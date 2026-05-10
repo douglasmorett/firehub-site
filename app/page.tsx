@@ -153,9 +153,9 @@ export default function FireHubLanding() {
         <div className="fh-nav-links">
           <a href="#funcionalidades">Funcionalidades</a>
           <a href="#como-funciona">Como funciona</a>
-          <a href="#planos">Planos</a>
+          <a href="/planos">Planos e Preços</a>
           <a href="#faq">FAQ</a>
-          <a href="https://hakim-portal.vercel.app/login" className="fh-nav-btn">Área do Cliente</a>
+          <a href="https://portalhakim.com.br/login" className="fh-nav-btn">Área do Lojista</a>
         </div>
       </nav>
 
