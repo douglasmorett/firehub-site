@@ -1,12 +1,9 @@
 "use client";
-import { useState } from "react";
-
-const SEGMENTS = ["Pizzaria","Hamburgueria","Restaurante","Lanchonete","Confeitaria","Açaiteria","Sushi","Marmitaria","Pastelaria","Outro"];
-const REVENUES = ["Não sei","Não tem faturamento","Menos de R$1.000","R$1.001 à R$5.000","R$5.001 à R$10.000","R$10.001 à R$20.000","R$20.001 à R$50.000","Acima de R$50.000"];
+import { useState, useEffect } from "react";
 
 const FEATURES = [
-  { icon: "📋", title: "Cardápio Digital", desc: "Delivery, mesa e balcão num só lugar. Sem app, direto no navegador." },
-  { icon: "🤖", title: "Chatbot WhatsApp", desc: "Atendimento automático com IA. Receba pedidos 24h sem perder vendas." },
+  { icon: "📋", title: "Cardápio Digital", desc: "Delivery, mesa e balcão num só lugar. Sem app, direto no navegador do cliente." },
+  { icon: "🤖", title: "Chatbot WhatsApp", desc: "Atendimento automático com IA. Receba pedidos 24h sem perder nenhuma venda." },
   { icon: "📊", title: "Gestão Completa", desc: "Controle de caixa, estoque, financeiro e relatórios em tempo real." },
   { icon: "🛵", title: "Gestão de Entregas", desc: "Rastreamento de entregadores, rotas otimizadas e status em tempo real." },
   { icon: "🔥", title: "Módulos FireCheck", desc: "Auditoria por IA, ponto com geolocalização, ranking de equipe e mais." },
@@ -14,231 +11,239 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { num: "01", title: "Cadastre seu restaurante", desc: "Em menos de 5 minutos seu cardápio digital está pronto para receber pedidos." },
-  { num: "02", title: "Personalize tudo", desc: "Logo, banner, categorias, produtos, taxas de entrega, formas de pagamento." },
-  { num: "03", title: "Receba pedidos", desc: "Pelo cardápio digital, WhatsApp, mesas ou balcão — tudo centralizado." },
-  { num: "04", title: "Gerencie e cresça", desc: "Relatórios, IA e ferramentas de marketing para escalar seu negócio." },
-];
-
-const PLANS = [
-  { name: "Delivery", icon: "🛵", popular: false, desc: "Esse plano é ideal para empresas que buscam trabalhar com delivery e querem automatizar seu atendimento com cardápios digitais e autoatendimento, além de aumentar suas vendas com ferramentas de automação e marketing muito completas." },
-  { name: "Premium", icon: "🔥", popular: true, desc: "Esse plano foi feito para empresas que buscam automatizar tanto seu atendimento presencial quanto de delivery, tudo isso usando cardápios digitais, ChatBots e ferramentas de gestão que centralizam toda sua operação em único lugar." },
-  { name: "Mesas", icon: "🍽️", popular: false, desc: "Esse plano foi feito para empresas que trabalham com um ambiente presencial e buscam automatizar seu atendimento de mesas e comandas, tudo isso através de cardápios digitais e módulos de gestão, para você controlar o que acontece no seu salão." },
+  { num: "01", title: "Cadastre-se grátis", desc: "Em menos de 2 minutos seu restaurante está no ar, pronto para vender." },
+  { num: "02", title: "Personalize tudo", desc: "Logo, banner, categorias, produtos, taxas de entrega e pagamentos." },
+  { num: "03", title: "Receba pedidos", desc: "Cardápio digital, WhatsApp, mesas ou balcão — tudo centralizado." },
+  { num: "04", title: "Cresça com IA", desc: "Relatórios inteligentes e ferramentas de marketing para escalar." },
 ];
 
 const FAQ = [
-  { q: "Quanto custa o FireHub?", a: "Os planos variam de acordo com a operação. Agende uma demonstração gratuita e receba uma proposta personalizada." },
+  { q: "Quanto custa o FireHub?", a: "Comece com 15 dias grátis sem compromisso. Após o teste, planos a partir de R$ 99/mês — sem taxas por pedido." },
   { q: "Precisa instalar aplicativo?", a: "Não! O FireHub funciona 100% no navegador, tanto para você quanto para seus clientes. Celular, tablet ou computador." },
   { q: "Como funciona o suporte?", a: "Nosso suporte funciona 7 dias por semana, de manhã, tarde e noite. Atendimento humanizado via WhatsApp." },
   { q: "Posso imprimir comandas?", a: "Sim! Imprima comandas de delivery, cozinha e mesas em uma ou mais impressoras, pelo celular ou computador." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no seu painel FireHub, junto com os pedidos do cardápio digital e WhatsApp." },
-  { q: "O que são os módulos FireCheck?", a: "São ferramentas de auditoria por IA: checklist com fotos obrigatórias, ponto com geolocalização, financeiro inteligente e ranking de equipe." },
+  { q: "O que são os módulos FireCheck?", a: "Ferramentas de auditoria por IA: checklist com fotos obrigatórias, ponto com geolocalização, financeiro inteligente e ranking de equipe." },
 ];
 
-export default function FireHubLanding() {
-  const [form, setForm] = useState({ name: "", company: "", email: "", phone: "", revenue: "", segment: "" });
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
+const COMPARE = [
+  ["Cardápio digital sem taxa adicional", true, true, false],
+  ["Pedidos: Delivery, Balcão e Mesas", true, true, false],
+  ["IA integrada ao WhatsApp", true, true, false],
+  ["Auditoria operacional com IA 🏆", true, false, false],
+  ["Controle financeiro completo 🏆", true, false, false],
+  ["Módulo FireCheck incluso 🏆", true, false, false],
+  ["Notas de compras lidas por IA 🏆", true, false, false],
+  ["Controle de estoque automático", "soon", true, false],
+  ["CMV automático", "soon", true, false],
+  ["Integração iFood / Rappi", "soon", true, false],
+];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSending(true);
-    // TODO: integrate with API/WhatsApp
-    await new Promise(r => setTimeout(r, 1500));
-    setSent(true);
-    setSending(false);
-  };
+const TRIAL_URL = "https://portalhakim.com.br/login";
+const WA_URL = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20testar%20o%20FireHub%20gr%C3%A1tis%20por%2015%20dias";
+
+export default function FireHubLanding() {
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", background: "#fff", color: "#1a1a2e" }}>
+    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", background: "#09090b", color: "#fafafa" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        .fh-hero { background: linear-gradient(135deg, #B91C1C 0%, #DC2626 40%, #EF4444 100%); min-height: 100vh; display: flex; align-items: center; position: relative; overflow: hidden; }
-        .fh-hero::before { content: ''; position: absolute; top: -50%; right: -20%; width: 70%; height: 200%; background: radial-gradient(ellipse, rgba(255,255,255,0.08) 0%, transparent 70%); }
-        .fh-container { max-width: 1200px; margin: 0 auto; padding: 0 24px; width: 100%; }
-        .fh-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; background: rgba(185,28,28,0.95); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .fh-logo { display: flex; align-items: center; gap: 10px; }
-        .fh-logo-text { font-size: 1.5rem; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
-        .fh-logo-text span { color: #FCA5A5; }
-        .fh-logo-sub { font-size: 0.55rem; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 2px; display: block; margin-top: -2px; }
-        .fh-nav-links { display: flex; gap: 24px; align-items: center; }
-        .fh-nav-links a { color: rgba(255,255,255,0.85); text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: color 0.2s; }
-        .fh-nav-links a:hover { color: #fff; }
-        .fh-nav-btn { background: #fff !important; color: #DC2626 !important; padding: 8px 20px; border-radius: 8px; font-weight: 700 !important; font-size: 0.85rem; }
-        .fh-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; padding-top: 100px; }
-        .fh-hero-tag { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 3px; color: #FCA5A5; font-weight: 600; margin-bottom: 16px; }
-        .fh-hero h1 { font-size: 3rem; font-weight: 900; color: #fff; line-height: 1.1; margin-bottom: 20px; }
-        .fh-hero h1 em { font-style: normal; color: #FEE2E2; }
-        .fh-hero p { color: rgba(255,255,255,0.85); font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px; }
-        .fh-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
-        .fh-badge { background: rgba(255,255,255,0.15); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2); }
-        .fh-form-card { background: #fff; border-radius: 16px; padding: 32px; box-shadow: 0 25px 60px rgba(0,0,0,0.3); }
-        .fh-form-card h3 { font-size: 1.2rem; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
-        .fh-form-card p { font-size: 0.8rem; color: #64748B; margin-bottom: 20px; }
-        .fh-input { width: 100%; padding: 12px 14px; border: 1.5px solid #E2E8F0; border-radius: 8px; font-size: 0.9rem; outline: none; transition: border 0.2s; margin-bottom: 12px; font-family: inherit; }
-        .fh-input:focus { border-color: #DC2626; }
-        .fh-select { width: 100%; padding: 12px 14px; border: 1.5px solid #E2E8F0; border-radius: 8px; font-size: 0.9rem; outline: none; background: #fff; margin-bottom: 12px; font-family: inherit; appearance: auto; }
-        .fh-submit { width: 100%; padding: 14px; background: #DC2626; color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.3s; font-family: inherit; text-transform: uppercase; letter-spacing: 1px; }
-        .fh-submit:hover { background: #B91C1C; transform: translateY(-2px); box-shadow: 0 8px 25px rgba(220,38,38,0.4); }
-        .fh-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-        .fh-section { padding: 80px 0; }
-        .fh-section-alt { background: #FFF5F5; }
-        .fh-section-red { background: linear-gradient(135deg, #B91C1C, #DC2626); color: #fff; }
-        .fh-section-title { text-align: center; margin-bottom: 60px; }
-        .fh-section-title h2 { font-size: 2.2rem; font-weight: 800; margin-bottom: 12px; }
-        .fh-section-title p { color: #64748B; font-size: 1rem; max-width: 600px; margin: 0 auto; }
-        .fh-features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-        .fh-feature-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 14px; padding: 28px; transition: all 0.3s; }
-        .fh-feature-card:hover { border-color: #DC2626; box-shadow: 0 12px 40px rgba(220,38,38,0.1); transform: translateY(-4px); }
-        .fh-feature-icon { font-size: 2rem; margin-bottom: 14px; }
-        .fh-feature-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; }
-        .fh-feature-card p { font-size: 0.85rem; color: #64748B; line-height: 1.5; }
-        .fh-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
-        .fh-step { text-align: center; position: relative; }
-        .fh-step-num { font-size: 3rem; font-weight: 900; color: #FEE2E2; margin-bottom: 12px; }
-        .fh-step h3 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
-        .fh-step p { font-size: 0.8rem; color: #64748B; line-height: 1.5; }
-        .fh-plans-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; align-items: center; }
-        .fh-plan { background: #FEE2E2; border: none; border-radius: 20px; padding: 36px 28px; position: relative; transition: all 0.3s; color: #1a1a2e; }
-        .fh-plan.popular { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: #fff; transform: scale(1.07); box-shadow: 0 20px 50px rgba(127,29,29,0.3); z-index: 2; }
-        .fh-plan-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.2); color: #fff; padding: 6px 20px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(4px); }
-        .fh-plan-icon { font-size: 2rem; display: inline-block; margin-right: 10px; vertical-align: middle; background: rgba(220,38,38,0.15); padding: 8px; border-radius: 10px; }
-        .fh-plan.popular .fh-plan-icon { background: rgba(255,255,255,0.15); }
-        .fh-plan h3 { font-size: 1.6rem; font-weight: 800; margin-bottom: 16px; display: inline-block; vertical-align: middle; }
-        .fh-plan p { font-size: 0.9rem; color: #64748B; margin-bottom: 28px; line-height: 1.6; }
-        .fh-plan.popular p { color: rgba(255,255,255,0.8); }
-        .fh-plan-btn { display: inline-block; text-align: center; padding: 12px 28px; border-radius: 25px; font-weight: 700; font-size: 0.85rem; text-decoration: none; transition: all 0.3s; background: #DC2626; color: #fff; border: none; cursor: pointer; font-family: inherit; box-shadow: 0 4px 15px rgba(220,38,38,0.3); }
-        .fh-plan.popular .fh-plan-btn { background: #EF4444; }
-        .fh-plan-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(220,38,38,0.4); }
-        .fh-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; text-align: center; padding: 60px 0; }
-        .fh-stat h3 { font-size: 2.5rem; font-weight: 900; color: #fff; }
-        .fh-stat p { font-size: 0.85rem; color: rgba(255,255,255,0.8); }
-        .fh-faq { max-width: 700px; margin: 0 auto; }
-        .fh-faq-item { border: 1px solid #E2E8F0; border-radius: 10px; margin-bottom: 10px; overflow: hidden; transition: border 0.2s; }
-        .fh-faq-item.open { border-color: #DC2626; }
-        .fh-faq-q { padding: 16px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.95rem; }
-        .fh-faq-a { padding: 0 20px 16px; font-size: 0.85rem; color: #64748B; line-height: 1.6; }
-        .fh-cta-box { text-align: center; }
-        .fh-cta-box h2 { font-size: 2rem; font-weight: 800; color: #fff; margin-bottom: 12px; }
-        .fh-cta-box p { color: rgba(255,255,255,0.85); margin-bottom: 30px; font-size: 1rem; }
-        .fh-cta-btn { display: inline-block; background: #fff; color: #DC2626; padding: 16px 40px; border-radius: 12px; font-weight: 800; font-size: 1.1rem; text-decoration: none; transition: all 0.3s; border: none; cursor: pointer; font-family: inherit; }
-        .fh-cta-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,0.2); }
-        .fh-footer { background: #0F172A; color: rgba(255,255,255,0.6); padding: 40px 0; text-align: center; font-size: 0.8rem; }
-        .fh-mockup-img { width: 100%; max-width: 500px; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-        @media(max-width: 900px) {
-          .fh-hero-grid { grid-template-columns: 1fr; gap: 30px; padding-top: 80px; }
-          .fh-hero h1 { font-size: 2rem; }
-          .fh-features-grid, .fh-plans-grid { grid-template-columns: 1fr; }
-          .fh-steps { grid-template-columns: 1fr 1fr; }
-          .fh-stats { grid-template-columns: 1fr 1fr; }
-          .fh-plan.popular { transform: none; }
-          .fh-nav-links { display: none; }
-          .fh-hero-grid > div:last-child { order: -1; }
+        * { margin: 0; padding: 0; box-sizing: border-box; scroll-behavior: smooth; }
+        ::selection { background: rgba(239,68,68,0.4); }
+
+        /* ── NAV ── */
+        .fn { position:fixed;top:0;left:0;right:0;z-index:100;padding:14px 32px;display:flex;justify-content:space-between;align-items:center;transition:all .4s; }
+        .fn.scrolled { background:rgba(9,9,11,.92);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06);box-shadow:0 4px 30px rgba(0,0,0,.3); }
+        .fn-links { display:flex;gap:28px;align-items:center; }
+        .fn-links a { color:rgba(255,255,255,.7);text-decoration:none;font-size:.85rem;font-weight:500;transition:color .2s;position:relative; }
+        .fn-links a:hover { color:#fff; }
+        .fn-cta { background:linear-gradient(135deg,#ef4444,#dc2626)!important;color:#fff!important;padding:9px 22px;border-radius:10px;font-weight:700!important;font-size:.85rem;box-shadow:0 4px 20px rgba(239,68,68,.3);transition:all .3s!important; }
+        .fn-cta:hover { transform:translateY(-2px);box-shadow:0 8px 30px rgba(239,68,68,.5)!important; }
+
+        /* ── HERO ── */
+        .hero { min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden;padding-top:80px; }
+        .hero::before { content:'';position:absolute;top:-30%;left:50%;transform:translateX(-50%);width:140%;height:80%;background:radial-gradient(ellipse at center,rgba(239,68,68,.12) 0%,transparent 70%);pointer-events:none; }
+        .hero::after { content:'';position:absolute;bottom:0;left:0;right:0;height:200px;background:linear-gradient(to top,#09090b,transparent);pointer-events:none; }
+        .hero-inner { max-width:1200px;margin:0 auto;padding:0 24px;width:100%;text-align:center;position:relative;z-index:2; }
+        .hero-tag { display:inline-flex;align-items:center;gap:8px;padding:8px 20px;border-radius:50px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#f87171;font-size:.8rem;font-weight:600;margin-bottom:28px;letter-spacing:.5px; }
+        .hero-tag .dot { width:6px;height:6px;border-radius:50%;background:#ef4444;animation:pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+        .hero h1 { font-size:clamp(2.4rem,5.5vw,4.2rem);font-weight:900;line-height:1.08;margin-bottom:24px;letter-spacing:-1.5px; }
+        .hero h1 .grad { background:linear-gradient(135deg,#ef4444,#f97316,#ef4444);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+        .hero-sub { font-size:clamp(1rem,2vw,1.25rem);color:rgba(255,255,255,.55);max-width:620px;margin:0 auto 40px;line-height:1.7;font-weight:400; }
+        .hero-btns { display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:16px; }
+        .btn-fire { display:inline-flex;align-items:center;gap:10px;padding:16px 36px;border-radius:14px;font-weight:800;font-size:1.05rem;text-decoration:none;transition:all .3s;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;cursor:pointer;font-family:inherit;box-shadow:0 8px 30px rgba(239,68,68,.35);letter-spacing:.3px; }
+        .btn-fire:hover { transform:translateY(-3px);box-shadow:0 14px 40px rgba(239,68,68,.5); }
+        .btn-ghost { display:inline-flex;align-items:center;gap:10px;padding:16px 36px;border-radius:14px;font-weight:700;font-size:1.05rem;text-decoration:none;transition:all .3s;background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.1);cursor:pointer;font-family:inherit; }
+        .btn-ghost:hover { background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);transform:translateY(-2px); }
+        .hero-note { color:rgba(255,255,255,.35);font-size:.8rem;margin-top:8px; }
+        .hero-badges { display:flex;gap:20px;justify-content:center;flex-wrap:wrap;margin-top:48px; }
+        .hb { display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);font-size:.82rem;color:rgba(255,255,255,.6);font-weight:500; }
+        .hb span { font-size:1.1rem; }
+
+        /* ── CONTAINER ── */
+        .ctn { max-width:1200px;margin:0 auto;padding:0 24px;width:100%; }
+        .sec { padding:100px 0; }
+
+        /* ── STATS ── */
+        .stats { display:grid;grid-template-columns:repeat(4,1fr);gap:24px;text-align:center;padding:60px 0;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06); }
+        .stat h3 { font-size:2.8rem;font-weight:900;background:linear-gradient(135deg,#ef4444,#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+        .stat p { font-size:.85rem;color:rgba(255,255,255,.5);margin-top:4px; }
+
+        /* ── SECTION TITLE ── */
+        .stitle { text-align:center;margin-bottom:64px; }
+        .stitle h2 { font-size:clamp(1.8rem,3.5vw,2.6rem);font-weight:800;margin-bottom:16px;letter-spacing:-0.5px; }
+        .stitle p { color:rgba(255,255,255,.45);font-size:1.05rem;max-width:600px;margin:0 auto; }
+
+        /* ── FEATURES ── */
+        .fgrid { display:grid;grid-template-columns:repeat(3,1fr);gap:20px; }
+        .fcard { background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:18px;padding:32px;transition:all .4s;position:relative;overflow:hidden; }
+        .fcard::before { content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#ef4444,transparent);opacity:0;transition:opacity .4s; }
+        .fcard:hover { border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.04);transform:translateY(-4px); }
+        .fcard:hover::before { opacity:1; }
+        .fcard-icon { font-size:2.2rem;margin-bottom:18px;display:block; }
+        .fcard h3 { font-size:1.1rem;font-weight:700;margin-bottom:10px; }
+        .fcard p { font-size:.88rem;color:rgba(255,255,255,.45);line-height:1.6; }
+
+        /* ── STEPS ── */
+        .steps { display:grid;grid-template-columns:repeat(4,1fr);gap:32px; }
+        .step { text-align:center;position:relative; }
+        .step-num { font-size:4rem;font-weight:900;background:linear-gradient(135deg,rgba(239,68,68,.25),rgba(239,68,68,.05));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1; }
+        .step h3 { font-size:1rem;font-weight:700;margin:12px 0 8px; }
+        .step p { font-size:.82rem;color:rgba(255,255,255,.4);line-height:1.6; }
+
+        /* ── COMPARE ── */
+        .compare-sec { background:rgba(255,255,255,.02);border-top:1px solid rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.05); }
+        .ctable { width:100%;border-collapse:collapse;font-size:.92rem; }
+        .ctable th { padding:16px 20px;font-weight:600;border-bottom:1px solid rgba(255,255,255,.08); }
+        .ctable td { padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.04); }
+        .ctable .fh-col { background:rgba(239,68,68,.06); }
+        .ctable .fh-head { background:rgba(239,68,68,.12);color:#f87171;font-weight:800;border-radius:12px 12px 0 0; }
+
+        /* ── FAQ ── */
+        .faq { max-width:720px;margin:0 auto; }
+        .faq-item { border:1px solid rgba(255,255,255,.06);border-radius:14px;margin-bottom:10px;overflow:hidden;transition:all .3s; }
+        .faq-item.open { border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.03); }
+        .faq-q { padding:18px 22px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:.95rem;transition:color .2s; }
+        .faq-q:hover { color:#f87171; }
+        .faq-a { padding:0 22px 18px;font-size:.88rem;color:rgba(255,255,255,.5);line-height:1.7; }
+        .faq-arrow { transition:transform .3s;font-size:1.2rem;color:rgba(255,255,255,.3); }
+        .faq-item.open .faq-arrow { transform:rotate(45deg);color:#ef4444; }
+
+        /* ── CTA ── */
+        .cta-sec { background:linear-gradient(135deg,rgba(239,68,68,.12),rgba(249,115,22,.08));border-top:1px solid rgba(239,68,68,.15); }
+        .cta-box { text-align:center; }
+        .cta-box h2 { font-size:clamp(1.8rem,3.5vw,2.5rem);font-weight:800;margin-bottom:16px; }
+        .cta-box p { color:rgba(255,255,255,.5);margin-bottom:36px;font-size:1.05rem; }
+
+        /* ── FOOTER ── */
+        .foot { background:#050505;padding:40px 0;text-align:center;border-top:1px solid rgba(255,255,255,.05); }
+        .foot p { color:rgba(255,255,255,.3);font-size:.8rem; }
+
+        /* ── MOBILE ── */
+        @media(max-width:900px) {
+          .fn-links { display:none; }
+          .hero h1 { font-size:2.2rem; }
+          .fgrid { grid-template-columns:1fr; }
+          .steps { grid-template-columns:1fr 1fr; }
+          .stats { grid-template-columns:1fr 1fr; }
+          .hero-badges { flex-direction:column;align-items:center; }
+          .hero-btns { flex-direction:column;align-items:center; }
+          .btn-fire,.btn-ghost { width:100%;max-width:340px;justify-content:center; }
+        }
+        @media(max-width:600px) {
+          .steps { grid-template-columns:1fr; }
+          .stats { grid-template-columns:1fr 1fr; }
         }
       `}</style>
 
-      {/* NAV */}
-      <nav className="fh-nav">
-        <div className="fh-logo">
-          <img src="/firehub-flame.png" alt="" style={{ height: "36px", width: "36px", objectFit: "contain", borderRadius: "8px" }} />
+      {/* ═══════ NAV ═══════ */}
+      <nav className={`fn ${scrolled ? "scrolled" : ""}`}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img src="/firehub-flame.png" alt="" style={{ height: 34, width: 34, objectFit: "contain" }} />
           <div>
-            <div style={{ fontSize: "1.4rem", fontWeight: 800, letterSpacing: "-0.5px", lineHeight: 1 }}>
-              <span style={{ color: "#FF4500" }}>FIRE</span><span style={{ color: "#C0C0C0" }}>HUB</span>
+            <div style={{ fontSize: "1.3rem", fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>
+              <span style={{ color: "#ef4444" }}>FIRE</span><span style={{ color: "#a1a1aa" }}>HUB</span>
             </div>
-            <div style={{ fontSize: "0.45rem", color: "rgba(255,255,255,0.6)", letterSpacing: "1.5px", textTransform: "uppercase" as const, marginTop: "1px" }}>Sistema Centralizado de Pedidos & Estoque</div>
+            <div style={{ fontSize: ".5rem", color: "rgba(255,255,255,.4)", letterSpacing: 1.5, textTransform: "uppercase" as const, marginTop: 1 }}>
+              Sistema para Restaurantes
+            </div>
           </div>
         </div>
-        <div className="fh-nav-links">
+        <div className="fn-links">
           <a href="#funcionalidades">Funcionalidades</a>
           <a href="#como-funciona">Como funciona</a>
-          <a href="/planos">Planos e Preços</a>
+          <a href="#comparativo">Comparativo</a>
           <a href="#faq">FAQ</a>
-          <a href="https://portalhakim.com.br/login" className="fh-nav-btn">Área do Lojista</a>
+          <a href={TRIAL_URL} className="fn-cta">Testar Grátis</a>
         </div>
       </nav>
 
-      {/* HERO */}
-      <section className="fh-hero">
-        <div className="fh-container">
-          <div className="fh-hero-grid">
-            <div>
-              <div className="fh-hero-tag">Sistema para Delivery e Restaurante</div>
-              <h1>O sistema de <em>pedidos</em> com tudo que o seu restaurante precisa</h1>
-              <p>
-                Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro 
-                e auditoria com IA — tudo num só lugar. Pare de perder vendas e comece a crescer.
-              </p>
-              <div className="fh-badges">
-                <span className="fh-badge">📋 Delivery</span>
-                <span className="fh-badge">🍽️ Mesas</span>
-                <span className="fh-badge">🏪 Balcão</span>
-                <span className="fh-badge">🤖 IA</span>
-                <span className="fh-badge">💬 WhatsApp</span>
-              </div>
-              <img src="/firehub-mockup.png" alt="FireHub Sistema" style={{ marginTop: "20px", width: "100%", maxWidth: "600px", borderRadius: "16px" }} />
-            </div>
-
-            {/* FORM */}
-            <div>
-              <div className="fh-form-card" id="demo">
-                <h3>🔥 Agende uma demonstração gratuita</h3>
-                <p>Preencha e um consultor entrará em contato em até 24h</p>
-                {sent ? (
-                  <div style={{ textAlign: "center", padding: "40px 0" }}>
-                    <div style={{ fontSize: "3rem", marginBottom: "12px" }}>✅</div>
-                    <h3 style={{ color: "#16A34A", marginBottom: "8px" }}>Solicitação enviada!</h3>
-                    <p style={{ color: "#64748B" }}>Entraremos em contato em breve pelo WhatsApp.</p>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSubmit}>
-                    <input className="fh-input" placeholder="Nome" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-                    <input className="fh-input" placeholder="Empresa / Restaurante" value={form.company} onChange={e => setForm({...form, company: e.target.value})} />
-                    <input className="fh-input" placeholder="E-mail" type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
-                    <input className="fh-input" placeholder="WhatsApp" required value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
-                    <select className="fh-select" value={form.revenue} onChange={e => setForm({...form, revenue: e.target.value})}>
-                      <option value="">Faturamento mensal</option>
-                      {REVENUES.map(r => <option key={r}>{r}</option>)}
-                    </select>
-                    <select className="fh-select" value={form.segment} onChange={e => setForm({...form, segment: e.target.value})}>
-                      <option value="">Qual o seu segmento?</option>
-                      {SEGMENTS.map(s => <option key={s}>{s}</option>)}
-                    </select>
-                    <button className="fh-submit" type="submit" disabled={sending}>
-                      {sending ? "Enviando..." : "🔥 SOLICITAR DEMONSTRAÇÃO"}
-                    </button>
-                  </form>
-                )}
-              </div>
-            </div>
+      {/* ═══════ HERO ═══════ */}
+      <section className="hero">
+        <div className="hero-inner">
+          <div className="hero-tag">
+            <span className="dot" />
+            15 dias grátis · Sem cartão de crédito
+          </div>
+          <h1>
+            <span className="grad">Simples, rápido e completo.</span><br />
+            Tudo que o seu restaurante<br />precisa em um só lugar.
+          </h1>
+          <p className="hero-sub">
+            Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro
+            e auditoria com IA — pare de perder vendas e comece a crescer.
+          </p>
+          <div className="hero-btns">
+            <a href={TRIAL_URL} className="btn-fire">
+              🔥 Testar Grátis por 15 Dias
+            </a>
+            <a href={WA_URL} className="btn-ghost" target="_blank" rel="noopener">
+              💬 Falar com Consultor
+            </a>
+          </div>
+          <p className="hero-note">Sem compromisso. Sem cartão. Cancele quando quiser.</p>
+          <div className="hero-badges">
+            <div className="hb"><span>📋</span> Delivery</div>
+            <div className="hb"><span>🍽️</span> Mesas</div>
+            <div className="hb"><span>🏪</span> Balcão</div>
+            <div className="hb"><span>🤖</span> IA</div>
+            <div className="hb"><span>💬</span> WhatsApp</div>
           </div>
         </div>
       </section>
 
-      {/* STATS */}
-      <section className="fh-section-red">
-        <div className="fh-container">
-          <div className="fh-stats">
-            <div className="fh-stat"><h3>500+</h3><p>restaurantes ativos</p></div>
-            <div className="fh-stat"><h3>2M+</h3><p>pedidos processados</p></div>
-            <div className="fh-stat"><h3>99.9%</h3><p>uptime garantido</p></div>
-            <div className="fh-stat"><h3>24/7</h3><p>suporte disponível</p></div>
+      {/* ═══════ STATS ═══════ */}
+      <section className="sec">
+        <div className="ctn">
+          <div className="stats">
+            <div className="stat"><h3>500+</h3><p>restaurantes ativos</p></div>
+            <div className="stat"><h3>2M+</h3><p>pedidos processados</p></div>
+            <div className="stat"><h3>99.9%</h3><p>uptime garantido</p></div>
+            <div className="stat"><h3>24/7</h3><p>suporte disponível</p></div>
           </div>
         </div>
       </section>
 
-      {/* FEATURES */}
-      <section className="fh-section" id="funcionalidades">
-        <div className="fh-container">
-          <div className="fh-section-title">
-            <h2>Tudo que seu negócio precisa numa única solução</h2>
+      {/* ═══════ FEATURES ═══════ */}
+      <section className="sec" id="funcionalidades">
+        <div className="ctn">
+          <div className="stitle">
+            <h2>Tudo que você precisa numa <span style={{ color: "#ef4444" }}>única solução</span></h2>
             <p>Do cardápio digital à auditoria com inteligência artificial, o FireHub centraliza toda a operação do seu restaurante.</p>
           </div>
-          <div className="fh-features-grid">
+          <div className="fgrid">
             {FEATURES.map((f, i) => (
-              <div key={i} className="fh-feature-card">
-                <div className="fh-feature-icon">{f.icon}</div>
+              <div key={i} className="fcard">
+                <span className="fcard-icon">{f.icon}</span>
                 <h3>{f.title}</h3>
                 <p>{f.desc}</p>
               </div>
@@ -247,17 +252,17 @@ export default function FireHubLanding() {
         </div>
       </section>
 
-      {/* COMO FUNCIONA */}
-      <section className="fh-section fh-section-alt" id="como-funciona">
-        <div className="fh-container">
-          <div className="fh-section-title">
-            <h2>Como funciona?</h2>
-            <p>Em 4 passos simples você coloca seu restaurante para vender online.</p>
+      {/* ═══════ COMO FUNCIONA ═══════ */}
+      <section className="sec" id="como-funciona" style={{ background: "rgba(255,255,255,.02)" }}>
+        <div className="ctn">
+          <div className="stitle">
+            <h2>Comece a vender em <span style={{ color: "#ef4444" }}>4 passos</span></h2>
+            <p>Seu restaurante online em minutos, sem burocracia.</p>
           </div>
-          <div className="fh-steps">
+          <div className="steps">
             {STEPS.map((s, i) => (
-              <div key={i} className="fh-step">
-                <div className="fh-step-num">{s.num}</div>
+              <div key={i} className="step">
+                <div className="step-num">{s.num}</div>
                 <h3>{s.title}</h3>
                 <p>{s.desc}</p>
               </div>
@@ -266,119 +271,90 @@ export default function FireHubLanding() {
         </div>
       </section>
 
-      {/* TABELA COMPARATIVA */}
-      <section className="fh-section" style={{ background: "#0f172a" }}>
-        <div className="fh-container">
-          <div className="fh-section-title">
-            <h2 style={{ color: "#fff" }}>Por que escolher o <span style={{ color: "#EF4444" }}>FireHub</span>?</h2>
-            <p style={{ color: "#94a3b8" }}>Compare e veja por que somos a melhor opção para o seu restaurante</p>
+      {/* ═══════ COMPARATIVO ═══════ */}
+      <section className="sec compare-sec" id="comparativo">
+        <div className="ctn">
+          <div className="stitle">
+            <h2>Por que escolher o <span style={{ color: "#ef4444" }}>FireHub</span>?</h2>
+            <p>Compare e descubra por que somos a melhor opção para o seu restaurante.</p>
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem", minWidth: "600px" }}>
+          <div style={{ overflowX: "auto", borderRadius: 16, border: "1px solid rgba(255,255,255,.06)" }}>
+            <table className="ctable" style={{ minWidth: 600 }}>
               <thead>
                 <tr>
-                  <th style={{ padding: "14px 20px", textAlign: "left", color: "#94a3b8", fontWeight: 600, borderBottom: "1px solid #1e293b" }}>Funcionalidade</th>
-                  <th style={{ padding: "14px 20px", textAlign: "center", background: "rgba(239,68,68,0.15)", color: "#EF4444", fontWeight: 700, borderBottom: "1px solid #1e293b", borderRadius: "8px 8px 0 0" }}>🔥 FireHub</th>
-                  <th style={{ padding: "14px 20px", textAlign: "center", color: "#64748b", fontWeight: 600, borderBottom: "1px solid #1e293b" }}>Saipos</th>
-                  <th style={{ padding: "14px 20px", textAlign: "center", color: "#64748b", fontWeight: 600, borderBottom: "1px solid #1e293b" }}>Sem sistema</th>
+                  <th style={{ textAlign: "left", color: "rgba(255,255,255,.4)" }}>Funcionalidade</th>
+                  <th className="fh-head" style={{ textAlign: "center" }}>🔥 FireHub</th>
+                  <th style={{ textAlign: "center", color: "rgba(255,255,255,.4)" }}>Concorrentes</th>
+                  <th style={{ textAlign: "center", color: "rgba(255,255,255,.4)" }}>Sem sistema</th>
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ["Cardápio digital sem taxa adicional", "✅", "✅", "❌"],
-                  ["Pedidos: Delivery, Balcão e Mesas", "✅", "✅", "❌"],
-                  ["IA integrada ao WhatsApp", "✅", "✅", "❌"],
-                  ["Auditoria operacional com IA 🏆", "✅", "❌", "❌"],
-                  ["Controle financeiro pessoal + empresarial 🏆", "✅", "❌", "❌"],
-                  ["Módulo FireCheck de auditoria incluso 🏆", "✅", "❌", "❌"],
-                  ["Notas de compras lidas por IA", "✅", "❌", "❌"],
-                  ["Controle de estoque automático", "Em breve", "✅", "❌"],
-                  ["CMV automático", "Em breve", "✅", "❌"],
-                  ["Integração iFood / Rappi", "Em breve", "✅", "❌"],
-                  ["App para garçom", "Em breve", "✅", "❌"],
-                  ["Roteirização de entregas", "Em breve", "✅", "❌"],
-                ].map(([feat, fh, saipos, sem], i) => (
-                  <tr key={i} style={{ borderBottom: "1px solid #1e293b" }}>
-                    <td style={{ padding: "13px 20px", color: feat.includes("🏆") ? "#fbbf24" : "#e2e8f0", fontWeight: feat.includes("🏆") ? 600 : 400 }}>{feat}</td>
-                    <td style={{ padding: "13px 20px", textAlign: "center", background: "rgba(239,68,68,0.05)", fontSize: "1.1rem" }}>
-                      {fh === "✅" ? <span style={{ color: "#22c55e" }}>✅</span> : fh === "❌" ? <span style={{ color: "#ef4444" }}>❌</span> : <span style={{ color: "#f59e0b", fontSize: "0.8rem", fontWeight: 600 }}>EM BREVE</span>}
+                {COMPARE.map(([feat, fh, conc, sem], i) => (
+                  <tr key={i}>
+                    <td style={{ color: (feat as string).includes("🏆") ? "#fbbf24" : "rgba(255,255,255,.7)", fontWeight: (feat as string).includes("🏆") ? 600 : 400 }}>{feat as string}</td>
+                    <td className="fh-col" style={{ textAlign: "center", fontSize: "1.1rem" }}>
+                      {fh === true ? "✅" : fh === false ? "❌" : <span style={{ color: "#f59e0b", fontSize: ".75rem", fontWeight: 700 }}>EM BREVE</span>}
                     </td>
-                    <td style={{ padding: "13px 20px", textAlign: "center", fontSize: "1.1rem" }}>
-                      {saipos === "✅" ? <span style={{ color: "#22c55e" }}>✅</span> : <span style={{ color: "#ef4444" }}>❌</span>}
-                    </td>
-                    <td style={{ padding: "13px 20px", textAlign: "center", fontSize: "1.1rem" }}>
-                      {sem === "✅" ? <span style={{ color: "#22c55e" }}>✅</span> : <span style={{ color: "#ef4444" }}>❌</span>}
-                    </td>
+                    <td style={{ textAlign: "center", fontSize: "1.1rem" }}>{conc === true ? "✅" : "❌"}</td>
+                    <td style={{ textAlign: "center", fontSize: "1.1rem" }}>{sem === true ? "✅" : "❌"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p style={{ textAlign: "center", color: "#64748b", fontSize: "0.85rem", marginTop: "16px" }}>
-            🏆 Funcionalidades exclusivas do FireHub que nenhum concorrente oferece
+          <p style={{ textAlign: "center", color: "rgba(255,255,255,.3)", fontSize: ".82rem", marginTop: 16 }}>
+            🏆 Funcionalidades exclusivas que nenhum concorrente oferece
           </p>
         </div>
       </section>
 
-      {/* PLANS */}
-      <section className="fh-section" id="planos">
-        <div className="fh-container">
-          <div className="fh-section-title">
-            <h2>Planos personalizados para cada operação</h2>
-            <p>Escolha o plano ideal e agende uma demonstração gratuita.</p>
-          </div>
-          <div className="fh-plans-grid">
-            {PLANS.map((p, i) => (
-              <div key={i} className={`fh-plan ${p.popular ? "popular" : ""}`}>
-                {p.popular && <div className="fh-plan-badge">+ Popular</div>}
-                <div style={{ marginBottom: "16px" }}>
-                  <span className="fh-plan-icon">{p.icon}</span>
-                  <h3>{p.name}</h3>
-                </div>
-                <p>{p.desc}</p>
-                <a href="https://wa.me/5522981118514?text=Ol%C3%A1!%20Tenho%20interesse%20no%20FireHub%20-%20Plano%20" className="fh-plan-btn">Fale com um consultor</a>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className="fh-section fh-section-alt" id="faq">
-        <div className="fh-container">
-          <div className="fh-section-title">
+      {/* ═══════ FAQ ═══════ */}
+      <section className="sec" id="faq">
+        <div className="ctn">
+          <div className="stitle">
             <h2>Perguntas frequentes</h2>
           </div>
-          <div className="fh-faq">
+          <div className="faq">
             {FAQ.map((f, i) => (
-              <div key={i} className={`fh-faq-item ${openFaq === i ? "open" : ""}`}>
-                <div className="fh-faq-q" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+              <div key={i} className={`faq-item ${openFaq === i ? "open" : ""}`}>
+                <div className="faq-q" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
                   {f.q}
-                  <span>{openFaq === i ? "−" : "+"}</span>
+                  <span className="faq-arrow">+</span>
                 </div>
-                {openFaq === i && <div className="fh-faq-a">{f.a}</div>}
+                {openFaq === i && <div className="faq-a">{f.a}</div>}
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA FINAL */}
-      <section className="fh-section fh-section-red">
-        <div className="fh-container">
-          <div className="fh-cta-box">
-            <h2>Pronto para vender mais?</h2>
-            <p>Agende uma demonstração gratuita e descubra como o FireHub pode transformar seu restaurante.</p>
-            <a href="https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20agendar%20uma%20demonstra%C3%A7%C3%A3o%20do%20FireHub" className="fh-cta-btn">🔥 AGENDAR DEMONSTRAÇÃO GRATUITA</a>
+      {/* ═══════ CTA FINAL ═══════ */}
+      <section className="sec cta-sec">
+        <div className="ctn">
+          <div className="cta-box">
+            <h2>Pronto para <span style={{ color: "#ef4444" }}>vender mais</span>?</h2>
+            <p>Comece agora mesmo com 15 dias grátis. Sem cartão, sem compromisso.</p>
+            <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+              <a href={TRIAL_URL} className="btn-fire" style={{ fontSize: "1.1rem", padding: "18px 44px" }}>
+                🔥 Começar Teste Grátis
+              </a>
+              <a href={WA_URL} className="btn-ghost" target="_blank" rel="noopener" style={{ fontSize: "1.1rem", padding: "18px 44px" }}>
+                💬 Falar no WhatsApp
+              </a>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer className="fh-footer">
-        <div className="fh-container">
-          <p style={{ marginBottom: "8px", fontSize: "1.1rem" }}><span style={{ color: "#EF4444", fontWeight: 800 }}>FIRE</span><span style={{ color: "#aaa", fontWeight: 800 }}>HUB</span> <span style={{ fontSize: "0.7rem" }}>— Sistema Centralizado de Pedidos & Estoque</span></p>
-          <p>© {new Date().getFullYear()} FireHub. Todos os direitos reservados.</p>
+      {/* ═══════ FOOTER ═══════ */}
+      <footer className="foot">
+        <div className="ctn">
+          <p style={{ marginBottom: 8, fontSize: "1.1rem" }}>
+            <span style={{ color: "#ef4444", fontWeight: 900 }}>FIRE</span>
+            <span style={{ color: "#71717a", fontWeight: 900 }}>HUB</span>
+            <span style={{ fontSize: ".7rem", marginLeft: 8, color: "rgba(255,255,255,.25)" }}>Simples, rápido e completo.</span>
+          </p>
+          <p>© {new Date().getFullYear()} FireHub Food Technology. Todos os direitos reservados.</p>
         </div>
       </footer>
     </div>
