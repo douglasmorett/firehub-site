@@ -71,6 +71,7 @@ export default function Home() {
         .nav-links a { color:#6B7280;text-decoration:none;font-size:.88rem;font-weight:500;transition:color .2s; }
         .nav-links a:hover { color:#EF4444; }
         .nav-btn { background:#EF4444 !important;color:#fff !important;padding:10px 24px;border-radius:10px;font-weight:700 !important;font-size:.88rem;box-shadow:0 4px 14px rgba(239,68,68,.25);transition:all .3s !important; }
+        .nav-mob-cta { display:none; }
         .nav-btn:hover { background:#DC2626 !important;transform:translateY(-1px);box-shadow:0 6px 20px rgba(239,68,68,.35) !important; }
 
         /* HERO */
@@ -161,25 +162,57 @@ export default function Home() {
         .foot-logo span:last-child { color:#6B7280; }
         .foot p { color:#4B5563;font-size:.82rem; }
 
-        /* RESPONSIVE */
+        /* RESPONSIVE - TABLET */
         @media(max-width:960px) {
-          .hero { grid-template-columns:1fr;gap:40px;padding:120px 24px 80px;text-align:center; }
+          .nav { padding:14px 20px; }
+          .nav-links { display:none; }
+          .nav-mob-cta { display:inline-flex !important;padding:8px 16px;font-size:.8rem; }
+          .hero { grid-template-columns:1fr;gap:36px;padding:110px 20px 72px;text-align:center; }
           .hero-sub { max-width:100%; }
           .hero-ctas { justify-content:center; }
           .hero-badges { justify-content:center; }
-          .nav { padding:14px 24px; }
-          .nav-links { display:none; }
           .fg { grid-template-columns:1fr 1fr; }
-          .sg { grid-template-columns:1fr 1fr; }
+          .sg { grid-template-columns:1fr 1fr;gap:28px; }
           .sg::before { display:none; }
-          .stats { grid-template-columns:1fr 1fr; }
-          .w { padding:0 24px; }
+          .stats { grid-template-columns:1fr 1fr;gap:1px; }
+          .w { padding:0 20px; }
+          .sec { padding:72px 0; }
+          .cta-sec { padding:72px 0; }
+          .t { margin-bottom:44px; }
+          .foot { padding:40px 20px; }
         }
+        /* RESPONSIVE - MOBILE */
         @media(max-width:600px) {
-          .fg { grid-template-columns:1fr; }
-          .sg { grid-template-columns:1fr; }
-          .hero-ctas { flex-direction:column;align-items:center; }
-          .btn-main, .btn-sec { width:100%;max-width:320px;justify-content:center; }
+          .nav { padding:12px 16px; }
+          .hero { padding:100px 16px 60px;gap:28px; }
+          .hero h1 { font-size:2rem;letter-spacing:-.5px; }
+          .hero-sub { font-size:.95rem; }
+          .hero-ctas { flex-direction:column;align-items:stretch;gap:12px; }
+          .btn-main, .btn-sec { width:100%;justify-content:center;padding:14px 20px;font-size:.95rem; }
+          .hero-badges { gap:8px; }
+          .badge { font-size:.76rem;padding:6px 12px; }
+          .fg { grid-template-columns:1fr;gap:14px; }
+          .fc { padding:24px 20px; }
+          .sg { grid-template-columns:1fr;gap:24px; }
+          .stats { grid-template-columns:1fr 1fr;gap:1px; }
+          .stat { padding:24px 16px; }
+          .stat h3 { font-size:1.9rem; }
+          .sec { padding:56px 0; }
+          .w { padding:0 16px; }
+          .t { margin-bottom:36px; }
+          .t h2 { font-size:1.6rem; }
+          .t p { font-size:.9rem; }
+          .fq-q { font-size:.88rem;padding:16px 18px; }
+          .fq-a { padding:0 18px 16px;font-size:.84rem; }
+          .cta-sec { padding:60px 0; }
+          .cta-box h2 { font-size:1.7rem; }
+          .cta-box p { font-size:.9rem;margin-bottom:28px; }
+          .cta-btns { flex-direction:column;align-items:stretch;gap:12px; }
+          .btn-white, .btn-white-ghost { width:100%;justify-content:center;padding:15px 20px;font-size:.95rem; }
+          .foot { padding:32px 16px; }
+          .foot-logo { font-size:1.1rem; }
+          .foot p { font-size:.76rem; }
+          .ct th, .ct td { padding:11px 12px;font-size:.78rem; }
         }
       `}</style>
 
@@ -194,6 +227,8 @@ export default function Home() {
             <div className="nav-sub">Sistema para restaurantes</div>
           </div>
         </div>
+        {/* Botão visível só no mobile via CSS */}
+        <a href={TRIAL} className="nav-btn nav-mob-cta">Testar Grátis</a>
         <div className="nav-links">
           <a href="#funcionalidades">Funcionalidades</a>
           <a href="#como-funciona">Como funciona</a>
@@ -350,7 +385,7 @@ export default function Home() {
           <div className="cta-box">
             <h2>Pronto para vender mais?</h2>
             <p>Comece agora com 15 dias grátis. Sem cartão, sem compromisso.</p>
-            <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+            <div className="cta-btns" style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
               <a href={TRIAL} className="btn-white">🔥 Começar Teste Grátis</a>
               <a href={WA} target="_blank" rel="noopener" className="btn-white-ghost">💬 Falar no WhatsApp</a>
             </div>
