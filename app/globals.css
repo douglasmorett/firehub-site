@@ -30,6 +30,8 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a2e}
 .hero-btns{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .btn-primary{display:inline-flex;align-items:center;gap:8px;padding:14px 30px;background:#EF4444;color:#fff;border-radius:12px;font-weight:800;font-size:1rem;text-decoration:none;transition:all .3s;box-shadow:0 6px 24px rgba(239,68,68,.25);border:none;cursor:pointer;font-family:inherit}
 .btn-primary:hover{background:#DC2626;transform:translateY(-2px);box-shadow:0 10px 32px rgba(239,68,68,.35)}
+.btn-pulse{animation:btnPulse 2s ease-in-out infinite}
+@keyframes btnPulse{0%,100%{box-shadow:0 6px 24px rgba(239,68,68,.25)}50%{box-shadow:0 6px 40px rgba(239,68,68,.55),0 0 0 10px rgba(239,68,68,.08)}}
 .btn-outline{display:inline-flex;align-items:center;gap:8px;padding:14px 30px;background:#fff;color:#374151;border-radius:12px;font-weight:700;font-size:1rem;text-decoration:none;transition:all .3s;border:1.5px solid #E5E7EB;cursor:pointer;font-family:inherit}
 .btn-outline:hover{border-color:#EF4444;color:#EF4444;transform:translateY(-1px)}
 .hero-note{font-size:.78rem;color:#9CA3AF}

@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 
 const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20testar%20o%20FireHub%20gr%C3%A1tis%20por%2015%20dias";
 const TRIAL = "/cadastro";
+const LOGIN = "https://hakim-portal-grupohakim.vercel.app/login";
 
 const SOLUTIONS = [
   {
@@ -54,13 +55,13 @@ const COMPARE = [
   ["Integração iFood / Rappi", true, true, false],
 ];
 
-// Preço = 2% do faturamento, mín R$50, máx R$400
-const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(50, Math.min(400, rev * 0.02));
+// Preço = 1% do faturamento, mín R$50, máx R$400
+const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(50, Math.min(400, rev * 0.01));
 
 const FAQ = [
   { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades durante o período de teste." },
   { q: "E se eu não usar a plataforma?", a: "Se você não processar nenhuma venda pelo FireHub no mês, você não paga nada. Nosso modelo é justo: você só paga quando vende." },
-  { q: "Como funciona a cobrança?", a: "Cobramos apenas 2% do seu faturamento no canal próprio (cardápio digital + WhatsApp). Mínimo de R$ 50 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
+  { q: "Como funciona a cobrança?", a: "Cobramos apenas 1% do seu faturamento no canal próprio (cardápio digital + WhatsApp). Mínimo de R$ 50 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona 100% no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento." },
   { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana — manhã, tarde e noite. Você nunca fica sem resposta." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
@@ -96,14 +97,14 @@ export default function Home() {
             <div className="nav-sub">Sistema para restaurantes</div>
           </div>
         </a>
-        <a href={TRIAL} className="btn-cta nav-mobile-cta">Testar Grátis</a>
+        <a href={LOGIN} className="btn-cta nav-mobile-cta">Acessar</a>
         <div className="nav-links">
           <a href="#funcionalidades">Funcionalidades</a>
           <a href="#como-funciona">Como funciona</a>
           <a href="#planos">Planos</a>
           <a href="#comparativo">Comparativo</a>
           <a href="#faq">FAQ</a>
-          <a href={TRIAL} className="btn-cta">🔥 Testar Grátis</a>
+          <a href={LOGIN} className="btn-cta">🔑 Acessar</a>
         </div>
       </nav>
 
@@ -115,8 +116,7 @@ export default function Home() {
             <h1>Simples, rápido e<br /><em>completo.</em> Tudo que o seu<br />restaurante precisa.</h1>
             <p className="hero-p" style={{maxWidth:560,margin:"0 auto 32px"}}>Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro e auditoria com IA — pare de perder vendas e comece a crescer.</p>
             <div className="hero-btns" style={{justifyContent:"center"}}>
-              <a href={TRIAL} className="btn-primary">🔥 Testar Grátis por 15 Dias</a>
-              <a href={WA} target="_blank" rel="noopener" className="btn-outline">💬 Falar com Consultor</a>
+              <a href={TRIAL} className="btn-primary btn-pulse" style={{padding:"18px 48px",fontSize:"1.15rem"}}>🔥 Testar Grátis por 15 Dias</a>
             </div>
             <p className="hero-note" style={{marginTop:16}}>✓ Sem compromisso &nbsp;·&nbsp; ✓ Sem multa &nbsp;·&nbsp; ✓ Migração fácil</p>
             <div className="hero-badges" style={{justifyContent:"center",marginTop:24}}>
@@ -188,7 +188,7 @@ export default function Home() {
       <section className="sec" id="planos">
         <div className="w">
           <div className="sec-title">
-            <h2>Um só FireHub, do <em>primeiro pedido ao primeiro milhão</em></h2>
+            <h2>Juntos com você do <em>primeiro pedido até sua rede de lojas!</em></h2>
             <p>Nós existimos para mudar a realidade do seu delivery, e por isso você pode ter acesso a todas as funcionalidades por um preço que se adapta à realidade do seu negócio.</p>
           </div>
           <div className="pricing-card" style={{maxWidth:560}}>
@@ -228,7 +228,7 @@ export default function Home() {
               {/* Percentual info */}
               <div style={{display:"flex",justifyContent:"center",gap:24,marginBottom:20}}>
                 <div style={{textAlign:"center"}}>
-                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#EF4444"}}>2%</p>
+                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#EF4444"}}>1%</p>
                   <p style={{fontSize:".72rem",color:"#9CA3AF"}}>do faturamento</p>
                 </div>
                 <div style={{width:1,background:"#E5E7EB"}} />
@@ -245,8 +245,8 @@ export default function Home() {
 
               {/* Faixa info */}
               <div style={{background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:14,padding:"16px 20px",marginBottom:24}}>
-                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Faturou R$ 0? Não paga nada." : `Faturamento de R$ ${sliderValue.toLocaleString("pt-BR")} × 2% = R$ ${(sliderValue * 0.02).toFixed(2).replace(".",",")}`}</p>
-                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Se você não processar vendas pelo FireHub no mês, não cobramos nada. Você só paga quando vende." : calculatedPrice <= 50 ? "Valor mínimo de R$ 50,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 20k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
+                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Faturou R$ 0? Não paga nada." : `Faturamento de R$ ${sliderValue.toLocaleString("pt-BR")} × 1% = R$ ${(sliderValue * 0.01).toFixed(2).replace(".",",")}`}</p>
+                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Se você não processar vendas pelo FireHub no mês, não cobramos nada. Você só paga quando vende." : calculatedPrice <= 50 ? "Valor mínimo de R$ 50,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 40k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
               </div>
 
 
