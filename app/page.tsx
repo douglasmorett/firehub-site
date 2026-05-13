@@ -249,7 +249,6 @@ export default function Home() {
                 <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Se você não processar vendas pelo FireHub no mês, não cobramos nada. Você só paga quando vende." : calculatedPrice <= 50 ? "Valor mínimo de R$ 50,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 20k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
               </div>
 
-              <p style={{fontSize:".75rem",color:"#9CA3AF",marginBottom:20,textAlign:"center"}}>* +Taxas de pagamento online (cartão/Pix)</p>
 
               <div className="pricing-cta">
                 <a href={TRIAL} className="btn-primary" style={{width:"100%",justifyContent:"center",padding:16}}>🔥 Testar Grátis Agora</a>
