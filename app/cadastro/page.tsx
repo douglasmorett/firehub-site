@@ -5,377 +5,356 @@ const API = "https://hakim-portal-grupohakim.vercel.app";
 const PORTAL = API;
 
 type CnpjData = {
-  cnpj: string;
-  razao_social: string;
-  nome_fantasia: string;
-  situacao: string;
-  municipio: string;
-  uf: string;
+  cnpj: string; razao_social: string; nome_fantasia: string;
+  situacao: string; municipio: string; uf: string;
   socios: { nome: string; qualificacao: string }[];
 };
 
 function fmtCPF(v: string) {
-  return v.replace(/\D/g, "").slice(0, 11)
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  return v.replace(/\D/g,"").slice(0,11).replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d{1,2})$/,"$1-$2");
 }
 function fmtCNPJ(v: string) {
-  return v.replace(/\D/g, "").slice(0, 14)
-    .replace(/(\d{2})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1/$2")
-    .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+  return v.replace(/\D/g,"").slice(0,14).replace(/(\d{2})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1/$2").replace(/(\d{4})(\d{1,2})$/,"$1-$2");
 }
 function fmtPhone(v: string) {
-  return v.replace(/\D/g, "").slice(0, 11)
-    .replace(/(\d{2})(\d)/, "($1) $2")
-    .replace(/(\d{5})(\d)/, "$1-$2");
+  return v.replace(/\D/g,"").slice(0,11).replace(/(\d{2})(\d)/,"($1) $2").replace(/(\d{5})(\d)/,"$1-$2");
 }
-function validaCPF(cpf: string): boolean {
-  const c = cpf.replace(/\D/g, "");
+function validaCPF(cpf: string) {
+  const c = cpf.replace(/\D/g,"");
   if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
-  let s = 0;
-  for (let i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
-  let r = (s * 10) % 11; if (r === 10) r = 0;
-  if (r !== parseInt(c[9])) return false;
-  s = 0;
-  for (let i = 0; i < 10; i++) s += parseInt(c[i]) * (11 - i);
-  r = (s * 10) % 11; if (r === 10) r = 0;
-  return r === parseInt(c[10]);
+  let s = 0; for (let i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
+  let r = (s * 10) % 11; if (r === 10) r = 0; if (r !== parseInt(c[9])) return false;
+  s = 0; for (let i = 0; i < 10; i++) s += parseInt(c[i]) * (11 - i);
+  r = (s * 10) % 11; if (r === 10) r = 0; return r === parseInt(c[10]);
 }
+
+const COMO_CONHECEU = [
+  "Instagram", "Facebook", "Google", "YouTube", "Indicação de amigo",
+  "Indicação de outro restaurante", "WhatsApp", "Outro"
+];
+const FATURAMENTO = [
+  "Ainda não faturo", "Até R$ 3.000", "R$ 3.000 a R$ 7.000",
+  "R$ 7.000 a R$ 15.000", "R$ 15.000 a R$ 30.000", "Acima de R$ 30.000"
+];
 
 export default function CadastroPage() {
-  const [step, setStep] = useState<1|2|3|4>(1);
-  const [cpf, setCpf] = useState("");
-  const [cnpjInput, setCnpjInput] = useState("");
-  const [cnpjData, setCnpjData] = useState<CnpjData|null>(null);
+  const [step, setStep] = useState<1|2|3|4|5>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
+
+  // Step 1 - Qualificação
+  const [nome, setNome] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [empresa, setEmpresa] = useState("");
+  const [email, setEmail] = useState("");
+  const [temPC, setTemPC] = useState<string>("");
+  const [comoConheceu, setComoConheceu] = useState("");
+  const [faturamento, setFaturamento] = useState("");
+
+  // Step 2 - CPF
+  const [cpf, setCpf] = useState("");
+
+  // Step 3 - CNPJ
+  const [cnpjInput, setCnpjInput] = useState("");
+  const [cnpjData, setCnpjData] = useState<CnpjData|null>(null);
+
+  // Step 4 - Senha
+  const [senha, setSenha] = useState("");
+  const [termos, setTermos] = useState(false);
+
+  // Step 5 - Sucesso
   const [createdStore, setCreatedStore] = useState("");
 
-  const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
-
-  // Step 1 → 2: validar CPF e avançar
-  function handleCpfNext() {
+  // === HANDLERS ===
+  function handleStep1() {
     setError("");
-    if (!validaCPF(cpf)) {
-      setError("CPF inválido. Verifique os dígitos e tente novamente.");
-      return;
-    }
+    if (!nome.trim()) { setError("Digite seu nome."); return; }
+    if (!whatsapp.replace(/\D/g,"") || whatsapp.replace(/\D/g,"").length < 10) { setError("WhatsApp inválido."); return; }
+    if (!empresa.trim()) { setError("Digite o nome da sua empresa."); return; }
+    if (!email.trim() || !email.includes("@")) { setError("E-mail inválido."); return; }
+    if (!temPC) { setError("Informe se tem computador ou notebook."); return; }
+    if (!comoConheceu) { setError("Selecione como conheceu o FireHub."); return; }
+    if (!faturamento) { setError("Selecione seu faturamento."); return; }
     setStep(2);
   }
 
-  // Step 2: buscar CNPJ na Receita Federal
-  async function handleCnpjLookup() {
+  function handleStep2() {
     setError("");
-    const clean = cnpjInput.replace(/\D/g, "");
-    if (clean.length !== 14) {
-      setError("Digite um CNPJ válido com 14 dígitos.");
-      return;
-    }
+    if (!validaCPF(cpf)) { setError("CPF inválido."); return; }
+    setStep(3);
+  }
+
+  async function handleStep3() {
+    setError("");
+    const clean = cnpjInput.replace(/\D/g,"");
+    if (clean.length !== 14) { setError("CNPJ inválido."); return; }
     setLoading(true);
     try {
       const res = await fetch(`${API}/api/cnpj-lookup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cnpj: clean }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "CNPJ não encontrado."); return; }
-      if (data.situacao && data.situacao !== "ATIVA" && data.situacao !== "Ativa") {
-        setError(`Este CNPJ está com situação "${data.situacao}" na Receita Federal. Só é possível cadastrar CNPJs com situação ATIVA.`);
-        return;
+      if (data.situacao && !["ATIVA","Ativa"].includes(data.situacao)) {
+        setError(`CNPJ com situação "${data.situacao}". Só aceitamos CNPJs ativos.`); return;
       }
       setCnpjData(data);
-      setStep(3);
-    } catch {
-      setError("Erro ao consultar. Verifique sua conexão.");
-    } finally {
-      setLoading(false);
-    }
+      setStep(4);
+    } catch { setError("Erro de conexão."); }
+    finally { setLoading(false); }
   }
 
-  // Step 3: criar conta
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleStep4(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (!form.name || !form.email || !form.password || !form.phone) {
-      setError("Preencha todos os campos."); return;
-    }
-    if (form.password.length < 6) {
-      setError("A senha precisa ter pelo menos 6 caracteres."); return;
-    }
+    if (senha.length < 6) { setError("Senha precisa ter pelo menos 6 caracteres."); return; }
+    if (!termos) { setError("Aceite os termos para continuar."); return; }
     setLoading(true);
     try {
-      const storeName = cnpjData?.nome_fantasia || cnpjData?.razao_social || form.name;
+      const storeName = cnpjData?.nome_fantasia || cnpjData?.razao_social || empresa;
       const res = await fetch(`${API}/api/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: form.name,
-          email: form.email,
-          password: form.password,
-          phone: form.phone.replace(/\D/g, ""),
-          cnpj: cnpjData?.cnpj,
-          cpf: cpf.replace(/\D/g, ""),
-          storeName,
-          city: cnpjData?.municipio,
+          name: nome, email, password: senha, phone: whatsapp.replace(/\D/g,""),
+          cnpj: cnpjData?.cnpj, cpf: cpf.replace(/\D/g,""),
+          storeName, city: cnpjData?.municipio,
         }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Erro ao criar conta."); return; }
       setCreatedStore(storeName);
-      setStep(4);
-    } catch {
-      setError("Erro de conexão. Tente novamente.");
-    } finally {
-      setLoading(false);
-    }
+      setStep(5);
+    } catch { setError("Erro de conexão."); }
+    finally { setLoading(false); }
   }
 
-  const stepsLabels = ["CPF", "CNPJ", "Dados", "Pronto"];
+  const labels = ["Seus dados", "CPF", "CNPJ", "Senha", "Pronto"];
   const si = step - 1;
 
   return (
     <>
       <style>{`
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif}
-.cad-wrap{display:flex;min-height:100vh}
-.cad-l{flex:0 0 44%;background:linear-gradient(150deg,#0f172a,#1e3a5f 60%,#0f172a);display:flex;align-items:center;justify-content:center;padding:48px 40px;position:relative;overflow:hidden}
-.cad-l::after{content:'';position:absolute;top:-40%;right:-20%;width:60%;height:160%;background:radial-gradient(circle,rgba(59,130,246,.08),transparent 70%);pointer-events:none}
-.cad-r{flex:1;display:flex;align-items:center;justify-content:center;padding:40px 32px;background:#fff}
-.cad-inner{width:100%;max-width:420px}
-.inp{width:100%;padding:14px 16px;border:2px solid #E5E7EB;border-radius:12px;font-size:1rem;outline:none;color:#111;background:#F9FAFB;font-family:inherit;transition:all .2s}
-.inp:focus{border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-.inp-big{font-size:1.3rem;letter-spacing:2px;text-align:center;font-weight:700}
-.btn{width:100%;padding:15px;background:linear-gradient(135deg,#2563EB,#1d4ed8);color:#fff;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;box-shadow:0 4px 14px rgba(37,99,235,.3)}
-.btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(37,99,235,.4)}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Inter',sans-serif}
+.wrap{display:flex;min-height:100vh}
+.left{flex:0 0 42%;background:linear-gradient(150deg,#0a0a0a,#1a1a2e 60%,#0a0a0a);display:flex;align-items:center;justify-content:center;padding:48px 36px;position:relative;overflow:hidden}
+.left::after{content:'';position:absolute;top:20%;left:50%;width:300px;height:300px;background:radial-gradient(circle,rgba(239,68,68,.12),transparent 70%);pointer-events:none;transform:translate(-50%,-50%)}
+.right{flex:1;display:flex;align-items:center;justify-content:center;padding:36px 28px;background:#fff}
+.inner{width:100%;max-width:440px}
+.inp{width:100%;padding:13px 16px;border:2px solid #E5E7EB;border-radius:10px;font-size:.92rem;outline:none;color:#111;background:#F9FAFB;font-family:inherit;transition:all .2s}
+.inp:focus{border-color:#EF4444;box-shadow:0 0 0 3px rgba(239,68,68,.08)}
+.inp-big{font-size:1.2rem;letter-spacing:2px;text-align:center;font-weight:700}
+.sel{width:100%;padding:13px 16px;border:2px solid #E5E7EB;border-radius:10px;font-size:.92rem;outline:none;color:#111;background:#F9FAFB;font-family:inherit;appearance:none;cursor:pointer}
+.sel:focus{border-color:#EF4444;box-shadow:0 0 0 3px rgba(239,68,68,.08)}
+.btn{width:100%;padding:15px;background:linear-gradient(135deg,#EF4444,#DC2626);color:#fff;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;box-shadow:0 4px 14px rgba(239,68,68,.3)}
+.btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(239,68,68,.4)}
 .btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.btn-fire{background:linear-gradient(135deg,#EF4444,#DC2626);box-shadow:0 4px 14px rgba(239,68,68,.3)}
-.btn-fire:hover:not(:disabled){box-shadow:0 6px 20px rgba(239,68,68,.4)}
-.err{background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;border-radius:10px;padding:11px 15px;font-size:.84rem;margin-bottom:16px;animation:shake .35s}
-@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
-.lbl{font-size:.82rem;font-weight:600;color:#374151;margin-bottom:5px;display:block}
-.prog{display:flex;gap:6px;margin-bottom:28px}
-.prog-s{flex:1;text-align:center}
-.prog-dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 4px;font-size:.78rem;font-weight:700;transition:all .3s}
-.prog-lbl{font-size:.68rem;font-weight:600}
-.cnpj-box{background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:14px;padding:16px 18px;margin-bottom:22px}
-.feat{display:flex;gap:10px;margin-bottom:10px;font-size:.88rem;color:rgba(255,255,255,.85)}
-.back-btn{background:none;border:none;color:#6B7280;cursor:pointer;font-size:.84rem;margin-top:14px;display:block;width:100%;text-align:center;font-family:inherit}
-.back-btn:hover{color:#374151}
-@keyframes bounceIn{0%{transform:scale(0)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
-@media(max-width:768px){.cad-l{display:none!important}.cad-r{padding:28px 20px!important}}
+.err{background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;border-radius:10px;padding:11px 15px;font-size:.82rem;margin-bottom:14px;animation:shake .3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.lbl{font-size:.8rem;font-weight:600;color:#374151;margin-bottom:4px;display:block}
+.prog{display:flex;gap:4px;margin-bottom:24px}
+.prog-s{flex:1;height:4px;border-radius:4px;transition:background .3s}
+.radio-group{display:flex;gap:16px;margin-top:4px}
+.radio-opt{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.88rem;color:#374151}
+.radio-opt input{accent-color:#EF4444;width:16px;height:16px}
+.check-opt{display:flex;align-items:center;gap:8px;font-size:.8rem;color:#6B7280;cursor:pointer}
+.check-opt input{accent-color:#EF4444;width:16px;height:16px}
+.cnpj-box{background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:12px;padding:14px 16px;margin-bottom:18px}
+.back{background:none;border:none;color:#6B7280;cursor:pointer;font-size:.82rem;margin-top:12px;display:block;width:100%;text-align:center;font-family:inherit}
+.back:hover{color:#374151}
+@keyframes bounceIn{0%{transform:scale(0)}50%{transform:scale(1.12)}100%{transform:scale(1)}}
+@media(max-width:768px){.left{display:none!important}.right{padding:24px 18px!important}}
       `}</style>
 
-      <div className="cad-wrap">
+      <div className="wrap">
         {/* ESQUERDA */}
-        <div className="cad-l">
-          <div style={{ maxWidth: 380, color: "#fff", position: "relative", zIndex: 2 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 40 }}>
-              <img src="/firehub-flame.png" alt="" style={{ width: 38, height: 38, objectFit: "contain" }}
+        <div className="left">
+          <div style={{ maxWidth: 360, color: "#fff", position: "relative", zIndex: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 36 }}>
+              <img src="/firehub-flame.png" alt="" style={{ width: 36, height: 36, objectFit: "contain" }}
                 onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              <span style={{ fontWeight: 900, fontSize: "1.5rem" }}>
-                <span style={{ color: "#F97316" }}>FIRE</span><span>HUB</span>
+              <span style={{ fontWeight: 900, fontSize: "1.4rem" }}>
+                <span style={{ color: "#EF4444" }}>FIRE</span><span>HUB</span>
               </span>
             </div>
-            <h1 style={{ fontSize: "2rem", fontWeight: 900, lineHeight: 1.2, marginBottom: 16 }}>
-              Comece grátis em<br /><span style={{ color: "#60A5FA" }}>menos de 2 minutos.</span>
+            <div style={{ background: "rgba(239,68,68,.15)", border: "1px solid rgba(239,68,68,.3)", borderRadius: 8, padding: "6px 14px", display: "inline-block", fontSize: ".75rem", fontWeight: 700, color: "#EF4444", marginBottom: 20, letterSpacing: .5 }}>
+              PRONTO PARA COMEÇAR?
+            </div>
+            <h1 style={{ fontSize: "1.9rem", fontWeight: 900, lineHeight: 1.2, marginBottom: 14 }}>
+              Crie sua conta grátis e veja o FireHub em ação
             </h1>
-            <p style={{ color: "rgba(255,255,255,.65)", lineHeight: 1.7, marginBottom: 28, fontSize: ".92rem" }}>
-              Cardápio digital, pedidos, financeiro e IA — tudo num só lugar.
+            <p style={{ color: "rgba(255,255,255,.6)", lineHeight: 1.7, marginBottom: 28, fontSize: ".9rem" }}>
+              Fale com nosso time, entenda qual plano faz mais sentido para sua operação e comece a vender mais no seu canal próprio.
             </p>
             {[
-              ["🔥", "15 dias grátis, sem cartão"],
-              ["🔒", "Dados protegidos e seguros"],
-              ["📱", "Cardápio digital + WhatsApp IA"],
-              ["📊", "Relatórios e controle completo"],
-              ["💬", "Suporte humano 7 dias por semana"],
-            ].map(([ic, tx], i) => (
-              <div key={i} className="feat"><span>{ic}</span><span>{tx}</span></div>
+              "🔥 15 dias grátis, sem cartão",
+              "📱 Cardápio digital + WhatsApp IA",
+              "📊 Relatórios e controle completo",
+              "💬 Suporte humano 7 dias por semana",
+            ].map((tx, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, fontSize: ".86rem", color: "rgba(255,255,255,.8)" }}>
+                <span>{tx}</span>
+              </div>
             ))}
           </div>
         </div>
 
         {/* DIREITA */}
-        <div className="cad-r">
-          <div className="cad-inner">
-            {/* Progress */}
+        <div className="right">
+          <div className="inner">
+            {/* Progress bar */}
             <div className="prog">
-              {stepsLabels.map((l, i) => {
-                const done = i < si;
-                const act = i === si;
-                return (
-                  <div className="prog-s" key={i}>
-                    <div className="prog-dot" style={{
-                      background: done ? "#16A34A" : act ? "#2563EB" : "#F3F4F6",
-                      color: done || act ? "#fff" : "#9CA3AF",
-                    }}>
-                      {done ? "✓" : i + 1}
-                    </div>
-                    <div className="prog-lbl" style={{ color: act ? "#2563EB" : done ? "#16A34A" : "#9CA3AF" }}>{l}</div>
-                  </div>
-                );
-              })}
+              {labels.map((_, i) => (
+                <div key={i} className="prog-s" style={{ background: i <= si ? "#EF4444" : "#E5E7EB" }} />
+              ))}
             </div>
 
-            {/* ========== STEP 1: CPF ========== */}
+            {/* ===== STEP 1: QUALIFICAÇÃO ===== */}
             {step === 1 && (
               <>
-                <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>
-                  Qual é o seu CPF?
+                <h2 style={{ fontSize: "1.35rem", fontWeight: 800, color: "#111", marginBottom: 4, textAlign: "center" }}>
+                  Transforme o seu delivery agora <span style={{ color: "#EF4444" }}>gratuitamente</span>
                 </h2>
-                <p style={{ color: "#6B7280", marginBottom: 24, fontSize: ".88rem", lineHeight: 1.6 }}>
+                <p style={{ color: "#9CA3AF", fontSize: ".82rem", textAlign: "center", marginBottom: 20 }}>
+                  Preencha seus dados e comece seu teste grátis de 15 dias
+                </p>
+                {error && <div className="err">{error}</div>}
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <input className="inp" placeholder="Seu nome*" value={nome} autoFocus onChange={e => setNome(e.target.value)} />
+                  <input className="inp" placeholder="WhatsApp Pessoal para Contato*" type="tel" inputMode="numeric"
+                    value={whatsapp} onChange={e => setWhatsapp(fmtPhone(e.target.value))} />
+                  <input className="inp" placeholder="Nome da sua empresa*" value={empresa} onChange={e => setEmpresa(e.target.value)} />
+                  <input className="inp" placeholder="Email*" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+
+                  <div>
+                    <label className="lbl">Você tem computador ou notebook para trabalhar?*</label>
+                    <div className="radio-group">
+                      <label className="radio-opt">
+                        <input type="radio" name="pc" checked={temPC==="sim"} onChange={() => setTemPC("sim")} /> Sim
+                      </label>
+                      <label className="radio-opt">
+                        <input type="radio" name="pc" checked={temPC==="nao"} onChange={() => setTemPC("nao")} /> Não
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <select className="sel" value={comoConheceu} onChange={e => setComoConheceu(e.target.value)}>
+                      <option value="">Como você conheceu o FireHub?*</option>
+                      {COMO_CONHECEU.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <select className="sel" value={faturamento} onChange={e => setFaturamento(e.target.value)}>
+                      <option value="">Qual seu faturamento no canal próprio (WhatsApp + Cardápio Digital)?*</option>
+                      {FATURAMENTO.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+
+                  <button className="btn" onClick={handleStep1}>Testar Grátis</button>
+                </div>
+                <p style={{ textAlign: "center", marginTop: 14, fontSize: ".82rem", color: "#6B7280" }}>
+                  Já tem conta? <a href={`${PORTAL}/login`} style={{ color: "#EF4444", fontWeight: 600, textDecoration: "none" }}>Entrar</a>
+                </p>
+              </>
+            )}
+
+            {/* ===== STEP 2: CPF ===== */}
+            {step === 2 && (
+              <>
+                <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>Qual é o seu CPF?</h2>
+                <p style={{ color: "#6B7280", marginBottom: 22, fontSize: ".86rem", lineHeight: 1.6 }}>
                   Usamos seu CPF para garantir que cada empresa tenha apenas uma conta no FireHub.
                 </p>
                 {error && <div className="err">{error}</div>}
-                <div style={{ marginBottom: 18 }}>
-                  <label className="lbl">CPF do responsável</label>
-                  <input className="inp inp-big" type="text" inputMode="numeric"
-                    placeholder="000.000.000-00" value={cpf} autoFocus
-                    onChange={e => setCpf(fmtCPF(e.target.value))}
-                    onKeyDown={e => e.key === "Enter" && handleCpfNext()} />
+                <div style={{ marginBottom: 16 }}>
+                  <input className="inp inp-big" type="text" inputMode="numeric" placeholder="000.000.000-00"
+                    value={cpf} autoFocus onChange={e => setCpf(fmtCPF(e.target.value))}
+                    onKeyDown={e => e.key === "Enter" && handleStep2()} />
                 </div>
-                <button className="btn" onClick={handleCpfNext}>Continuar →</button>
-                <p style={{ textAlign: "center", marginTop: 14, fontSize: ".78rem", color: "#9CA3AF" }}>
-                  🔒 Seus dados estão protegidos e não são compartilhados.
-                </p>
-                <p style={{ textAlign: "center", marginTop: 16, fontSize: ".85rem", color: "#6B7280" }}>
-                  Já tem conta?{" "}
-                  <a href={`${PORTAL}/login`} style={{ color: "#2563EB", fontWeight: 600, textDecoration: "none" }}>Entrar</a>
-                </p>
+                <button className="btn" onClick={handleStep2}>Continuar →</button>
+                <p style={{ textAlign: "center", marginTop: 12, fontSize: ".76rem", color: "#9CA3AF" }}>🔒 Dados protegidos e não compartilhados</p>
+                <button className="back" onClick={() => { setStep(1); setError(""); }}>← Voltar</button>
               </>
             )}
 
-            {/* ========== STEP 2: CNPJ ========== */}
-            {step === 2 && (
+            {/* ===== STEP 3: CNPJ ===== */}
+            {step === 3 && (
               <>
-                <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>
-                  Agora, digite o CNPJ
-                </h2>
-                <p style={{ color: "#6B7280", marginBottom: 24, fontSize: ".88rem", lineHeight: 1.6 }}>
-                  Vamos verificar sua empresa na Receita Federal para preencher tudo automaticamente.
+                <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>Digite o CNPJ da empresa</h2>
+                <p style={{ color: "#6B7280", marginBottom: 22, fontSize: ".86rem", lineHeight: 1.6 }}>
+                  Vamos verificar sua empresa para preencher tudo automaticamente.
                 </p>
                 {error && <div className="err">{error}</div>}
-                <div style={{ marginBottom: 18 }}>
-                  <label className="lbl">CNPJ da empresa</label>
-                  <input className="inp inp-big" type="text" inputMode="numeric"
-                    placeholder="00.000.000/0001-00" value={cnpjInput} autoFocus
-                    onChange={e => setCnpjInput(fmtCNPJ(e.target.value))}
-                    onKeyDown={e => e.key === "Enter" && handleCnpjLookup()} />
+                <div style={{ marginBottom: 16 }}>
+                  <input className="inp inp-big" type="text" inputMode="numeric" placeholder="00.000.000/0001-00"
+                    value={cnpjInput} autoFocus onChange={e => setCnpjInput(fmtCNPJ(e.target.value))}
+                    onKeyDown={e => e.key === "Enter" && handleStep3()} />
                 </div>
-                <button className="btn" onClick={handleCnpjLookup} disabled={loading}>
-                  {loading ? "🔍 Consultando Receita Federal..." : "Verificar CNPJ →"}
+                <button className="btn" onClick={handleStep3} disabled={loading}>
+                  {loading ? "🔍 Verificando..." : "Verificar CNPJ →"}
                 </button>
-                <button className="back-btn" onClick={() => { setStep(1); setError(""); }}>
-                  ← Voltar
-                </button>
+                <button className="back" onClick={() => { setStep(2); setError(""); }}>← Voltar</button>
               </>
             )}
 
-            {/* ========== STEP 3: DADOS ========== */}
-            {step === 3 && cnpjData && (
+            {/* ===== STEP 4: SENHA ===== */}
+            {step === 4 && cnpjData && (
               <>
                 <div className="cnpj-box">
-                  <div style={{ fontSize: ".73rem", color: "#2563EB", fontWeight: 700, marginBottom: 3 }}>
-                    ✅ EMPRESA VERIFICADA NA RECEITA FEDERAL
-                  </div>
-                  <div style={{ fontWeight: 700, color: "#1E3A5F", fontSize: ".95rem" }}>
+                  <div style={{ fontSize: ".72rem", color: "#16A34A", fontWeight: 700, marginBottom: 2 }}>✅ EMPRESA VERIFICADA</div>
+                  <div style={{ fontWeight: 700, color: "#111", fontSize: ".92rem" }}>
                     {cnpjData.nome_fantasia || cnpjData.razao_social}
                   </div>
-                  <div style={{ fontSize: ".78rem", color: "#4B5563", marginTop: 2 }}>
-                    CNPJ {fmtCNPJ(cnpjData.cnpj)}
-                    {cnpjData.municipio ? ` · ${cnpjData.municipio}/${cnpjData.uf}` : ""}
+                  <div style={{ fontSize: ".76rem", color: "#6B7280", marginTop: 2 }}>
+                    CNPJ {fmtCNPJ(cnpjData.cnpj)}{cnpjData.municipio ? ` · ${cnpjData.municipio}/${cnpjData.uf}` : ""}
                   </div>
-                  {cnpjData.socios && cnpjData.socios.length > 0 && (
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #BFDBFE" }}>
-                      <div style={{ fontSize: ".7rem", color: "#6B7280", fontWeight: 600, marginBottom: 4 }}>SÓCIOS:</div>
-                      {cnpjData.socios.slice(0, 3).map((s, i) => (
-                        <div key={i} style={{ fontSize: ".78rem", color: "#374151" }}>
-                          {s.nome} <span style={{ color: "#9CA3AF" }}>({s.qualificacao})</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
-                <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#111", marginBottom: 4 }}>
-                  Complete seu cadastro
-                </h2>
-                <p style={{ color: "#6B7280", marginBottom: 18, fontSize: ".85rem" }}>
-                  Dados de acesso à sua conta FireHub.
-                </p>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#111", marginBottom: 4 }}>Crie sua senha</h2>
+                <p style={{ color: "#6B7280", marginBottom: 18, fontSize: ".84rem" }}>Última etapa! Defina uma senha para acessar seu painel.</p>
                 {error && <div className="err">{error}</div>}
 
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+                <form onSubmit={handleStep4} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <div>
-                    <label className="lbl">Seu nome completo *</label>
-                    <input className="inp" type="text" placeholder="João Silva" value={form.name} autoFocus
-                      onChange={e => set("name", e.target.value)} />
+                    <label className="lbl">Senha de acesso *</label>
+                    <input className="inp" type="password" placeholder="Mínimo 6 caracteres" value={senha} autoFocus
+                      onChange={e => setSenha(e.target.value)} />
                   </div>
-                  <div>
-                    <label className="lbl">WhatsApp *</label>
-                    <input className="inp" type="tel" inputMode="numeric" placeholder="(22) 99999-9999"
-                      value={form.phone} onChange={e => set("phone", fmtPhone(e.target.value))} />
-                  </div>
-                  <div>
-                    <label className="lbl">E-mail *</label>
-                    <input className="inp" type="email" placeholder="joao@restaurante.com"
-                      value={form.email} onChange={e => set("email", e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="lbl">Crie uma senha *</label>
-                    <input className="inp" type="password" placeholder="Mínimo 6 caracteres"
-                      value={form.password} onChange={e => set("password", e.target.value)} />
-                  </div>
-                  <button type="submit" className="btn btn-fire" disabled={loading} style={{ marginTop: 4 }}>
-                    {loading ? "Criando sua conta..." : "🔥 Começar Teste Grátis de 15 Dias"}
+                  <label className="check-opt">
+                    <input type="checkbox" checked={termos} onChange={e => setTermos(e.target.checked)} />
+                    Aceito os <a href="#" style={{ color: "#EF4444", marginLeft: 3 }}>Termos de Uso</a>
+                    <span style={{ margin: "0 3px" }}>e</span>
+                    <a href="#" style={{ color: "#EF4444" }}>Política de Privacidade</a>
+                  </label>
+                  <button type="submit" className="btn" disabled={loading}>
+                    {loading ? "Criando sua conta..." : "🔥 Começar Teste Grátis"}
                   </button>
-                  <p style={{ fontSize: ".72rem", color: "#9CA3AF", textAlign: "center" }}>
-                    Ao cadastrar, você concorda com os{" "}
-                    <a href="#" style={{ color: "#2563EB" }}>Termos de Uso</a> e{" "}
-                    <a href="#" style={{ color: "#2563EB" }}>Política de Privacidade</a>
-                  </p>
                 </form>
-                <button className="back-btn" onClick={() => { setStep(2); setError(""); }}>← Voltar</button>
+                <button className="back" onClick={() => { setStep(3); setError(""); }}>← Voltar</button>
               </>
             )}
 
-            {/* ========== STEP 4: SUCESSO ========== */}
-            {step === 4 && (
+            {/* ===== STEP 5: SUCESSO ===== */}
+            {step === 5 && (
               <div style={{ textAlign: "center", padding: "10px 0" }}>
-                <div style={{ fontSize: "4rem", marginBottom: 16, animation: "bounceIn .5s" }}>🎉</div>
-                <h2 style={{ fontSize: "1.6rem", fontWeight: 800, color: "#111", marginBottom: 8 }}>
-                  Conta criada com sucesso!
-                </h2>
-                <p style={{ color: "#6B7280", lineHeight: 1.6, marginBottom: 22, fontSize: ".92rem" }}>
+                <div style={{ fontSize: "3.5rem", marginBottom: 14, animation: "bounceIn .5s" }}>🎉</div>
+                <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#111", marginBottom: 8 }}>Conta criada!</h2>
+                <p style={{ color: "#6B7280", lineHeight: 1.6, marginBottom: 20, fontSize: ".9rem" }}>
                   <strong>&quot;{createdStore}&quot;</strong> está pronto.<br />
                   Seus 15 dias de teste grátis começam agora!
                 </p>
-                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 14, padding: "16px 18px", marginBottom: 22, textAlign: "left" }}>
-                  <p style={{ fontWeight: 700, marginBottom: 8, fontSize: ".86rem" }}>📋 Próximos passos:</p>
-                  {["Configure seu cardápio digital", "Adicione logo e banner", "Compartilhe o link com clientes", "Receba seus primeiros pedidos!"].map((s, i) => (
-                    <p key={i} style={{ fontSize: ".82rem", color: "#374151", marginBottom: 3 }}>
-                      <span style={{ color: "#16A34A", fontWeight: 700 }}>{i + 1}.</span> {s}
-                    </p>
-                  ))}
+                <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 12, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
+                  <p style={{ fontSize: ".82rem", fontWeight: 600, marginBottom: 6 }}>Dados de acesso:</p>
+                  <p style={{ fontSize: ".82rem", color: "#374151", marginBottom: 2 }}>📧 <strong>{email}</strong></p>
+                  <p style={{ fontSize: ".82rem", color: "#374151" }}>🔑 Senha que você definiu</p>
                 </div>
-                <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 12, padding: "14px 16px", marginBottom: 22, textAlign: "left" }}>
-                  <p style={{ fontSize: ".82rem", fontWeight: 600, marginBottom: 6 }}>Seus dados de acesso:</p>
-                  <p style={{ fontSize: ".82rem", color: "#374151", marginBottom: 2 }}>📧 <strong>{form.email}</strong></p>
-                  <p style={{ fontSize: ".82rem", color: "#374151" }}>🔑 A senha que você definiu</p>
-                </div>
-                <a href={`${PORTAL}/login`} className="btn btn-fire"
-                  style={{ display: "block", textDecoration: "none", textAlign: "center" }}>
+                <a href={`${PORTAL}/login`} className="btn" style={{ display: "block", textDecoration: "none", textAlign: "center" }}>
                   🚀 Acessar Meu Painel
                 </a>
-                <p style={{ fontSize: ".78rem", color: "#9CA3AF", marginTop: 12 }}>
-                  Sem cartão de crédito · Cancele quando quiser
-                </p>
+                <p style={{ fontSize: ".76rem", color: "#9CA3AF", marginTop: 12 }}>Sem cartão · Cancele quando quiser</p>
               </div>
             )}
           </div>
