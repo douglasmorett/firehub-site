@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 
 const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20testar%20o%20FireHub%20gr%C3%A1tis%20por%2015%20dias";
-const TRIAL = "https://portalhakim.com.br/cadastro";
+const TRIAL = "/cadastro";
 
 const SOLUTIONS = [
   {
@@ -47,7 +47,7 @@ const COMPARE = [
   ["Chatbot WhatsApp com IA", true, true, false],
   ["Auditoria operacional com IA 🏆", true, false, false],
   ["Controle financeiro completo 🏆", true, false, false],
-  ["FireCheck 🏆", true, false, false],
+  ["Checklist auditado por IA 🏆", true, false, false],
   ["Leitura de notas por IA 🏆", true, false, false],
   ["Estoque automático 🏆", true, false, false],
   ["CMV automático 🏆", true, false, false],
