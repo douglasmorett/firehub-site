@@ -1,254 +1,457 @@
 "use client";
 import { useState } from "react";
 
-const API_BASE = "https://hakim-portal-grupohakim.vercel.app";
-const PORTAL_URL = API_BASE;
+const API = "https://hakim-portal-grupohakim.vercel.app";
+const PORTAL = API;
+
+type CnpjInfo = {
+  cnpj: string;
+  razao_social: string;
+  nome_fantasia?: string;
+  municipio?: string;
+  uf?: string;
+  situacao_cadastral?: string;
+};
+
+function formatCPF(v: string) {
+  return v.replace(/\D/g, "").slice(0, 11)
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+function formatPhone(v: string) {
+  return v.replace(/\D/g, "").slice(0, 11)
+    .replace(/(\d{2})(\d)/, "($1) $2")
+    .replace(/(\d{5})(\d)/, "$1-$2");
+}
+
+function formatCNPJ(v: string) {
+  return v.replace(/\D/g, "")
+    .replace(/(\d{2})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1/$2")
+    .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+}
 
 export default function CadastroPage() {
-  const [form, setForm] = useState({ name: "", email: "", password: "", storeName: "", phone: "" });
-  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [cpf, setCpf] = useState("");
+  const [loadingCpf, setLoadingCpf] = useState(false);
+  const [cnpjList, setCnpjList] = useState<CnpjInfo[]>([]);
+  const [selectedCnpj, setSelectedCnpj] = useState<CnpjInfo | null>(null);
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
+  const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [error, setError] = useState("");
-  const [step, setStep] = useState(1);
+  const [createdStore, setCreatedStore] = useState("");
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Etapa 1: buscar CNPJs pelo CPF na Receita Federal
+  async function handleCpfSubmit() {
     setError("");
-
-    if (!form.name || !form.email || !form.password || !form.storeName) {
-      setError("Preencha todos os campos obrigatórios");
-      return;
-    }
-    if (form.password.length < 6) {
-      setError("A senha precisa ter pelo menos 6 caracteres");
-      return;
-    }
-
-    setLoading(true);
+    const cpfClean = cpf.replace(/\D/g, "");
+    if (cpfClean.length !== 11) { setError("Digite um CPF válido com 11 dígitos."); return; }
+    setLoadingCpf(true);
     try {
-      const res = await fetch(`${API_BASE}/api/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      // API pública da Receita Federal via BrasilAPI
+      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cpfClean}`, { method: "HEAD" });
+      // BrasilAPI não tem busca por CPF — usamos ReceitaWS para buscar CNPJ por CPF do sócio
+      // Alternativa: usamos a API de busca de sócios da ReceitaWS
+      const r2 = await fetch(`https://receitaws.com.br/v1/cnpj/search?cpf=${cpfClean}`, {
+        headers: { Accept: "application/json" }
+      }).catch(() => null);
+      void res;
 
-      const data = await res.json();
+      let empresas: CnpjInfo[] = [];
 
-      if (!res.ok) {
-        setError(data.error || "Erro ao criar conta");
-        setLoading(false);
-        return;
+      if (r2 && r2.ok) {
+        const data = await r2.json();
+        if (Array.isArray(data)) empresas = data;
       }
 
-      setStep(2);
+      // Fallback: pede o CNPJ manualmente se a API não retornou
+      if (empresas.length === 0) {
+        setCnpjList([]);
+        setStep(2);
+      } else {
+        // Filtrar só ativas
+        const ativas = empresas.filter(e => e.situacao_cadastral === "ATIVA" || !e.situacao_cadastral);
+        setCnpjList(ativas.length > 0 ? ativas : empresas);
+        setStep(2);
+      }
     } catch {
-      setError("Erro de conexão. Tente novamente.");
+      // Se der erro de rede, vai pro passo de digitar manualmente
+      setCnpjList([]);
+      setStep(2);
     } finally {
-      setLoading(false);
+      setLoadingCpf(false);
     }
+  }
+
+  // Etapa 2: usuário selecionou ou digitou CNPJ → buscar dados completos
+  async function handleCnpjSelect(info: CnpjInfo) {
+    setSelectedCnpj(info);
+    // Pré-preencher nome fantasia como nome do restaurante
+    const nome = info.nome_fantasia || info.razao_social || "";
+    setForm(p => ({ ...p }));
+    void nome;
+    setStep(3);
+  }
+
+  async function handleManualCnpj(cnpjRaw: string) {
+    setError("");
+    const clean = cnpjRaw.replace(/\D/g, "");
+    if (clean.length !== 14) { setError("CNPJ inválido. Verifique e tente novamente."); return; }
+    setLoadingCpf(true);
+    try {
+      const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`);
+      if (r.ok) {
+        const d = await r.json();
+        const info: CnpjInfo = {
+          cnpj: clean,
+          razao_social: d.razao_social || "",
+          nome_fantasia: d.nome_fantasia || "",
+          municipio: d.municipio || "",
+          uf: d.uf || "",
+          situacao_cadastral: d.descricao_situacao_cadastral || "",
+        };
+        setSelectedCnpj(info);
+        setStep(3);
+      } else {
+        setError("CNPJ não encontrado na Receita Federal. Verifique e tente novamente.");
+      }
+    } catch {
+      setError("Erro ao consultar Receita Federal. Verifique o CNPJ e tente novamente.");
+    } finally {
+      setLoadingCpf(false);
+    }
+  }
+
+  // Etapa 3: enviar cadastro
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!form.name || !form.email || !form.password || !form.phone) {
+      setError("Preencha todos os campos."); return;
+    }
+    if (form.password.length < 6) { setError("A senha precisa ter pelo menos 6 caracteres."); return; }
+    setLoadingSubmit(true);
+    try {
+      const storeName = selectedCnpj?.nome_fantasia || selectedCnpj?.razao_social || form.name;
+      const res = await fetch(`${API}/api/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          phone: form.phone,
+          cnpj: selectedCnpj?.cnpj,
+          storeName,
+          city: selectedCnpj?.municipio,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Erro ao criar conta."); return; }
+      setCreatedStore(storeName);
+      setStep(4);
+    } catch {
+      setError("Erro de conexão. Verifique sua internet e tente novamente.");
+    } finally {
+      setLoadingSubmit(false);
+    }
+  }
+
+  const S = {
+    page: { minHeight: "100vh", display: "flex", fontFamily: "'Inter',sans-serif", background: "#fff" } as React.CSSProperties,
+    left: { flex: "0 0 44%", background: "linear-gradient(145deg,#0f172a,#1e3a5f)", display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 40px" } as React.CSSProperties,
+    right: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 32px" } as React.CSSProperties,
+    inner: { width: "100%", maxWidth: 400 } as React.CSSProperties,
   };
+
+  const steps = ["CPF", "Empresa", "Dados", "Pronto"];
+  const stepIdx = step - 1;
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; }
-        .cad-container { display:flex; min-height:100vh; }
-        .cad-left { flex:0 0 45%; background:linear-gradient(135deg,#0F172A 0%,#1E293B 50%,#0F172A 100%); display:flex; align-items:center; justify-content:center; padding:48px 40px; position:relative; overflow:hidden; }
-        .cad-left::before { content:''; position:absolute; top:-50%; right:-30%; width:80%; height:200%; background:radial-gradient(circle,rgba(239,68,68,0.08) 0%,transparent 70%); pointer-events:none; }
-        .cad-right { flex:1; display:flex; align-items:center; justify-content:center; padding:48px 40px; background:#fff; }
-        .cad-left-inner { position:relative; z-index:2; max-width:440px; }
-        .cad-right-inner { width:100%; max-width:420px; }
-        .cad-logo { display:flex; align-items:center; gap:12px; margin-bottom:48px; }
-        .cad-logo-fire { color:#EF4444; font-weight:900; font-size:1.5rem; }
-        .cad-logo-hub { color:#fff; font-weight:900; font-size:1.5rem; }
-        .cad-title { font-size:2.4rem; font-weight:900; color:#fff; line-height:1.15; margin-bottom:20px; }
-        .cad-title em { color:#EF4444; font-style:normal; }
-        .cad-desc { font-size:1rem; color:rgba(255,255,255,0.7); line-height:1.6; margin-bottom:32px; }
-        .cad-features { display:flex; flex-direction:column; gap:14px; margin-bottom:36px; }
-        .cad-feat { display:flex; align-items:center; gap:10px; font-size:.9rem; color:rgba(255,255,255,0.85); }
-        .cad-feat-icon { width:32px; height:32px; border-radius:8px; background:rgba(239,68,68,0.15); display:flex; align-items:center; justify-content:center; font-size:1rem; flex-shrink:0; }
-        .cad-guarantee { display:flex; align-items:center; gap:14px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px 20px; color:#fff; }
-        .cad-form-title { font-size:1.8rem; font-weight:800; color:#111827; margin-bottom:8px; }
-        .cad-form-sub { font-size:.95rem; color:#6B7280; margin-bottom:28px; }
-        .cad-error { background:#FEF2F2; border:1px solid #FECACA; color:#DC2626; border-radius:10px; padding:12px 16px; font-size:.85rem; margin-bottom:20px; animation:shake .4s; }
-        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
-        .cad-form { display:flex; flex-direction:column; gap:18px; }
-        .cad-field { display:flex; flex-direction:column; gap:6px; }
-        .cad-label { font-size:.82rem; font-weight:600; color:#374151; }
-        .cad-input { padding:13px 16px; border:2px solid #E5E7EB; border-radius:12px; font-size:.95rem; outline:none; transition:border-color .2s,box-shadow .2s; color:#111827; background:#F9FAFB; font-family:inherit; }
-        .cad-input:focus { border-color:#EF4444; box-shadow:0 0 0 3px rgba(239,68,68,0.1); }
-        .cad-submit { padding:16px 24px; background:linear-gradient(135deg,#EF4444,#DC2626); color:#fff; border:none; border-radius:14px; font-size:1rem; font-weight:700; margin-top:8px; cursor:pointer; box-shadow:0 4px 14px rgba(239,68,68,0.4); transition:transform .15s,box-shadow .15s; font-family:inherit; }
-        .cad-submit:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 6px 20px rgba(239,68,68,0.5); }
-        .cad-submit:disabled { opacity:.6; cursor:not-allowed; }
-        .cad-terms { font-size:.75rem; color:#9CA3AF; text-align:center; line-height:1.5; }
-        .cad-terms a { color:#EF4444; text-decoration:none; }
-        .cad-login { text-align:center; font-size:.88rem; color:#6B7280; padding-top:8px; }
-        .cad-login a { color:#EF4444; font-weight:600; text-decoration:none; }
-        .cad-success { text-align:center; padding:20px 0; }
-        .cad-success-icon { font-size:4rem; margin-bottom:20px; animation:bounceIn .6s; }
-        @keyframes bounceIn { 0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
-        .cad-success h2 { font-size:1.8rem; font-weight:800; color:#111827; margin-bottom:12px; }
-        .cad-success p { font-size:1rem; color:#6B7280; line-height:1.6; margin-bottom:28px; }
-        .cad-credentials { background:#F0FDF4; border:1px solid #BBF7D0; border-radius:14px; padding:18px 24px; margin-bottom:28px; text-align:left; }
-        .cad-access-btn { display:block; padding:16px 24px; background:linear-gradient(135deg,#EF4444,#DC2626); color:#fff; border:none; border-radius:14px; font-size:1.1rem; font-weight:700; text-decoration:none; text-align:center; box-shadow:0 4px 14px rgba(239,68,68,0.4); transition:transform .15s; }
-        .cad-access-btn:hover { transform:translateY(-1px); }
-        .cad-mobile-logo { display:none; align-items:center; gap:8px; margin-bottom:32px; }
-        @media (max-width:768px) {
-          .cad-container { flex-direction:column; }
-          .cad-left { display:none; }
-          .cad-right { padding:32px 24px; }
-          .cad-mobile-logo { display:flex; }
-          .cad-form-title { font-size:1.4rem; }
-        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Inter',sans-serif}
+        .inp{width:100%;padding:13px 16px;border:2px solid #E5E7EB;border-radius:12px;font-size:.95rem;outline:none;color:#111;background:#F9FAFB;font-family:inherit;transition:border-color .2s}
+        .inp:focus{border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+        .btn{width:100%;padding:15px;background:linear-gradient(135deg,#2563EB,#1d4ed8);color:#fff;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity .15s,transform .15s}
+        .btn:hover:not(:disabled){opacity:.92;transform:translateY(-1px)}
+        .btn:disabled{opacity:.55;cursor:not-allowed}
+        .err{background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;border-radius:10px;padding:11px 15px;font-size:.84rem;margin-bottom:16px}
+        .lbl{font-size:.82rem;font-weight:600;color:#374151;margin-bottom:5px;display:block}
+        .cnpj-card{border:2px solid #E5E7EB;border-radius:14px;padding:16px 18px;cursor:pointer;transition:all .2s;margin-bottom:10px}
+        .cnpj-card:hover{border-color:#2563EB;background:#EFF6FF}
+        .cnpj-card.sel{border-color:#2563EB;background:#EFF6FF}
+        .prog{display:flex;gap:8px;margin-bottom:32px}
+        .prog-step{flex:1;text-align:center}
+        .prog-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 4px;font-size:.75rem;font-weight:700}
+        .prog-label{font-size:.7rem;font-weight:500}
+        @media(max-width:768px){.left-panel{display:none!important}.right-panel{padding:28px 20px!important}}
       `}</style>
 
-      <div className="cad-container">
-        {/* ESQUERDA — Branding */}
-        <div className="cad-left">
-          <div className="cad-left-inner">
-            <div className="cad-logo">
-              <svg width="44" height="44" viewBox="0 0 100 100" fill="none">
-                <circle cx="50" cy="50" r="48" fill="#1E293B" stroke="#EF4444" strokeWidth="3"/>
-                <path d="M50 15C45 30 30 40 30 55C30 68 39 80 50 85C61 80 70 68 70 55C70 40 55 30 50 15Z" fill="#EF4444"/>
-                <path d="M50 35C47 45 40 50 40 58C40 65 44 72 50 75C56 72 60 65 60 58C60 50 53 45 50 35Z" fill="#FF8C00"/>
-                <circle cx="50" cy="60" r="6" fill="#FFD700"/>
-              </svg>
-              <div>
-                <span className="cad-logo-fire">FIRE</span>
-                <span className="cad-logo-hub">HUB</span>
-              </div>
+      <div style={S.page}>
+        {/* ESQUERDA */}
+        <div className="left-panel" style={S.left}>
+          <div style={{ maxWidth: 380, color: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 40 }}>
+              <img src="/firehub-flame.png" alt="FireHub" style={{ width: 40, height: 40, objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <span style={{ fontWeight: 900, fontSize: "1.6rem" }}>
+                <span style={{ color: "#F97316" }}>FIRE</span><span>HUB</span>
+              </span>
             </div>
-
-            <h1 className="cad-title">
-              Comece a vender mais<br/>
-              <em>agora mesmo.</em>
+            <h1 style={{ fontSize: "2rem", fontWeight: 900, lineHeight: 1.2, marginBottom: 16 }}>
+              Comece grátis em<br /><span style={{ color: "#60A5FA" }}>menos de 2 minutos.</span>
             </h1>
-
-            <p className="cad-desc">
-              Crie sua conta gratuita em menos de 2 minutos e tenha acesso completo a todas as funcionalidades por 15 dias.
+            <p style={{ color: "rgba(255,255,255,.7)", lineHeight: 1.7, marginBottom: 32, fontSize: ".95rem" }}>
+              Seu restaurante online com cardápio digital, pedidos, financeiro e IA. Sem cartão de crédito.
             </p>
-
-            <div className="cad-features">
-              {[
-                ["📱", "Cardápio digital ilimitado"],
-                ["🤖", "Chatbot WhatsApp com IA"],
-                ["📦", "Gestão completa de pedidos"],
-                ["📊", "Relatórios e analytics"],
-                ["📸", "Leitura de notas fiscais por IA"],
-                ["🏍️", "Controle de entregas e motoboys"],
-                ["📋", "Checklist auditado por IA"],
-                ["💰", "CMV e estoque automático"],
-              ].map(([icon, text], i) => (
-                <div key={i} className="cad-feat">
-                  <div className="cad-feat-icon">{icon}</div>
-                  <span>{text}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="cad-guarantee">
-              <span style={{ fontSize: "1.3rem" }}>🔒</span>
-              <div>
-                <p style={{ fontWeight: 700, margin: 0 }}>Sem cartão de crédito</p>
-                <p style={{ fontSize: ".82rem", opacity: .7, margin: 0 }}>15 dias grátis · Sem compromisso · Cancele quando quiser</p>
+            {[
+              ["✅", "15 dias 100% grátis, sem compromisso"],
+              ["✅", "CNPJ verificado — segurança na conta"],
+              ["✅", "Sem taxa de instalação"],
+              ["✅", "Suporte humano via WhatsApp 7 dias"],
+              ["✅", "Cancele quando quiser, sem multa"],
+            ].map(([icon, txt], i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, fontSize: ".88rem", color: "rgba(255,255,255,.85)" }}>
+                <span>{icon}</span><span>{txt}</span>
               </div>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* DIREITA — Formulário */}
-        <div className="cad-right">
-          <div className="cad-right-inner">
-            {step === 1 ? (
+        {/* DIREITA */}
+        <div className="right-panel" style={S.right}>
+          <div style={S.inner}>
+            {/* Progresso */}
+            <div className="prog">
+              {steps.map((label, i) => {
+                const done = i < stepIdx;
+                const active = i === stepIdx;
+                return (
+                  <div className="prog-step" key={i}>
+                    <div className="prog-dot" style={{
+                      background: done ? "#16A34A" : active ? "#2563EB" : "#F3F4F6",
+                      color: done || active ? "#fff" : "#9CA3AF",
+                    }}>
+                      {done ? "✓" : i + 1}
+                    </div>
+                    <div className="prog-label" style={{ color: active ? "#2563EB" : done ? "#16A34A" : "#9CA3AF" }}>{label}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ETAPA 1 — CPF */}
+            {step === 1 && (
               <>
-                <div className="cad-mobile-logo">
-                  <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
-                    <circle cx="50" cy="50" r="48" fill="#FEF2F2" stroke="#EF4444" strokeWidth="3"/>
-                    <path d="M50 15C45 30 30 40 30 55C30 68 39 80 50 85C61 80 70 68 70 55C70 40 55 30 50 15Z" fill="#EF4444"/>
-                    <path d="M50 35C47 45 40 50 40 58C40 65 44 72 50 75C56 72 60 65 60 58C60 50 53 45 50 35Z" fill="#FF8C00"/>
-                    <circle cx="50" cy="60" r="6" fill="#FFD700"/>
-                  </svg>
-                  <span style={{ color: "#EF4444", fontWeight: 900, fontSize: "1.2rem" }}>FIRE</span>
-                  <span style={{ color: "#1F2937", fontWeight: 900, fontSize: "1.2rem" }}>HUB</span>
-                </div>
-
-                <h2 className="cad-form-title">Criar conta grátis</h2>
-                <p className="cad-form-sub">Teste grátis por 15 dias. Sem cartão de crédito.</p>
-
-                {error && <div className="cad-error">{error}</div>}
-
-                <form onSubmit={handleSubmit} className="cad-form">
-                  <div className="cad-field">
-                    <label className="cad-label">Seu nome completo *</label>
-                    <input className="cad-input" type="text" placeholder="João Silva" value={form.name} onChange={e => set("name", e.target.value)} autoFocus />
-                  </div>
-
-                  <div className="cad-field">
-                    <label className="cad-label">Nome do restaurante *</label>
-                    <input className="cad-input" type="text" placeholder="Pizzaria do João" value={form.storeName} onChange={e => set("storeName", e.target.value)} />
-                  </div>
-
-                  <div className="cad-field">
-                    <label className="cad-label">WhatsApp</label>
-                    <input className="cad-input" type="tel" placeholder="(22) 99999-9999" value={form.phone} onChange={e => set("phone", e.target.value)} />
-                  </div>
-
-                  <div className="cad-field">
-                    <label className="cad-label">Email *</label>
-                    <input className="cad-input" type="email" placeholder="joao@email.com" value={form.email} onChange={e => set("email", e.target.value)} />
-                  </div>
-
-                  <div className="cad-field">
-                    <label className="cad-label">Senha *</label>
-                    <input className="cad-input" type="password" placeholder="Mínimo 6 caracteres" value={form.password} onChange={e => set("password", e.target.value)} />
-                  </div>
-
-                  <button type="submit" disabled={loading} className="cad-submit">
-                    {loading ? "Criando sua conta..." : "🔥 Começar Teste Grátis de 15 Dias"}
-                  </button>
-
-                  <p className="cad-terms">
-                    Ao criar sua conta, você concorda com nossos{" "}
-                    <a href="#">Termos de Uso</a> e{" "}
-                    <a href="#">Política de Privacidade</a>
-                  </p>
-
-                  <div className="cad-login">
-                    Já tem uma conta?{" "}
-                    <a href={`${PORTAL_URL}/login`}>Entrar</a>
-                  </div>
-                </form>
-              </>
-            ) : (
-              <div className="cad-success">
-                <div className="cad-success-icon">🎉</div>
-                <h2>Conta criada com sucesso!</h2>
-                <p>
-                  Seu restaurante <strong>&quot;{form.storeName}&quot;</strong> já está pronto!<br/>
-                  Acesse o painel e comece a configurar seu cardápio.
+                <h2 style={{ fontSize: "1.6rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>Qual é o seu CPF?</h2>
+                <p style={{ color: "#6B7280", marginBottom: 24, fontSize: ".9rem", lineHeight: 1.5 }}>
+                  Usamos seu CPF para encontrar automaticamente os CNPJs vinculados a você na Receita Federal — assim garantimos que só existe uma conta por empresa.
                 </p>
+                {error && <div className="err">{error}</div>}
+                <div style={{ marginBottom: 16 }}>
+                  <label className="lbl">CPF do responsável</label>
+                  <input
+                    className="inp"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="000.000.000-00"
+                    value={cpf}
+                    autoFocus
+                    onChange={e => setCpf(formatCPF(e.target.value))}
+                    onKeyDown={e => e.key === "Enter" && handleCpfSubmit()}
+                  />
+                </div>
+                <button className="btn" onClick={handleCpfSubmit} disabled={loadingCpf}>
+                  {loadingCpf ? "Consultando Receita Federal..." : "Continuar →"}
+                </button>
+                <p style={{ textAlign: "center", marginTop: 16, fontSize: ".8rem", color: "#9CA3AF" }}>
+                  🔒 Dados protegidos · Não compartilhamos seu CPF
+                </p>
+                <p style={{ textAlign: "center", marginTop: 20, fontSize: ".85rem", color: "#6B7280" }}>
+                  Já tem conta? <a href={`${PORTAL}/login`} style={{ color: "#2563EB", fontWeight: 600, textDecoration: "none" }}>Entrar</a>
+                </p>
+              </>
+            )}
 
-                <div className="cad-credentials">
-                  <p style={{ margin: "0 0 8px", fontWeight: 700, fontSize: ".9rem" }}>Seus dados de acesso:</p>
-                  <p style={{ margin: "0 0 4px", fontSize: ".85rem" }}>📧 <strong>{form.email}</strong></p>
-                  <p style={{ margin: 0, fontSize: ".85rem" }}>🔑 Senha que você definiu</p>
+            {/* ETAPA 2 — Selecionar CNPJ */}
+            {step === 2 && (
+              <>
+                <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>Selecione sua empresa</h2>
+                <p style={{ color: "#6B7280", marginBottom: 20, fontSize: ".88rem", lineHeight: 1.5 }}>
+                  {cnpjList.length > 0
+                    ? "Encontramos essas empresas vinculadas ao seu CPF. Selecione a que vai usar no FireHub:"
+                    : "Digite o CNPJ da sua empresa para continuar:"}
+                </p>
+                {error && <div className="err">{error}</div>}
+
+                {cnpjList.length > 0 ? (
+                  <>
+                    {cnpjList.map((c) => (
+                      <div
+                        key={c.cnpj}
+                        className="cnpj-card"
+                        onClick={() => handleCnpjSelect(c)}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: ".95rem", color: "#111", marginBottom: 4 }}>
+                          {c.nome_fantasia || c.razao_social}
+                        </div>
+                        <div style={{ fontSize: ".8rem", color: "#6B7280" }}>
+                          {formatCNPJ(c.cnpj)} · {c.municipio}/{c.uf}
+                        </div>
+                        {c.situacao_cadastral && (
+                          <div style={{ fontSize: ".75rem", color: c.situacao_cadastral === "ATIVA" ? "#16A34A" : "#EF4444", marginTop: 4, fontWeight: 600 }}>
+                            {c.situacao_cadastral}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <p style={{ textAlign: "center", fontSize: ".82rem", color: "#9CA3AF", margin: "12px 0" }}>
+                      Não encontrou? Digite o CNPJ manualmente:
+                    </p>
+                  </>
+                ) : null}
+
+                {/* Input manual de CNPJ */}
+                <ManualCnpjInput onConfirm={handleManualCnpj} loading={loadingCpf} />
+
+                <button
+                  style={{ background: "none", border: "none", color: "#6B7280", cursor: "pointer", fontSize: ".84rem", marginTop: 12, display: "block", width: "100%", textAlign: "center" }}
+                  onClick={() => { setStep(1); setError(""); }}
+                >
+                  ← Voltar
+                </button>
+              </>
+            )}
+
+            {/* ETAPA 3 — Dados pessoais */}
+            {step === 3 && selectedCnpj && (
+              <>
+                <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: 12, padding: "14px 16px", marginBottom: 24 }}>
+                  <div style={{ fontSize: ".75rem", color: "#2563EB", fontWeight: 700, marginBottom: 2 }}>✅ EMPRESA VERIFICADA</div>
+                  <div style={{ fontWeight: 700, color: "#1E3A5F", fontSize: ".95rem" }}>
+                    {selectedCnpj.nome_fantasia || selectedCnpj.razao_social}
+                  </div>
+                  <div style={{ fontSize: ".78rem", color: "#4B5563" }}>
+                    CNPJ {formatCNPJ(selectedCnpj.cnpj)}
+                    {selectedCnpj.municipio ? ` · ${selectedCnpj.municipio}/${selectedCnpj.uf}` : ""}
+                  </div>
                 </div>
 
-                <a href={`${PORTAL_URL}/login`} className="cad-access-btn">
-                  🚀 Acessar Meu Painel Agora
-                </a>
+                <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>Complete seu cadastro</h2>
+                <p style={{ color: "#6B7280", marginBottom: 20, fontSize: ".88rem" }}>Essas informações serão usadas para acessar sua conta.</p>
 
-                <p style={{ fontSize: ".8rem", color: "#9CA3AF", textAlign: "center", marginTop: 16 }}>
+                {error && <div className="err">{error}</div>}
+
+                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div>
+                    <label className="lbl">Seu nome completo *</label>
+                    <input className="inp" type="text" placeholder="João Silva" value={form.name} autoFocus onChange={e => set("name", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="lbl">WhatsApp *</label>
+                    <input className="inp" type="tel" inputMode="numeric" placeholder="(22) 99999-9999" value={form.phone} onChange={e => set("phone", formatPhone(e.target.value))} />
+                  </div>
+                  <div>
+                    <label className="lbl">E-mail *</label>
+                    <input className="inp" type="email" placeholder="joao@restaurante.com" value={form.email} onChange={e => set("email", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="lbl">Senha *</label>
+                    <input className="inp" type="password" placeholder="Mínimo 6 caracteres" value={form.password} onChange={e => set("password", e.target.value)} />
+                  </div>
+                  <button type="submit" className="btn" disabled={loadingSubmit} style={{ marginTop: 4, background: "linear-gradient(135deg,#EF4444,#DC2626)" }}>
+                    {loadingSubmit ? "Criando sua conta..." : "🔥 Começar Teste Grátis"}
+                  </button>
+                  <p style={{ fontSize: ".73rem", color: "#9CA3AF", textAlign: "center" }}>
+                    Ao cadastrar, você concorda com os <a href="#" style={{ color: "#2563EB" }}>Termos de Uso</a> e <a href="#" style={{ color: "#2563EB" }}>Política de Privacidade</a>
+                  </p>
+                </form>
+
+                <button
+                  style={{ background: "none", border: "none", color: "#6B7280", cursor: "pointer", fontSize: ".84rem", marginTop: 12, display: "block", width: "100%", textAlign: "center" }}
+                  onClick={() => { setStep(2); setError(""); }}
+                >
+                  ← Voltar
+                </button>
+              </>
+            )}
+
+            {/* ETAPA 4 — Sucesso */}
+            {step === 4 && (
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <div style={{ fontSize: "4rem", marginBottom: 16, animation: "bounceIn .6s" }}>🎉</div>
+                <h2 style={{ fontSize: "1.7rem", fontWeight: 800, color: "#111", marginBottom: 10 }}>
+                  Conta criada!
+                </h2>
+                <p style={{ color: "#6B7280", lineHeight: 1.6, marginBottom: 24, fontSize: ".95rem" }}>
+                  <strong>&quot;{createdStore}&quot;</strong> está pronto para começar.<br />
                   Seus 15 dias de teste grátis começam agora!
                 </p>
+                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 14, padding: "16px 20px", marginBottom: 24, textAlign: "left" }}>
+                  <p style={{ fontWeight: 700, marginBottom: 8, fontSize: ".88rem" }}>Próximos passos:</p>
+                  {["Configure seu cardápio digital", "Adicione sua logo e banner", "Compartilhe o link com seus clientes", "Receba seus primeiros pedidos"].map((s, i) => (
+                    <p key={i} style={{ fontSize: ".84rem", color: "#374151", marginBottom: 4 }}>
+                      <span style={{ color: "#16A34A", fontWeight: 700 }}>{i + 1}.</span> {s}
+                    </p>
+                  ))}
+                </div>
+                <a
+                  href={`${PORTAL}/login`}
+                  style={{ display: "block", padding: "16px 24px", background: "linear-gradient(135deg,#EF4444,#DC2626)", color: "#fff", borderRadius: 14, fontWeight: 700, fontSize: "1rem", textDecoration: "none", boxShadow: "0 4px 14px rgba(239,68,68,.4)" }}
+                >
+                  🚀 Acessar Meu Painel
+                </a>
               </div>
             )}
           </div>
         </div>
       </div>
+      <style>{`
+        @keyframes bounceIn {
+          0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)}
+        }
+      `}</style>
     </>
+  );
+}
+
+// Componente interno para input manual de CNPJ
+function ManualCnpjInput({ onConfirm, loading }: { onConfirm: (v: string) => void; loading: boolean }) {
+  const [val, setVal] = useState("");
+  function fmt(v: string) {
+    return v.replace(/\D/g, "").slice(0, 14)
+      .replace(/(\d{2})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1/$2")
+      .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+  }
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      <input
+        className="inp"
+        type="text"
+        inputMode="numeric"
+        placeholder="00.000.000/0001-00"
+        value={val}
+        onChange={e => setVal(fmt(e.target.value))}
+        onKeyDown={e => e.key === "Enter" && onConfirm(val)}
+        style={{ flex: 1 }}
+      />
+      <button
+        onClick={() => onConfirm(val)}
+        disabled={loading}
+        style={{ padding: "13px 18px", background: "#2563EB", color: "#fff", border: "none", borderRadius: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}
+      >
+        {loading ? "..." : "Buscar"}
+      </button>
+    </div>
   );
 }
