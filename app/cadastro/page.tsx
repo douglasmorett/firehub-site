@@ -337,7 +337,7 @@ export default function CadastroPage() {
               </>
             )}
 
-            {/* ===== STEP 5: SUCESSO ===== */}
+            {/* ===== STEP 5: SUCESSO — redireciona automaticamente ===== */}
             {step === 5 && (
               <div style={{ textAlign: "center", padding: "10px 0" }}>
                 <div style={{ fontSize: "3.5rem", marginBottom: 14, animation: "bounceIn .5s" }}>🎉</div>
@@ -346,15 +346,14 @@ export default function CadastroPage() {
                   <strong>&quot;{createdStore}&quot;</strong> está pronto.<br />
                   Seus 15 dias de teste grátis começam agora!
                 </p>
-                <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: 12, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
-                  <p style={{ fontSize: ".82rem", fontWeight: 600, marginBottom: 6 }}>Dados de acesso:</p>
-                  <p style={{ fontSize: ".82rem", color: "#374151", marginBottom: 2 }}>📧 <strong>{email}</strong></p>
-                  <p style={{ fontSize: ".82rem", color: "#374151" }}>🔑 Senha que você definiu</p>
-                </div>
+                <p style={{ fontSize: ".82rem", color: "#9CA3AF", marginBottom: 16 }}>
+                  ⏳ Redirecionando para o seu painel em instantes...
+                </p>
                 <a href={`${PORTAL}/login`} className="btn" style={{ display: "block", textDecoration: "none", textAlign: "center" }}>
-                  🚀 Acessar Meu Painel
+                  🚀 Acessar Meu Painel Agora
                 </a>
                 <p style={{ fontSize: ".76rem", color: "#9CA3AF", marginTop: 12 }}>Sem cartão · Cancele quando quiser</p>
+                <script dangerouslySetInnerHTML={{ __html: `setTimeout(function(){ window.location.href="${PORTAL}/login"; }, 3000);` }} />
               </div>
             )}
           </div>
