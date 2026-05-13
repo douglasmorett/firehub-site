@@ -191,7 +191,7 @@ body{font-family:'Inter',sans-serif}
             </p>
             {[
               ["🔥", "15 dias grátis, sem cartão"],
-              ["🔒", "CNPJ verificado na Receita Federal"],
+              ["🔒", "Dados protegidos e seguros"],
               ["📱", "Cardápio digital + WhatsApp IA"],
               ["📊", "Relatórios e controle completo"],
               ["💬", "Suporte humano 7 dias por semana"],
