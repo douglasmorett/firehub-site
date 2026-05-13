@@ -54,19 +54,13 @@ const COMPARE = [
   ["Integração iFood / Rappi", true, true, false],
 ];
 
-// Faixas de preço baseadas no faturamento
-const PRICING_TIERS = [
-  { maxRev: 1500, label: "R$ 0 a R$ 1.500", price: 59, desc: "Para negócios em crescimento, o valor mínimo para ter acesso a todas as funcionalidades." },
-  { maxRev: 5000, label: "R$ 1.500 a R$ 5.000", price: 99, desc: "Seu restaurante já tem fluxo constante. Todas as ferramentas para escalar." },
-  { maxRev: 10000, label: "R$ 5.000 a R$ 10.000", price: 149, desc: "Operação consolidada. Maximize seus resultados com automação completa." },
-  { maxRev: 15000, label: "R$ 10.000 a R$ 15.000", price: 199, desc: "Alto volume. Gestão avançada para manter o controle total." },
-  { maxRev: 99999, label: "R$ 15.000+", price: 249, desc: "Para os maiores. Suporte prioritário e todas as funcionalidades premium." },
-];
+// Preço = 2% do faturamento, mín R$50, máx R$400
+const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(50, Math.min(400, rev * 0.02));
 
 const FAQ = [
   { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades durante o período de teste." },
   { q: "E se eu não usar a plataforma?", a: "Se você não processar nenhuma venda pelo FireHub no mês, você não paga nada. Nosso modelo é justo: você só paga quando vende." },
-  { q: "Como funciona a cobrança?", a: "O valor mensal é calculado de acordo com o faturamento do seu restaurante no canal próprio. Quanto mais você cresce, nós crescemos junto. Sem taxa por pedido." },
+  { q: "Como funciona a cobrança?", a: "Cobramos apenas 2% do seu faturamento no canal próprio (cardápio digital + WhatsApp). Mínimo de R$ 50 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona 100% no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento." },
   { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana — manhã, tarde e noite. Você nunca fica sem resposta." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
@@ -84,7 +78,7 @@ export default function Home() {
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
-  const currentTier = PRICING_TIERS.find(t => sliderValue <= t.maxRev) || PRICING_TIERS[PRICING_TIERS.length - 1];
+  const calculatedPrice = calcPrice(sliderValue);
 
   const Check = () => <span style={{color:"#16A34A",fontSize:"1.1rem"}}>✅</span>;
   const Cross = () => <span style={{color:"#EF4444"}}>❌</span>;
@@ -214,27 +208,45 @@ export default function Home() {
                 <input
                   type="range"
                   min={0}
-                  max={20000}
+                  max={30000}
                   step={500}
                   value={sliderValue}
                   onChange={(e) => setSliderValue(Number(e.target.value))}
                   style={{width:"100%",accentColor:"#EF4444",cursor:"pointer"}}
                 />
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:".72rem",color:"#9CA3AF",marginTop:4}}>
-                  <span>R$ 0</span><span>R$ 5k</span><span>R$ 10k</span><span>R$ 15k+</span>
+                  <span>R$ 0</span><span>R$ 5k</span><span>R$ 10k</span><span>R$ 20k</span><span>R$ 30k</span>
                 </div>
               </div>
 
               {/* Preço calculado */}
               <div className="pricing-price">
-                <span className="amount" style={{color:"#EF4444"}}>R$ {sliderValue === 0 ? "0" : currentTier.price.toFixed(2).replace(".",",")}</span>
+                <span className="amount" style={{color:"#EF4444"}}>R$ {calculatedPrice.toFixed(2).replace(".",",")}</span>
                 <span className="period">/mês</span>
+              </div>
+
+              {/* Percentual info */}
+              <div style={{display:"flex",justifyContent:"center",gap:24,marginBottom:20}}>
+                <div style={{textAlign:"center"}}>
+                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#EF4444"}}>2%</p>
+                  <p style={{fontSize:".72rem",color:"#9CA3AF"}}>do faturamento</p>
+                </div>
+                <div style={{width:1,background:"#E5E7EB"}} />
+                <div style={{textAlign:"center"}}>
+                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#374151"}}>R$ 50</p>
+                  <p style={{fontSize:".72rem",color:"#9CA3AF"}}>mínimo/mês</p>
+                </div>
+                <div style={{width:1,background:"#E5E7EB"}} />
+                <div style={{textAlign:"center"}}>
+                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#374151"}}>R$ 400</p>
+                  <p style={{fontSize:".72rem",color:"#9CA3AF"}}>máximo/mês</p>
+                </div>
               </div>
 
               {/* Faixa info */}
               <div style={{background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:14,padding:"16px 20px",marginBottom:24}}>
-                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Faturou R$ 0? Não paga nada." : currentTier.label}</p>
-                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Se você não processar vendas pelo FireHub no mês, não cobramos nada. Você só paga quando vende." : currentTier.desc}</p>
+                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Faturou R$ 0? Não paga nada." : `Faturamento de R$ ${sliderValue.toLocaleString("pt-BR")} × 2% = R$ ${(sliderValue * 0.02).toFixed(2).replace(".",",")}`}</p>
+                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Se você não processar vendas pelo FireHub no mês, não cobramos nada. Você só paga quando vende." : calculatedPrice <= 50 ? "Valor mínimo de R$ 50,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 20k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
               </div>
 
               <p style={{fontSize:".75rem",color:"#9CA3AF",marginBottom:20,textAlign:"center"}}>* +Taxas de pagamento online (cartão/Pix)</p>
