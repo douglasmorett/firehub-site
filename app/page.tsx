@@ -47,33 +47,36 @@ const COMPARE = [
   ["Chatbot WhatsApp com IA", true, true, false],
   ["Auditoria operacional com IA 🏆", true, false, false],
   ["Controle financeiro completo 🏆", true, false, false],
-  ["FireCheck incluso 🏆", true, false, false],
+  ["FireCheck 🏆", true, false, false],
   ["Leitura de notas por IA 🏆", true, false, false],
-  ["Estoque automático", "soon", true, false],
-  ["CMV automático", "soon", true, false],
-  ["Integração iFood / Rappi", "soon", true, false],
+  ["Estoque automático 🏆", true, false, false],
+  ["CMV automático 🏆", true, false, false],
+  ["Integração iFood / Rappi", true, true, false],
 ];
 
-const PRICING_FEATURES = [
-  "Cardápio digital ilimitado", "Chatbot WhatsApp com IA", "Gestão completa de pedidos",
-  "Disparos em massa", "Relatórios e analytics", "FireCheck (auditoria com IA)",
-  "Leitura de notas fiscais por IA", "Controle de motoboys",
-  "Pagamento online (cartão + Pix)", "Suporte humano via WhatsApp"
+// Faixas de preço baseadas no faturamento
+const PRICING_TIERS = [
+  { maxRev: 1500, label: "R$ 0 a R$ 1.500", price: 59, desc: "Para negócios em crescimento, o valor mínimo para ter acesso a todas as funcionalidades." },
+  { maxRev: 5000, label: "R$ 1.500 a R$ 5.000", price: 99, desc: "Seu restaurante já tem fluxo constante. Todas as ferramentas para escalar." },
+  { maxRev: 10000, label: "R$ 5.000 a R$ 10.000", price: 149, desc: "Operação consolidada. Maximize seus resultados com automação completa." },
+  { maxRev: 15000, label: "R$ 10.000 a R$ 15.000", price: 199, desc: "Alto volume. Gestão avançada para manter o controle total." },
+  { maxRev: 99999, label: "R$ 15.000+", price: 249, desc: "Para os maiores. Suporte prioritário e todas as funcionalidades premium." },
 ];
 
 const FAQ = [
-  { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Depois, planos a partir de R$ 99/mês sem taxa por pedido." },
+  { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades durante o período de teste." },
+  { q: "E se eu não usar a plataforma?", a: "Se você não processar nenhuma venda pelo FireHub no mês, você não paga nada. Nosso modelo é justo: você só paga quando vende." },
+  { q: "Como funciona a cobrança?", a: "O valor mensal é calculado de acordo com o faturamento do seu restaurante no canal próprio. Quanto mais você cresce, nós crescemos junto. Sem taxa por pedido." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona 100% no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento." },
   { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana — manhã, tarde e noite. Você nunca fica sem resposta." },
-  { q: "Posso imprimir comandas?", a: "Sim! Impressão de comandas de delivery, cozinha e mesas em uma ou mais impressoras térmicas." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
-  { q: "O que é o FireCheck?", a: "Módulo exclusivo de auditoria operacional: checklist com fotos, ponto eletrônico com geolocalização e controle financeiro inteligente." },
   { q: "Existe multa para cancelar?", a: "Absolutamente não. Você cancela quando quiser, sem burocracia, sem multa, sem surpresas." },
 ];
 
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [sliderValue, setSliderValue] = useState(3000);
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 30);
@@ -81,9 +84,12 @@ export default function Home() {
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
+  const currentTier = PRICING_TIERS.find(t => sliderValue <= t.maxRev) || PRICING_TIERS[PRICING_TIERS.length - 1];
+
   const Check = () => <span style={{color:"#16A34A",fontSize:"1.1rem"}}>✅</span>;
   const Cross = () => <span style={{color:"#EF4444"}}>❌</span>;
-  const Soon = () => <span style={{color:"#D97706",fontSize:".73rem",fontWeight:700,background:"#FEF3C7",padding:"2px 8px",borderRadius:6}}>EM BREVE</span>;
+
+  const formatCurrency = (v: number) => v >= 1000 ? `R$ ${(v/1000).toFixed(v%1000===0?0:1)}k` : `R$ ${v}`;
 
   return (
     <div>
@@ -107,28 +113,25 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* HERO */}
+      {/* HERO — sem imagem, texto centralizado */}
       <section>
-        <div className="hero">
+        <div className="hero" style={{gridTemplateColumns:"1fr",textAlign:"center",maxWidth:800}}>
           <div>
-            <div className="hero-tag"><span className="pulse" />15 dias grátis · Sem cartão de crédito</div>
+            <div className="hero-tag" style={{margin:"0 auto 22px"}}><span className="pulse" />15 dias grátis · Sem cartão de crédito</div>
             <h1>Simples, rápido e<br /><em>completo.</em> Tudo que o seu<br />restaurante precisa.</h1>
-            <p className="hero-p">Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro e auditoria com IA — pare de perder vendas e comece a crescer.</p>
-            <div className="hero-btns">
+            <p className="hero-p" style={{maxWidth:560,margin:"0 auto 32px"}}>Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro e auditoria com IA — pare de perder vendas e comece a crescer.</p>
+            <div className="hero-btns" style={{justifyContent:"center"}}>
               <a href={TRIAL} className="btn-primary">🔥 Testar Grátis por 15 Dias</a>
               <a href={WA} target="_blank" rel="noopener" className="btn-outline">💬 Falar com Consultor</a>
             </div>
-            <p className="hero-note">✓ Sem compromisso &nbsp;·&nbsp; ✓ Sem multa &nbsp;·&nbsp; ✓ Migração fácil</p>
-            <div className="hero-badges">
+            <p className="hero-note" style={{marginTop:16}}>✓ Sem compromisso &nbsp;·&nbsp; ✓ Sem multa &nbsp;·&nbsp; ✓ Migração fácil</p>
+            <div className="hero-badges" style={{justifyContent:"center",marginTop:24}}>
               <div className="badge"><span>📋</span> Delivery</div>
               <div className="badge"><span>🍽️</span> Mesas</div>
               <div className="badge"><span>🏪</span> Balcão</div>
               <div className="badge"><span>🤖</span> IA</div>
               <div className="badge"><span>💬</span> WhatsApp</div>
             </div>
-          </div>
-          <div className="hero-visual">
-            <img src="/firehub-mockup.png" alt="FireHub Dashboard" className="hero-img" />
           </div>
         </div>
       </section>
@@ -147,8 +150,8 @@ export default function Home() {
       <section className="sec" id="funcionalidades">
         <div className="w">
           <div className="sec-title">
-            <h2>Tudo que seu negócio precisa numa <em>única solução</em></h2>
-            <p>Do cardápio digital à auditoria com inteligência artificial — o FireHub centraliza toda a operação do seu restaurante.</p>
+            <h2>Todas as funcionalidades <em>incluídas</em></h2>
+            <p>Tenha acesso a todas as funcionalidades do nosso sistema independente do seu faturamento.</p>
           </div>
           <div className="solutions">
             {SOLUTIONS.map((sol, i) => (
@@ -187,33 +190,59 @@ export default function Home() {
         </div>
       </section>
 
-      {/* PLANOS */}
+      {/* PLANOS — Slider de faturamento */}
       <section className="sec" id="planos">
         <div className="w">
           <div className="sec-title">
             <h2>Um só FireHub, do <em>primeiro pedido ao primeiro milhão</em></h2>
-            <p>Acesso a todas as funcionalidades por um preço que cabe no seu bolso. Sem taxa por pedido.</p>
+            <p>Nós existimos para mudar a realidade do seu delivery, e por isso você pode ter acesso a todas as funcionalidades por um preço que se adapta à realidade do seu negócio.</p>
           </div>
-          <div className="pricing-card">
-            <div className="pricing-header">
-              <h3>Plano Completo</h3>
+          <div className="pricing-card" style={{maxWidth:560}}>
+            <div className="pricing-header" style={{background:"linear-gradient(135deg,#1a1a2e,#16213e)"}}>
+              <h3>Plano Único</h3>
               <p>Todas as funcionalidades incluídas</p>
             </div>
             <div className="pricing-body">
+              {/* Slider */}
+              <div style={{marginBottom:28}}>
+                <p style={{textAlign:"center",fontWeight:600,fontSize:".88rem",color:"#374151",marginBottom:12}}>Selecione seu faturamento mensal atual:</p>
+                <div style={{textAlign:"center",marginBottom:16}}>
+                  <span style={{display:"inline-block",padding:"8px 24px",background:"#FEF2F2",border:"2px solid #EF4444",borderRadius:12,color:"#EF4444",fontWeight:800,fontSize:"1.3rem"}}>
+                    R$ {sliderValue.toLocaleString("pt-BR")}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={20000}
+                  step={500}
+                  value={sliderValue}
+                  onChange={(e) => setSliderValue(Number(e.target.value))}
+                  style={{width:"100%",accentColor:"#EF4444",cursor:"pointer"}}
+                />
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:".72rem",color:"#9CA3AF",marginTop:4}}>
+                  <span>R$ 0</span><span>R$ 5k</span><span>R$ 10k</span><span>R$ 15k+</span>
+                </div>
+              </div>
+
+              {/* Preço calculado */}
               <div className="pricing-price">
-                <div className="from">a partir de</div>
-                <span className="amount">R$ 99</span>
+                <span className="amount" style={{color:"#EF4444"}}>R$ {sliderValue === 0 ? "0" : currentTier.price.toFixed(2).replace(".",",")}</span>
                 <span className="period">/mês</span>
               </div>
-              <ul className="pricing-features">
-                {PRICING_FEATURES.map((f, i) => (
-                  <li key={i}><span className="ck">✓</span>{f}</li>
-                ))}
-              </ul>
-              <div className="pricing-cta">
-                <a href={TRIAL} className="btn-primary">🔥 Começar Teste Grátis de 15 Dias</a>
+
+              {/* Faixa info */}
+              <div style={{background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:14,padding:"16px 20px",marginBottom:24}}>
+                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Faturou R$ 0? Não paga nada." : currentTier.label}</p>
+                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Se você não processar vendas pelo FireHub no mês, não cobramos nada. Você só paga quando vende." : currentTier.desc}</p>
               </div>
-              <p className="pricing-note">Sem cartão de crédito · Cancele quando quiser</p>
+
+              <p style={{fontSize:".75rem",color:"#9CA3AF",marginBottom:20,textAlign:"center"}}>* +Taxas de pagamento online (cartão/Pix)</p>
+
+              <div className="pricing-cta">
+                <a href={TRIAL} className="btn-primary" style={{width:"100%",justifyContent:"center",padding:16}}>🔥 Testar Grátis Agora</a>
+              </div>
+              <p className="pricing-note">Sem cartão de crédito · Cancele quando quiser · Sem multa</p>
             </div>
           </div>
         </div>
@@ -240,7 +269,7 @@ export default function Home() {
                 {COMPARE.map(([feat, fh, conc, sem], i) => (
                   <tr key={i}>
                     <td style={{color:(feat as string).includes("🏆")?"#B45309":"#374151",fontWeight:(feat as string).includes("🏆")?600:400}}>{feat as string}</td>
-                    <td className="fh-col" style={{textAlign:"center"}}>{fh===true?<Check/>:fh===false?<Cross/>:<Soon/>}</td>
+                    <td className="fh-col" style={{textAlign:"center"}}>{fh===true?<Check/>:<Cross/>}</td>
                     <td style={{textAlign:"center"}}>{conc===true?<Check/>:<Cross/>}</td>
                     <td style={{textAlign:"center"}}>{sem===true?<Check/>:<Cross/>}</td>
                   </tr>
@@ -255,7 +284,7 @@ export default function Home() {
       {/* FAQ */}
       <section className="sec" id="faq">
         <div className="w">
-          <div className="sec-title"><h2>Perguntas <em>Frequentes</em></h2><p>Tire suas dúvidas sobre nossos planos e serviços</p></div>
+          <div className="sec-title"><h2>Perguntas <em>Frequentes</em></h2><p>Tire suas dúvidas sobre o FireHub</p></div>
           <div className="faq-list">
             {FAQ.map((f, i) => (
               <div key={i} className={`faq-item ${openFaq===i?"open":""}`}>
