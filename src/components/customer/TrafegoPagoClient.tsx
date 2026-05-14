@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { TrendingUp, Star, ChevronRight, ArrowLeft, Check, X, Zap, Target, BarChart2, MapPin, Clock, Shield } from "lucide-react";
 
 const SOCIAL_PROOF = [
@@ -43,7 +43,6 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
   const [pixPaid, setPixPaid] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -59,19 +58,6 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
     return () => clearTimeout(t);
   }, []);
 
-  // Auto scroll social proof
-  useEffect(() => {
-    if (step !== "hero") return;
-    const el = scrollRef.current;
-    if (!el) return;
-    let pos = 0;
-    const interval = setInterval(() => {
-      pos += 1;
-      if (pos >= el.scrollWidth / 2) pos = 0;
-      el.scrollLeft = pos;
-    }, 20);
-    return () => clearInterval(interval);
-  }, [step]);
 
   // Live counter tick — simula crescimento constante nos totais
   useEffect(() => {
@@ -143,20 +129,35 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         <p style={{ color: "#9CA3AF", fontSize: "0.8rem", marginTop: 8 }}>Configuração em menos de 5 minutos</p>
       </div>
 
-      {/* Social proof scroll */}
-      <div ref={scrollRef} style={{ display: "flex", gap: "0.75rem", overflowX: "hidden", marginBottom: "2rem", userSelect: "none" }}>
-        {[...SOCIAL_PROOF, ...SOCIAL_PROOF].map((r, i) => (
-          <div key={i} style={{ flexShrink: 0, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: "0.85rem 1rem", minWidth: 200 }}>
-            <div style={{ display: "flex", gap: 2, marginBottom: 6 }}>
-              {Array(r.stars).fill(0).map((_, j) => <Star key={j} size={12} fill="#F59E0B" color="#F59E0B" />)}
+      {/* Social proof — CSS marquee infinito */}
+      <div style={{ overflow: "hidden", marginBottom: "2rem", userSelect: "none", position: "relative" }}>
+        <style>{`
+          @keyframes marquee {
+            0%   { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+          .social-track {
+            display: flex;
+            gap: 0.75rem;
+            width: max-content;
+            animation: marquee 28s linear infinite;
+          }
+          .social-track:hover { animation-play-state: paused; }
+        `}</style>
+        <div className="social-track">
+          {[...SOCIAL_PROOF, ...SOCIAL_PROOF].map((r, i) => (
+            <div key={i} style={{ flexShrink: 0, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: "0.85rem 1rem", minWidth: 200 }}>
+              <div style={{ display: "flex", gap: 2, marginBottom: 6 }}>
+                {Array(r.stars).fill(0).map((_, j) => <Star key={j} size={12} fill="#F59E0B" color="#F59E0B" />)}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: "0.88rem", marginBottom: 4 }}>{r.name}</div>
+              <div style={{ fontSize: "0.78rem", color: "#6B7280" }}>
+                Investiu <strong>R${r.invested}</strong> — Faturou{" "}
+                <span style={{ color: "#16A34A", fontWeight: 800 }}>R${r.earned.toLocaleString("pt-BR")}</span>
+              </div>
             </div>
-            <div style={{ fontWeight: 700, fontSize: "0.88rem", marginBottom: 4 }}>{r.name}</div>
-            <div style={{ fontSize: "0.78rem", color: "#6B7280" }}>
-              Investiu <strong>R${r.invested}</strong> — Faturou{" "}
-              <span style={{ color: "#16A34A", fontWeight: 800 }}>R${r.earned.toLocaleString("pt-BR")}</span>
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* Bottom totals — live counters */}
