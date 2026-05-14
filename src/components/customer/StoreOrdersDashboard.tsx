@@ -488,11 +488,62 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
         {expanded && (
           <div style={{ padding: "0 1rem 0.75rem", borderTop: "1px solid #F1F5F9" }}>
+
+            {/* ── CENÁRIO 1: Banner de PEDIDO AGENDADO ── */}
+            {order.scheduledDatetime && (
+              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: "10px", border: "2px solid #93C5FD", display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.4rem" }}>📅</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#1D4ED8" }}>PEDIDO AGENDADO</div>
+                  <div style={{ fontSize: "0.82rem", color: "#1E40AF", fontWeight: 600 }}>
+                    {new Date(order.scheduledDatetime).toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── CENÁRIO 3: Banner de RETIRADA ── */}
+            {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
+              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "linear-gradient(135deg,#FFF7ED,#FFEDD5)", borderRadius: "10px", border: "2px solid #FCD34D", display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.4rem" }}>🏪</span>
+                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#B45309" }}>RETIRADA NO LOCAL — Cliente vem buscar</div>
+              </div>
+            )}
+
+            {/* ── CENÁRIO 4: Banner de CANCELAMENTO POR PLATAFORMA ── */}
+            {order.status === "CANCELADO" && order.cancelledBy === "IFOOD" && (
+              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#FEF2F2", borderRadius: "10px", border: "2px solid #FCA5A5", display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.4rem" }}>🚫</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#DC2626" }}>CANCELADO PELA PLATAFORMA</div>
+                  <div style={{ fontSize: "0.78rem", color: "#B91C1C" }}>O iFood cancelou este pedido automaticamente</div>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", margin: "0.75rem 0", fontSize: "0.82rem" }}>
               <div><span style={{ color: "#94A3B8" }}>Tel:</span> <a href={`https://wa.me/55${order.customerPhone?.replace(/\D/g,'')}`} target="_blank" style={{ color: "#25D366", fontWeight: 600 }}>{order.customerPhone}</a></div>
               {order.customerAddress && <div><span style={{ color: "#94A3B8" }}>End:</span> <strong>{order.customerAddress}</strong></div>}
             </div>
-            {order.paymentMethod && <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "0.25rem" }}>💳 {order.paymentMethod}</div>}
+
+            {/* Pagamento + Troco (Cenário 5) */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "0.5rem" }}>
+              {order.paymentMethod && (
+                <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.78rem", fontWeight: 600 }}>
+                  💳 {order.paymentMethod}
+                </span>
+              )}
+              {order.changeAmount != null && order.changeAmount > 0 && (
+                <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F0FDF4", border: "1px solid #BBF7D0", fontSize: "0.78rem", fontWeight: 700, color: "#15803D" }}>
+                  💵 Troco para R$ {Number(order.changeAmount).toFixed(2)}
+                </span>
+              )}
+              {order.customerCpfCnpj && (
+                <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F5F3FF", border: "1px solid #DDD6FE", fontSize: "0.78rem", fontWeight: 600, color: "#6D28D9" }}>
+                  🪪 CPF/CNPJ: {order.customerCpfCnpj}
+                </span>
+              )}
+            </div>
 
             {/* SELETOR DE MOTOBOY */}
             {order.deliveryType === "DELIVERY" && motoboys.length > 0 && (
@@ -554,6 +605,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   };
 
   const Column = ({ columnId, title, emoji, color, count, children, headerExtra }: { columnId: string; title: string; emoji: string; color: string; count: number; children: React.ReactNode; headerExtra?: React.ReactNode }) => {
+
     const isOver = dragOverColumn === columnId;
 
     return (

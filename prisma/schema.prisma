@@ -246,8 +246,12 @@ model CustomerOrder {
   gatewayProvider  String?             // mercadopago | celcoin | manual
   gatewayPaymentId String?             // ID do pagamento no gateway ativo
   // === IFOOD ===
-  ifoodOrderId     String?  @unique   // ID do pedido no iFood (idempotência)
-  ifoodReference   String?            // Número de exibição do pedido no iFood
+  ifoodOrderId        String?  @unique   // ID do pedido no iFood (idempotência)
+  ifoodReference      String?            // Número de exibição do pedido no iFood (#ABC123)
+  scheduledDatetime   DateTime?          // Cen1: Data/hora agendada (SCHEDULED orders)
+  changeAmount        Float?             // Cen5: Valor do troco (pagamento em dinheiro)
+  customerCpfCnpj     String?            // Cen5: CPF/CNPJ do cliente para NF
+  cancelledBy         String?            // Cen4: quem cancelou: RESTAURANT | IFOOD | CUSTOMER
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   franchisee       User                @relation(fields: [franchiseeId], references: [id])

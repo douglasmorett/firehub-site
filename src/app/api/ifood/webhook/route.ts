@@ -169,20 +169,53 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
     const total = orderData.totalPrice ?? orderData.total ?? 0;
 
+    // === Campos para homologação iFood ===
+    // Cen1: data/hora do agendamento
+    const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
+      ? new Date(orderData.scheduledDatetime)
+      : null;
+
+    // Cen5: troco e CPF/CNPJ
+    const cashPayment = (orderData.payments ?? []).find((p: any) =>
+      p.name?.toLowerCase().includes("dinheir") || p.method === "CASH"
+    );
+    const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
+    const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
+
+    // Observação do cliente
+    const customerNote = orderData.customer?.customerNote ?? orderData.observations ?? null;
+
+    // Voucher/benefício
+    const voucherInfo = (orderData.benefits ?? [])
+      .flatMap((b: any) => b.sponsorshipValues ?? [])
+      .map((v: any) => `${v.name}: -R$${v.value?.toFixed(2)}`)
+      .join(", ");
+
+    const notesArr = [
+      `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
+      orderData.orderTiming === "SCHEDULED" ? `📅 AGENDADO para ${scheduledDatetime ? scheduledDatetime.toLocaleString("pt-BR") : "data não informada"}` : null,
+      voucherInfo ? `🎟️ Voucher: ${voucherInfo}` : null,
+      customerNote ? `💬 Obs. cliente: ${customerNote}` : null,
+    ].filter(Boolean).join(" | ");
+
     await (prisma.customerOrder as any).create({
       data: {
-        franchiseeId:  franchisee.id,
-        ifoodOrderId:  orderId,
-        source:        "IFOOD",
-        customerName:  orderData.customer?.name ?? "Cliente iFood",
-        customerPhone: orderData.customer?.phone ?? "",
-        customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
-        deliveryType:  orderData.orderType === "TAKEOUT" ? "PICKUP" : "DELIVERY",
-        paymentMethod: "PIX",
-        totalAmount:   total,
-        status:        "NOVO",
-        notes:         `Pedido iFood #${orderId.slice(-6).toUpperCase()}`,
-        items:         { create: items },
+        franchiseeId:     franchisee.id,
+        ifoodOrderId:     orderId,
+        ifoodReference:   orderData.displayId ?? undefined,
+        scheduledDatetime,
+        changeAmount,
+        customerCpfCnpj,
+        source:           "IFOOD",
+        customerName:     orderData.customer?.name ?? "Cliente iFood",
+        customerPhone:    orderData.customer?.phone ?? "",
+        customerAddress:  orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
+        deliveryType:     orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
+        paymentMethod:    cashPayment ? "Dinheiro" : (orderData.payments?.[0]?.name ?? "iFood"),
+        totalAmount:      total,
+        status:           "NOVO",
+        notes:            notesArr,
+        items:            { create: items },
       },
     });
 
