@@ -1,14 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export default async function StoreOrdersPage() {
   const session = await getServerSession(authOptions);
-  
-  if (!session || !session.user || !session.user.email) return null;
+  if (!session || !session.user || !session.user.email) redirect("/login");
 
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
-  if (!user) return null;
+  const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, role: true } });
+  if (!user) redirect("/login");
+  // Apenas ADMIN pode ver pedidos de insumos de todos
+  if (user.role !== "ADMIN") redirect("/store/compras");
 
   const orders = await prisma.order.findMany({
     where: { userId: user.id },

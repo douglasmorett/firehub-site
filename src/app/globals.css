@@ -191,3 +191,106 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a2e}
   .footer-bottom{flex-direction:column;gap:12px;text-align:center}
   .ct th,.ct td{padding:10px 12px;font-size:.76rem}
 }
+
+/* ──────────────────────────────────────────────────
+   STORE / PAINEL — Mobile First
+   ────────────────────────────────────────────────── */
+
+/* Touch targets mínimos: 44px */
+button, a, [role="button"] { min-height: 36px; }
+
+/* Esconde scrollbar esteticamente mas mantém scroll funcional */
+.scrollbar-none,
+nav [style*="overflow"],
+nav [style*="scroll"] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Tabelas responsivas no store */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.table-responsive::-webkit-scrollbar { display: none; }
+
+/* Spin animation para loadings */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Store nav mobile */
+@media (max-width: 640px) {
+  /* Nav superior: esconde labels de cidade em telas pequenas */
+  .nav-user-label { display: none !important; }
+  .nav-view-store { display: none !important; }
+
+  /* Dashboard grid 2 colunas no mobile */
+  .store-grid-4 {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Cards full width no mobile */
+  .store-card-full-mobile {
+    grid-column: 1 / -1 !important;
+  }
+
+  /* Texto menor em botões de toggle no nav */
+  .toggle-pill-text {
+    font-size: 0.72rem !important;
+  }
+
+  /* PDV — grid de produtos 2 colunas */
+  .pdv-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Financeiro — cards 2x2 */
+  .financeiro-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Tabela admin lojistas — scroll horizontal */
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Botões grandes para toque */
+  .btn-touch {
+    min-height: 48px;
+    font-size: 1rem !important;
+    padding: 14px 20px !important;
+  }
+
+  /* Modal full screen no mobile */
+  .modal-mobile {
+    position: fixed !important;
+    top: 0 !important; left: 0 !important;
+    right: 0 !important; bottom: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    max-height: 100vh !important;
+    overflow-y: auto !important;
+  }
+}
+
+@media (max-width: 400px) {
+  /* Esconde texto dos toggles Caixa/Loja, mostra só ícone */
+  .toggle-label-text { display: none !important; }
+
+  /* Reduz padding das páginas */
+  .store-page-pad {
+    padding: 0.75rem 0.5rem !important;
+  }
+}
+
+/* iOS safe area (notch) */
+@supports (padding: max(0px)) {
+  .store-bottom-bar {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
