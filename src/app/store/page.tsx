@@ -82,6 +82,8 @@ export default async function StorePage({ searchParams }: { searchParams: { loja
   });
   if (!user) redirect("/");
 
+  const menuCount = await prisma.menuProduct.count({ where: { franchiseeId: user.id } });
+
   const orders = await prisma.customerOrder.findMany({
     where: { franchiseeId: user.id, createdAt: { gte: since } },
     include: { items: { include: { menuProduct: { select: { name: true, cost: true } } } } },
@@ -89,12 +91,16 @@ export default async function StorePage({ searchParams }: { searchParams: { loja
   });
 
   const completedSteps: string[] = [];
+  if (user.storeLogo) completedSteps.push("logo_logo_upload");
+  if (user.storeBanner) completedSteps.push("logo_banner_upload");
   if (user.storeLogo || user.storeBanner) completedSteps.push("logo");
   if (user.storeHours) completedSteps.push("hours");
   if (user.paymentFees && Object.keys(user.paymentFees as object).length > 0) completedSteps.push("payment");
   if (user.deliveryZones) completedSteps.push("delivery");
   if ((user.storeOrderCount || 0) > 0) completedSteps.push("first_order");
-  if (orders.length > 0) completedSteps.push("menu");
+  if (menuCount > 0) completedSteps.push("menu");
+  if (menuCount >= 5) completedSteps.push("menu_menu_prod");
+
 
   const serialized = orders.map(o => ({
     id: o.id,

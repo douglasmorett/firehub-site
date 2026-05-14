@@ -190,13 +190,18 @@ const PHASES: Phase[] = [
 
 // ─── MAPEAMENTO: step do servidor → IDs do wizard ─────────────────────────
 const SERVER_TO_WIZARD: Record<string, string[]> = {
-  logo:        ["logo"],
-  hours:       ["hours"],
-  payment:     ["payment"],
-  delivery:    ["delivery"],
-  menu:        ["import_ifood", "menu"],
-  first_order: ["test_order", "share_link", "first_order"],
+  logo:              ["logo"],
+  logo_logo_upload:  ["logo_logo_upload"],
+  logo_banner_upload:["logo_banner_upload"],
+  hours:             ["hours", "hours_hours_set"],
+  payment:           ["payment"],
+  delivery:          ["delivery", "delivery_delivery_type", "delivery_delivery_fee"],
+  menu:              ["import_ifood", "menu"],
+  menu_menu_prod:    ["menu_menu_prod"],
+  first_order:       ["test_order", "share_link", "first_order",
+                      "test_order_test_open", "test_order_test_add", "test_order_test_checkout"],
 };
+
 
 // ─── COMPONENTE PRINCIPAL ────────────────────────────────────────────────
 export default function OnboardingChecklist({
@@ -368,23 +373,21 @@ export default function OnboardingChecklist({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px" }}>
-                  {/* Status button */}
-                  <button
-                    onClick={() => toggleTask(task.id)}
+                  {/* Status indicator — automático, sem clique manual */}
+                  <div
                     style={{
-                      width: 30, height: 30, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                      width: 30, height: 30, borderRadius: "50%", flexShrink: 0, cursor: "default",
                       border: isDone ? "2px solid #16A34A" : "2px solid #CBD5E1",
                       background: isDone ? "#16A34A" : "#fff",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       transition: "all 0.2s",
                     }}
-                    title={isDone ? "Marcar como pendente" : "Marcar como concluído"}
                   >
                     {isDone
                       ? <Check size={14} color="#fff" strokeWidth={3} />
                       : <span style={{ fontSize: "0.8rem" }}>{task.icon}</span>
                     }
-                  </button>
+                  </div>
 
                   {/* Conteúdo */}
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -422,22 +425,15 @@ export default function OnboardingChecklist({
                             const subId = `${task.id}_${sub.id}`;
                             const isSubDone = done.has(subId);
                             return (
-                              <label key={subId} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.75rem", color: isSubDone ? "#16A34A" : "#475569" }}>
+                              <div key={subId} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.75rem", color: isSubDone ? "#16A34A" : "#475569" }}>
                                 <input
                                   type="checkbox"
                                   checked={isSubDone}
-                                  onChange={() => {
-                                    setDone(prev => {
-                                      const next = new Set(prev);
-                                      next.has(subId) ? next.delete(subId) : next.add(subId);
-                                      localStorage.setItem("firehub_wizard_done", JSON.stringify([...next]));
-                                      return next;
-                                    });
-                                  }}
-                                  style={{ accentColor: "#E63946", width: 13, height: 13 }}
+                                  readOnly
+                                  style={{ accentColor: "#16A34A", width: 13, height: 13, cursor: "default", pointerEvents: "none" }}
                                 />
                                 {sub.label}
-                              </label>
+                              </div>
                             );
                           })}
                         </div>
