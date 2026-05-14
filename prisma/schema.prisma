@@ -1,0 +1,487 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String          @id @default(cuid())
+  name            String
+  email           String          @unique
+  password        String
+  role            String          @default("FRANCHISEE")
+  city            String?
+  cpfCnpj         String?
+  slug            String?         @unique
+  storeName       String?
+  storePhone      String?
+  storeAddress    String?
+  storeBanner     String?
+  storeLogo       String?
+  storeHours      Json?
+  storeDeliveryOnly Boolean   @default(true)
+  paymentFees     Json?
+  deliveryZoneType String?
+  deliveryZones   Json?
+  storeLatLng     Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  permissions     String          @default("")
+  isFranqueadoHakim Boolean      @default(false)
+  deliveryConfig  Json?           // Config: freeShipping, freeShippingMinValue
+  storeOpen       Boolean         @default(true)
+  cashOpen        Boolean         @default(false)
+  storePause      Json?           // { active, from, to, reason }
+  storeCoupons    Json?           // Array de cupons de desconto
+  pagarmeRecipientId String?      // ID do destinatário no Pagar.me (split por restaurante)
+  facebookPixelId String?         // ID do Pixel do Facebook/Meta Ads
+  autoAcceptOrders Boolean        @default(false) // Auto-aceitar pedidos online
+  storeAlertSound  String?        @default("bell") // Som de alerta: bell | chime | beep | none
+  storeLoyalty    Json?           // { type: cashback|points, rate: 2, active: true }
+  storeOrderCount Int             @default(0) // Contador de pedidos (Pay as You Grow)
+  printerConfig   Json?           // Config de impressoras: { autoprint, printers: [{name, label, categories, copies}] }
+  fixedCosts      Json?           // Custos fixos mensais: [{id, label, value}] ex: aluguel, funcionários
+  financialGoals  Json?           // Metas financeiras mensais: { faturamento, margemLiquida, cmvPct, pedidos, ticketMedio }
+  resetToken      String?         // Token de recuperação de senha
+  resetTokenExp   DateTime?       // Expiração do token de recuperação
+  // === FATURAMENTO: USE FIRST, PAY LATER ===
+  planPercent     Float           @default(0)  // % cobrado sobre vendas (ex: 5.0 = 5%)
+  billingCycles   FranchiseeBillingCycle[]
+  // === META ADS ===
+  metaFbPageId      String?        // ID da Página do Facebook conectada
+  metaFbAccessToken String?        @db.Text  // Token OAuth do Facebook (longa duração)
+  metaAdAccountId   String?        // act_XXXXXXX — conta de anúncios
+  metaPixelId       String?        // Pixel Meta instalado no cardápio
+  metaAdsEnabled    Boolean        @default(false) // Módulo ativo
+  metaAdsCampaigns  MetaAdsCampaign[]
+  // === GATEWAYS DE PAGAMENTO ===
+  mpSellerId        String?        // ID do vendedor no Mercado Pago Marketplace
+  mpAccessToken     String?  @db.Text // OAuth token do restaurante no MP
+  mpRefreshToken    String?  @db.Text // Refresh token MP
+  celcoinAccountId  String?        // Subconta Celcoin do restaurante (quando disponível)
+  // === IFOOD INTEGRATION ===
+  ifoodMerchantId   String?        // UUID da loja no iFood
+  ifoodAccessToken  String?        @db.Text  // Bearer token (OAuth iFood Merchant API)
+  ifoodClientId     String?        // Client ID do app cadastrado no iFood Developer
+  ifoodConnected    Boolean        @default(false) // Módulo iFood ativo
+  orders          Order[]
+  customerOrders  CustomerOrder[]
+  storeReviews    StoreReview[]
+  motoboys        Motoboy[]
+  menuProducts    MenuProduct[]
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  description String
+  price       Float
+  imageUrl    String?
+  category    String?
+  labelData   Json?
+  active      Boolean     @default(true)
+  franchiseOnly Boolean   @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id             String         @id @default(cuid())
+  userId         String
+  totalAmount    Float
+  status         String         @default("PENDING_PAYMENT")
+  boletoUrl      String?
+  asaasPaymentId String?
+  deliveryDate   DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  cancelReason   String?
+  isEmergency    Boolean        @default(false)
+  emergencyStatus String?
+  rejectionReason String?
+  user           User           @relation(fields: [userId], references: [id])
+  history        OrderHistory[]
+  items          OrderItem[]
+}
+
+model OrderHistory {
+  id          String   @id @default(cuid())
+  orderId     String
+  statusFrom  String
+  statusTo    String
+  actionBy    String
+  actionEmail String
+  notes       String?
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model RouteSchedule {
+  id          String @id @default(cuid())
+  cityName    String
+  deliveryDay Int
+}
+
+model Payable {
+  id           String    @id @default(cuid())
+  supplierName String
+  barcode      String?
+  receivedDate DateTime
+  dueDate      DateTime
+  value        Float
+  status       String    @default("PENDING")
+  category     String    @default("BUSINESS")
+  paidDate     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model PurchaseInvoice {
+  id              String   @id @default(cuid())
+  description     String
+  imageUrl        String
+  aiValue         Float?
+  aiCategory      String?
+  aiRawText       String?  @db.Text
+  invoiceDate     DateTime?
+  status          String   @default("PENDING")
+  category        String   @default("BUSINESS")
+  rejectionReason String?
+  source          String   @default("ai")   // "ai" | "manual"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  uploadedBy      String
+}
+
+// ========== SISTEMA DE PEDIDOS DO CLIENTE FINAL ==========
+
+model MenuProduct {
+  id              String              @id @default(cuid())
+  franchiseeId    String?
+  name            String
+  description     String
+  price           Float
+  cost            Float?
+  tags            String?             // JSON array: ["Novo","Mais Vendido","Promoção","Esgotado","Vegano","Picante"]
+  imageUrl        String?
+  category        String              @default("Lanches")
+  active          Boolean             @default(true)
+  isCombo         Boolean             @default(false)
+  comboConfig     Json?
+  // Canais de venda
+  activePDV       Boolean             @default(true)   // Disponível no PDV (atendente)
+  activeDelivery  Boolean             @default(true)   // Disponível no Delivery online
+  activeTotem     Boolean             @default(false)  // Disponível no Totem de autoatendimento
+  activeGarcom    Boolean             @default(false)  // Disponível para o garçom (mesa)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  franchisee      User?               @relation(fields: [franchiseeId], references: [id])
+  orderItems      CustomerOrderItem[]
+  comboGroups     ComboGroup[]
+  comboGroupItems ComboGroupItem[]
+}
+
+model ComboGroup {
+  id            String           @id @default(cuid())
+  menuProductId String
+  title         String
+  maxQty        Int
+  sortOrder     Int              @default(0)
+  menuProduct   MenuProduct      @relation(fields: [menuProductId], references: [id], onDelete: Cascade)
+  items         ComboGroupItem[]
+}
+
+model ComboGroupItem {
+  id             String      @id @default(cuid())
+  comboGroupId   String
+  menuProductId  String
+  comboGroup     ComboGroup  @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
+  menuProduct    MenuProduct @relation(fields: [menuProductId], references: [id])
+}
+
+model CustomerOrder {
+  id               String              @id @default(cuid())
+  franchiseeId     String
+  customerId       String?
+  customerName     String
+  customerPhone    String
+  customerAddress  String?
+  deliveryType     String              @default("DELIVERY")
+  paymentMethod    String?
+  totalAmount      Float
+  deliveryFee      Float               @default(0)
+  motoboyFee       Float?
+  deliveryDistance Float?
+  motoboyId        String?
+  status           String              @default("NOVO")
+  source           String              @default("ONLINE")
+  notes            String?
+  rating           Int?
+  ratingComment    String?
+  // Pagar.me — campos legados (mantidos para compatibilidade com pedidos antigos)
+  pagarmeOrderId   String?             // ID do pedido no Pagar.me
+  pagarmeChargeId  String?             // ID da cobrança
+  pagarmeStatus    String?             // pending | paid | failed | canceled
+  pagarmePixQrCode String?  @db.Text  // QR code PIX (base64)
+  pagarmePixExpiry DateTime?           // Expiração do PIX
+  pagarmeMethod    String?             // pix | credit_card | debit_card | voucher
+  paymentPaidAt    DateTime?           // Confirmação de pagamento
+  cashbackEarned   Float?              // Cashback gerado neste pedido (R$)
+  cashbackUsed     Float?              // Cashback resgatado neste pedido (R$)
+  // === GATEWAY UNIFICADO (Mercado Pago / Celcoin) ===
+  gatewayProvider  String?             // mercadopago | celcoin | manual
+  gatewayPaymentId String?             // ID do pagamento no gateway ativo
+  // === IFOOD ===
+  ifoodOrderId     String?  @unique   // ID do pedido no iFood (idempotência)
+  ifoodReference   String?            // Número de exibição do pedido no iFood
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  franchisee       User                @relation(fields: [franchiseeId], references: [id])
+  customer         StoreCustomer?      @relation(fields: [customerId], references: [id])
+  motoboy          Motoboy?            @relation(fields: [motoboyId], references: [id])
+  items            CustomerOrderItem[]
+  review           StoreReview?
+}
+
+model CustomerOrderItem {
+  id              String        @id @default(cuid())
+  orderId         String
+  menuProductId   String?
+  quantity        Int
+  price           Float
+  comboSelections Json?
+  order           CustomerOrder @relation(fields: [orderId], references: [id])
+  menuProduct     MenuProduct?  @relation(fields: [menuProductId], references: [id], onDelete: SetNull)
+}
+
+model StoreCustomer {
+  id               String          @id @default(cuid())
+  name             String
+  phone            String          @unique
+  password         String
+  address          String?
+  cashbackBalance  Float           @default(0) // Saldo atual de cashback (R$)
+  cashbackHistory  Json?           // Array: [{ orderId, amount, type: earn|redeem, date, storeId }]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  orders           CustomerOrder[]
+  reviews          StoreReview[]
+}
+
+model StoreReview {
+  id           String         @id @default(cuid())
+  franchiseeId String
+  customerId   String
+  orderId      String         @unique
+  rating       Int
+  comment      String?
+  createdAt    DateTime       @default(now())
+  franchisee   User           @relation(fields: [franchiseeId], references: [id])
+  customer     StoreCustomer  @relation(fields: [customerId], references: [id])
+  order        CustomerOrder  @relation(fields: [orderId], references: [id])
+}
+
+// ========== MÓDULO DE GESTÃO FINANCEIRA AVANÇADA ==========
+
+// Taxa cobrada por plataforma (iFood, Rappi, etc)
+model PlatformFee {
+  id         String   @id @default(cuid())
+  platform   String   // "IFOOD" | "RAPPI" | "AIQFOME" | "OWN"
+  label      String   // "iFood" | "Rappi" | "Loja Própria"
+  feePercent Float    @default(0)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// Folha de pagamento: funcionários e freelancers
+model PayrollEntry {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   @default("EMPLOYEE") // "EMPLOYEE" | "FREELANCER"
+  role        String?  // cargo / função
+  amount      Float
+  description String?
+  payDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Abertura e fechamento de caixa
+model CashRegister {
+  id              String              @id @default(cuid())
+  openedAt        DateTime            @default(now())
+  closedAt        DateTime?
+  openingAmount   Float               // dinheiro inicial informado
+  status          String              @default("OPEN") // "OPEN" | "CLOSED"
+  expectedTotal   Float?              // total calculado pelo sistema com base nos pedidos
+  actualTotal     Float?              // total informado pelo operador
+  discrepancy     Float?              // diferença (actualTotal - expectedTotal)
+  justification   String?             // obrigatório se houver discrepância
+  openedBy        String              // email do usuário
+  closedBy        String?
+  entries         CashRegisterEntry[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+}
+
+// Entradas por forma de pagamento no fechamento
+model CashRegisterEntry {
+  id             String       @id @default(cuid())
+  registerId     String
+  method         String       // "CASH" | "CARD_CREDIT" | "CARD_DEBIT" | "PIX" | "VOUCHER" | "OTHER"
+  methodLabel    String       // "Dinheiro" | "Cartão Crédito" | "Cartão Débito" | "PIX" | "Vale" | "Outro"
+  expectedAmount Float        // sistema calculou
+  actualAmount   Float        // operador informou
+  register       CashRegister @relation(fields: [registerId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+}
+
+// ========== MÓDULO DE MOTOBOYS ==========
+
+model Motoboy {
+  id               String          @id @default(cuid())
+  franchiseeId     String
+  name             String
+  phone            String?
+  active           Boolean         @default(true)
+  // Tipo: "PER_DELIVERY" | "DAILY_RATE" | "BOTH" | "PER_KM"
+  paymentType      String          @default("PER_DELIVERY")
+  dailyRate        Float?          // Diária fixa (R$/dia)
+  perDeliveryRate  Float?          // Valor fixo por entrega (R$)
+  perKmRate        Float?          // Valor por KM percorrido (R$)
+  notes            String?
+  franchisee       User            @relation(fields: [franchiseeId], references: [id])
+  orders           CustomerOrder[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+// ========== SESSÕES DE CAIXA ==========
+model CashSession {
+  id              String    @id @default(cuid())
+  franchiseeId    String
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+  status          String    @default("OPEN")    // OPEN | CLOSED
+  openingAmount   Float     @default(0)          // Troco inicial
+  // Valores informados no fechamento (manual/presencial)
+  closingCash     Float?
+  closingDebit    Float?
+  closingCredit   Float?
+  closingPix      Float?
+  closingVoucher  Float?
+  closingOthers   Json?                          // Outras formas customizadas
+  // Valores calculados do sistema
+  expectedCash    Float?
+  expectedDebit   Float?
+  expectedCredit  Float?
+  expectedPix     Float?
+  expectedVoucher Float?
+  expectedTotal   Float?
+  // Resultado
+  difference      Float?                         // Positivo = sobra, Negativo = falta
+  justification   String?                        // Justificativa da diferença
+  closedBy        String?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// ========== FATURAMENTO: USE FIRST, PAY LATER ==========
+// Ciclo mensal de cobrança por franqueado. 
+// O franqueado usa o sistema o mês todo, e paga no fechamento.
+// Pagamentos online recebidos vão abatendo a dívida em tempo real.
+
+model FranchiseeBillingCycle {
+  id               String    @id @default(cuid())
+  franchiseeId     String
+  // Referência do mês (ex: "2025-05" = Maio/2025)
+  yearMonth        String    // formato "YYYY-MM"
+  // Valores calculados
+  totalSales       Float     @default(0)   // Total de vendas do mês
+  planPercent      Float     @default(0)   // % aplicado (snapshot do plano no fechamento)
+  amountDue        Float     @default(0)   // Valor devido = totalSales * planPercent / 100
+  // Abatimentos acumulados de pagamentos online
+  amountOffset     Float     @default(0)   // Já abatido por recebimentos online (Pagar.me)
+  // Resultado no fechamento
+  amountPending    Float     @default(0)   // amountDue - amountOffset (o que ainda falta)
+  // Status do ciclo
+  status           String    @default("OPEN")
+  // OPEN       = mês em andamento, abatendo em tempo real
+  // CLOSED     = mês encerrado, link gerado se havia diferença
+  // PAID       = quitado (link pago OU offset cobriu tudo)
+  // FORGIVEN   = admin zerou manualmente
+  closedAt         DateTime?
+  // Link de cobrança da diferença (gerado no fechamento se amountPending > 0)
+  asaasPaymentId   String?
+  asaasBoletoUrl   String?
+  asaasBoletoCode  String?
+  asaasPixQrCode   String?   @db.Text
+  // Log de abatimentos: [{ date, orderId, amount, pagarmeOrderId }]
+  offsetLog        Json?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  franchisee       User      @relation(fields: [franchiseeId], references: [id])
+
+  @@unique([franchiseeId, yearMonth])
+}
+
+// ========== META ADS MODULE ==========
+// Campanhas de tráfego pago gerenciadas automaticamente pelo FireHub.
+// Modelo: R$50/semana de gestão + verba do franqueado (100% vai pro Meta).
+
+model MetaAdsCampaign {
+  id               String    @id @default(cuid())
+  franchiseeId     String
+  franchisee       User      @relation(fields: [franchiseeId], references: [id])
+
+  // IDs da Meta Marketing API
+  metaCampaignId   String?   // Campanha no Meta
+  metaAdSetId      String?   // Conjunto de anúncios
+  metaAdId         String?   // Anúncio ativo
+  metaAdCreativeId String?   // Criativo (imagem + copy)
+
+  // Configuração da campanha
+  status           String    @default("DRAFT")
+  // DRAFT = configurando | ACTIVE = rodando | PAUSED = pausada | ENDED = encerrada
+  weeklyBudget     Float     @default(100)   // Verba semanal em anúncio (R$)
+  radiusKm         Int       @default(3)     // Raio de entrega em km
+  objective        String    @default("LINK_CLICKS") // LINK_CLICKS | CONVERSIONS
+  adCopy           String?   @db.Text        // Texto do anúncio gerado por IA
+  adImageUrl       String?                   // Imagem usada no criativo
+
+  // Métricas (atualizadas periodicamente via cron)
+  spend            Float     @default(0)     // Gasto total acumulado
+  impressions      Int       @default(0)
+  clicks           Int       @default(0)
+  ordersGenerated  Int       @default(0)     // Pedidos rastreados pelo Pixel
+  revenue          Float     @default(0)     // Faturamento atribuído aos anúncios
+
+  // Cobrança de gestão (R$50/semana FireHub)
+  managementFeePaid Float    @default(0)     // Total pago em taxa de gestão
+  lastBilledAt     DateTime?                 // Última cobrança semanal
+
+  // Verba depositada via PIX
+  depositTotal     Float     @default(0)     // Total depositado pelo franqueado
+  depositUsed      Float     @default(0)     // Total enviado ao Meta
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+

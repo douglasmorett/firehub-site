@@ -1,0 +1,66 @@
+/**
+ * POST /api/payments/card
+ * Processa pagamento com cartão via Mercado Pago Marketplace (D+2).
+ * O cardToken é gerado pelo MP Brick no frontend — dados do cartão NUNCA chegam ao servidor.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { createMpCardPayment } from "@/lib/mercadopago";
+
+export async function POST(req: NextRequest) {
+  try {
+    const { orderId, cardToken, installments = 1, payerEmail, payerCpf } = await req.json();
+    if (!orderId || !cardToken) {
+      return NextResponse.json({ error: "orderId e cardToken são obrigatórios" }, { status: 400 });
+    }
+
+    const order = await prisma.customerOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        franchisee: { select: { id: true, storeName: true, mpSellerId: true } },
+      },
+    });
+
+    if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+    if (order.paymentPaidAt) return NextResponse.json({ error: "Pedido já pago" }, { status: 400 });
+
+    const storeName = order.franchisee.storeName || "Restaurante FireHub";
+    const description = `Pedido #${order.id.slice(-6).toUpperCase()} — ${storeName}`;
+
+    const result = await createMpCardPayment({
+      amount:       order.totalAmount,
+      orderId:      order.id,
+      cardToken,
+      installments: Number(installments),
+      payerEmail:   payerEmail || order.customerPhone + "@firehub.com.br",
+      payerCpf,
+      mpSellerId:   order.franchisee.mpSellerId || undefined,
+      description,
+    });
+
+    const paid = result.status === "approved";
+
+    // Atualiza o pedido com dados do pagamento
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: {
+        gatewayProvider:  "mercadopago",
+        gatewayPaymentId: result.paymentId,
+        pagarmeMethod:    "credit_card",
+        pagarmeStatus:    result.status,
+        ...(paid ? { paymentPaidAt: new Date(), status: "CONFIRMADO" } : {}),
+      },
+    });
+
+    return NextResponse.json({
+      paid,
+      status:       result.status,
+      statusDetail: result.statusDetail,
+      paymentId:    result.paymentId,
+    });
+
+  } catch (err: any) {
+    console.error("[Card MP]", err);
+    return NextResponse.json({ error: err.message || "Erro ao processar cartão" }, { status: 500 });
+  }
+}
