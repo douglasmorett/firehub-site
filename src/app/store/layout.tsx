@@ -18,6 +18,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   });
 
   const isFranqueado = user?.role === "FRANCHISEE";
+  const isAdmin = user?.role === "ADMIN";
 
   // === TRIAL: calcular dias restantes ===
   let trialDaysLeft = 0;
@@ -66,6 +67,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           userCity={(session.user as any)?.city || user?.city || ""}
           userSlug={user?.slug}
           showCompras={user?.isFranqueadoHakim === true}
+          isAdmin={isAdmin}
           initialStoreOpen={user?.storeOpen ?? true}
           initialCashOpen={user?.cashOpen ?? false}
         />

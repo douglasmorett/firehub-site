@@ -28,11 +28,11 @@ const METHODS = [
 ];
 
 export default function StoreTopNav({
-  userName, userCity, userSlug, showCompras,
+  userName, userCity, userSlug, showCompras, isAdmin = false,
   initialStoreOpen = true, initialCashOpen = false,
 }: {
   userName: string; userCity: string; userSlug?: string | null;
-  showCompras: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
+  showCompras: boolean; isAdmin?: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -328,6 +328,11 @@ export default function StoreTopNav({
           {storeUrl && (
             <a href={storeUrl} target="_blank" className="nav-view-store" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.65rem", borderRadius:8, background:"rgba(255,255,255,0.15)", color:"#fff", fontWeight:600, fontSize:"0.72rem", textDecoration:"none", border:"1px solid rgba(255,255,255,0.25)", whiteSpace:"nowrap" }}>
               <ExternalLink size={12} /> Ver Loja
+            </a>
+          )}
+          {isAdmin && (
+            <a href="/store/admin/lojistas" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.65rem", borderRadius:8, background:"#EF4444", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap" }}>
+              🏪 Lojistas
             </a>
           )}
           <span className="nav-user-label" style={{ color:"rgba(255,255,255,0.85)", fontSize:"0.72rem", padding:"0 0.2rem" }}>{userName} • {userCity}</span>

@@ -47,7 +47,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   if (!franchisee) notFound();
 
   const menuProducts = await prisma.menuProduct.findMany({
-    where: { active: true },
+    where: { active: true, franchiseeId: franchisee.id },
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
     include: {
       comboGroups: {

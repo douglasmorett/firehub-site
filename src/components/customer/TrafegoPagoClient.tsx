@@ -73,7 +73,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
   const handleConnectFacebook = () => {
     // Redireciona para OAuth do Facebook com permissões de ads_management
-    const appId = "YOUR_META_APP_ID"; // será env var
+    const appId = process.env.NEXT_PUBLIC_META_APP_ID || "";
     const redirectUri = encodeURIComponent(window.location.origin + "/api/meta-ads/callback");
     const scope = "ads_management,ads_read,pages_show_list,pages_read_engagement,business_management";
     window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${investment}`;
@@ -190,7 +190,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
         {[
-          { title: "Configuração Acompanhada", desc: "Um especialista FireHub configura com você via WhatsApp", href: `https://wa.me/5511999999999?text=Quero+ativar+o+Tráfego+Pago` },
+          { title: "Configuração Acompanhada", desc: "Um especialista FireHub configura com você via WhatsApp", href: `https://wa.me/5521970067196?text=Quero+ativar+o+Tráfego+Pago` },
           { title: "Configurar Sozinho", desc: "Configure no seu ritmo, passo a passo em menos de 5 minutos", action: () => setStep("invest") },
         ].map((opt, i) => (
           <div key={i} onClick={() => opt.action ? opt.action() : window.open(opt.href, "_blank")}
@@ -399,7 +399,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 12, padding: "1rem", fontSize: "0.85rem", color: "#92400E" }}>
         <strong>📊 Métricas atualizadas:</strong> As métricas de campanhas são sincronizadas diariamente com o Facebook. Para ver relatórios detalhados em tempo real, acesse o gerenciador de anúncios pelo botão abaixo.
         <br /><br />
-        <button onClick={() => window.open("https://wa.me/5511999999999?text=Quero+ver+métricas+do+meu+tráfego+pago", "_blank")}
+        <button onClick={() => window.open("https://wa.me/5521970067196?text=Quero+ver+métricas+do+meu+tráfego+pago", "_blank")}
           style={{ background: "#EF4444", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 8, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>
           💬 Falar com especialista
         </button>
