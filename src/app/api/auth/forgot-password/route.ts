@@ -9,7 +9,7 @@ import { Resend } from "resend";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 
-const APP_URL = process.env.NEXTAUTH_URL || "https://hakim-portal.vercel.app";
+const APP_URL = process.env.NEXTAUTH_URL || "https://firehubfood.com.br";
 
 // ── POST /api/auth/forgot-password ────────────────────────────────
 export async function POST(req: NextRequest) {
@@ -30,11 +30,9 @@ export async function POST(req: NextRequest) {
       data: { resetToken, resetTokenExp },
     });
 
-    const resetUrl = `${APP_URL}/firehub/redefinir-senha?token=${resetToken}`;
+    const resetUrl = `${APP_URL}/redefinir-senha?token=${resetToken}`;
 
     await resend.emails.send({
-      // onboarding@resend.dev funciona sem verificação de domínio
-      // Trocar para "noreply@firehubfood.com.br" após verificar domínio no Resend
       from: "FireHub <onboarding@resend.dev>",
       to: email,
       subject: "🔥 Redefinição de senha — FireHub",

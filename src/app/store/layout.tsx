@@ -14,7 +14,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, name: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true },
+    select: { id: true, name: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
   });
 
   const isFranqueado = user?.role === "FRANCHISEE";
@@ -65,7 +65,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           userName={session.user?.name || user?.name || ""}
           userCity={(session.user as any)?.city || user?.city || ""}
           userSlug={user?.slug}
-          isFranqueado={isFranqueado}
+          showCompras={user?.isFranqueadoHakim === true}
           initialStoreOpen={user?.storeOpen ?? true}
           initialCashOpen={user?.cashOpen ?? false}
         />

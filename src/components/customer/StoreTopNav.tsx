@@ -28,11 +28,11 @@ const METHODS = [
 ];
 
 export default function StoreTopNav({
-  userName, userCity, userSlug, isFranqueado,
+  userName, userCity, userSlug, showCompras,
   initialStoreOpen = true, initialCashOpen = false,
 }: {
   userName: string; userCity: string; userSlug?: string | null;
-  isFranqueado: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
+  showCompras: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -142,7 +142,7 @@ export default function StoreTopNav({
       <span style={{ display:"inline-block", width:28, height:15, borderRadius:8, background: isOn ? "#4ADE80" : "#64748B", position:"relative" }}>
         <span style={{ position:"absolute", top:2, left: isOn ? 15 : 2, width:11, height:11, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
       </span>
-      {label === "Loja" ? (isOn ? " aberta" : " fechada") : (isOn ? " aberto" : " fechado")}
+      {label}{label === "Loja" ? (isOn ? " aberta" : " fechada") : (isOn ? " aberto" : " fechado")}
     </button>
   );
 
@@ -320,7 +320,7 @@ export default function StoreTopNav({
           <a href="/store/impressoras" title="Impressora" style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:32, height:32, borderRadius:9, background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.25)", color:"#fff", textDecoration:"none" }}>
             <Printer size={15} />
           </a>
-          {isFranqueado && (
+          {showCompras && (
             <a href="/store/compras" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.8rem", borderRadius:8, background: isCompras ? "rgba(255,255,255,0.2)" : "#FF8A00", color:"#fff", fontWeight:700, fontSize:"0.78rem", textDecoration:"none", whiteSpace:"nowrap" }}>
               <ShoppingBag size={13} /> {isCompras ? "Comprando..." : "Fazer Compras"}
             </a>
