@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 
 const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20testar%20o%20FireHub%20gr%C3%A1tis%20por%2015%20dias";
 const TRIAL = "/cadastro";
-const LOGIN = "https://hakim-portal-grupohakim.vercel.app/firehub/login";
+const LOGIN = "https://firehubfood.com.br/login";
 
 const SOLUTIONS = [
   {
