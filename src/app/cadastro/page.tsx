@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-const API = "https://hakim-portal-grupohakim.vercel.app";
+const API = "";
 const PORTAL = API;
 
 type CnpjData = {
