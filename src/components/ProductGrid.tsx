@@ -61,7 +61,7 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
     router.push("/store/cart");
   };
 
-  const CartSidebar = () => (
+  const cartSidebarJSX = (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
@@ -266,7 +266,7 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
 
         {/* RIGHT: Cart Sidebar (Desktop) */}
         <div style={{ width: "340px", flexShrink: 0, position: "sticky", top: "70px", height: "calc(100vh - 90px)", background: "#FAFAFA", borderRadius: "14px", border: "1px solid #E2E8F0", overflow: "hidden", display: "none", flexDirection: "column" }} className="cart-sidebar-desktop">
-          <CartSidebar />
+          {cartSidebarJSX}
         </div>
       </div>
 
@@ -291,7 +291,7 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
             <div style={{ padding: "0.75rem", textAlign: "center", flexShrink: 0 }}>
               <div style={{ width: "40px", height: "4px", background: "#CBD5E1", borderRadius: "2px", margin: "0 auto" }} />
             </div>
-            <CartSidebar />
+            {cartSidebarJSX}
           </div>
         </div>
       )}
