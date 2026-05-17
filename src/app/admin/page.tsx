@@ -29,7 +29,7 @@ export default async function AdminPage() {
     orderBy: { closedAt: "desc" },
     select: {
       franchiseeId: true, amountDue: true, amountPending: true,
-      amountPaid: true, closedAt: true, status: true,
+      amountOffset: true, closedAt: true, status: true,
     },
   });
 
@@ -48,7 +48,7 @@ export default async function AdminPage() {
   startOfWeek.setDate(startOfWeek.getDate() - 7); startOfWeek.setHours(0, 0, 0, 0);
   const novosSemana = lojistas.filter(l => new Date(l.createdAt) >= startOfWeek).length;
 
-  // MRR (Monthly Recurring Revenue) = soma dos amountDue do último billing de cada lojista
+  // MRR = soma dos amountDue do último billing de cada lojista
   const lastBillingMap: Record<string, number> = {};
   billings.forEach(b => {
     if (!lastBillingMap[b.franchiseeId]) {
@@ -57,8 +57,8 @@ export default async function AdminPage() {
   });
   const mrr = Object.values(lastBillingMap).reduce((sum, v) => sum + v, 0);
 
-  // Total arrecadado histórico
-  const totalArrecadado = billings.reduce((sum, b) => sum + (b.amountPaid || 0), 0);
+  // Total arrecadado = amountDue - amountPending (o que efetivamente foi pago)
+  const totalArrecadado = billings.reduce((sum, b) => sum + Math.max(0, b.amountDue - b.amountPending), 0);
 
   // Pendências
   const pendingMap: Record<string, number> = {};
