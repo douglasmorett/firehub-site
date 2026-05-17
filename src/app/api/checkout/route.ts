@@ -62,18 +62,25 @@ export async function POST(req: Request) {
       }
     });
 
-    // ── Gerar boleto Asaas automaticamente ──────────────────────────────────
+    // ── Gerar boleto Asaas automaticamente (com retry) ───────────────────
     let boletoUrl: string | null = null;
     const shortId = order.id.slice(-6).toUpperCase();
-
-    const asaasResult = await createAsaasPayment({
+    const paymentOpts = {
       userName: user.name || user.email || "",
       userEmail: user.email || "",
       cpfCnpj: user.cpfCnpj || "",
       totalAmount: calculatedTotal,
       orderId: order.id,
-      description: `Pedido #${shortId} — Hakim Congelados`
-    });
+      description: `Pedido #${shortId} — Icebox Congelados`
+    };
+
+    // Tenta até 2x
+    let asaasResult = await createAsaasPayment(paymentOpts);
+    if (!asaasResult) {
+      console.warn(`[checkout] Asaas falhou na 1ª tentativa para #${shortId}, retentando...`);
+      await new Promise(r => setTimeout(r, 1500));
+      asaasResult = await createAsaasPayment(paymentOpts);
+    }
 
     if (asaasResult) {
       boletoUrl = asaasResult.boletoUrl;
@@ -84,6 +91,9 @@ export async function POST(req: Request) {
           asaasPaymentId: asaasResult.paymentId
         }
       });
+      console.log(`[checkout] ✅ #${shortId} link gerado: ${boletoUrl}`);
+    } else {
+      console.error(`[checkout] ❌ Asaas falhou 2x para #${shortId} - link será gerado na página de pedidos`);
     }
 
     return NextResponse.json({ success: true, orderId: order.id, boletoUrl });

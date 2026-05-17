@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createAsaasPayment } from "@/lib/asaas";
+import GeneratePaymentLink from "@/components/GeneratePaymentLink";
 
 export const dynamic = "force-dynamic";
 
@@ -17,34 +17,6 @@ export default async function StoreOrdersPage() {
   });
   if (!user) redirect("/login");
   if (user.role !== "ADMIN" && user.role !== "FRANCHISEE") redirect("/store");
-
-  // ── Auto-fix: gerar links de pagamento faltantes ──────────────────
-  const pendingNoLink = await prisma.order.findMany({
-    where: { userId: user.id, status: "PENDING_PAYMENT", boletoUrl: null },
-  });
-
-  for (const order of pendingNoLink) {
-    try {
-      const shortId = order.id.slice(-6).toUpperCase();
-      const result = await createAsaasPayment({
-        userName: user.name || user.email || "",
-        userEmail: user.email || "",
-        cpfCnpj: user.cpfCnpj || "",
-        totalAmount: order.totalAmount,
-        orderId: order.id,
-        description: `Pedido #${shortId} — Icebox Congelados`,
-      });
-      if (result) {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { boletoUrl: result.boletoUrl, asaasPaymentId: result.paymentId },
-        });
-        console.log(`[auto-fix] Pedido #${shortId} link gerado: ${result.boletoUrl}`);
-      }
-    } catch (err) {
-      console.error(`[auto-fix] Falha ao gerar link para ${order.id}:`, err);
-    }
-  }
 
   const orders = await prisma.order.findMany({
     where: { userId: user.id },
@@ -212,16 +184,10 @@ export default async function StoreOrdersPage() {
                   </div>
                 )}
 
-                {/* ── Aviso: sem link de pagamento ── */}
+                {/* ── Sem link: gera automaticamente via client-side ── */}
                 {isPending && !order.boletoUrl && (
                   <div style={{ padding: "0 1.25rem 1rem" }}>
-                    <div style={{
-                      padding: "10px 14px", borderRadius: 8,
-                      background: "#FEF3C7", border: "1px solid #FDE68A",
-                      fontSize: "0.8rem", color: "#92400E", fontWeight: 600, textAlign: "center",
-                    }}>
-                      ⏳ Link de pagamento sendo gerado — atualize a página em alguns instantes
-                    </div>
+                    <GeneratePaymentLink orderId={order.id} shortId={shortId} />
                   </div>
                 )}
               </div>
