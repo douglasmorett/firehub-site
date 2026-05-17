@@ -358,7 +358,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
 
   // ===== CART SIDEBAR CONTENT =====
   const cartContentJSX = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div className="cart-header">
         <h3>{isCheckout ? "Finalizar Pedido" : `Sua Sacola (${cartCount})`}</h3>
         <button className="mob-close-btn" onClick={() => setMobileCartOpen(false)} style={{ cursor: "pointer", background: "none", border: "none" }}><X size={22} /></button>
