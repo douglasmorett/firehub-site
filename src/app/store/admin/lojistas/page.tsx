@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -140,7 +141,7 @@ export default async function AdminLojistasPage() {
                     <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700 }}>{l._count.menuProducts}</td>
                     <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700 }}>{l._count.customerOrders}</td>
                     <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                      <span style={{ fontSize: "1rem" }}>{l.isFranqueadoHakim ? "✅" : "—"}</span>
+                      <ToggleFranqueadoHakim userId={l.id} initialValue={l.isFranqueadoHakim} />
                     </td>
                     <td style={{ padding: "10px 12px" }}>
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>

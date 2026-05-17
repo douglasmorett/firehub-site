@@ -227,9 +227,16 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
   // Atualiza status de pedido existente
   const firehubStatus = STATUS_MAP[code];
   if (firehubStatus) {
+    const updateData: any = { status: firehubStatus };
+
+    // Cenário 4: registra quem cancelou
+    if (code === "CANCELLED") {
+      updateData.cancelledBy = "IFOOD";
+    }
+
     await (prisma.customerOrder as any).updateMany({
       where: { ifoodOrderId: orderId } as any,
-      data:  { status: firehubStatus },
+      data:  updateData,
     });
   }
 }

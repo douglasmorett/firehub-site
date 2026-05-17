@@ -427,6 +427,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const novos = filteredOrders.filter(o => o.status === "NOVO");
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO");
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || o.status === "ENTREGUE");
+  const cancelados = filteredOrders.filter(o => o.status === "CANCELADO");
 
   // Resumo de vendas
   const allInRange = orders.filter(o => { const d = new Date(o.createdAt); return d >= fromDate && d <= toDate; });
@@ -922,6 +923,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           <Column columnId="col-transporte" title="Em Transporte/Finalizados" emoji="🛵" color="#8B5CF6" count={transporte.length}>
             {transporte.map(o => <OrderCard key={o.id} order={o} />)}
           </Column>
+          {cancelados.length > 0 && (
+            <Column columnId="col-cancelados" title="Cancelados" emoji="🚫" color="#DC2626" count={cancelados.length}>
+              {cancelados.map(o => <OrderCard key={o.id} order={o} />)}
+            </Column>
+          )}
         </div>
       </div>
 
