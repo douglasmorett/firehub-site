@@ -62,7 +62,7 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
   };
 
   const CartSidebar = () => (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
           <ShoppingCart size={18} /> Carrinho
@@ -70,7 +70,7 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
         </h3>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "0.75rem" }}>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "0.75rem", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" as any }}>
         {items.length === 0 ? (
           <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
             <ShoppingCart size={36} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
@@ -265,7 +265,7 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
         </div>
 
         {/* RIGHT: Cart Sidebar (Desktop) */}
-        <div style={{ width: "340px", flexShrink: 0, position: "sticky", top: "70px", height: "calc(100vh - 90px)", background: "#FAFAFA", borderRadius: "14px", border: "1px solid #E2E8F0", overflow: "hidden", display: "none" }} className="cart-sidebar-desktop">
+        <div style={{ width: "340px", flexShrink: 0, position: "sticky", top: "70px", height: "calc(100vh - 90px)", background: "#FAFAFA", borderRadius: "14px", border: "1px solid #E2E8F0", overflow: "hidden", display: "none", flexDirection: "column" }} className="cart-sidebar-desktop">
           <CartSidebar />
         </div>
       </div>
@@ -287,8 +287,8 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
       {showMobileCart && (
         <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
           <div onClick={() => setShowMobileCart(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} />
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, maxHeight: "75vh", background: "#fff", borderRadius: "20px 20px 0 0", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <div style={{ padding: "0.75rem", textAlign: "center" }}>
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "75vh", background: "#fff", borderRadius: "20px 20px 0 0", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "0.75rem", textAlign: "center", flexShrink: 0 }}>
               <div style={{ width: "40px", height: "4px", background: "#CBD5E1", borderRadius: "2px", margin: "0 auto" }} />
             </div>
             <CartSidebar />
