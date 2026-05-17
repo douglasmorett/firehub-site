@@ -122,7 +122,7 @@ export default async function StoreOrdersPage() {
                       fontWeight: 800, fontSize: "0.92rem", textDecoration: "none",
                       boxShadow: "0 4px 12px rgba(22,163,74,0.3)",
                     }}>
-                      💳 Pagar Agora (Pix, Boleto ou Cartão)
+                      💳 Pagar Agora
                     </a>
                   </div>
                 )}
