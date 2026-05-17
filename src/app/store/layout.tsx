@@ -5,12 +5,17 @@ import { CartProvider } from "@/components/CartProvider";
 import StoreTopNav from "@/components/customer/StoreTopNav";
 import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { headers } from "next/headers";
 
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/");
   const role = (session.user as any)?.role;
   if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/");
+
+  const headersList = await headers();
+  const pathname = headersList.get("x-next-url") || headersList.get("x-invoke-path") || "";
+  const isCompras = pathname.startsWith("/store/compras") || pathname.startsWith("/store/orders");
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
@@ -70,10 +75,11 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           isAdmin={isAdmin}
           initialStoreOpen={user?.storeOpen ?? true}
           initialCashOpen={user?.cashOpen ?? false}
+          isComprasMode={isCompras}
         />
 
-        {/* Banner: Trial ativo */}
-        {isInTrial && isFranqueado && (
+        {/* Banner: Trial ativo (esconde no módulo de compras) */}
+        {isInTrial && isFranqueado && !isCompras && (
           <div style={{
             background: "linear-gradient(135deg, #2563EB, #1d4ed8)",
             color: "white", padding: "10px 1.5rem", textAlign: "center",
@@ -87,8 +93,8 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           </div>
         )}
 
-        {/* Banner: Pagamento pendente DENTRO DO PRAZO (só avisa, não bloqueia) */}
-        {pendingPayment && !pendingPayment.isOverdue && !isInTrial && (
+        {/* Banner: Pagamento pendente DENTRO DO PRAZO (esconde no módulo de compras) */}
+        {pendingPayment && !pendingPayment.isOverdue && !isInTrial && !isCompras && (
           <div style={{
             background: "linear-gradient(135deg, #F59E0B, #D97706)",
             color: "white", padding: "10px 1.5rem", textAlign: "center",

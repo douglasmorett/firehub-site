@@ -171,6 +171,27 @@ export default function ProductGrid({ products, deliveryInfo }: { products: any[
       <div className="container" style={{ display: "flex", gap: "1.5rem", maxWidth: "1400px" }}>
         {/* LEFT: Products */}
         <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Action Buttons */}
+          <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+            <Link href="/store/orders" style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 20px", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem",
+              background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
+              textDecoration: "none", boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
+              transition: "opacity 0.2s",
+            }}>
+              📋 Ver Meus Pedidos
+            </Link>
+            <Link href="/store" style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 20px", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem",
+              background: "#fff", color: "#475569", border: "1.5px solid #E2E8F0",
+              textDecoration: "none", transition: "all 0.2s",
+            }}>
+              ← Voltar para Painel
+            </Link>
+          </div>
+
           {/* Banner de Entrega */}
           <div style={{
             backgroundColor: "var(--primary-light)",

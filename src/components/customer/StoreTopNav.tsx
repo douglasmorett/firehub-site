@@ -29,10 +29,11 @@ const METHODS = [
 
 export default function StoreTopNav({
   userName, userCity, userSlug, showCompras, isAdmin = false,
-  initialStoreOpen = true, initialCashOpen = false,
+  initialStoreOpen = true, initialCashOpen = false, isComprasMode = false,
 }: {
   userName: string; userCity: string; userSlug?: string | null;
   showCompras: boolean; isAdmin?: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
+  isComprasMode?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -342,7 +343,8 @@ export default function StoreTopNav({
         </div>
       </div>
 
-      {/* ── NAV ────────────────────────────────────────────── */}
+      {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
+      {!isComprasMode && (
       <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.75rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
         <div style={{ maxWidth:"1400px", margin:"0 auto", display:"flex", alignItems:"stretch", gap:0, overflowX:"auto", scrollbarWidth:"none" }}>
           {NAV_ITEMS.map(item => {
@@ -357,6 +359,7 @@ export default function StoreTopNav({
           })}
         </div>
       </nav>
+      )}
 
       <style>{`
         @media (max-width: 520px) { .nav-user-label { display: none !important; } .nav-view-store { display: none !important; } }
