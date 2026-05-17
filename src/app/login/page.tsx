@@ -30,7 +30,11 @@ export default function FireHubLoginPage() {
       if (rememberMe) {
         localStorage.setItem("fh_remember", "true");
       }
-      router.push("/store");
+      // Busca role para redirecionar corretamente
+      const meRes = await fetch("/api/me");
+      const meData = meRes.ok ? await meRes.json() : null;
+      const role = meData?.role;
+      router.push(role === "ADMIN" ? "/admin" : "/store");
     } else {
       setError("E-mail ou senha incorretos. Tente novamente.");
     }
