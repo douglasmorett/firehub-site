@@ -12,10 +12,9 @@ type Coupon = { id?: string; code: string; discount: number; active: boolean };
 
 // Botão de salvar inline por seção
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
-  if (!dirty) return null;
   return (
-    <button onClick={onSave} disabled={saving}
-      style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "8px 16px", background: "#C62828", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", animation: "fadeIn 0.2s" }}>
+    <button onClick={onSave} disabled={saving || !dirty}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "8px 16px", background: dirty ? "#C62828" : "#E2E8F0", color: dirty ? "#fff" : "#94A3B8", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem", cursor: (saving || !dirty) ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
       <Save size={14} />{saving ? "Salvando..." : label}
     </button>
   );

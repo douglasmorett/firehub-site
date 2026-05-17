@@ -64,7 +64,7 @@ export default function ProfileClient({ user }: { user: any }) {
 
   return (
     <div className="container" style={{ maxWidth: "600px", marginTop: "2rem" }}>
-      <div className="flex items-center gap-4 mb-8">
+      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "2rem" }}>
         <Link href="/store" className="btn btn-outline" style={{ padding: "0.5rem", borderRadius: "50%" }}>
           <ArrowLeft size={20} />
         </Link>
