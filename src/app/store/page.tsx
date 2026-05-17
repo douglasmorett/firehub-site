@@ -95,7 +95,7 @@ export default async function StorePage({ searchParams }: { searchParams: { loja
   if (user.storeBanner) completedSteps.push("logo_banner_upload");
   if (user.storeLogo || user.storeBanner) completedSteps.push("logo");
   if (user.storeHours) completedSteps.push("hours");
-  if (user.paymentFees && Object.keys(user.paymentFees as object).length > 0) completedSteps.push("payment");
+  if (user.paymentFees && Object.keys((user.paymentFees as object) || {}).length > 0) completedSteps.push("payment");
   if (user.deliveryZones) completedSteps.push("delivery");
   if ((user.storeOrderCount || 0) > 0) completedSteps.push("first_order");
   if (menuCount > 0) completedSteps.push("menu");
