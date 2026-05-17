@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
+import ToggleAdmin from "@/components/ToggleAdmin";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -22,10 +23,10 @@ export default async function AdminLojistasPage() {
   if (me?.role !== "ADMIN") redirect("/store");
 
   const lojistas = await prisma.user.findMany({
-    where: { role: "FRANCHISEE" },
+    where: { role: { in: ["FRANCHISEE", "ADMIN"] } },
     orderBy: { createdAt: "desc" },
     select: {
-      id: true, name: true, email: true, slug: true,
+      id: true, name: true, email: true, slug: true, role: true,
       storeName: true, city: true, createdAt: true, storeOpen: true,
       isFranqueadoHakim: true, mpAccessToken: true, celcoinAccountId: true,
       mpSellerId: true, cashOpen: true, storeLogo: true,
@@ -92,7 +93,7 @@ export default async function AdminLojistasPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.83rem" }}>
             <thead>
               <tr style={{ background: "#F8FAFC" }}>
-                {["Lojista", "Email", "Cidade", "Cadastro", "Status", "Produtos", "Pedidos", "Hakim", "Pagamento", "Ação"].map(h => (
+                {["Lojista", "Email", "Cidade", "Cadastro", "Status", "Produtos", "Pedidos", "Admin", "Hakim", "Pagamento", "Ação"].map(h => (
                   <th key={h} style={{ padding: "10px 12px", textAlign: "left", color: "#64748B", fontWeight: 700, borderBottom: "1px solid #E2E8F0", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -140,6 +141,9 @@ export default async function AdminLojistasPage() {
                     </td>
                     <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700 }}>{l._count.menuProducts}</td>
                     <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 700 }}>{l._count.customerOrders}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                      <ToggleAdmin userId={l.id} initialValue={l.role === "ADMIN"} />
+                    </td>
                     <td style={{ padding: "10px 12px", textAlign: "center" }}>
                       <ToggleFranqueadoHakim userId={l.id} initialValue={l.isFranqueadoHakim} />
                     </td>
