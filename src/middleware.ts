@@ -14,15 +14,14 @@ export async function middleware(request: NextRequest) {
     if (pathname === "/" || pathname === "") {
       const url = request.nextUrl.clone();
       url.pathname = "/store/compras";
-      return NextResponse.rewrite(url);
+      return NextResponse.redirect(url);
     }
     // Se acessou /login, mantém (precisa logar)
     if (pathname === "/login" || pathname === "/cadastro" || pathname === "/esqueci-senha" || pathname === "/redefinir-senha") {
       return NextResponse.next();
     }
-    // Se acessou /store/compras ou /store/cart, permite (catálogo público)
-    if (pathname.startsWith("/store/compras") || pathname.startsWith("/store/cart")) {
-      // Não exige login — a própria page vai tratar se precisa ou não
+    // Se acessou /store/compras ou /store/cart ou /store/orders, permite (catálogo público)
+    if (pathname.startsWith("/store/compras") || pathname.startsWith("/store/cart") || pathname.startsWith("/store/orders")) {
       return NextResponse.next();
     }
     // API routes são liberadas
@@ -32,7 +31,7 @@ export async function middleware(request: NextRequest) {
     // Qualquer outra rota no domínio Icebox → redireciona pro catálogo
     const url = request.nextUrl.clone();
     url.pathname = "/store/compras";
-    return NextResponse.rewrite(url);
+    return NextResponse.redirect(url);
   }
 
   // ─── FIREHUB DOMAIN: rotas protegidas /store/* ───────────────
