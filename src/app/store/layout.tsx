@@ -8,15 +8,26 @@ import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import HideOnCompras from "@/components/HideOnCompras";
 
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession(authOptions);
-  if (!session) redirect("/");
+  let session;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (err) {
+    console.error("[StoreLayout] Erro ao obter sessão:", err);
+    redirect("/login");
+  }
+  if (!session) redirect("/login");
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/");
+  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user?.email || "" },
-    select: { id: true, name: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
-  });
+  let user: any = null;
+  try {
+    user = await prisma.user.findUnique({
+      where: { email: session.user?.email || "" },
+      select: { id: true, name: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
+    });
+  } catch (err) {
+    console.error("[StoreLayout] Erro ao buscar usuário:", err);
+  }
 
   const isFranqueado = user?.role === "FRANCHISEE";
   const isAdmin = user?.role === "ADMIN";
@@ -34,27 +45,31 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   // === PAGAMENTO: verificar ciclo pendente ===
   let pendingPayment: { amount: number; url: string | null; isOverdue: boolean } | null = null;
   if (isFranqueado && user) {
-    const closedCycle = await prisma.franchiseeBillingCycle.findFirst({
-      where: {
-        franchiseeId: user.id,
-        status: "CLOSED",
-        amountPending: { gt: 0 },
-      },
-      orderBy: { closedAt: "desc" },
-    });
+    try {
+      const closedCycle = await prisma.franchiseeBillingCycle.findFirst({
+        where: {
+          franchiseeId: user.id,
+          status: "CLOSED",
+          amountPending: { gt: 0 },
+        },
+        orderBy: { closedAt: "desc" },
+      });
 
-    if (closedCycle && closedCycle.amountPending > 0) {
-      // Verifica se o boleto já venceu (7 dias após fechamento)
-      const closedAt = closedCycle.closedAt ? new Date(closedCycle.closedAt) : new Date();
-      const dueDate = new Date(closedAt);
-      dueDate.setDate(dueDate.getDate() + 7);
-      const isOverdue = new Date() > dueDate;
+      if (closedCycle && closedCycle.amountPending > 0) {
+        // Verifica se o boleto já venceu (7 dias após fechamento)
+        const closedAt = closedCycle.closedAt ? new Date(closedCycle.closedAt) : new Date();
+        const dueDate = new Date(closedAt);
+        dueDate.setDate(dueDate.getDate() + 7);
+        const isOverdue = new Date() > dueDate;
 
-      pendingPayment = {
-        amount: closedCycle.amountPending,
-        url: closedCycle.asaasBoletoUrl,
-        isOverdue, // true = vencido = BLOQUEIA | false = dentro do prazo = só avisa
-      };
+        pendingPayment = {
+          amount: closedCycle.amountPending,
+          url: closedCycle.asaasBoletoUrl,
+          isOverdue, // true = vencido = BLOQUEIA | false = dentro do prazo = só avisa
+        };
+      }
+    } catch (err) {
+      console.error("[StoreLayout] Erro ao verificar pagamento:", err);
     }
   }
 

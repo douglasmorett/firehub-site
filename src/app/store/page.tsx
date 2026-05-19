@@ -4,11 +4,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import StoreDashboard from "@/components/customer/StoreDashboard";
 
-export default async function StorePage({ searchParams }: { searchParams: { loja?: string } }) {
+export default async function StorePage({ searchParams }: { searchParams: Promise<{ loja?: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/");
   const role = (session.user as any)?.role;
   if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/");
+
+  const resolvedParams = await searchParams;
 
   const since = new Date();
   since.setDate(since.getDate() - 90);
@@ -21,7 +23,7 @@ export default async function StorePage({ searchParams }: { searchParams: { loja
       orderBy: { name: "asc" },
     });
 
-    const selectedId = searchParams.loja || "todas";
+    const selectedId = resolvedParams.loja || "todas";
 
     const whereClause = selectedId === "todas"
       ? { createdAt: { gte: since } }
