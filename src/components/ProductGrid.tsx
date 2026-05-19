@@ -7,7 +7,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true }: { products: any[], deliveryInfo: { limitStr: string, deliveryStr: string, limitDateIso?: string }, isLoggedIn?: boolean }) {
+export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true, isIcebox = false }: { products: any[], deliveryInfo: { limitStr: string, deliveryStr: string, limitDateIso?: string }, isLoggedIn?: boolean, isIcebox?: boolean }) {
+  const loginUrl = isIcebox ? "/icebox/login" : "/login?callbackUrl=/store/compras";
   const { items, addToCart, removeFromCart, total } = useCart();
   const [addedIds, setAddedIds] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -33,7 +34,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true 
 
   const handleAdd = (product: any) => {
     if (!isLoggedIn) {
-      router.push("/login?callbackUrl=/store/compras");
+      router.push(loginUrl);
       return;
     }
     addToCart(product, 1);
@@ -58,7 +59,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true 
 
   const handleFinalizarPedido = () => {
     if (!isLoggedIn) {
-      router.push("/login?callbackUrl=/store/compras");
+      router.push(loginUrl);
       return;
     }
     if (total < MIN_ORDER) {
@@ -179,8 +180,8 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true 
       <div className="container" style={{ display: "flex", gap: "1.5rem", maxWidth: "1400px" }}>
         {/* LEFT: Products */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Action Buttons / Icebox Header */}
-          {isLoggedIn ? (
+          {/* Action Buttons — só mostra quando NÃO é Icebox independente */}
+          {!isIcebox && isLoggedIn && (
             <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
               <Link href="/store/orders" style={{
                 display: "inline-flex", alignItems: "center", gap: 8,
@@ -198,26 +199,6 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true 
                 textDecoration: "none", transition: "all 0.2s",
               }}>
                 ← Voltar para Painel
-              </Link>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg, #0D47A1, #1565C0)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: "1.5rem" }}>🧊</span>
-                </div>
-                <div>
-                  <h1 style={{ fontWeight: 900, fontSize: "1.3rem", margin: 0, color: "#0F172A" }}>Icebox Distribuidora</h1>
-                  <p style={{ margin: 0, fontSize: "0.82rem", color: "#64748B" }}>Catálogo de Produtos</p>
-                </div>
-              </div>
-              <Link href="/login?callbackUrl=/store/compras" style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "10px 24px", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem",
-                background: "linear-gradient(135deg, #0D47A1, #1565C0)", color: "#fff",
-                textDecoration: "none", boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
-              }}>
-                🔑 Entrar na conta
               </Link>
             </div>
           )}
