@@ -390,7 +390,55 @@ export default function PrinterSetupClient({
               <p style={{ fontSize: "0.75rem", color: "#3B82F6", margin: "2px 0 0" }}>Imprime uma comanda de teste para verificar o layout</p>
             </div>
             <button
-              onClick={() => window.dispatchEvent(new CustomEvent("firehub:test-print"))}
+              onClick={async () => {
+                try {
+                  if (!window.qz || !window.qz.websocket.isActive()) {
+                    alert("QZ Tray não está conectado. Clique em 'Verificar conexão' primeiro.");
+                    return;
+                  }
+                  const printerName = config.printers[0].name;
+                  const now = new Date();
+                  const data = [
+                    "\x1B\x40",           // Init
+                    "\x1B\x61\x01",       // Center
+                    "\x1D\x21\x11",       // Double size
+                    "FIREHUB\n",
+                    "\x1D\x21\x00",       // Normal size
+                    "\x1B\x61\x01",       // Center
+                    "================================\n",
+                    "    IMPRESSAO DE TESTE\n",
+                    "================================\n\n",
+                    "\x1B\x61\x00",       // Left align
+                    `Impressora: ${printerName}\n`,
+                    `Data: ${now.toLocaleDateString("pt-BR")}\n`,
+                    `Hora: ${now.toLocaleTimeString("pt-BR")}\n\n`,
+                    "\x1B\x61\x01",       // Center
+                    "--------------------------------\n",
+                    "Item              Qtd   Valor\n",
+                    "--------------------------------\n",
+                    "\x1B\x61\x00",       // Left
+                    "X-Burger           1   R$25,90\n",
+                    "Coca-Cola 600ml    2   R$17,00\n",
+                    "Batata Frita       1   R$14,50\n",
+                    "\x1B\x61\x01",       // Center
+                    "--------------------------------\n",
+                    "\x1D\x21\x01",       // Tall
+                    "TOTAL: R$ 57,40\n",
+                    "\x1D\x21\x00",       // Normal
+                    "\n",
+                    "Pedido #TESTE-001\n",
+                    "Cliente: Teste FireHub\n\n",
+                    "Se voce esta lendo isso,\n",
+                    "a impressora esta funcionando!\n\n",
+                    "\x1D\x56\x00",       // Cut
+                  ];
+                  const qzConfig = window.qz.configs.create(printerName);
+                  await window.qz.print(qzConfig, data);
+                  alert("✅ Impressão de teste enviada!");
+                } catch (e: any) {
+                  alert("❌ Erro ao imprimir: " + e.message);
+                }
+              }}
               style={{ padding: "8px 18px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
             >
               Imprimir teste
