@@ -30,13 +30,12 @@ export async function PUT(req: NextRequest) {
   try {
     const body        = await req.json();
     const merchantId  = getMerchantId();
-    const payload     = body.openingHours ?? body; // aceita ambos formatos
 
-    console.log("[iFood Opening Hours PUT] Enviando:", JSON.stringify(payload, null, 2));
+    console.log("[iFood Opening Hours PUT] Enviando:", JSON.stringify(body, null, 2));
 
     const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
 
     const data = await res.json().catch(() => ({}));

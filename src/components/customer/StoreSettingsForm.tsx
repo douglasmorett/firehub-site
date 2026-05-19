@@ -35,8 +35,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [coupons, setCoupons] = useState<Coupon[]>(user.storeCoupons || []);
   // Agendar Pausa
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [pauseActive, setPauseActive] = useState<boolean>(user.storePause?.active || false);
-  const [pauseSavedActive, setPauseSavedActive] = useState<boolean>(user.storePause?.active || false);
+  const [pauseActive, setPauseActive] = useState<boolean>(false);
+  const [pauseSavedActive, setPauseSavedActive] = useState<boolean>(false);
   const [pauseFrom, setPauseFrom] = useState<string>(user.storePause?.from || todayStr);
   const [pauseTo, setPauseTo] = useState<string>(user.storePause?.to || todayStr);
   const [pauseReason, setPauseReason] = useState<string>(user.storePause?.reason || "Férias");
