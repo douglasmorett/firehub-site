@@ -43,6 +43,14 @@ export default function StoreTopNav({
   const [cashOpen, setCashOpen] = useState(initialCashOpen);
   const [toggling, setToggling] = useState<"store" | null>(null);
 
+  // ── PAUSE MODAL ──────────────────────────────────────────────
+  const [showPauseModal, setShowPauseModal] = useState(false);
+  const [pauseDuration, setPauseDuration] = useState("1h");
+  const [pauseReason, setPauseReason] = useState("Intervalo");
+  const [pauseScope, setPauseScope] = useState<"site" | "site+ifood">("site+ifood");
+  const [pauseCustomEnd, setPauseCustomEnd] = useState("");
+  const [pausing, setPausing] = useState(false);
+
   // iFood stores dropdown
   const [ifoodStore, setIfoodStore]       = useState<any>(null);
   const [ifoodAvailable, setIfoodAvail]   = useState<boolean | null>(null);
@@ -183,44 +191,80 @@ export default function StoreTopNav({
   };
 
   // ── STORE TOGGLE ─────────────────────────────────────────────────
-  const toggleStore = async () => {
+  const handleStoreToggleClick = () => {
+    if (storeOpen) {
+      // Abrindo modal de pausa em vez de fechar direto
+      setShowPauseModal(true);
+    } else {
+      // Reabrindo loja
+      reopenStore();
+    }
+  };
+
+  const reopenStore = async () => {
     setToggling("store");
-    const newVal = !storeOpen;
     const res = await fetch("/api/store/status", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeOpen: newVal }),
+      body: JSON.stringify({ storeOpen: true }),
     });
     if (res.ok) {
-      setStoreOpen(newVal);
+      setStoreOpen(true);
       startTransition(() => router.refresh());
-      // Sincroniza com iFood automaticamente
       if (ifoodStore) {
-        if (!newVal) {
-          // Fechando site → cria interrupção longa no iFood
-          const localIso = (d: Date) => {
-            const p = (n: number) => String(n).padStart(2, "0");
-            return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-          };
-          const now = new Date();
-          const farFuture = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
-          fetch("/api/ifood/interruptions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ description: "Loja fechada pelo FireHub", start: localIso(now), end: localIso(farFuture) }),
-          }).then(() => setIfoodAvail(false)).catch(() => {});
-        } else {
-          // Abrindo site → remove interrupções do iFood
-          fetch("/api/ifood/interruptions").then(r => r.json()).then(items => {
-            for (const item of (Array.isArray(items) ? items : [])) {
-              if (item.id) fetch(`/api/ifood/interruptions/${item.id}`, { method: "DELETE" }).catch(() => {});
-            }
-            setIfoodAvail(true);
-          }).catch(() => {});
-        }
+        fetch("/api/ifood/interruptions").then(r => r.json()).then(items => {
+          for (const item of (Array.isArray(items) ? items : [])) {
+            if (item.id) fetch(`/api/ifood/interruptions/${item.id}`, { method: "DELETE" }).catch(() => {});
+          }
+          setIfoodAvail(true);
+        }).catch(() => {});
       }
     }
     setToggling(null);
+  };
+
+  const getPauseEndDate = (): Date => {
+    const now = new Date();
+    switch (pauseDuration) {
+      case "15m": return new Date(now.getTime() + 15 * 60 * 1000);
+      case "1h": return new Date(now.getTime() + 60 * 60 * 1000);
+      case "6h": return new Date(now.getTime() + 6 * 60 * 60 * 1000);
+      case "12h": return new Date(now.getTime() + 12 * 60 * 60 * 1000);
+      case "hoje": { const d = new Date(now); d.setHours(23, 59, 59); return d; }
+      case "amanha": { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(23, 59, 59); return d; }
+      case "custom": return pauseCustomEnd ? new Date(pauseCustomEnd) : new Date(now.getTime() + 60 * 60 * 1000);
+      default: return new Date(now.getTime() + 60 * 60 * 1000);
+    }
+  };
+
+  const confirmPause = async () => {
+    setPausing(true);
+    const endDate = getPauseEndDate();
+    // 1. Fechar site
+    const res = await fetch("/api/store/status", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storeOpen: false, storePause: { active: true, until: endDate.toISOString(), reason: pauseReason, scope: pauseScope } }),
+    });
+    if (res.ok) {
+      setStoreOpen(false);
+      startTransition(() => router.refresh());
+      // 2. Pausar iFood se selecionado
+      if (pauseScope === "site+ifood" && ifoodStore) {
+        const localIso = (d: Date) => {
+          const p = (n: number) => String(n).padStart(2, "0");
+          return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        };
+        const now = new Date();
+        fetch("/api/ifood/interruptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: pauseReason, start: localIso(now), end: localIso(endDate) }),
+        }).then(() => setIfoodAvail(false)).catch(() => {});
+      }
+    }
+    setPausing(false);
+    setShowPauseModal(false);
   };
 
   const TogglePill = ({ label, isOn, onClick, disabled }: any) => (
@@ -240,8 +284,18 @@ export default function StoreTopNav({
   );
 
   const SiteToggle = () => (
-    <TogglePill label="Site" isOn={storeOpen} onClick={toggleStore} disabled={toggling === "store"} />
+    <TogglePill label="Site" isOn={storeOpen} onClick={handleStoreToggleClick} disabled={toggling === "store"} />
   );
+
+  const PAUSE_DURATIONS = [
+    { key: "15m", label: "15 minutos" }, { key: "1h", label: "1 hora" },
+    { key: "6h", label: "6 horas" }, { key: "12h", label: "12 horas" },
+    { key: "hoje", label: "Até hoje" }, { key: "amanha", label: "Até amanhã" },
+    { key: "custom", label: "Personalizado" },
+  ];
+  const PAUSE_REASONS = ["Folga", "Força maior", "Intervalo", "Limpeza", "Manutenção", "Treinamento", "Outro"];
+  const pauseEnd = getPauseEndDate();
+  const fmtDate = (d: Date) => d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
   const overlay: React.CSSProperties = {
     position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000,
@@ -254,6 +308,109 @@ export default function StoreTopNav({
 
   return (
     <>
+      {/* ── MODAL: PAUSAR LOJA ────────────────────────────── */}
+      {showPauseModal && (
+        <div style={overlay} onClick={() => setShowPauseModal(false)}>
+          <div style={{ ...card, maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowPauseModal(false)} style={{ position:"absolute", top:12, right:12, background:"none", border:"none", cursor:"pointer" }}><X size={20} /></button>
+            <h2 style={{ margin:"0 0 6px", fontSize:"1.15rem", fontWeight:900 }}>Agendar uma nova pausa</h2>
+
+            {/* Preview */}
+            <div style={{ background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:12, padding:"10px 14px", marginBottom:"1rem", fontSize:"0.82rem", color:"#1E40AF", fontWeight:600 }}>
+              Pausa de <strong>{fmtDate(new Date())}</strong> até <strong>{fmtDate(pauseEnd)}</strong>
+            </div>
+
+            {/* Escopo: site só ou site + iFood */}
+            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", margin:"0 0 8px" }}>O que pausar?</p>
+            <div style={{ display:"flex", gap:8, marginBottom:"1rem" }}>
+              {(["site", "site+ifood"] as const).map(scope => {
+                const active = pauseScope === scope;
+                return (
+                  <button key={scope} onClick={() => setPauseScope(scope)} style={{
+                    flex:1, padding:"10px 12px", borderRadius:12, cursor:"pointer", fontFamily:"inherit",
+                    border: active ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                    background: active ? "#FEF2F2" : "#fff",
+                    color: active ? "#C62828" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.82rem",
+                  }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, justifyContent:"center" }}>
+                      <span style={{ width:16, height:16, borderRadius:"50%", border: active ? "5px solid #C62828" : "2px solid #CBD5E1", display:"inline-block", flexShrink:0 }} />
+                      {scope === "site" ? "Pausar só o site" : "Pausar site + iFood"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* iFood stores - se tem iFood conectado e escopo inclui iFood */}
+            {pauseScope === "site+ifood" && ifoodStore && (
+              <div style={{ background:"#FFF7ED", border:"1px solid #FED7AA", borderRadius:10, padding:"10px 14px", marginBottom:"1rem", fontSize:"0.8rem" }}>
+                <p style={{ margin:"0 0 6px", fontWeight:700, color:"#92400E", fontSize:"0.75rem" }}>LOJAS IFOOD QUE SERÃO PAUSADAS</p>
+                <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
+                  <input type="checkbox" checked disabled style={{ width:16, height:16, accentColor:"#C62828" }} />
+                  <span style={{ fontWeight:600, color:"#0F172A" }}>{ifoodStore.name || "Loja iFood"}</span>
+                  <span style={{ fontSize:"0.7rem", color: ifoodAvailable ? "#16A34A" : "#94A3B8", fontWeight:600 }}>{ifoodAvailable ? "(aberta)" : "(fechada)"}</span>
+                </label>
+              </div>
+            )}
+
+            {/* Duração */}
+            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", margin:"0 0 8px" }}>Por quanto tempo a loja será fechada?</p>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom: pauseDuration === "custom" ? 8 : 16 }}>
+              {PAUSE_DURATIONS.map(d => {
+                const active = pauseDuration === d.key;
+                return (
+                  <button key={d.key} onClick={() => setPauseDuration(d.key)} style={{
+                    padding:"7px 14px", borderRadius:20, cursor:"pointer", fontFamily:"inherit",
+                    border: active ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                    background: active ? "#C6282810" : "#fff",
+                    color: active ? "#C62828" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.78rem",
+                  }}>
+                    <span style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <span style={{ width:14, height:14, borderRadius:"50%", border: active ? "4px solid #C62828" : "2px solid #CBD5E1", display:"inline-block" }} />
+                      {d.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {pauseDuration === "custom" && (
+              <input type="datetime-local" value={pauseCustomEnd} onChange={e => setPauseCustomEnd(e.target.value)}
+                style={{ width:"100%", padding:"9px 12px", borderRadius:10, border:"1.5px solid #E2E8F0", fontSize:"0.85rem", marginBottom:16, fontFamily:"inherit" }} />
+            )}
+
+            {/* Motivo */}
+            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", margin:"0 0 8px" }}>Qual o motivo da pausa?</p>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:"1.25rem" }}>
+              {PAUSE_REASONS.map(r => {
+                const active = pauseReason === r;
+                return (
+                  <button key={r} onClick={() => setPauseReason(r)} style={{
+                    padding:"7px 14px", borderRadius:20, cursor:"pointer", fontFamily:"inherit",
+                    border: active ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                    background: active ? "#C6282810" : "#fff",
+                    color: active ? "#C62828" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.78rem",
+                  }}>
+                    <span style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <span style={{ width:14, height:14, borderRadius:"50%", border: active ? "4px solid #C62828" : "2px solid #CBD5E1", display:"inline-block" }} />
+                      {r}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Confirmar */}
+            <button onClick={confirmPause} disabled={pausing} style={{
+              width:"100%", padding:"13px", background:"linear-gradient(135deg,#B71C1C,#C62828)", color:"#fff",
+              border:"none", borderRadius:14, fontWeight:900, fontSize:"1rem", cursor:"pointer", fontFamily:"inherit",
+              opacity: pausing ? 0.7 : 1,
+            }}>
+              {pausing ? "Pausando..." : `⏸️ Confirmar pausa${pauseScope === "site+ifood" ? " (Site + iFood)" : " (só Site)"}`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── MODAL: ABRIR CAIXA ─────────────────────────────── */}
       {showOpenModal && (
         <div style={overlay} onClick={() => setShowOpenModal(false)}>
