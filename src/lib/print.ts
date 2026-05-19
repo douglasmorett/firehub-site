@@ -52,77 +52,113 @@ async function ensureQZ(): Promise<boolean> {
   }
 }
 
-/* ─── Gera conteúdo ESC/POS para impressora térmica 80mm ─── */
-function buildReceiptESCPOS(order: PrintOrder, storeName: string): string[] {
-  const line = (text: string) => `${text}\n`;
-  const divider = () => `${"─".repeat(32)}\n`;
-  const center = (text: string) => {
-    const pad = Math.max(0, Math.floor((32 - text.length) / 2));
-    return " ".repeat(pad) + text + "\n";
-  };
-  const right = (left: string, right: string) => {
+/* ─── ESC/POS control codes ──────────────────────────────── */
+const ESC = '\x1B';
+const GS  = '\x1D';
+const LF  = '\x0A';
+
+const CMD = {
+  INIT:        ESC + '@',           // Inicializa impressora
+  BOLD_ON:     ESC + 'E' + '\x01',  // Negrito ON
+  BOLD_OFF:    ESC + 'E' + '\x00',  // Negrito OFF
+  CENTER:      ESC + 'a' + '\x01',  // Alinhar centro
+  LEFT:        ESC + 'a' + '\x00',  // Alinhar esquerda
+  DOUBLE_ON:   GS  + '!' + '\x11',  // Texto duplo (largura+altura)
+  DOUBLE_OFF:  GS  + '!' + '\x00',  // Texto normal
+  CUT:         GS  + 'V' + '\x00',  // Cortar papel (full cut)
+  FEED3:       ESC + 'd' + '\x03',  // Avança 3 linhas
+};
+
+const SEP = '--------------------------------' + LF;
+
+/* ─── Gera conteúdo ESC/POS para impressora térmica ──────── */
+function buildReceiptESCPOS(order: PrintOrder, storeName: string): string {
+  const rightAlign = (left: string, right: string) => {
     const space = Math.max(1, 32 - left.length - right.length);
-    return left + " ".repeat(space) + right + "\n";
+    return left + ' '.repeat(space) + right + LF;
   };
 
-  const lines: string[] = [];
   const time = new Date().toLocaleString("pt-BR", {
     day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
   });
 
-  lines.push(center(storeName.toUpperCase()));
-  lines.push(center(`FireHub — ${time}`));
-  lines.push(divider());
-  lines.push(center(`PEDIDO #${order.id.slice(-6).toUpperCase()}`));
-  lines.push(center(order.deliveryType === "DELIVERY" ? "🛵 DELIVERY" : "🏪 RETIRADA"));
-  lines.push(divider());
-  lines.push(line(`Cliente: ${order.customerName}`));
-  if (order.customerPhone) lines.push(line(`Tel: ${order.customerPhone}`));
+  let r = '';
+  r += CMD.INIT;
+
+  // Cabeçalho centralizado em destaque
+  r += CMD.CENTER + CMD.DOUBLE_ON + CMD.BOLD_ON;
+  r += storeName.toUpperCase() + LF;
+  r += CMD.DOUBLE_OFF + CMD.BOLD_OFF;
+  r += 'FireHub - ' + time + LF;
+  r += SEP;
+
+  // Número do pedido em destaque
+  r += CMD.CENTER + CMD.DOUBLE_ON + CMD.BOLD_ON;
+  r += 'PEDIDO #' + order.id.slice(-6).toUpperCase() + LF;
+  r += CMD.DOUBLE_OFF + CMD.BOLD_OFF;
+  r += (order.deliveryType === "DELIVERY" ? ">> DELIVERY <<" : ">> RETIRADA <<") + LF;
+  r += SEP;
+
+  // Dados do cliente (alinhado à esquerda)
+  r += CMD.LEFT;
+  r += 'Cliente: ' + order.customerName + LF;
+  if (order.customerPhone) r += 'Tel: ' + order.customerPhone + LF;
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
-    lines.push(line(`End: ${order.customerAddress}`));
+    r += 'End: ' + order.customerAddress + LF;
   }
-  lines.push(divider());
+  r += SEP;
 
   // Itens
+  r += CMD.BOLD_ON;
+  r += rightAlign('Item', 'Valor');
+  r += CMD.BOLD_OFF;
   order.items.forEach(item => {
-    lines.push(right(`${item.qty}x ${item.name}`, `R$${(item.price * item.qty).toFixed(2)}`));
-    if (item.notes) lines.push(line(`   ↳ ${item.notes}`));
+    r += rightAlign(item.qty + 'x ' + item.name, 'R$' + (item.price * item.qty).toFixed(2));
+    if (item.notes) r += '   > ' + item.notes + LF;
   });
 
-  lines.push(divider());
+  r += SEP;
   if (order.deliveryFee && order.deliveryFee > 0) {
-    lines.push(right("Taxa de entrega:", `R$${order.deliveryFee.toFixed(2)}`));
+    r += rightAlign('Taxa de entrega:', 'R$' + order.deliveryFee.toFixed(2));
   }
-  lines.push(right("TOTAL:", `R$${order.totalAmount.toFixed(2)}`));
-  lines.push(right("Pagamento:", order.paymentMethod));
-  if (order.notes) {
-    lines.push(divider());
-    lines.push(line(`OBS: ${order.notes}`));
-  }
-  lines.push(divider());
-  lines.push(center("obrigado pela preferencia!"));
-  lines.push("\n\n\n"); // feed de papel
 
-  return lines;
+  // Total em destaque
+  r += CMD.CENTER + CMD.DOUBLE_ON + CMD.BOLD_ON;
+  r += 'TOTAL: R$' + order.totalAmount.toFixed(2) + LF;
+  r += CMD.DOUBLE_OFF + CMD.BOLD_OFF;
+
+  r += CMD.LEFT;
+  r += rightAlign('Pagamento:', order.paymentMethod);
+
+  if (order.notes) {
+    r += SEP;
+    r += 'OBS: ' + order.notes + LF;
+  }
+
+  r += SEP;
+  r += CMD.CENTER;
+  r += 'Obrigado pela preferencia!' + LF;
+  r += CMD.FEED3;
+  r += CMD.CUT;
+
+  return r;
 }
 
 /* ─── Imprime em uma impressora específica ───────────────── */
 async function printToDevice(
   printerName: string,
-  content: string[],
+  content: string,
   copies = 1
 ): Promise<boolean> {
   try {
     const ok = await ensureQZ();
     if (!ok) return false;
 
-    const config = window.qz.configs.create(printerName, {
-      copies,
-      encoding: "Cp1252",
-    });
+    const config = window.qz.configs.create(printerName);
 
-    const data = content.map(line => ({ type: "raw", format: "plain", data: line }));
-    await window.qz.print(config, data);
+    for (let i = 0; i < copies; i++) {
+      await window.qz.print(config, [{ type: "raw", format: "plain", data: content }]);
+    }
     return true;
   } catch (err) {
     console.error("[FireHub Print]", err);

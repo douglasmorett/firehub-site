@@ -379,71 +379,95 @@ export default function PrinterSetupClient({
                 </p>
               </div>
             )}
+
+            {/* Botão de teste INDIVIDUAL para esta impressora */}
+            {printer.name && (
+              <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "0.85rem 1rem", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: "1rem" }}>
+                <div>
+                  <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0, color: "#1E40AF" }}>🧪 Testar esta impressora</p>
+                  <p style={{ fontSize: "0.72rem", color: "#3B82F6", margin: "2px 0 0" }}>Imprime uma comanda de teste em "{printer.label}"</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!window.qz || !window.qz.websocket.isActive()) {
+                        alert("QZ Tray não está conectado. Clique em 'Verificar conexão' primeiro.");
+                        return;
+                      }
+                      const printerName = printer.name;
+                      const now = new Date();
+                      const dateStr = now.toLocaleDateString("pt-BR");
+                      const timeStr = now.toLocaleTimeString("pt-BR");
+
+                      // ── ESC/POS raw commands para impressoras térmicas ──
+                      const ESC = '\x1B';
+                      const GS  = '\x1D';
+                      const LF  = '\x0A';
+
+                      const INIT        = ESC + '@';           // Inicializa impressora
+                      const BOLD_ON     = ESC + 'E' + '\x01';  // Negrito ON
+                      const BOLD_OFF    = ESC + 'E' + '\x00';  // Negrito OFF
+                      const CENTER      = ESC + 'a' + '\x01';  // Alinhar centro
+                      const LEFT        = ESC + 'a' + '\x00';  // Alinhar esquerda
+                      const DOUBLE_ON   = GS  + '!' + '\x11';  // Texto duplo (largura+altura)
+                      const DOUBLE_OFF  = GS  + '!' + '\x00';  // Texto normal
+                      const CUT         = GS  + 'V' + '\x00';  // Cortar papel
+                      const FEED3       = ESC + 'd' + '\x03';  // Avança 3 linhas
+
+                      const SEP = '--------------------------------' + LF;
+
+                      let receipt = '';
+                      receipt += INIT;
+                      receipt += CENTER + DOUBLE_ON + BOLD_ON;
+                      receipt += 'FIREHUB' + LF;
+                      receipt += DOUBLE_OFF + BOLD_OFF;
+                      receipt += SEP;
+                      receipt += CENTER + BOLD_ON;
+                      receipt += 'IMPRESSAO DE TESTE' + LF;
+                      receipt += BOLD_OFF;
+                      receipt += SEP;
+                      receipt += LEFT;
+                      receipt += 'Impressora: ' + printerName + LF;
+                      receipt += 'Apelido: ' + printer.label + LF;
+                      receipt += 'Data: ' + dateStr + LF;
+                      receipt += 'Hora: ' + timeStr + LF;
+                      receipt += SEP;
+                      receipt += BOLD_ON;
+                      receipt += 'Item             Qtd    Valor' + LF;
+                      receipt += BOLD_OFF;
+                      receipt += 'X-Burger           1   R$25,90' + LF;
+                      receipt += 'Coca-Cola 600ml    2   R$17,00' + LF;
+                      receipt += 'Batata Frita       1   R$14,50' + LF;
+                      receipt += SEP;
+                      receipt += CENTER + DOUBLE_ON + BOLD_ON;
+                      receipt += 'TOTAL: R$ 57,40' + LF;
+                      receipt += DOUBLE_OFF + BOLD_OFF;
+                      receipt += SEP;
+                      receipt += CENTER;
+                      receipt += 'Pedido #TESTE-001' + LF;
+                      receipt += 'Cliente: Teste FireHub' + LF;
+                      receipt += LF;
+                      receipt += 'Se voce esta lendo isso,' + LF;
+                      receipt += 'a impressora esta funcionando!' + LF;
+                      receipt += SEP;
+                      receipt += FEED3;
+                      receipt += CUT;
+
+                      const qzConfig = window.qz.configs.create(printerName);
+                      await window.qz.print(qzConfig, [{ type: "raw", format: "plain", data: receipt }]);
+                      alert("✅ Impressão de teste enviada para \"" + printer.label + "\"!");
+                    } catch (e: any) {
+                      alert("❌ Erro ao imprimir em \"" + printer.label + "\": " + e.message);
+                    }
+                  }}
+                  style={{ padding: "8px 16px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+                >
+                  Imprimir teste
+                </button>
+              </div>
+            )}
           </div>
         ))}
-
-        {/* Botão de teste */}
-        {config.printers.length > 0 && config.printers[0].name && (
-          <div style={{ background: "#EFF6FF", borderRadius: 14, padding: "1rem 1.25rem", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <p style={{ fontWeight: 700, fontSize: "0.88rem", margin: 0, color: "#1E40AF" }}>🧪 Testar impressão</p>
-              <p style={{ fontSize: "0.75rem", color: "#3B82F6", margin: "2px 0 0" }}>Imprime uma comanda de teste para verificar o layout</p>
-            </div>
-            <button
-              onClick={async () => {
-                try {
-                  if (!window.qz || !window.qz.websocket.isActive()) {
-                    alert("QZ Tray não está conectado. Clique em 'Verificar conexão' primeiro.");
-                    return;
-                  }
-                  const printerName = config.printers[0].name;
-                  const now = new Date();
-                  const html = `
-                    <html><head><style>
-                      body { font-family: 'Courier New', monospace; width: 270px; padding: 8px; margin: 0; font-size: 12px; }
-                      .center { text-align: center; }
-                      .bold { font-weight: bold; }
-                      .big { font-size: 20px; font-weight: 900; }
-                      .line { border-top: 1px dashed #000; margin: 6px 0; }
-                      table { width: 100%; border-collapse: collapse; }
-                      td { padding: 2px 0; font-size: 11px; }
-                      .total { font-size: 16px; font-weight: 900; text-align: center; margin: 8px 0; }
-                      .footer { text-align: center; font-size: 10px; margin-top: 10px; }
-                    </style></head><body>
-                      <div class="center big">🔥 FIREHUB</div>
-                      <div class="line"></div>
-                      <div class="center bold">IMPRESSÃO DE TESTE</div>
-                      <div class="line"></div>
-                      <div>Impressora: ${printerName}</div>
-                      <div>Data: ${now.toLocaleDateString("pt-BR")}</div>
-                      <div>Hora: ${now.toLocaleTimeString("pt-BR")}</div>
-                      <div class="line"></div>
-                      <table>
-                        <tr><td class="bold">Item</td><td class="bold" style="text-align:center">Qtd</td><td class="bold" style="text-align:right">Valor</td></tr>
-                        <tr><td>X-Burger</td><td style="text-align:center">1</td><td style="text-align:right">R$25,90</td></tr>
-                        <tr><td>Coca-Cola 600ml</td><td style="text-align:center">2</td><td style="text-align:right">R$17,00</td></tr>
-                        <tr><td>Batata Frita</td><td style="text-align:center">1</td><td style="text-align:right">R$14,50</td></tr>
-                      </table>
-                      <div class="line"></div>
-                      <div class="total">TOTAL: R$ 57,40</div>
-                      <div class="line"></div>
-                      <div class="center">Pedido #TESTE-001</div>
-                      <div class="center">Cliente: Teste FireHub</div>
-                      <div class="footer">Se você está lendo isso,<br/>a impressora está funcionando! ✅</div>
-                    </body></html>`;
-                  const qzConfig = window.qz.configs.create(printerName, { scaleContent: false, margins: { top: 0, right: 0, bottom: 0, left: 0 } });
-                  await window.qz.print(qzConfig, [{ type: "pixel", format: "html", data: html }]);
-                  alert("✅ Impressão de teste enviada!");
-                } catch (e: any) {
-                  alert("❌ Erro ao imprimir: " + e.message);
-                }
-              }}
-              style={{ padding: "8px 18px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
-            >
-              Imprimir teste
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
