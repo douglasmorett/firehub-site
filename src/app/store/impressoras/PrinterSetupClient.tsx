@@ -180,15 +180,66 @@ export default function PrinterSetupClient({
                 </a>
               </div>
 
-              {/* Passo 2 */}
-              <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1rem" }}>
+              {/* Passo 2 — Mockup visual do navegador */}
+              <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #3B82F6", marginBottom: "1rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "10px" }}>
-                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#64748B", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.85rem", flexShrink: 0 }}>2</div>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#3B82F6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.85rem", flexShrink: 0 }}>2</div>
                   <h3 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Permitir acesso à rede local</h3>
                 </div>
-                <p style={{ fontSize: "0.82rem", color: "#475569", margin: "0 0 12px", lineHeight: 1.5 }}>
-                  O navegador vai pedir permissão para acessar a rede local. Clique em <strong>"Permitir"</strong>. Isso permite a comunicação com suas impressoras.
+                <p style={{ fontSize: "0.82rem", color: "#475569", margin: "0 0 14px", lineHeight: 1.5 }}>
+                  Clique no <strong>cadeado 🔒</strong> ao lado do endereço do site na barra do navegador, e ative o botão <strong>"Apps no dispositivo"</strong>.
                 </p>
+
+                {/* ── MOCKUP DO NAVEGADOR ──────────────────────── */}
+                <div style={{ background: "#F1F5F9", borderRadius: 12, overflow: "hidden", border: "1.5px solid #E2E8F0", position: "relative" }}>
+                  {/* Barra de abas */}
+                  <div style={{ background: "#E2E8F0", padding: "6px 10px 0", display: "flex", alignItems: "flex-end", gap: 2 }}>
+                    <div style={{ background: "#fff", borderRadius: "8px 8px 0 0", padding: "6px 16px", fontSize: "0.7rem", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: 5, maxWidth: 200 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C62828", flexShrink: 0 }} />
+                      Impressoras - FireHub
+                    </div>
+                  </div>
+                  {/* Barra de endereço */}
+                  <div style={{ background: "#fff", margin: "6px 8px", borderRadius: 20, padding: "7px 14px", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+                    {/* Seta animada apontando para o cadeado */}
+                    <div className="bounce-arrow" style={{ position: "absolute", top: -28, left: 8, fontSize: "1.4rem", zIndex: 10, filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.2))" }}>
+                      👆
+                    </div>
+                    <div className="pulse-ring" style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.82rem" }}>🔒</span>
+                    </div>
+                    <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 500 }}>app.firehub.com.br/store/impressoras</span>
+                  </div>
+
+                  {/* Popup simulado do navegador */}
+                  <div style={{ background: "#fff", margin: "4px 8px 8px 8px", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.12)", padding: "14px 16px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "#0F172A" }}>app.firehub.com.br</span>
+                      <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>✕</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontSize: "0.78rem", color: "#475569" }}>
+                      <span>🔒</span> A ligação é segura
+                    </div>
+                    <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: "0.78rem", color: "#374151", fontWeight: 600 }}>📱 Apps no dispositivo</span>
+                      </div>
+                      {/* Toggle animado */}
+                      <div className="toggle-demo" style={{ width: 38, height: 20, borderRadius: 10, background: "#3B82F6", position: "relative", flexShrink: 0 }}>
+                        <div className="toggle-knob" style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: "0.68rem", color: "#94A3B8", margin: "6px 0 0", lineHeight: 1.4 }}>
+                      Selecionar autorização para Apps no dispositivo
+                    </p>
+                  </div>
+                </div>
+
+                {/* Dica visual abaixo */}
+                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "10px 14px", marginTop: "0.75rem", display: "flex", alignItems: "center", gap: 8, fontSize: "0.78rem", color: "#1E40AF" }}>
+                  <span style={{ fontSize: "1.1rem" }}>💡</span>
+                  <span>Ao clicar em <strong>permitir</strong>, o navegador autoriza o site a se comunicar com o Assistente no seu computador. É <strong>seguro</strong> e funciona apenas na rede local.</span>
+                </div>
               </div>
 
               {/* Passo 3 */}
@@ -198,7 +249,7 @@ export default function PrinterSetupClient({
                   <h3 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Verificar conexão</h3>
                 </div>
                 <p style={{ fontSize: "0.82rem", color: "#475569", margin: "0 0 12px" }}>
-                  Após abrir o assistente, clique no botão abaixo.
+                  Após abrir o assistente e permitir o acesso, clique abaixo para verificar.
                 </p>
                 <button onClick={tryConnect} style={{ padding: "10px 20px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <RefreshCw size={14} /> Verificar conexão
@@ -207,7 +258,26 @@ export default function PrinterSetupClient({
             </>
           )}
         </div>
-        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        <style>{`
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @keyframes bounceUp {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+          }
+          .bounce-arrow { animation: bounceUp 1.2s ease-in-out infinite; }
+          @keyframes pulseRing {
+            0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+            100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+          }
+          .pulse-ring { animation: pulseRing 2s ease-in-out infinite; border-radius: 50%; }
+          @keyframes toggleSlide {
+            0%, 40% { left: 20px; }
+            50%, 90% { left: 20px; }
+            45%, 95% { left: 2px; }
+          }
+          .toggle-knob { animation: toggleSlide 3s ease-in-out infinite; left: 20px; }
+        `}</style>
       </div>
     );
   }
