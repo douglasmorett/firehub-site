@@ -181,65 +181,108 @@ export default function PrinterSetupClient({
                 </a>
               </div>
 
-              {/* Passo 2 — Mockup visual do navegador */}
+              {/* Passo 2 — Mockup visual REALISTA do Chrome */}
               <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #3B82F6", marginBottom: "1rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "10px" }}>
                   <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#3B82F6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.85rem", flexShrink: 0 }}>2</div>
                   <h3 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Permitir acesso à rede local</h3>
                 </div>
                 <p style={{ fontSize: "0.82rem", color: "#475569", margin: "0 0 14px", lineHeight: 1.5 }}>
-                  Clique no <strong>cadeado 🔒</strong> ao lado do endereço do site na barra do navegador, e ative o botão <strong>"Apps no dispositivo"</strong>.
+                  Na barra de endereço do navegador, clique no <strong>ícone de cadeado</strong> e ative <strong>"Apps no dispositivo"</strong>:
                 </p>
 
-                {/* ── MOCKUP DO NAVEGADOR ──────────────────────── */}
-                <div style={{ background: "#F1F5F9", borderRadius: 12, overflow: "hidden", border: "1.5px solid #E2E8F0", position: "relative" }}>
-                  {/* Barra de abas */}
-                  <div style={{ background: "#E2E8F0", padding: "6px 10px 0", display: "flex", alignItems: "flex-end", gap: 2 }}>
-                    <div style={{ background: "#fff", borderRadius: "8px 8px 0 0", padding: "6px 16px", fontSize: "0.7rem", fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: 5, maxWidth: 200 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C62828", flexShrink: 0 }} />
-                      Impressoras - FireHub
+                {/* ── MOCKUP REALISTA DO CHROME ──────────────────── */}
+                <div style={{ borderRadius: 12, overflow: "hidden", border: "1.5px solid #DEE1E6" }}>
+
+                  {/* Barra de endereço do Chrome */}
+                  <div style={{ background: "#F1F3F4", padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, background: "#fff", borderRadius: 20, padding: "6px 14px", display: "flex", alignItems: "center", gap: 8, border: "1px solid #DEE1E6" }}>
+                      {/* Cadeado com seta animada */}
+                      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                        <div className="bounce-arrow" style={{ position: "absolute", top: -30, left: "50%", transform: "translateX(-50%)", fontSize: "1.2rem", zIndex: 10 }}>
+                          👆
+                        </div>
+                        <div className="pulse-ring">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5F6368" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: "0.82rem", color: "#202124" }}>firehubfood.com.br/store/impressoras</span>
                     </div>
-                  </div>
-                  {/* Barra de endereço */}
-                  <div style={{ background: "#fff", margin: "6px 8px", borderRadius: 20, padding: "7px 14px", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-                    {/* Seta animada apontando para o cadeado */}
-                    <div className="bounce-arrow" style={{ position: "absolute", top: -28, left: 8, fontSize: "1.4rem", zIndex: 10, filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.2))" }}>
-                      👆
-                    </div>
-                    <div className="pulse-ring" style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                      <span style={{ fontSize: "0.82rem" }}>🔒</span>
-                    </div>
-                    <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 500 }}>app.firehub.com.br/store/impressoras</span>
                   </div>
 
-                  {/* Popup simulado do navegador */}
-                  <div style={{ background: "#fff", margin: "4px 8px 8px 8px", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.12)", padding: "14px 16px", border: "1px solid #E2E8F0" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "#0F172A" }}>app.firehub.com.br</span>
-                      <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>✕</span>
+                  {/* Popup do Chrome — cópia fiel */}
+                  <div style={{ background: "#fff", padding: 0 }}>
+                    {/* Header do popup */}
+                    <div style={{ padding: "16px 16px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #E8EAED" }}>
+                      <span style={{ fontWeight: 600, fontSize: "0.92rem", color: "#202124" }}>firehubfood.com.br</span>
+                      <span style={{ fontSize: "0.82rem", color: "#5F6368", cursor: "pointer", lineHeight: 1 }}>✕</span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontSize: "0.78rem", color: "#475569" }}>
-                      <span>🔒</span> A ligação é segura
-                    </div>
-                    <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: "0.78rem", color: "#374151", fontWeight: 600 }}>📱 Apps no dispositivo</span>
+
+                    {/* Conexão segura */}
+                    <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #F1F3F4" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        <span style={{ fontSize: "0.82rem", color: "#202124" }}>A conexão é segura</span>
                       </div>
-                      {/* Toggle animado */}
-                      <div className="toggle-demo" style={{ width: 38, height: 20, borderRadius: 10, background: "#3B82F6", position: "relative", flexShrink: 0 }}>
-                        <div className="toggle-knob" style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                      <span style={{ fontSize: "0.75rem", color: "#5F6368" }}>›</span>
+                    </div>
+
+                    {/* Notificações */}
+                    <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #F1F3F4" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                        <span style={{ fontSize: "0.82rem", color: "#202124" }}>Notificações</span>
+                      </div>
+                      <div style={{ width: 36, height: 18, borderRadius: 9, background: "#1A73E8", position: "relative" }}>
+                        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: 20, boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
                       </div>
                     </div>
-                    <p style={{ fontSize: "0.68rem", color: "#94A3B8", margin: "6px 0 0", lineHeight: 1.4 }}>
-                      Selecionar autorização para Apps no dispositivo
-                    </p>
+
+                    {/* ★ Apps no dispositivo — DESTAQUE com seta */}
+                    <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #F1F3F4", background: "#E8F0FE", position: "relative" }}>
+                      {/* Seta animada lateral */}
+                      <div className="bounce-right" style={{ position: "absolute", right: 50, top: "50%", transform: "translateY(-50%)", fontSize: "1.1rem" }}>
+                        👉
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1A73E8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                        <span style={{ fontSize: "0.82rem", color: "#1A73E8", fontWeight: 600 }}>Apps no dispositivo</span>
+                      </div>
+                      {/* Toggle animado — liga/desliga */}
+                      <div className="toggle-demo" style={{ width: 36, height: 18, borderRadius: 9, position: "relative", flexShrink: 0 }}>
+                        <div className="toggle-knob" style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
+                      </div>
+                    </div>
+
+                    {/* Redefinir permissões */}
+                    <div style={{ padding: "12px 16px", display: "flex", justifyContent: "center", borderBottom: "1px solid #F1F3F4" }}>
+                      <span style={{ fontSize: "0.78rem", color: "#1A73E8", fontWeight: 500, padding: "6px 16px", border: "1px solid #DADCE0", borderRadius: 20 }}>Redefinir permissões</span>
+                    </div>
+
+                    {/* Cookies e dados */}
+                    <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #F1F3F4" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                        <span style={{ fontSize: "0.82rem", color: "#202124" }}>Cookies e dados de sites</span>
+                      </div>
+                      <span style={{ fontSize: "0.75rem", color: "#5F6368" }}>›</span>
+                    </div>
+
+                    {/* Configurações */}
+                    <div style={{ padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5F6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                        <span style={{ fontSize: "0.82rem", color: "#202124" }}>Configurações de sites</span>
+                      </div>
+                      <span style={{ fontSize: "0.75rem", color: "#5F6368" }}>↗</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Dica visual abaixo */}
+                {/* Dica */}
                 <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "10px 14px", marginTop: "0.75rem", display: "flex", alignItems: "center", gap: 8, fontSize: "0.78rem", color: "#1E40AF" }}>
-                  <span style={{ fontSize: "1.1rem" }}>💡</span>
-                  <span>Ao clicar em <strong>permitir</strong>, o navegador autoriza o site a se comunicar com o Assistente no seu computador. É <strong>seguro</strong> e funciona apenas na rede local.</span>
+                  <span style={{ fontSize: "1.1rem", flexShrink: 0 }}>💡</span>
+                  <span>Isso autoriza o site a se comunicar com o Assistente no seu computador. É <strong>seguro</strong> e funciona apenas na rede local.</span>
                 </div>
               </div>
 
@@ -266,6 +309,11 @@ export default function PrinterSetupClient({
             50% { transform: translateY(-8px); }
           }
           .bounce-arrow { animation: bounceUp 1.2s ease-in-out infinite; }
+          @keyframes bounceRight {
+            0%, 100% { transform: translateY(-50%) translateX(0); }
+            50% { transform: translateY(-50%) translateX(6px); }
+          }
+          .bounce-right { animation: bounceRight 1s ease-in-out infinite; }
           @keyframes pulseRing {
             0% { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
             70% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
@@ -273,10 +321,13 @@ export default function PrinterSetupClient({
           }
           .pulse-ring { animation: pulseRing 2s ease-in-out infinite; border-radius: 50%; }
           @keyframes toggleSlide {
-            0%, 40% { left: 20px; }
-            50%, 90% { left: 20px; }
-            45%, 95% { left: 2px; }
+            0%, 40% { left: 20px; background: #1A73E8; }
+            45% { left: 2px; background: #DADCE0; }
+            50%, 90% { left: 20px; background: #1A73E8; }
+            95% { left: 2px; background: #DADCE0; }
+            100% { left: 20px; background: #1A73E8; }
           }
+          .toggle-demo { background: #1A73E8; }
           .toggle-knob { animation: toggleSlide 3s ease-in-out infinite; left: 20px; }
         `}</style>
       </div>
