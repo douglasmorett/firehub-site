@@ -213,6 +213,8 @@ export default function PrinterSetupClient({
   }
 
   /* ─── CONFIGURAÇÃO (Assistente conectado) ──────────────────── */
+  const [showHelp, setShowHelp] = useState(false);
+
   return (
     <div style={{ fontFamily: "'Inter',sans-serif", minHeight: "100vh", background: "#F8FAFC", padding: "2rem 1rem" }}>
       <div style={{ maxWidth: 680, margin: "0 auto" }}>
@@ -225,12 +227,7 @@ export default function PrinterSetupClient({
             </div>
             <div>
               <h1 style={{ fontWeight: 900, fontSize: "1.3rem", margin: 0 }}>Impressoras</h1>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16A34A" }} />
-                <span style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 700 }}>
-                  Assistente conectado • {availablePrinters.filter(p => /^(USB|LPT|COM)/i.test(p.port)).length || availablePrinters.length} impressora(s) detectada(s)
-                </span>
-              </div>
+              <p style={{ margin: "2px 0 0", fontSize: "0.82rem", color: "#64748B" }}>{storeName}</p>
             </div>
           </div>
           <button
@@ -242,6 +239,103 @@ export default function PrinterSetupClient({
           </button>
         </div>
 
+        {/* ── CARD: ASSISTENTE + DOWNLOAD ─────────────────────── */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 220 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: "#F0FDF4", border: "1.5px solid #BBF7D0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <CheckCircle size={20} color="#16A34A" />
+              </div>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontWeight: 800, fontSize: "0.95rem" }}>Assistente FireHub</span>
+                  <span style={{ padding: "2px 8px", borderRadius: 20, background: "#F0FDF4", color: "#16A34A", fontSize: "0.68rem", fontWeight: 700, border: "1px solid #BBF7D0" }}>Conectado</span>
+                </div>
+                <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
+                  {availablePrinters.filter(p => /^(USB|LPT|COM)/i.test(p.port)).length || availablePrinters.length} impressora(s) detectada(s) no computador
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <a
+                href="/downloads/FireHub-Assistente-Impressao.exe"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.78rem", whiteSpace: "nowrap" }}
+              >
+                <Download size={14} /> Baixar Assistente
+              </a>
+              <button onClick={() => setShowHelp(v => !v)} style={{ padding: "8px 14px", borderRadius: 10, background: "#F1F5F9", border: "none", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", color: "#64748B", whiteSpace: "nowrap" }}>
+                ❓ Ajuda
+              </button>
+            </div>
+          </div>
+
+          {/* Info rápida */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: "0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#475569", background: "#F8FAFC", padding: "5px 10px", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+              🖨️ Permite comunicação com suas impressoras
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#475569", background: "#F8FAFC", padding: "5px 10px", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+              🔒 Acesso seguro apenas à sua rede local
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem", color: "#475569", background: "#F8FAFC", padding: "5px 10px", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+              ✅ Necessário para impressão automática
+            </div>
+          </div>
+
+          {/* Seção de ajuda expandível */}
+          {showHelp && (
+            <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1.5px solid #F1F5F9" }}>
+              <h3 style={{ fontWeight: 800, fontSize: "0.9rem", margin: "0 0 12px", color: "#0F172A" }}>📖 Como configurar sua impressora</h3>
+              
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>1</div>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Baixe o Assistente FireHub</p>
+                    <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Clique no botão vermelho "Baixar Assistente" acima. Salve o arquivo no computador que está conectado à impressora.</p>
+                  </div>
+                </div>
+                
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>2</div>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Execute o programa</p>
+                    <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Dê dois cliques no arquivo baixado para abrir. Uma janela preta vai aparecer com a mensagem "FireHub Assistente rodando". <strong>Não feche essa janela!</strong></p>
+                  </div>
+                </div>
+                
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>3</div>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Permita acesso à rede local</p>
+                    <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>O navegador pode pedir permissão para acessar a rede local. Clique em <strong>"Permitir"</strong>. Isso é necessário apenas na primeira vez.</p>
+                  </div>
+                </div>
+                
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>4</div>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Configure sua impressora</p>
+                    <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Clique em "Adicionar impressora", selecione a impressora na lista, dê um apelido (ex: "Cozinha") e faça um teste de impressão.</p>
+                  </div>
+                </div>
+                
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>5</div>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Ative a impressão automática</p>
+                    <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Ligue o botão "Impressão automática" e salve. Pronto! Cada pedido aceito vai imprimir a comanda sozinho.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 14px", marginTop: "1rem", fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
+                <strong>⚠️ Importante:</strong> O Assistente precisa estar aberto no computador para funcionar. Se fechar o programa, a impressão automática para até abrir novamente.
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Auto-print toggle */}
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1px solid #E2E8F0", marginBottom: "1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -249,7 +343,7 @@ export default function PrinterSetupClient({
               <CheckCircle size={18} color={config.autoprint ? "#16A34A" : "#94A3B8"} />
             </div>
             <div>
-              <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Impressão automática</p>
+              <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Impressão automática de pedidos</p>
               <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>
                 {config.autoprint ? "✅ Comanda impressa automaticamente ao aceitar pedido" : "Desativado — você precisará imprimir manualmente"}
               </p>
