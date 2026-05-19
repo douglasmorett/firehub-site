@@ -2,20 +2,32 @@
   "name": "firehub-print-assistant",
   "version": "1.0.0",
   "description": "Assistente FireHub de Impressão — servidor local para impressoras térmicas",
-  "main": "server.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js",
-    "build": "pkg server.js --target node18-win-x64 --output dist/FireHub-Assistente-Impressao.exe"
+    "start": "electron .",
+    "start:server": "node server.js",
+    "build": "electron-builder --win",
+    "build:portable": "electron-builder --win portable"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2"
   },
   "devDependencies": {
-    "pkg": "^5.8.1"
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1"
   },
-  "pkg": {
-    "assets": [],
-    "targets": ["node18-win-x64"]
+  "build": {
+    "appId": "com.firehub.print-assistant",
+    "productName": "FireHub Assistente de Impressão",
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "FireHub-Assistente-Impressao.exe"
+    }
   }
 }
