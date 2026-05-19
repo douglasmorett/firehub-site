@@ -27,6 +27,7 @@ export default async function StoreOrdersPage() {
   const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; border: string }> = {
     PENDING_PAYMENT: { label: "Aguardando Pagamento", bg: "#FEF3C7", color: "#92400E", border: "#FDE68A" },
     PAGO:            { label: "Pago",                  bg: "#DCFCE7", color: "#166534", border: "#BBF7D0" },
+    PAID:            { label: "Pago",                  bg: "#DCFCE7", color: "#166534", border: "#BBF7D0" },
     AGUARDANDO_ENTREGA: { label: "Aguardando Entrega", bg: "#DBEAFE", color: "#1E40AF", border: "#BFDBFE" },
     FINALIZADO:      { label: "Finalizado",            bg: "#F0FDF4", color: "#16A34A", border: "#BBF7D0" },
     CANCELADO:       { label: "Cancelado",             bg: "#FEE2E2", color: "#DC2626", border: "#FECACA" },
@@ -80,6 +81,7 @@ export default async function StoreOrdersPage() {
             const st = STATUS_CONFIG[order.status] || { label: order.status, bg: "#F1F5F9", color: "#475569", border: "#E2E8F0" };
             const shortId = order.id.slice(-6).toUpperCase();
             const isPending = order.status === "PENDING_PAYMENT";
+            const isPaid = order.status === "PAGO" || order.status === "PAID";
             const isCancelled = order.status === "CANCELADO";
 
             return (
@@ -188,6 +190,21 @@ export default async function StoreOrdersPage() {
                 {isPending && !order.boletoUrl && (
                   <div style={{ padding: "0 1.25rem 1rem" }}>
                     <GeneratePaymentLink orderId={order.id} shortId={shortId} />
+                  </div>
+                )}
+
+                {/* ── Badge de pagamento confirmado ── */}
+                {isPaid && (
+                  <div style={{ padding: "0 1.25rem 1rem" }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      width: "100%", padding: "11px", borderRadius: 10,
+                      background: "#DCFCE7", color: "#166534",
+                      fontWeight: 800, fontSize: "0.9rem",
+                      border: "1.5px solid #BBF7D0",
+                    }}>
+                      ✅ Pagamento Confirmado
+                    </div>
                   </div>
                 )}
               </div>

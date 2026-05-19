@@ -8,61 +8,95 @@ export async function POST(req: Request) {
 
     // Validação de segurança do Webhook
     if (asaasToken && receivedToken !== asaasToken) {
-      console.error("Tentativa de Webhook com Token Inválido!");
+      console.error("[webhook/asaas] Token inválido!");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
     const { event, payment } = body;
 
-    console.log(`Webhook Asaas recebido: Evento ${event} para Pagamento ${payment.id}`);
+    console.log(`[webhook/asaas] Evento: ${event} | Payment: ${payment?.id} | externalRef: ${payment?.externalReference}`);
 
-    // Procurar o pedido no banco de dados pelo ID do pagamento do Asaas
-    const order = await prisma.order.findFirst({
+    if (!payment?.id) {
+      return NextResponse.json({ received: true });
+    }
+
+    // Procurar o pedido: primeiro por asaasPaymentId, depois por externalReference (orderId)
+    let order = await prisma.order.findFirst({
       where: { asaasPaymentId: payment.id }
     });
 
+    if (!order && payment.externalReference) {
+      order = await prisma.order.findFirst({
+        where: { id: payment.externalReference }
+      });
+
+      // Se encontrou por externalReference, salvar o asaasPaymentId que estava faltando
+      if (order && !order.asaasPaymentId) {
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { asaasPaymentId: payment.id }
+        });
+        console.log(`[webhook/asaas] asaasPaymentId ${payment.id} salvo no pedido ${order.id}`);
+      }
+    }
+
     if (!order) {
-      console.warn(`Pedido não encontrado para o Pagamento ID ${payment.id}`);
-      // Respondemos 200 para o Asaas não ficar tentando reenviar algo que não temos
+      console.warn(`[webhook/asaas] Pedido não encontrado para payment ${payment.id}`);
       return NextResponse.json({ received: true });
     }
+
+    const shortId = order.id.slice(-6).toUpperCase();
 
     // Processar eventos de confirmação de pagamento
     if (event === "PAYMENT_RECEIVED" || event === "PAYMENT_CONFIRMED") {
       const oldStatus = order.status;
       
-      if (oldStatus !== "PAID") {
+      if (oldStatus !== "PAGO") {
         await prisma.order.update({
           where: { id: order.id },
-          data: { status: "PAID" }
+          data: { status: "PAGO" }
         });
 
-        // Registrar no histórico do pedido
-        await prisma.orderHistory.create({
-          data: {
-            orderId: order.id,
-            statusFrom: oldStatus,
-            statusTo: "PAID",
-            actionBy: "Asaas Webhook",
-            actionEmail: "financeiro@asaas.com.br",
-            notes: `Pagamento confirmado via Asaas (ID: ${payment.id}). Valor: R$ ${payment.value}`
-          }
-        });
+        // Registrar no histórico do pedido (com try/catch para não bloquear)
+        try {
+          await prisma.orderHistory.create({
+            data: {
+              orderId: order.id,
+              statusFrom: oldStatus,
+              statusTo: "PAGO",
+              actionBy: "Asaas Webhook",
+              actionEmail: "financeiro@asaas.com.br",
+              notes: `Pagamento confirmado via Asaas (ID: ${payment.id}). Valor: R$ ${payment.value}`
+            }
+          });
+        } catch (historyErr) {
+          console.error(`[webhook/asaas] Erro ao criar histórico para #${shortId}:`, historyErr);
+        }
 
-        console.log(`Pedido ${order.id} marcado como PAGO via Webhook.`);
+        console.log(`[webhook/asaas] ✅ Pedido #${shortId} marcado como PAGO.`);
       }
     }
 
-    // Processar evento de vencimento (opcional)
+    // Atualizar boletoUrl se ainda não tiver
+    if (!order.boletoUrl && (payment.invoiceUrl || payment.bankSlipUrl)) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { boletoUrl: payment.invoiceUrl || payment.bankSlipUrl }
+      });
+      console.log(`[webhook/asaas] boletoUrl atualizado para #${shortId}`);
+    }
+
+    // Processar evento de vencimento
     if (event === "PAYMENT_OVERDUE") {
-        console.warn(`O pagamento ${payment.id} do pedido ${order.id} está VENCIDO.`);
+      console.warn(`[webhook/asaas] ⚠️ Pagamento ${payment.id} do pedido #${shortId} está VENCIDO.`);
     }
 
     return NextResponse.json({ success: true });
 
   } catch (error: any) {
-    console.error("Erro no Webhook Asaas:", error);
+    console.error("[webhook/asaas] Erro:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
+
