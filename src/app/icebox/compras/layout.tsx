@@ -1,9 +1,9 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { CartProvider } from "@/components/CartProvider";
-import { headers } from "next/headers";
 import { Metadata } from "next";
 import Link from "next/link";
+import IceboxLogoutButton from "@/components/IceboxLogoutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,10 @@ export default async function IceboxLayout({ children }: { children: React.React
 
   return (
     <CartProvider>
+      <head>
+        <link rel="icon" href="/icebox-favicon.png" type="image/png" />
+        <link rel="shortcut icon" href="/icebox-favicon.png" type="image/png" />
+      </head>
       <div className="icebox-theme" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#F5F5F5" }}>
         {/* Top bar Icebox */}
         <nav style={{
@@ -35,7 +39,7 @@ export default async function IceboxLayout({ children }: { children: React.React
           flexWrap: "wrap",
           boxShadow: "0 2px 12px rgba(13,71,161,0.3)",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Link href="/icebox/compras" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ fontSize: "1.3rem" }}>🧊</span>
             </div>
@@ -43,8 +47,8 @@ export default async function IceboxLayout({ children }: { children: React.React
               <span style={{ color: "#fff", fontWeight: 800, fontSize: "1.1rem", letterSpacing: "-0.3px" }}>Icebox</span>
               <span style={{ color: "#93C5FD", fontWeight: 600, fontSize: "0.72rem", marginLeft: 6 }}>Distribuidora</span>
             </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {isLoggedIn ? (
               <>
                 <span style={{ color: "#BFDBFE", fontSize: "0.82rem" }}>
@@ -62,6 +66,7 @@ export default async function IceboxLayout({ children }: { children: React.React
                 }}>
                   📋 Meus Pedidos
                 </Link>
+                <IceboxLogoutButton />
               </>
             ) : (
               <Link href="/icebox/login" style={{
