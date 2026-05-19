@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
-        // Icebox domain → catálogo de compras
+        // ─── Icebox: raiz → catálogo ───
         {
           source: "/",
           has: [{ type: "host", value: "iceboxdistribuidora.com.br" }],
@@ -21,6 +21,17 @@ const nextConfig: NextConfig = {
           source: "/",
           has: [{ type: "host", value: "www.iceboxdistribuidora.com.br" }],
           destination: "/store/compras",
+        },
+        // ─── Icebox: login → login Icebox azul ───
+        {
+          source: "/login",
+          has: [{ type: "host", value: "iceboxdistribuidora.com.br" }],
+          destination: "/icebox/login",
+        },
+        {
+          source: "/login",
+          has: [{ type: "host", value: "www.iceboxdistribuidora.com.br" }],
+          destination: "/icebox/login",
         },
       ],
       afterFiles: [],

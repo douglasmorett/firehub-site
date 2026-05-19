@@ -6,14 +6,12 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = (request.headers.get("host") || "").toLowerCase();
 
-  // Icebox domain: não exige login para nenhuma rota de compra
-  const isIcebox = host.includes("iceboxdistribuidora");
-  if (isIcebox) {
-    // Permite tudo no domínio Icebox — a autenticação é tratada na página
+  // ─── ICEBOX DOMAIN: libera tudo, autenticação na página ──────
+  if (host.includes("iceboxdistribuidora")) {
     return NextResponse.next();
   }
 
-  // Rotas protegidas: /store/* exige autenticação (exceto /store/compras)
+  // ─── FIREHUB DOMAIN: rotas protegidas /store/* ───────────────
   if (pathname.startsWith("/store")) {
     // /store/compras é público (catálogo Icebox acessível pelo FireHub também)
     if (pathname.startsWith("/store/compras")) {
@@ -31,7 +29,6 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Só FRANCHISEE e ADMIN podem acessar /store
     const role = token.role as string;
     if (role !== "FRANCHISEE" && role !== "ADMIN") {
       return NextResponse.redirect(new URL("/login", request.url));
