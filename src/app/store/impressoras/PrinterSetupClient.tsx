@@ -37,6 +37,7 @@ export default function PrinterSetupClient({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testingPrinter, setTestingPrinter] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const tryConnect = useCallback(async () => {
     setStatus("checking");
@@ -283,7 +284,6 @@ export default function PrinterSetupClient({
   }
 
   /* ─── CONFIGURAÇÃO (Assistente conectado) ──────────────────── */
-  const [showHelp, setShowHelp] = useState(false);
 
   return (
     <div style={{ fontFamily: "'Inter',sans-serif", minHeight: "100vh", background: "#F8FAFC", padding: "2rem 1rem" }}>
