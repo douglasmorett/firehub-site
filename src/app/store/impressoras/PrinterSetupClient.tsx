@@ -172,20 +172,12 @@ export default function PrinterSetupClient({
                 </p>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <a
-                    href="https://github.com/qzind/tray/releases/latest/download/qz-tray-2.2.6-x86_64.exe"
+                    href="https://qz.io/download/"
                     target="_blank" rel="noreferrer"
                     onClick={() => setSetupStep(s => Math.max(s, 1))}
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 20px", background: "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.88rem" }}
                   >
-                    <Download size={15} /> Baixar QZ Tray (Windows)
-                  </a>
-                  <a
-                    href="https://github.com/qzind/tray/releases/latest/download/qz-tray-2.2.6-x86_64.pkg"
-                    target="_blank" rel="noreferrer"
-                    onClick={() => setSetupStep(s => Math.max(s, 1))}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "#1E293B", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.85rem" }}
-                  >
-                    <Download size={14} /> Mac
+                    <Download size={15} /> Baixar QZ Tray (Windows / Mac)
                   </a>
                 </div>
               </div>

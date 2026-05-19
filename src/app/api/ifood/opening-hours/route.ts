@@ -30,20 +30,25 @@ export async function PUT(req: NextRequest) {
   try {
     const body        = await req.json();
     const merchantId  = getMerchantId();
+    const payload     = body.openingHours ?? body; // aceita ambos formatos
 
-    // body.openingHours = [{ dayOfWeek, shifts: [{ start, duration }] }]
+    console.log("[iFood Opening Hours PUT] Enviando:", JSON.stringify(payload, null, 2));
+
     const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`, {
       method: "PUT",
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json().catch(() => ({}));
+    console.log("[iFood Opening Hours PUT] Resposta:", res.status, JSON.stringify(data));
+
     if (!res.ok) {
       return NextResponse.json({ error: `iFood ${res.status}`, details: data }, { status: res.status });
     }
 
     return NextResponse.json({ success: true, result: data });
   } catch (err: any) {
+    console.error("[iFood Opening Hours PUT] Erro:", err.message);
     return NextResponse.json({ error: err.message }, { status: 502 });
   }
 }

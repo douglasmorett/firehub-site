@@ -36,6 +36,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   // Agendar Pausa
   const todayStr = new Date().toISOString().slice(0, 10);
   const [pauseActive, setPauseActive] = useState<boolean>(user.storePause?.active || false);
+  const [pauseSavedActive, setPauseSavedActive] = useState<boolean>(user.storePause?.active || false);
   const [pauseFrom, setPauseFrom] = useState<string>(user.storePause?.from || todayStr);
   const [pauseTo, setPauseTo] = useState<string>(user.storePause?.to || todayStr);
   const [pauseReason, setPauseReason] = useState<string>(user.storePause?.reason || "Férias");
@@ -171,6 +172,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     setSavingPause(true);
     try {
       await saveFields({ storePause: { active: pauseActive, from: pauseFrom, to: pauseTo, reason: pauseReason } });
+      setPauseSavedActive(pauseActive);
       setDirtyPause(false);
       // Sync com iFood
       try {
@@ -386,14 +388,14 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
       </div>}
 
       {/* AGENDAR PAUSA */}
-      {show("hours") && <div className="card mb-4" style={{ border: pauseActive ? "1.5px solid #FCA5A5" : "1.5px solid #E2E8F0", background: pauseActive ? "#FFF5F5" : "#fff" }}>
+      {show("hours") && <div className="card mb-4" style={{ border: pauseSavedActive ? "1.5px solid #FCA5A5" : "1.5px solid #E2E8F0", background: pauseSavedActive ? "#FFF5F5" : "#fff" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Calendar size={18} color={pauseActive ? "#DC2626" : "#64748B"} />
-            <h3 className="font-bold" style={{ margin: 0, color: pauseActive ? "#DC2626" : "inherit" }}>
+            <Calendar size={18} color={pauseSavedActive ? "#DC2626" : "#64748B"} />
+            <h3 className="font-bold" style={{ margin: 0, color: pauseSavedActive ? "#DC2626" : "inherit" }}>
               📅 Agendar Pausa / Férias
             </h3>
-            {pauseActive && <span style={{ padding: "2px 8px", background: "#FEE2E2", color: "#DC2626", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700 }}>ATIVO</span>}
+            {pauseSavedActive && <span style={{ padding: "2px 8px", background: "#FEE2E2", color: "#DC2626", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700 }}>ATIVO</span>}
           </div>
           <button
             onClick={() => { setPauseActive(v => !v); setDirtyPause(true); }}
