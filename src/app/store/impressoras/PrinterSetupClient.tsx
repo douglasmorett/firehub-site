@@ -398,42 +398,41 @@ export default function PrinterSetupClient({
                   }
                   const printerName = config.printers[0].name;
                   const now = new Date();
-                  const data = [
-                    "\x1B\x40",           // Init
-                    "\x1B\x61\x01",       // Center
-                    "\x1D\x21\x11",       // Double size
-                    "FIREHUB\n",
-                    "\x1D\x21\x00",       // Normal size
-                    "\x1B\x61\x01",       // Center
-                    "================================\n",
-                    "    IMPRESSAO DE TESTE\n",
-                    "================================\n\n",
-                    "\x1B\x61\x00",       // Left align
-                    `Impressora: ${printerName}\n`,
-                    `Data: ${now.toLocaleDateString("pt-BR")}\n`,
-                    `Hora: ${now.toLocaleTimeString("pt-BR")}\n\n`,
-                    "\x1B\x61\x01",       // Center
-                    "--------------------------------\n",
-                    "Item              Qtd   Valor\n",
-                    "--------------------------------\n",
-                    "\x1B\x61\x00",       // Left
-                    "X-Burger           1   R$25,90\n",
-                    "Coca-Cola 600ml    2   R$17,00\n",
-                    "Batata Frita       1   R$14,50\n",
-                    "\x1B\x61\x01",       // Center
-                    "--------------------------------\n",
-                    "\x1D\x21\x01",       // Tall
-                    "TOTAL: R$ 57,40\n",
-                    "\x1D\x21\x00",       // Normal
-                    "\n",
-                    "Pedido #TESTE-001\n",
-                    "Cliente: Teste FireHub\n\n",
-                    "Se voce esta lendo isso,\n",
-                    "a impressora esta funcionando!\n\n",
-                    "\x1D\x56\x00",       // Cut
-                  ];
-                  const qzConfig = window.qz.configs.create(printerName);
-                  await window.qz.print(qzConfig, data);
+                  const html = `
+                    <html><head><style>
+                      body { font-family: 'Courier New', monospace; width: 270px; padding: 8px; margin: 0; font-size: 12px; }
+                      .center { text-align: center; }
+                      .bold { font-weight: bold; }
+                      .big { font-size: 20px; font-weight: 900; }
+                      .line { border-top: 1px dashed #000; margin: 6px 0; }
+                      table { width: 100%; border-collapse: collapse; }
+                      td { padding: 2px 0; font-size: 11px; }
+                      .total { font-size: 16px; font-weight: 900; text-align: center; margin: 8px 0; }
+                      .footer { text-align: center; font-size: 10px; margin-top: 10px; }
+                    </style></head><body>
+                      <div class="center big">🔥 FIREHUB</div>
+                      <div class="line"></div>
+                      <div class="center bold">IMPRESSÃO DE TESTE</div>
+                      <div class="line"></div>
+                      <div>Impressora: ${printerName}</div>
+                      <div>Data: ${now.toLocaleDateString("pt-BR")}</div>
+                      <div>Hora: ${now.toLocaleTimeString("pt-BR")}</div>
+                      <div class="line"></div>
+                      <table>
+                        <tr><td class="bold">Item</td><td class="bold" style="text-align:center">Qtd</td><td class="bold" style="text-align:right">Valor</td></tr>
+                        <tr><td>X-Burger</td><td style="text-align:center">1</td><td style="text-align:right">R$25,90</td></tr>
+                        <tr><td>Coca-Cola 600ml</td><td style="text-align:center">2</td><td style="text-align:right">R$17,00</td></tr>
+                        <tr><td>Batata Frita</td><td style="text-align:center">1</td><td style="text-align:right">R$14,50</td></tr>
+                      </table>
+                      <div class="line"></div>
+                      <div class="total">TOTAL: R$ 57,40</div>
+                      <div class="line"></div>
+                      <div class="center">Pedido #TESTE-001</div>
+                      <div class="center">Cliente: Teste FireHub</div>
+                      <div class="footer">Se você está lendo isso,<br/>a impressora está funcionando! ✅</div>
+                    </body></html>`;
+                  const qzConfig = window.qz.configs.create(printerName, { scaleContent: false, margins: { top: 0, right: 0, bottom: 0, left: 0 } });
+                  await window.qz.print(qzConfig, [{ type: "pixel", format: "html", data: html }]);
                   alert("✅ Impressão de teste enviada!");
                 } catch (e: any) {
                   alert("❌ Erro ao imprimir: " + e.message);
