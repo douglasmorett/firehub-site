@@ -4,38 +4,68 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import DREClient from "./DREClient";
 
-export default async function StoreFinanceiroPage() {
-  const session = await getServerSession(authOptions);
-  if (!session) redirect("/");
-  const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/");
+export const dynamic = "force-dynamic";
 
+export default async function StoreFinanceiroPage() {
+  // Auth FORA de try/catch — redirect() não pode ser capturado
+  const session = await getServerSession(authOptions).catch((err) => {
+    console.error("[Financeiro] Erro ao obter sessão:", err);
+    return null;
+  });
+  if (!session) redirect("/login");
+
+  const role = (session.user as any)?.role;
+  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+
+  // Busca do usuário FORA de try/catch
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
     select: {
       id: true, paymentFees: true, storeName: true,
       storeOrderCount: true, createdAt: true,
-      fixedCosts: true, financialGoals: true
+      fixedCosts: true, financialGoals: true, role: true,
     }
+  }).catch((err) => {
+    console.error("[Financeiro] Erro ao buscar usuário:", err);
+    return null;
   });
-  if (!user) redirect("/");
+  if (!user) redirect("/login");
 
   const since = new Date();
   since.setDate(since.getDate() - 365);
 
-  const orders = await prisma.customerOrder.findMany({
-    where: { franchiseeId: user.id, createdAt: { gte: since } },
-    include: {
-      items: { include: { menuProduct: { select: { name: true, cost: true } } } },
-      motoboy: { select: { name: true, paymentType: true, perDeliveryRate: true, dailyRate: true, perKmRate: true } }
-    },
-    orderBy: { createdAt: "desc" }
-  });
+  // ADMIN vê tudo, FRANCHISEE só vê os seus
+  const franchiseeFilter = user.role === "ADMIN"
+    ? { createdAt: { gte: since } }
+    : { franchiseeId: user.id, createdAt: { gte: since } };
 
-  const produtosSemCusto = await prisma.menuProduct.findMany({
-    where: { OR: [{ cost: null }, { cost: 0 }] },
-    select: { name: true, id: true }
-  });
+  let orders: any[] = [];
+  let produtosSemCusto: any[] = [];
+
+  try {
+    orders = await prisma.customerOrder.findMany({
+      where: franchiseeFilter,
+      include: {
+        items: { include: { menuProduct: { select: { name: true, cost: true } } } },
+        motoboy: { select: { name: true, paymentType: true, perDeliveryRate: true, dailyRate: true, perKmRate: true } }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    // Produtos sem custo filtrados por franqueado
+    const produtoFilter = user.role === "ADMIN"
+      ? { OR: [{ cost: null }, { cost: 0 }] }
+      : { franchiseeId: user.id, OR: [{ cost: null }, { cost: 0 }] };
+
+    produtosSemCusto = await prisma.menuProduct.findMany({
+      where: produtoFilter,
+      select: { name: true, id: true }
+    });
+  } catch (err) {
+    console.error("[Financeiro] Erro ao buscar dados:", err);
+    orders = [];
+    produtosSemCusto = [];
+  }
 
   const serialized = orders.map(o => ({
     id: o.id,
@@ -49,7 +79,7 @@ export default async function StoreFinanceiroPage() {
     pagarmeMethod: (o as any).pagarmeMethod || null,
     source: o.source || "ONLINE",
     createdAt: o.createdAt.toISOString(),
-    items: o.items.map(i => ({
+    items: o.items.map((i: any) => ({
       quantity: i.quantity,
       price: i.price,
       cost: i.menuProduct?.cost || 0,

@@ -4,16 +4,25 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import MinhaLojaClient from "@/components/customer/MinhaLojaClient";
 
+export const dynamic = "force-dynamic";
+
 export default async function StoreSettingsPage() {
-  const session = await getServerSession(authOptions);
-  if (!session) redirect("/");
-  const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
-  if (!user) redirect("/");
+  const session = await getServerSession(authOptions).catch(() => null);
+  if (!session) redirect("/login");
+
+  const user = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" }
+  }).catch(() => null);
+  if (!user) redirect("/login");
 
   return (
     <MinhaLojaClient user={{
       id: user.id,
       slug: user.slug || "",
+      name: user.name || "",
+      email: user.email || "",
+      cpfCnpj: user.cpfCnpj || "",
+      city: user.city || "",
       storeName: user.storeName || "",
       storePhone: user.storePhone || "",
       storeAddress: user.storeAddress || "",

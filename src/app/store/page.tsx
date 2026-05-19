@@ -7,25 +7,24 @@ import StoreDashboard from "@/components/customer/StoreDashboard";
 export const dynamic = "force-dynamic";
 
 export default async function StorePage({ searchParams }: { searchParams: Promise<{ loja?: string }> }) {
-  let session;
-  try {
-    session = await getServerSession(authOptions);
-  } catch (err) {
+  // Auth FORA de try/catch — redirect() não pode ser capturado
+  const session = await getServerSession(authOptions).catch((err) => {
     console.error("[StorePage] Erro ao obter sessão:", err);
-    redirect("/login");
-  }
+    return null;
+  });
   if (!session) redirect("/login");
+
   const role = (session.user as any)?.role;
   if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
 
   const resolvedParams = await searchParams;
 
-  try {
-    const since = new Date();
-    since.setDate(since.getDate() - 90);
+  // ── ADMIN: acessa TODAS as lojas ─────────────────────────────────────────
+  if (role === "ADMIN") {
+    try {
+      const since = new Date();
+      since.setDate(since.getDate() - 90);
 
-    // ── ADMIN: acessa TODAS as lojas ─────────────────────────────────────────
-    if (role === "ADMIN") {
       const franchisees = await prisma.user.findMany({
         where: { role: "FRANCHISEE" },
         select: { id: true, name: true, slug: true, storeLogo: true },
@@ -74,24 +73,35 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         <StoreDashboard
           orders={serialized}
           paymentFees={{}}
-          completedOnboardingSteps={["logo","hours","payment","delivery","first_order","menu"]}
+          completedOnboardingSteps={["logo", "hours", "payment", "delivery", "first_order", "menu"]}
           isAdmin={true}
           storeList={storeList}
           selectedStoreId={selectedId}
         />
       );
+    } catch (err) {
+      console.error("[StorePage/Admin] Erro ao carregar dados:", err);
+      return <ErrorPanel />;
     }
+  }
 
-    // ── FRANCHISEE: só vê sua própria loja ──────────────────────────────────
-    const user = await prisma.user.findUnique({
-      where: { email: session.user?.email || "" },
-      select: {
-        id: true, slug: true,
-        storeLogo: true, storeBanner: true, storeHours: true,
-        paymentFees: true, deliveryZones: true, storeOrderCount: true,
-      }
-    });
-    if (!user) redirect("/login");
+  // ── FRANCHISEE: busca FORA de try/catch para que redirect() propague ─────
+  const user = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: {
+      id: true, slug: true,
+      storeLogo: true, storeBanner: true, storeHours: true,
+      paymentFees: true, deliveryZones: true, storeOrderCount: true,
+    }
+  }).catch((err) => {
+    console.error("[StorePage] Erro ao buscar usuário:", err);
+    return null;
+  });
+  if (!user) redirect("/login");
+
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - 90);
 
     const menuCount = await prisma.menuProduct.count({ where: { franchiseeId: user.id } });
 
@@ -137,22 +147,26 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
     );
   } catch (err) {
     console.error("[StorePage] Erro ao carregar dados:", err);
-    return (
-      <div style={{ padding: "2rem", textAlign: "center" }}>
-        <h2 style={{ color: "#DC2626", fontSize: "1.2rem", fontWeight: 800 }}>
-          ⚠️ Erro ao carregar o painel
-        </h2>
-        <p style={{ color: "#64748b", margin: "0.5rem 0" }}>
-          Ocorreu um erro inesperado. Tente recarregar a página.
-        </p>
-        <a href="/store" style={{
-          display: "inline-block", marginTop: "1rem",
-          padding: "10px 24px", background: "#DC2626", color: "#fff",
-          borderRadius: 10, fontWeight: 700, textDecoration: "none"
-        }}>
-          🔄 Recarregar
-        </a>
-      </div>
-    );
+    return <ErrorPanel />;
   }
+}
+
+function ErrorPanel() {
+  return (
+    <div style={{ padding: "2rem", textAlign: "center" }}>
+      <h2 style={{ color: "#DC2626", fontSize: "1.2rem", fontWeight: 800 }}>
+        ⚠️ Erro ao carregar o painel
+      </h2>
+      <p style={{ color: "#64748b", margin: "0.5rem 0" }}>
+        Ocorreu um erro inesperado. Tente recarregar a página.
+      </p>
+      <a href="/store" style={{
+        display: "inline-block", marginTop: "1rem",
+        padding: "10px 24px", background: "#DC2626", color: "#fff",
+        borderRadius: 10, fontWeight: 700, textDecoration: "none"
+      }}>
+        🔄 Recarregar
+      </a>
+    </div>
+  );
 }

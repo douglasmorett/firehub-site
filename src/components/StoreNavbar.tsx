@@ -65,7 +65,7 @@ export default function StoreNavbar({ userName, userCity }: { userName: string, 
               </span>
             )}
           </Link>
-          <Link href="/store/profile" className="btn btn-outline" style={{ border: "none" }} title="Meu Perfil">
+          <Link href="/store/minha-loja" className="btn btn-outline" style={{ border: "none" }} title="Minha Loja">
             <User size={18} />
           </Link>
           <a href="/api/auth/signout" className="btn" style={{ color: "var(--danger)" }}>

@@ -103,11 +103,75 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     else throw new Error("Erro ao salvar");
   };
 
+  const DAY_MAP: Record<string, string> = {
+    "Segunda": "MONDAY", "Terça": "TUESDAY", "Quarta": "WEDNESDAY",
+    "Quinta": "THURSDAY", "Sexta": "FRIDAY", "Sábado": "SATURDAY", "Domingo": "SUNDAY"
+  };
+
   const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, storeAddress, storeDeliveryOnly }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
-  const saveHours = async () => { setSavingHours(true); try { await saveFields({ storeHours }); setDirtyHours(false); } finally { setSavingHours(false); } };
+
+  const saveHours = async () => {
+    setSavingHours(true);
+    try {
+      await saveFields({ storeHours });
+      setDirtyHours(false);
+      // Sync com iFood (fire-and-forget — não bloqueia o save local)
+      try {
+        const ifoodHours = storeHours
+          .filter((h: any) => h.active && DAY_MAP[h.day])
+          .map((h: any) => ({
+            dayOfWeek: DAY_MAP[h.day],
+            shifts: (h.shifts || [{ open: h.open, close: h.close }]).map((s: any) => {
+              const [oH, oM] = (s.open || "00:00").split(":").map(Number);
+              const [cH, cM] = (s.close || "23:59").split(":").map(Number);
+              const dur = Math.max(1, (cH * 60 + cM) - (oH * 60 + oM));
+              return { start: s.open, duration: dur };
+            }),
+          }));
+        await fetch("/api/ifood/opening-hours", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ openingHours: ifoodHours }),
+        });
+      } catch { /* iFood sync falhou silenciosamente */ }
+    } finally { setSavingHours(false); }
+  };
+
   const saveCoupons = async () => { setSavingCoupons(true); try { await saveFields({ storeCoupons: coupons }); setDirtyCoupons(false); } finally { setSavingCoupons(false); } };
   const savePayment = async () => { setSavingPayment(true); try { await saveFields({ paymentFees: paymentConfig }); setDirtyPayment(false); } finally { setSavingPayment(false); } };
-  const savePause = async () => { setSavingPause(true); try { await saveFields({ storePause: { active: pauseActive, from: pauseFrom, to: pauseTo, reason: pauseReason } }); setDirtyPause(false); } finally { setSavingPause(false); } };
+
+  const savePause = async () => {
+    setSavingPause(true);
+    try {
+      await saveFields({ storePause: { active: pauseActive, from: pauseFrom, to: pauseTo, reason: pauseReason } });
+      setDirtyPause(false);
+      // Sync com iFood
+      try {
+        if (pauseActive) {
+          // Criar interrupção no iFood
+          await fetch("/api/ifood/interruptions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              description: pauseReason,
+              start: `${pauseFrom}T00:00:00`,
+              end:   `${pauseTo}T23:59:00`,
+            }),
+          });
+        } else {
+          // Remover todas as interrupções ativas no iFood
+          const listRes = await fetch("/api/ifood/interruptions");
+          if (listRes.ok) {
+            const items = await listRes.json();
+            for (const item of (Array.isArray(items) ? items : [])) {
+              if (item.id) await fetch(`/api/ifood/interruptions/${item.id}`, { method: "DELETE" });
+            }
+          }
+        }
+      } catch { /* iFood sync falhou silenciosamente */ }
+    } finally { setSavingPause(false); }
+  };
+
 
   const updateHour = (idx: number, key: string, val: any) => {
     setStoreHours(prev => prev.map((h, i) => i === idx ? { ...h, [key]: val } : h));

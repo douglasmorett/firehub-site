@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History } from "lucide-react";
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 
 const NAV_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
@@ -14,7 +14,6 @@ const NAV_ITEMS = [
   { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "IA" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },
-  { href: "/store/profile", label: "Perfil", icon: Users },
 ];
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -43,6 +42,72 @@ export default function StoreTopNav({
   const [storeOpen, setStoreOpen] = useState(initialStoreOpen);
   const [cashOpen, setCashOpen] = useState(initialCashOpen);
   const [toggling, setToggling] = useState<"store" | null>(null);
+
+  // iFood stores dropdown
+  const [ifoodStore, setIfoodStore]       = useState<any>(null);
+  const [ifoodAvailable, setIfoodAvail]   = useState<boolean | null>(null);
+  const [showIfood, setShowIfood]         = useState(false);
+  const [ifoodToggling, setIfoodToggling] = useState(false);
+  const ifoodRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/ifood/auth?step=test").then(r => r.json()).then(d => {
+      if (d.connected) {
+        setIfoodStore({ name: d.storeName, id: d.merchantId });
+        // busca disponibilidade
+        fetch("/api/ifood/merchant").then(r => r.json()).then(m => {
+          if (m.status) {
+            const entries = Array.isArray(m.status) ? m.status : [m.status];
+            setIfoodAvail(entries.some((s: any) => s.available === true));
+          }
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ifoodRef.current && !ifoodRef.current.contains(e.target as Node)) setShowIfood(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggleIfood = async () => {
+    if (!ifoodStore || ifoodToggling) return;
+    setIfoodToggling(true);
+    try {
+      if (ifoodAvailable) {
+        // Fechar: cria interrupção longa (1 ano)
+        const localIso = (d: Date) => {
+          const p = (n: number) => String(n).padStart(2, "0");
+          return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        };
+        const now = new Date();
+        const farFuture = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+        const resp = await fetch("/api/ifood/interruptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: "Loja fechada manualmente", start: localIso(now), end: localIso(farFuture) }),
+        });
+        const result = await resp.json();
+        if (resp.ok) { setIfoodAvail(false); }
+        else { console.error("[iFood] Fechar falhou:", result); }
+      } else {
+        // Abrir: remove todas as interrupções
+        const res = await fetch("/api/ifood/interruptions");
+        if (res.ok) {
+          const items = await res.json();
+          for (const item of (Array.isArray(items) ? items : [])) {
+            if (item.id) await fetch(`/api/ifood/interruptions/${item.id}`, { method: "DELETE" });
+          }
+        }
+        setIfoodAvail(true);
+      }
+    } catch(e) { console.error("[iFood] toggleIfood erro:", e); }
+    finally { setIfoodToggling(false); }
+  };
 
   // ── MODALS ──────────────────────────────────────────────────────
   const [showOpenModal, setShowOpenModal]   = useState(false);
@@ -126,7 +191,35 @@ export default function StoreTopNav({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ storeOpen: newVal }),
     });
-    if (res.ok) { setStoreOpen(newVal); startTransition(() => router.refresh()); }
+    if (res.ok) {
+      setStoreOpen(newVal);
+      startTransition(() => router.refresh());
+      // Sincroniza com iFood automaticamente
+      if (ifoodStore) {
+        if (!newVal) {
+          // Fechando site → cria interrupção longa no iFood
+          const localIso = (d: Date) => {
+            const p = (n: number) => String(n).padStart(2, "0");
+            return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+          };
+          const now = new Date();
+          const farFuture = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+          fetch("/api/ifood/interruptions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description: "Loja fechada pelo FireHub", start: localIso(now), end: localIso(farFuture) }),
+          }).then(() => setIfoodAvail(false)).catch(() => {});
+        } else {
+          // Abrindo site → remove interrupções do iFood
+          fetch("/api/ifood/interruptions").then(r => r.json()).then(items => {
+            for (const item of (Array.isArray(items) ? items : [])) {
+              if (item.id) fetch(`/api/ifood/interruptions/${item.id}`, { method: "DELETE" }).catch(() => {});
+            }
+            setIfoodAvail(true);
+          }).catch(() => {});
+        }
+      }
+    }
     setToggling(null);
   };
 
@@ -144,6 +237,10 @@ export default function StoreTopNav({
       </span>
       {label}{label === "Loja" ? (isOn ? " aberta" : " fechada") : (isOn ? " aberto" : " fechado")}
     </button>
+  );
+
+  const SiteToggle = () => (
+    <TogglePill label="Site" isOn={storeOpen} onClick={toggleStore} disabled={toggling === "store"} />
   );
 
   const overlay: React.CSSProperties = {
@@ -312,13 +409,52 @@ export default function StoreTopNav({
               label="Caixa" isOn={cashOpen}
               onClick={() => cashOpen ? setShowCloseModal(true) : setShowOpenModal(true)}
             />
-            <TogglePill label="Loja" isOn={storeOpen} onClick={toggleStore} disabled={toggling === "store"} />
+            <SiteToggle />
+
+            {/* iFood stores dropdown */}
+            {ifoodStore && (
+              <div ref={ifoodRef} style={{ position: "relative" }}>
+                <button
+                  onClick={() => setShowIfood(v => !v)}
+                  style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"6px 11px", borderRadius:20, border:"1.5px solid rgba(255,255,255,0.35)", background: ifoodAvailable ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.25)", color:"#fff", fontWeight:700, fontSize:"0.73rem", cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}
+                >
+                  Lojas iFood
+                  <span style={{ fontSize:"0.6rem", marginLeft:2 }}>▾</span>
+                </button>
+                {showIfood && (
+                  <div style={{ position:"absolute", top:"calc(100% + 8px)", right:0, background:"#fff", border:"1px solid #E2E8F0", borderRadius:14, boxShadow:"0 8px 32px rgba(0,0,0,0.18)", minWidth:240, zIndex:500, overflow:"hidden" }}>
+                    <div style={{ padding:"0.6rem 1rem", borderBottom:"1px solid #F1F5F9", fontSize:"0.7rem", fontWeight:700, color:"#94A3B8", textTransform:"uppercase", letterSpacing:"0.5px" }}>Lojas iFood</div>
+                    <div style={{ padding:"0.75rem 1rem", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin:"0 0 2px", fontWeight:700, fontSize:"0.82rem", color:"#0F172A" }}>{ifoodStore.name || "Loja iFood"}</p>
+                        <p style={{ margin:0, fontSize:"0.70rem", color: ifoodAvailable ? "#16A34A" : "#DC2626", fontWeight:600 }}>
+                          {ifoodAvailable === null ? "Verificando..." : ifoodAvailable ? "Aberta" : "Fechada"}
+                        </p>
+                      </div>
+                      <button
+                        onClick={toggleIfood}
+                        disabled={ifoodToggling || ifoodAvailable === null}
+                        style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:20, border:`1.5px solid ${ifoodAvailable ? "rgba(22,163,74,0.4)" : "rgba(100,116,139,0.4)"}`, background: ifoodAvailable ? "rgba(22,163,74,0.12)" : "rgba(0,0,0,0.07)", color: ifoodAvailable ? "#16A34A" : "#64748B", fontWeight:700, fontSize:"0.75rem", cursor: ifoodToggling ? "not-allowed" : "pointer", fontFamily:"inherit", opacity: ifoodToggling ? 0.6 : 1, transition:"all 0.2s" }}
+                      >
+                        <span style={{ display:"inline-block", width:28, height:15, borderRadius:8, background: ifoodAvailable ? "#4ADE80" : "#64748B", position:"relative", flexShrink:0, transition:"background 0.2s" }}>
+                          <span style={{ position:"absolute", top:2, left: ifoodAvailable ? 15 : 2, width:11, height:11, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
+                        </span>
+                        {ifoodToggling ? "Aguarde..." : ifoodAvailable ? "Fechar loja" : "Abrir loja"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         <div style={{ display:"flex", alignItems:"center", gap:"0.35rem", flexWrap:"wrap" }}>
           <a href="/store/impressoras" title="Impressora" style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:32, height:32, borderRadius:9, background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.25)", color:"#fff", textDecoration:"none" }}>
             <Printer size={15} />
+          </a>
+          <a href="/store/ifood" title="Integração iFood" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.65rem", borderRadius:8, background:"#E8360C", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap", border:"1px solid rgba(255,255,255,0.3)" }}>
+            Integração iFood
           </a>
           {showCompras && (
             <a href="/store/compras" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.8rem", borderRadius:8, background: isCompras ? "rgba(255,255,255,0.2)" : "#FF8A00", color:"#fff", fontWeight:700, fontSize:"0.78rem", textDecoration:"none", whiteSpace:"nowrap" }}>
@@ -341,6 +477,7 @@ export default function StoreTopNav({
           </a>
         </div>
       </div>
+
 
       {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
       {!isCompras && (
