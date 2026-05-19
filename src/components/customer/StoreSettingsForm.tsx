@@ -145,21 +145,26 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
       // Sync com iFood somente se marcado
       if (syncIfoodHours) {
         try {
-          const ifoodHours = storeHours
+          const ifoodShifts: any[] = [];
+          storeHours
             .filter((h: any) => h.active && DAY_MAP[h.day])
-            .map((h: any) => ({
-              dayOfWeek: DAY_MAP[h.day],
-              shifts: (h.shifts || [{ open: h.open, close: h.close }]).map((s: any) => {
+            .forEach((h: any) => {
+              const shifts = h.shifts || [{ open: h.open, close: h.close }];
+              shifts.forEach((s: any) => {
                 const [oH, oM] = (s.open || "00:00").split(":").map(Number);
                 const [cH, cM] = (s.close || "23:59").split(":").map(Number);
                 const dur = Math.max(1, (cH * 60 + cM) - (oH * 60 + oM));
-                return { start: s.open, duration: dur };
-              }),
-            }));
+                ifoodShifts.push({
+                  dayOfWeek: DAY_MAP[h.day],
+                  start: `${String(oH).padStart(2,"0")}:${String(oM).padStart(2,"0")}:00`,
+                  duration: dur,
+                });
+              });
+            });
           const syncRes = await fetch("/api/ifood/opening-hours", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ openingHours: ifoodHours }),
+            body: JSON.stringify({ shifts: ifoodShifts }),
           });
           if (syncRes.ok) {
             setHoursSyncMsg("✅ Horários sincronizados com o iFood!");
