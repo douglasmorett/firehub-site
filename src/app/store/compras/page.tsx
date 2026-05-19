@@ -1,26 +1,27 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import ProductGrid from "@/components/ProductGrid";
 import { getNextDeliveryInfo } from "@/lib/deliveryDates";
 
 export default async function ComprasPage() {
   const session = await getServerSession(authOptions);
-  if (!session) redirect("/");
-  const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/");
-
-  const city = (session.user as any)?.city || null;
+  const isLoggedIn = !!session;
+  const role = (session?.user as any)?.role;
+  const city = (session?.user as any)?.city || null;
   const deliveryInfo = await getNextDeliveryInfo(city);
 
-  // Check if user is Franqueado Hakim
-  const user = await prisma.user.findUnique({
-    where: { email: session.user?.email || "" },
-    select: { isFranqueadoHakim: true }
-  });
-  const isFranqueadoHakim = user?.isFranqueadoHakim || false;
-  
+  // Check if user is Franqueado Hakim (se logado)
+  let isFranqueadoHakim = false;
+  if (isLoggedIn && session?.user?.email) {
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { isFranqueadoHakim: true }
+    });
+    isFranqueadoHakim = user?.isFranqueadoHakim || false;
+  }
+
+  // Produtos: franqueados Hakim veem tudo, outros não veem franchiseOnly
   const products = await prisma.product.findMany({
     where: {
       active: true,
@@ -30,6 +31,10 @@ export default async function ComprasPage() {
   });
 
   return (
-    <ProductGrid products={products} deliveryInfo={deliveryInfo} />
+    <ProductGrid
+      products={products}
+      deliveryInfo={deliveryInfo}
+      isLoggedIn={isLoggedIn}
+    />
   );
 }
