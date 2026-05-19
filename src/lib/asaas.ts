@@ -114,34 +114,60 @@ export async function createAsaasPayment(opts: {
   try {
     // 1. Busca ou cria cliente
     let customerId: string | null = null;
+    const cleanCpfCnpj = opts.cpfCnpj ? opts.cpfCnpj.replace(/\D/g, "") : "";
 
-    if (opts.cpfCnpj) {
-      const searchRes = await fetch(
-        `${BASE}/customers?cpfCnpj=${encodeURIComponent(opts.cpfCnpj)}`,
-        { headers: ASAAS_HEADERS(asaasKey) }
-      );
-      if (searchRes.ok) {
-        const data = await searchRes.json();
-        if (data.data?.length > 0) customerId = data.data[0].id;
+    if (cleanCpfCnpj) {
+      try {
+        const searchRes = await fetch(
+          `${BASE}/customers?cpfCnpj=${encodeURIComponent(cleanCpfCnpj)}`,
+          { headers: ASAAS_HEADERS(asaasKey) }
+        );
+        if (searchRes.ok) {
+          const data = await searchRes.json();
+          if (data.data?.length > 0) customerId = data.data[0].id;
+        }
+      } catch (err) {
+        console.error("Erro ao buscar cliente por CPF/CNPJ no Asaas:", err);
       }
     }
 
     if (!customerId) {
-      const createRes = await fetch(`${BASE}/customers`, {
+      const payload: any = {
+        name: opts.userName || opts.userEmail,
+        email: opts.userEmail,
+      };
+      if (cleanCpfCnpj) {
+        payload.cpfCnpj = cleanCpfCnpj;
+      }
+
+      let createRes = await fetch(`${BASE}/customers`, {
         method: "POST",
         headers: ASAAS_HEADERS(asaasKey),
-        body: JSON.stringify({
-          name: opts.userName || opts.userEmail,
-          email: opts.userEmail,
-          cpfCnpj: opts.cpfCnpj || ""
-        })
+        body: JSON.stringify(payload)
       });
-      const createData = await createRes.json();
+      let createData = await createRes.json();
+
       if (!createRes.ok) {
         console.error("Erro criar cliente Asaas:", JSON.stringify(createData));
-        return null;
+        
+        // Se falhou e tinha CPF/CNPJ, tenta criar sem ele como fallback
+        if (payload.cpfCnpj) {
+          console.warn("Tentando criar cliente Asaas sem CPF/CNPJ...");
+          delete payload.cpfCnpj;
+          createRes = await fetch(`${BASE}/customers`, {
+            method: "POST",
+            headers: ASAAS_HEADERS(asaasKey),
+            body: JSON.stringify(payload)
+          });
+          createData = await createRes.json();
+        }
       }
-      customerId = createData.id;
+
+      if (createRes.ok) {
+        customerId = createData.id;
+      } else {
+        console.error("Erro criar cliente Asaas (fallback):", JSON.stringify(createData));
+      }
     }
 
     if (!customerId) return null;

@@ -55,45 +55,65 @@ export async function POST(req: Request) {
 
     // 1. Buscar ou criar cliente
     let customerId: string | null = null;
+    const cleanCpfCnpj = user.cpfCnpj ? user.cpfCnpj.replace(/\D/g, "") : "";
 
-    if (user.cpfCnpj) {
-      const searchRes = await fetch(
-        `${BASE}/customers?cpfCnpj=${encodeURIComponent(user.cpfCnpj)}`,
-        { headers }
-      );
-      const searchData = await searchRes.json();
-      
-      if (!searchRes.ok) {
-        console.error("[generate-link] Erro buscar cliente:", JSON.stringify(searchData));
-        return NextResponse.json({ 
-          error: `Asaas erro ao buscar cliente: ${searchData?.errors?.[0]?.description || JSON.stringify(searchData)}` 
-        }, { status: 502 });
-      }
-      
-      if (searchData.data?.length > 0) {
-        customerId = searchData.data[0].id;
+    if (cleanCpfCnpj) {
+      try {
+        const searchRes = await fetch(
+          `${BASE}/customers?cpfCnpj=${encodeURIComponent(cleanCpfCnpj)}`,
+          { headers }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.data?.length > 0) {
+            customerId = searchData.data[0].id;
+          }
+        }
+      } catch (err) {
+        console.error("[generate-link] Erro ao buscar cliente por CPF/CNPJ no Asaas:", err);
       }
     }
 
     if (!customerId) {
-      const createRes = await fetch(`${BASE}/customers`, {
+      const payload: any = {
+        name: user.name || user.email,
+        email: user.email,
+      };
+      if (cleanCpfCnpj) {
+        payload.cpfCnpj = cleanCpfCnpj;
+      }
+
+      let createRes = await fetch(`${BASE}/customers`, {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          name: user.name || user.email,
-          email: user.email,
-          cpfCnpj: user.cpfCnpj || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
-      const createData = await createRes.json();
+      let createData = await createRes.json();
 
       if (!createRes.ok) {
         console.error("[generate-link] Erro criar cliente:", JSON.stringify(createData));
+        
+        // Se falhou e tinha CPF/CNPJ, tenta criar sem CPF/CNPJ como fallback
+        if (payload.cpfCnpj) {
+          console.warn("[generate-link] Tentando criar cliente Asaas sem CPF/CNPJ...");
+          delete payload.cpfCnpj;
+          createRes = await fetch(`${BASE}/customers`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload),
+          });
+          createData = await createRes.json();
+        }
+      }
+
+      if (createRes.ok) {
+        customerId = createData.id;
+      } else {
+        console.error("[generate-link] Erro criar cliente (fallback):", JSON.stringify(createData));
         return NextResponse.json({ 
           error: `Asaas erro ao criar cliente: ${createData?.errors?.[0]?.description || JSON.stringify(createData)}` 
         }, { status: 502 });
       }
-      customerId = createData.id;
     }
 
     if (!customerId) {
