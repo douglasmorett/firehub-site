@@ -49,6 +49,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [dirtyPayment, setDirtyPayment] = useState(false);
   const [syncIfoodHours, setSyncIfoodHours] = useState(true); // Refletir horários no iFood
   const [hoursError, setHoursError] = useState<string | null>(null);
+  const [hoursSyncMsg, setHoursSyncMsg] = useState<string | null>(null);
   // Saving states por seção
   const [savingInfo, setSavingInfo] = useState(false);
   const [savingHours, setSavingHours] = useState(false);
@@ -155,12 +156,22 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 return { start: s.open, duration: dur };
               }),
             }));
-          await fetch("/api/ifood/opening-hours", {
+          const syncRes = await fetch("/api/ifood/opening-hours", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ openingHours: ifoodHours }),
           });
-        } catch { /* iFood sync falhou silenciosamente */ }
+          if (syncRes.ok) {
+            setHoursSyncMsg("✅ Horários sincronizados com o iFood!");
+          } else {
+            const errData = await syncRes.json().catch(() => ({}));
+            setHoursSyncMsg(`❌ iFood rejeitou: ${errData?.error || syncRes.status} ${JSON.stringify(errData?.details || '')}`);
+          }
+          setTimeout(() => setHoursSyncMsg(null), 8000);
+        } catch(e: any) {
+          setHoursSyncMsg(`❌ Erro ao sincronizar: ${e.message}`);
+          setTimeout(() => setHoursSyncMsg(null), 8000);
+        }
       }
     } finally { setSavingHours(false); }
   };
@@ -385,6 +396,11 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           <input type="checkbox" checked={syncIfoodHours} onChange={e => setSyncIfoodHours(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#E8360C" }} />
           <span><strong>Refletir horários do site no iFood</strong> — ao salvar, os mesmos horários serão enviados para o iFood automaticamente</span>
         </label>
+        {hoursSyncMsg && (
+          <div style={{ marginTop: 8, padding: "10px 14px", background: hoursSyncMsg.startsWith("✅") ? "#F0FDF4" : "#FEF2F2", border: `1.5px solid ${hoursSyncMsg.startsWith("✅") ? "#BBF7D0" : "#FECACA"}`, borderRadius: 10, fontSize: "0.82rem", fontWeight: 600, color: hoursSyncMsg.startsWith("✅") ? "#16A34A" : "#DC2626" }}>
+            {hoursSyncMsg}
+          </div>
+        )}
       </div>}
 
       {/* AGENDAR PAUSA */}
@@ -398,7 +414,30 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             {pauseSavedActive && <span style={{ padding: "2px 8px", background: "#FEE2E2", color: "#DC2626", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700 }}>ATIVO</span>}
           </div>
           <button
-            onClick={() => { setPauseActive(v => !v); setDirtyPause(true); }}
+            onClick={async () => {
+              setPauseActive(v => {
+                const newVal = !v;
+                if (!newVal) {
+                  // Desativando: salva imediatamente como inativo
+                  setSavingPause(true);
+                  saveFields({ storePause: { active: false, from: pauseFrom, to: pauseTo, reason: pauseReason } })
+                    .then(() => {
+                      setPauseSavedActive(false);
+                      setDirtyPause(false);
+                      // Remove interrupções do iFood
+                      fetch("/api/ifood/interruptions").then(r => r.json()).then(items => {
+                        for (const item of (Array.isArray(items) ? items : [])) {
+                          if (item.id) fetch(`/api/ifood/interruptions/${item.id}`, { method: "DELETE" }).catch(() => {});
+                        }
+                      }).catch(() => {});
+                    })
+                    .finally(() => setSavingPause(false));
+                } else {
+                  setDirtyPause(true);
+                }
+                return newVal;
+              });
+            }}
             style={{ background: "none", border: "none", cursor: "pointer" }}
           >
             {pauseActive ? <ToggleRight size={28} color="#DC2626" /> : <ToggleLeft size={28} color="#CBD5E1" />}
