@@ -27,7 +27,18 @@ async function loadQZ(): Promise<boolean> {
   return new Promise((resolve) => {
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.min.js";
-    script.onload = () => resolve(!!window.qz);
+    script.onload = () => {
+      if (window.qz) {
+        // Configura certificado demo — permite conexão HTTPS sem aceitar certificado manualmente
+        window.qz.security.setCertificatePromise(function(resolve: any) {
+          resolve("");
+        });
+        window.qz.security.setSignaturePromise(function() {
+          return function(resolve: any) { resolve(""); };
+        });
+      }
+      resolve(!!window.qz);
+    };
     script.onerror = () => resolve(false);
     document.head.appendChild(script);
   });
@@ -38,7 +49,12 @@ async function connectQZ(): Promise<{ ok: boolean; printers: string[] }> {
     const loaded = await loadQZ();
     if (!loaded) return { ok: false, printers: [] };
     if (!window.qz.websocket.isActive()) {
-      await window.qz.websocket.connect({ host: "localhost", port: { secure: [8182], insecure: [8181] } });
+      // Tenta wss:// (seguro) primeiro, depois ws:// (inseguro) como fallback
+      try {
+        await window.qz.websocket.connect({ host: "localhost", port: { secure: [8182] } });
+      } catch {
+        await window.qz.websocket.connect({ host: "localhost", port: { insecure: [8181] } });
+      }
     }
     const printers: string[] = await window.qz.printers.find();
     return { ok: true, printers };
