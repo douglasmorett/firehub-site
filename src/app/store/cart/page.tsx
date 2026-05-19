@@ -14,6 +14,7 @@ export default function CartPage() {
   const [boletoCode, setBoletoCode] = useState<string | null>(null);
   const [emergencyDone, setEmergencyDone] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -39,6 +40,7 @@ export default function CartPage() {
         clearCart();
         setBoletoUrl(data.boletoUrl || null);
         setBoletoCode(data.boletoCode || data.barCode || null);
+        setCheckoutSuccess(true);
       } else {
         alert("Erro ao finalizar pedido. Tente novamente.");
         setLoading(false);
@@ -84,8 +86,8 @@ export default function CartPage() {
     }
   };
 
-  /* ── TELA: BOLETO GERADO ─────────────────────────────────────── */
-  if (boletoUrl || boletoCode) {
+  /* ── TELA: PEDIDO CONFIRMADO ─────────────────────────────────── */
+  if (checkoutSuccess) {
     return (
       <div style={{
         minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
@@ -101,57 +103,78 @@ export default function CartPage() {
           <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#0F172A", margin: "0 0 0.5rem" }}>
             Pedido Confirmado!
           </h2>
-          <p style={{ color: "#64748B", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
-            Seu boleto foi gerado com vencimento em <strong>10 dias</strong> via Asaas.
-          </p>
 
-          {boletoCode && (
+          {boletoUrl || boletoCode ? (
+            <>
+              <p style={{ color: "#64748B", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
+                Seu boleto foi gerado com vencimento em <strong>10 dias</strong> via Asaas.
+              </p>
+
+              {boletoCode && (
+                <div style={{
+                  background: "#F0F4FF", borderRadius: 14, padding: "1rem",
+                  marginBottom: "1rem", border: "1.5px solid #BFDBFE",
+                }}>
+                  <p style={{ fontSize: "0.75rem", color: "#64748B", marginBottom: "0.5rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Código de Barras
+                  </p>
+                  <p style={{
+                    fontSize: "0.8rem", color: "#1E3A8A", fontFamily: "monospace",
+                    wordBreak: "break-all", lineHeight: 1.6, marginBottom: "0.75rem",
+                  }}>
+                    {boletoCode}
+                  </p>
+                  <button
+                    onClick={copyCode}
+                    style={{
+                      width: "100%", padding: "0.75rem", borderRadius: 10,
+                      border: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.9rem",
+                      background: copied ? "#10B981" : "#1565C0", color: "#fff",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      transition: "background 0.2s",
+                    }}
+                  >
+                    <Copy size={16} />
+                    {copied ? "Código Copiado! ✓" : "Copiar Código"}
+                  </button>
+                </div>
+              )}
+
+              {boletoUrl && (
+                <a
+                  href={boletoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    width: "100%", padding: "0.85rem", borderRadius: 12,
+                    background: "linear-gradient(135deg, #1565C0, #1976D2)",
+                    color: "#fff", fontWeight: 700, fontSize: "0.95rem",
+                    textDecoration: "none", marginBottom: "0.75rem",
+                    boxShadow: "0 8px 20px rgba(21,101,192,0.35)",
+                  }}
+                >
+                  <ExternalLink size={18} />
+                  Abrir Boleto
+                </a>
+              )}
+            </>
+          ) : (
             <div style={{
-              background: "#F0F4FF", borderRadius: 14, padding: "1rem",
-              marginBottom: "1rem", border: "1.5px solid #BFDBFE",
+              background: "#FFF7ED", borderRadius: 14, padding: "1.25rem",
+              marginBottom: "1.5rem", border: "1.5px solid #FDBA74",
+              textAlign: "left"
             }}>
-              <p style={{ fontSize: "0.75rem", color: "#64748B", marginBottom: "0.5rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Código de Barras
+              <p style={{ color: "#C2410C", fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: 6 }}>
+                <AlertTriangle size={18} /> Boleto em processamento
               </p>
-              <p style={{
-                fontSize: "0.8rem", color: "#1E3A8A", fontFamily: "monospace",
-                wordBreak: "break-all", lineHeight: 1.6, marginBottom: "0.75rem",
-              }}>
-                {boletoCode}
+              <p style={{ color: "#7C2D12", fontSize: "0.82rem", lineHeight: 1.5 }}>
+                Seu pedido foi registrado com sucesso, mas o gateway de pagamento (Asaas) demorou para responder.
               </p>
-              <button
-                onClick={copyCode}
-                style={{
-                  width: "100%", padding: "0.75rem", borderRadius: 10,
-                  border: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.9rem",
-                  background: copied ? "#10B981" : "#1565C0", color: "#fff",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  transition: "background 0.2s",
-                }}
-              >
-                <Copy size={16} />
-                {copied ? "Código Copiado! ✓" : "Copiar Código"}
-              </button>
+              <p style={{ color: "#7C2D12", fontSize: "0.82rem", lineHeight: 1.5, marginTop: "0.5rem" }}>
+                Você pode acompanhar e gerar a cobrança a qualquer momento acessando a página <strong>Meus Pedidos</strong>.
+              </p>
             </div>
-          )}
-
-          {boletoUrl && (
-            <a
-              href={boletoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                width: "100%", padding: "0.85rem", borderRadius: 12,
-                background: "linear-gradient(135deg, #1565C0, #1976D2)",
-                color: "#fff", fontWeight: 700, fontSize: "0.95rem",
-                textDecoration: "none", marginBottom: "0.75rem",
-                boxShadow: "0 8px 20px rgba(21,101,192,0.35)",
-              }}
-            >
-              <ExternalLink size={18} />
-              Abrir Boleto
-            </a>
           )}
 
           <button
