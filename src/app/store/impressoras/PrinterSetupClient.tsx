@@ -77,13 +77,6 @@ export default function PrinterSetupClient({
 
   useEffect(() => { tryConnect(); }, [tryConnect]);
 
-  // Poll enquanto não conectado (verifica a cada 5s)
-  useEffect(() => {
-    if (qzStatus === "connected") return;
-    const iv = setInterval(tryConnect, 5000);
-    return () => clearInterval(iv);
-  }, [qzStatus, tryConnect]);
-
   const saveConfig = async () => {
     setSaving(true);
     try {
@@ -179,7 +172,7 @@ export default function PrinterSetupClient({
                 </p>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <a
-                    href="https://github.com/qzind/tray/releases/latest/download/qz-tray-windows.exe"
+                    href="https://github.com/qzind/tray/releases/latest/download/qz-tray-2.2.6-x86_64.exe"
                     target="_blank" rel="noreferrer"
                     onClick={() => setSetupStep(s => Math.max(s, 1))}
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 20px", background: "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.88rem" }}
@@ -187,7 +180,7 @@ export default function PrinterSetupClient({
                     <Download size={15} /> Baixar QZ Tray (Windows)
                   </a>
                   <a
-                    href="https://github.com/qzind/tray/releases/latest/download/qz-tray-mac.pkg"
+                    href="https://github.com/qzind/tray/releases/latest/download/qz-tray-2.2.6-x86_64.pkg"
                     target="_blank" rel="noreferrer"
                     onClick={() => setSetupStep(s => Math.max(s, 1))}
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "#1E293B", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.85rem" }}
@@ -231,13 +224,11 @@ export default function PrinterSetupClient({
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <RefreshCw size={16} color="#94A3B8" style={{ animation: setupStep >= 2 ? "spin 2s linear infinite" : "none" }} />
                   <span style={{ fontSize: "0.8rem", color: "#94A3B8" }}>
-                    {setupStep >= 2 ? "Verificando a cada 5 segundos..." : "Conclua os passos anteriores"}
+                    {setupStep >= 2 ? "Clique no botão abaixo para verificar a conexão" : "Conclua os passos anteriores"}
                   </span>
-                  {setupStep >= 2 && (
-                    <button onClick={tryConnect} style={{ marginLeft: 8, padding: "4px 12px", borderRadius: 8, background: "#F1F5F9", border: "1px solid #E2E8F0", fontSize: "0.78rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                      Verificar agora
-                    </button>
-                  )}
+                  <button onClick={tryConnect} disabled={setupStep < 2} style={{ marginLeft: 8, padding: "8px 18px", borderRadius: 10, background: setupStep >= 2 ? "#3B82F6" : "#E2E8F0", color: setupStep >= 2 ? "#fff" : "#94A3B8", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: setupStep >= 2 ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><RefreshCw size={14} /> Verificar conexão</span>
+                  </button>
                 </div>
               </div>
             </>

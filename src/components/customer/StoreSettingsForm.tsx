@@ -46,6 +46,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [dirtyHours, setDirtyHours] = useState(false);
   const [dirtyCoupons, setDirtyCoupons] = useState(false);
   const [dirtyPayment, setDirtyPayment] = useState(false);
+  const [syncIfoodHours, setSyncIfoodHours] = useState(true); // Refletir horários no iFood
+  const [hoursError, setHoursError] = useState<string | null>(null);
   // Saving states por seção
   const [savingInfo, setSavingInfo] = useState(false);
   const [savingHours, setSavingHours] = useState(false);
@@ -110,30 +112,55 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
   const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, storeAddress, storeDeliveryOnly }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
 
+  // Valida sobreposição de turnos no mesmo dia
+  const validateShifts = (): string | null => {
+    for (const h of storeHours) {
+      if (!h.active) continue;
+      const shifts = h.shifts || [{ open: h.open, close: h.close }];
+      for (let i = 0; i < shifts.length; i++) {
+        const [aStart] = [shifts[i].open].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
+        const [aEnd] = [shifts[i].close].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
+        for (let j = i + 1; j < shifts.length; j++) {
+          const [bStart] = [shifts[j].open].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
+          const [bEnd] = [shifts[j].close].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
+          if (aStart < bEnd && bStart < aEnd) {
+            return `${h.day}: Turno ${i+1} (${shifts[i].open}-${shifts[i].close}) se sobrepõe ao Turno ${j+1} (${shifts[j].open}-${shifts[j].close}). Insira um horário diferente.`;
+          }
+        }
+      }
+    }
+    return null;
+  };
+
   const saveHours = async () => {
+    const overlap = validateShifts();
+    if (overlap) { setHoursError(overlap); return; }
+    setHoursError(null);
     setSavingHours(true);
     try {
       await saveFields({ storeHours });
       setDirtyHours(false);
-      // Sync com iFood (fire-and-forget — não bloqueia o save local)
-      try {
-        const ifoodHours = storeHours
-          .filter((h: any) => h.active && DAY_MAP[h.day])
-          .map((h: any) => ({
-            dayOfWeek: DAY_MAP[h.day],
-            shifts: (h.shifts || [{ open: h.open, close: h.close }]).map((s: any) => {
-              const [oH, oM] = (s.open || "00:00").split(":").map(Number);
-              const [cH, cM] = (s.close || "23:59").split(":").map(Number);
-              const dur = Math.max(1, (cH * 60 + cM) - (oH * 60 + oM));
-              return { start: s.open, duration: dur };
-            }),
-          }));
-        await fetch("/api/ifood/opening-hours", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ openingHours: ifoodHours }),
-        });
-      } catch { /* iFood sync falhou silenciosamente */ }
+      // Sync com iFood somente se marcado
+      if (syncIfoodHours) {
+        try {
+          const ifoodHours = storeHours
+            .filter((h: any) => h.active && DAY_MAP[h.day])
+            .map((h: any) => ({
+              dayOfWeek: DAY_MAP[h.day],
+              shifts: (h.shifts || [{ open: h.open, close: h.close }]).map((s: any) => {
+                const [oH, oM] = (s.open || "00:00").split(":").map(Number);
+                const [cH, cM] = (s.close || "23:59").split(":").map(Number);
+                const dur = Math.max(1, (cH * 60 + cM) - (oH * 60 + oM));
+                return { start: s.open, duration: dur };
+              }),
+            }));
+          await fetch("/api/ifood/opening-hours", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ openingHours: ifoodHours }),
+          });
+        } catch { /* iFood sync falhou silenciosamente */ }
+      }
     } finally { setSavingHours(false); }
   };
 
@@ -346,6 +373,16 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           ))}
         </div>
         <SectionSaveBtn dirty={dirtyHours} saving={savingHours} onSave={saveHours} label="Salvar Horários" />
+        {hoursError && (
+          <div style={{ marginTop: 10, padding: "10px 14px", background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            <AlertTriangle size={16} color="#DC2626" />
+            <span style={{ fontSize: "0.82rem", color: "#DC2626", fontWeight: 600 }}>{hoursError}</span>
+          </div>
+        )}
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: "0.82rem", color: "#475569", cursor: "pointer" }}>
+          <input type="checkbox" checked={syncIfoodHours} onChange={e => setSyncIfoodHours(e.target.checked)} style={{ width: 18, height: 18, accentColor: "#E8360C" }} />
+          <span><strong>Refletir horários do site no iFood</strong> — ao salvar, os mesmos horários serão enviados para o iFood automaticamente</span>
+        </label>
       </div>}
 
       {/* AGENDAR PAUSA */}

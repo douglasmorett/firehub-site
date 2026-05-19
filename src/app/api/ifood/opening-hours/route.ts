@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { ifoodFetch, getMerchantId } from "@/lib/ifood-api";
+import { ifoodMutate, getMerchantId } from "@/lib/ifood-api";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -15,7 +15,7 @@ export async function GET() {
 
   try {
     const merchantId = getMerchantId();
-    const res  = await ifoodFetch(`/merchant/v1.0/merchants/${merchantId}/opening-hours`);
+    const res  = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`);
     const data = res.ok ? await res.json() : null;
     return NextResponse.json({ merchantId, openingHours: data });
   } catch (err: any) {
@@ -32,7 +32,7 @@ export async function PUT(req: NextRequest) {
     const merchantId  = getMerchantId();
 
     // body.openingHours = [{ dayOfWeek, shifts: [{ start, duration }] }]
-    const res = await ifoodFetch(`/merchant/v1.0/merchants/${merchantId}/opening-hours`, {
+    const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`, {
       method: "PUT",
       body: JSON.stringify(body),
     });
