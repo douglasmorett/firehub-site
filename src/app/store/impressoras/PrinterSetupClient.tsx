@@ -382,88 +382,157 @@ export default function PrinterSetupClient({
 
             {/* Botão de teste INDIVIDUAL para esta impressora */}
             {printer.name && (
-              <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "0.85rem 1rem", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: "1rem" }}>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0, color: "#1E40AF" }}>🧪 Testar esta impressora</p>
-                  <p style={{ fontSize: "0.72rem", color: "#3B82F6", margin: "2px 0 0" }}>Imprime uma comanda de teste em "{printer.label}"</p>
+              <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "0.85rem 1rem", border: "1px solid #BFDBFE", marginTop: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0, color: "#1E40AF" }}>🧪 Testar "{printer.label}"</p>
+                  </div>
                 </div>
-                <button
-                  onClick={async () => {
-                    try {
-                      if (!window.qz || !window.qz.websocket.isActive()) {
-                        alert("QZ Tray não está conectado. Clique em 'Verificar conexão' primeiro.");
-                        return;
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {/* Teste 1: Texto puro simples (mais compatível) */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        if (!window.qz || !window.qz.websocket.isActive()) {
+                          alert("QZ Tray nao conectado!"); return;
+                        }
+                        const pn = printer.name;
+                        const now = new Date();
+                        const cfg = window.qz.configs.create(pn);
+                        // Envia como array de strings simples — formato mais compatível QZ Tray
+                        const data = [
+                          '\n',
+                          'FIREHUB\n',
+                          '================================\n',
+                          '     IMPRESSAO DE TESTE\n',
+                          '================================\n',
+                          'Impressora: ' + pn + '\n',
+                          'Data: ' + now.toLocaleDateString("pt-BR") + '\n',
+                          'Hora: ' + now.toLocaleTimeString("pt-BR") + '\n',
+                          '--------------------------------\n',
+                          '1x X-Burger          R$25,90\n',
+                          '2x Coca-Cola 600ml   R$17,00\n',
+                          '1x Batata Frita      R$14,50\n',
+                          '--------------------------------\n',
+                          '   TOTAL: R$ 57,40\n',
+                          '--------------------------------\n',
+                          'Pedido #TESTE-001\n',
+                          'Se voce esta lendo isso,\n',
+                          'a impressora funciona!\n',
+                          '================================\n',
+                          '\n\n\n\n\n',
+                        ];
+                        await window.qz.print(cfg, data);
+                        alert("Teste 1 (texto puro) enviado para " + printer.label);
+                      } catch (e: any) {
+                        alert("Erro teste 1: " + e.message);
                       }
-                      const printerName = printer.name;
-                      const now = new Date();
-                      const dateStr = now.toLocaleDateString("pt-BR");
-                      const timeStr = now.toLocaleTimeString("pt-BR");
+                    }}
+                    style={{ padding: "7px 14px", borderRadius: 8, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Teste 1: Texto puro
+                  </button>
 
-                      // ── ESC/POS raw commands para impressoras térmicas ──
-                      const ESC = '\x1B';
-                      const GS  = '\x1D';
-                      const LF  = '\x0A';
+                  {/* Teste 2: ESC/POS via hex */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        if (!window.qz || !window.qz.websocket.isActive()) {
+                          alert("QZ Tray nao conectado!"); return;
+                        }
+                        const pn = printer.name;
+                        const cfg = window.qz.configs.create(pn);
+                        // Mistura hex (para comandos ESC/POS) com texto plain
+                        const data = [
+                          { type: 'raw', format: 'hex', data: '1B40' },               // ESC @ (init)
+                          { type: 'raw', format: 'hex', data: '1B6101' },              // ESC a 1 (center)
+                          { type: 'raw', format: 'hex', data: '1D2111' },              // GS ! 0x11 (double size)
+                          'FIREHUB\n',
+                          { type: 'raw', format: 'hex', data: '1D2100' },              // GS ! 0x00 (normal size)
+                          '================================\n',
+                          { type: 'raw', format: 'hex', data: '1B4501' },              // ESC E 1 (bold on)
+                          'IMPRESSAO DE TESTE\n',
+                          { type: 'raw', format: 'hex', data: '1B4500' },              // ESC E 0 (bold off)
+                          '================================\n',
+                          { type: 'raw', format: 'hex', data: '1B6100' },              // ESC a 0 (left)
+                          'Impressora: ' + pn + '\n',
+                          'Data: ' + new Date().toLocaleDateString("pt-BR") + '\n',
+                          'Hora: ' + new Date().toLocaleTimeString("pt-BR") + '\n',
+                          '--------------------------------\n',
+                          '1x X-Burger          R$25,90\n',
+                          '2x Coca-Cola 600ml   R$17,00\n',
+                          '1x Batata Frita      R$14,50\n',
+                          '--------------------------------\n',
+                          { type: 'raw', format: 'hex', data: '1B6101' },              // center
+                          { type: 'raw', format: 'hex', data: '1D2111' },              // double
+                          'TOTAL: R$ 57,40\n',
+                          { type: 'raw', format: 'hex', data: '1D2100' },              // normal
+                          '--------------------------------\n',
+                          'Pedido #TESTE-001\n',
+                          'Se voce esta lendo isso,\n',
+                          'a impressora funciona!\n',
+                          '================================\n',
+                          '\n\n\n',
+                          { type: 'raw', format: 'hex', data: '1D5600' },              // GS V 0 (cut)
+                        ];
+                        await window.qz.print(cfg, data);
+                        alert("Teste 2 (ESC/POS hex) enviado para " + printer.label);
+                      } catch (e: any) {
+                        alert("Erro teste 2: " + e.message);
+                      }
+                    }}
+                    style={{ padding: "7px 14px", borderRadius: 8, background: "#7C3AED", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Teste 2: ESC/POS
+                  </button>
 
-                      const INIT        = ESC + '@';           // Inicializa impressora
-                      const BOLD_ON     = ESC + 'E' + '\x01';  // Negrito ON
-                      const BOLD_OFF    = ESC + 'E' + '\x00';  // Negrito OFF
-                      const CENTER      = ESC + 'a' + '\x01';  // Alinhar centro
-                      const LEFT        = ESC + 'a' + '\x00';  // Alinhar esquerda
-                      const DOUBLE_ON   = GS  + '!' + '\x11';  // Texto duplo (largura+altura)
-                      const DOUBLE_OFF  = GS  + '!' + '\x00';  // Texto normal
-                      const CUT         = GS  + 'V' + '\x00';  // Cortar papel
-                      const FEED3       = ESC + 'd' + '\x03';  // Avança 3 linhas
-
-                      const SEP = '--------------------------------' + LF;
-
-                      let receipt = '';
-                      receipt += INIT;
-                      receipt += CENTER + DOUBLE_ON + BOLD_ON;
-                      receipt += 'FIREHUB' + LF;
-                      receipt += DOUBLE_OFF + BOLD_OFF;
-                      receipt += SEP;
-                      receipt += CENTER + BOLD_ON;
-                      receipt += 'IMPRESSAO DE TESTE' + LF;
-                      receipt += BOLD_OFF;
-                      receipt += SEP;
-                      receipt += LEFT;
-                      receipt += 'Impressora: ' + printerName + LF;
-                      receipt += 'Apelido: ' + printer.label + LF;
-                      receipt += 'Data: ' + dateStr + LF;
-                      receipt += 'Hora: ' + timeStr + LF;
-                      receipt += SEP;
-                      receipt += BOLD_ON;
-                      receipt += 'Item             Qtd    Valor' + LF;
-                      receipt += BOLD_OFF;
-                      receipt += 'X-Burger           1   R$25,90' + LF;
-                      receipt += 'Coca-Cola 600ml    2   R$17,00' + LF;
-                      receipt += 'Batata Frita       1   R$14,50' + LF;
-                      receipt += SEP;
-                      receipt += CENTER + DOUBLE_ON + BOLD_ON;
-                      receipt += 'TOTAL: R$ 57,40' + LF;
-                      receipt += DOUBLE_OFF + BOLD_OFF;
-                      receipt += SEP;
-                      receipt += CENTER;
-                      receipt += 'Pedido #TESTE-001' + LF;
-                      receipt += 'Cliente: Teste FireHub' + LF;
-                      receipt += LF;
-                      receipt += 'Se voce esta lendo isso,' + LF;
-                      receipt += 'a impressora esta funcionando!' + LF;
-                      receipt += SEP;
-                      receipt += FEED3;
-                      receipt += CUT;
-
-                      const qzConfig = window.qz.configs.create(printerName);
-                      await window.qz.print(qzConfig, [{ type: "raw", format: "plain", data: receipt }]);
-                      alert("✅ Impressão de teste enviada para \"" + printer.label + "\"!");
-                    } catch (e: any) {
-                      alert("❌ Erro ao imprimir em \"" + printer.label + "\": " + e.message);
-                    }
-                  }}
-                  style={{ padding: "8px 16px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
-                >
-                  Imprimir teste
-                </button>
+                  {/* Teste 3: HTML pixel (para impressoras não-térmicas) */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        if (!window.qz || !window.qz.websocket.isActive()) {
+                          alert("QZ Tray nao conectado!"); return;
+                        }
+                        const pn = printer.name;
+                        const cfg = window.qz.configs.create(pn, {
+                          colorType: 'grayscale',
+                          margins: { top: 0, right: 0, bottom: 0, left: 0 },
+                          size: { width: 3.14, height: null },
+                          units: 'in',
+                          rasterize: true,
+                        });
+                        const html = '<html><body style="font-family:monospace;width:280px;padding:10px;font-size:13px;margin:0;">'
+                          + '<h2 style="text-align:center;margin:0;">FIREHUB</h2>'
+                          + '<hr/>'
+                          + '<p style="text-align:center;font-weight:bold;">IMPRESSAO DE TESTE</p>'
+                          + '<hr/>'
+                          + '<p>Impressora: ' + pn + '</p>'
+                          + '<p>Data: ' + new Date().toLocaleDateString("pt-BR") + '</p>'
+                          + '<p>Hora: ' + new Date().toLocaleTimeString("pt-BR") + '</p>'
+                          + '<hr/>'
+                          + '<p>1x X-Burger ............ R$25,90</p>'
+                          + '<p>2x Coca-Cola 600ml ..... R$17,00</p>'
+                          + '<p>1x Batata Frita ........ R$14,50</p>'
+                          + '<hr/>'
+                          + '<h3 style="text-align:center;">TOTAL: R$ 57,40</h3>'
+                          + '<hr/>'
+                          + '<p style="text-align:center;">Pedido #TESTE-001</p>'
+                          + '<p style="text-align:center;font-size:11px;">Se voce esta lendo isso, a impressora funciona!</p>'
+                          + '</body></html>';
+                        await window.qz.print(cfg, [{ type: 'pixel', format: 'html', data: html }]);
+                        alert("Teste 3 (HTML rasterizado) enviado para " + printer.label);
+                      } catch (e: any) {
+                        alert("Erro teste 3: " + e.message);
+                      }
+                    }}
+                    style={{ padding: "7px 14px", borderRadius: 8, background: "#059669", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Teste 3: HTML (raster)
+                  </button>
+                </div>
+                <p style={{ fontSize: "0.68rem", color: "#64748B", margin: "6px 0 0" }}>
+                  Tente cada formato para descobrir qual funciona na sua impressora
+                </p>
               </div>
             )}
           </div>
