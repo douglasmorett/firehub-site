@@ -2,14 +2,32 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const ICEBOX_DOMAINS = ["iceboxdistribuidora.com.br", "www.iceboxdistribuidora.com.br"];
+function isIceboxDomain(request: NextRequest): boolean {
+  // Check multiple header sources for the hostname
+  const host = request.headers.get("host") || "";
+  const xForwardedHost = request.headers.get("x-forwarded-host") || "";
+  const url = request.nextUrl.hostname || "";
+  
+  const allHosts = [host, xForwardedHost, url].map(h => h.replace(/:.*$/, "").toLowerCase().trim());
+  return allHosts.some(h => h.includes("iceboxdistribuidora"));
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hostname = request.headers.get("host")?.replace(/:.*$/, "") || "";
+
+  // ─── DEBUG: rota para verificar hostname (remover depois) ───
+  if (pathname === "/_debug-host") {
+    return NextResponse.json({
+      host: request.headers.get("host"),
+      xForwardedHost: request.headers.get("x-forwarded-host"),
+      urlHostname: request.nextUrl.hostname,
+      isIcebox: isIceboxDomain(request),
+      pathname,
+    });
+  }
 
   // ─── ICEBOX DOMAIN: redireciona para catálogo ────────────────
-  if (ICEBOX_DOMAINS.includes(hostname)) {
+  if (isIceboxDomain(request)) {
     // Se acessou a raiz, manda pro catálogo
     if (pathname === "/" || pathname === "") {
       const url = request.nextUrl.clone();
@@ -64,6 +82,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.svg$|.*\\.ico$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.svg$|.*\\.ico$).*)",
   ],
 };
