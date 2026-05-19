@@ -4,11 +4,19 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import StoreDashboard from "@/components/customer/StoreDashboard";
 
+export const dynamic = "force-dynamic";
+
 export default async function StorePage({ searchParams }: { searchParams: Promise<{ loja?: string }> }) {
-  const session = await getServerSession(authOptions);
-  if (!session) redirect("/");
+  let session;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (err) {
+    console.error("[StorePage] Erro ao obter sessão:", err);
+    redirect("/login");
+  }
+  if (!session) redirect("/login");
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/");
+  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
 
   const resolvedParams = await searchParams;
 
