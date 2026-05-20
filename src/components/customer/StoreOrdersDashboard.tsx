@@ -127,18 +127,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return () => clearInterval(wt);
   }, [user.city, user.storeAddress, (user.storeLatLng as any)?.lat]);
 
-  // FAST POLLING — 1s via lightweight API
+  // FAST POLLING — 3s via lightweight API (pauses during drag)
+  const isDraggingRef = useRef(false);
   useEffect(() => {
     let active = true;
     const poll = async () => {
       try {
-        const res = await fetch("/api/customer-order/poll");
-        if (res.ok && active) {
-          const data = await res.json();
-          setOrders(data);
+        if (!isDraggingRef.current) {
+          const res = await fetch("/api/customer-order/poll");
+          if (res.ok && active) {
+            const data = await res.json();
+            setOrders(data);
+          }
         }
       } catch {}
-      if (active) setTimeout(poll, 1000);
+      if (active) setTimeout(poll, 3000);
     };
     const timeout = setTimeout(poll, 1000);
     return () => { active = false; clearTimeout(timeout); };
@@ -303,12 +306,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // --- DRAG HANDLERS ---
   const handleDragStart = (e: React.DragEvent, orderId: string) => {
+    isDraggingRef.current = true;
     setDraggedOrderId(orderId);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", orderId);
   };
 
   const handleDragEnd = () => {
+    isDraggingRef.current = false;
     setDraggedOrderId(null);
     setDragOverColumn(null);
   };
@@ -359,6 +364,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const ghostRef = useRef<HTMLElement | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent, orderId: string) => {
+    isDraggingRef.current = true;
     const touch = e.touches[0];
     const el = e.currentTarget as HTMLElement;
     touchRef.current = { orderId, startX: touch.clientX, startY: touch.clientY, el };
@@ -370,8 +376,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const dx = Math.abs(touch.clientX - touchRef.current.startX);
     const dy = Math.abs(touch.clientY - touchRef.current.startY);
 
-    // Only activate horizontal drag
-    if (dx > 20 && dx > dy) {
+    // Only activate horizontal drag — low threshold for fast response
+    if (dx > 8 && dx > dy) {
       e.preventDefault();
 
       // Create/update ghost element
@@ -433,6 +439,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     }
 
+    isDraggingRef.current = false;
     setDragOverColumn(null);
     touchRef.current = null;
   }, [orders]);
@@ -510,7 +517,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           border: `1.5px solid ${isLate ? "#FCA5A5" : isUrgent ? "#FCD34D" : st.color + "20"}`,
           marginBottom: "0.5rem", overflow: "hidden",
           boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          cursor: canDrag ? "grab" : "default", transition: "box-shadow 0.2s, border-color 0.2s",
+          cursor: canDrag ? "grab" : "default",
           userSelect: "none"
         }}
       >
