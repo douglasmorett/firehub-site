@@ -169,8 +169,9 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     });
     if (exists) return;
 
-    // Monta os itens do pedido
-    const items = (orderData.items ?? []).map((i: any) => ({
+    // Monta os itens do pedido (simplificado para evitar erros com customizations)
+    const rawItems = orderData.items ?? [];
+    const items = rawItems.map((i: any) => ({
       price:    i.unitPrice ?? i.price ?? 0,
       quantity: i.quantity ?? 1,
       menuProduct: {
@@ -181,7 +182,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
             franchiseeId: franchisee.id,
             name:         i.name ?? i.description ?? "Item iFood",
             description:  "",
-            price:        i.unitPrice ?? 0,
+            price:        i.unitPrice ?? i.price ?? 0,
             category:     "iFood",
             active:       true,
           } as any,
@@ -189,57 +190,61 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
       },
     }));
 
-    const total = orderData.totalPrice ?? orderData.total ?? 0;
+    // Total — iFood retorna em total.orderAmount ou total.subTotal
+    const total = typeof orderData.total === "object"
+      ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)
+      : (orderData.totalPrice ?? orderData.total ?? 0);
+
+    // Pagamentos — iFood retorna em payments.methods[]
+    const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
+    const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
 
     // === Campos para homologação iFood ===
-    // Cen1: data/hora do agendamento
     const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
       ? new Date(orderData.scheduledDatetime)
       : null;
 
-    // Cen5: troco e CPF/CNPJ
-    const cashPayment = (orderData.payments ?? []).find((p: any) =>
-      p.name?.toLowerCase().includes("dinheir") || p.method === "CASH"
+    const cashPayment = paymentList.find((p: any) =>
+      p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
     );
     const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
     const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
-
-    // Observação do cliente
-    const customerNote = orderData.customer?.customerNote ?? orderData.observations ?? null;
-
-    // Voucher/benefício
-    const voucherInfo = (orderData.benefits ?? [])
-      .flatMap((b: any) => b.sponsorshipValues ?? [])
-      .map((v: any) => `${v.name}: -R$${v.value?.toFixed(2)}`)
-      .join(", ");
+    const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 
     const notesArr = [
       `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-      orderData.orderTiming === "SCHEDULED" ? `📅 AGENDADO para ${scheduledDatetime ? scheduledDatetime.toLocaleString("pt-BR") : "data não informada"}` : null,
-      voucherInfo ? `🎟️ Voucher: ${voucherInfo}` : null,
-      customerNote ? `💬 Obs. cliente: ${customerNote}` : null,
+      scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+      customerNote ? `💬 ${customerNote}` : null,
     ].filter(Boolean).join(" | ");
 
-    await (prisma.customerOrder as any).create({
-      data: {
-        franchiseeId:     franchisee.id,
-        ifoodOrderId:     orderId,
-        ifoodReference:   orderData.displayId ?? undefined,
-        scheduledDatetime,
-        changeAmount,
-        customerCpfCnpj,
-        source:           "IFOOD",
-        customerName:     orderData.customer?.name ?? "Cliente iFood",
-        customerPhone:    orderData.customer?.phone ?? "",
-        customerAddress:  orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
-        deliveryType:     orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-        paymentMethod:    cashPayment ? "Dinheiro" : (orderData.payments?.[0]?.name ?? "iFood"),
-        totalAmount:      total,
-        status:           "NOVO",
-        notes:            notesArr,
-        items:            { create: items },
-      },
-    });
+    const payMethodName = paymentList[0]?.method ?? paymentList[0]?.name ?? "iFood Online";
+
+    try {
+      await (prisma.customerOrder as any).create({
+        data: {
+          franchiseeId:     franchisee.id,
+          ifoodOrderId:     orderId,
+          ifoodReference:   orderData.displayId ?? undefined,
+          scheduledDatetime,
+          changeAmount,
+          customerCpfCnpj,
+          source:           "IFOOD",
+          customerName:     orderData.customer?.name ?? "Cliente iFood",
+          customerPhone:    orderData.customer?.phone?.number ?? orderData.customer?.phone ?? "",
+          customerAddress:  orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
+          deliveryType:     orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
+          paymentMethod:    cashPayment ? "Dinheiro" : payMethodName,
+          totalAmount:      total,
+          status:           "NOVO",
+          notes:            notesArr,
+          items:            { create: items },
+        },
+      });
+      console.log(`[iFood] ✅ Pedido ${orderId} criado no FireHub`);
+    } catch (createErr: any) {
+      console.error(`[iFood] ❌ Erro ao criar pedido ${orderId}:`, createErr.message);
+      throw createErr;
+    }
 
     // Auto-confirma o pedido para o iFood (evita cancelamento por timeout)
     await autoConfirmIfoodOrder(orderId, token);
