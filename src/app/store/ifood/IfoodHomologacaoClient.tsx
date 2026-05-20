@@ -71,8 +71,8 @@ export default function IfoodHomologacaoClient({
     } catch { setConn("error"); }
   };
 
-  // Auto-verifica ao carregar a página
-  useEffect(() => { testConnection(); }, []);
+  // Auto-verifica ao carregar a página (force=true para reconectar automaticamente)
+  useEffect(() => { testConnection(true); }, []);
 
   const getAuthUrl = async () => {
     const r = await fetch("/api/ifood/auth?step=url");
@@ -168,7 +168,7 @@ export default function IfoodHomologacaoClient({
               </button>
             </div>
           ) : connStatus !== "loading" ? (
-            <button onClick={() => {}} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#E8360C", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit" }}>
+            <button onClick={() => testConnection(true)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#E8360C", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit" }}>
               + Integrar loja no iFood
             </button>
           ) : null}
