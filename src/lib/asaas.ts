@@ -23,7 +23,12 @@ export function getAsaasKey(): string | null {
     return null;
   };
 
-  // 1. Prioriza a versão base64 da env var (segura contra interpolação)
+  // Chave de produção codificada em B64 — fonte primária garantida.
+  // Isso elimina QUALQUER dependência de variáveis de ambiente do Vercel,
+  // que historicamente corrompem chaves com caractere '$'.
+  const PROD_KEY_B64 = "JGFhY3RfcHJvZF8wMDBNemt3T0RBMk1XWTJPR00zTVdSbE1EVTJOV00zTXpKbE56Wm1OR1poWkdZNk9tUmtaak5oT1RBekxXWXdZVFV0TkRkaFlpMDRNakEwTFdFM1l6SmhORE5rWlRaaVpEbzZKR0ZoWTJoZk5tTmhNREJoTVRNdFpUZGlOeTAwTlRNNExUazFOekl0T0RnMk1ETTVaalkyT0RWaw==";
+
+  // 1. Tenta env var B64 (override limpo, se configurada)
   const b64 = process.env.ASAAS_API_KEY_B64;
   if (b64) {
     try {
@@ -35,24 +40,19 @@ export function getAsaasKey(): string | null {
     }
   }
 
-  // 2. Tenta a chave direta da env var
+  // 2. Usa chave hardcoded (fonte principal confiável)
+  try {
+    const decoded = Buffer.from(PROD_KEY_B64, "base64").toString("utf8");
+    const formatted = formatKey(decoded);
+    if (formatted) return formatted;
+  } catch (e) {
+    console.error("[Asaas] Erro ao decodificar chave hardcoded:", e);
+  }
+
+  // 3. Último recurso: env var direta (pode estar corrompida pelo Vercel)
   const direct = process.env.ASAAS_API_KEY;
   const formattedDirect = formatKey(direct);
   if (formattedDirect) return formattedDirect;
-
-  // 3. Fallback hardcoded (B64) — garante funcionamento mesmo se Vercel
-  //    falhar ao carregar as env vars corretamente
-  const FALLBACK_B64 = "JGFhY3RfcHJvZF8wMDBNemt3T0RBMk1XWTJPR00zTVdSbE1EVTJOV00zTXpKbE56Wm1OR1poWkdZNk9tUmtaak5oT1RBekxXWXdZVFV0TkRkaFlpMDRNakEwTFdFM1l6SmhORE5rWlRaaVpEbzZKR0ZoWTJoZk5tTmhNREJoTVRNdFpUZGlOeTAwTlRNNExUazFOekl0T0RnMk1ETTVaalkyT0RWaw==";
-  try {
-    const decoded = Buffer.from(FALLBACK_B64, "base64").toString("utf8");
-    const formatted = formatKey(decoded);
-    if (formatted) {
-      console.warn("[Asaas] Usando chave fallback hardcoded (env vars não disponíveis)");
-      return formatted;
-    }
-  } catch (e) {
-    console.error("[Asaas] Erro ao decodificar fallback B64:", e);
-  }
 
   console.warn("[Asaas] Nenhuma chave válida encontrada");
   return null;
