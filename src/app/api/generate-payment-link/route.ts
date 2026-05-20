@@ -46,6 +46,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "ASAAS_API_KEY não configurada no servidor" }, { status: 500 });
     }
 
+    // Diagnóstico da chave no ambiente
+    const keyPreview = asaasKey.substring(0, 20) + "..." + asaasKey.substring(asaasKey.length - 10);
+    console.log(`[generate-link] Key preview: ${keyPreview} (len=${asaasKey.length})`);
+
     const BASE = asaasKey.startsWith("$aact_prod")
       ? "https://api.asaas.com/v3"
       : "https://sandbox.asaas.com/v3";

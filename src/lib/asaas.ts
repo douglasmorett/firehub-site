@@ -122,6 +122,10 @@ export async function createAsaasPayment(opts: {
     return null;
   }
 
+  // Log para diagnosticar problemas com a chave no Vercel
+  const keyPreview = asaasKey.substring(0, 20) + "..." + asaasKey.substring(asaasKey.length - 10);
+  console.log(`[Asaas] Key preview: ${keyPreview} (len=${asaasKey.length})`);
+
   const BASE = asaasKey.startsWith("$aact_prod")
     ? "https://api.asaas.com/v3"
     : "https://sandbox.asaas.com/v3";
