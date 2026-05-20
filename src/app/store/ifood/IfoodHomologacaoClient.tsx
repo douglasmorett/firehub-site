@@ -59,6 +59,17 @@ export default function IfoodHomologacaoClient({
     } catch { setConn("error"); }
   };
 
+  const disconnectStore = async () => {
+    if (!window.confirm("Tem certeza que deseja desconectar esta conta iFood?")) return;
+    setConn("loading");
+    try {
+      const r = await fetch("/api/ifood/auth?step=disconnect");
+      await r.json();
+      setConnData(null);
+      setConn("idle");
+    } catch { setConn("error"); }
+  };
+
   // Auto-verifica ao carregar a página
   useEffect(() => { testConnection(); }, []);
 
@@ -147,9 +158,14 @@ export default function IfoodHomologacaoClient({
           </div>
           {/* Só mostra botão de reconectar se já conectado (discreto) ou botão integrar se não */}
           {connStatus === "ok" ? (
-            <button onClick={testConnection} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #BBF7D0", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#16A34A", fontFamily: "inherit" }}>
-              <RefreshCw size={11} /> Reconectar
-            </button>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+              <button onClick={testConnection} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #BBF7D0", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#16A34A", fontFamily: "inherit" }}>
+                <RefreshCw size={11} /> Reconectar
+              </button>
+              <button onClick={disconnectStore} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #FECACA", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#DC2626", fontFamily: "inherit" }}>
+                <Trash2 size={11} /> Desconectar
+              </button>
+            </div>
           ) : connStatus !== "loading" ? (
             <button onClick={() => {}} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#E8360C", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit" }}>
               + Integrar loja no iFood
@@ -331,8 +347,27 @@ export default function IfoodHomologacaoClient({
         </>
       )}
 
-      {/* Store info */}
-      {connStatus === "ok" && <TabLoja />}
+      {/* Abas de Navegação */}
+      {connStatus === "ok" && (
+        <div style={{
+          display: "flex",
+          border: "1.5px solid #E2E8F0",
+          borderRadius: 14,
+          overflow: "hidden",
+          marginBottom: "1.25rem",
+          background: "#fff",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+        }}>
+          {tabBtn("loja", "Loja", "🏪")}
+          {tabBtn("pausas", "Pausas", "⏸️")}
+          {tabBtn("horarios", "Horários", "🕐")}
+        </div>
+      )}
+
+      {/* Conteúdo das Abas */}
+      {connStatus === "ok" && tab === "loja" && <TabLoja />}
+      {connStatus === "ok" && tab === "pausas" && <TabPausas />}
+      {connStatus === "ok" && tab === "horarios" && <TabHorarios />}
     </div>
   );
 }

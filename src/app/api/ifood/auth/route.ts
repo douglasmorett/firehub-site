@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
+import { prisma } from "@/lib/prisma";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
 
@@ -35,9 +36,21 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // ── Passo 2: Testa conexão com merchantId atual ────────────────────────────
+  // ── Passo 2: Testa conexão com merchantId atual (com suporte ao banco de dados) ──
   if (step === "test") {
-    const merchantId = process.env.IFOOD_MERCHANT_UUID;
+    const email = session.user?.email || "";
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { ifoodConnected: true, ifoodMerchantId: true }
+    });
+
+    // Se o usuário já desconectou explicitamente no banco de dados, reportamos como desconectado
+    const isExplicitlyDisconnected = user && user.ifoodConnected === false;
+    if (isExplicitlyDisconnected) {
+      return NextResponse.json({ connected: false, message: "Loja desconectada pelo usuário" });
+    }
+
+    const merchantId = user?.ifoodMerchantId || process.env.IFOOD_MERCHANT_UUID;
     if (!merchantId) return NextResponse.json({ connected: false, error: "IFOOD_MERCHANT_UUID não configurado" });
 
     try {
@@ -45,12 +58,23 @@ export async function GET(req: NextRequest) {
       const res   = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants/${merchantId}`, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
-      const data = res.ok ? await res.json() : await res.text();
+      
+      const resOk = res.ok;
+      const data = resOk ? await res.json() : await res.text();
+
+      // Se conectou com sucesso e o status no banco ainda era falso/não sincronizado, atualiza para true
+      if (resOk && user && !user.ifoodConnected) {
+        await prisma.user.update({
+          where: { email },
+          data: { ifoodConnected: true, ifoodMerchantId: merchantId }
+        });
+      }
+
       return NextResponse.json({
-        connected: res.ok,
+        connected: resOk,
         status:    res.status,
         merchantId,
-        storeName: res.ok ? (data?.name || data?.shortName || "Loja iFood") : null,
+        storeName: resOk ? (data?.name || data?.shortName || "Loja iFood") : null,
         raw:       data,
       });
     } catch (err: any) {
@@ -58,7 +82,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ error: "step inválido. Use ?step=url ou ?step=test" }, { status: 400 });
+  // ── Passo 3: Desconecta a loja do iFood ────────────────────────────────────
+  if (step === "disconnect") {
+    const email = session.user?.email || "";
+    await prisma.user.update({
+      where: { email },
+      data: { ifoodConnected: false, ifoodMerchantId: null }
+    });
+    return NextResponse.json({ success: true, connected: false });
+  }
+
+  return NextResponse.json({ error: "step inválido. Use ?step=url, ?step=test ou ?step=disconnect" }, { status: 400 });
 }
 
 export async function POST(req: NextRequest) {

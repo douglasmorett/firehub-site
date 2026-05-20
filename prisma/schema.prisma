@@ -146,6 +146,7 @@ model Payable {
   status       String    @default("PENDING")
   category     String    @default("BUSINESS")
   paidDate     DateTime?
+  paymentType  String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
