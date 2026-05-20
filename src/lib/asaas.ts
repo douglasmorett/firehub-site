@@ -4,11 +4,16 @@ const ASAAS_HEADERS = (key: string) => ({
   "Content-Type": "application/json"
 });
 
-export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<boolean> {
-  if (!cpfCnpj) return false;
+export type OverdueInfo = {
+  blocked: boolean;
+  payments: { id: string; value: number; dueDate: string; invoiceUrl: string | null; description: string }[];
+};
+
+export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<OverdueInfo> {
+  if (!cpfCnpj) return { blocked: false, payments: [] };
   
   const asaasKey = process.env.ASAAS_API_KEY;
-  if (!asaasKey) return false;
+  if (!asaasKey) return { blocked: false, payments: [] };
 
   try {
     const customerRes = await fetch(`https://api.asaas.com/v3/customers?cpfCnpj=${cpfCnpj}`, {
@@ -17,7 +22,7 @@ export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<boolean
     const customerData = await customerRes.json();
 
     if (!customerRes.ok || !customerData.data || customerData.data.length === 0) {
-      return false;
+      return { blocked: false, payments: [] };
     }
 
     const asaasCustomerId = customerData.data[0].id;
@@ -29,15 +34,25 @@ export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<boolean
     const paymentsData = await paymentsRes.json();
 
     if (paymentsRes.ok && paymentsData.data && paymentsData.data.length > 0) {
-      return true;
+      return {
+        blocked: true,
+        payments: paymentsData.data.map((p: any) => ({
+          id: p.id,
+          value: p.value,
+          dueDate: p.dueDate,
+          invoiceUrl: p.invoiceUrl || p.bankSlipUrl || null,
+          description: p.description || `Cobrança ${p.id}`,
+        }))
+      };
     }
 
-    return false;
+    return { blocked: false, payments: [] };
   } catch (error) {
     console.error("Erro ao checar inadimplência no Asaas:", error);
-    return false;
+    return { blocked: false, payments: [] };
   }
 }
+
 
 export async function getAsaasDashboardData(month: number, year: number) {
   const asaasKey = process.env.ASAAS_API_KEY;

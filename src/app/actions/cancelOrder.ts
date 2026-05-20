@@ -52,7 +52,7 @@ export async function cancelOrder(orderId: string, adminPassword?: string, reaso
     throw new Error("Pedido já está cancelado.");
   }
 
-  // Se o pedido possui um ID de pagamento no Asaas, tentamos cancelar lá primeiro
+  // Se o pedido possui um ID de pagamento no Asaas, tentamos cancelar lá
   if (order.asaasPaymentId) {
     const asaasKey = process.env.ASAAS_API_KEY;
     if (asaasKey) {
@@ -60,19 +60,26 @@ export async function cancelOrder(orderId: string, adminPassword?: string, reaso
         ? "https://api.asaas.com/v3"
         : "https://sandbox.asaas.com/v3";
 
-      const res = await fetch(`${ASAAS_URL}/payments/${order.asaasPaymentId}`, {
-        method: "DELETE",
-        headers: {
-          "access_token": asaasKey,
-          "User-Agent": "HakimPortal/1.0"
+      try {
+        const res = await fetch(`${ASAAS_URL}/payments/${order.asaasPaymentId}`, {
+          method: "DELETE",
+          headers: {
+            "access_token": asaasKey,
+            "User-Agent": "HakimPortal/1.0"
+          }
+        });
+        
+        const data = await res.json().catch(() => ({}));
+        
+        if (res.ok || data.deleted) {
+          console.log(`[cancelOrder] ✅ Cobrança ${order.asaasPaymentId} cancelada no Asaas.`);
+        } else {
+          // Não bloqueia o cancelamento local — apenas loga o aviso
+          console.warn(`[cancelOrder] ⚠️ Aviso ao cancelar no Asaas (cobrança ${order.asaasPaymentId}):`, JSON.stringify(data));
         }
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok && data.errors && data.errors[0].code !== "invalid_action") {
-         console.warn("Aviso ao deletar cobrança no Asaas:", data.errors);
-         throw new Error("Falha ao remover boleto no Asaas: " + data.errors[0].description);
+      } catch (asaasErr) {
+        // Erro de rede — não bloqueia o cancelamento local
+        console.error(`[cancelOrder] ❌ Erro de rede ao cancelar no Asaas:`, asaasErr);
       }
     }
   }

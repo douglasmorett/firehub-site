@@ -46,10 +46,13 @@ export async function POST(req: Request) {
 
     // ── Verifica inadimplência ───────────────────────────────────────────────
     if (user.cpfCnpj) {
-      const isBlocked = await checkAsaasOverdue(user.cpfCnpj);
-      if (isBlocked) {
+      const overdueInfo = await checkAsaasOverdue(user.cpfCnpj);
+      if (overdueInfo.blocked) {
         return NextResponse.json(
-          { error: "Sua conta está bloqueada por pendências financeiras." },
+          { 
+            error: "Sua conta está bloqueada por pendências financeiras.",
+            overduePayments: overdueInfo.payments
+          },
           { status: 403 }
         );
       }

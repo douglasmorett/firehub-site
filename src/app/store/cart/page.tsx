@@ -15,6 +15,7 @@ export default function CartPage() {
   const [emergencyDone, setEmergencyDone] = useState(false);
   const [copied, setCopied] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [overduePayments, setOverduePayments] = useState<any[] | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -27,6 +28,7 @@ export default function CartPage() {
   const handleCheckout = async () => {
     if (items.length === 0 || total < 300) return;
     setLoading(true);
+    setOverduePayments(null);
 
     try {
       const res = await fetch("/api/checkout", {
@@ -38,12 +40,14 @@ export default function CartPage() {
       const data = await res.json().catch(() => null);
 
       if (res.ok && data) {
-        // Primeiro seta o estado de sucesso, DEPOIS limpa o carrinho
         setBoletoUrl(data.boletoUrl || null);
         setBoletoCode(data.boletoCode || data.barCode || null);
         setCheckoutSuccess(true);
-        // Limpa o carrinho por último para não perder o estado visual
         clearCart();
+      } else if (res.status === 403 && data?.overduePayments) {
+        // Inadimplência — mostrar modal com links de pagamento
+        setOverduePayments(data.overduePayments);
+        setLoading(false);
       } else if (res.status === 401) {
         alert("Sessão expirada. Faça login novamente para finalizar o pedido.");
         setLoading(false);
@@ -251,7 +255,7 @@ export default function CartPage() {
   }
 
   /* ── TELA: CARRINHO VAZIO ────────────────────────────────────── */
-  if (items.length === 0) {
+  if (items.length === 0 && !overduePayments) {
     return (
       <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
         <div style={{ textAlign: "center", maxWidth: 360 }}>
@@ -274,6 +278,81 @@ export default function CartPage() {
   /* ── TELA: CARRINHO PRINCIPAL ────────────────────────────────── */
   return (
     <>
+      {/* ── BANNER INADIMPLÊNCIA ──────────────────────────────── */}
+      {overduePayments && overduePayments.length > 0 && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.6)", zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "1rem",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 20, maxWidth: 480, width: "100%",
+            padding: "2rem", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            animation: "fadeIn 0.3s ease",
+          }}>
+            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+              <AlertTriangle size={48} color="#DC2626" style={{ margin: "0 auto 0.75rem" }} />
+              <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#DC2626", marginBottom: "0.5rem" }}>
+                Pendência Financeira
+              </h2>
+              <p style={{ color: "#64748B", fontSize: "0.9rem", lineHeight: 1.5 }}>
+                Você possui {overduePayments.length} cobrança{overduePayments.length > 1 ? "s" : ""} vencida{overduePayments.length > 1 ? "s" : ""}. 
+                Regularize para continuar comprando.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.5rem" }}>
+              {overduePayments.map((p: any, i: number) => (
+                <div key={i} style={{
+                  background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12,
+                  padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  gap: "0.75rem", flexWrap: "wrap",
+                }}>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#991B1B" }}>
+                      R$ {p.value?.toFixed(2)}
+                    </p>
+                    <p style={{ fontSize: "0.8rem", color: "#B91C1C" }}>
+                      Vencido em {new Date(p.dueDate + "T12:00:00").toLocaleDateString("pt-BR")}
+                    </p>
+                  </div>
+                  {p.invoiceUrl && (
+                    <a
+                      href={p.invoiceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "0.6rem 1.2rem", borderRadius: 10,
+                        background: "linear-gradient(135deg, #16A34A, #22C55E)",
+                        color: "#fff", fontWeight: 700, fontSize: "0.85rem",
+                        textDecoration: "none", whiteSpace: "nowrap",
+                        boxShadow: "0 3px 10px rgba(22,163,74,0.3)",
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      Pagar Agora
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setOverduePayments(null)}
+              style={{
+                width: "100%", padding: "0.85rem", borderRadius: 12,
+                border: "1px solid #E2E8F0", background: "#F8FAFC",
+                color: "#64748B", fontWeight: 700, fontSize: "0.9rem",
+                cursor: "pointer",
+              }}
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
       {/* CSS inline para garantir responsividade mesmo sem media query do globals */}
       <style>{`
         .cart-page-grid {
