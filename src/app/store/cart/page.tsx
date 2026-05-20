@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function CartPage() {
-  const { items, removeFromCart, total, clearCart } = useCart();
+  const { items, removeFromCart, total, clearCart, isLoaded } = useCart();
   const [loading, setLoading] = useState(false);
   const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   const [boletoUrl, setBoletoUrl] = useState<string | null>(null);
@@ -249,6 +249,16 @@ export default function CartPage() {
           >
             Ver Meus Pedidos
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return (
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ color: "#64748B", fontWeight: 600, fontSize: "1.1rem" }}>Carregando carrinho...</p>
         </div>
       </div>
     );

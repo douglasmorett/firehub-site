@@ -14,10 +14,38 @@ export async function updateOrderStatus(orderId: string, newStatus: string, note
 
   const oldOrder = await prisma.order.findUnique({
     where: { id: orderId },
-    select: { status: true }
+    select: { status: true, asaasPaymentId: true }
   });
 
   if (!oldOrder) throw new Error("Pedido não encontrado");
+
+  // Se está mudando para CANCELADO e tem pagamento no Asaas, cancela lá também
+  if (newStatus === "CANCELADO" && oldOrder.asaasPaymentId) {
+    const asaasKey = process.env.ASAAS_API_KEY;
+    if (asaasKey) {
+      const ASAAS_URL = asaasKey.startsWith("$aact_prod")
+        ? "https://api.asaas.com/v3"
+        : "https://sandbox.asaas.com/v3";
+
+      try {
+        const res = await fetch(`${ASAAS_URL}/payments/${oldOrder.asaasPaymentId}`, {
+          method: "DELETE",
+          headers: {
+            "access_token": asaasKey,
+            "User-Agent": "HakimPortal/1.0"
+          }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok || data.deleted) {
+          console.log(`[updateOrderStatus] ✅ Cobrança ${oldOrder.asaasPaymentId} cancelada no Asaas.`);
+        } else {
+          console.warn(`[updateOrderStatus] ⚠️ Aviso ao cancelar no Asaas:`, JSON.stringify(data));
+        }
+      } catch (asaasErr) {
+        console.error(`[updateOrderStatus] ❌ Erro de rede ao cancelar no Asaas:`, asaasErr);
+      }
+    }
+  }
 
   await prisma.order.update({
     where: { id: orderId },

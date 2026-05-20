@@ -15,12 +15,38 @@ type CartContextType = {
   removeFromCart: (id: string) => void;
   clearCart: () => void;
   total: number;
+  isLoaded: boolean;
 };
+
+const STORAGE_KEY = "icebox_cart";
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Carrega do localStorage ao montar (client-side only)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setItems(parsed);
+        }
+      }
+    } catch (_) {}
+    setIsLoaded(true);
+  }, []);
+
+  // Salva no localStorage a cada alteração (somente após carregar a carga inicial)
+  useEffect(() => {
+    if (!isLoaded) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch (_) {}
+  }, [items, isLoaded]);
 
   const addToCart = (product: any, quantity: number) => {
     setItems((prev) => {
@@ -36,12 +62,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems(prev => prev.filter(item => item.id !== id));
   };
 
-  const clearCart = () => setItems([]);
+  const clearCart = () => {
+    setItems([]);
+    try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+  };
 
   const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   return (
-    <CartContext.Provider value={{ items, addToCart, removeFromCart, clearCart, total }}>
+    <CartContext.Provider value={{ items, addToCart, removeFromCart, clearCart, total, isLoaded }}>
       {children}
     </CartContext.Provider>
   );
@@ -52,3 +81,4 @@ export function useCart() {
   if (!context) throw new Error("useCart must be used within CartProvider");
   return context;
 }
+

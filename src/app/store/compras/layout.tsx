@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { CartProvider } from "@/components/CartProvider";
+
 import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export default async function ComprasLayout({ children }: { children: React.Reac
   const isIcebox = host.includes("iceboxdistribuidora");
 
   return (
-    <CartProvider>
+    <>
       <div className="icebox-theme" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#F5F5F5" }}>
         {/* Top bar Icebox — só aparece quando acessado pelo domínio Icebox OU quando não logado */}
         {(isIcebox || !isLoggedIn) && (
@@ -104,6 +104,6 @@ export default async function ComprasLayout({ children }: { children: React.Reac
           border-color: #1565C0 !important;
         }
       `}</style>
-    </CartProvider>
+    </>
   );
 }
