@@ -166,11 +166,36 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   useEffect(() => {
     const currentNewCount = orders.filter(o => o.status === "NOVO").length;
     if (currentNewCount > prevOrderCount.current) {
-      // Play notification sound
+      // Play notification sound — clear alert chime using Web Audio API
       try {
-        const audio = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbsGczFj2markup+");
-        audio.volume = 0.5;
-        audio.play().catch(() => {});
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const playChime = (startTime: number) => {
+          // First tone (higher)
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = "sine";
+          osc1.frequency.setValueAtTime(880, startTime);
+          gain1.gain.setValueAtTime(0.3, startTime);
+          gain1.gain.exponentialRampToValueAtTime(0.01, startTime + 0.3);
+          osc1.connect(gain1).connect(ctx.destination);
+          osc1.start(startTime);
+          osc1.stop(startTime + 0.3);
+          // Second tone (even higher)
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = "sine";
+          osc2.frequency.setValueAtTime(1100, startTime + 0.15);
+          gain2.gain.setValueAtTime(0.3, startTime + 0.15);
+          gain2.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+          osc2.connect(gain2).connect(ctx.destination);
+          osc2.start(startTime + 0.15);
+          osc2.stop(startTime + 0.5);
+        };
+        // Play chime 3 times with 0.7s gap
+        const now = ctx.currentTime;
+        playChime(now);
+        playChime(now + 0.7);
+        playChime(now + 1.4);
       } catch {}
 
       // Push Notification (browser)
