@@ -11,12 +11,42 @@ export async function GET() {
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: user.id },
     orderBy: [{ active: "desc" }, { name: "asc" }],
+    include: {
+      orders: {
+        where: {
+          createdAt: { gte: today },
+          status: { notIn: ["CANCELADO"] },
+        },
+        select: { id: true, totalAmount: true, deliveryType: true },
+      },
+    },
   });
 
-  return NextResponse.json(motoboys);
+  // Calculate earnings for each motoboy
+  const result = motoboys.map((mb) => {
+    const todayOrders = mb.orders || [];
+    const deliveryCount = todayOrders.length;
+    const deliveryFees = (mb.perDeliveryRate || 0) * deliveryCount;
+    const daily = mb.dailyRate || 0;
+    const totalEarnings = daily + deliveryFees;
+
+    return {
+      ...mb,
+      orders: undefined, // don't send full orders to client
+      todayDeliveryCount: deliveryCount,
+      todayDeliveryFees: deliveryFees,
+      todayDailyRate: daily,
+      todayTotalEarnings: totalEarnings,
+    };
+  });
+
+  return NextResponse.json(result);
 }
 
 // POST - criar motoboy

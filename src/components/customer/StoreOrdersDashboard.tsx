@@ -129,6 +129,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // FAST POLLING — 3s via lightweight API (pauses during drag)
   const isDraggingRef = useRef(false);
+  const lastPollHash = useRef("");
   useEffect(() => {
     let active = true;
     const poll = async () => {
@@ -136,8 +137,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (!isDraggingRef.current) {
           const res = await fetch("/api/customer-order/poll");
           if (res.ok && active) {
-            const data = await res.json();
-            setOrders(data);
+            const text = await res.text();
+            // Only update if data actually changed — prevents re-render closing dropdowns
+            if (text !== lastPollHash.current) {
+              lastPollHash.current = text;
+              setOrders(JSON.parse(text));
+            }
           }
         }
       } catch {}
