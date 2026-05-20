@@ -341,16 +341,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
-    // NOVO orders can't be dragged
-    if (order.status === "NOVO") return;
-
     const targetStatus = COLUMN_STATUS_MAP[columnId];
-    if (!targetStatus || order.status === targetStatus) return;
+    if (!targetStatus) return;
 
-    // Only allow: PREPARANDO/ACEITO <-> SAIU_ENTREGA
+    // Set the correct status based on target column
     let newStatus = targetStatus;
     if (columnId === "col-preparo") newStatus = "PREPARANDO";
     if (columnId === "col-transporte") newStatus = "SAIU_ENTREGA";
+
+    if (order.status === newStatus) return;
 
     updateStatus(orderId, newStatus);
   };
@@ -424,12 +423,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     if (droppedColumn && droppedColumn !== "col-novos" && touchRef.current) {
       const order = orders.find(o => o.id === touchRef.current!.orderId);
-      if (order && order.status !== "NOVO") {
-        const targetStatus = COLUMN_STATUS_MAP[droppedColumn];
-        if (targetStatus && order.status !== targetStatus) {
-          let newStatus = targetStatus;
-          if (droppedColumn === "col-preparo") newStatus = "PREPARANDO";
-          if (droppedColumn === "col-transporte") newStatus = "SAIU_ENTREGA";
+      if (order) {
+        let newStatus: string | null = null;
+        if (droppedColumn === "col-preparo") newStatus = "PREPARANDO";
+        if (droppedColumn === "col-transporte") newStatus = "SAIU_ENTREGA";
+        if (newStatus && order.status !== newStatus) {
           updateStatus(order.id, newStatus);
         }
       }
@@ -499,7 +497,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       : (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`);
     const timerColor = isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#64748B";
 
-    const canDrag = order.status !== "NOVO" && order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
+    const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
 
     return (
       <div
