@@ -91,6 +91,11 @@ async function pollIfoodEvents() {
           const payMethodName = paymentList[0]?.method ?? "iFood Online";
 
           const customerNote = orderData.delivery?.observations ?? null;
+          // Delivery deadline from iFood
+          const deliveryDeadline = orderData.delivery?.deliveryDateTime
+            ? new Date(orderData.delivery.deliveryDateTime)
+            : null;
+
           const notesArr = [
             `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
             customerNote ? `💬 ${customerNote}` : null,
@@ -101,6 +106,7 @@ async function pollIfoodEvents() {
               franchiseeId: franchisee.id,
               ifoodOrderId: orderId,
               ifoodReference: orderData.displayId ?? undefined,
+              scheduledDatetime: deliveryDeadline,
               source: "IFOOD",
               customerName: orderData.customer?.name ?? "Cliente iFood",
               customerPhone: orderData.customer?.phone?.number ?? orderData.customer?.phone ?? "",
@@ -110,6 +116,7 @@ async function pollIfoodEvents() {
               totalAmount: total,
               status: "NOVO",
               notes: notesArr,
+              createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
               items: { create: items },
             },
           });

@@ -332,30 +332,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     e.preventDefault();
     setDragOverColumn(null);
 
+    // Never allow dropping into Novos Pedidos
+    if (columnId === "col-novos") return;
+
     const orderId = e.dataTransfer.getData("text/plain");
     if (!orderId) return;
 
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
+    // NOVO orders can't be dragged
+    if (order.status === "NOVO") return;
+
     const targetStatus = COLUMN_STATUS_MAP[columnId];
     if (!targetStatus || order.status === targetStatus) return;
 
-    // Determine the correct target status based on the column
-    // Column "novos" = NOVO (but we should only allow moving back if needed)
-    // Column "preparo" = PREPARANDO (or ACEITO if coming from NOVO)
-    // Column "transporte" = SAIU_ENTREGA
-
+    // Only allow: PREPARANDO/ACEITO <-> SAIU_ENTREGA
     let newStatus = targetStatus;
-
-    // If dragging from NOVO to Preparo, auto-accept first then set to PREPARANDO
-    if (order.status === "NOVO" && columnId === "col-preparo") {
-      newStatus = "PREPARANDO";
-    }
-    // If dragging from NOVO to Transport, accept + prepare + set SAIU_ENTREGA
-    if (order.status === "NOVO" && columnId === "col-transporte") {
-      newStatus = "SAIU_ENTREGA";
-    }
+    if (columnId === "col-preparo") newStatus = "PREPARANDO";
+    if (columnId === "col-transporte") newStatus = "SAIU_ENTREGA";
 
     updateStatus(orderId, newStatus);
   };
@@ -427,14 +422,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     });
 
-    if (droppedColumn && touchRef.current) {
+    if (droppedColumn && droppedColumn !== "col-novos" && touchRef.current) {
       const order = orders.find(o => o.id === touchRef.current!.orderId);
-      if (order) {
+      if (order && order.status !== "NOVO") {
         const targetStatus = COLUMN_STATUS_MAP[droppedColumn];
         if (targetStatus && order.status !== targetStatus) {
           let newStatus = targetStatus;
-          if (order.status === "NOVO" && droppedColumn === "col-preparo") newStatus = "PREPARANDO";
-          if (order.status === "NOVO" && droppedColumn === "col-transporte") newStatus = "SAIU_ENTREGA";
+          if (droppedColumn === "col-preparo") newStatus = "PREPARANDO";
+          if (droppedColumn === "col-transporte") newStatus = "SAIU_ENTREGA";
           updateStatus(order.id, newStatus);
         }
       }
@@ -488,41 +483,60 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
     const isLoading = loadingId === order.id;
     const isDragging = draggedOrderId === order.id;
-    const mins = Math.floor((now.getTime() - new Date(order.createdAt).getTime()) / 60000);
+    const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
+    const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
+
+    // Delivery deadline countdown (scheduledDatetime stores the delivery deadline for iFood orders)
+    const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : null;
+    const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
+    const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
+    const isLate = remainingMins !== null && remainingMins < 0;
+    const isUrgent = remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
+
+    // Timer display: show countdown if we have a deadline, otherwise show elapsed time
+    const timerLabel = remainingMins !== null
+      ? (isLate ? `⚠️ -${Math.abs(remainingMins)}min atrasado` : `⏱️ ${remainingMins}min restante${remainingMins !== 1 ? "s" : ""}`)
+      : (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`);
+    const timerColor = isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#64748B";
+
+    const canDrag = order.status !== "NOVO" && order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
 
     return (
       <div
-        draggable
-        onDragStart={e => handleDragStart(e, order.id)}
-        onDragEnd={handleDragEnd}
-        onTouchStart={e => handleTouchStart(e, order.id)}
+        draggable={canDrag}
+        onDragStart={canDrag ? (e => handleDragStart(e, order.id)) : undefined}
+        onDragEnd={canDrag ? handleDragEnd : undefined}
+        onTouchStart={canDrag ? (e => handleTouchStart(e, order.id)) : undefined}
         style={{
           background: "#fff", borderRadius: "10px",
-          border: `1.5px solid ${st.color + "20"}`,
+          border: `1.5px solid ${isLate ? "#FCA5A5" : isUrgent ? "#FCD34D" : st.color + "20"}`,
           marginBottom: "0.5rem", overflow: "hidden",
           boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          cursor: "grab", transition: "box-shadow 0.2s, border-color 0.2s",
+          cursor: canDrag ? "grab" : "default", transition: "box-shadow 0.2s, border-color 0.2s",
           userSelect: "none"
         }}
       >
         <div style={{ padding: "0.75rem 1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0 }}>
-            <GripVertical size={16} />
-          </div>
+          {canDrag && (
+            <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0 }}>
+              <GripVertical size={16} />
+            </div>
+          )}
           <div style={{ flex: 1 }} onClick={() => setExpandedId(expanded ? null : order.id)}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
               <div>
                 <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>#{order.id.slice(-6).toUpperCase()}</span>
-                <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "#64748B" }}>{mins < 60 ? `${mins}min` : `${Math.floor(mins/60)}h${mins%60}min`}</span>
+                <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", fontWeight: isLate || isUrgent ? 700 : 400, color: timerColor }}>{timerLabel}</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <span style={{ fontWeight: 800, color: st.color }}>R$ {order.totalAmount.toFixed(2)}</span>
                 {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </div>
             </div>
-            <div style={{ display: "flex", gap: "0.75rem", marginTop: "4px", fontSize: "0.8rem", color: "#64748B" }}>
+            <div style={{ display: "flex", gap: "0.75rem", marginTop: "4px", fontSize: "0.8rem", color: "#64748B", flexWrap: "wrap" }}>
               <span style={{ display: "flex", alignItems: "center", gap: "3px" }}><User size={12} /> {order.customerName}</span>
               <span>{order.deliveryType === "DELIVERY" ? "🛵 Entrega" : "🏪 Retirada"}</span>
+              {elapsedMins > 0 && <span style={{ color: "#94A3B8" }}>🍳 Na cozinha {elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`}</span>}
             </div>
           </div>
         </div>
@@ -530,18 +544,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         {expanded && (
           <div style={{ padding: "0 1rem 0.75rem", borderTop: "1px solid #F1F5F9" }}>
 
-            {/* ── CENÁRIO 1: Banner de PEDIDO AGENDADO ── */}
-            {order.scheduledDatetime && (
-              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: "10px", border: "2px solid #93C5FD", display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "1.4rem" }}>📅</span>
+            {/* ── Prazo de entrega ── */}
+            {deadline && (
+              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: isLate ? "#FEF2F2" : isUrgent ? "#FFFBEB" : "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: "10px", border: `2px solid ${isLate ? "#FCA5A5" : isUrgent ? "#FCD34D" : "#93C5FD"}`, display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.4rem" }}>{isLate ? "🚨" : isUrgent ? "⚠️" : "⏱️"}</span>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#1D4ED8" }}>PEDIDO AGENDADO</div>
-                  <div style={{ fontSize: "0.82rem", color: "#1E40AF", fontWeight: 600 }}>
-                    {new Date(order.scheduledDatetime).toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: isLate ? "#DC2626" : isUrgent ? "#D97706" : "#1D4ED8" }}>
+                    {isLate ? `ATRASADO ${Math.abs(remainingMins!)}min` : `PRAZO: ${remainingMins}min restantes`}
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "#64748B" }}>
+                    Entregar até {deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · Na cozinha há {elapsedMins}min
                   </div>
                 </div>
               </div>
             )}
+
 
             {/* ── CENÁRIO 3: Banner de RETIRADA ── */}
             {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
