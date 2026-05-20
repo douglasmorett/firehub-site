@@ -18,7 +18,7 @@ export default async function PerfilPage() {
       name: true,
       email: true,
       cpfCnpj: true,
-      phone: true,
+      storePhone: true,
       city: true,
       role: true,
       createdAt: true,
@@ -70,7 +70,7 @@ export default async function PerfilPage() {
           <InfoRow label="Nome" value={user.name || "—"} />
           <InfoRow label="E-mail" value={user.email} />
           <InfoRow label="CPF/CNPJ" value={user.cpfCnpj || "Não cadastrado"} />
-          <InfoRow label="Telefone" value={user.phone || "Não cadastrado"} />
+          <InfoRow label="Telefone" value={user.storePhone || "Não cadastrado"} />
           <InfoRow label="Cidade" value={user.city || "Não cadastrada"} />
           <InfoRow label="Membro desde" value={
             new Date(user.createdAt).toLocaleDateString("pt-BR", {
