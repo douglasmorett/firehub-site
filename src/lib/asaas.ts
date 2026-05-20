@@ -8,23 +8,37 @@ const ASAAS_HEADERS = (key: string) => ({
  * Retorna a chave do Asaas de forma segura.
  * O Vercel interpreta `$` em env vars como referência a outra variável,
  * o que corrompe a chave do Asaas (que começa com `$aact_prod_...`).
- * Solução: armazenar como base64 em ASAAS_API_KEY_B64 e decodificar aqui.
+ * Solução:
+ * 1. Priorizar base64 em ASAAS_API_KEY_B64 (imune à interpolação).
+ * 2. Suportar chave direta sem o '$' inicial (e.g. configurada como 'aact_prod_...').
+ *    Nossos métodos adicionam o '$' automaticamente em runtime se estiver faltando,
+ *    evitando qualquer interpolação ou corrupção do Vercel!
  */
 export function getAsaasKey(): string | null {
-  // 1. Tenta a chave direta (funciona local, pode falhar no Vercel)
-  const direct = process.env.ASAAS_API_KEY;
-  if (direct && direct.startsWith("$aact_")) return direct;
+  const formatKey = (key: string | undefined): string | null => {
+    if (!key) return null;
+    const trimmed = key.trim();
+    if (trimmed.startsWith("$aact_")) return trimmed;
+    if (trimmed.startsWith("aact_")) return "$" + trimmed;
+    return null;
+  };
 
-  // 2. Fallback: decodifica da versão base64 (funciona no Vercel)
+  // 1. Prioriza a versão base64 (segura contra interpolação no Vercel)
   const b64 = process.env.ASAAS_API_KEY_B64;
   if (b64) {
     try {
       const decoded = Buffer.from(b64, "base64").toString("utf8");
-      if (decoded.startsWith("$aact_")) return decoded;
+      const formatted = formatKey(decoded);
+      if (formatted) return formatted;
     } catch (e) {
       console.error("[Asaas] Erro ao decodificar ASAAS_API_KEY_B64:", e);
     }
   }
+
+  // 2. Tenta a chave direta
+  const direct = process.env.ASAAS_API_KEY;
+  const formattedDirect = formatKey(direct);
+  if (formattedDirect) return formattedDirect;
 
   console.warn("[Asaas] Nenhuma chave válida encontrada (ASAAS_API_KEY ou ASAAS_API_KEY_B64)");
   return null;
