@@ -5,12 +5,14 @@ import { Plus, Edit2, Trash2, Bike, Check, X, Phone, DollarSign } from "lucide-r
 type Motoboy = {
   id: string; name: string; phone?: string; active: boolean;
   paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; notes?: string;
+  todayDeliveryCount?: number; todayDeliveryFees?: number; todayDailyRate?: number; todayTotalEarnings?: number;
 };
 
 const PAYMENT_TYPES = [
   { value: "PER_DELIVERY", label: "Por Entrega (fixo por corrida)" },
   { value: "DAILY_RATE", label: "Diária Fixa" },
   { value: "BOTH", label: "Diária + Por Entrega" },
+  { value: "DAILY_PLUS_FEE", label: "Diária + Taxa do Pedido" },
   { value: "PER_KM", label: "Por KM Percorrido" },
 ];
 
@@ -77,7 +79,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             </select>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            {(editing.paymentType === "DAILY_RATE" || editing.paymentType === "BOTH") && (
+            {(editing.paymentType === "DAILY_RATE" || editing.paymentType === "BOTH" || editing.paymentType === "DAILY_PLUS_FEE") && (
               <div><label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Diária (R$)</label>
                 <input className="input-field" type="number" step="0.5" min="0" value={editing.dailyRate ?? ""} onChange={e => setEditing(p => ({ ...p, dailyRate: e.target.value ? Number(e.target.value) : undefined }))} placeholder="Ex: 60" /></div>
             )}
@@ -90,6 +92,11 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                 <input className="input-field" type="number" step="0.1" min="0" value={editing.perKmRate ?? ""} onChange={e => setEditing(p => ({ ...p, perKmRate: e.target.value ? Number(e.target.value) : undefined }))} placeholder="Ex: 1.50" /></div>
             )}
           </div>
+          {editing.paymentType === "DAILY_PLUS_FEE" && (
+            <div style={{ margin: "0 0 12px", padding: "10px 14px", background: "#EFF6FF", borderRadius: 10, border: "1.5px solid #93C5FD", fontSize: "0.82rem", color: "#1D4ED8" }}>
+              💡 <strong>Diária + Taxa:</strong> O motoboy recebe a diária fixa + o valor da taxa de entrega de cada pedido (iFood ou site). As taxas são somadas automaticamente.
+            </div>
+          )}
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Observações</label>
             <input className="input-field" value={editing.notes || ""} onChange={e => setEditing(p => ({ ...p, notes: e.target.value }))} placeholder="Opcional..." />
@@ -125,13 +132,23 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
               <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>{mb.name}
                 {!mb.active && <span style={{ marginLeft: 8, fontSize: "0.7rem", background: "#FEE2E2", color: "#EF4444", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>Inativo</span>}
               </div>
-              <div style={{ fontSize: "0.78rem", color: "#64748B", display: "flex", gap: 12, marginTop: 2 }}>
+              <div style={{ fontSize: "0.78rem", color: "#64748B", display: "flex", gap: 12, marginTop: 2, flexWrap: "wrap" }}>
                 {mb.phone && <span><Phone size={11} style={{ marginRight: 3 }} />{mb.phone}</span>}
                 <span><DollarSign size={11} style={{ marginRight: 3 }} />{payLabel(mb.paymentType)}</span>
-                {mb.dailyRate && <span>Diária: R${mb.dailyRate.toFixed(2)}</span>}
-                {mb.perDeliveryRate && <span>R${mb.perDeliveryRate.toFixed(2)}/entrega</span>}
-                {mb.perKmRate && <span>R${mb.perKmRate.toFixed(2)}/km</span>}
+                {mb.dailyRate ? <span>Diária: R${mb.dailyRate.toFixed(2)}</span> : null}
+                {mb.perDeliveryRate ? <span>R${mb.perDeliveryRate.toFixed(2)}/entrega</span> : null}
+                {mb.perKmRate ? <span>R${mb.perKmRate.toFixed(2)}/km</span> : null}
+                {mb.paymentType === "DAILY_PLUS_FEE" && <span style={{ color: "#0369A1" }}>💰 Recebe taxa do pedido</span>}
               </div>
+              {/* Resumo do dia */}
+              {mb.active && (mb.todayDeliveryCount ?? 0) >= 0 && (
+                <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: "0.75rem", flexWrap: "wrap" }}>
+                  <span style={{ background: "#ECFDF5", color: "#059669", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📦 Hoje: {mb.todayDeliveryCount ?? 0} entregas</span>
+                  {(mb.todayDailyRate ?? 0) > 0 && <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📅 Diária: R${(mb.todayDailyRate ?? 0).toFixed(2)}</span>}
+                  {(mb.todayDeliveryFees ?? 0) > 0 && <span style={{ background: "#FFF7ED", color: "#D97706", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>🛵 Taxas: R${(mb.todayDeliveryFees ?? 0).toFixed(2)}</span>}
+                  <span style={{ background: "#F0FDF4", color: "#16A34A", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>💰 Total: R${(mb.todayTotalEarnings ?? 0).toFixed(2)}</span>
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button onClick={() => toggle(mb)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, color: mb.active ? "#EF4444" : "#16A34A" }}>{mb.active ? "Pausar" : "Ativar"}</button>

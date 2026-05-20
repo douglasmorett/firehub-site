@@ -23,7 +23,7 @@ export async function GET() {
           createdAt: { gte: today },
           status: { notIn: ["CANCELADO"] },
         },
-        select: { id: true, totalAmount: true, deliveryType: true },
+        select: { id: true, totalAmount: true, deliveryType: true, deliveryFee: true },
       },
     },
   });
@@ -32,8 +32,17 @@ export async function GET() {
   const result = motoboys.map((mb) => {
     const todayOrders = mb.orders || [];
     const deliveryCount = todayOrders.length;
-    const deliveryFees = (mb.perDeliveryRate || 0) * deliveryCount;
     const daily = mb.dailyRate || 0;
+
+    let deliveryFees = 0;
+    if (mb.paymentType === "DAILY_PLUS_FEE") {
+      // Sum actual delivery fees from orders
+      deliveryFees = todayOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
+    } else {
+      // Fixed per-delivery rate
+      deliveryFees = (mb.perDeliveryRate || 0) * deliveryCount;
+    }
+
     const totalEarnings = daily + deliveryFees;
 
     return {

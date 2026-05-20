@@ -90,6 +90,12 @@ async function pollIfoodEvents() {
           const cashPayment = paymentList.find((p: any) => p.method === "CASH");
           const payMethodName = paymentList[0]?.method ?? "iFood Online";
 
+          // Extract delivery fee from iFood
+          const deliveryFeeValue = orderData.total?.deliveryFee
+            ?? orderData.delivery?.deliveryFee
+            ?? orderData.deliveryFee
+            ?? 0;
+
           const customerNote = orderData.delivery?.observations ?? null;
           // Delivery deadline from iFood
           const deliveryDeadline = orderData.delivery?.deliveryDateTime
@@ -114,6 +120,7 @@ async function pollIfoodEvents() {
               deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
               paymentMethod: cashPayment ? "Dinheiro" : payMethodName,
               totalAmount: total,
+              deliveryFee: deliveryFeeValue,
               status: "NOVO",
               notes: notesArr,
               createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
