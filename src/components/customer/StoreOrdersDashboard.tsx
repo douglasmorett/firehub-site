@@ -221,38 +221,54 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     } catch {}
   }, []);
 
-  // Sound + Push Notification for new orders
-  useEffect(() => {
-    const currentNewCount = orders.filter(o => o.status === "NOVO").length;
-    if (currentNewCount > prevOrderCount.current) {
-      // Play notification chime
-      playOrderChime();
+  // Continuous alert sound — loops every 4s while there are NOVO orders
+  const alertIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasNotifiedRef = useRef(false);
 
-      // Push Notification (browser)
-      if ("Notification" in window) {
-        if (Notification.permission === "granted") {
+  useEffect(() => {
+    const novoCount = orders.filter(o => o.status === "NOVO").length;
+
+    if (novoCount > 0) {
+      // Start looping sound if not already playing
+      if (!alertIntervalRef.current) {
+        // Play immediately
+        playOrderChime();
+
+        // Then repeat every 4 seconds
+        alertIntervalRef.current = setInterval(() => {
+          playOrderChime();
+        }, 4000);
+      }
+
+      // Send push notification only once per batch
+      if (!hasNotifiedRef.current) {
+        hasNotifiedRef.current = true;
+        if ("Notification" in window && Notification.permission === "granted") {
           try {
             new Notification("🔔 Novo pedido chegou!", {
-              body: `Você tem ${currentNewCount} pedido${currentNewCount > 1 ? "s" : ""} aguardando confirmação.`,
+              body: `Você tem ${novoCount} pedido${novoCount > 1 ? "s" : ""} aguardando confirmação.`,
               icon: "/icon.jpg",
               tag: "new-order",
             });
           } catch {}
-        } else if (Notification.permission !== "denied") {
-          Notification.requestPermission().then(permission => {
-            if (permission === "granted") {
-              try {
-                new Notification("🔔 Notificações ativadas!", {
-                  body: "Você receberá alertas quando chegar novos pedidos.",
-                  icon: "/icon.jpg",
-                });
-              } catch {}
-            }
-          });
         }
       }
+    } else {
+      // All orders accepted — stop the sound
+      if (alertIntervalRef.current) {
+        clearInterval(alertIntervalRef.current);
+        alertIntervalRef.current = null;
+      }
+      hasNotifiedRef.current = false;
     }
-    prevOrderCount.current = currentNewCount;
+
+    return () => {
+      // Cleanup on unmount
+      if (alertIntervalRef.current) {
+        clearInterval(alertIntervalRef.current);
+        alertIntervalRef.current = null;
+      }
+    };
   }, [orders, playOrderChime]);
 
   // Solicitar permissão de notificação na montagem
