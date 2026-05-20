@@ -76,50 +76,64 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ received: true });
 }
 
-// Polling de eventos (alternativa ao webhook)
+// Polling de eventos (alternativa ao webhook) — usa token centralizado
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const franchiseeId = searchParams.get("franchiseeId");
-  if (!franchiseeId) return NextResponse.json({ error: "franchiseeId obrigatório" }, { status: 400 });
+  const { getIfoodToken } = await import("@/lib/ifood-api");
+  const merchantId = process.env.IFOOD_MERCHANT_UUID;
+  if (!merchantId) return NextResponse.json({ error: "IFOOD_MERCHANT_UUID não configurado" }, { status: 500 });
 
-  // Busca o token iFood do franqueado
-  const user = await prisma.user.findUnique({
-    where: { id: franchiseeId },
-    select: { ifoodMerchantId: true, ifoodAccessToken: true } as any,
-  });
-
-  if (!(user as any)?.ifoodAccessToken) {
-    return NextResponse.json({ error: "Conta do iFood não conectada" }, { status: 400 });
+  // Obtém token via client_credentials (centralizado)
+  let token: string;
+  try {
+    token = await getIfoodToken();
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
   // GET /events/v1.0/events:polling
   const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
     method: "GET",
-    headers: { Authorization: `Bearer ${(user as any).ifoodAccessToken}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!res.ok) return NextResponse.json({ events: [], error: res.statusText });
+  if (!res.ok) {
+    const errText = await res.text();
+    return NextResponse.json({ events: [], error: `${res.status} ${errText}` });
+  }
   const data = await res.json();
+
+  // Encontra o franqueado vinculado a esse merchantId
+  const franchisee = await prisma.user.findFirst({
+    where: { ifoodMerchantId: merchantId } as any,
+  });
+  // Fallback: pega o primeiro usuário franqueado se nenhum tem o merchantId
+  const fallbackUser = franchisee ?? await prisma.user.findFirst({
+    where: { role: "FRANCHISEE" } as any,
+  });
 
   // Processa cada evento
   for (const event of data ?? []) {
-    await processIfoodEvent(event, franchiseeId);
+    try {
+      await processIfoodEvent(event, fallbackUser?.id);
+    } catch (err) {
+      console.error("[iFood Polling] Erro ao processar evento:", event?.id, err);
+    }
   }
 
-  // Confirma recebimento dos eventos
+  // Confirma recebimento dos eventos (acknowledgment)
   const eventIds = (data ?? []).map((e: any) => e.id);
   if (eventIds.length > 0) {
     await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${(user as any).ifoodAccessToken}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(eventIds.map((id: string) => ({ id }))),
     });
   }
 
-  return NextResponse.json({ processed: eventIds.length });
+  return NextResponse.json({ processed: eventIds.length, events: data ?? [] });
 }
 
 // ─── Processa um evento do iFood ──────────────────────────────────────────
@@ -129,16 +143,24 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
   // Pedido novo (PLACED) — cria no banco do FireHub
   if (code === "PLACED") {
+    const { getIfoodToken } = await import("@/lib/ifood-api");
+    const token = await getIfoodToken();
+
     // Busca detalhes completos do pedido
-    const franchisee = await prisma.user.findFirst({
+    let franchisee = await prisma.user.findFirst({
       where: { ifoodMerchantId: merchantId } as any,
     });
+    // Fallback: usa o franchiseeId do override ou pega o primeiro franqueado
+    if (!franchisee && franchiseeIdOverride) {
+      franchisee = await prisma.user.findUnique({ where: { id: franchiseeIdOverride } });
+    }
+    if (!franchisee) {
+      franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
+    }
     if (!franchisee) return;
 
-    const orderData = event.fullCode === "PLACED"
-      ? event.data
-      : await fetchIfoodOrderDetails(orderId, (franchisee as any).ifoodAccessToken);
-
+    // Busca detalhes do pedido na API usando token centralizado
+    const orderData = event.data ?? await fetchIfoodOrderDetails(orderId, token);
     if (!orderData) return;
 
     // Verifica se já foi criado (idempotência)
@@ -220,7 +242,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     });
 
     // Auto-confirma o pedido para o iFood (evita cancelamento por timeout)
-    await autoConfirmIfoodOrder(orderId, (franchisee as any).ifoodAccessToken);
+    await autoConfirmIfoodOrder(orderId, token);
     return;
   }
 
