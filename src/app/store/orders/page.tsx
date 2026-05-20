@@ -42,21 +42,32 @@ export default async function StoreOrdersPage() {
         marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem",
       }}>
         <div>
-          <h1 style={{ fontWeight: 900, fontSize: "1.4rem", margin: 0, color: "#0F172A" }}>
-            📋 Meus Pedidos de Insumos
+          <h1 style={{ fontWeight: 900, fontSize: "1.3rem", margin: 0, color: "#0F172A" }}>
+            📋 Meus Pedidos
           </h1>
-          <p style={{ color: "#94A3B8", fontSize: "0.82rem", margin: "4px 0 0" }}>
-            Acompanhe todos os seus pedidos e pagamentos
+          <p style={{ color: "#94A3B8", fontSize: "0.78rem", margin: "4px 0 0" }}>
+            Acompanhe pedidos e pagamentos
           </p>
         </div>
-        <Link href="/store/compras" style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "10px 20px", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem",
-          background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
-          textDecoration: "none", boxShadow: "0 3px 10px rgba(21,101,192,0.25)",
-        }}>
-          ← Voltar às Compras
-        </Link>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <Link href="/store/perfil" style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem",
+            background: "#fff", color: "#475569", border: "1.5px solid #E2E8F0",
+            textDecoration: "none", whiteSpace: "nowrap",
+          }}>
+            👤 Perfil
+          </Link>
+          <Link href="/store/compras" style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem",
+            background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
+            textDecoration: "none", boxShadow: "0 3px 10px rgba(21,101,192,0.25)",
+            whiteSpace: "nowrap",
+          }}>
+            ← Compras
+          </Link>
+        </div>
       </div>
 
       {/* ── LISTA DE PEDIDOS ────────────────────────────── */}
@@ -93,15 +104,16 @@ export default async function StoreOrdersPage() {
 
                 {/* ── Card Header ── */}
                 <div style={{
-                  padding: "1rem 1.25rem",
+                  padding: "1rem 1rem",
                   display: "flex", justifyContent: "space-between", alignItems: "flex-start",
                   borderBottom: "1px solid #F1F5F9",
+                  flexWrap: "wrap", gap: "0.5rem",
                 }}>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: "1rem", color: "#0F172A" }}>
                       Pedido #{shortId}
                     </div>
-                    <div style={{ color: "#94A3B8", fontSize: "0.78rem", marginTop: 2 }}>
+                    <div style={{ color: "#94A3B8", fontSize: "0.75rem", marginTop: 2 }}>
                       {new Date(order.createdAt).toLocaleDateString("pt-BR", {
                         day: "2-digit", month: "long", year: "numeric",
                         timeZone: "America/Sao_Paulo"
@@ -114,15 +126,15 @@ export default async function StoreOrdersPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{
-                      padding: "4px 12px", borderRadius: 8, fontWeight: 700, fontSize: "0.73rem",
+                      padding: "3px 10px", borderRadius: 8, fontWeight: 700, fontSize: "0.7rem",
                       background: st.bg, color: st.color, border: `1px solid ${st.border}`,
                       whiteSpace: "nowrap",
                     }}>
                       {st.label}
                     </span>
-                    <span style={{ fontWeight: 900, fontSize: "1.1rem", color: "#0F172A", whiteSpace: "nowrap" }}>
+                    <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", whiteSpace: "nowrap" }}>
                       R$ {order.totalAmount.toFixed(2)}
                     </span>
                   </div>

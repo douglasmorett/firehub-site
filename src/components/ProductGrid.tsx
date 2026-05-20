@@ -182,23 +182,31 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Action Buttons — só mostra quando NÃO é Icebox independente */}
           {!isIcebox && isLoggedIn && (
-            <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
               <Link href="/store/orders" style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "10px 20px", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem",
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem",
                 background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
-                textDecoration: "none", boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
-                transition: "opacity 0.2s",
+                textDecoration: "none", boxShadow: "0 3px 10px rgba(21,101,192,0.25)",
+                transition: "opacity 0.2s", whiteSpace: "nowrap",
               }}>
-                📋 Ver Meus Pedidos
+                📋 Meus Pedidos
+              </Link>
+              <Link href="/store/perfil" style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem",
+                background: "#fff", color: "#475569", border: "1.5px solid #E2E8F0",
+                textDecoration: "none", transition: "all 0.2s", whiteSpace: "nowrap",
+              }}>
+                👤 Meu Perfil
               </Link>
               <Link href="/store" style={{
-                display: "inline-flex", alignItems: "center", gap: 8,
-                padding: "10px 20px", borderRadius: 12, fontWeight: 700, fontSize: "0.88rem",
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem",
                 background: "#fff", color: "#475569", border: "1.5px solid #E2E8F0",
-                textDecoration: "none", transition: "all 0.2s",
+                textDecoration: "none", transition: "all 0.2s", whiteSpace: "nowrap",
               }}>
-                ← Voltar para Painel
+                ← Voltar
               </Link>
             </div>
           )}
@@ -266,12 +274,12 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
             <div style={{ textAlign: "center", padding: "4rem 1rem", color: "var(--text-muted)" }}>Nenhum produto encontrado para sua busca.</div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1.5rem" }}>
+          <div className="product-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
             {filteredProducts.map(product => (
-              <div key={product.id} className="card" style={{ display: "flex", flexDirection: "column", padding: "1.5rem" }}>
+              <div key={product.id} className="card" style={{ display: "flex", flexDirection: "column", padding: "1rem" }}>
                 {product.imageUrl ? (
-                  <div style={{ position: "relative", width: "100%", height: "200px", marginBottom: "1rem" }}>
-                    <Image src={product.imageUrl} alt={product.name} fill style={{ objectFit: "cover", borderRadius: "var(--radius-sm)" }} sizes="(max-width: 768px) 100vw, 300px" />
+                  <div style={{ position: "relative", width: "100%", height: "180px", marginBottom: "0.75rem" }}>
+                    <Image src={product.imageUrl} alt={product.name} fill style={{ objectFit: "cover", borderRadius: "var(--radius-sm)" }} sizes="(max-width: 768px) 50vw, 300px" />
                   </div>
                 ) : (
                   <div style={{ width: "100%", height: "200px", backgroundColor: "#f1f5f9", borderRadius: "var(--radius-sm)", marginBottom: "1rem", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -332,6 +340,13 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
         @media(min-width: 1024px) {
           .cart-sidebar-desktop { display: flex !important; flex-direction: column !important; }
           .cart-mobile-btn { display: none !important; }
+        }
+        @media(max-width: 480px) {
+          .product-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 0.5rem !important; }
+          .product-grid .card { padding: 0.65rem !important; }
+          .product-grid .card h3 { font-size: 0.85rem !important; }
+          .product-grid .card .btn { padding: 0.4rem 0.6rem !important; font-size: 0.75rem !important; }
+          .container { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
         }
         @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
       `}</style>
