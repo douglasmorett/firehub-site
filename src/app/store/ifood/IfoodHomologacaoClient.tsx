@@ -49,10 +49,11 @@ export default function IfoodHomologacaoClient({
   };
 
 
-  const testConnection = async () => {
+  const testConnection = async (force = false) => {
     setConn("loading");
     try {
-      const r = await fetch("/api/ifood/auth?step=test");
+      const url = `/api/ifood/auth?step=test${force ? "&force=true" : ""}`;
+      const r = await fetch(url);
       const d = await r.json();
       setConnData(d);
       setConn(d.connected ? "ok" : "error");
@@ -159,7 +160,7 @@ export default function IfoodHomologacaoClient({
           {/* Só mostra botão de reconectar se já conectado (discreto) ou botão integrar se não */}
           {connStatus === "ok" ? (
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={testConnection} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #BBF7D0", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#16A34A", fontFamily: "inherit" }}>
+              <button onClick={() => testConnection(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #BBF7D0", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#16A34A", fontFamily: "inherit" }}>
                 <RefreshCw size={11} /> Reconectar
               </button>
               <button onClick={disconnectStore} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #FECACA", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#DC2626", fontFamily: "inherit" }}>
@@ -244,7 +245,7 @@ export default function IfoodHomologacaoClient({
                   Após inserir o código no portal, clique abaixo para confirmar que sua loja foi conectada ao FireHub.
                 </p>
                 <button
-                  onClick={testConnection}
+                  onClick={() => testConnection(true)}
                   disabled={!genCode}
                   style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: genCode ? "pointer" : "not-allowed", fontFamily: "inherit" }}
                 >
@@ -335,7 +336,7 @@ export default function IfoodHomologacaoClient({
                     <div style={{ width: 28, height: 28, borderRadius: "50%", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", fontWeight: 900, fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>3</div>
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Confirme a conexão</p>
-                      <button onClick={() => { testConnection(); setShowModal(false); }} disabled={!genCode} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: genCode ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+                      <button onClick={() => { testConnection(true); setShowModal(false); }} disabled={!genCode} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: genCode ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
                         <CheckCircle size={15} /> Já conectei — Verificar
                       </button>
                     </div>

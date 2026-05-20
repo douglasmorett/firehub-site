@@ -44,9 +44,10 @@ export async function GET(req: NextRequest) {
       select: { ifoodConnected: true, ifoodMerchantId: true }
     });
 
-    // Se o usuário já desconectou explicitamente no banco de dados, reportamos como desconectado
+    // Se o usuário desconectou explicitamente E não está forçando reconexão, reporta desconectado
+    const force = req.nextUrl.searchParams.get("force") === "true";
     const isExplicitlyDisconnected = user && user.ifoodConnected === false;
-    if (isExplicitlyDisconnected) {
+    if (isExplicitlyDisconnected && !force) {
       return NextResponse.json({ connected: false, message: "Loja desconectada pelo usuário" });
     }
 
