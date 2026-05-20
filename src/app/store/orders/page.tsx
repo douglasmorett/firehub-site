@@ -103,11 +103,13 @@ export default async function StoreOrdersPage() {
                     </div>
                     <div style={{ color: "#94A3B8", fontSize: "0.78rem", marginTop: 2 }}>
                       {new Date(order.createdAt).toLocaleDateString("pt-BR", {
-                        day: "2-digit", month: "long", year: "numeric"
+                        day: "2-digit", month: "long", year: "numeric",
+                        timeZone: "America/Sao_Paulo"
                       })}
                       {" · "}
                       {new Date(order.createdAt).toLocaleTimeString("pt-BR", {
-                        hour: "2-digit", minute: "2-digit"
+                        hour: "2-digit", minute: "2-digit",
+                        timeZone: "America/Sao_Paulo"
                       })}
                     </div>
                   </div>
