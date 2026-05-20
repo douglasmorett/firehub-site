@@ -699,14 +699,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const Column = ({ columnId, title, emoji, color, count, children, headerExtra }: { columnId: string; title: string; emoji: string; color: string; count: number; children: React.ReactNode; headerExtra?: React.ReactNode }) => {
 
-    const isOver = dragOverColumn === columnId;
+    const canDrop = columnId !== "col-novos";
+    const isOver = canDrop && dragOverColumn === columnId;
 
     return (
       <div
         data-droppable={columnId}
-        onDragOver={e => handleDragOver(e, columnId)}
-        onDragLeave={handleDragLeave}
-        onDrop={e => handleDrop(e, columnId)}
+        onDragOver={canDrop ? (e => handleDragOver(e, columnId)) : undefined}
+        onDragLeave={canDrop ? handleDragLeave : undefined}
+        onDrop={canDrop ? (e => handleDrop(e, columnId)) : undefined}
         style={{
           flex: 1, minWidth: "300px",
           background: isOver ? "#E0F2FE" : "#FAFAFA",
@@ -714,7 +715,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           border: isOver ? "2px dashed #3B82F6" : "1px solid #E2E8F0",
           display: "flex", flexDirection: "column",
           minHeight: "calc(100vh - 175px)", maxHeight: "calc(100vh - 175px)",
-          transition: "background 0.2s, border 0.2s"
         }}
       >
         <div style={{ padding: "0.85rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: "14px 14px 0 0", gap: "0.5rem" }}>
