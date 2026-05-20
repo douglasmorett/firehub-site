@@ -23,12 +23,19 @@ export function getAsaasKey(): string | null {
     return null;
   };
 
+  // Diagnóstico detalhado (remover depois de confirmar funcionamento)
+  const rawDirect = process.env.ASAAS_API_KEY;
+  const rawB64 = process.env.ASAAS_API_KEY_B64;
+  console.log(`[Asaas-Diag] ASAAS_API_KEY present=${!!rawDirect} len=${rawDirect?.length ?? 0} prefix="${rawDirect?.substring(0, 10) ?? ''}" suffix="${rawDirect?.substring((rawDirect?.length ?? 0) - 5) ?? ''}"`);
+  console.log(`[Asaas-Diag] ASAAS_API_KEY_B64 present=${!!rawB64} len=${rawB64?.length ?? 0} prefix="${rawB64?.substring(0, 10) ?? ''}"`);
+
   // 1. Prioriza a versão base64 (segura contra interpolação no Vercel)
   const b64 = process.env.ASAAS_API_KEY_B64;
   if (b64) {
     try {
       const decoded = Buffer.from(b64, "base64").toString("utf8");
       const formatted = formatKey(decoded);
+      console.log(`[Asaas-Diag] B64 decoded len=${decoded.length} prefix="${decoded.substring(0, 10)}" formatted=${!!formatted}`);
       if (formatted) return formatted;
     } catch (e) {
       console.error("[Asaas] Erro ao decodificar ASAAS_API_KEY_B64:", e);
@@ -38,6 +45,7 @@ export function getAsaasKey(): string | null {
   // 2. Tenta a chave direta
   const direct = process.env.ASAAS_API_KEY;
   const formattedDirect = formatKey(direct);
+  console.log(`[Asaas-Diag] Direct formatted=${!!formattedDirect}`);
   if (formattedDirect) return formattedDirect;
 
   console.warn("[Asaas] Nenhuma chave válida encontrada (ASAAS_API_KEY ou ASAAS_API_KEY_B64)");
