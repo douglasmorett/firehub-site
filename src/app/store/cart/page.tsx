@@ -35,18 +35,26 @@ export default function CartPage() {
         body: JSON.stringify({ items, totalAmount: total }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        clearCart();
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data) {
+        // Primeiro seta o estado de sucesso, DEPOIS limpa o carrinho
         setBoletoUrl(data.boletoUrl || null);
         setBoletoCode(data.boletoCode || data.barCode || null);
         setCheckoutSuccess(true);
+        // Limpa o carrinho por último para não perder o estado visual
+        clearCart();
+      } else if (res.status === 401) {
+        alert("Sessão expirada. Faça login novamente para finalizar o pedido.");
+        setLoading(false);
       } else {
-        alert("Erro ao finalizar pedido. Tente novamente.");
+        const errorMsg = data?.error || `Erro ${res.status} ao finalizar pedido.`;
+        alert(errorMsg);
         setLoading(false);
       }
-    } catch {
-      alert("Erro ao conectar com o servidor.");
+    } catch (err) {
+      console.error("[checkout] Erro:", err);
+      alert("Erro ao conectar com o servidor. Verifique sua internet e tente novamente.");
       setLoading(false);
     }
   };

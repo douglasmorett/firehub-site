@@ -18,9 +18,12 @@ export async function POST(req: Request) {
 
     const userId = (session.user as any).id;
     const user = await prisma.user.findUnique({
-      where: { id: userId || undefined, email: session.user.email! }
+      where: userId ? { id: userId } : { email: session.user.email! }
     });
-    if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    if (!user) {
+      console.error("[checkout] Usuário não encontrado. userId:", userId, "email:", session.user.email);
+      return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    }
 
     // ── Recalcula total no servidor (segurança) ──────────────────────────────
     const productIds = items.map((i: any) => i.id);

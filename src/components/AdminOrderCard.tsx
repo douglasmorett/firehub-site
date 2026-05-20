@@ -17,7 +17,8 @@ export default function AdminOrderCard({ order, deliveryInfo }: { order: any, de
       "PENDING_PAYMENT": "Aguardando Pagamento",
       "AGUARDANDO_ENTREGA": "Aguardando Entrega",
       "FINALIZADO": "Finalizado",
-      "PAID": "Pago (Asaas)",
+      "PAID": "Pago",
+      "PAGO": "Pago",
       "CANCELADO": "Cancelado"
     };
     return labels[s] || s;
@@ -53,7 +54,7 @@ export default function AdminOrderCard({ order, deliveryInfo }: { order: any, de
     }
   };
 
-  const isPaid = order.status !== "PENDING_PAYMENT" && order.status !== "CANCELADO" && order.status !== "EMERGENCIA_PENDENTE";
+  const isPaid = order.status === "PAGO" || order.status === "PAID" || (order.status !== "PENDING_PAYMENT" && order.status !== "CANCELADO" && order.status !== "EMERGENCIA_PENDENTE");
 
   return (
     <div className="card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", transition: "all 0.3s ease" }}>
