@@ -54,7 +54,7 @@ export default async function IceboxLayout({ children }: { children: React.React
                 <span style={{ color: "#BFDBFE", fontSize: "0.82rem" }}>
                   Olá, <strong style={{ color: "#fff" }}>{session?.user?.name || "Cliente"}</strong>
                 </span>
-                <Link href="/icebox/compras" style={{
+                <Link href="/store/orders" style={{
                   background: "rgba(255,255,255,0.15)",
                   color: "#fff",
                   padding: "6px 14px",
