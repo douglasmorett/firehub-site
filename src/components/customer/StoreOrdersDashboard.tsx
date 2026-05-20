@@ -306,20 +306,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     setDraggedOrderId(orderId);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", orderId);
-    // Add visual feedback
-    if (e.currentTarget instanceof HTMLElement) {
-      setTimeout(() => {
-        (e.currentTarget as HTMLElement).style.opacity = "0.4";
-      }, 0);
-    }
   };
 
-  const handleDragEnd = (e: React.DragEvent) => {
+  const handleDragEnd = () => {
     setDraggedOrderId(null);
     setDragOverColumn(null);
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = "1";
-    }
   };
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
@@ -388,7 +379,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // Only activate horizontal drag
     if (dx > 20 && dx > dy) {
       e.preventDefault();
-      touchRef.current.el.style.opacity = "0.4";
 
       // Create/update ghost element
       if (!ghostRef.current) {
@@ -417,7 +407,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const handleTouchEnd = useCallback((e: TouchEvent) => {
     if (!touchRef.current) return;
-    touchRef.current.el.style.opacity = "1";
 
     // Remove ghost
     if (ghostRef.current) {
@@ -509,11 +498,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         onTouchStart={e => handleTouchStart(e, order.id)}
         style={{
           background: "#fff", borderRadius: "10px",
-          border: `1.5px solid ${isDragging ? "#3B82F6" : st.color + "20"}`,
+          border: `1.5px solid ${st.color + "20"}`,
           marginBottom: "0.5rem", overflow: "hidden",
-          boxShadow: isDragging ? "0 8px 24px rgba(59,130,246,0.2)" : "0 1px 4px rgba(0,0,0,0.06)",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
           cursor: "grab", transition: "box-shadow 0.2s, border-color 0.2s",
-          opacity: isDragging ? 0.4 : 1,
           userSelect: "none"
         }}
       >
