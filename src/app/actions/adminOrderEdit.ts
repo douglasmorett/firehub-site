@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
-import { createAsaasPayment } from "@/lib/asaas";
+import { createAsaasPayment, getAsaasKey } from "@/lib/asaas";
 
 export async function adminUpdateOrderItems(orderId: string, items: { productId: string, quantity: number, price?: number }[]) {
   const session = await getServerSession(authOptions);
@@ -69,7 +69,7 @@ export async function adminUpdateOrderItems(orderId: string, items: { productId:
 
   // If order has Asaas payment and is still open, cancel it and recreate
   if (order.asaasPaymentId && order.status === "PENDING_PAYMENT") {
-    const asaasKey = process.env.ASAAS_API_KEY;
+    const asaasKey = getAsaasKey();
     if (asaasKey) {
       const ASAAS_URL = asaasKey.startsWith("$aact_prod") 
         ? "https://api.asaas.com/v3" 

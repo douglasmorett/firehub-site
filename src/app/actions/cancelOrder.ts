@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { getAsaasKey } from "@/lib/asaas";
 import bcrypt from "bcryptjs";
 
 export async function cancelOrder(orderId: string, adminPassword?: string, reason?: string) {
@@ -54,7 +55,7 @@ export async function cancelOrder(orderId: string, adminPassword?: string, reaso
 
   // Se o pedido possui um ID de pagamento no Asaas, tentamos cancelar lá
   if (order.asaasPaymentId) {
-    const asaasKey = process.env.ASAAS_API_KEY;
+    const asaasKey = getAsaasKey();
     if (asaasKey) {
       const ASAAS_URL = asaasKey.startsWith("$aact_prod")
         ? "https://api.asaas.com/v3"

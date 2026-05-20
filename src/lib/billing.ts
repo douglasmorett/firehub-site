@@ -20,6 +20,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { calcMensalidade } from "@/lib/firehub-billing";
+import { getAsaasKey } from "@/lib/asaas";
 
 export function getCurrentYearMonth(offset = 0): string {
   const d = new Date();
@@ -135,7 +136,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   }
 
   // Gera cobrança Asaas pelo valor restante
-  const asaasKey = process.env.ASAAS_API_KEY;
+  const asaasKey = getAsaasKey();
   let asaasPaymentId: string | null = null;
   let asaasBoletoUrl: string | null = null;
   let asaasBoletoCode: string | null = null;

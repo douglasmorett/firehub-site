@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getAsaasKey } from "@/lib/asaas";
 
 const ASAAS_HEADERS = (key: string) => ({
   "access_token": key,
@@ -41,14 +42,10 @@ export async function POST(req: Request) {
     }
 
     // ── Gerar diretamente no Asaas com erros detalhados ──
-    const asaasKey = process.env.ASAAS_API_KEY;
+    const asaasKey = getAsaasKey();
     if (!asaasKey) {
-      return NextResponse.json({ error: "ASAAS_API_KEY não configurada no servidor" }, { status: 500 });
+      return NextResponse.json({ error: "Chave do Asaas não configurada no servidor" }, { status: 500 });
     }
-
-    // Diagnóstico da chave no ambiente
-    const keyPreview = asaasKey.substring(0, 20) + "..." + asaasKey.substring(asaasKey.length - 10);
-    console.log(`[generate-link] Key preview: ${keyPreview} (len=${asaasKey.length})`);
 
     const BASE = asaasKey.startsWith("$aact_prod")
       ? "https://api.asaas.com/v3"

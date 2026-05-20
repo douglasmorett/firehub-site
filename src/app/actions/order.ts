@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { getAsaasKey } from "@/lib/asaas";
 
 export async function updateOrderStatus(orderId: string, newStatus: string, notes?: string) {
   const session = await getServerSession(authOptions);
@@ -21,7 +22,7 @@ export async function updateOrderStatus(orderId: string, newStatus: string, note
 
   // Se está mudando para CANCELADO e tem pagamento no Asaas, cancela lá também
   if (newStatus === "CANCELADO" && oldOrder.asaasPaymentId) {
-    const asaasKey = process.env.ASAAS_API_KEY;
+    const asaasKey = getAsaasKey();
     if (asaasKey) {
       const ASAAS_URL = asaasKey.startsWith("$aact_prod")
         ? "https://api.asaas.com/v3"

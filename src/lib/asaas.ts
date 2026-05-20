@@ -4,6 +4,32 @@ const ASAAS_HEADERS = (key: string) => ({
   "Content-Type": "application/json"
 });
 
+/**
+ * Retorna a chave do Asaas de forma segura.
+ * O Vercel interpreta `$` em env vars como referência a outra variável,
+ * o que corrompe a chave do Asaas (que começa com `$aact_prod_...`).
+ * Solução: armazenar como base64 em ASAAS_API_KEY_B64 e decodificar aqui.
+ */
+export function getAsaasKey(): string | null {
+  // 1. Tenta a chave direta (funciona local, pode falhar no Vercel)
+  const direct = process.env.ASAAS_API_KEY;
+  if (direct && direct.startsWith("$aact_")) return direct;
+
+  // 2. Fallback: decodifica da versão base64 (funciona no Vercel)
+  const b64 = process.env.ASAAS_API_KEY_B64;
+  if (b64) {
+    try {
+      const decoded = Buffer.from(b64, "base64").toString("utf8");
+      if (decoded.startsWith("$aact_")) return decoded;
+    } catch (e) {
+      console.error("[Asaas] Erro ao decodificar ASAAS_API_KEY_B64:", e);
+    }
+  }
+
+  console.warn("[Asaas] Nenhuma chave válida encontrada (ASAAS_API_KEY ou ASAAS_API_KEY_B64)");
+  return null;
+}
+
 export type OverdueInfo = {
   blocked: boolean;
   payments: { id: string; value: number; dueDate: string; invoiceUrl: string | null; description: string }[];
@@ -12,7 +38,7 @@ export type OverdueInfo = {
 export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<OverdueInfo> {
   if (!cpfCnpj) return { blocked: false, payments: [] };
   
-  const asaasKey = process.env.ASAAS_API_KEY;
+  const asaasKey = getAsaasKey();
   if (!asaasKey) return { blocked: false, payments: [] };
 
   try {
@@ -55,7 +81,7 @@ export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<Overdue
 
 
 export async function getAsaasDashboardData(month: number, year: number) {
-  const asaasKey = process.env.ASAAS_API_KEY;
+  const asaasKey = getAsaasKey();
   if (!asaasKey) return null;
 
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
@@ -116,15 +142,11 @@ export async function createAsaasPayment(opts: {
   orderId: string;
   description?: string;
 }): Promise<{ paymentId: string; boletoUrl: string | null } | null> {
-  const asaasKey = process.env.ASAAS_API_KEY;
+  const asaasKey = getAsaasKey();
   if (!asaasKey) {
-    console.warn("ASAAS_API_KEY não configurada — cobrança não gerada.");
+    console.warn("[Asaas] Chave não configurada — cobrança não gerada.");
     return null;
   }
-
-  // Log para diagnosticar problemas com a chave no Vercel
-  const keyPreview = asaasKey.substring(0, 20) + "..." + asaasKey.substring(asaasKey.length - 10);
-  console.log(`[Asaas] Key preview: ${keyPreview} (len=${asaasKey.length})`);
 
   const BASE = asaasKey.startsWith("$aact_prod")
     ? "https://api.asaas.com/v3"
