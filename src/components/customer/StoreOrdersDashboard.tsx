@@ -162,41 +162,68 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     localStorage.setItem("autoAcceptOrders", next.toString());
   };
 
+  // Pre-initialize AudioContext on first user interaction (required by browser autoplay policy)
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    const initAudio = () => {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+    };
+    document.addEventListener("click", initAudio, { once: true });
+    document.addEventListener("touchstart", initAudio, { once: true });
+    document.addEventListener("keydown", initAudio, { once: true });
+    return () => {
+      document.removeEventListener("click", initAudio);
+      document.removeEventListener("touchstart", initAudio);
+      document.removeEventListener("keydown", initAudio);
+    };
+  }, []);
+
+  const playOrderChime = useCallback(async () => {
+    try {
+      let ctx = audioCtxRef.current;
+      if (!ctx) {
+        ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioCtxRef.current = ctx;
+      }
+      // Resume if suspended (browser policy)
+      if (ctx.state === "suspended") await ctx.resume();
+
+      const playChime = (startTime: number) => {
+        const osc1 = ctx!.createOscillator();
+        const gain1 = ctx!.createGain();
+        osc1.type = "sine";
+        osc1.frequency.setValueAtTime(880, startTime);
+        gain1.gain.setValueAtTime(0.4, startTime);
+        gain1.gain.exponentialRampToValueAtTime(0.01, startTime + 0.3);
+        osc1.connect(gain1).connect(ctx!.destination);
+        osc1.start(startTime);
+        osc1.stop(startTime + 0.3);
+
+        const osc2 = ctx!.createOscillator();
+        const gain2 = ctx!.createGain();
+        osc2.type = "sine";
+        osc2.frequency.setValueAtTime(1100, startTime + 0.15);
+        gain2.gain.setValueAtTime(0.4, startTime + 0.15);
+        gain2.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+        osc2.connect(gain2).connect(ctx!.destination);
+        osc2.start(startTime + 0.15);
+        osc2.stop(startTime + 0.5);
+      };
+      const t = ctx.currentTime;
+      playChime(t);
+      playChime(t + 0.7);
+      playChime(t + 1.4);
+    } catch {}
+  }, []);
+
   // Sound + Push Notification for new orders
   useEffect(() => {
     const currentNewCount = orders.filter(o => o.status === "NOVO").length;
     if (currentNewCount > prevOrderCount.current) {
-      // Play notification sound — clear alert chime using Web Audio API
-      try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const playChime = (startTime: number) => {
-          // First tone (higher)
-          const osc1 = ctx.createOscillator();
-          const gain1 = ctx.createGain();
-          osc1.type = "sine";
-          osc1.frequency.setValueAtTime(880, startTime);
-          gain1.gain.setValueAtTime(0.3, startTime);
-          gain1.gain.exponentialRampToValueAtTime(0.01, startTime + 0.3);
-          osc1.connect(gain1).connect(ctx.destination);
-          osc1.start(startTime);
-          osc1.stop(startTime + 0.3);
-          // Second tone (even higher)
-          const osc2 = ctx.createOscillator();
-          const gain2 = ctx.createGain();
-          osc2.type = "sine";
-          osc2.frequency.setValueAtTime(1100, startTime + 0.15);
-          gain2.gain.setValueAtTime(0.3, startTime + 0.15);
-          gain2.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
-          osc2.connect(gain2).connect(ctx.destination);
-          osc2.start(startTime + 0.15);
-          osc2.stop(startTime + 0.5);
-        };
-        // Play chime 3 times with 0.7s gap
-        const now = ctx.currentTime;
-        playChime(now);
-        playChime(now + 0.7);
-        playChime(now + 1.4);
-      } catch {}
+      // Play notification chime
+      playOrderChime();
 
       // Push Notification (browser)
       if ("Notification" in window) {
@@ -223,7 +250,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     }
     prevOrderCount.current = currentNewCount;
-  }, [orders]);
+  }, [orders, playOrderChime]);
 
   // Solicitar permissão de notificação na montagem
   useEffect(() => {
