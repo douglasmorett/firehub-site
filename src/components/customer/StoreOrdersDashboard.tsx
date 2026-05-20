@@ -602,32 +602,46 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
             {/* SELETOR DE MOTOBOY */}
-            {order.deliveryType === "DELIVERY" && motoboys.length > 0 && (
+            {order.deliveryType === "DELIVERY" && (
               <div style={{ margin: "0.5rem 0", padding: "8px 10px", background: "#F0F9FF", borderRadius: "8px", border: "1px solid #BAE6FD" }}>
                 <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0369A1", display: "block", marginBottom: "4px" }}>🛵 Motoboy responsável:</label>
-                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                  <select
-                    value={order.motoboyId || ""}
-                    onChange={e => assignMotoboy(order.id, e.target.value)}
-                    disabled={assigningId === order.id}
-                    style={{ flex: 1, padding: "5px 8px", borderRadius: "6px", border: "1px solid #BAE6FD", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit" }}
-                  >
-                    <option value="">— Não atribuído —</option>
-                    {motoboys.map((m: any) => (
-                      <option key={m.id} value={m.id}>{m.name}{m.phone ? ` · ${m.phone}` : ""}</option>
-                    ))}
-                  </select>
-                  {order.motoboy && (
-                    <a
-                      href={`https://wa.me/55${(order.motoboy.phone || "").replace(/\D/g, "")}`}
-                      target="_blank" rel="noopener noreferrer"
-                      title={`WhatsApp ${order.motoboy.name}`}
-                      style={{ padding: "5px 8px", background: "#25D366", color: "white", borderRadius: "6px", textDecoration: "none", fontSize: "0.8rem", fontWeight: 700 }}
-                    >📲</a>
-                  )}
-                </div>
-                {order.motoboy && (
-                  <div style={{ fontSize: "0.72rem", color: "#0369A1", marginTop: "3px" }}>✅ {order.motoboy.name} atribuído</div>
+                {(order.status === "ENTREGUE" || order.status === "ENCERRADO" || order.status === "CANCELADO") ? (
+                  /* Read-only for finalized orders */
+                  <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "#0369A1", padding: "5px 0" }}>
+                    {order.motoboy ? (
+                      <span>✅ {order.motoboy.name} {order.motoboy.phone ? `· ${order.motoboy.phone}` : ""}</span>
+                    ) : (
+                      <span style={{ color: "#94A3B8" }}>Nenhum motoboy atribuído</span>
+                    )}
+                  </div>
+                ) : (
+                  /* Editable for active orders */
+                  <>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <select
+                        value={order.motoboyId || ""}
+                        onChange={e => assignMotoboy(order.id, e.target.value)}
+                        disabled={assigningId === order.id}
+                        style={{ flex: 1, padding: "5px 8px", borderRadius: "6px", border: "1px solid #BAE6FD", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit" }}
+                      >
+                        <option value="">— Não atribuído —</option>
+                        {motoboys.map((m: any) => (
+                          <option key={m.id} value={m.id}>{m.name}{m.phone ? ` · ${m.phone}` : ""}</option>
+                        ))}
+                      </select>
+                      {order.motoboy && (
+                        <a
+                          href={`https://wa.me/55${(order.motoboy.phone || "").replace(/\D/g, "")}`}
+                          target="_blank" rel="noopener noreferrer"
+                          title={`WhatsApp ${order.motoboy.name}`}
+                          style={{ padding: "5px 8px", background: "#25D366", color: "white", borderRadius: "6px", textDecoration: "none", fontSize: "0.8rem", fontWeight: 700 }}
+                        >📲</a>
+                      )}
+                    </div>
+                    {order.motoboy && (
+                      <div style={{ fontSize: "0.72rem", color: "#0369A1", marginTop: "3px" }}>✅ {order.motoboy.name} atribuído</div>
+                    )}
+                  </>
                 )}
               </div>
             )}
