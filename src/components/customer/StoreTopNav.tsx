@@ -553,7 +553,7 @@ export default function StoreTopNav({
             </div>
           ) : (
             <Link href="/store" style={{ display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
-              <img src="/firehub-icon.png" alt="FireHub" style={{ width:30, height:30, borderRadius:7, objectFit:"cover" }} />
+              <img src="/firehub-flame.png" alt="FireHub" style={{ width:30, height:30, borderRadius:7, objectFit:"cover" }} />
               <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1 }}>
                 <span style={{ color:"#fff", fontWeight:900, fontSize:"0.95rem" }}>Fire<span style={{ color:"#FF6B35" }}>Hub</span></span>
                 <span style={{ color:"rgba(255,255,255,0.65)", fontWeight:500, fontSize:"0.55rem", letterSpacing:"0.5px", textTransform:"uppercase" }}>Sistema de Pedidos</span>

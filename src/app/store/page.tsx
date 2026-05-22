@@ -79,9 +79,9 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
           selectedStoreId={selectedId}
         />
       );
-    } catch (err) {
+    } catch (err: any) {
       console.error("[StorePage/Admin] Erro ao carregar dados:", err);
-      return <ErrorPanel />;
+      return <ErrorPanel message={err?.message} />;
     }
   }
 
@@ -145,20 +145,20 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         completedOnboardingSteps={completedSteps}
       />
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("[StorePage] Erro ao carregar dados:", err);
-    return <ErrorPanel />;
+    return <ErrorPanel message={err?.message} />;
   }
 }
 
-function ErrorPanel() {
+function ErrorPanel({ message }: { message?: string }) {
   return (
     <div style={{ padding: "2rem", textAlign: "center" }}>
       <h2 style={{ color: "#DC2626", fontSize: "1.2rem", fontWeight: 800 }}>
         ⚠️ Erro ao carregar o painel
       </h2>
       <p style={{ color: "#64748b", margin: "0.5rem 0" }}>
-        Ocorreu um erro inesperado. Tente recarregar a página.
+        {message || "Ocorreu um erro inesperado. Tente recarregar a página."}
       </p>
       <a href="/store" style={{
         display: "inline-block", marginTop: "1rem",
