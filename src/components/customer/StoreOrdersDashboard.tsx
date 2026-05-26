@@ -855,7 +855,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {order.deliveryType === "DELIVERY" && (
               <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
                 <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em", display: "block", marginBottom: "4px" }}>Motoboy</span>
-                {(order.status === "ENTREGUE" || order.status === "ENCERRADO" || order.status === "CANCELADO") ? (
+                {(order.status === "ENCERRADO" || order.status === "CANCELADO") ? (
                   <div style={{ fontSize: "0.82rem", fontWeight: 500, color: "#1F2937" }}>
                     {order.motoboy ? (
                       <span>{order.motoboy.name} {order.motoboy.phone ? `· ${order.motoboy.phone}` : ""}</span>
