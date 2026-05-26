@@ -37,6 +37,7 @@ async function pollIfoodEvents() {
     }
 
     // Process each event
+    const processedEventIds: string[] = [];
     for (const event of events) {
       try {
         const { code, orderId } = event;
@@ -259,19 +260,23 @@ async function pollIfoodEvents() {
             data: { status: "CANCELADO", cancelledBy: "IFOOD" },
           });
         }
+
+        // Evento processado com sucesso
+        if (event.id) processedEventIds.push(event.id);
       } catch (err) {
         console.error("[iFood Poll] Erro:", err);
+        // NÃO adiciona ao processedIds — evento não foi processado, será reprocessado no próximo poll
       }
     }
 
-    // Acknowledge events
-    const eventIds = events.map((e: any) => e.id);
-    if (eventIds.length > 0) {
+    // Só reconhecer eventos que foram processados com sucesso
+    if (processedEventIds.length > 0) {
       await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(eventIds.map((id: string) => ({ id }))),
+        body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
       });
+      console.log(`[iFood Poll] ✅ ${processedEventIds.length}/${events.length} eventos acknowledged`);
     }
   } catch (err) {
     console.error("[iFood Poll] Erro geral:", err);
