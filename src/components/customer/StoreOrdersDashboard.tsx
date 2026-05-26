@@ -1268,6 +1268,34 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {scheduledOrders.length}
               </span>
             </button>
+            <button
+              onClick={async () => {
+                try {
+                  const btn = document.getElementById("btn-sync-ifood");
+                  if (btn) { btn.textContent = "⏳ Sincronizando..."; btn.setAttribute("disabled", "true"); }
+                  const res = await fetch("/api/ifood/sync-orders", { method: "POST" });
+                  const data = await res.json();
+                  if (data.imported > 0) {
+                    alert(`✅ ${data.imported} pedido(s) importado(s) do iFood!`);
+                  } else {
+                    alert("✅ Nenhum pedido novo encontrado na fila do iFood.");
+                  }
+                  if (btn) { btn.textContent = "🔄 Sincronizar iFood"; btn.removeAttribute("disabled"); }
+                } catch {
+                  alert("❌ Erro ao sincronizar com iFood.");
+                  const btn = document.getElementById("btn-sync-ifood");
+                  if (btn) { btn.textContent = "🔄 Sincronizar iFood"; btn.removeAttribute("disabled"); }
+                }
+              }}
+              id="btn-sync-ifood"
+              style={{
+                padding: "6px 14px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem",
+                cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
+                background: "#FFF1F2", color: "#E11D48", outline: "1.5px solid #FECDD3"
+              }}
+            >
+              🔄 Sincronizar iFood
+            </button>
           </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>

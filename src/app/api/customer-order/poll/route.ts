@@ -55,10 +55,9 @@ async function pollIfoodEvents() {
         const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
         const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
 
-        // Qualquer evento de pedido ativo — criar no FireHub se não existir
-        const isActiveOrderEvent = isPlaced || isConfirmed || isPreparation || isReadyPickup || isDispatched || isConcluded;
-
-        if (isActiveOrderEvent) {
+        // CATCH-ALL: qualquer evento com orderId (que não seja cancelamento) deve criar o pedido se não existir
+        // Isso garante que NENHUM pedido é perdido, independente do código do evento
+        if (!isCancelled) {
           // Check idempotency
           const exists = await prisma.customerOrder.findFirst({
             where: { ifoodOrderId: orderId } as any,
