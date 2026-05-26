@@ -8,11 +8,22 @@ import { prisma } from "@/lib/prisma";
 import { Resend } from "resend";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 const APP_URL = process.env.NEXTAUTH_URL || "https://firehubfood.com.br";
 
 // ── POST /api/auth/forgot-password ────────────────────────────────
 export async function POST(req: NextRequest) {
+  // Rate limiting: 3 tentativas por 5 minutos por IP
+  const ip = getClientIp(req);
+  const { allowed } = checkRateLimit(`forgot:${ip}`, { windowMs: 300_000, maxRequests: 3 });
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Muitas tentativas. Tente novamente em 5 minutos." },
+      { status: 429 }
+    );
+  }
+
   const resend = new Resend(process.env.RESEND_API_KEY || "placeholder");
   const { email, newPassword, token } = await req.json();
 

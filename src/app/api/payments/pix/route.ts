@@ -6,11 +6,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { MercadoPagoConfig, Payment } from "mercadopago";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || "";
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limiting: 10 tentativas por minuto por IP
+    const ip = getClientIp(req);
+    const { allowed } = checkRateLimit(`pay-pix:${ip}`, { windowMs: 60_000, maxRequests: 10 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Muitas tentativas. Aguarde 1 minuto." }, { status: 429 });
+    }
+
     const { orderId } = await req.json();
     if (!orderId) return NextResponse.json({ error: "orderId obrigatório" }, { status: 400 });
 

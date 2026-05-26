@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
 export async function OPTIONS(req: NextRequest) {
@@ -10,6 +11,16 @@ export async function OPTIONS(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limiting: 5 registros por minuto por IP
+    const ip = getClientIp(req);
+    const { allowed } = checkRateLimit(`register:${ip}`, { windowMs: 60_000, maxRequests: 5 });
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Muitas tentativas. Tente novamente em 1 minuto." },
+        { status: 429, headers: getCorsHeaders(req) }
+      );
+    }
+
     const { name, email, password, phone, storeName, cnpj, cpf, city } = await req.json();
 
     // Validações básicas

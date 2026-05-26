@@ -6,9 +6,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createMpCardPayment } from "@/lib/mercadopago";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limiting: 10 tentativas por minuto por IP
+    const ip = getClientIp(req);
+    const { allowed } = checkRateLimit(`pay-card:${ip}`, { windowMs: 60_000, maxRequests: 10 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Muitas tentativas. Aguarde 1 minuto." }, { status: 429 });
+    }
+
     const { orderId, cardToken, installments = 1, payerEmail, payerCpf } = await req.json();
     if (!orderId || !cardToken) {
       return NextResponse.json({ error: "orderId e cardToken são obrigatórios" }, { status: 400 });

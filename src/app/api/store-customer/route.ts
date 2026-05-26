@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 // POST: Login or Register
 export async function POST(req: Request) {
   const body = await req.json();
   const { action, phone, password, name, address } = body;
+
+  // Rate limiting: 5 tentativas por minuto por IP
+  const ip = getClientIp(req);
+  const { allowed } = checkRateLimit(`customer:${ip}`, { windowMs: 60_000, maxRequests: 5 });
+  if (!allowed) {
+    return NextResponse.json({ error: "Muitas tentativas. Aguarde 1 minuto." }, { status: 429 });
+  }
 
   if (!phone || !password) {
     return NextResponse.json({ error: "Telefone e senha são obrigatórios." }, { status: 400 });

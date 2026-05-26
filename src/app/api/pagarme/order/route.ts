@@ -5,9 +5,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPixOrder, createCardOrder } from "@/lib/pagarme";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 export async function POST(req: Request) {
   try {
+    // Rate limiting: 10 tentativas por minuto por IP
+    const ip = getClientIp(req);
+    const { allowed } = checkRateLimit(`pagarme:${ip}`, { windowMs: 60_000, maxRequests: 10 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Muitas tentativas. Aguarde 1 minuto." }, { status: 429 });
+    }
+
     const body = await req.json();
     const { orderId, paymentMethod, cardToken, customerDocument, installments } = body;
 
