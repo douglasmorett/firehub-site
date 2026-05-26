@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer } from "lucide-react";
+import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -12,6 +12,22 @@ const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: strin
   CANCELADO: { label: "Cancelado", emoji: "❌", color: "#EF4444", bg: "#FEF2F2" },
   ENCERRADO: { label: "Encerrado", emoji: "🔒", color: "#6B7280", bg: "#F3F4F6" },
 };
+
+const PAYMENT_LABELS: Record<string, string> = {
+  CREDIT: "Crédito",
+  CREDITO: "Crédito",
+  DEBIT: "Débito",
+  DEBITO: "Débito",
+  PIX: "Pix",
+  CASH: "Dinheiro",
+  DINHEIRO: "Dinheiro",
+  VOUCHER: "Voucher",
+  credit_card: "Crédito",
+  debit_card: "Débito",
+  pix: "Pix",
+  cash: "Dinheiro",
+};
+const translatePayment = (method: string) => PAYMENT_LABELS[method] || PAYMENT_LABELS[method.toUpperCase()] || method;
 
 // Mapping columns to statuses for drag-and-drop
 const COLUMN_STATUS_MAP: Record<string, string> = {
@@ -62,6 +78,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [adExtraFee, setAdExtraFee] = useState(3.0);
   const [adDuration, setAdDuration] = useState(60); // minutos
   const [showAltaDemandaLog, setShowAltaDemandaLog] = useState(false);
+  const [showAgendamentos, setShowAgendamentos] = useState(false);
 
   const activateAltaDemanda = () => {
     const now = new Date();
@@ -486,7 +503,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return o.customerName?.toLowerCase().includes(s) || o.customerPhone?.includes(s) || o.customerAddress?.toLowerCase().includes(s) || o.id.includes(s);
   });
 
-  const novos = filteredOrders.filter(o => o.status === "NOVO");
+  // Pedidos agendados para o futuro (scheduledDatetime > agora + 3h, ainda não iniciados)
+  const scheduledOrders = orders.filter(o => {
+    if (!o.scheduledDatetime) return false;
+    const deadline = new Date(o.scheduledDatetime);
+    const diffMs = deadline.getTime() - new Date(o.createdAt).getTime();
+    const isFutureScheduled = diffMs > 3 * 60 * 60 * 1000; // >3h = agendado
+    const isNotStarted = o.status === "NOVO" || o.status === "ACEITO";
+    return isFutureScheduled && isNotStarted && deadline.getTime() > now.getTime();
+  });
+
+  const scheduledOrderIds = new Set(scheduledOrders.map(o => o.id));
+
+  const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id));
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO");
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || o.status === "ENTREGUE");
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO");
@@ -561,8 +590,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
             <div style={{ display: "flex", gap: "0.75rem", marginTop: "4px", fontSize: "0.8rem", color: "#64748B", flexWrap: "wrap" }}>
               <span style={{ display: "flex", alignItems: "center", gap: "3px" }}><User size={12} /> {order.customerName}</span>
+              <span>🕐 {new Date(order.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
               <span>{order.deliveryType === "DELIVERY" ? "🛵 Entrega" : "🏪 Retirada"}</span>
-              {elapsedMins > 0 && <span style={{ color: "#94A3B8" }}>🍳 Na cozinha {elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`}</span>}
+              {(order.status === "ACEITO" || order.status === "PREPARANDO" || order.status === "SAIU_ENTREGA") && elapsedMins > 0 && <span style={{ color: "#94A3B8" }}>🍳 Na cozinha {elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`}</span>}
             </div>
           </div>
         </div>
@@ -633,8 +663,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", margin: "0.75rem 0", fontSize: "0.82rem" }}>
-              <div><span style={{ color: "#94A3B8" }}>Tel:</span> <a href={`https://wa.me/55${order.customerPhone?.replace(/\D/g,'')}`} target="_blank" style={{ color: "#25D366", fontWeight: 600 }}>{order.customerPhone}</a></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", margin: "0.75rem 0", fontSize: "0.82rem" }}>
+              <div>
+                <span style={{ color: "#94A3B8" }}>Tel:</span>{" "}
+                {(() => {
+                  const phone = order.customerPhone || "";
+                  const idMatch = phone.match(/ID:\s*(\d+)/i);
+                  const phoneNumber = phone.replace(/\s*ID:\s*\d+/i, "").trim();
+                  return (
+                    <>
+                      <a href={`https://wa.me/55${phoneNumber.replace(/\D/g,'')}`} target="_blank" style={{ color: "#25D366", fontWeight: 600 }}>{phoneNumber}</a>
+                      {idMatch && (
+                        <span style={{ marginLeft: "6px", padding: "2px 8px", borderRadius: "6px", background: "#EFF6FF", border: "1px solid #93C5FD", fontSize: "0.78rem", fontWeight: 700, color: "#1D4ED8" }}>
+                          🆔 {idMatch[1]}
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
               {order.customerAddress && <div><span style={{ color: "#94A3B8" }}>End:</span> <strong>{order.customerAddress}</strong></div>}
             </div>
 
@@ -642,7 +689,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "0.5rem" }}>
               {order.paymentMethod && (
                 <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.78rem", fontWeight: 600 }}>
-                  💳 {order.paymentMethod}
+                  💳 Pagamento: {translatePayment(order.paymentMethod)}
                 </span>
               )}
               {order.changeAmount != null && order.changeAmount > 0 && (
@@ -659,11 +706,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {order.deliveryType === "DELIVERY" && (
                 order.deliveryFee > 0 ? (
                   <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#FFF7ED", border: "1px solid #FED7AA", fontSize: "0.78rem", fontWeight: 600, color: "#C2410C" }}>
-                    🛵 Frete: R$ {Number(order.deliveryFee).toFixed(2)}
+                    🛵 Taxa de Entrega: R$ {Number(order.deliveryFee).toFixed(2)}
                   </span>
                 ) : (
                   <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F0FDF4", border: "1px solid #86EFAC", fontSize: "0.78rem", fontWeight: 700, color: "#15803D" }}>
-                    🎉 FRETE GRÁTIS
+                    🎉 ENTREGA GRÁTIS
                   </span>
                 )
               )}
@@ -702,7 +749,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div style={{ marginTop: "6px", fontSize: "0.72rem", color: "#78716C" }}>
                     {order.discountDetails.map((d: any, i: number) => (
                       <div key={i}>
-                        {d.target === "DELIVERY_FEE" ? "🛵 Frete" : "🛒 Carrinho"}: R$ {Number(d.value).toFixed(2)}
+                        {d.target === "DELIVERY_FEE" ? "🛵 Taxa de Entrega" : "🛒 Carrinho"}: R$ {Number(d.value).toFixed(2)}
                         {d.description ? ` — ${d.description}` : ""}
                       </div>
                     ))}
@@ -895,7 +942,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" }}>
                   <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#E11D48" }}>💰 Taxa extra de entrega</span>
                   <span style={{ fontSize: "0.72rem", color: "#E11D48", background: "#FFE4E6", padding: "3px 8px", borderRadius: "6px", display: "inline-flex", alignItems: "center", gap: "4px", width: "fit-content" }}>
-                    ⚠️ O cliente paga R${adExtraFee.toFixed(2)} a mais no frete durante o período ativo
+                    ⚠️ O cliente paga R${adExtraFee.toFixed(2)} a mais na taxa de entrega durante o período ativo
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -962,10 +1009,132 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {[...(altaDemanda.logs || [])].reverse().map((log: any, i: number) => (
                 <div key={i} style={{ padding: "12px", borderRadius: "10px", background: "#F8FAFC", border: "1px solid #E2E8F0", fontSize: "0.82rem" }}>
                   <div style={{ fontWeight: 700, marginBottom: "4px" }}>🕐 {new Date(log.activatedAt).toLocaleString("pt-BR")}</div>
-                  <div style={{ color: "#64748B" }}>+{log.extraMinutes}min de preparo · +R${log.extraFee?.toFixed(2)} frete · Duração: {log.duration}min</div>
+                  <div style={{ color: "#64748B" }}>+{log.extraMinutes}min de preparo · +R${log.extraFee?.toFixed(2)} taxa de entrega · Duração: {log.duration}min</div>
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL AGENDAMENTOS ===== */}
+      {showAgendamentos && (
+        <div onClick={() => setShowAgendamentos(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "520px", maxWidth: "95vw", maxHeight: "85vh", boxShadow: "0 30px 80px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+              <div style={{ width: 44, height: 44, borderRadius: "12px", background: "linear-gradient(135deg,#8B5CF6,#6366F1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <CalendarClock size={22} color="#fff" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontWeight: 800, fontSize: "1.15rem", margin: 0 }}>📅 Pedidos Agendados</h3>
+                <p style={{ fontSize: "0.78rem", color: "#64748B", margin: 0 }}>{scheduledOrders.length} pedido{scheduledOrders.length !== 1 ? "s" : ""} agendado{scheduledOrders.length !== 1 ? "s" : ""} para os próximos dias</p>
+              </div>
+              <button onClick={() => setShowAgendamentos(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
+              {scheduledOrders.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
+                  <CalendarClock size={48} style={{ opacity: 0.2, marginBottom: "12px" }} />
+                  <p style={{ fontSize: "0.95rem", fontWeight: 600 }}>Nenhum pedido agendado</p>
+                  <p style={{ fontSize: "0.8rem" }}>Pedidos agendados para os próximos dias aparecerão aqui</p>
+                </div>
+              ) : (
+                scheduledOrders
+                  .sort((a, b) => new Date(a.scheduledDatetime).getTime() - new Date(b.scheduledDatetime).getTime())
+                  .map(order => {
+                    const deadline = new Date(order.scheduledDatetime);
+                    const dateStr = deadline.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+                    const timeStr = deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                    const isToday = deadline.toDateString() === now.toDateString();
+                    const isTomorrow = deadline.toDateString() === new Date(now.getTime() + 86400000).toDateString();
+                    const dayLabel = isToday ? "Hoje" : isTomorrow ? "Amanhã" : dateStr;
+
+                    return (
+                      <div key={order.id} style={{ padding: "16px", borderRadius: "14px", background: "linear-gradient(135deg,#F5F3FF,#EDE9FE)", border: "1.5px solid #C4B5FD" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+                          <div>
+                            <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1E1B4B" }}>#{order.id.slice(-6).toUpperCase()}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                              <span style={{ fontSize: "0.82rem", color: "#64748B", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <User size={12} /> {order.customerName}
+                              </span>
+                            </div>
+                          </div>
+                          <span style={{ fontWeight: 800, fontSize: "1rem", color: "#7C3AED" }}>R$ {order.totalAmount.toFixed(2)}</span>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", padding: "8px 12px", background: "#fff", borderRadius: "10px", border: "1px solid #DDD6FE" }}>
+                          <span style={{ fontSize: "1.3rem" }}>📅</span>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#6D28D9" }}>{dayLabel}</div>
+                            <div style={{ fontWeight: 600, fontSize: "0.8rem", color: "#7C3AED" }}>🕐 {timeStr}</div>
+                          </div>
+                          <span style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: "20px", background: isToday ? "#FEF3C7" : "#E0E7FF", fontSize: "0.72rem", fontWeight: 700, color: isToday ? "#B45309" : "#4338CA" }}>
+                            {isToday ? "📢 Hoje" : isTomorrow ? "📆 Amanhã" : "📆 Futuro"}
+                          </span>
+                        </div>
+
+                        {order.items && order.items.length > 0 && (
+                          <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "10px", padding: "6px 10px", background: "rgba(255,255,255,0.6)", borderRadius: "8px" }}>
+                            {order.items.slice(0, 3).map((item: any, i: number) => (
+                              <div key={i}>{item.quantity}x {item.menuProduct?.name}</div>
+                            ))}
+                            {order.items.length > 3 && <div style={{ color: "#A78BFA" }}>+{order.items.length - 3} itens...</div>}
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
+                            {order.deliveryType === "DELIVERY" ? "🛵 Entrega" : "🏪 Retirada"}
+                          </span>
+                          {order.paymentMethod && (
+                            <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
+                              💳 Pagamento: {translatePayment(order.paymentMethod)}
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Antecipar pedido #${order.id.slice(-6).toUpperCase()} para agora?\n\nEle será movido para Novos Pedidos imediatamente.`)) return;
+                            try {
+                              const res = await fetch("/api/customer-order/status", {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ orderId: order.id, status: "NOVO", scheduledDatetime: new Date().toISOString() })
+                              });
+                              if (res.ok) {
+                                setOrders(prev => prev.map(o =>
+                                  o.id === order.id ? { ...o, status: "NOVO", scheduledDatetime: new Date().toISOString() } : o
+                                ));
+                                setShowAgendamentos(false);
+                              } else {
+                                alert("Erro ao antecipar pedido.");
+                              }
+                            } catch {
+                              alert("Erro de conexão.");
+                            }
+                          }}
+                          style={{
+                            width: "100%", marginTop: "12px", padding: "10px", borderRadius: "10px", border: "none",
+                            background: "linear-gradient(135deg,#7C3AED,#6366F1)", color: "#fff",
+                            fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                            fontFamily: "inherit", transition: "all 0.2s"
+                          }}
+                          onMouseEnter={e => { (e.target as HTMLElement).style.transform = "scale(1.02)"; (e.target as HTMLElement).style.boxShadow = "0 4px 16px rgba(124,58,237,0.35)"; }}
+                          onMouseLeave={e => { (e.target as HTMLElement).style.transform = "scale(1)"; (e.target as HTMLElement).style.boxShadow = "none"; }}
+                        >
+                          ⚡ Antecipar agendamento
+                        </button>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+
+            <button onClick={() => setShowAgendamentos(false)} style={{ marginTop: "20px", width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0", background: "#F8FAFC", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: "0.85rem" }}>Fechar</button>
           </div>
         </div>
       )}
@@ -976,7 +1145,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#fff" }}>
             <Zap size={18} />
             <span style={{ fontWeight: 800, fontSize: "0.92rem" }}>⚡ ALTA DEMANDA ATIVA</span>
-            <span style={{ fontSize: "0.82rem", opacity: 0.9 }}>+{altaDemanda.extraMinutes}min preparo · +R${Number(altaDemanda.extraFee).toFixed(2)} frete</span>
+            <span style={{ fontSize: "0.82rem", opacity: 0.9 }}>+{altaDemanda.extraMinutes}min preparo · +R${Number(altaDemanda.extraFee).toFixed(2)} taxa de entrega</span>
             {altaDemanda.expiresAt && (
               <span style={{ fontSize: "0.78rem", opacity: 0.85 }}>
                 · Expira às {new Date(altaDemanda.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
@@ -1019,6 +1188,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               }}
             >
               <Zap size={14} /> {altaDemanda.active ? "⚡ Alta Demanda ON" : "Alta Demanda"}
+            </button>
+            <button
+              onClick={() => setShowAgendamentos(true)}
+              style={{
+                padding: "6px 14px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem",
+                cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
+                background: scheduledOrders.length > 0 ? "linear-gradient(135deg,#8B5CF6,#6366F1)" : "#F5F3FF",
+                color: scheduledOrders.length > 0 ? "#fff" : "#7C3AED",
+                outline: scheduledOrders.length > 0 ? "none" : "1.5px solid #DDD6FE",
+                position: "relative"
+              }}
+            >
+              <CalendarClock size={14} /> Agendamentos
+              <span style={{
+                background: scheduledOrders.length > 0 ? "#fff" : "#7C3AED",
+                color: scheduledOrders.length > 0 ? "#7C3AED" : "#fff",
+                borderRadius: "50%", minWidth: "20px", height: "20px",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "0.72rem", fontWeight: 800, marginLeft: "2px"
+              }}>
+                {scheduledOrders.length}
+              </span>
             </button>
           </div>
           </div>

@@ -190,7 +190,12 @@ async function pollIfoodEvents() {
               discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
               source: "IFOOD",
               customerName: orderData.customer?.name ?? "Cliente iFood",
-              customerPhone: orderData.customer?.phone?.number ?? orderData.customer?.phone ?? "",
+              customerPhone: (() => {
+                const phone = orderData.customer?.phone;
+                const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
+                const localizer = phone?.localizer;
+                return localizer ? `${number} ID: ${localizer}` : number;
+              })(),
               customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
               deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
               paymentMethod: cashPayment ? "Dinheiro" : payMethodName,

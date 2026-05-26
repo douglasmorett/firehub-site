@@ -44,7 +44,7 @@ export async function PUT(req: Request) {
 
   const role = (session.user as any)?.role;
   const body = await req.json();
-  const { orderId, status } = body;
+  const { orderId, status, scheduledDatetime } = body;
 
   if (!orderId || !status) {
     return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
@@ -64,9 +64,15 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
+  const updateData: any = { status };
+  // Allow updating scheduledDatetime (e.g. when anticipating a scheduled order)
+  if (scheduledDatetime) {
+    updateData.scheduledDatetime = new Date(scheduledDatetime);
+  }
+
   await prisma.customerOrder.update({
     where: { id: orderId },
-    data: { status }
+    data: updateData
   });
 
   // Atualiza faturamento do ciclo mensal se pedido foi confirmado
