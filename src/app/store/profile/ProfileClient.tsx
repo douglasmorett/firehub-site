@@ -12,6 +12,7 @@ export default function ProfileClient({ user }: { user: any }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);
 
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,8 +49,9 @@ export default function ProfileClient({ user }: { user: any }) {
 
     setLoading(true);
     try {
-      await updatePassword(password);
+      await updatePassword(currentPassword, password);
       setSuccess(true);
+      setCurrentPassword("");
       setPassword("");
       setConfirmPassword("");
     } catch (err: any) {
@@ -137,6 +139,10 @@ export default function ProfileClient({ user }: { user: any }) {
         )}
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div>
+            <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>Senha Atual</label>
+            <input type="password" className="input-field w-full" placeholder="Digite a senha atual" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required />
+          </div>
           <div>
             <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>Nova Senha</label>
             <input type="password" className="input-field w-full" placeholder="Digite a nova senha" value={password} onChange={e => setPassword(e.target.value)} required />

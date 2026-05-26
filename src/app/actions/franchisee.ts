@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 export async function createFranchisee(data: { name: string, email: string, city: string, password?: string, cpfCnpj: string }) {
   const session = await getServerSession(authOptions);
@@ -12,7 +13,7 @@ export async function createFranchisee(data: { name: string, email: string, city
     throw new Error("Não autorizado");
   }
 
-  const plainPassword = data.password || "123456";
+  const plainPassword = data.password || crypto.randomBytes(12).toString('base64url');
   const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
   await prisma.user.create({

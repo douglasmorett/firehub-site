@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
-// Throttle iFood polling — max once every 10s across all requests
+// Throttle iFood polling — max once every 30s across all requests (iFood requirement)
 let lastIfoodPoll = 0;
 
 async function pollIfoodEvents() {
   const now = Date.now();
-  if (now - lastIfoodPoll < 10_000) return; // Skip if polled less than 10s ago
+  if (now - lastIfoodPoll < 30_000) return; // Skip if polled less than 30s ago
   lastIfoodPoll = now;
 
   try {
@@ -87,8 +87,6 @@ async function pollIfoodEvents() {
           // Extract payments
           const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
           const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
-          const cashPayment = paymentList.find((p: any) => p.method === "CASH");
-          const payMethodName = paymentList[0]?.method ?? "iFood Online";
 
           // Extract delivery fee from iFood
           const deliveryFeeValue = orderData.total?.deliveryFee
@@ -96,14 +94,85 @@ async function pollIfoodEvents() {
             ?? orderData.deliveryFee
             ?? 0;
 
-          const customerNote = orderData.delivery?.observations ?? null;
-          // Delivery deadline from iFood
-          const deliveryDeadline = orderData.delivery?.deliveryDateTime
+          // === Campos para homologação iFood ===
+          // Cenário 1: Agendamento — usa orderTiming + scheduledDatetime do iFood
+          const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
+            ? new Date(orderData.scheduledDatetime)
+            : null;
+
+          // Fallback: deliveryDateTime (prazo de entrega normal, não agendamento)
+          const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
             ? new Date(orderData.delivery.deliveryDateTime)
             : null;
 
+          const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
+
+          // Cenário 5: Troco e CPF/CNPJ
+          const cashPayment = paymentList.find((p: any) =>
+            p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
+          );
+          const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
+          const payMethodName = paymentList[0]?.method ?? "iFood Online";
+          const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
+
+          // === DISCRIMINAÇÃO DE DESCONTOS (benefits) ===
+          const benefits = orderData.benefits ?? [];
+          let discountIfood = 0;
+          let discountMerchant = 0;
+          let discountTotal = 0;
+          const discountDetails: any[] = [];
+
+          for (const benefit of benefits) {
+            const value = benefit.value ?? 0;
+            discountTotal += value;
+
+            // sponsorshipValues pode ser objeto ou array
+            const sponsorships = Array.isArray(benefit.sponsorshipValues)
+              ? benefit.sponsorshipValues
+              : benefit.sponsorshipValues ? [benefit.sponsorshipValues] : [];
+
+            let benefitIfood = 0;
+            let benefitMerchant = 0;
+
+            for (const sp of sponsorships) {
+              const spName = (sp.name ?? sp.sponsorship ?? "").toUpperCase();
+              const spValue = sp.value ?? 0;
+              if (spName === "IFOOD" || spName === "PARTNER" || spName === "EXTERNAL") {
+                benefitIfood += spValue;
+              } else if (spName === "MERCHANT") {
+                benefitMerchant += spValue;
+              } else {
+                // Fallback: assume iFood se não reconhecido
+                benefitIfood += spValue;
+              }
+            }
+
+            // Se não tem sponsorshipValues, tenta inferir pelo campo sponsorship do benefit
+            if (sponsorships.length === 0 && value > 0) {
+              const sponsor = (benefit.sponsorship ?? "").toUpperCase();
+              if (sponsor === "MERCHANT") {
+                benefitMerchant += value;
+              } else {
+                benefitIfood += value;
+              }
+            }
+
+            discountIfood += benefitIfood;
+            discountMerchant += benefitMerchant;
+
+            discountDetails.push({
+              target: benefit.target ?? "CART",
+              value,
+              ifood: benefitIfood,
+              merchant: benefitMerchant,
+              description: benefit.campaign?.name ?? benefit.description ?? null,
+            });
+          }
+
           const notesArr = [
             `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
+            scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+            discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
             customerNote ? `💬 ${customerNote}` : null,
           ].filter(Boolean).join(" | ");
 
@@ -112,7 +181,13 @@ async function pollIfoodEvents() {
               franchiseeId: franchisee.id,
               ifoodOrderId: orderId,
               ifoodReference: orderData.displayId ?? undefined,
-              scheduledDatetime: deliveryDeadline,
+              scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
+              changeAmount,
+              customerCpfCnpj,
+              discountTotal: discountTotal > 0 ? discountTotal : null,
+              discountIfood: discountIfood > 0 ? discountIfood : null,
+              discountMerchant: discountMerchant > 0 ? discountMerchant : null,
+              discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
               source: "IFOOD",
               customerName: orderData.customer?.name ?? "Cliente iFood",
               customerPhone: orderData.customer?.phone?.number ?? orderData.customer?.phone ?? "",

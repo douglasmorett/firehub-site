@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { getCorsHeaders } from "@/lib/cors";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+export async function OPTIONS(req: NextRequest) {
+  return NextResponse.json({}, { headers: getCorsHeaders(req) });
 }
 
 export async function POST(req: NextRequest) {
@@ -21,21 +16,21 @@ export async function POST(req: NextRequest) {
     if (!name || !email || !password) {
       return NextResponse.json(
         { error: "Nome, e-mail e senha são obrigatórios." },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: getCorsHeaders(req) }
       );
     }
 
     if (password.length < 6) {
       return NextResponse.json(
         { error: "A senha deve ter no mínimo 6 caracteres." },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: getCorsHeaders(req) }
       );
     }
 
     if (!cnpj) {
       return NextResponse.json(
         { error: "O CNPJ da empresa é obrigatório." },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: getCorsHeaders(req) }
       );
     }
 
@@ -44,7 +39,7 @@ export async function POST(req: NextRequest) {
     if (cnpjClean.length !== 14) {
       return NextResponse.json(
         { error: "CNPJ inválido." },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: getCorsHeaders(req) }
       );
     }
 
@@ -55,7 +50,7 @@ export async function POST(req: NextRequest) {
     if (existingByCnpj) {
       return NextResponse.json(
         { error: "Este CNPJ já possui uma conta cadastrada no FireHub. Faça login ou entre em contato com o suporte." },
-        { status: 409, headers: corsHeaders }
+        { status: 409, headers: getCorsHeaders(req) }
       );
     }
 
@@ -66,7 +61,7 @@ export async function POST(req: NextRequest) {
     if (existingByEmail) {
       return NextResponse.json(
         { error: "Este e-mail já está cadastrado. Tente fazer login." },
-        { status: 409, headers: corsHeaders }
+        { status: 409, headers: getCorsHeaders(req) }
       );
     }
 
@@ -135,12 +130,12 @@ export async function POST(req: NextRequest) {
       slug: user.slug,
       email: user.email,
       storeName: user.storeName,
-    }, { headers: corsHeaders });
+    }, { headers: getCorsHeaders(req) });
   } catch (error: unknown) {
     console.error("Register error:", error);
     return NextResponse.json(
       { error: "Erro interno ao criar conta. Tente novamente." },
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: getCorsHeaders(req) }
     );
   }
 }

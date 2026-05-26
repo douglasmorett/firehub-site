@@ -127,12 +127,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `iFood ${res.status}`, details: data }, { status: res.status });
   }
 
+  const merchantId = data.merchantId || data.merchant?.id;
+
+  // Salva o token no banco — nunca expor ao client
+  if (session.user?.email) {
+    await prisma.user.update({
+      where: { email: session.user.email },
+      data: {
+        ifoodConnected: true,
+        ifoodMerchantId: merchantId,
+      },
+    });
+  }
+
   return NextResponse.json({
     success:      true,
-    accessToken:  data.accessToken,
-    merchantId:   data.merchantId || data.merchant?.id,
-    expiresIn:    data.expiresIn,
-    message:      "Token gerado! Copie o merchantId e configure IFOOD_MERCHANT_UUID no Vercel.",
-    instruction:  "Agora vá em Vercel → Settings → Environment Variables e atualize IFOOD_MERCHANT_UUID com o merchantId retornado.",
+    merchantId,
+    message:      "Autorização concluída! MerchantId salvo automaticamente.",
+    instruction:  "A conexão com o iFood foi configurada. Você já pode gerenciar pedidos.",
   });
 }

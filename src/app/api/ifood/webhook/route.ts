@@ -211,9 +211,61 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
     const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 
+    // === DISCRIMINAÇÃO DE DESCONTOS (benefits) ===
+    const benefits = orderData.benefits ?? [];
+    let discountIfood = 0;
+    let discountMerchant = 0;
+    let discountTotal = 0;
+    const discountDetails: any[] = [];
+
+    for (const benefit of benefits) {
+      const value = benefit.value ?? 0;
+      discountTotal += value;
+
+      const sponsorships = Array.isArray(benefit.sponsorshipValues)
+        ? benefit.sponsorshipValues
+        : benefit.sponsorshipValues ? [benefit.sponsorshipValues] : [];
+
+      let benefitIfood = 0;
+      let benefitMerchant = 0;
+
+      for (const sp of sponsorships) {
+        const spName = (sp.name ?? sp.sponsorship ?? "").toUpperCase();
+        const spValue = sp.value ?? 0;
+        if (spName === "IFOOD" || spName === "PARTNER" || spName === "EXTERNAL") {
+          benefitIfood += spValue;
+        } else if (spName === "MERCHANT") {
+          benefitMerchant += spValue;
+        } else {
+          benefitIfood += spValue;
+        }
+      }
+
+      if (sponsorships.length === 0 && value > 0) {
+        const sponsor = (benefit.sponsorship ?? "").toUpperCase();
+        if (sponsor === "MERCHANT") {
+          benefitMerchant += value;
+        } else {
+          benefitIfood += value;
+        }
+      }
+
+      discountIfood += benefitIfood;
+      discountMerchant += benefitMerchant;
+
+      discountDetails.push({
+        target: benefit.target ?? "CART",
+        value,
+        ifood: benefitIfood,
+        merchant: benefitMerchant,
+        description: benefit.campaign?.name ?? benefit.description ?? null,
+      });
+    }
+
     const notesArr = [
       `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
       scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+      discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
       customerNote ? `💬 ${customerNote}` : null,
     ].filter(Boolean).join(" | ");
 
@@ -228,6 +280,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           scheduledDatetime,
           changeAmount,
           customerCpfCnpj,
+          discountTotal: discountTotal > 0 ? discountTotal : null,
+          discountIfood: discountIfood > 0 ? discountIfood : null,
+          discountMerchant: discountMerchant > 0 ? discountMerchant : null,
+          discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
           source:           "IFOOD",
           customerName:     orderData.customer?.name ?? "Cliente iFood",
           customerPhone:    orderData.customer?.phone?.number ?? orderData.customer?.phone ?? "",

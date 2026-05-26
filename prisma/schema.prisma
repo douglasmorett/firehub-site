@@ -253,6 +253,11 @@ model CustomerOrder {
   changeAmount        Float?             // Cen5: Valor do troco (pagamento em dinheiro)
   customerCpfCnpj     String?            // Cen5: CPF/CNPJ do cliente para NF
   cancelledBy         String?            // Cen4: quem cancelou: RESTAURANT | IFOOD | CUSTOMER
+  // === DISCRIMINAÇÃO DE DESCONTOS ===
+  discountTotal       Float?             // Desconto total aplicado no pedido
+  discountIfood       Float?             // Quanto o iFood subsidia (sponsorship: IFOOD)
+  discountMerchant    Float?             // Quanto a loja subsidia (sponsorship: MERCHANT)
+  discountDetails     Json?              // JSON com detalhes: [{target, value, sponsor, description}]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   franchisee       User                @relation(fields: [franchiseeId], references: [id])

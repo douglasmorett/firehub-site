@@ -5,8 +5,15 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  }
+
   const phone = req.nextUrl.searchParams.get("phone");
   const storeSlug = req.nextUrl.searchParams.get("store");
   if (!phone) return NextResponse.json({ error: "phone obrigatório" }, { status: 400 });
@@ -33,6 +40,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+  }
+
   const body = await req.json();
   const { phone, orderId, type, amount, storeId } = body;
   // type: "earn" | "redeem"

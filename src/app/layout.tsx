@@ -14,6 +14,10 @@ export const metadata: Metadata = {
   description: "Tudo que o seu restaurante precisa em um só lugar. Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro e auditoria com IA. Teste grátis por 15 dias.",
   keywords: "sistema restaurante, cardápio digital, delivery, gestão restaurante, FireHub, sistema para delivery, chatbot whatsapp restaurante",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "FireHub" },
+  icons: {
+    icon: "/firehub-flame.png",
+    apple: "/firehub-flame.png",
+  },
   openGraph: {
     title: "FireHub — Tudo que o seu restaurante precisa em um só lugar",
     description: "Simples, rápido e completo. Cardápio digital, pedidos, WhatsApp, financeiro e IA. Teste grátis por 15 dias.",

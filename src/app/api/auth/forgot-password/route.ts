@@ -18,7 +18,10 @@ export async function POST(req: NextRequest) {
 
   // FLUXO 1 — Solicitar recuperação de senha
   if (email && !token) {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, name: true },
+    });
     // Mesmo que não encontre, retorna sucesso (segurança)
     if (!user) return NextResponse.json({ ok: true });
 
@@ -71,6 +74,7 @@ export async function POST(req: NextRequest) {
         resetToken: token,
         resetTokenExp: { gt: new Date() },
       },
+      select: { id: true },
     });
 
     if (!user) {

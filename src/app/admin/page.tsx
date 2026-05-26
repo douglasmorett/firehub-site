@@ -83,10 +83,20 @@ export default async function AdminPage() {
     return { label, count };
   });
 
-  // Serializa lojistas
+  // Serializa lojistas (sem expor tokens sensíveis ao client)
   const serialized = lojistas.map(l => ({
-    ...l,
+    id: l.id,
+    name: l.name,
+    email: l.email,
+    slug: l.slug,
+    storeName: l.storeName,
+    city: l.city,
     createdAt: l.createdAt.toISOString(),
+    storeOpen: l.storeOpen,
+    isFranqueadoHakim: l.isFranqueadoHakim,
+    storeLogo: l.storeLogo,
+    storePhone: l.storePhone,
+    mpSellerId: l.mpSellerId,
     diasCadastro: daysSince(l.createdAt),
     emTrial: daysSince(l.createdAt) < TRIAL_DAYS,
     pendente: pendingMap[l.id] || 0,

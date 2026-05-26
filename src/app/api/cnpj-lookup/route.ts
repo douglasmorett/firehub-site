@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCorsHeaders } from "@/lib/cors";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+export async function OPTIONS(req: NextRequest) {
+  return NextResponse.json({}, { headers: getCorsHeaders(req) });
 }
 
 /**
@@ -29,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (!cnpj) {
       return NextResponse.json(
         { error: "CNPJ é obrigatório." },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: getCorsHeaders(req) }
       );
     }
 
@@ -37,7 +32,7 @@ export async function POST(req: NextRequest) {
     if (clean.length !== 14) {
       return NextResponse.json(
         { error: "CNPJ inválido. Deve conter 14 dígitos." },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: getCorsHeaders(req) }
       );
     }
 
@@ -89,7 +84,7 @@ export async function POST(req: NextRequest) {
     if (!data) {
       return NextResponse.json(
         { error: "CNPJ não encontrado na Receita Federal. Verifique e tente novamente." },
-        { status: 404, headers: corsHeaders }
+        { status: 404, headers: getCorsHeaders(req) }
       );
     }
 
@@ -109,12 +104,12 @@ export async function POST(req: NextRequest) {
         nome: s.nome_socio || "",
         qualificacao: s.qualificacao_socio || "",
       })),
-    }, { headers: corsHeaders });
+    }, { headers: getCorsHeaders(req) });
   } catch (error) {
     console.error("CNPJ lookup error:", error);
     return NextResponse.json(
       { error: "Erro ao consultar CNPJ. Tente novamente." },
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: getCorsHeaders(req) }
     );
   }
 }

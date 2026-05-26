@@ -18,7 +18,8 @@ export async function POST(req: Request) {
 
     const userId = (session.user as any).id;
     const user = await prisma.user.findUnique({
-      where: userId ? { id: userId } : { email: session.user.email! }
+      where: userId ? { id: userId } : { email: session.user.email! },
+      select: { id: true, name: true, email: true, cpfCnpj: true },
     });
     if (!user) {
       console.error("[checkout] Usuário não encontrado. userId:", userId, "email:", session.user.email);

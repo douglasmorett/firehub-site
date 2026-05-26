@@ -610,6 +610,9 @@ function TabPausas() {
           </div>
         ))}
       </SectionCard>
+
+      {/* Verificação ao vivo */}
+      <IfoodLiveCheck type="pausas" triggerAfterAction={success} />
     </div>
   );
 }
@@ -720,6 +723,117 @@ function TabHorarios() {
           </div>
         )}
       </SectionCard>
+
+      {/* Verificação ao vivo */}
+      <IfoodLiveCheck type="horarios" triggerAfterAction={success} />
+    </div>
+  );
+}
+
+// ── Verificação ao vivo — prova para homologação ──────────
+function IfoodLiveCheck({ type, triggerAfterAction }: { type: "pausas" | "horarios"; triggerAfterAction: string }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+
+  const check = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/ifood/status");
+      const json = await res.json();
+      setData(json);
+      setCheckedAt(new Date());
+    } catch {}
+    setLoading(false);
+  };
+
+  // Auto-check when an action succeeds
+  useEffect(() => { if (triggerAfterAction) { setTimeout(check, 1500); } }, [triggerAfterAction]);
+
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const durationToEnd = (start: string, min: number) => {
+    const [h, m] = start.split(":").map(Number);
+    const end = new Date(0, 0, 0, h, m + min);
+    return `${pad2(end.getHours())}:${pad2(end.getMinutes())}`;
+  };
+
+  return (
+    <div style={{ background: "#0F172A", borderRadius: 16, padding: "1.25rem", border: "2px solid #334155" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: "0.95rem", color: "#F1F5F9" }}>📡 Verificação ao Vivo — API iFood</p>
+          <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#64748B" }}>Consulta direta à API oficial do iFood · mesmo dado do Portal do Parceiro</p>
+        </div>
+        <button
+          onClick={check}
+          disabled={loading}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", background: loading ? "#1E293B" : "#EA1D2C", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit" }}
+        >
+          {loading ? "⏳ Consultando..." : "🔍 Verificar Reflexo no iFood"}
+        </button>
+      </div>
+
+      {checkedAt && (
+        <p style={{ margin: "0 0 0.75rem", fontSize: "0.72rem", color: "#94A3B8" }}>⏱ Consultado em: {checkedAt.toLocaleTimeString("pt-BR")} · {checkedAt.toLocaleDateString("pt-BR")}</p>
+      )}
+
+      {!data && !loading && (
+        <div style={{ textAlign: "center", padding: "1.5rem", color: "#475569", fontSize: "0.85rem" }}>Clique no botão para consultar o iFood em tempo real</div>
+      )}
+
+      {data && type === "pausas" && (
+        <div>
+          {/* Status da loja */}
+          <div style={{ display: "flex", gap: 10, marginBottom: "0.75rem", flexWrap: "wrap" }}>
+            <span style={{ padding: "5px 14px", borderRadius: 20, fontWeight: 800, fontSize: "0.85rem", background: data.status?.available ? "#DCFCE7" : "#FEE2E2", color: data.status?.available ? "#16A34A" : "#DC2626" }}>
+              {data.status?.available ? "🟢 LOJA ABERTA" : "🔴 LOJA FECHADA/PAUSADA"}
+            </span>
+          </div>
+          {/* Pausas */}
+          <p style={{ margin: "0 0 0.5rem", fontSize: "0.78rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Pausas ativas no iFood</p>
+          {Array.isArray(data.interruptions) && data.interruptions.length > 0 ? (
+            data.interruptions.map((i: any, idx: number) => (
+              <div key={idx} style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, marginBottom: 6, border: "1px solid #F59E0B" }}>
+                <p style={{ margin: 0, fontWeight: 700, color: "#FCD34D", fontSize: "0.88rem" }}>⏸ {i.description ?? "Pausa"}</p>
+                {(i.start || i.startTime) && <p style={{ margin: "3px 0 0", fontSize: "0.75rem", color: "#94A3B8" }}>{i.start ?? i.startTime} → {i.end ?? i.endTime}</p>}
+                <p style={{ margin: "3px 0 0", fontSize: "0.68rem", color: "#475569", fontFamily: "monospace" }}>ID: {i.id}</p>
+              </div>
+            ))
+          ) : (
+            <div style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, color: "#22C55E", fontWeight: 700, fontSize: "0.85rem" }}>✅ Nenhuma pausa ativa — loja disponível</div>
+          )}
+        </div>
+      )}
+
+      {data && type === "horarios" && (() => {
+        const hours = Array.isArray(data.openingHours) ? data.openingHours
+          : data.openingHours?.openingHours ?? [];
+        return (
+          <div>
+            <p style={{ margin: "0 0 0.5rem", fontSize: "0.78rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Horários de funcionamento no iFood</p>
+            {hours.length === 0 && <div style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, color: "#94A3B8", fontSize: "0.85rem" }}>Nenhum horário cadastrado</div>}
+            {hours.map((h: any, i: number) => (
+              <div key={i} style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, marginBottom: 6, border: "1px solid #3B82F6" }}>
+                <p style={{ margin: 0, fontWeight: 800, color: "#93C5FD", fontSize: "0.88rem" }}>{DAYS_PT[h.dayOfWeek] || h.dayOfWeek}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 5 }}>
+                  {(h.shifts ?? []).map((s: any, j: number) => (
+                    <span key={j} style={{ padding: "3px 10px", background: "#1D4ED8", color: "#BFDBFE", borderRadius: 20, fontSize: "0.78rem", fontWeight: 700 }}>
+                      🕐 {s.start} → {durationToEnd(s.start, s.duration)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {checkedAt && (
+        <div style={{ marginTop: "0.75rem", padding: "8px 12px", background: "#1E293B", borderRadius: 8, fontSize: "0.72rem", color: "#475569", display: "flex", justifyContent: "space-between" }}>
+          <span>🔗 Endpoint: <code style={{ color: "#94A3B8" }}>/api/ifood/status</code></span>
+          <span>📡 iFood Merchant API v1.0</span>
+        </div>
+      )}
     </div>
   );
 }

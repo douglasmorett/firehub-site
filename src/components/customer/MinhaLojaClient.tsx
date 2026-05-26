@@ -197,8 +197,10 @@ function ContaSection({ user }: { user: any }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);
 
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [passLoading, setPassLoading] = useState(false);
@@ -227,8 +229,9 @@ function ContaSection({ user }: { user: any }) {
     if (password.length < 6) { setPassError("A senha deve ter pelo menos 6 caracteres."); return; }
     setPassLoading(true);
     try {
-      await updatePassword(password);
+      await updatePassword(currentPassword, password);
       setPassSuccess(true);
+      setCurrentPassword("");
       setPassword("");
       setConfirmPassword("");
     } catch (err: any) {
@@ -327,6 +330,22 @@ function ContaSection({ user }: { user: any }) {
             </div>
           )}
           <form onSubmit={handlePasswordSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Senha Atual</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showCurrentPass ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                  placeholder="Digite a senha atual"
+                  required
+                  style={{ ...inp, paddingRight: 42 }}
+                />
+                <button type="button" onClick={() => setShowCurrentPass(p => !p)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94A3B8", padding: 0 }}>
+                  {showCurrentPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
             <div>
               <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Nova Senha</label>
               <div style={{ position: "relative" }}>

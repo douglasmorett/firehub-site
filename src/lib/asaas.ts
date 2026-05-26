@@ -23,11 +23,6 @@ export function getAsaasKey(): string | null {
     return null;
   };
 
-  // Chave de produção codificada em B64 — fonte primária garantida.
-  // Isso elimina QUALQUER dependência de variáveis de ambiente do Vercel,
-  // que historicamente corrompem chaves com caractere '$'.
-  const PROD_KEY_B64 = "JGFhY3RfcHJvZF8wMDBNemt3T0RBMk1XWTJPR00zTVdSbE1EVTJOV00zTXpKbE56Wm1OR1poWkdZNk9tUmtaak5oT1RBekxXWXdZVFV0TkRkaFlpMDRNakEwTFdFM1l6SmhORE5rWlRaaVpEbzZKR0ZoWTJoZk5tTmhNREJoTVRNdFpUZGlOeTAwTlRNNExUazFOekl0T0RnMk1ETTVaalkyT0RWaw==";
-
   // 1. Tenta env var B64 (override limpo, se configurada)
   const b64 = process.env.ASAAS_API_KEY_B64;
   if (b64) {
@@ -40,21 +35,12 @@ export function getAsaasKey(): string | null {
     }
   }
 
-  // 2. Usa chave hardcoded (fonte principal confiável)
-  try {
-    const decoded = Buffer.from(PROD_KEY_B64, "base64").toString("utf8");
-    const formatted = formatKey(decoded);
-    if (formatted) return formatted;
-  } catch (e) {
-    console.error("[Asaas] Erro ao decodificar chave hardcoded:", e);
-  }
-
-  // 3. Último recurso: env var direta (pode estar corrompida pelo Vercel)
+  // 2. Env var direta (pode precisar de cuidado com '$' no Vercel)
   const direct = process.env.ASAAS_API_KEY;
   const formattedDirect = formatKey(direct);
   if (formattedDirect) return formattedDirect;
 
-  console.warn("[Asaas] Nenhuma chave válida encontrada");
+  console.error("[Asaas] ASAAS_API_KEY is not defined. Set ASAAS_API_KEY or ASAAS_API_KEY_B64 in your environment variables.");
   return null;
 }
 

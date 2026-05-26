@@ -4,6 +4,10 @@ import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
 import { decode } from "next-auth/jwt";
 
+if (!process.env.NEXTAUTH_SECRET) {
+  throw new Error('NEXTAUTH_SECRET environment variable is not defined. Please set it in your .env file.');
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -20,7 +24,7 @@ export const authOptions: NextAuthOptions = {
           if (sessionTokenMatch) {
             const tokenValue = sessionTokenMatch[1];
             try {
-              const decoded = await decode({ token: tokenValue, secret: process.env.NEXTAUTH_SECRET || "fallback_secret_for_dev" });
+              const decoded = await decode({ token: tokenValue, secret: process.env.NEXTAUTH_SECRET! });
               if (decoded?.role === "ADMIN") {
                 const targetUser = await prisma.user.findUnique({ where: { id: credentials.impersonateId } });
                 if (targetUser) {
@@ -87,5 +91,5 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  secret: process.env.NEXTAUTH_SECRET || "fallback_secret_for_dev",
+  secret: process.env.NEXTAUTH_SECRET!,
 };

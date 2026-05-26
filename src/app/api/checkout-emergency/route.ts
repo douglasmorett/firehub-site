@@ -18,7 +18,10 @@ export async function POST(req: Request) {
     }
 
     const userId = (session.user as any).id;
-    const user = await prisma.user.findUnique({ where: { id: userId || undefined, email: session.user.email! } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId || undefined, email: session.user.email! },
+      select: { id: true, name: true, email: true, cpfCnpj: true },
+    });
     if (!user) return NextResponse.json({ error: "User não encontrado" }, { status: 404 });
 
     // Verifica se já fez retirada de emergência no mês

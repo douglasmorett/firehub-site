@@ -570,20 +570,48 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         {expanded && (
           <div style={{ padding: "0 1rem 0.75rem", borderTop: "1px solid #F1F5F9" }}>
 
-            {/* ── Prazo de entrega ── */}
-            {deadline && (
-              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: isLate ? "#FEF2F2" : isUrgent ? "#FFFBEB" : "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: "10px", border: `2px solid ${isLate ? "#FCA5A5" : isUrgent ? "#FCD34D" : "#93C5FD"}`, display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "1.4rem" }}>{isLate ? "🚨" : isUrgent ? "⚠️" : "⏱️"}</span>
-                <div>
-                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: isLate ? "#DC2626" : isUrgent ? "#D97706" : "#1D4ED8" }}>
-                    {isLate ? `ATRASADO ${Math.abs(remainingMins!)}min` : `PRAZO: ${remainingMins}min restantes`}
+            {/* ── Cenário 1: Banner de AGENDAMENTO / Prazo de entrega ── */}
+            {deadline && (() => {
+              // Check if this is a scheduled order (date is in the future, typically next day+)
+              const isScheduled = deadline.getTime() - new Date(order.createdAt).getTime() > 3 * 60 * 60 * 1000; // >3h difference = likely scheduled
+              const dateStr = deadline.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
+              const timeStr = deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+              if (isScheduled) {
+                // SCHEDULED ORDER — prominent banner with full date+time
+                return (
+                  <div style={{ margin: "0.6rem 0", padding: "12px 14px", background: "linear-gradient(135deg,#F0FDF4,#DCFCE7)", borderRadius: "10px", border: "2px solid #86EFAC", display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "1.6rem" }}>📅</span>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#15803D" }}>
+                        PEDIDO AGENDADO
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#166534", marginTop: "2px" }}>
+                        📆 {dateStr}
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#166534" }}>
+                        🕐 Horário: {timeStr}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: "0.78rem", color: "#64748B" }}>
-                    Entregar até {deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · Na cozinha há {elapsedMins}min
+                );
+              }
+
+              // REGULAR DEADLINE — countdown style
+              return (
+                <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: isLate ? "#FEF2F2" : isUrgent ? "#FFFBEB" : "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: "10px", border: `2px solid ${isLate ? "#FCA5A5" : isUrgent ? "#FCD34D" : "#93C5FD"}`, display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "1.4rem" }}>{isLate ? "🚨" : isUrgent ? "⚠️" : "⏱️"}</span>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "0.85rem", color: isLate ? "#DC2626" : isUrgent ? "#D97706" : "#1D4ED8" }}>
+                      {isLate ? `ATRASADO ${Math.abs(remainingMins!)}min` : `PRAZO: ${remainingMins}min restantes`}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748B" }}>
+                      Entregar até {timeStr} · Na cozinha há {elapsedMins}min
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
 
             {/* ── CENÁRIO 3: Banner de RETIRADA ── */}
@@ -610,7 +638,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {order.customerAddress && <div><span style={{ color: "#94A3B8" }}>End:</span> <strong>{order.customerAddress}</strong></div>}
             </div>
 
-            {/* Pagamento + Troco (Cenário 5) */}
+            {/* Pagamento + Troco + Frete (Cenários 1 e 5) */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "0.5rem" }}>
               {order.paymentMethod && (
                 <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.78rem", fontWeight: 600 }}>
@@ -627,7 +655,61 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   🪪 CPF/CNPJ: {order.customerCpfCnpj}
                 </span>
               )}
+              {/* Cenário 1: Taxa de entrega / Frete grátis (voucher) */}
+              {order.deliveryType === "DELIVERY" && (
+                order.deliveryFee > 0 ? (
+                  <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#FFF7ED", border: "1px solid #FED7AA", fontSize: "0.78rem", fontWeight: 600, color: "#C2410C" }}>
+                    🛵 Frete: R$ {Number(order.deliveryFee).toFixed(2)}
+                  </span>
+                ) : (
+                  <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F0FDF4", border: "1px solid #86EFAC", fontSize: "0.78rem", fontWeight: 700, color: "#15803D" }}>
+                    🎉 FRETE GRÁTIS
+                  </span>
+                )
+              )}
             </div>
+
+            {/* === DISCRIMINAÇÃO DE DESCONTOS (iFood vs Loja) === */}
+            {order.discountTotal > 0 && (
+              <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "linear-gradient(135deg,#FFFBEB,#FEF3C7)", borderRadius: "10px", border: "1.5px solid #FCD34D" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "1.1rem" }}>🏷️</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#92400E" }}>
+                    Desconto: R$ {Number(order.discountTotal).toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {(order.discountIfood ?? 0) > 0 && (
+                    <div style={{ padding: "4px 10px", borderRadius: "8px", background: "#F0FDF4", border: "1px solid #86EFAC", fontSize: "0.78rem" }}>
+                      <span style={{ color: "#6B7280" }}>iFood paga:</span>{" "}
+                      <span style={{ fontWeight: 700, color: "#15803D" }}>R$ {Number(order.discountIfood).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {(order.discountMerchant ?? 0) > 0 && (
+                    <div style={{ padding: "4px 10px", borderRadius: "8px", background: "#FEF2F2", border: "1px solid #FECACA", fontSize: "0.78rem" }}>
+                      <span style={{ color: "#6B7280" }}>Loja paga:</span>{" "}
+                      <span style={{ fontWeight: 700, color: "#DC2626" }}>R$ {Number(order.discountMerchant).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {(order.discountIfood ?? 0) === 0 && (order.discountMerchant ?? 0) === 0 && (
+                    <div style={{ padding: "4px 10px", borderRadius: "8px", background: "#F0FDF4", border: "1px solid #86EFAC", fontSize: "0.78rem" }}>
+                      <span style={{ fontWeight: 700, color: "#15803D" }}>iFood subsidia</span>
+                    </div>
+                  )}
+                </div>
+                {/* Detalhes por cupom */}
+                {Array.isArray(order.discountDetails) && order.discountDetails.length > 0 && (
+                  <div style={{ marginTop: "6px", fontSize: "0.72rem", color: "#78716C" }}>
+                    {order.discountDetails.map((d: any, i: number) => (
+                      <div key={i}>
+                        {d.target === "DELIVERY_FEE" ? "🛵 Frete" : "🛒 Carrinho"}: R$ {Number(d.value).toFixed(2)}
+                        {d.description ? ` — ${d.description}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* SELETOR DE MOTOBOY */}
             {order.deliveryType === "DELIVERY" && (

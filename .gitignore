@@ -43,3 +43,9 @@ next-env.d.ts
 .vercel
 
 /app/generated/prisma
+
+# security - temp credential files
+*.tmp
+*.b64.txt
+*-stripped.txt
+*-key.tmp
