@@ -669,9 +669,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   : null
               }
             </span>
-            <span style={{ fontWeight: isLate || isUrgent ? 600 : 400, color: timerColor, fontSize: "0.73rem" }}>
-              {timerLabel}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {order.status === "ENTREGUE" && (
+                <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#059669", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>Entregue</span>
+              )}
+              {order.status === "CANCELADO" && (
+                <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#DC2626", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>Cancelado</span>
+              )}
+              <span style={{ fontWeight: isLate || isUrgent ? 600 : 400, color: timerColor, fontSize: "0.73rem" }}>
+                {timerLabel}
+              </span>
+            </div>
           </div>
         </div>
 
