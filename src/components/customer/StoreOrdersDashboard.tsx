@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock } from "lucide-react";
 
@@ -526,6 +526,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return o.customerName?.toLowerCase().includes(s) || o.customerPhone?.includes(s) || o.customerAddress?.toLowerCase().includes(s) || o.id.includes(s);
   });
 
+  // Sequential order numbering — includes ALL orders in period (even ENCERRADO)
+  // so numbers stay stable. Resets when date range / cash session changes.
+  const orderNumberMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const allInPeriod = orders
+      .filter(o => {
+        const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
+        return refDate >= fromDate && refDate <= toDate;
+      })
+      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    allInPeriod.forEach((o: any, i: number) => map.set(o.id, i + 1));
+    return map;
+  }, [orders, fromDate, toDate]);
+
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
   const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id));
@@ -553,6 +567,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const isDragging = draggedOrderId === order.id;
     const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
     const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
+    const seqNum = orderNumberMap.get(order.id) ?? "—";
 
     // Delivery deadline countdown (scheduledDatetime stores the delivery deadline for iFood orders)
     const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : null;
@@ -584,29 +599,79 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           userSelect: "none"
         }}
       >
-        <div style={{ padding: "0.75rem 1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          {canDrag && (
-            <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0 }}>
-              <GripVertical size={16} />
-            </div>
-          )}
-          <div style={{ flex: 1 }} onClick={() => setExpandedId(expanded ? null : order.id)}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-              <div>
-                <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>#{order.id.slice(-6).toUpperCase()}</span>
-                <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", fontWeight: isLate || isUrgent ? 700 : 400, color: timerColor }}>{timerLabel}</span>
+        <div style={{ padding: "0.6rem 0.75rem", cursor: "pointer" }} onClick={() => setExpandedId(expanded ? null : order.id)}>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            {canDrag && (
+              <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0, alignSelf: "flex-start", paddingTop: "2px" }} onClick={e => e.stopPropagation()}>
+                <GripVertical size={14} />
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <span style={{ fontWeight: 800, color: st.color }}>R$ {order.totalAmount.toFixed(2)}</span>
-                {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            )}
+            {/* Two-column layout */}
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr auto", gap: "0 16px", fontSize: "0.8rem", lineHeight: "1.7" }}>
+              {/* LEFT COLUMN */}
+              <div style={{ minWidth: 0 }}>
+                {/* Line 1: Sequential # + Customer name */}
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1F2937", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {seqNum} — {order.customerName}
+                </div>
+                {/* Line 2: Phone */}
+                <div style={{ color: "#6B7280" }}>
+                  {order.customerPhone ? order.customerPhone.replace(/\s*ID:\s*\d+/i, "").trim() : "—"}
+                </div>
+                {/* Line 3: Payment method */}
+                <div style={{ color: "#6B7280" }}>
+                  {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+                </div>
+                {/* Line 4: Address/Bairro */}
+                <div style={{ color: "#6B7280", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {order.customerAddress
+                    ? (() => {
+                        // Try to extract bairro from address
+                        const parts = order.customerAddress.split(/[,\-–]/);
+                        return parts.length > 1 ? parts[parts.length - 2]?.trim() || order.customerAddress : order.customerAddress;
+                      })()
+                    : "—"
+                  }
+                </div>
+              </div>
+              {/* RIGHT COLUMN */}
+              <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                {/* Line 1: iFood ref or source */}
+                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#6366F1" }}>
+                  {order.ifoodReference ? `#${order.ifoodReference}` : (order.source === "IFOOD" ? "iFood" : order.source === "PDV" ? "PDV" : "Online")}
+                </div>
+                {/* Line 2: Source (if iFood ref shown) or ID */}
+                <div style={{ color: "#6B7280" }}>
+                  {order.ifoodReference ? (order.source === "IFOOD" ? "iFood" : order.source === "PDV" ? "PDV" : "Online") : `#${order.id.slice(-6).toUpperCase()}`}
+                </div>
+                {/* Line 3: Value */}
+                <div style={{ fontWeight: 700, color: "#1F2937" }}>
+                  R$ {order.totalAmount.toFixed(2)}
+                </div>
+                {/* Line 4: Delivery type */}
+                <div style={{ color: "#6B7280" }}>
+                  {order.deliveryType === "DELIVERY" ? "Entrega" : "Retirada"}
+                </div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: "0.75rem", marginTop: "4px", fontSize: "0.8rem", color: "#64748B", flexWrap: "wrap" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: "3px" }}><User size={12} /> {order.customerName}</span>
-              <span>🕐 {new Date(order.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-              <span>{order.deliveryType === "DELIVERY" ? "🛵 Entrega" : "🏪 Retirada"}</span>
-              {(order.status === "ACEITO" || order.status === "PREPARANDO" || order.status === "SAIU_ENTREGA") && elapsedMins > 0 && <span style={{ color: "#94A3B8" }}>🍳 Na cozinha {elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`}</span>}
+            {/* Expand arrow */}
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: "#9CA3AF" }}>
+              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </div>
+          </div>
+          {/* Bottom bar: motoboy + timer (always visible) */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", paddingTop: "4px", borderTop: "1px solid #F3F4F6", fontSize: "0.75rem", color: "#9CA3AF" }}>
+            <span>
+              {order.motoboy
+                ? <span style={{ color: "#374151", fontWeight: 500 }}>{order.motoboy.name}</span>
+                : order.deliveryType === "DELIVERY"
+                  ? <span style={{ color: "#D1D5DB" }}>Sem motoboy</span>
+                  : null
+              }
+            </span>
+            <span style={{ fontWeight: isLate || isUrgent ? 600 : 400, color: timerColor, fontSize: "0.73rem" }}>
+              {timerLabel}
+            </span>
           </div>
         </div>
 
