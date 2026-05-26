@@ -687,11 +687,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
             {/* Pagamento + Troco + Frete (Cenários 1 e 5) */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "0.5rem" }}>
-              {order.paymentMethod && (
-                <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.78rem", fontWeight: 600 }}>
-                  💳 Pagamento: {translatePayment(order.paymentMethod)}
-                </span>
-              )}
+              {order.paymentMethod && (() => {
+                const method = translatePayment(order.paymentMethod);
+                const isDinheiro = method === "Dinheiro";
+                const isPaidOnline = !isDinheiro && (
+                  order.paymentPaidAt ||
+                  order.source === "IFOOD" ||
+                  order.gatewayProvider
+                );
+                return (
+                  <>
+                    <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.78rem", fontWeight: 600 }}>
+                      💳 Pagamento: {method}
+                    </span>
+                    <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, background: isPaidOnline ? "#F0FDF4" : "#FFF7ED", border: `1px solid ${isPaidOnline ? "#BBF7D0" : "#FED7AA"}`, color: isPaidOnline ? "#15803D" : "#C2410C" }}>
+                      {isPaidOnline ? "✅ Pago Online" : "💰 Pagar na Entrega"}
+                    </span>
+                  </>
+                );
+              })()}
               {order.changeAmount != null && order.changeAmount > 0 && (
                 <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F0FDF4", border: "1px solid #BBF7D0", fontSize: "0.78rem", fontWeight: 700, color: "#15803D" }}>
                   💵 Troco para R$ {Number(order.changeAmount).toFixed(2)}
@@ -1088,11 +1102,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
                             {order.deliveryType === "DELIVERY" ? "🛵 Entrega" : "🏪 Retirada"}
                           </span>
-                          {order.paymentMethod && (
-                            <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
-                              💳 Pagamento: {translatePayment(order.paymentMethod)}
-                            </span>
-                          )}
+                          {order.paymentMethod && (() => {
+                            const method = translatePayment(order.paymentMethod);
+                            const isDinheiro = method === "Dinheiro";
+                            const isPaidOnline = !isDinheiro && (order.paymentPaidAt || order.source === "IFOOD" || order.gatewayProvider);
+                            return (
+                              <>
+                                <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
+                                  💳 Pagamento: {method}
+                                </span>
+                                <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, background: isPaidOnline ? "#F0FDF4" : "#FFF7ED", border: `1px solid ${isPaidOnline ? "#BBF7D0" : "#FED7AA"}`, color: isPaidOnline ? "#15803D" : "#C2410C" }}>
+                                  {isPaidOnline ? "✅ Pago Online" : "💰 Pagar na Entrega"}
+                                </span>
+                              </>
+                            );
+                          })()}
                         </div>
 
                         <button
