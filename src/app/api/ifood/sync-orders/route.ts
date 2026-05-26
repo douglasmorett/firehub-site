@@ -51,7 +51,9 @@ export async function POST(req: NextRequest) {
     const discoveredOrderIds = new Set<string>();
 
     if (eventsRes.ok) {
-      const events = await eventsRes.json();
+      // iFood events:polling can return 204 No Content or empty body
+      const eventsText = await eventsRes.text();
+      const events = eventsText ? JSON.parse(eventsText) : [];
       if (Array.isArray(events)) {
         const processedEventIds: string[] = [];
 

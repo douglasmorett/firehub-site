@@ -29,7 +29,9 @@ async function pollIfoodEvents() {
       return;
     }
 
-    const events = await res.json();
+    // iFood events:polling can return 204 No Content or empty body
+    const eventsText = await res.text();
+    const events = eventsText ? JSON.parse(eventsText) : [];
     if (!events || events.length === 0) return;
 
     // Find franchisee for this merchant

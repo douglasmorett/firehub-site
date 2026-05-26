@@ -100,7 +100,9 @@ export async function GET(req: NextRequest) {
     const errText = await res.text();
     return NextResponse.json({ events: [], error: `${res.status} ${errText}` });
   }
-  const data = await res.json();
+  // iFood events:polling can return 204 No Content or empty body
+  const dataText = await res.text();
+  const data = dataText ? JSON.parse(dataText) : [];
 
   // Encontra o franqueado vinculado a esse merchantId
   const franchisee = await prisma.user.findFirst({
