@@ -1158,11 +1158,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                               const res = await fetch("/api/customer-order/status", {
                                 method: "PUT",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ orderId: order.id, status: "NOVO", scheduledDatetime: new Date().toISOString() })
+                                body: JSON.stringify({ orderId: order.id, status: "NOVO", scheduledDatetime: null })
                               });
                               if (res.ok) {
                                 setOrders(prev => prev.map(o =>
-                                  o.id === order.id ? { ...o, status: "NOVO", scheduledDatetime: new Date().toISOString() } : o
+                                  o.id === order.id ? { ...o, status: "NOVO", scheduledDatetime: null } : o
                                 ));
                                 setShowAgendamentos(false);
                               } else {

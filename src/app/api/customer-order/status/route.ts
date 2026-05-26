@@ -66,8 +66,8 @@ export async function PUT(req: Request) {
 
   const updateData: any = { status };
   // Allow updating scheduledDatetime (e.g. when anticipating a scheduled order)
-  if (scheduledDatetime) {
-    updateData.scheduledDatetime = new Date(scheduledDatetime);
+  if (scheduledDatetime !== undefined) {
+    updateData.scheduledDatetime = scheduledDatetime ? new Date(scheduledDatetime) : null;
   }
 
   await prisma.customerOrder.update({
