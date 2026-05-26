@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
-// Throttle iFood polling — max once every 30s across all requests (iFood requirement)
+// Throttle iFood polling — max once every 10s for fast order detection
 let lastIfoodPoll = 0;
 
 async function pollIfoodEvents() {
   const now = Date.now();
-  if (now - lastIfoodPoll < 30_000) return; // Skip if polled less than 30s ago
+  if (now - lastIfoodPoll < 10_000) return; // Skip if polled less than 10s ago
   lastIfoodPoll = now;
 
   try {
@@ -41,6 +41,9 @@ async function pollIfoodEvents() {
       try {
         const { code, orderId } = event;
         if (!orderId) continue;
+
+        // Log de debug para identificar códigos de eventos
+        console.log(`[iFood Poll] Evento recebido: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
 
         // Códigos de eventos do iFood (abreviados e completos)
         const isPlaced = code === "PLC" || event.fullCode === "PLACED";

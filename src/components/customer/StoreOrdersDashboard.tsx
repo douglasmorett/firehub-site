@@ -518,8 +518,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const filteredOrders = orders.filter(o => {
     if (o.status === "ENCERRADO") return false;
-    const created = new Date(o.createdAt);
-    if (created < fromDate || created > toDate) return false;
+    // Para pedidos agendados, usar scheduledDatetime como data de referência
+    const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
+    if (refDate < fromDate || refDate > toDate) return false;
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
     return o.customerName?.toLowerCase().includes(s) || o.customerPhone?.includes(s) || o.customerAddress?.toLowerCase().includes(s) || o.id.includes(s);
@@ -533,7 +534,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO");
 
   // Resumo de vendas
-  const allInRange = orders.filter(o => { const d = new Date(o.createdAt); return d >= fromDate && d <= toDate; });
+  const allInRange = orders.filter(o => { const d = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt); return d >= fromDate && d <= toDate; });
   const resumo = {
     pendentes: allInRange.filter(o => o.status === "NOVO"),
     preparo: allInRange.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO"),
