@@ -79,6 +79,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [adDuration, setAdDuration] = useState(60); // minutos
   const [showAltaDemandaLog, setShowAltaDemandaLog] = useState(false);
   const [showAgendamentos, setShowAgendamentos] = useState(false);
+  const [scheduleLeadHours, setScheduleLeadHours] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("scheduleLeadHours");
+      return saved ? Number(saved) : 1;
+    }
+    return 1;
+  });
+  const [scheduleLeadInput, setScheduleLeadInput] = useState("");
 
   const activateAltaDemanda = () => {
     const now = new Date();
@@ -243,12 +251,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     } catch {}
   }, []);
 
+  // Calcular pedidos agendados ANTES do useEffect do som
+  const leadMs = scheduleLeadHours * 60 * 60 * 1000;
+  const scheduledOrders = orders.filter(o => {
+    if (!o.scheduledDatetime) return false;
+    const deadline = new Date(o.scheduledDatetime);
+    const diffMs = deadline.getTime() - new Date(o.createdAt).getTime();
+    const isFutureScheduled = diffMs > 3 * 60 * 60 * 1000;
+    const isNotStarted = o.status === "NOVO" || o.status === "ACEITO";
+    const stillWaiting = deadline.getTime() - now.getTime() > leadMs;
+    return isFutureScheduled && isNotStarted && stillWaiting;
+  });
+  const scheduledOrderIds = new Set(scheduledOrders.map(o => o.id));
+
   // Continuous alert sound — loops every 4s while there are NOVO orders
   const alertIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasNotifiedRef = useRef(false);
 
   useEffect(() => {
-    const novoCount = orders.filter(o => o.status === "NOVO").length;
+    // Só conta pedidos NOVO que NÃO estão na lista de agendados (som só para novos reais)
+    const novoCount = orders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id)).length;
 
     if (novoCount > 0) {
       // Start looping sound if not already playing
@@ -291,7 +313,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         alertIntervalRef.current = null;
       }
     };
-  }, [orders, playOrderChime]);
+  }, [orders, playOrderChime, scheduledOrderIds]);
 
   // Solicitar permissão de notificação na montagem
   useEffect(() => {
@@ -503,17 +525,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return o.customerName?.toLowerCase().includes(s) || o.customerPhone?.includes(s) || o.customerAddress?.toLowerCase().includes(s) || o.id.includes(s);
   });
 
-  // Pedidos agendados para o futuro (scheduledDatetime > agora + 3h, ainda não iniciados)
-  const scheduledOrders = orders.filter(o => {
-    if (!o.scheduledDatetime) return false;
-    const deadline = new Date(o.scheduledDatetime);
-    const diffMs = deadline.getTime() - new Date(o.createdAt).getTime();
-    const isFutureScheduled = diffMs > 3 * 60 * 60 * 1000; // >3h = agendado
-    const isNotStarted = o.status === "NOVO" || o.status === "ACEITO";
-    return isFutureScheduled && isNotStarted && deadline.getTime() > now.getTime();
-  });
-
-  const scheduledOrderIds = new Set(scheduledOrders.map(o => o.id));
+  // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
   const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id));
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO");
@@ -1044,6 +1056,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <p style={{ fontSize: "0.78rem", color: "#64748B", margin: 0 }}>{scheduledOrders.length} pedido{scheduledOrders.length !== 1 ? "s" : ""} agendado{scheduledOrders.length !== 1 ? "s" : ""} para os próximos dias</p>
               </div>
               <button onClick={() => setShowAgendamentos(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Configuração de antecedência */}
+            <div style={{ marginBottom: "16px", padding: "14px", background: "#F5F3FF", borderRadius: "12px", border: "1px solid #DDD6FE" }}>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#6D28D9", display: "block", marginBottom: "8px" }}>
+                ⏰ Quantas horas antes do horário agendado você quer que o pedido vá para Novos Pedidos?
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  {[0.5, 1, 1.5, 2, 3].map(h => (
+                    <button key={h} onClick={() => { setScheduleLeadHours(h); localStorage.setItem("scheduleLeadHours", String(h)); }}
+                      style={{ padding: "6px 14px", borderRadius: "8px", border: `2px solid ${scheduleLeadHours === h ? "#7C3AED" : "#E2E8F0"}`, background: scheduleLeadHours === h ? "#EDE9FE" : "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem", color: scheduleLeadHours === h ? "#7C3AED" : "#64748B", fontFamily: "inherit" }}>
+                      {h === 0.5 ? "30min" : `${h}h`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p style={{ fontSize: "0.72rem", color: "#8B5CF6", margin: "8px 0 0" }}>
+                ✅ Configurado: pedidos entram em Novos Pedidos <strong>{scheduleLeadHours === 0.5 ? "30 minutos" : `${scheduleLeadHours} hora${scheduleLeadHours > 1 ? "s" : ""}`}</strong> antes do horário agendado.
+              </p>
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
