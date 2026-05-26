@@ -133,7 +133,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const storeUrl = user.slug ? `/loja/${user.slug}` : null;
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
+    const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
 
@@ -611,44 +611,36 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         </div>
 
         {expanded && (
-          <div style={{ padding: "0 1rem 0.75rem", borderTop: "1px solid #F1F5F9" }}>
+          <div style={{ padding: "0 1rem 0.75rem", borderTop: "1px solid #E2E8F0" }}>
 
-            {/* ── Cenário 1: Banner de AGENDAMENTO / Prazo de entrega ── */}
+            {/* ── Agendamento / Prazo de entrega ── */}
             {deadline && (() => {
-              // Check if this is a scheduled order (date is in the future, typically next day+)
-              const isScheduled = deadline.getTime() - new Date(order.createdAt).getTime() > 3 * 60 * 60 * 1000; // >3h difference = likely scheduled
+              const isScheduled = deadline.getTime() - new Date(order.createdAt).getTime() > 3 * 60 * 60 * 1000;
               const dateStr = deadline.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
               const timeStr = deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
               if (isScheduled) {
-                // SCHEDULED ORDER — prominent banner with full date+time
                 return (
-                  <div style={{ margin: "0.6rem 0", padding: "12px 14px", background: "linear-gradient(135deg,#F0FDF4,#DCFCE7)", borderRadius: "10px", border: "2px solid #86EFAC", display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ fontSize: "1.6rem" }}>📅</span>
+                  <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#F8FAFC", borderRadius: "8px", borderLeft: "4px solid #16A34A", display: "flex", alignItems: "center", gap: "10px" }}>
                     <div>
-                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#15803D" }}>
-                        PEDIDO AGENDADO
+                      <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#15803D", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                        Pedido Agendado
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#166534", marginTop: "2px" }}>
-                        📆 {dateStr}
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#166534" }}>
-                        🕐 Horário: {timeStr}
+                      <div style={{ fontSize: "0.8rem", color: "#374151", marginTop: "2px" }}>
+                        {dateStr} — {timeStr}
                       </div>
                     </div>
                   </div>
                 );
               }
 
-              // REGULAR DEADLINE — countdown style
               return (
-                <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: isLate ? "#FEF2F2" : isUrgent ? "#FFFBEB" : "linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderRadius: "10px", border: `2px solid ${isLate ? "#FCA5A5" : isUrgent ? "#FCD34D" : "#93C5FD"}`, display: "flex", alignItems: "center", gap: "10px" }}>
-                  <span style={{ fontSize: "1.4rem" }}>{isLate ? "🚨" : isUrgent ? "⚠️" : "⏱️"}</span>
+                <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: isLate ? "#FEF2F2" : isUrgent ? "#FFFBEB" : "#F8FAFC", borderRadius: "8px", borderLeft: `4px solid ${isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#3B82F6"}`, display: "flex", alignItems: "center", gap: "10px" }}>
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: "0.85rem", color: isLate ? "#DC2626" : isUrgent ? "#D97706" : "#1D4ED8" }}>
-                      {isLate ? `ATRASADO ${Math.abs(remainingMins!)}min` : `PRAZO: ${remainingMins}min restantes`}
+                    <div style={{ fontWeight: 700, fontSize: "0.82rem", color: isLate ? "#DC2626" : isUrgent ? "#D97706" : "#1D4ED8", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                      {isLate ? `Atrasado ${Math.abs(remainingMins!)}min` : `Prazo: ${remainingMins}min restantes`}
                     </div>
-                    <div style={{ fontSize: "0.78rem", color: "#64748B" }}>
+                    <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "1px" }}>
                       Entregar até {timeStr} · Na cozinha há {elapsedMins}min
                     </div>
                   </div>
@@ -656,127 +648,128 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               );
             })()}
 
-
-            {/* ── CENÁRIO 3: Banner de RETIRADA ── */}
+            {/* ── Retirada no local ── */}
             {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
-              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "linear-gradient(135deg,#FFF7ED,#FFEDD5)", borderRadius: "10px", border: "2px solid #FCD34D", display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "1.4rem" }}>🏪</span>
-                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#B45309" }}>RETIRADA NO LOCAL — Cliente vem buscar</div>
+              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#F8FAFC", borderRadius: "8px", borderLeft: "4px solid #D97706" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#92400E", textTransform: "uppercase", letterSpacing: "0.03em" }}>Retirada no local</div>
+                <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "1px" }}>Cliente vem buscar</div>
               </div>
             )}
 
-            {/* ── CENÁRIO 4: Banner de CANCELAMENTO POR PLATAFORMA ── */}
+            {/* ── Cancelamento por plataforma ── */}
             {order.status === "CANCELADO" && order.cancelledBy === "IFOOD" && (
-              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#FEF2F2", borderRadius: "10px", border: "2px solid #FCA5A5", display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "1.4rem" }}>🚫</span>
-                <div>
-                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#DC2626" }}>CANCELADO PELA PLATAFORMA</div>
-                  <div style={{ fontSize: "0.78rem", color: "#B91C1C" }}>O iFood cancelou este pedido automaticamente</div>
-                </div>
+              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#FEF2F2", borderRadius: "8px", borderLeft: "4px solid #EF4444" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#DC2626", textTransform: "uppercase", letterSpacing: "0.03em" }}>Cancelado pela plataforma</div>
+                <div style={{ fontSize: "0.78rem", color: "#B91C1C", marginTop: "1px" }}>O iFood cancelou este pedido automaticamente</div>
               </div>
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", margin: "0.75rem 0", fontSize: "0.82rem" }}>
-              <div>
-                <span style={{ color: "#94A3B8" }}>Tel:</span>{" "}
+            {/* ── Dados do cliente ── */}
+            <div style={{ margin: "0.6rem 0", display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: "0.82rem", lineHeight: "1.6" }}>
+              <span style={{ color: "#9CA3AF", fontWeight: 500 }}>Telefone</span>
+              <span>
                 {(() => {
                   const phone = order.customerPhone || "";
                   const idMatch = phone.match(/ID:\s*(\d+)/i);
                   const phoneNumber = phone.replace(/\s*ID:\s*\d+/i, "").trim();
                   return (
                     <>
-                      <a href={`https://wa.me/55${phoneNumber.replace(/\D/g,'')}`} target="_blank" style={{ color: "#25D366", fontWeight: 600 }}>{phoneNumber}</a>
+                      <a href={`https://wa.me/55${phoneNumber.replace(/\D/g,'')}`} target="_blank" style={{ color: "#059669", fontWeight: 600, textDecoration: "none" }}>{phoneNumber}</a>
                       {idMatch && (
-                        <span style={{ marginLeft: "6px", padding: "2px 8px", borderRadius: "6px", background: "#EFF6FF", border: "1px solid #93C5FD", fontSize: "0.78rem", fontWeight: 700, color: "#1D4ED8" }}>
-                          🆔 {idMatch[1]}
+                        <span style={{ marginLeft: "8px", fontSize: "0.75rem", fontWeight: 600, color: "#6B7280" }}>
+                          ID {idMatch[1]}
                         </span>
                       )}
                     </>
                   );
                 })()}
+              </span>
+              {order.customerAddress && (
+                <>
+                  <span style={{ color: "#9CA3AF", fontWeight: 500 }}>Endereço</span>
+                  <span style={{ fontWeight: 500, color: "#1F2937" }}>{order.customerAddress}</span>
+                </>
+              )}
+            </div>
+
+            {/* ── Pagamento e detalhes ── */}
+            <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px", fontSize: "0.8rem" }}>
+                {order.paymentMethod && (() => {
+                  const method = translatePayment(order.paymentMethod);
+                  const isDinheiro = method === "Dinheiro";
+                  const isPaidOnline = !isDinheiro && (
+                    order.paymentPaidAt ||
+                    order.source === "IFOOD" ||
+                    order.gatewayProvider
+                  );
+                  return (
+                    <>
+                      <div>
+                        <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Pagamento</span>
+                        <div style={{ fontWeight: 600, color: "#1F2937", marginTop: "1px" }}>{method}</div>
+                      </div>
+                      <div>
+                        <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Status</span>
+                        <div style={{ fontWeight: 600, color: isPaidOnline ? "#059669" : "#D97706", marginTop: "1px" }}>
+                          {isPaidOnline ? "Pago online" : "Pagar na entrega"}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+                {order.changeAmount != null && order.changeAmount > 0 && (
+                  <div>
+                    <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Troco para</span>
+                    <div style={{ fontWeight: 600, color: "#1F2937", marginTop: "1px" }}>R$ {Number(order.changeAmount).toFixed(2)}</div>
+                  </div>
+                )}
+                {order.customerCpfCnpj && (
+                  <div>
+                    <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>CPF/CNPJ</span>
+                    <div style={{ fontWeight: 600, color: "#1F2937", marginTop: "1px" }}>{order.customerCpfCnpj}</div>
+                  </div>
+                )}
+                {order.deliveryType === "DELIVERY" && (
+                  <div>
+                    <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Taxa de entrega</span>
+                    <div style={{ fontWeight: 600, color: order.deliveryFee > 0 ? "#1F2937" : "#059669", marginTop: "1px" }}>
+                      {order.deliveryFee > 0 ? `R$ ${Number(order.deliveryFee).toFixed(2)}` : "Grátis"}
+                    </div>
+                  </div>
+                )}
               </div>
-              {order.customerAddress && <div><span style={{ color: "#94A3B8" }}>End:</span> <strong>{order.customerAddress}</strong></div>}
             </div>
 
-            {/* Pagamento + Troco + Frete (Cenários 1 e 5) */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "0.5rem" }}>
-              {order.paymentMethod && (() => {
-                const method = translatePayment(order.paymentMethod);
-                const isDinheiro = method === "Dinheiro";
-                const isPaidOnline = !isDinheiro && (
-                  order.paymentPaidAt ||
-                  order.source === "IFOOD" ||
-                  order.gatewayProvider
-                );
-                return (
-                  <>
-                    <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.78rem", fontWeight: 600 }}>
-                      💳 Pagamento: {method}
-                    </span>
-                    <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, background: isPaidOnline ? "#F0FDF4" : "#FFF7ED", border: `1px solid ${isPaidOnline ? "#BBF7D0" : "#FED7AA"}`, color: isPaidOnline ? "#15803D" : "#C2410C" }}>
-                      {isPaidOnline ? "✅ Pago Online" : "💰 Pagar na Entrega"}
-                    </span>
-                  </>
-                );
-              })()}
-              {order.changeAmount != null && order.changeAmount > 0 && (
-                <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F0FDF4", border: "1px solid #BBF7D0", fontSize: "0.78rem", fontWeight: 700, color: "#15803D" }}>
-                  💵 Troco para R$ {Number(order.changeAmount).toFixed(2)}
-                </span>
-              )}
-              {order.customerCpfCnpj && (
-                <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F5F3FF", border: "1px solid #DDD6FE", fontSize: "0.78rem", fontWeight: 600, color: "#6D28D9" }}>
-                  🪪 CPF/CNPJ: {order.customerCpfCnpj}
-                </span>
-              )}
-              {/* Cenário 1: Taxa de entrega / Frete grátis (voucher) */}
-              {order.deliveryType === "DELIVERY" && (
-                order.deliveryFee > 0 ? (
-                  <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#FFF7ED", border: "1px solid #FED7AA", fontSize: "0.78rem", fontWeight: 600, color: "#C2410C" }}>
-                    🛵 Taxa de Entrega: R$ {Number(order.deliveryFee).toFixed(2)}
-                  </span>
-                ) : (
-                  <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F0FDF4", border: "1px solid #86EFAC", fontSize: "0.78rem", fontWeight: 700, color: "#15803D" }}>
-                    🎉 ENTREGA GRÁTIS
-                  </span>
-                )
-              )}
-            </div>
-
-            {/* === DISCRIMINAÇÃO DE DESCONTOS (iFood vs Loja) === */}
+            {/* ── Descontos ── */}
             {order.discountTotal > 0 && (
-              <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "linear-gradient(135deg,#FFFBEB,#FEF3C7)", borderRadius: "10px", border: "1.5px solid #FCD34D" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                  <span style={{ fontSize: "1.1rem" }}>🏷️</span>
-                  <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#92400E" }}>
-                    Desconto: R$ {Number(order.discountTotal).toFixed(2)}
+              <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                  <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Desconto total</span>
+                  <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#1F2937" }}>
+                    − R$ {Number(order.discountTotal).toFixed(2)}
                   </span>
                 </div>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "16px", fontSize: "0.78rem" }}>
                   {(order.discountIfood ?? 0) > 0 && (
-                    <div style={{ padding: "4px 10px", borderRadius: "8px", background: "#F0FDF4", border: "1px solid #86EFAC", fontSize: "0.78rem" }}>
-                      <span style={{ color: "#6B7280" }}>iFood paga:</span>{" "}
-                      <span style={{ fontWeight: 700, color: "#15803D" }}>R$ {Number(order.discountIfood).toFixed(2)}</span>
-                    </div>
+                    <span style={{ color: "#6B7280" }}>
+                      iFood: <strong style={{ color: "#059669" }}>R$ {Number(order.discountIfood).toFixed(2)}</strong>
+                    </span>
                   )}
                   {(order.discountMerchant ?? 0) > 0 && (
-                    <div style={{ padding: "4px 10px", borderRadius: "8px", background: "#FEF2F2", border: "1px solid #FECACA", fontSize: "0.78rem" }}>
-                      <span style={{ color: "#6B7280" }}>Loja paga:</span>{" "}
-                      <span style={{ fontWeight: 700, color: "#DC2626" }}>R$ {Number(order.discountMerchant).toFixed(2)}</span>
-                    </div>
+                    <span style={{ color: "#6B7280" }}>
+                      Loja: <strong style={{ color: "#DC2626" }}>R$ {Number(order.discountMerchant).toFixed(2)}</strong>
+                    </span>
                   )}
                   {(order.discountIfood ?? 0) === 0 && (order.discountMerchant ?? 0) === 0 && (
-                    <div style={{ padding: "4px 10px", borderRadius: "8px", background: "#F0FDF4", border: "1px solid #86EFAC", fontSize: "0.78rem" }}>
-                      <span style={{ fontWeight: 700, color: "#15803D" }}>iFood subsidia</span>
-                    </div>
+                    <span style={{ color: "#059669", fontWeight: 500 }}>Subsidiado pelo iFood</span>
                   )}
                 </div>
-                {/* Detalhes por cupom */}
                 {Array.isArray(order.discountDetails) && order.discountDetails.length > 0 && (
-                  <div style={{ marginTop: "6px", fontSize: "0.72rem", color: "#78716C" }}>
+                  <div style={{ marginTop: "4px", fontSize: "0.72rem", color: "#9CA3AF" }}>
                     {order.discountDetails.map((d: any, i: number) => (
                       <div key={i}>
-                        {d.target === "DELIVERY_FEE" ? "🛵 Taxa de Entrega" : "🛒 Carrinho"}: R$ {Number(d.value).toFixed(2)}
+                        {d.target === "DELIVERY_FEE" ? "Taxa de entrega" : "Carrinho"}: R$ {Number(d.value).toFixed(2)}
                         {d.description ? ` — ${d.description}` : ""}
                       </div>
                     ))}
@@ -785,28 +778,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             )}
 
-            {/* SELETOR DE MOTOBOY */}
+            {/* ── Motoboy ── */}
             {order.deliveryType === "DELIVERY" && (
-              <div style={{ margin: "0.5rem 0", padding: "8px 10px", background: "#F0F9FF", borderRadius: "8px", border: "1px solid #BAE6FD" }}>
-                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0369A1", display: "block", marginBottom: "4px" }}>🛵 Motoboy responsável:</label>
+              <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
+                <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em", display: "block", marginBottom: "4px" }}>Motoboy</span>
                 {(order.status === "ENTREGUE" || order.status === "ENCERRADO" || order.status === "CANCELADO") ? (
-                  /* Read-only for finalized orders */
-                  <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "#0369A1", padding: "5px 0" }}>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 500, color: "#1F2937" }}>
                     {order.motoboy ? (
-                      <span>✅ {order.motoboy.name} {order.motoboy.phone ? `· ${order.motoboy.phone}` : ""}</span>
+                      <span>{order.motoboy.name} {order.motoboy.phone ? `· ${order.motoboy.phone}` : ""}</span>
                     ) : (
-                      <span style={{ color: "#94A3B8" }}>Nenhum motoboy atribuído</span>
+                      <span style={{ color: "#9CA3AF" }}>Não atribuído</span>
                     )}
                   </div>
                 ) : (
-                  /* Editable for active orders */
                   <>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                       <select
                         value={order.motoboyId || ""}
                         onChange={e => assignMotoboy(order.id, e.target.value)}
                         disabled={assigningId === order.id}
-                        style={{ flex: 1, padding: "5px 8px", borderRadius: "6px", border: "1px solid #BAE6FD", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit" }}
+                        style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #D1D5DB", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit", color: "#374151" }}
                       >
                         <option value="">— Não atribuído —</option>
                         {motoboys.map((m: any) => (
@@ -818,39 +809,45 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           href={`https://wa.me/55${(order.motoboy.phone || "").replace(/\D/g, "")}`}
                           target="_blank" rel="noopener noreferrer"
                           title={`WhatsApp ${order.motoboy.name}`}
-                          style={{ padding: "5px 8px", background: "#25D366", color: "white", borderRadius: "6px", textDecoration: "none", fontSize: "0.8rem", fontWeight: 700 }}
-                        >📲</a>
+                          style={{ padding: "6px 10px", background: "#059669", color: "white", borderRadius: "6px", textDecoration: "none", fontSize: "0.78rem", fontWeight: 600 }}
+                        >WhatsApp</a>
                       )}
                     </div>
                     {order.motoboy && (
-                      <div style={{ fontSize: "0.72rem", color: "#0369A1", marginTop: "3px" }}>✅ {order.motoboy.name} atribuído</div>
+                      <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: "3px" }}>{order.motoboy.name} atribuído</div>
                     )}
                   </>
                 )}
               </div>
             )}
-            {order.notes && <div style={{ padding: "0.4rem 0.6rem", background: "#FFF7ED", borderRadius: "6px", fontSize: "0.8rem", marginBottom: "0.5rem" }}>💬 {order.notes}</div>}
-            <div style={{ fontSize: "0.82rem", marginBottom: "0.5rem" }}>
+
+            {/* ── Observações ── */}
+            {order.notes && <div style={{ padding: "8px 12px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: "0.8rem", color: "#374151", margin: "0.4rem 0", lineHeight: "1.5" }}>{order.notes}</div>}
+
+            {/* ── Itens do pedido ── */}
+            <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
               {order.items?.map((item: any) => (
-                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
-                  <span>{item.quantity}x {item.menuProduct?.name}</span>
-                  <span style={{ fontWeight: 600 }}>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid #F3F4F6" }}>
+                  <span style={{ color: "#374151" }}>{item.quantity}× {item.menuProduct?.name}</span>
+                  <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(item.price * item.quantity).toFixed(2)}</span>
                 </div>
               ))}
             </div>
+
+            {/* ── Botões de ação ── */}
             {order.status !== "ENTREGUE" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
-              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
                 {order.status === "NOVO" && <>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ACEITO")} style={{ flex: 1, padding: "0.6rem 1rem", borderRadius: "8px", border: "none", background: "#10B981", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>✅ Aceitar Pedido</button>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.6rem 0.75rem", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem" }}>❌</button>
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ACEITO")} style={{ flex: 1, padding: "0.6rem 1rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit", letterSpacing: "0.02em" }}>Aceitar pedido</button>
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.6rem 0.75rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Recusar</button>
                 </> }
-                {order.status === "ACEITO" && <button disabled={isLoading} onClick={() => updateStatus(order.id, "PREPARANDO")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#F59E0B", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}>👨‍🍳 Preparar</button>}
-                {order.status === "PREPARANDO" && <button disabled={isLoading} onClick={() => updateStatus(order.id, "SAIU_ENTREGA")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#8B5CF6", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}>🛵 Saiu Entrega</button>}
-                {order.status === "SAIU_ENTREGA" && <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#10B981", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem" }}>📦 Entregue</button>}
+                {order.status === "ACEITO" && <button disabled={isLoading} onClick={() => updateStatus(order.id, "PREPARANDO")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Iniciar preparo</button>}
+                {order.status === "PREPARANDO" && <button disabled={isLoading} onClick={() => updateStatus(order.id, "SAIU_ENTREGA")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Saiu para entrega</button>}
+                {order.status === "SAIU_ENTREGA" && <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Marcar entregue</button>}
               </div>
             )}
             {(order.status === "ENTREGUE" || order.status === "CANCELADO") && (
-              <button disabled={isLoading} onClick={() => { if(confirm("Encerrar pedido? Ele sairá da lista.")) updateStatus(order.id, "ENCERRADO"); }} style={{ width: "100%", marginTop: "4px", padding: "0.4rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 600, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>🔒 Encerrar pedido</button>
+              <button disabled={isLoading} onClick={() => { if(confirm("Encerrar pedido? Ele sairá da lista.")) updateStatus(order.id, "ENCERRADO"); }} style={{ width: "100%", marginTop: "4px", padding: "0.4rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>Encerrar pedido</button>
             )}
           </div>
         )}
@@ -858,10 +855,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     );
   };
 
+  // Scroll position refs — persists scroll across re-renders
+  const scrollRefs = useRef<Record<string, number>>({});
+
   const Column = ({ columnId, title, emoji, color, count, children, headerExtra }: { columnId: string; title: string; emoji: string; color: string; count: number; children: React.ReactNode; headerExtra?: React.ReactNode }) => {
 
     const canDrop = columnId !== "col-novos";
     const isOver = canDrop && dragOverColumn === columnId;
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Restore scroll position after render
+    useEffect(() => {
+      const el = scrollRef.current;
+      if (el && scrollRefs.current[columnId] != null) {
+        el.scrollTop = scrollRefs.current[columnId];
+      }
+    });
+
+    const handleScroll = () => {
+      if (scrollRef.current) {
+        scrollRefs.current[columnId] = scrollRef.current.scrollTop;
+      }
+    };
 
     return (
       <div
@@ -885,7 +900,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
           </div>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "0.75rem" }}>
+        <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", padding: "0.75rem" }}>
           {count === 0 ? (
             <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
               <Package size={40} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
