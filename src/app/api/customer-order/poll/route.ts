@@ -23,7 +23,11 @@ async function pollIfoodEvents() {
       method: "GET",
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.error(`[iFood Poll] events:polling falhou: ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
+      return;
+    }
 
     const events = await res.json();
     if (!events || events.length === 0) return;
@@ -293,8 +297,13 @@ export async function GET(req: NextRequest) {
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  // Poll iFood events in background (throttled to every 10s)
-  pollIfoodEvents().catch(() => {});
+  // Poll iFood events BEFORE returning orders (must await in serverless/Vercel
+  // to prevent the function from being killed before polling completes)
+  try {
+    await pollIfoodEvents();
+  } catch (err) {
+    console.error("[iFood Poll] Erro no polling (não bloqueante):", err);
+  }
 
   const orders = await prisma.customerOrder.findMany({
     where: { franchiseeId: user.id },
