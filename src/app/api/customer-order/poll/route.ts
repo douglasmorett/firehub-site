@@ -42,182 +42,215 @@ async function pollIfoodEvents() {
         const { code, orderId } = event;
         if (!orderId) continue;
 
-        if (code === "PLC" || event.fullCode === "PLACED") {
+        // Códigos de eventos do iFood (abreviados e completos)
+        const isPlaced = code === "PLC" || event.fullCode === "PLACED";
+        const isConfirmed = code === "CFM" || event.fullCode === "CONFIRMED";
+        const isPreparation = code === "PRP" || event.fullCode === "IN_PREPARATION" || event.fullCode === "PREPARATION_STARTED";
+        const isReadyPickup = code === "RTP" || event.fullCode === "READY_TO_PICKUP";
+        const isDispatched = code === "DSP" || event.fullCode === "DISPATCHED";
+        const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
+        const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
+
+        // Qualquer evento de pedido ativo — criar no FireHub se não existir
+        const isActiveOrderEvent = isPlaced || isConfirmed || isPreparation || isReadyPickup || isDispatched || isConcluded;
+
+        if (isActiveOrderEvent) {
           // Check idempotency
           const exists = await prisma.customerOrder.findFirst({
             where: { ifoodOrderId: orderId } as any,
           });
-          if (exists) continue;
 
-          // Fetch order details
-          const orderRes = await fetch(
-            `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          if (!orderRes.ok) continue;
-          const orderData = await orderRes.json();
+          if (!exists) {
+            // Pedido não existe — criar (independente do tipo de evento)
+            const orderRes = await fetch(
+              `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (!orderRes.ok) continue;
+            const orderData = await orderRes.json();
 
-          if (!franchisee) continue;
+            if (!franchisee) continue;
 
-          // Extract items
-          const items = (orderData.items ?? []).map((i: any) => ({
-            price: i.unitPrice ?? i.price ?? 0,
-            quantity: i.quantity ?? 1,
-            menuProduct: {
-              connectOrCreate: {
-                where: { id: `ifood-${i.id}` } as any,
-                create: {
-                  id: `ifood-${i.id}`,
-                  franchiseeId: franchisee.id,
-                  name: i.name ?? "Item iFood",
-                  description: "",
-                  price: i.unitPrice ?? i.price ?? 0,
-                  category: "iFood",
-                  active: true,
+            // Extract items
+            const items = (orderData.items ?? []).map((i: any) => ({
+              price: i.unitPrice ?? i.price ?? 0,
+              quantity: i.quantity ?? 1,
+              menuProduct: {
+                connectOrCreate: {
+                  where: { id: `ifood-${i.id}` } as any,
+                  create: {
+                    id: `ifood-${i.id}`,
+                    franchiseeId: franchisee.id,
+                    name: i.name ?? "Item iFood",
+                    description: "",
+                    price: i.unitPrice ?? i.price ?? 0,
+                    category: "iFood",
+                    active: true,
+                  } as any,
                 } as any,
-              } as any,
-            },
-          }));
+              },
+            }));
 
-          // Extract total
-          const total = typeof orderData.total === "object"
-            ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)
-            : (orderData.totalPrice ?? orderData.total ?? 0);
+            // Extract total
+            const total = typeof orderData.total === "object"
+              ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)
+              : (orderData.totalPrice ?? orderData.total ?? 0);
 
-          // Extract payments
-          const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
-          const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
+            // Extract payments
+            const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
+            const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
 
-          // Extract delivery fee from iFood
-          const deliveryFeeValue = orderData.total?.deliveryFee
-            ?? orderData.delivery?.deliveryFee
-            ?? orderData.deliveryFee
-            ?? 0;
+            // Extract delivery fee from iFood
+            const deliveryFeeValue = orderData.total?.deliveryFee
+              ?? orderData.delivery?.deliveryFee
+              ?? orderData.deliveryFee
+              ?? 0;
 
-          // === Campos para homologação iFood ===
-          // Cenário 1: Agendamento — usa orderTiming + scheduledDatetime do iFood
-          const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
-            ? new Date(orderData.scheduledDatetime)
-            : null;
+            // === Campos para homologação iFood ===
+            const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
+              ? new Date(orderData.scheduledDatetime)
+              : null;
 
-          // Fallback: deliveryDateTime (prazo de entrega normal, não agendamento)
-          const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
-            ? new Date(orderData.delivery.deliveryDateTime)
-            : null;
+            const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
+              ? new Date(orderData.delivery.deliveryDateTime)
+              : null;
 
-          const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
+            const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 
-          // Cenário 5: Troco e CPF/CNPJ
-          const cashPayment = paymentList.find((p: any) =>
-            p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
-          );
-          const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-          const payMethodName = paymentList[0]?.method ?? "iFood Online";
-          const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
+            const cashPayment = paymentList.find((p: any) =>
+              p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
+            );
+            const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
+            const payMethodName = paymentList[0]?.method ?? "iFood Online";
+            const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
 
-          // === DISCRIMINAÇÃO DE DESCONTOS (benefits) ===
-          const benefits = orderData.benefits ?? [];
-          let discountIfood = 0;
-          let discountMerchant = 0;
-          let discountTotal = 0;
-          const discountDetails: any[] = [];
+            // === DISCRIMINAÇÃO DE DESCONTOS (benefits) ===
+            const benefits = orderData.benefits ?? [];
+            let discountIfood = 0;
+            let discountMerchant = 0;
+            let discountTotal = 0;
+            const discountDetails: any[] = [];
 
-          for (const benefit of benefits) {
-            const value = benefit.value ?? 0;
-            discountTotal += value;
+            for (const benefit of benefits) {
+              const value = benefit.value ?? 0;
+              discountTotal += value;
 
-            // sponsorshipValues pode ser objeto ou array
-            const sponsorships = Array.isArray(benefit.sponsorshipValues)
-              ? benefit.sponsorshipValues
-              : benefit.sponsorshipValues ? [benefit.sponsorshipValues] : [];
+              const sponsorships = Array.isArray(benefit.sponsorshipValues)
+                ? benefit.sponsorshipValues
+                : benefit.sponsorshipValues ? [benefit.sponsorshipValues] : [];
 
-            let benefitIfood = 0;
-            let benefitMerchant = 0;
+              let benefitIfood = 0;
+              let benefitMerchant = 0;
 
-            for (const sp of sponsorships) {
-              const spName = (sp.name ?? sp.sponsorship ?? "").toUpperCase();
-              const spValue = sp.value ?? 0;
-              if (spName === "IFOOD" || spName === "PARTNER" || spName === "EXTERNAL") {
-                benefitIfood += spValue;
-              } else if (spName === "MERCHANT") {
-                benefitMerchant += spValue;
-              } else {
-                // Fallback: assume iFood se não reconhecido
-                benefitIfood += spValue;
+              for (const sp of sponsorships) {
+                const spName = (sp.name ?? sp.sponsorship ?? "").toUpperCase();
+                const spValue = sp.value ?? 0;
+                if (spName === "IFOOD" || spName === "PARTNER" || spName === "EXTERNAL") {
+                  benefitIfood += spValue;
+                } else if (spName === "MERCHANT") {
+                  benefitMerchant += spValue;
+                } else {
+                  benefitIfood += spValue;
+                }
               }
+
+              if (sponsorships.length === 0 && value > 0) {
+                const sponsor = (benefit.sponsorship ?? "").toUpperCase();
+                if (sponsor === "MERCHANT") {
+                  benefitMerchant += value;
+                } else {
+                  benefitIfood += value;
+                }
+              }
+
+              discountIfood += benefitIfood;
+              discountMerchant += benefitMerchant;
+
+              discountDetails.push({
+                target: benefit.target ?? "CART",
+                value,
+                ifood: benefitIfood,
+                merchant: benefitMerchant,
+                description: benefit.campaign?.name ?? benefit.description ?? null,
+              });
             }
 
-            // Se não tem sponsorshipValues, tenta inferir pelo campo sponsorship do benefit
-            if (sponsorships.length === 0 && value > 0) {
-              const sponsor = (benefit.sponsorship ?? "").toUpperCase();
-              if (sponsor === "MERCHANT") {
-                benefitMerchant += value;
-              } else {
-                benefitIfood += value;
-              }
-            }
+            const notesArr = [
+              `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
+              scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+              discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
+              customerNote ? `💬 ${customerNote}` : null,
+            ].filter(Boolean).join(" | ");
 
-            discountIfood += benefitIfood;
-            discountMerchant += benefitMerchant;
+            // Determinar status inicial baseado no evento recebido
+            let initialStatus = "NOVO";
+            if (isConfirmed) initialStatus = "ACEITO";
+            else if (isPreparation) initialStatus = "PREPARANDO";
+            else if (isReadyPickup) initialStatus = "PREPARANDO";
+            else if (isDispatched) initialStatus = "SAIU_ENTREGA";
+            else if (isConcluded) initialStatus = "ENTREGUE";
 
-            discountDetails.push({
-              target: benefit.target ?? "CART",
-              value,
-              ifood: benefitIfood,
-              merchant: benefitMerchant,
-              description: benefit.campaign?.name ?? benefit.description ?? null,
+            await (prisma.customerOrder as any).create({
+              data: {
+                franchiseeId: franchisee.id,
+                ifoodOrderId: orderId,
+                ifoodReference: orderData.displayId ?? undefined,
+                scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
+                changeAmount,
+                customerCpfCnpj,
+                discountTotal: discountTotal > 0 ? discountTotal : null,
+                discountIfood: discountIfood > 0 ? discountIfood : null,
+                discountMerchant: discountMerchant > 0 ? discountMerchant : null,
+                discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
+                source: "IFOOD",
+                customerName: orderData.customer?.name ?? "Cliente iFood",
+                customerPhone: (() => {
+                  const phone = orderData.customer?.phone;
+                  const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
+                  const localizer = phone?.localizer;
+                  return localizer ? `${number} ID: ${localizer}` : number;
+                })(),
+                customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
+                deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
+                paymentMethod: cashPayment ? "Dinheiro" : payMethodName,
+                totalAmount: total,
+                deliveryFee: deliveryFeeValue,
+                status: initialStatus,
+                notes: notesArr,
+                createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
+                items: { create: items },
+              },
             });
+            console.log(`[iFood Poll] ✅ Pedido ${orderId} criado (evento: ${code}/${event.fullCode}, status: ${initialStatus})`);
+
+            // Auto-confirm to iFood se ainda é PLACED
+            if (isPlaced) {
+              await fetch(
+                `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
+                { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+              );
+            }
+          } else if (!isPlaced) {
+            // Pedido já existe — atualizar status
+            const STATUS_EVENT_MAP: Record<string, string> = {};
+            if (isConfirmed) STATUS_EVENT_MAP[code] = "ACEITO";
+            if (isPreparation) STATUS_EVENT_MAP[code] = "PREPARANDO";
+            if (isReadyPickup) STATUS_EVENT_MAP[code] = "PREPARANDO";
+            if (isDispatched) STATUS_EVENT_MAP[code] = "SAIU_ENTREGA";
+            if (isConcluded) STATUS_EVENT_MAP[code] = "ENTREGUE";
+
+            const newStatus = STATUS_EVENT_MAP[code];
+            if (newStatus) {
+              await (prisma.customerOrder as any).updateMany({
+                where: { ifoodOrderId: orderId } as any,
+                data: { status: newStatus },
+              });
+            }
           }
-
-          const notesArr = [
-            `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-            scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
-            discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
-            customerNote ? `💬 ${customerNote}` : null,
-          ].filter(Boolean).join(" | ");
-
-          await (prisma.customerOrder as any).create({
-            data: {
-              franchiseeId: franchisee.id,
-              ifoodOrderId: orderId,
-              ifoodReference: orderData.displayId ?? undefined,
-              scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
-              changeAmount,
-              customerCpfCnpj,
-              discountTotal: discountTotal > 0 ? discountTotal : null,
-              discountIfood: discountIfood > 0 ? discountIfood : null,
-              discountMerchant: discountMerchant > 0 ? discountMerchant : null,
-              discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
-              source: "IFOOD",
-              customerName: orderData.customer?.name ?? "Cliente iFood",
-              customerPhone: (() => {
-                const phone = orderData.customer?.phone;
-                const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
-                const localizer = phone?.localizer;
-                return localizer ? `${number} ID: ${localizer}` : number;
-              })(),
-              customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
-              deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-              paymentMethod: cashPayment ? "Dinheiro" : payMethodName,
-              totalAmount: total,
-              deliveryFee: deliveryFeeValue,
-              status: "NOVO",
-              notes: notesArr,
-              createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
-              items: { create: items },
-            },
-          });
-          console.log(`[iFood Poll] ✅ Pedido ${orderId} criado`);
-
-          // Auto-confirm to iFood
-          await fetch(
-            `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
-            { method: "POST", headers: { Authorization: `Bearer ${token}` } }
-          );
         }
 
         // Handle cancellations
-        if (code === "CAN" || event.fullCode === "CANCELLED") {
+        if (isCancelled) {
           await (prisma.customerOrder as any).updateMany({
             where: { ifoodOrderId: orderId } as any,
             data: { status: "CANCELADO", cancelledBy: "IFOOD" },
