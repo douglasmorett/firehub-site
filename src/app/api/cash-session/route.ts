@@ -20,27 +20,43 @@ export async function GET() {
     orderBy: { openedAt: "desc" },
   });
 
-  // Se tem sessão aberta, calcular os valores esperados com base nos pedidos presenciais do período
+  // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
   let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, total: 0 };
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: user.id,
-        source: "PRESENCIAL",
         status: { notIn: ["CANCELADO"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { paymentMethod: true, totalAmount: true },
+      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true },
     });
 
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
-      const val = o.totalAmount || 0;
-      if (pm.includes("dinheiro")) expected.cash += val;
-      else if (pm.includes("débito") || pm.includes("debito")) expected.debit += val;
-      else if (pm.includes("crédito") || pm.includes("credito")) expected.credit += val;
-      else if (pm.includes("pix")) expected.pix += val;
-      else if (pm.includes("voucher") || pm.includes("vale")) expected.voucher += val;
+      const val = (o.totalAmount || 0) + (o.deliveryFee || 0);
+      const src = ((o as any).source || "").toUpperCase();
+      const isPaidOnline = !!(o.paymentPaidAt || o.gatewayProvider);
+
+      // iFood orders paid online — count but under the correct method
+      // For iFood paid on delivery (Dinheiro), count as cash
+      if (pm.includes("dinheiro") || pm.includes("cash")) {
+        expected.cash += val;
+      } else if (pm.includes("débito") || pm.includes("debito") || pm.includes("debit")) {
+        expected.debit += val;
+      } else if (pm.includes("crédito") || pm.includes("credito") || pm.includes("credit")) {
+        expected.credit += val;
+      } else if (pm.includes("pix")) {
+        expected.pix += val;
+      } else if (pm.includes("voucher") || pm.includes("vale") || pm.includes("meal") || pm.includes("food")) {
+        expected.voucher += val;
+      } else if (src === "IFOOD" && isPaidOnline) {
+        // iFood online payment (credit card via app) — categorize as credit
+        expected.credit += val;
+      } else {
+        // Unknown method — count as credit (most common online)
+        expected.credit += val;
+      }
       expected.total += val;
     }
     // Adicionar o troco inicial ao dinheiro esperado
