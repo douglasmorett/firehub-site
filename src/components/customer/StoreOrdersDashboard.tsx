@@ -947,7 +947,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             )}
             {(order.status === "ENTREGUE" || order.status === "CANCELADO") && (
-              <button disabled={isLoading} onClick={() => { if(confirm("Encerrar pedido? Ele sairá da lista.")) updateStatus(order.id, "ENCERRADO"); }} style={{ width: "100%", marginTop: "4px", padding: "0.4rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>Encerrar pedido</button>
+              <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENCERRADO")} style={{ width: "100%", marginTop: "4px", padding: "0.4rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>Encerrar pedido</button>
             )}
           </div>
         )}
