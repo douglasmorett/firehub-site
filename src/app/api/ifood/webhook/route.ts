@@ -143,6 +143,9 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
   const { code, orderId, merchantId } = event;
   if (!orderId) return;
 
+  // Log ALL events for debugging
+  console.log(`[iFood Webhook] 📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}, metadata=${JSON.stringify(event.metadata || {})}`);
+
   // Pedido novo (PLACED) — cria no banco do FireHub
   if (code === "PLACED") {
     const { getIfoodToken } = await import("@/lib/ifood-api");
