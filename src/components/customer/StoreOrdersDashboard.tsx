@@ -125,19 +125,36 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
   const [weather, setWeather] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  // Use local date — if between midnight and 6AM, consider previous day (cash still open)
+  // Default date — will be overridden by cash session openedAt if available
   const _now = new Date();
-  const _ref = _now.getHours() < 6 ? new Date(_now.getTime() - 6 * 60 * 60 * 1000) : _now;
+  const _ref = _now;
   const todayStr = `${_ref.getFullYear()}-${String(_ref.getMonth() + 1).padStart(2, "0")}-${String(_ref.getDate()).padStart(2, "0")}`;
   const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
-  const _nextDay = new Date(_ref.getTime() + 24 * 60 * 60 * 1000);
-  const nextDayStr = `${_nextDay.getFullYear()}-${String(_nextDay.getMonth() + 1).padStart(2, "0")}-${String(_nextDay.getDate()).padStart(2, "0")}`;
-  const [dateTo, setDateTo] = useState(nextDayStr + "T05:59");
+  const [dateTo, setDateTo] = useState(todayStr + "T23:59");
   const [showResumo, setShowResumo] = useState(false);
+  const [cashSessionLoaded, setCashSessionLoaded] = useState(false);
 
   const storeName = user.storeName || user.name;
   const storeStatus = isStoreOpen(user.storeHours as any);
   const storeUrl = user.slug ? `/loja/${user.slug}` : null;
+
+  // Fetch cash session to use openedAt as date range start
+  useEffect(() => {
+    if (cashSessionLoaded) return;
+    fetch("/api/cash-session").then(r => r.json()).then(data => {
+      if (data.session?.openedAt) {
+        const opened = new Date(data.session.openedAt);
+        const openedStr = `${opened.getFullYear()}-${String(opened.getMonth() + 1).padStart(2, "0")}-${String(opened.getDate()).padStart(2, "0")}`;
+        const openedTimeStr = `${String(opened.getHours()).padStart(2, "0")}:${String(opened.getMinutes()).padStart(2, "0")}`;
+        setDateFrom(openedStr + "T" + openedTimeStr);
+        // End: now + some margin
+        const n = new Date();
+        const nowStr = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+        setDateTo(nowStr + "T23:59");
+      }
+      setCashSessionLoaded(true);
+    }).catch(() => setCashSessionLoaded(true));
+  }, [cashSessionLoaded]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000);
