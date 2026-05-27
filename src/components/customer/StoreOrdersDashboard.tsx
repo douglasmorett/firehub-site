@@ -123,7 +123,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
   const [weather, setWeather] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // Use local date (not UTC) to avoid timezone shift after 21h BRT
+  const _now = new Date();
+  const todayStr = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
   const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
   const [dateTo, setDateTo] = useState(todayStr + "T23:59");
   const [showResumo, setShowResumo] = useState(false);
