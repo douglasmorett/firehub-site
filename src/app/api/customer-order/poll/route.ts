@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
-// Throttle iFood polling — max once every 10s for fast order detection
+// Throttle iFood polling — max once every 5s for faster order detection
 let lastIfoodPoll = 0;
 
 async function pollIfoodEvents() {
   const now = Date.now();
-  if (now - lastIfoodPoll < 10_000) return; // Skip if polled less than 10s ago
+  if (now - lastIfoodPoll < 5_000) return; // Skip if polled less than 5s ago
   lastIfoodPoll = now;
 
   try {

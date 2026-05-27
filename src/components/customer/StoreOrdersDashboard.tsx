@@ -570,16 +570,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const seqNum = orderNumberMap.get(order.id) ?? "—";
 
     // Delivery deadline countdown (scheduledDatetime stores the delivery deadline for iFood orders)
+    const isFinished = order.status === "ENTREGUE" || order.status === "CANCELADO" || order.status === "ENCERRADO";
     const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : null;
     const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
     const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
-    const isLate = remainingMins !== null && remainingMins < 0;
-    const isUrgent = remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
+    // Don't flag as late/urgent once the order is finished
+    const isLate = !isFinished && remainingMins !== null && remainingMins < 0;
+    const isUrgent = !isFinished && remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
 
-    // Timer display: show countdown if we have a deadline, otherwise show elapsed time
-    const timerLabel = remainingMins !== null
-      ? (isLate ? `⚠️ -${Math.abs(remainingMins)}min atrasado` : `⏱️ ${remainingMins}min restante${remainingMins !== 1 ? "s" : ""}`)
-      : (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`);
+    // Timer display: hide countdown for finished orders, show countdown if we have a deadline, otherwise show elapsed time
+    const timerLabel = isFinished
+      ? (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`)
+      : remainingMins !== null
+        ? (isLate ? `⚠️ -${Math.abs(remainingMins)}min atrasado` : `⏱️ ${remainingMins}min restante${remainingMins !== 1 ? "s" : ""}`)
+        : (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`);
     const timerColor = isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#64748B";
 
     const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
