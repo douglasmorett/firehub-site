@@ -70,60 +70,79 @@ export async function PUT(req: Request) {
     updateData.scheduledDatetime = scheduledDatetime ? new Date(scheduledDatetime) : null;
   }
 
-  // ── Special handling for CANCELADO ──
-  if (status === "CANCELADO") {
-    // 1. Remove motoboy so delivery fee doesn't count for them
+  // ── Sync with iFood ──
+  if (order.ifoodOrderId) {
+    try {
+      const { getIfoodToken } = await import("@/lib/ifood-api");
+      const token = await getIfoodToken();
+      const ifoodId = order.ifoodOrderId;
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+      const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${ifoodId}`;
+
+      if (status === "ACEITO") {
+        // Confirm order on iFood
+        const r = await fetch(`${baseUrl}/confirm`, { method: "POST", headers });
+        console.log(`[iFood Sync] confirm ${ifoodId}: ${r.status}`);
+      }
+
+      if (status === "PREPARANDO") {
+        // Start preparation
+        const r = await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers });
+        console.log(`[iFood Sync] startPreparation ${ifoodId}: ${r.status}`);
+      }
+
+      if (status === "SAIU_ENTREGA") {
+        // Dispatch (delivery orders)
+        const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
+        console.log(`[iFood Sync] dispatch ${ifoodId}: ${r.status}`);
+      }
+
+      if (status === "ENTREGUE") {
+        const isPickup = order.deliveryType !== "DELIVERY";
+        if (isPickup) {
+          // For pickup: readyToPickup then conclude
+          const r1 = await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers });
+          console.log(`[iFood Sync] readyToPickup ${ifoodId}: ${r1.status}`);
+        }
+        // Conclude order (works for both delivery and pickup)
+        const r2 = await fetch(`${baseUrl}/conclude`, { method: "POST", headers, body: JSON.stringify({}) });
+        console.log(`[iFood Sync] conclude ${ifoodId}: ${r2.status}`);
+      }
+
+      if (status === "CANCELADO") {
+        // Cancel on iFood
+        updateData.motoboyId = null;
+        updateData.cancelledBy = "LOJA";
+        if (cancelReason) updateData.cancelReason = cancelReason;
+
+        const cancelRes = await fetch(`${baseUrl}/requestCancellation`, {
+          method: "POST", headers,
+          body: JSON.stringify({ reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: "501" }),
+        });
+
+        if (!cancelRes.ok) {
+          // Fallback: try deny (for NOVO orders) or direct cancel
+          const fallbackUrl = order.status === "NOVO" ? `${baseUrl}/deny` : `${baseUrl}/cancel`;
+          const fallbackRes = await fetch(fallbackUrl, {
+            method: "POST", headers,
+            body: JSON.stringify({ reason: cancelReason || "Cancelado pela loja", cancelCodeId: "501" }),
+          });
+          console.log(`[iFood Sync] cancel fallback ${ifoodId}: ${fallbackRes.status}`);
+        } else {
+          console.log(`[iFood Sync] ✅ cancel ${ifoodId}: ${cancelRes.status}`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[iFood Sync] Erro ${order.ifoodOrderId}:`, err?.message);
+      // Don't block local update even if iFood sync fails
+    }
+  }
+
+  // Handle non-iFood cancellations
+  if (status === "CANCELADO" && !order.ifoodOrderId) {
     updateData.motoboyId = null;
     updateData.cancelledBy = "LOJA";
     if (cancelReason) updateData.cancelReason = cancelReason;
-
-    // 2. Cancel on iFood if it's an iFood order
-    if (order.ifoodOrderId) {
-      try {
-        const { getIfoodToken } = await import("@/lib/ifood-api");
-        const token = await getIfoodToken();
-
-        // Try requestCancellation first (merchant-initiated)
-        const cancelRes = await fetch(
-          `https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/requestCancellation`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              reason: "CANCELLED_BY_RESTAURANT",
-              cancellationCode: "501",
-            }),
-          }
-        );
-
-        if (!cancelRes.ok) {
-          // Fallback: try direct cancel endpoint
-          const fallbackRes = await fetch(
-            `https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/cancel`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                reason: "Cancelado pela loja",
-                cancelCodeId: "501",
-              }),
-            }
-          );
-          console.log(`[iFood Cancel] Fallback cancel ${order.ifoodOrderId}: ${fallbackRes.status}`);
-        } else {
-          console.log(`[iFood Cancel] ✅ Pedido ${order.ifoodOrderId} cancelado no iFood`);
-        }
-      } catch (err: any) {
-        console.error(`[iFood Cancel] Erro ao cancelar ${order.ifoodOrderId}:`, err?.message);
-        // Don't block local cancellation even if iFood fails
-      }
-    }
   }
 
   await prisma.customerOrder.update({
