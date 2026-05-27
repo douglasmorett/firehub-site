@@ -665,15 +665,38 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
           {/* Bottom bar: motoboy + timer (always visible) */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", paddingTop: "4px", borderTop: "1px solid #F3F4F6", fontSize: "0.75rem", color: "#9CA3AF" }}>
-            <span>
+            <span onClick={e => e.stopPropagation()} style={{ flex: 1, minWidth: 0 }}>
               {order.motoboy
                 ? <span style={{ color: "#374151", fontWeight: 500 }}>{order.motoboy.name}</span>
                 : order.deliveryType === "DELIVERY"
-                  ? <span style={{ color: "#D1D5DB" }}>Sem motoboy</span>
+                  ? <select
+                      value=""
+                      onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
+                      disabled={assigningId === order.id}
+                      style={{ padding: "2px 6px", borderRadius: "5px", border: "1px solid #E5E7EB", fontSize: "0.73rem", color: "#9CA3AF", background: "white", fontFamily: "inherit", cursor: "pointer", maxWidth: "130px" }}
+                    >
+                      <option value="">Sem motoboy</option>
+                      {motoboys.map((m: any) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
                   : null
               }
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {/* Quick action buttons in collapsed view */}
+              {!expanded && order.status === "NOVO" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ACEITO"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Aceitar</button>
+              )}
+              {!expanded && order.status === "ACEITO" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "PREPARANDO"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Iniciar preparo</button>
+              )}
+              {!expanded && order.status === "PREPARANDO" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Saiu entrega</button>
+              )}
+              {!expanded && order.status === "SAIU_ENTREGA" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Entregue</button>
+              )}
               {order.status === "ENTREGUE" && (
                 <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#059669", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>Entregue</span>
               )}
