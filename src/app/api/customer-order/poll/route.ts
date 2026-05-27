@@ -285,7 +285,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
         // Handle cancellations
         if (isCancelled) {
-          const existingOrder = await prisma.customerOrder.findFirst({
+          const existingOrder: any = await prisma.customerOrder.findFirst({
             where: { ifoodOrderId: orderId } as any,
             select: { cancelledBy: true } as any,
           });

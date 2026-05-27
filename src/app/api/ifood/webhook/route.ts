@@ -326,7 +326,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
     // Cenário 4: registra quem cancelou — não sobrescreve se a loja já cancelou
     if (code === "CANCELLED") {
-      const existingOrder = await prisma.customerOrder.findFirst({
+      const existingOrder: any = await prisma.customerOrder.findFirst({
         where: { ifoodOrderId: orderId } as any,
         select: { cancelledBy: true } as any,
       });

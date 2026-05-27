@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
         log.push(`  📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
 
         if (isCancelled) {
-          const existingOrder = await prisma.customerOrder.findFirst({
+          const existingOrder: any = await prisma.customerOrder.findFirst({
             where: { ifoodOrderId: orderId } as any,
             select: { cancelledBy: true } as any,
           });
