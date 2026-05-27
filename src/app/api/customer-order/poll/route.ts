@@ -25,7 +25,7 @@ async function pollIfoodEvents() {
     });
     if (!res.ok) {
       const errBody = await res.text().catch(() => "");
-      console.error(`[iFood Poll] events:polling falhou: ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
+      console.error(`[iFood Poll] ❌ events:polling falhou: ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
       return;
     }
 
@@ -75,10 +75,17 @@ async function pollIfoodEvents() {
               `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
               { headers: { Authorization: `Bearer ${token}` } }
             );
-            if (!orderRes.ok) continue;
+            if (!orderRes.ok) {
+              const errText = await orderRes.text().catch(() => "");
+              console.error(`[iFood Poll] ❌ Falha ao buscar detalhes do pedido ${orderId}: ${orderRes.status} — ${errText.slice(0, 200)}`);
+              continue;
+            }
             const orderData = await orderRes.json();
 
-            if (!franchisee) continue;
+            if (!franchisee) {
+              console.error(`[iFood Poll] ❌ Nenhum franqueado encontrado para criar pedido ${orderId}`);
+              continue;
+            }
 
             // Extract items
             const items = (orderData.items ?? []).map((i: any) => ({
@@ -230,7 +237,7 @@ async function pollIfoodEvents() {
                 items: { create: items },
               },
             });
-            console.log(`[iFood Poll] ✅ Pedido ${orderId} criado (evento: ${code}/${event.fullCode}, status: ${initialStatus})`);
+            console.log(`[iFood Poll] ✅ Pedido ${orderId} criado com sucesso! (evento: ${code}/${event.fullCode}, status: ${initialStatus}, franchisee: ${franchisee.id})`);
 
             // Auto-confirm to iFood se ainda é PLACED
             if (isPlaced) {
@@ -269,7 +276,7 @@ async function pollIfoodEvents() {
         // Evento processado com sucesso
         if (event.id) processedEventIds.push(event.id);
       } catch (err) {
-        console.error("[iFood Poll] Erro:", err);
+        console.error(`[iFood Poll] ❌ Erro processando evento ${event?.orderId}:`, err?.message ?? err);
         // NÃO adiciona ao processedIds — evento não foi processado, será reprocessado no próximo poll
       }
     }
