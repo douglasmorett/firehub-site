@@ -93,25 +93,30 @@ export async function GET(req: NextRequest) {
         const isDispatched = code === "DSP" || event.fullCode === "DISPATCHED";
         const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
         const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
-        const isCancellationRequest = code === "CRR" || event.fullCode === "CANCELLATION_REQUEST_BY_CUSTOMER" || event.fullCode === "CANCELLATION_REQUESTED";
+        const isCancellationRequest = code === "HSD" || code === "CRR" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED";
 
         log.push(`  📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
 
         // Handle cancellation REQUEST (negotiation)
         if (isCancellationRequest) {
-          const disputeData = {
-            pending: true,
-            reason: event.metadata?.cancelCodeDescription || event.metadata?.reason || "Cliente solicitou cancelamento",
-            code: event.metadata?.cancelCode || event.metadata?.cancellationCode || "",
-            requestedAt: new Date().toISOString(),
-          };
-          await (prisma.customerOrder as any).updateMany({
-            where: { ifoodOrderId: orderId } as any,
-            data: { cancelDispute: disputeData },
-          });
-          log.push(`  ⚠️ Negociação: ${orderId} — ${disputeData.reason}`);
-          if (event.id) processedEventIds.push(event.id);
-          continue;
+          const meta = event.metadata || {};
+          if (meta.action === "CANCELLATION" || code === "CRR") {
+            const disputeData = {
+              pending: true,
+              disputeId: meta.disputeId || "",
+              reason: meta.message || meta.cancelCodeDescription || "Cliente solicitou cancelamento",
+              handshakeType: meta.handshakeType || "",
+              expiresAt: meta.expiresAt || "",
+              requestedAt: meta.createdAt || new Date().toISOString(),
+            };
+            await (prisma.customerOrder as any).updateMany({
+              where: { ifoodOrderId: orderId } as any,
+              data: { cancelDispute: disputeData },
+            });
+            log.push(`  ⚠️ Negociação: ${orderId} — disputeId=${meta.disputeId}, motivo="${meta.message}"`);
+            if (event.id) processedEventIds.push(event.id);
+            continue;
+          }
         }
 
         if (isCancelled) {

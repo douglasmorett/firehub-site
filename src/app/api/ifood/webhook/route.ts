@@ -327,20 +327,25 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
   if (firehubStatus) {
     const updateData: any = { status: firehubStatus };
 
-    // Cenário: Negociação de cancelamento (CRR)
-    if (code === "CRR" || code === "CANCELLATION_REQUEST_BY_CUSTOMER" || code === "CANCELLATION_REQUESTED") {
-      const disputeData = {
-        pending: true,
-        reason: event.metadata?.cancelCodeDescription || event.metadata?.reason || "Cliente solicitou cancelamento",
-        code: event.metadata?.cancelCode || event.metadata?.cancellationCode || "",
-        requestedAt: new Date().toISOString(),
-      };
-      await (prisma.customerOrder as any).updateMany({
-        where: { ifoodOrderId: orderId } as any,
-        data: { cancelDispute: disputeData },
-      });
-      console.log(`[iFood Webhook] ⚠️ Negociação: ${orderId}`);
-      return NextResponse.json({ received: true });
+    // Cenário: Negociação de cancelamento (HSD = HANDSHAKE_DISPUTE)
+    if (code === "HSD" || code === "CRR" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED") {
+      const meta = event.metadata || {};
+      if (meta.action === "CANCELLATION" || code === "CRR") {
+        const disputeData = {
+          pending: true,
+          disputeId: meta.disputeId || "",
+          reason: meta.message || meta.cancelCodeDescription || "Cliente solicitou cancelamento",
+          handshakeType: meta.handshakeType || "",
+          expiresAt: meta.expiresAt || "",
+          requestedAt: meta.createdAt || new Date().toISOString(),
+        };
+        await (prisma.customerOrder as any).updateMany({
+          where: { ifoodOrderId: orderId } as any,
+          data: { cancelDispute: disputeData },
+        });
+        console.log(`[iFood Webhook] ⚠️ Negociação detectada: ${orderId} — disputeId=${meta.disputeId}, motivo="${meta.message}"`);
+        return NextResponse.json({ received: true });
+      }
     }
 
     // Cenário 4: registra quem cancelou — não sobrescreve se a loja já cancelou
