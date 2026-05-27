@@ -274,9 +274,17 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
         // Handle cancellations
         if (isCancelled) {
+          const existingOrder = await prisma.customerOrder.findFirst({
+            where: { ifoodOrderId: orderId } as any,
+            select: { cancelledBy: true } as any,
+          });
+          const cancelData: any = { status: "CANCELADO" };
+          if (!existingOrder?.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
+            cancelData.cancelledBy = "IFOOD";
+          }
           await (prisma.customerOrder as any).updateMany({
             where: { ifoodOrderId: orderId } as any,
-            data: { status: "CANCELADO", cancelledBy: "IFOOD" },
+            data: cancelData,
           });
         }
 

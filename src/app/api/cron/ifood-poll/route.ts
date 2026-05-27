@@ -97,9 +97,17 @@ export async function GET(req: NextRequest) {
         log.push(`  📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
 
         if (isCancelled) {
+          const existingOrder = await prisma.customerOrder.findFirst({
+            where: { ifoodOrderId: orderId } as any,
+            select: { cancelledBy: true } as any,
+          });
+          const cancelData: any = { status: "CANCELADO" };
+          if (!existingOrder?.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
+            cancelData.cancelledBy = "IFOOD";
+          }
           await (prisma.customerOrder as any).updateMany({
             where: { ifoodOrderId: orderId } as any,
-            data: { status: "CANCELADO", cancelledBy: "IFOOD" },
+            data: cancelData,
           });
           log.push(`  🚫 Cancelado: ${orderId}`);
           if (event.id) processedEventIds.push(event.id);

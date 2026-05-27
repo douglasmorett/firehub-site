@@ -756,11 +756,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             )}
 
-            {/* ── Cancelamento por plataforma ── */}
-            {order.status === "CANCELADO" && order.cancelledBy === "IFOOD" && (
-              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#FEF2F2", borderRadius: "8px", borderLeft: "4px solid #EF4444" }}>
-                <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#DC2626", textTransform: "uppercase", letterSpacing: "0.03em" }}>Cancelado pela plataforma</div>
-                <div style={{ fontSize: "0.78rem", color: "#B91C1C", marginTop: "1px" }}>O iFood cancelou este pedido automaticamente</div>
+            {/* ── Motivo do cancelamento ── */}
+            {order.status === "CANCELADO" && (
+              <div style={{ margin: "0.6rem 0", padding: "10px 14px", borderRadius: "8px", borderLeft: "4px solid",
+                background: order.cancelledBy === "LOJA" ? "#EFF6FF" : "#FEF2F2",
+                borderLeftColor: order.cancelledBy === "LOJA" ? "#3B82F6" : "#EF4444"
+              }}>
+                <div style={{ fontWeight: 700, fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.03em",
+                  color: order.cancelledBy === "LOJA" ? "#1D4ED8" : "#DC2626"
+                }}>
+                  {order.cancelledBy === "LOJA" ? "Cancelado pela loja"
+                    : order.cancelledBy === "CUSTOMER" ? "Cancelado pelo cliente"
+                    : order.cancelledBy === "IFOOD" ? "Cancelado pela plataforma"
+                    : "Cancelado"}
+                </div>
+                <div style={{ fontSize: "0.78rem", marginTop: "1px",
+                  color: order.cancelledBy === "LOJA" ? "#1E40AF" : "#B91C1C"
+                }}>
+                  {order.cancelledBy === "LOJA" ? "Você cancelou este pedido manualmente"
+                    : order.cancelledBy === "CUSTOMER" ? "O cliente solicitou o cancelamento"
+                    : order.cancelledBy === "IFOOD" ? "O iFood cancelou este pedido automaticamente"
+                    : "Pedido foi cancelado"}
+                </div>
               </div>
             )}
 

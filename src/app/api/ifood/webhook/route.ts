@@ -324,9 +324,16 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
   if (firehubStatus) {
     const updateData: any = { status: firehubStatus };
 
-    // Cenário 4: registra quem cancelou
+    // Cenário 4: registra quem cancelou — não sobrescreve se a loja já cancelou
     if (code === "CANCELLED") {
-      updateData.cancelledBy = "IFOOD";
+      const existingOrder = await prisma.customerOrder.findFirst({
+        where: { ifoodOrderId: orderId } as any,
+        select: { cancelledBy: true } as any,
+      });
+      // Só marca como IFOOD se não foi a loja que cancelou
+      if (!existingOrder?.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
+        updateData.cancelledBy = "IFOOD";
+      }
     }
 
     await (prisma.customerOrder as any).updateMany({
