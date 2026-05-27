@@ -899,9 +899,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   );
                 })()}
                 {order.customerCpfCnpj && (
-                  <div style={{ background: "#EFF6FF", borderRadius: "6px", padding: "6px 10px", border: "1px solid #BFDBFE" }}>
-                    <span style={{ color: "#1E40AF", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>📋 CPF/CNPJ na nota</span>
-                    <div style={{ fontWeight: 700, color: "#1E3A5F", marginTop: "1px", fontSize: "0.9rem", fontFamily: "monospace" }}>{order.customerCpfCnpj}</div>
+                  <div style={{ overflow: "hidden" }}>
+                    <span style={{ color: "#1E40AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>📋 CPF/CNPJ na nota</span>
+                    <div style={{ fontWeight: 600, color: "#1E3A5F", marginTop: "1px", fontSize: "0.8rem", wordBreak: "break-all" }}>{order.customerCpfCnpj}</div>
                   </div>
                 )}
                 {order.deliveryType === "DELIVERY" && (
