@@ -148,9 +148,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     const { getIfoodToken } = await import("@/lib/ifood-api");
     const token = await getIfoodToken();
 
-    // Busca detalhes completos do pedido
+    // Busca franqueado - usa IFOOD_MERCHANT_UUID do env para consistência
+    const envMerchantId = process.env.IFOOD_MERCHANT_UUID;
     let franchisee = await prisma.user.findFirst({
-      where: { ifoodMerchantId: merchantId } as any,
+      where: { ifoodMerchantId: envMerchantId ?? merchantId } as any,
     });
     // Fallback: usa o franchiseeId do override ou pega o primeiro franqueado
     if (!franchisee && franchiseeIdOverride) {
@@ -159,7 +160,11 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     if (!franchisee) {
       franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
     }
-    if (!franchisee) return;
+    if (!franchisee) {
+      console.error(`[iFood Webhook] ❌ Nenhum franqueado encontrado para pedido ${orderId}`);
+      return;
+    }
+    console.log(`[iFood Webhook] Usando franchisee: ${franchisee.id} para pedido ${orderId}`);
 
     // Busca detalhes do pedido na API usando token centralizado
     const orderData = event.data ?? await fetchIfoodOrderDetails(orderId, token);

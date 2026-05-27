@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 // Throttle iFood polling — max once every 5s for faster order detection
 let lastIfoodPoll = 0;
 
-async function pollIfoodEvents() {
+async function pollIfoodEvents(sessionUserId?: string) {
   const now = Date.now();
   if (now - lastIfoodPoll < 5_000) return; // Skip if polled less than 5s ago
   lastIfoodPoll = now;
@@ -34,12 +34,19 @@ async function pollIfoodEvents() {
     const events = eventsText ? JSON.parse(eventsText) : [];
     if (!events || events.length === 0) return;
 
-    // Find franchisee for this merchant
-    let franchisee = await prisma.user.findFirst({
-      where: { ifoodMerchantId: merchantId } as any,
-    });
-    if (!franchisee) {
-      franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
+    // Use session user if available, otherwise look up by merchantId
+    let franchisee: { id: string } | null = null;
+    if (sessionUserId) {
+      franchisee = { id: sessionUserId };
+      console.log(`[iFood Poll] Usando franchisee da sessão: ${sessionUserId}`);
+    } else {
+      franchisee = await prisma.user.findFirst({
+        where: { ifoodMerchantId: merchantId } as any,
+      });
+      if (!franchisee) {
+        franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
+      }
+      console.log(`[iFood Poll] Franchisee por lookup: ${franchisee?.id ?? 'NÃO ENCONTRADO'}`);
     }
 
     // Process each event
@@ -309,7 +316,7 @@ export async function GET(req: NextRequest) {
   // Poll iFood events BEFORE returning orders (must await in serverless/Vercel
   // to prevent the function from being killed before polling completes)
   try {
-    await pollIfoodEvents();
+    await pollIfoodEvents(user.id);
   } catch (err) {
     console.error("[iFood Poll] Erro no polling (não bloqueante):", err);
   }
