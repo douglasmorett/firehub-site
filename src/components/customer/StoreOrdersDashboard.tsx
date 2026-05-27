@@ -881,12 +881,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     </>
                   );
                 })()}
-                {order.changeAmount != null && order.changeAmount > 0 && (
-                  <div style={{ background: "#FEF3C7", borderRadius: "6px", padding: "6px 10px", border: "1px solid #FDE68A" }}>
-                    <span style={{ color: "#92400E", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>💵 Troco para</span>
-                    <div style={{ fontWeight: 700, color: "#78350F", marginTop: "1px", fontSize: "0.95rem" }}>R$ {Number(order.changeAmount).toFixed(2)}</div>
-                  </div>
-                )}
+                {order.changeAmount != null && order.changeAmount > 0 && (() => {
+                  const changeFor = Number(order.changeAmount);
+                  const orderTotal = Number(order.totalAmount) + Number(order.deliveryFee || 0);
+                  const toSeparate = changeFor - orderTotal;
+                  return (
+                    <div style={{ background: "#FEF3C7", borderRadius: "8px", padding: "10px 12px", border: "2px solid #F59E0B" }}>
+                      <span style={{ color: "#92400E", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>💵 Troco para</span>
+                      <div style={{ fontWeight: 800, color: "#78350F", marginTop: "2px", fontSize: "1.1rem" }}>R$ {changeFor.toFixed(2)}</div>
+                      {toSeparate > 0 && (
+                        <div style={{ marginTop: "6px", padding: "6px 10px", background: "#FDE68A", borderRadius: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#92400E" }}>👉 Separe</span>
+                          <span style={{ fontSize: "1rem", fontWeight: 800, color: "#78350F" }}>R$ {toSeparate.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {order.customerCpfCnpj && (
                   <div style={{ background: "#EFF6FF", borderRadius: "6px", padding: "6px 10px", border: "1px solid #BFDBFE" }}>
                     <span style={{ color: "#1E40AF", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>📋 CPF/CNPJ na nota</span>

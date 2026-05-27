@@ -218,7 +218,14 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
       p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
     );
     const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-    const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
+    const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber
+      ?? orderData.customer?.documentNumber
+      ?? orderData.customer?.cpf
+      ?? orderData.taxPayerIdentificationNumber
+      ?? orderData.additionalInfo?.taxPayerIdentificationNumber
+      ?? null;
+    if (customerCpfCnpj) console.log(`[iFood Webhook] 📋 CPF/CNPJ: ${customerCpfCnpj}`);
+    else console.log(`[iFood Webhook] 📋 CPF/CNPJ não informado. customer keys: ${JSON.stringify(Object.keys(orderData.customer || {}))}`);
     const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 
     // === DISCRIMINAÇÃO DE DESCONTOS (benefits) ===
