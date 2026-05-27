@@ -714,8 +714,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {!expanded && order.status === "ACEITO" && (
                 <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "PREPARANDO"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Iniciar preparo</button>
               )}
-              {!expanded && order.status === "PREPARANDO" && (
+              {!expanded && order.status === "PREPARANDO" && order.deliveryType === "DELIVERY" && (
                 <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Saiu entrega</button>
+              )}
+              {!expanded && order.status === "PREPARANDO" && order.deliveryType !== "DELIVERY" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Pronto</button>
               )}
               {!expanded && order.status === "SAIU_ENTREGA" && (
                 <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Entregue</button>
@@ -987,8 +990,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {order.status === "ACEITO" && (
                   <button disabled={isLoading} onClick={() => updateStatus(order.id, "PREPARANDO")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Iniciar preparo</button>
                 )}
-                {order.status === "PREPARANDO" && (
+                {order.status === "PREPARANDO" && order.deliveryType === "DELIVERY" && (
                   <button disabled={isLoading} onClick={() => updateStatus(order.id, "SAIU_ENTREGA")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Saiu para entrega</button>
+                )}
+                {order.status === "PREPARANDO" && order.deliveryType !== "DELIVERY" && (
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Pronto para retirada</button>
                 )}
                 {order.status === "SAIU_ENTREGA" && (
                   <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Marcar entregue</button>

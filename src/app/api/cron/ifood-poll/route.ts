@@ -165,9 +165,18 @@ export async function GET(req: NextRequest) {
             ?? orderData.deliveryFee
             ?? 0;
 
-          const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
-            ? new Date(orderData.scheduledDatetime)
-            : null;
+          const rawScheduled = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
+            ? orderData.scheduledDatetime
+            : orderData.schedule?.scheduledDatetimeEnd
+              ?? orderData.schedule?.scheduledDatetimeStart
+              ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
+                ? orderData.preparationStartDateTime : null);
+
+          const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
+
+          if (orderData.orderTiming === "SCHEDULED" || orderData.schedule) {
+            log.push(`  📅 Scheduling: orderTiming=${orderData.orderTiming}, scheduledDatetime=${orderData.scheduledDatetime}, schedule=${JSON.stringify(orderData.schedule)}, resolved=${scheduledDatetime?.toISOString()}`);
+          }
 
           const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
             ? new Date(orderData.delivery.deliveryDateTime)
