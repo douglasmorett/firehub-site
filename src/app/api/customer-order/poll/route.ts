@@ -275,7 +275,7 @@ async function pollIfoodEvents() {
 
         // Evento processado com sucesso
         if (event.id) processedEventIds.push(event.id);
-      } catch (err) {
+      } catch (err: any) {
         console.error(`[iFood Poll] ❌ Erro processando evento ${event?.orderId}:`, err?.message ?? err);
         // NÃO adiciona ao processedIds — evento não foi processado, será reprocessado no próximo poll
       }
