@@ -44,7 +44,7 @@ export async function PUT(req: Request) {
 
   const role = (session.user as any)?.role;
   const body = await req.json();
-  const { orderId, status, scheduledDatetime } = body;
+  const { orderId, status, scheduledDatetime, cancelReason } = body;
 
   if (!orderId || !status) {
     return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
@@ -75,6 +75,7 @@ export async function PUT(req: Request) {
     // 1. Remove motoboy so delivery fee doesn't count for them
     updateData.motoboyId = null;
     updateData.cancelledBy = "LOJA";
+    if (cancelReason) updateData.cancelReason = cancelReason;
 
     // 2. Cancel on iFood if it's an iFood order
     if (order.ifoodOrderId) {

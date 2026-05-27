@@ -59,6 +59,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [now, setNow] = useState(new Date());
   const [motoboys, setMotoboys] = useState<any[]>([]);
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
   const [autoAccept, setAutoAccept] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("autoAcceptOrders") === "true";
     return false;
@@ -366,6 +368,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     } catch { alert("Erro."); } finally { setLoadingId(null); }
   };
 
+  const confirmCancel = async () => {
+    if (!cancelConfirmId) return;
+    if (!cancelReason.trim()) { alert("Por favor, informe o motivo do cancelamento."); return; }
+    setLoadingId(cancelConfirmId);
+    try {
+      const res = await fetch("/api/customer-order/status", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: cancelConfirmId, status: "CANCELADO", cancelReason: cancelReason.trim() })
+      });
+      if (res.ok) {
+        setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", motoboyId: null, motoboy: null } : o));
+        router.refresh();
+      } else alert("Erro ao cancelar.");
+    } catch { alert("Erro."); } finally {
+      setLoadingId(null);
+      setCancelConfirmId(null);
+      setCancelReason("");
+    }
+  };
   // --- DRAG HANDLERS ---
   const handleDragStart = (e: React.DragEvent, orderId: string) => {
     isDraggingRef.current = true;
@@ -955,27 +976,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
             {/* ── Botões de ação ── */}
             {order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
-              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
-                {order.status === "NOVO" && <>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ACEITO")} style={{ flex: 1, padding: "0.6rem 1rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit", letterSpacing: "0.02em" }}>Aceitar pedido</button>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.6rem 0.75rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Recusar</button>
-                </> }
-                {order.status === "ACEITO" && <>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "PREPARANDO")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Iniciar preparo</button>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid #EF4444", background: "#fff", color: "#EF4444", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Cancelar</button>
-                </>}
-                {order.status === "PREPARANDO" && <>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "SAIU_ENTREGA")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Saiu para entrega</button>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid #EF4444", background: "#fff", color: "#EF4444", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Cancelar</button>
-                </>}
-                {order.status === "SAIU_ENTREGA" && <>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ flex: 1, padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Marcar entregue</button>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid #EF4444", background: "#fff", color: "#EF4444", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Cancelar</button>
-                </>}
-                {order.status === "ENTREGUE" && <>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ flex: 1, padding: "0.4rem", borderRadius: "8px", border: "1px solid #EF4444", background: "#fff", color: "#EF4444", fontWeight: 500, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>Cancelar pedido</button>
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENCERRADO")} style={{ flex: 1, padding: "0.4rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>Encerrar pedido</button>
-                </>}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
+                {/* Primary action row */}
+                {order.status === "NOVO" && (
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <button disabled={isLoading} onClick={() => updateStatus(order.id, "ACEITO")} style={{ flex: 1, padding: "0.6rem 1rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit", letterSpacing: "0.02em" }}>Aceitar pedido</button>
+                    <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.6rem 0.75rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Recusar</button>
+                  </div>
+                )}
+                {order.status === "ACEITO" && (
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "PREPARANDO")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Iniciar preparo</button>
+                )}
+                {order.status === "PREPARANDO" && (
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "SAIU_ENTREGA")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Saiu para entrega</button>
+                )}
+                {order.status === "SAIU_ENTREGA" && (
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Marcar entregue</button>
+                )}
+                {/* Encerrar — above cancel */}
+                {order.status === "ENTREGUE" && (
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENCERRADO")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Encerrar pedido</button>
+                )}
+                {/* Cancel — big red button at bottom, opens popup */}
+                {order.status !== "NOVO" && (
+                  <button disabled={isLoading} onClick={() => { setCancelConfirmId(order.id); setCancelReason(""); }} style={{ width: "100%", padding: "0.6rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit", letterSpacing: "0.02em", marginTop: "0.2rem" }}>Cancelar pedido</button>
+                )}
               </div>
             )}
             {order.status === "CANCELADO" && (
@@ -1051,6 +1076,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   return (
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
+      {/* MODAL CANCELAR PEDIDO */}
+      {cancelConfirmId && (
+        <div onClick={() => { setCancelConfirmId(null); setCancelReason(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ textAlign: "center", marginBottom: "16px" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "8px" }}>⚠️</div>
+              <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1F2937" }}>Tem certeza que deseja cancelar esse pedido?</div>
+            </div>
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Por favor, informe o motivo do cancelamento:</label>
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Ex: Cliente desistiu, item indisponível..."
+                autoFocus
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #D1D5DB", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", minHeight: "80px", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button onClick={() => { setCancelConfirmId(null); setCancelReason(""); }} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#374151", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Não</button>
+              <button onClick={confirmCancel} disabled={!!loadingId} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>{loadingId ? "Cancelando..." : "Sim, cancelar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* MODAL RESUMO DE VENDAS */}
       {showResumo && (
         <div onClick={() => setShowResumo(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
