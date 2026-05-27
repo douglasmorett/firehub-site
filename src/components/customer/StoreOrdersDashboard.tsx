@@ -694,6 +694,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {/* Line 3: Value */}
                 <div style={{ fontWeight: 700, color: "#1F2937" }}>
                   R$ {order.totalAmount.toFixed(2)}
+                  {order.changeAmount != null && order.changeAmount > 0 && (
+                    <div style={{ fontSize: "0.65rem", fontWeight: 600, color: "#92400E", marginTop: "1px" }}>Troco p/ R$ {Number(order.changeAmount).toFixed(0)}</div>
+                  )}
                 </div>
                 {/* Line 4: Delivery type */}
                 <div style={{ color: "#6B7280" }}>
@@ -886,14 +889,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   const orderTotal = Number(order.totalAmount) + Number(order.deliveryFee || 0);
                   const toSeparate = changeFor - orderTotal;
                   return (
-                    <div style={{ background: "#FEF3C7", borderRadius: "8px", padding: "10px 12px", border: "2px solid #F59E0B" }}>
-                      <span style={{ color: "#92400E", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>💵 Troco para</span>
-                      <div style={{ fontWeight: 800, color: "#78350F", marginTop: "2px", fontSize: "1.1rem" }}>R$ {changeFor.toFixed(2)}</div>
+                    <div>
+                      <span style={{ color: "#92400E", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>💵 Troco para</span>
+                      <div style={{ fontWeight: 600, color: "#78350F", marginTop: "1px" }}>R$ {changeFor.toFixed(2)}</div>
                       {toSeparate > 0 && (
-                        <div style={{ marginTop: "6px", padding: "6px 10px", background: "#FDE68A", borderRadius: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#92400E" }}>👉 Separe</span>
-                          <span style={{ fontSize: "1rem", fontWeight: 800, color: "#78350F" }}>R$ {toSeparate.toFixed(2)}</span>
-                        </div>
+                        <div style={{ fontWeight: 700, color: "#92400E", fontSize: "0.82rem", marginTop: "2px" }}>Separe R$ {toSeparate.toFixed(2)}</div>
                       )}
                     </div>
                   );

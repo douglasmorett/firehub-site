@@ -179,7 +179,13 @@ async function pollIfoodEvents(sessionUserId?: string) {
             );
             const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
             const payMethodName = paymentList[0]?.method ?? "iFood Online";
-            const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
+            const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber
+              ?? orderData.customer?.documentNumber
+              ?? orderData.customer?.cpf
+              ?? orderData.taxPayerIdentificationNumber
+              ?? orderData.additionalInfo?.taxPayerIdentificationNumber
+              ?? null;
+            console.log(`[iFood Poll] CPF/CNPJ: ${customerCpfCnpj ?? "não informado"}. customer=${JSON.stringify(orderData.customer || {})}`);
 
             // === DISCRIMINAÇÃO DE DESCONTOS (benefits) ===
             const benefits = orderData.benefits ?? [];
