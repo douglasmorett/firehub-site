@@ -125,11 +125,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
   const [weather, setWeather] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  // Use local date (not UTC) to avoid timezone shift after 21h BRT
+  // Use local date — if between midnight and 6AM, consider previous day (cash still open)
   const _now = new Date();
-  const todayStr = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
+  const _ref = _now.getHours() < 6 ? new Date(_now.getTime() - 6 * 60 * 60 * 1000) : _now;
+  const todayStr = `${_ref.getFullYear()}-${String(_ref.getMonth() + 1).padStart(2, "0")}-${String(_ref.getDate()).padStart(2, "0")}`;
   const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
-  const [dateTo, setDateTo] = useState(todayStr + "T23:59");
+  const _nextDay = new Date(_ref.getTime() + 24 * 60 * 60 * 1000);
+  const nextDayStr = `${_nextDay.getFullYear()}-${String(_nextDay.getMonth() + 1).padStart(2, "0")}-${String(_nextDay.getDate()).padStart(2, "0")}`;
+  const [dateTo, setDateTo] = useState(nextDayStr + "T05:59");
   const [showResumo, setShowResumo] = useState(false);
 
   const storeName = user.storeName || user.name;
