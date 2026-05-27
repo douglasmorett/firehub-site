@@ -70,6 +70,61 @@ export async function PUT(req: Request) {
     updateData.scheduledDatetime = scheduledDatetime ? new Date(scheduledDatetime) : null;
   }
 
+  // ── Special handling for CANCELADO ──
+  if (status === "CANCELADO") {
+    // 1. Remove motoboy so delivery fee doesn't count for them
+    updateData.motoboyId = null;
+    updateData.cancelledBy = "LOJA";
+
+    // 2. Cancel on iFood if it's an iFood order
+    if (order.ifoodOrderId) {
+      try {
+        const { getIfoodToken } = await import("@/lib/ifood-api");
+        const token = await getIfoodToken();
+
+        // Try requestCancellation first (merchant-initiated)
+        const cancelRes = await fetch(
+          `https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/requestCancellation`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              reason: "CANCELLED_BY_RESTAURANT",
+              cancellationCode: "501",
+            }),
+          }
+        );
+
+        if (!cancelRes.ok) {
+          // Fallback: try direct cancel endpoint
+          const fallbackRes = await fetch(
+            `https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/cancel`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                reason: "Cancelado pela loja",
+                cancelCodeId: "501",
+              }),
+            }
+          );
+          console.log(`[iFood Cancel] Fallback cancel ${order.ifoodOrderId}: ${fallbackRes.status}`);
+        } else {
+          console.log(`[iFood Cancel] ✅ Pedido ${order.ifoodOrderId} cancelado no iFood`);
+        }
+      } catch (err: any) {
+        console.error(`[iFood Cancel] Erro ao cancelar ${order.ifoodOrderId}:`, err?.message);
+        // Don't block local cancellation even if iFood fails
+      }
+    }
+  }
+
   await prisma.customerOrder.update({
     where: { id: orderId },
     data: updateData
