@@ -324,6 +324,22 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
   if (firehubStatus) {
     const updateData: any = { status: firehubStatus };
 
+    // Cenário: Negociação de cancelamento (CRR)
+    if (code === "CRR" || code === "CANCELLATION_REQUEST_BY_CUSTOMER" || code === "CANCELLATION_REQUESTED") {
+      const disputeData = {
+        pending: true,
+        reason: event.metadata?.cancelCodeDescription || event.metadata?.reason || "Cliente solicitou cancelamento",
+        code: event.metadata?.cancelCode || event.metadata?.cancellationCode || "",
+        requestedAt: new Date().toISOString(),
+      };
+      await (prisma.customerOrder as any).updateMany({
+        where: { ifoodOrderId: orderId } as any,
+        data: { cancelDispute: disputeData },
+      });
+      console.log(`[iFood Webhook] ⚠️ Negociação: ${orderId}`);
+      return NextResponse.json({ received: true });
+    }
+
     // Cenário 4: registra quem cancelou — não sobrescreve se a loja já cancelou
     if (code === "CANCELLED") {
       const existingOrder: any = await prisma.customerOrder.findFirst({

@@ -93,8 +93,26 @@ export async function GET(req: NextRequest) {
         const isDispatched = code === "DSP" || event.fullCode === "DISPATCHED";
         const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
         const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
+        const isCancellationRequest = code === "CRR" || event.fullCode === "CANCELLATION_REQUEST_BY_CUSTOMER" || event.fullCode === "CANCELLATION_REQUESTED";
 
         log.push(`  📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
+
+        // Handle cancellation REQUEST (negotiation)
+        if (isCancellationRequest) {
+          const disputeData = {
+            pending: true,
+            reason: event.metadata?.cancelCodeDescription || event.metadata?.reason || "Cliente solicitou cancelamento",
+            code: event.metadata?.cancelCode || event.metadata?.cancellationCode || "",
+            requestedAt: new Date().toISOString(),
+          };
+          await (prisma.customerOrder as any).updateMany({
+            where: { ifoodOrderId: orderId } as any,
+            data: { cancelDispute: disputeData },
+          });
+          log.push(`  ⚠️ Negociação: ${orderId} — ${disputeData.reason}`);
+          if (event.id) processedEventIds.push(event.id);
+          continue;
+        }
 
         if (isCancelled) {
           const existingOrder: any = await prisma.customerOrder.findFirst({

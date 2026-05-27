@@ -67,6 +67,24 @@ async function pollIfoodEvents(sessionUserId?: string) {
         const isDispatched = code === "DSP" || event.fullCode === "DISPATCHED";
         const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
         const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
+        const isCancellationRequest = code === "CRR" || event.fullCode === "CANCELLATION_REQUEST_BY_CUSTOMER" || event.fullCode === "CANCELLATION_REQUESTED";
+
+        // Handle cancellation REQUEST (negotiation) — don't cancel yet, let merchant decide
+        if (isCancellationRequest) {
+          const disputeData = {
+            pending: true,
+            reason: event.metadata?.cancelCodeDescription || event.metadata?.reason || "Cliente solicitou cancelamento",
+            code: event.metadata?.cancelCode || event.metadata?.cancellationCode || "",
+            requestedAt: new Date().toISOString(),
+          };
+          await (prisma.customerOrder as any).updateMany({
+            where: { ifoodOrderId: orderId } as any,
+            data: { cancelDispute: disputeData },
+          });
+          console.log(`[iFood Poll] ⚠️ Negociação de cancelamento: ${orderId} — ${disputeData.reason}`);
+          if (event.id) processedEventIds.push(event.id);
+          continue;
+        }
 
         // CATCH-ALL: qualquer evento com orderId (que não seja cancelamento) deve criar o pedido se não existir
         // Isso garante que NENHUM pedido é perdido, independente do código do evento

@@ -862,15 +862,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   );
                 })()}
                 {order.changeAmount != null && order.changeAmount > 0 && (
-                  <div>
-                    <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Troco para</span>
-                    <div style={{ fontWeight: 600, color: "#1F2937", marginTop: "1px" }}>R$ {Number(order.changeAmount).toFixed(2)}</div>
+                  <div style={{ background: "#FEF3C7", borderRadius: "6px", padding: "6px 10px", border: "1px solid #FDE68A" }}>
+                    <span style={{ color: "#92400E", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>💵 Troco para</span>
+                    <div style={{ fontWeight: 700, color: "#78350F", marginTop: "1px", fontSize: "0.95rem" }}>R$ {Number(order.changeAmount).toFixed(2)}</div>
                   </div>
                 )}
                 {order.customerCpfCnpj && (
-                  <div>
-                    <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>CPF/CNPJ</span>
-                    <div style={{ fontWeight: 600, color: "#1F2937", marginTop: "1px" }}>{order.customerCpfCnpj}</div>
+                  <div style={{ background: "#EFF6FF", borderRadius: "6px", padding: "6px 10px", border: "1px solid #BFDBFE" }}>
+                    <span style={{ color: "#1E40AF", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>📋 CPF/CNPJ na nota</span>
+                    <div style={{ fontWeight: 700, color: "#1E3A5F", marginTop: "1px", fontSize: "0.9rem", fontFamily: "monospace" }}>{order.customerCpfCnpj}</div>
                   </div>
                 )}
                 {order.deliveryType === "DELIVERY" && (
@@ -1107,6 +1107,66 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         </div>
       )}
+      {/* MODAL NEGOCIAÇÃO DE CANCELAMENTO (iFood) */}
+      {(() => {
+        const disputeOrder = orders.find((o: any) => o.cancelDispute?.pending === true);
+        if (!disputeOrder) return null;
+        const dispute = (disputeOrder as any).cancelDispute;
+        const orderNum = orderNumberMap.get(disputeOrder.id) || "?";
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "420px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: "3px solid #F59E0B" }}>
+              <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>⚠️</div>
+                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#92400E" }}>Pedido #{orderNum} em negociação</div>
+                <div style={{ fontSize: "0.82rem", color: "#6B7280", marginTop: "4px" }}>O cliente solicitou o cancelamento pelo iFood</div>
+              </div>
+              <div style={{ background: "#FEF3C7", borderRadius: "10px", padding: "14px", marginBottom: "16px", border: "1px solid #FDE68A" }}>
+                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#92400E", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Motivo do cliente:</div>
+                <div style={{ fontSize: "0.9rem", color: "#78350F", fontWeight: 500 }}>{dispute.reason || "Não informado"}</div>
+                {dispute.requestedAt && (
+                  <div style={{ fontSize: "0.72rem", color: "#A16207", marginTop: "6px" }}>
+                    Solicitado às {new Date(dispute.requestedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                )}
+              </div>
+              <div style={{ background: "#F9FAFB", borderRadius: "8px", padding: "10px", marginBottom: "16px", fontSize: "0.8rem", color: "#4B5563" }}>
+                <strong>Cliente:</strong> {disputeOrder.customerName} — {disputeOrder.customerPhone}<br/>
+                <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
+                {disputeOrder.ifoodReference && <><strong>iFood:</strong> #{disputeOrder.ifoodReference}</>}
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  disabled={!!loadingId}
+                  onClick={async () => {
+                    setLoadingId(disputeOrder.id);
+                    try {
+                      const r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "deny", denyReason: "Pedido já em andamento" }) });
+                      if (r.ok) { setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o)); router.refresh(); }
+                    } catch {} finally { setLoadingId(null); }
+                  }}
+                  style={{ flex: 1, padding: "0.7rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", fontFamily: "inherit" }}
+                >
+                  {loadingId === disputeOrder.id ? "..." : "✋ Recusar cancelamento"}
+                </button>
+                <button
+                  disabled={!!loadingId}
+                  onClick={async () => {
+                    setLoadingId(disputeOrder.id);
+                    try {
+                      const r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "accept" }) });
+                      if (r.ok) { setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, status: "CANCELADO", cancelledBy: "CUSTOMER", cancelDispute: { ...dispute, pending: false } } : o)); router.refresh(); }
+                    } catch {} finally { setLoadingId(null); }
+                  }}
+                  style={{ flex: 1, padding: "0.7rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", fontFamily: "inherit" }}
+                >
+                  {loadingId === disputeOrder.id ? "..." : "✅ Aceitar cancelamento"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* MODAL RESUMO DE VENDAS */}
       {showResumo && (
         <div onClick={() => setShowResumo(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
