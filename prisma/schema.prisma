@@ -260,6 +260,14 @@ model CustomerOrder {
   discountIfood       Float?             // Quanto o iFood subsidia (sponsorship: IFOOD)
   discountMerchant    Float?             // Quanto a loja subsidia (sponsorship: MERCHANT)
   discountDetails     Json?              // JSON com detalhes: [{target, value, sponsor, description}]
+  // === LOGÍSTICA IFOOD (Motoboy iFood) ===
+  ifoodDriverName        String?            // Nome do entregador iFood
+  ifoodDriverPhone       String?            // Telefone do entregador
+  ifoodDriverVehicle     String?            // Veículo (MOTORCYCLE, BICYCLE, CAR)
+  ifoodDriverPhotoUrl    String?            // Foto do entregador
+  ifoodDriverStatus      String?            // REQUESTED, ASSIGNED, GOING_TO_ORIGIN, ARRIVED_AT_ORIGIN, COLLECTED, DISPATCHED, ARRIVED_AT_DESTINATION, DELIVERED, FAILED
+  ifoodDriverRequestedAt DateTime?          // Quando o motoboy foi solicitado
+  ifoodDeliveryEta       DateTime?          // Previsão de entrega
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   franchisee       User                @relation(fields: [franchiseeId], references: [id])

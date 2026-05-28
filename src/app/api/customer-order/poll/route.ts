@@ -91,6 +91,50 @@ async function pollIfoodEvents(sessionUserId?: string) {
           }
         }
 
+        // === LOGISTICS EVENTS (Motoboy iFood) ===
+        const isAssignDriver = code === "ASSIGN_DRIVER" || code === "ADR" || event.fullCode === "ASSIGN_DRIVER";
+        const isGoingToOrigin = code === "GOING_TO_ORIGIN" || code === "GTO" || event.fullCode === "GOING_TO_ORIGIN";
+        const isArrivedAtOrigin = code === "ARRIVED_AT_ORIGIN" || code === "AAO" || event.fullCode === "ARRIVED_AT_ORIGIN";
+        const isCollectedEv = code === "COLLECTED" || code === "COL" || event.fullCode === "COLLECTED";
+        const isArrivedAtDest = code === "ARRIVED_AT_DESTINATION" || code === "AAD" || event.fullCode === "ARRIVED_AT_DESTINATION";
+        const isDriverSuccess = code === "REQUEST_DRIVER_SUCCESS" || code === "RDS" || event.fullCode === "REQUEST_DRIVER_SUCCESS";
+        const isDriverFailed = code === "REQUEST_DRIVER_FAILED" || code === "RDF" || event.fullCode === "REQUEST_DRIVER_FAILED";
+        const isDriverEvent = isAssignDriver || isGoingToOrigin || isArrivedAtOrigin || isCollectedEv || isArrivedAtDest || isDriverSuccess || isDriverFailed;
+
+        if (isDriverEvent) {
+          const meta = event.metadata || {};
+          const driverUpdate: any = {};
+
+          if (isAssignDriver || isDriverSuccess) {
+            driverUpdate.ifoodDriverName = meta.driverName || meta.name || null;
+            driverUpdate.ifoodDriverPhone = meta.driverPhone || null;
+            driverUpdate.ifoodDriverVehicle = meta.vehicle || null;
+            driverUpdate.ifoodDriverPhotoUrl = meta.driverPhotoUrl || null;
+            driverUpdate.ifoodDriverStatus = "ASSIGNED";
+            console.log(`[iFood Poll] 🛵 Motoboy atribuído: ${meta.driverName || "?"} para pedido ${orderId}`);
+          } else if (isGoingToOrigin) {
+            driverUpdate.ifoodDriverStatus = "GOING_TO_ORIGIN";
+          } else if (isArrivedAtOrigin) {
+            driverUpdate.ifoodDriverStatus = "ARRIVED_AT_ORIGIN";
+          } else if (isCollectedEv) {
+            driverUpdate.ifoodDriverStatus = "COLLECTED";
+          } else if (isArrivedAtDest) {
+            driverUpdate.ifoodDriverStatus = "ARRIVED_AT_DESTINATION";
+          } else if (isDriverFailed) {
+            driverUpdate.ifoodDriverStatus = "FAILED";
+          }
+
+          if (Object.keys(driverUpdate).length > 0) {
+            await (prisma.customerOrder as any).updateMany({
+              where: { ifoodOrderId: orderId } as any,
+              data: driverUpdate,
+            });
+            console.log(`[iFood Poll] 🛵 Driver status: ${driverUpdate.ifoodDriverStatus} para ${orderId}`);
+          }
+          if (event.id) processedEventIds.push(event.id);
+          continue;
+        }
+
         // CATCH-ALL: qualquer evento com orderId (que não seja cancelamento) deve criar o pedido se não existir
         // Isso garante que NENHUM pedido é perdido, independente do código do evento
         if (!isCancelled) {

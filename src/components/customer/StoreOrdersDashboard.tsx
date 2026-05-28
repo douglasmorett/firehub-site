@@ -61,6 +61,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  // === Motoboy iFood state ===
+  const [ifoodDriverModalId, setIfoodDriverModalId] = useState<string | null>(null);
+  const [ifoodDriverQuote, setIfoodDriverQuote] = useState<any>(null);
+  const [ifoodDriverLoading, setIfoodDriverLoading] = useState(false);
+  const [ifoodDriverError, setIfoodDriverError] = useState("");
   const [autoAccept, setAutoAccept] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("autoAcceptOrders") === "true";
     return false;
@@ -388,6 +393,50 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     } catch { alert("Erro."); } finally { setLoadingId(null); }
   };
 
+  // === MOTOBOY IFOOD FUNCTIONS ===
+  const fetchIfoodDriverQuote = async (orderId: string) => {
+    setIfoodDriverModalId(orderId);
+    setIfoodDriverLoading(true);
+    setIfoodDriverError("");
+    setIfoodDriverQuote(null);
+    try {
+      const res = await fetch(`/api/ifood/request-driver?orderId=${orderId}`);
+      const data = await res.json();
+      if (!data.available) throw new Error(data.error || "Motoboy iFood não disponível");
+      setIfoodDriverQuote(data);
+    } catch (e: any) { setIfoodDriverError(e.message); }
+    finally { setIfoodDriverLoading(false); }
+  };
+
+  const requestIfoodDriver = async () => {
+    if (!ifoodDriverModalId || !ifoodDriverQuote) return;
+    setIfoodDriverLoading(true);
+    try {
+      const res = await fetch("/api/ifood/request-driver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: ifoodDriverModalId, quoteId: ifoodDriverQuote.quoteId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao solicitar motoboy");
+      setOrders(prev => prev.map(o =>
+        o.id === ifoodDriverModalId ? { ...o, ifoodDriverStatus: "REQUESTED", ifoodDriverRequestedAt: new Date().toISOString() } : o
+      ));
+      setIfoodDriverModalId(null);
+    } catch (e: any) { setIfoodDriverError(e.message); }
+    finally { setIfoodDriverLoading(false); }
+  };
+
+  const cancelIfoodDriver = async (orderId: string) => {
+    if (!window.confirm("Cancelar solicitação de motoboy iFood?")) return;
+    try {
+      await fetch(`/api/ifood/request-driver?orderId=${orderId}`, { method: "DELETE" });
+      setOrders(prev => prev.map(o =>
+        o.id === orderId ? { ...o, ifoodDriverStatus: null, ifoodDriverName: null, ifoodDriverPhone: null } : o
+      ));
+    } catch {}
+  };
+
   const confirmCancel = async () => {
     if (!cancelConfirmId) return;
     if (!cancelReason.trim()) { alert("Por favor, informe o motivo do cancelamento."); return; }
@@ -712,21 +761,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           {/* Bottom bar: motoboy + timer (always visible) */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", paddingTop: "4px", borderTop: "1px solid #F3F4F6", fontSize: "0.75rem", color: "#9CA3AF" }}>
             <span onClick={e => e.stopPropagation()} style={{ flex: 1, minWidth: 0 }}>
-              {order.motoboy
-                ? <span style={{ color: "#374151", fontWeight: 500 }}>{order.motoboy.name}</span>
-                : order.deliveryType === "DELIVERY"
-                  ? <select
-                      value=""
-                      onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
-                      disabled={assigningId === order.id}
-                      style={{ padding: "2px 6px", borderRadius: "5px", border: "1px solid #E5E7EB", fontSize: "0.73rem", color: "#9CA3AF", background: "white", fontFamily: "inherit", cursor: "pointer", maxWidth: "130px" }}
-                    >
-                      <option value="">Sem motoboy</option>
-                      {motoboys.map((m: any) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
-                  : null
+              {order.ifoodDriverStatus && order.ifoodDriverStatus !== "FAILED"
+                ? <span style={{ color: "#1D4ED8", fontWeight: 600, fontSize: "0.73rem" }}>
+                    🛵 {order.ifoodDriverName || "iFood"}
+                    <span style={{ marginLeft: "4px", padding: "1px 6px", borderRadius: "8px", fontSize: "0.62rem", fontWeight: 700, background: order.ifoodDriverStatus === "REQUESTED" ? "#FEF3C7" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#DBEAFE" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#D1FAE5" : "#E0E7FF", color: order.ifoodDriverStatus === "REQUESTED" ? "#92400E" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#1E40AF" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#065F46" : "#3730A3" }}>
+                      {order.ifoodDriverStatus === "REQUESTED" ? "Solicitando" : order.ifoodDriverStatus === "ASSIGNED" ? "Atribuído" : order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "A caminho" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" ? "Na loja" : order.ifoodDriverStatus === "COLLECTED" ? "Coletou" : order.ifoodDriverStatus === "DISPATCHED" ? "Entregando" : order.ifoodDriverStatus === "ARRIVED_AT_DESTINATION" ? "No destino" : order.ifoodDriverStatus === "DELIVERED" ? "Entregue" : order.ifoodDriverStatus}
+                    </span>
+                  </span>
+                : order.motoboy
+                  ? <span style={{ color: "#374151", fontWeight: 500 }}>{order.motoboy.name}</span>
+                  : order.deliveryType === "DELIVERY"
+                    ? <select
+                        value=""
+                        onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
+                        disabled={assigningId === order.id}
+                        style={{ padding: "2px 6px", borderRadius: "5px", border: "1px solid #E5E7EB", fontSize: "0.73rem", color: "#9CA3AF", background: "white", fontFamily: "inherit", cursor: "pointer", maxWidth: "130px" }}
+                      >
+                        <option value="">Sem motoboy</option>
+                        {motoboys.map((m: any) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    : null
               }
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -955,16 +1011,99 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {/* ── Motoboy ── */}
             {order.deliveryType === "DELIVERY" && (
               <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
-                <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em", display: "block", marginBottom: "4px" }}>Motoboy</span>
+                <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em", display: "block", marginBottom: "4px" }}>Entrega</span>
+
+                {/* === MOTOBOY IFOOD TRACKING === */}
+                {order.ifoodDriverStatus && order.ifoodDriverStatus !== "FAILED" ? (
+                  <div style={{ background: "#EFF6FF", borderRadius: "8px", padding: "10px 12px", border: "1px solid #BFDBFE" }}>
+                    {/* Driver info */}
+                    {order.ifoodDriverName && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#3B82F6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.8rem", flexShrink: 0 }}>
+                          {order.ifoodDriverName?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#1E3A5F" }}>{order.ifoodDriverName}</div>
+                          <div style={{ fontSize: "0.72rem", color: "#6B7280" }}>
+                            {order.ifoodDriverPhone && <span>{order.ifoodDriverPhone} · </span>}
+                            {order.ifoodDriverVehicle === "MOTORCYCLE" ? "🏍️ Moto" : order.ifoodDriverVehicle === "BICYCLE" ? "🚲 Bicicleta" : order.ifoodDriverVehicle === "CAR" ? "🚗 Carro" : "🛵 iFood"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {/* Timeline */}
+                    {(() => {
+                      const steps = [
+                        { key: "REQUESTED", label: "Solicitado", emoji: "📤" },
+                        { key: "ASSIGNED", label: "Motoboy atribuído", emoji: "👤" },
+                        { key: "GOING_TO_ORIGIN", label: "A caminho da loja", emoji: "🏃" },
+                        { key: "ARRIVED_AT_ORIGIN", label: "Chegou na loja", emoji: "📍" },
+                        { key: "COLLECTED", label: "Coletou pedido", emoji: "📦" },
+                        { key: "DISPATCHED", label: "Saiu para entrega", emoji: "🛵" },
+                        { key: "ARRIVED_AT_DESTINATION", label: "Chegou no destino", emoji: "🏠" },
+                        { key: "DELIVERED", label: "Entregue", emoji: "✅" },
+                      ];
+                      const currentIdx = steps.findIndex(s => s.key === order.ifoodDriverStatus);
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "4px" }}>
+                          {steps.map((step, i) => {
+                            const isDone = i < currentIdx;
+                            const isCurrent = i === currentIdx;
+                            const isFuture = i > currentIdx;
+                            return (
+                              <div key={step.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "2px 0" }}>
+                                <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${isDone ? "#059669" : isCurrent ? "#3B82F6" : "#D1D5DB"}`, background: isDone ? "#059669" : isCurrent ? "#3B82F6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                  {isDone && <span style={{ color: "#fff", fontSize: "0.55rem", fontWeight: 900 }}>✓</span>}
+                                  {isCurrent && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />}
+                                </div>
+                                <span style={{ fontSize: "0.78rem", fontWeight: isCurrent ? 700 : 400, color: isFuture ? "#9CA3AF" : isCurrent ? "#1D4ED8" : "#374151" }}>
+                                  {step.emoji} {step.label} {isCurrent && "← agora"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                    {/* ETA + Cancel */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", paddingTop: "6px", borderTop: "1px solid #BFDBFE" }}>
+                      {order.ifoodDeliveryEta && (
+                        <span style={{ fontSize: "0.75rem", color: "#1D4ED8", fontWeight: 600 }}>
+                          ⏱️ Previsão: {new Date(order.ifoodDeliveryEta).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
+                      {order.ifoodDriverStatus === "REQUESTED" && (
+                        <button onClick={e => { e.stopPropagation(); cancelIfoodDriver(order.id); }} style={{ padding: "4px 10px", background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>❌ Cancelar</button>
+                      )}
+                    </div>
+                  </div>
+                ) : order.ifoodDriverStatus === "FAILED" ? (
+                  <div style={{ background: "#FEF2F2", borderRadius: "8px", padding: "10px 12px", border: "1px solid #FECACA", marginBottom: "6px" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#DC2626" }}>❌ Nenhum motoboy iFood disponível</div>
+                    <div style={{ fontSize: "0.75rem", color: "#6B7280", marginTop: "2px" }}>Tente novamente ou selecione um motoboy próprio abaixo.</div>
+                  </div>
+                ) : null}
+
+                {/* Botão Chamar Motoboy iFood (se pedido iFood, sem driver solicitado) */}
+                {order.source === "IFOOD" && order.ifoodOrderId && !order.ifoodDriverStatus && order.status !== "ENCERRADO" && order.status !== "CANCELADO" && order.status !== "ENTREGUE" && (
+                  <button
+                    onClick={e => { e.stopPropagation(); fetchIfoodDriverQuote(order.id); }}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", width: "100%", padding: "8px", background: "linear-gradient(135deg, #3B82F6, #1D4ED8)", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", marginBottom: "6px" }}
+                  >
+                    🛵 Chamar Motoboy iFood
+                  </button>
+                )}
+
+                {/* Motoboy próprio (select) */}
                 {(order.status === "ENCERRADO" || order.status === "CANCELADO") ? (
                   <div style={{ fontSize: "0.82rem", fontWeight: 500, color: "#1F2937" }}>
                     {order.motoboy ? (
                       <span>{order.motoboy.name} {order.motoboy.phone ? `· ${order.motoboy.phone}` : ""}</span>
-                    ) : (
+                    ) : !order.ifoodDriverName ? (
                       <span style={{ color: "#9CA3AF" }}>Não atribuído</span>
-                    )}
+                    ) : null}
                   </div>
-                ) : (
+                ) : !order.ifoodDriverStatus || order.ifoodDriverStatus === "FAILED" ? (
                   <>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                       <select
@@ -973,7 +1112,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         disabled={assigningId === order.id}
                         style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #D1D5DB", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit", color: "#374151" }}
                       >
-                        <option value="">— Não atribuído —</option>
+                        <option value="">— Motoboy próprio —</option>
                         {motoboys.map((m: any) => (
                           <option key={m.id} value={m.id}>{m.name}{m.phone ? ` · ${m.phone}` : ""}</option>
                         ))}
@@ -991,7 +1130,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: "3px" }}>{order.motoboy.name} atribuído</div>
                     )}
                   </>
-                )}
+                ) : null}
               </div>
             )}
 
@@ -1138,6 +1277,77 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         </div>
       )}
+      {/* MODAL MOTOBOY IFOOD — Cotação + Confirmação */}
+      {ifoodDriverModalId && (() => {
+        const driverOrder = orders.find(o => o.id === ifoodDriverModalId);
+        return (
+          <div onClick={() => { setIfoodDriverModalId(null); setIfoodDriverQuote(null); setIfoodDriverError(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+              <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>🛵</div>
+                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#1D4ED8" }}>Solicitar Motoboy iFood</div>
+              </div>
+
+              {/* Order info */}
+              {driverOrder && (
+                <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "0.82rem" }}>
+                  <div><strong>Pedido:</strong> #{driverOrder.ifoodReference || driverOrder.id.slice(-6).toUpperCase()}</div>
+                  {driverOrder.customerAddress && <div style={{ color: "#6B7280", marginTop: "2px" }}>{driverOrder.customerAddress}</div>}
+                </div>
+              )}
+
+              {/* Loading */}
+              {ifoodDriverLoading && !ifoodDriverQuote && (
+                <div style={{ textAlign: "center", padding: "20px", color: "#6B7280" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "8px" }}>⏳</div>
+                  Consultando disponibilidade...
+                </div>
+              )}
+
+              {/* Error */}
+              {ifoodDriverError && (
+                <div style={{ background: "#FEF2F2", borderRadius: "8px", padding: "12px", marginBottom: "12px", border: "1px solid #FECACA" }}>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#DC2626" }}>❌ {ifoodDriverError}</div>
+                </div>
+              )}
+
+              {/* Quote */}
+              {ifoodDriverQuote && (
+                <div style={{ background: "#EFF6FF", borderRadius: "12px", padding: "16px", marginBottom: "16px", border: "2px solid #BFDBFE" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <div>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Custo</div>
+                      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1D4ED8" }}>R$ {Number(ifoodDriverQuote.price).toFixed(2).replace('.', ',')}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Tempo estimado</div>
+                      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#059669" }}>~{ifoodDriverQuote.estimatedMinutes ?? "?"}min</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#6B7280", borderTop: "1px solid #BFDBFE", paddingTop: "6px" }}>
+                    ⚠️ O valor será cobrado pela plataforma iFood.
+                  </div>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button onClick={() => { setIfoodDriverModalId(null); setIfoodDriverQuote(null); setIfoodDriverError(""); }} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#374151", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Cancelar</button>
+                {ifoodDriverQuote && (
+                  <button onClick={requestIfoodDriver} disabled={ifoodDriverLoading} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #3B82F6, #1D4ED8)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
+                    {ifoodDriverLoading ? "Solicitando..." : "✅ Confirmar e Chamar"}
+                  </button>
+                )}
+                {ifoodDriverError && !ifoodDriverQuote && (
+                  <button onClick={() => fetchIfoodDriverQuote(ifoodDriverModalId)} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
+                    🔄 Tentar novamente
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* MODAL NEGOCIAÇÃO DE CANCELAMENTO (iFood) */}
       {(() => {
         const disputeOrder = orders.find((o: any) => o.cancelDispute?.pending === true);

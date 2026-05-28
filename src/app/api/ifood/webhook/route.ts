@@ -331,6 +331,49 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
   // Atualiza status de pedido existente
   const firehubStatus = STATUS_MAP[code];
+
+  // === LOGISTICS EVENTS (Motoboy iFood) ===
+  const driverEventCodes = ["ASSIGN_DRIVER", "ADR", "GOING_TO_ORIGIN", "GTO", "ARRIVED_AT_ORIGIN", "AAO", "COLLECTED", "COL", "ARRIVED_AT_DESTINATION", "AAD", "REQUEST_DRIVER_SUCCESS", "RDS", "REQUEST_DRIVER_FAILED", "RDF"];
+  const isDriverEvent = driverEventCodes.includes(code) ||
+    ["ASSIGN_DRIVER", "GOING_TO_ORIGIN", "ARRIVED_AT_ORIGIN", "COLLECTED", "ARRIVED_AT_DESTINATION", "REQUEST_DRIVER_SUCCESS", "REQUEST_DRIVER_FAILED"].includes(event.fullCode ?? "");
+
+  if (isDriverEvent) {
+    const meta = event.metadata || {};
+    const driverUpdate: any = {};
+
+    if (code === "ASSIGN_DRIVER" || code === "ADR" || event.fullCode === "ASSIGN_DRIVER" || code === "REQUEST_DRIVER_SUCCESS" || code === "RDS" || event.fullCode === "REQUEST_DRIVER_SUCCESS") {
+      driverUpdate.ifoodDriverName = meta.driverName || meta.name || null;
+      driverUpdate.ifoodDriverPhone = meta.driverPhone || null;
+      driverUpdate.ifoodDriverVehicle = meta.vehicle || null;
+      driverUpdate.ifoodDriverPhotoUrl = meta.driverPhotoUrl || null;
+      driverUpdate.ifoodDriverStatus = "ASSIGNED";
+      console.log(`[iFood Logistics] 🛵 Motoboy atribuído: ${meta.driverName || "?"} para pedido ${orderId}`);
+    } else if (code === "GOING_TO_ORIGIN" || code === "GTO" || event.fullCode === "GOING_TO_ORIGIN") {
+      driverUpdate.ifoodDriverStatus = "GOING_TO_ORIGIN";
+      console.log(`[iFood Logistics] 🏃 Motoboy a caminho da loja: ${orderId}`);
+    } else if (code === "ARRIVED_AT_ORIGIN" || code === "AAO" || event.fullCode === "ARRIVED_AT_ORIGIN") {
+      driverUpdate.ifoodDriverStatus = "ARRIVED_AT_ORIGIN";
+      console.log(`[iFood Logistics] 📍 Motoboy chegou na loja: ${orderId}`);
+    } else if (code === "COLLECTED" || code === "COL" || event.fullCode === "COLLECTED") {
+      driverUpdate.ifoodDriverStatus = "COLLECTED";
+      console.log(`[iFood Logistics] 📦 Motoboy coletou pedido: ${orderId}`);
+    } else if (code === "ARRIVED_AT_DESTINATION" || code === "AAD" || event.fullCode === "ARRIVED_AT_DESTINATION") {
+      driverUpdate.ifoodDriverStatus = "ARRIVED_AT_DESTINATION";
+      console.log(`[iFood Logistics] 🏠 Motoboy chegou no destino: ${orderId}`);
+    } else if (code === "REQUEST_DRIVER_FAILED" || code === "RDF" || event.fullCode === "REQUEST_DRIVER_FAILED") {
+      driverUpdate.ifoodDriverStatus = "FAILED";
+      console.log(`[iFood Logistics] ❌ Nenhum motoboy disponível: ${orderId}`);
+    }
+
+    if (Object.keys(driverUpdate).length > 0) {
+      await (prisma.customerOrder as any).updateMany({
+        where: { ifoodOrderId: orderId } as any,
+        data: driverUpdate,
+      });
+    }
+    // Don't return — let the event continue to be processed for status updates too
+  }
+
   if (firehubStatus) {
     const updateData: any = { status: firehubStatus };
 
