@@ -8,7 +8,7 @@ import "./store.css";
 
 type MenuProduct = { id: string; name: string; description: string; price: number; imageUrl: string | null; category: string; isCombo?: boolean; comboConfig?: any; comboGroups?: any[] };
 type CartItem = MenuProduct & { quantity: number; comboSelections?: any };
-type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null };
+type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean };
 type StoreRating = { average: number; count: number; reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[] };
 
 function isStoreOpen(hours: any[]): { open: boolean; text: string } {
@@ -531,6 +531,26 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
               )}
               {franchisee.storeDeliveryOnly && (
                 <span className="store-delivery-tag">• Somente Delivery</span>
+              )}
+              {franchisee.ifoodConnected && franchisee.ifoodMerchantId && (
+                <a
+                  href={`https://www.ifood.com.br/delivery/${(franchisee.city || "cidade").toLowerCase().replace(/\s+/g, "-")}/${(storeName || "loja").toLowerCase().replace(/\s+/g, "-")}/${franchisee.ifoodMerchantId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: "4px",
+                    padding: "3px 10px", borderRadius: "20px",
+                    background: "linear-gradient(135deg, #EA1D2C, #B71C1C)",
+                    color: "#fff", fontSize: "0.72rem", fontWeight: 700,
+                    textDecoration: "none", letterSpacing: "0.02em",
+                    boxShadow: "0 2px 8px rgba(234,29,44,0.3)",
+                    transition: "transform 0.2s, box-shadow 0.2s",
+                  }}
+                  onMouseEnter={e => { (e.target as HTMLElement).style.transform = "scale(1.05)"; }}
+                  onMouseLeave={e => { (e.target as HTMLElement).style.transform = "scale(1)"; }}
+                >
+                  🍽️ Peça pelo iFood
+                </a>
               )}
             </div>
           </div>
