@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import AdminDashboardClient from "@/components/admin/AdminDashboardClient";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub Admin — Visão Geral" };
 
 const TRIAL_DAYS = 15;
