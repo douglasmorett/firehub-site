@@ -67,6 +67,7 @@ model User {
   ifoodAccessToken  String?        @db.Text  // Bearer token (OAuth iFood Merchant API)
   ifoodClientId     String?        // Client ID do app cadastrado no iFood Developer
   ifoodConnected    Boolean        @default(false) // Módulo iFood ativo
+  ifoodWidgetId     String?        // ID do widget iFood (chat integrado — do Portal do Parceiro)
   orders          Order[]
   customerOrders  CustomerOrder[]
   storeReviews    StoreReview[]

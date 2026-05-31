@@ -4,11 +4,12 @@ import { ShoppingCart, Plus, Minus, X, MapPin, Search, Clock, Store, Truck, User
 import ComboModal from "./ComboModal";
 import PaymentGateway from "./PaymentGateway";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
+import FloatingContactWidget from "@/components/FloatingContactWidget";
 import "./store.css";
 
 type MenuProduct = { id: string; name: string; description: string; price: number; imageUrl: string | null; category: string; isCombo?: boolean; comboConfig?: any; comboGroups?: any[] };
 type CartItem = MenuProduct & { quantity: number; comboSelections?: any };
-type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean };
+type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean; ifoodWidgetId?: string | null };
 type StoreRating = { average: number; count: number; reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[] };
 
 function isStoreOpen(hours: any[]): { open: boolean; text: string } {
@@ -843,6 +844,14 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
             />
           </div>
         </div>
+      )}
+
+      {/* Per-store FloatingContactWidget with iFood chat support */}
+      {franchisee.ifoodWidgetId && franchisee.ifoodMerchantId && (
+        <FloatingContactWidget
+          ifoodWidgetId={franchisee.ifoodWidgetId}
+          ifoodMerchantId={franchisee.ifoodMerchantId}
+        />
       )}
     </div>
   );

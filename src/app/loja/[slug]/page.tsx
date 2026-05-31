@@ -43,6 +43,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       facebookPixelId: true,
       ifoodMerchantId: true,
       ifoodConnected: true,
+      ifoodWidgetId: true,
     }
   });
 

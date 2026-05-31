@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Store, Clock, RefreshCw, Trash2, Plus, CheckCircle, ExternalLink, Loader, Wifi, WifiOff, Copy } from "lucide-react";
 
-type Tab = "loja" | "pausas" | "horarios";
+type Tab = "loja" | "pausas" | "horarios" | "widget";
 
 // ── Status da conexão ──────────────────────────────────────
 type ConnStatus = "idle" | "loading" | "ok" | "error";
@@ -19,9 +19,11 @@ const DAYS_PT: Record<string, string> = {
 export default function IfoodHomologacaoClient({
   merchantId,
   clientId,
+  ifoodWidgetId,
 }: {
   merchantId: string;
   clientId: string;
+  ifoodWidgetId?: string;
 }) {
   const [tab, setTab]           = useState<Tab>("loja");
   const [connStatus, setConn]   = useState<ConnStatus>("loading"); // começa carregando
@@ -362,6 +364,7 @@ export default function IfoodHomologacaoClient({
           {tabBtn("loja", "Loja", "🏪")}
           {tabBtn("pausas", "Pausas", "⏸️")}
           {tabBtn("horarios", "Horários", "🕐")}
+          {tabBtn("widget", "Widget Chat", "💬")}
         </div>
       )}
 
@@ -369,6 +372,7 @@ export default function IfoodHomologacaoClient({
       {connStatus === "ok" && tab === "loja" && <TabLoja />}
       {connStatus === "ok" && tab === "pausas" && <TabPausas />}
       {connStatus === "ok" && tab === "horarios" && <TabHorarios />}
+      {connStatus === "ok" && tab === "widget" && <TabWidget currentWidgetId={ifoodWidgetId} />}
     </div>
   );
 }
@@ -834,6 +838,93 @@ function IfoodLiveCheck({ type, triggerAfterAction }: { type: "pausas" | "horari
           <span>📡 iFood Merchant API v1.0</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── CENÁRIO 4: Widget Chat iFood ──────────────────────────
+function TabWidget({ currentWidgetId }: { currentWidgetId?: string }) {
+  const [widgetId, setWidgetId] = useState(currentWidgetId || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const save = async () => {
+    setSaving(true); setError(""); setSuccess("");
+    try {
+      const r = await fetch("/api/ifood/widget", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ifoodWidgetId: widgetId || null }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Erro ao salvar");
+      setSuccess("✅ Widget ID salvo com sucesso!");
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontFamily: "monospace", outline: "none", boxSizing: "border-box" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      {error   && <ErrorBox msg={error} />}
+      {success && <SuccessBox msg={success} />}
+
+      <SectionCard title="Widget ID do iFood" emoji="💬">
+        <p style={{ margin: "0 0 0.75rem", fontSize: "0.8rem", color: "#64748B", lineHeight: 1.6 }}>
+          Cole aqui o <strong>widgetId</strong> do chat integrado do iFood. Ele aparecerá como opção de contato no cardápio online da sua loja.
+        </p>
+        <div style={{ marginBottom: "0.75rem" }}>
+          <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Widget ID</label>
+          <input
+            style={inp}
+            value={widgetId}
+            onChange={e => setWidgetId(e.target.value)}
+            placeholder="Ex: a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+          />
+        </div>
+        <button
+          onClick={save}
+          disabled={saving}
+          style={{
+            width: "100%", padding: "11px", background: "#E8360C", color: "#fff",
+            border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.9rem",
+            cursor: "pointer", fontFamily: "inherit", display: "flex",
+            alignItems: "center", justifyContent: "center", gap: 7,
+            opacity: saving ? 0.7 : 1,
+          }}
+        >
+          {saving ? "Salvando..." : "💾 Salvar Widget ID"}
+        </button>
+      </SectionCard>
+
+      <SectionCard title="Como obter o Widget ID" emoji="📖">
+        <div style={{ fontSize: "0.82rem", color: "#374151", lineHeight: 1.7 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: "0.75rem" }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#E8360C", color: "#fff", fontWeight: 900, fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>1</div>
+            <span>Acesse o <a href="https://portal.ifood.com.br" target="_blank" rel="noopener noreferrer" style={{ color: "#E8360C", fontWeight: 700 }}>Portal do Parceiro iFood</a> → <strong>Developer Portal</strong> → <strong>Widgets</strong></span>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: "0.75rem" }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#E8360C", color: "#fff", fontWeight: 900, fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>2</div>
+            <span>Clique em <strong>"Registrar Widget"</strong> → personalize a aparência → <strong>Salve</strong></span>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: "0.75rem" }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#E8360C", color: "#fff", fontWeight: 900, fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>3</div>
+            <span>Clique em <strong>"Embedding Code"</strong> (Código de Incorporação)</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: "0.75rem" }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#16A34A", color: "#fff", fontWeight: 900, fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>4</div>
+            <span>Copie o <strong>widgetId</strong> do código gerado e cole no campo acima</span>
+          </div>
+          <div style={{ padding: "10px 14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, marginTop: "0.5rem" }}>
+            <p style={{ margin: "0 0 4px", fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Exemplo do código</p>
+            <code style={{ fontSize: "0.75rem", color: "#0F172A", wordBreak: "break-all" }}>
+              {`iFoodWidget.init({ widgetId: "`}<span style={{ color: "#E8360C", fontWeight: 700 }}>SEU_WIDGET_ID</span>{`", merchantIds: ["..."] })`}
+            </code>
+          </div>
+        </div>
+      </SectionCard>
     </div>
   );
 }

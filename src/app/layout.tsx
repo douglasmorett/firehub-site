@@ -29,6 +29,7 @@ export const metadata: Metadata = {
 };
 
 import { Providers } from "@/components/Providers";
+import FloatingContactWidget from "@/components/FloatingContactWidget";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -41,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Providers>{children}</Providers>
+        <FloatingContactWidget />
       </body>
     </html>
   );
