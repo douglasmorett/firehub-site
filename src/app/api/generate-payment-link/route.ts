@@ -130,7 +130,7 @@ export async function POST(req: Request) {
       headers,
       body: JSON.stringify({
         customer: customerId,
-        billingType: "UNDEFINED",
+        billingType: "BOLETO",
         value: order.totalAmount,
         dueDate: dueDate.toISOString().split("T")[0],
         description: `Pedido #${shortId} — Icebox Congelados`,

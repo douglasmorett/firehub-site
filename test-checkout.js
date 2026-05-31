@@ -145,7 +145,7 @@ async function createAsaasPayment(opts) {
   const shortId = opts.orderId.slice(-6).toUpperCase();
   const paymentPayload = {
     customer: customerId,
-    billingType: "UNDEFINED",
+    billingType: "BOLETO",
     value: opts.totalAmount,
     dueDate: dueDate.toISOString().split("T")[0],
     description: opts.description || `Pedido #${shortId} — Hakim Congelados`,

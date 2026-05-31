@@ -56,7 +56,7 @@ async function main() {
       headers,
       body: JSON.stringify({
         customer: customer.id,
-        billingType: "UNDEFINED",
+        billingType: "BOLETO",
         value: 973.70,
         dueDate: dueDate.toISOString().split("T")[0],
         description: "Pedido #G65EYO — Icebox Congelados",

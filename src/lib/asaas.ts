@@ -237,7 +237,7 @@ export async function createAsaasPayment(opts: {
       headers: ASAAS_HEADERS(asaasKey),
       body: JSON.stringify({
         customer: customerId,
-        billingType: "UNDEFINED",
+        billingType: "BOLETO",
         value: opts.totalAmount,
         dueDate: dueDate.toISOString().split("T")[0],
         description: opts.description || `Pedido #${shortId} — Hakim Congelados`,
