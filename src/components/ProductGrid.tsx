@@ -67,7 +67,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
       return;
     }
     setShowMinError(false);
-    router.push("/store/cart");
+    router.push(isIcebox ? "/icebox/cart" : "/store/cart");
   };
 
   const cartSidebarJSX = (
