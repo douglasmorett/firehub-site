@@ -541,22 +541,10 @@ nav [style*="scroll"] {
   }
 }
 
-/* ── Responsive ── */
+/* ── Responsive: hide widget on mobile ── */
 @media (max-width: 600px) {
-  .fcw-container {
-    bottom: 18px;
-    right: 16px;
-  }
-  .fcw-fab {
-    width: 54px;
-    height: 54px;
-  }
-  .fcw-fab svg {
-    width: 22px;
-    height: 22px;
-  }
-  .fcw-menu {
-    width: calc(100vw - 32px);
-    right: 0;
+  .fcw-container,
+  .fcw-backdrop {
+    display: none !important;
   }
 }
