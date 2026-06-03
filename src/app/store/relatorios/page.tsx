@@ -1,0 +1,119 @@
+import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import RelatoriosClient from "./RelatoriosClient";
+
+export const dynamic = "force-dynamic";
+
+export default async function StoreRelatoriosPage() {
+  const session = await getServerSession(authOptions).catch((err) => {
+    console.error("[Relatorios] Erro ao obter sessão:", err);
+    return null;
+  });
+  if (!session) redirect("/login");
+
+  const role = (session.user as any)?.role;
+  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+
+  const user = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: {
+      id: true,
+      storeName: true,
+      role: true,
+    }
+  }).catch((err) => {
+    console.error("[Relatorios] Erro ao buscar usuário:", err);
+    return null;
+  });
+  if (!user) redirect("/login");
+
+  const since = new Date();
+  since.setDate(since.getDate() - 365); // Últimos 365 dias
+
+  const franchiseeFilter = user.role === "ADMIN"
+    ? { createdAt: { gte: since } }
+    : { franchiseeId: user.id, createdAt: { gte: since } };
+
+  let orders: any[] = [];
+  let products: any[] = [];
+
+  try {
+    orders = await prisma.customerOrder.findMany({
+      where: franchiseeFilter,
+      include: {
+        items: {
+          include: {
+            menuProduct: {
+              select: {
+                id: true,
+                name: true,
+                category: true,
+                cost: true,
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    const menuFilter = user.role === "ADMIN"
+      ? {}
+      : { franchiseeId: user.id };
+
+    products = await prisma.menuProduct.findMany({
+      where: menuFilter,
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        price: true,
+        cost: true,
+        active: true,
+      },
+      orderBy: [{ category: "asc" }, { name: "asc" }]
+    });
+  } catch (err) {
+    console.error("[Relatorios] Erro ao carregar dados:", err);
+  }
+
+  // Serializa os pedidos para passar para o Client Component
+  const serializedOrders = orders.map(o => ({
+    id: o.id,
+    totalAmount: o.totalAmount,
+    deliveryFee: o.deliveryFee || 0,
+    status: o.status,
+    deliveryType: o.deliveryType,
+    paymentMethod: o.paymentMethod || "Não informado",
+    source: o.source || "ONLINE",
+    createdAt: o.createdAt.toISOString(),
+    items: o.items.map((i: any) => ({
+      id: i.id,
+      quantity: i.quantity,
+      price: i.price,
+      productId: i.menuProductId,
+      productName: i.menuProduct?.name || "Produto Removido",
+      productCategory: i.menuProduct?.category || "Outros",
+      productCost: i.menuProduct?.cost || 0,
+    })),
+  }));
+
+  const serializedProducts = products.map(p => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    price: p.price,
+    cost: p.cost || 0,
+    active: p.active,
+  }));
+
+  return (
+    <RelatoriosClient
+      orders={serializedOrders}
+      products={serializedProducts}
+      storeName={user.storeName || "Minha Loja"}
+    />
+  );
+}

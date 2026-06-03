@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
 
 const NAV_ITEMS = [
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/store/venda-presencial", label: "PDV", icon: ShoppingBag },
   { href: "/store/cardapio", label: "Cardápio", icon: UtensilsCrossed },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
+  { href: "/store/relatorios", label: "Relatórios", icon: PieChart },
   { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "IA" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },

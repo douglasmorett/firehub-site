@@ -1,0 +1,800 @@
+"use client";
+import React, { useState, useMemo } from "react";
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  ShoppingBag,
+  BarChart2,
+  Calendar,
+  ChevronDown,
+  Award,
+  Activity,
+  Tag,
+  Download,
+  Filter,
+  Package,
+  Search,
+  PieChart,
+  Grid
+} from "lucide-react";
+
+// Presets de período
+const PERIOD_PRESETS = [
+  { label: "Hoje", days: 0 },
+  { label: "Ontem", days: 1 },
+  { label: "Últimos 7 dias", days: 7 },
+  { label: "Últimos 15 dias", days: 15 },
+  { label: "Últimos 30 dias", days: 30 },
+  { label: "Este mês", days: -1 },
+  { label: "Tudo (365 dias)", days: 365 },
+];
+
+function getRange(presetDays: number): { from: Date; to: Date } {
+  const to = new Date();
+  const from = new Date();
+  
+  if (presetDays === 0) {
+    from.setHours(0, 0, 0, 0);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  }
+  
+  if (presetDays === 1) {
+    from.setDate(to.getDate() - 1);
+    from.setHours(0, 0, 0, 0);
+    
+    const tempTo = new Date(from);
+    tempTo.setHours(23, 59, 59, 999);
+    return { from, to: tempTo };
+  }
+  
+  if (presetDays === -1) {
+    // Este mês
+    const startOfMonth = new Date(to.getFullYear(), to.getMonth(), 1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    return { from: startOfMonth, to };
+  }
+  
+  from.setDate(to.getDate() - presetDays);
+  from.setHours(0, 0, 0, 0);
+  return { from, to };
+}
+
+// Formatação
+const fmtR = (v: number) =>
+  `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtPct = (v: number) => `${v.toFixed(1)}%`;
+
+export default function RelatoriosClient({
+  orders,
+  products,
+  storeName,
+}: {
+  orders: any[];
+  products: any[];
+  storeName: string;
+}) {
+  const [preset, setPreset] = useState(2); // 7 dias padrão
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [useCustom, setUseCustom] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState("all");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Categorias únicas
+  const categories = useMemo(() => {
+    const list = new Set<string>();
+    products.forEach((p) => {
+      if (p.category) list.add(p.category);
+    });
+    return Array.from(list).sort();
+  }, [products]);
+
+  // Intervalo de datas selecionado
+  const { from, to } = useMemo(() => {
+    if (useCustom && customFrom && customTo) {
+      return {
+        from: new Date(customFrom + "T00:00:00"),
+        to: new Date(customTo + "T23:59:59"),
+      };
+    }
+    return getRange(PERIOD_PRESETS[preset].days);
+  }, [preset, useCustom, customFrom, customTo]);
+
+  // 1. Filtrar pedidos por data
+  const dateFilteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const d = new Date(o.createdAt);
+      return d >= from && d <= to && o.status !== "CANCELADO";
+    });
+  }, [orders, from, to]);
+
+  // 2. Filtrar itens dos pedidos baseados no filtro de produto e categoria
+  const processedData = useMemo(() => {
+    let rawRevenue = 0;
+    let rawCmv = 0;
+    let unitsSold = 0;
+    
+    // Contagem de pedidos contendo o filtro
+    const ordersWithFilter = new Set<string>();
+
+    dateFilteredOrders.forEach((o) => {
+      o.items.forEach((item: any) => {
+        const matchesProduct = selectedProduct === "all" || item.productId === selectedProduct;
+        const matchesCategory = selectedCategory === "all" || item.productCategory === selectedCategory;
+
+        if (matchesProduct && matchesCategory) {
+          rawRevenue += item.price * item.quantity;
+          rawCmv += item.productCost * item.quantity;
+          unitsSold += item.quantity;
+          ordersWithFilter.add(o.id);
+        }
+      });
+    });
+
+    const totalOrders = ordersWithFilter.size;
+    const totalProfit = rawRevenue - rawCmv;
+    const margin = rawRevenue > 0 ? (totalProfit / rawRevenue) * 100 : 0;
+    const ticketMedio = totalOrders > 0 ? rawRevenue / totalOrders : 0;
+
+    return {
+      revenue: rawRevenue,
+      cmv: rawCmv,
+      profit: totalProfit,
+      margin,
+      unitsSold,
+      ordersCount: totalOrders,
+      ticketMedio,
+    };
+  }, [dateFilteredOrders, selectedProduct, selectedCategory]);
+
+  // 3. Gerar Ranking de Produtos no período selecionado
+  const productRanking = useMemo(() => {
+    const counts: Record<
+      string,
+      {
+        id: string;
+        name: string;
+        category: string;
+        qty: number;
+        revenue: number;
+        cost: number;
+        profit: number;
+        price: number;
+      }
+    > = {};
+
+    // Inicializa todos os produtos com 0 vendas
+    products.forEach((p) => {
+      counts[p.id] = {
+        id: p.id,
+        name: p.name,
+        category: p.category || "Outros",
+        qty: 0,
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+        price: p.price,
+      };
+    });
+
+    // Soma as vendas
+    dateFilteredOrders.forEach((o) => {
+      o.items.forEach((item: any) => {
+        if (!item.productId) return;
+        
+        // Se o produto foi removido e não está na lista oficial de produtos, inicializa dinamicamente
+        if (!counts[item.productId]) {
+          counts[item.productId] = {
+            id: item.productId,
+            name: item.productName || "Produto Removido",
+            category: item.productCategory || "Outros",
+            qty: 0,
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+            price: item.price,
+          };
+        }
+
+        const data = counts[item.productId];
+        data.qty += item.quantity;
+        data.revenue += item.price * item.quantity;
+        data.cost += item.productCost * item.quantity;
+        data.profit = data.revenue - data.cost;
+      });
+    });
+
+    return Object.values(counts)
+      .filter((p) => {
+        const matchesCategory = selectedCategory === "all" || p.category === selectedCategory;
+        const matchesSearch =
+          searchQuery.trim() === "" ||
+          p.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesCategory && matchesSearch;
+      })
+      .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
+  }, [dateFilteredOrders, products, selectedCategory, searchQuery]);
+
+  // Produto Campeão (Top 1)
+  const championProduct = useMemo(() => {
+    if (productRanking.length === 0) return null;
+    const top = productRanking[0];
+    return top.qty > 0 ? top : null;
+  }, [productRanking]);
+
+  // 4. Origem dos Pedidos (Source Breakdown)
+  const sourceStats = useMemo(() => {
+    const stats: Record<string, { count: number; total: number }> = {};
+    let totalRevenue = 0;
+
+    dateFilteredOrders.forEach((o) => {
+      const source = o.source || "ONLINE";
+      if (!stats[source]) stats[source] = { count: 0, total: 0 };
+      stats[source].count++;
+      stats[source].total += o.totalAmount;
+      totalRevenue += o.totalAmount;
+    });
+
+    return Object.entries(stats).map(([key, value]) => ({
+      key,
+      label: key === "IFOOD" ? "🛵 iFood" : key === "PDV" ? "🛒 PDV" : "💻 Site",
+      count: value.count,
+      total: value.total,
+      pct: totalRevenue > 0 ? (value.total / totalRevenue) * 100 : 0,
+      color: key === "IFOOD" ? "#EA1D2C" : key === "PDV" ? "#FF8A00" : "#2563EB",
+    })).sort((a, b) => b.total - a.total);
+  }, [dateFilteredOrders]);
+
+  // 5. Formas de Pagamento
+  const paymentStats = useMemo(() => {
+    const stats: Record<string, { count: number; total: number }> = {};
+    let totalRevenue = 0;
+
+    dateFilteredOrders.forEach((o) => {
+      const method = o.paymentMethod || "Outros";
+      if (!stats[method]) stats[method] = { count: 0, total: 0 };
+      stats[method].count++;
+      stats[method].total += o.totalAmount;
+      totalRevenue += o.totalAmount;
+    });
+
+    const PM_COLORS: Record<string, string> = {
+      PIX: "#00BFA5",
+      DINHEIRO: "#4CAF50",
+      CREDITO: "#9C27B0",
+      DEBITO: "#2196F3",
+      VOUCHER: "#E65100"
+    };
+
+    return Object.entries(stats).map(([key, value]) => ({
+      key,
+      count: value.count,
+      total: value.total,
+      pct: totalRevenue > 0 ? (value.total / totalRevenue) * 100 : 0,
+      color: PM_COLORS[key.toUpperCase()] || "#64748B",
+    })).sort((a, b) => b.total - a.total);
+  }, [dateFilteredOrders]);
+
+  // Exportar dados como CSV
+  const handleExportCSV = () => {
+    const headers = ["Rank", "Produto", "Categoria", "Preço Base", "Quantidade Vendida", "Faturamento", "Custo Total", "Lucro Líquido"];
+    const rows = productRanking.map((p, index) => [
+      index + 1,
+      `"${p.name.replace(/"/g, '""')}"`,
+      `"${p.category.replace(/"/g, '""')}"`,
+      p.price.toFixed(2),
+      p.qty,
+      p.revenue.toFixed(2),
+      p.cost.toFixed(2),
+      p.profit.toFixed(2),
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `relatorio_vendas_${from.toISOString().split("T")[0]}_a_${to.toISOString().split("T")[0]}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div style={{ padding: "1.5rem 1rem", maxWidth: 1280, margin: "0 auto", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      
+      {/* ── HEADER ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div>
+          <h1 style={{ fontWeight: 900, fontSize: "1.8rem", color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
+            📈 Relatório de Vendas
+          </h1>
+          <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#64748B", fontWeight: 500 }}>
+            Painel consolidado de métricas e ranking de produtos · <strong>{storeName}</strong>
+          </p>
+        </div>
+
+        <button
+          onClick={handleExportCSV}
+          disabled={productRanking.length === 0}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 20px",
+            background: "linear-gradient(135deg,#0F172A,#1E293B)",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            fontWeight: 700,
+            fontSize: "0.88rem",
+            cursor: productRanking.length === 0 ? "not-allowed" : "pointer",
+            boxShadow: "0 4px 12px rgba(15,23,42,0.15)",
+            opacity: productRanking.length === 0 ? 0.6 : 1,
+            transition: "transform 0.1s"
+          }}
+        >
+          <Download size={16} /> Exportar CSV
+        </button>
+      </div>
+
+      {/* ── CONTRÔLES / FILTROS ── */}
+      <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: "1.25rem", marginBottom: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "1rem" }}>
+        
+        {/* Filtros de Período Rápido */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginRight: 6 }}>Período:</span>
+          {PERIOD_PRESETS.map((p, i) => (
+            <button
+              key={i}
+              onClick={() => {
+                setPreset(i);
+                setUseCustom(false);
+              }}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 20,
+                border: "none",
+                fontWeight: 700,
+                fontSize: "0.8rem",
+                cursor: "pointer",
+                background: !useCustom && preset === i ? "#E8360C" : "#F1F5F9",
+                color: !useCustom && preset === i ? "#fff" : "#475569",
+                transition: "all 0.15s"
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+          <div style={{ display: "flex", gap: 5, alignItems: "center", marginLeft: "auto" }}>
+            <Calendar size={14} color="#94A3B8" />
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => {
+                setCustomFrom(e.target.value);
+                setUseCustom(true);
+              }}
+              style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.78rem", fontFamily: "inherit" }}
+            />
+            <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>até</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => {
+                setCustomTo(e.target.value);
+                setUseCustom(true);
+              }}
+              style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.78rem", fontFamily: "inherit" }}
+            />
+          </div>
+        </div>
+
+        <div style={{ height: "1px", background: "#F1F5F9" }} />
+
+        {/* Filtros de Produto / Categoria */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+          <div>
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: 6 }}>🔍 Filtrar por Produto</label>
+            <div style={{ position: "relative" }}>
+              <select
+                value={selectedProduct}
+                onChange={(e) => setSelectedProduct(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "9px 30px 9px 12px",
+                  borderRadius: 10,
+                  border: "1.5px solid #E2E8F0",
+                  fontSize: "0.85rem",
+                  color: "#0F172A",
+                  background: "#fff",
+                  outline: "none",
+                  cursor: "pointer",
+                  appearance: "none",
+                  fontFamily: "inherit"
+                }}
+              >
+                <option value="all"> Todos os produtos ({products.length})</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#64748B", pointerEvents: "none" }} />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: 6 }}>🍔 Filtrar por Categoria</label>
+            <div style={{ position: "relative" }}>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "9px 30px 9px 12px",
+                  borderRadius: 10,
+                  border: "1.5px solid #E2E8F0",
+                  fontSize: "0.85rem",
+                  color: "#0F172A",
+                  background: "#fff",
+                  outline: "none",
+                  cursor: "pointer",
+                  appearance: "none",
+                  fontFamily: "inherit"
+                }}
+              >
+                <option value="all">Todas as categorias ({categories.length})</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#64748B", pointerEvents: "none" }} />
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ── BANNER DO PERÍODO ── */}
+      <div style={{ background: "linear-gradient(135deg, #1E293B, #0F172A)", border: "1px solid #334155", color: "white", padding: "10px 1.5rem", borderRadius: 14, textAlign: "center", fontSize: "0.82rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: "1.5rem" }}>
+        <span>📅 Visualizando dados de</span>
+        <strong>{from.toLocaleDateString("pt-BR")}</strong>
+        <span>até</span>
+        <strong>{to.toLocaleDateString("pt-BR")}</strong>
+      </div>
+
+      {/* ── KPIs CARDS ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
+        
+        {/* Receita dos Itens */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(22,163,74,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <DollarSign size={18} color="#16A34A" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#16A34A", background: "rgba(22,163,74,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Faturamento
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Valor Vendido</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{fmtR(processedData.revenue)}</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Exclui taxas de entrega</p>
+          </div>
+        </div>
+
+        {/* Quantidade Vendida */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(37,99,235,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Package size={18} color="#2563EB" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#2563EB", background: "rgba(37,99,235,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Volume
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Quantidade de Itens</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{processedData.unitsSold} u.</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Unidades de produtos vendidas</p>
+          </div>
+        </div>
+
+        {/* Total de Pedidos */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(139,92,246,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ShoppingBag size={18} color="#8B5CF6" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#8B5CF6", background: "rgba(139,92,246,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Movimentação
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Pedidos no Filtro</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{processedData.ordersCount} ped.</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Ticket Médio do filtro: {fmtR(processedData.ticketMedio)}</p>
+          </div>
+        </div>
+
+        {/* Lucro e Margem */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(245,158,11,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <TrendingUp size={18} color="#F59E0B" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#F59E0B", background: "rgba(245,158,11,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Rentabilidade
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Margem Estimada (Lucro)</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>
+              {fmtPct(processedData.margin)}
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Lucro Líquido: {fmtR(processedData.profit)}</p>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ── GRID: CAMPEÃO + GRÁFICOS CANAL / PAGAMENTO ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "1.5rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+        
+        {/* Produto Campeão Destaque */}
+        <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: "1.25rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 300 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F1F5F9", paddingBottom: "0.75rem", marginBottom: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Award size={18} color="#FF6B35" />
+              <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>🥇 Produto Campeão de Vendas</h2>
+            </div>
+            <span style={{ fontSize: "0.68rem", fontWeight: 800, background: "#FFF5F3", border: "1px solid #FFCDC4", color: "#E8360C", padding: "4px 10px", borderRadius: 20 }}>
+              TOP SELLER
+            </span>
+          </div>
+
+          {championProduct ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: "1.5rem", alignItems: "center", flex: 1 }}>
+              
+              {/* Lado Esquerdo: Identificação */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ background: "linear-gradient(135deg, #FFF5F3, #FFEBE7)", width: 70, height: 70, borderRadius: 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.2rem" }}>
+                  🍔
+                </div>
+                <div>
+                  <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#E8360C", background: "#FFF5F3", padding: "2px 8px", borderRadius: 6, textTransform: "uppercase" }}>
+                    {championProduct.category}
+                  </span>
+                  <h3 style={{ margin: "6px 0 2px", fontWeight: 900, fontSize: "1.2rem", color: "#0F172A", lineHeight: 1.2 }}>
+                    {championProduct.name}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>
+                    Preço base: <strong>{fmtR(championProduct.price)}</strong>
+                  </p>
+                </div>
+              </div>
+
+              {/* Lado Direito: Métricas Consolidadas */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "#F8FAFC", borderRadius: 14, padding: "12px 16px", border: "1px solid #F1F5F9" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+                  <span style={{ color: "#64748B" }}>Unidades Vendidas:</span>
+                  <strong style={{ color: "#0F172A" }}>{championProduct.qty} u.</strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+                  <span style={{ color: "#64748B" }}>Faturamento Gerado:</span>
+                  <strong style={{ color: "#16A34A" }}>{fmtR(championProduct.revenue)}</strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+                  <span style={{ color: "#64748B" }}>Custo Total (CMV):</span>
+                  <strong style={{ color: "#DC2626" }}>{fmtR(championProduct.cost)}</strong>
+                </div>
+                <div style={{ height: "1px", background: "#E2E8F0", margin: "4px 0" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 800 }}>
+                  <span style={{ color: "#475569" }}>Lucro Líquido:</span>
+                  <span style={{ color: "#FF6B35" }}>{fmtR(championProduct.profit)}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "#94A3B8" }}>
+                  <span>Margem no item:</span>
+                  <span>{championProduct.revenue > 0 ? fmtPct((championProduct.profit / championProduct.revenue) * 100) : "0.0%"}</span>
+                </div>
+              </div>
+
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, color: "#94A3B8" }}>
+              <div style={{ fontSize: "2rem", marginBottom: 8 }}>📊</div>
+              <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600 }}>Nenhum produto vendido no período</p>
+            </div>
+          )}
+
+          <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: "0.75rem", marginTop: "1rem" }}>
+            <span style={{ fontSize: "0.7rem", color: "#94A3B8", display: "flex", alignItems: "center", gap: 5 }}>
+              <Activity size={12} /> Atualizado de acordo com o fluxo de pedidos sincronizado.
+            </span>
+          </div>
+        </div>
+
+        {/* Canais e Formas de Pagamento */}
+        <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: "1.25rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "1.25rem", minHeight: 300 }}>
+          
+          {/* Canais */}
+          <div>
+            <h3 style={{ margin: "0 0 10px", fontWeight: 900, fontSize: "0.88rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
+              <Grid size={15} /> Origem dos Pedidos (Faturamento)
+            </h3>
+            {sourceStats.length === 0 ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>Sem dados no período.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {sourceStats.map((item) => (
+                  <div key={item.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: 3 }}>
+                      <span style={{ fontWeight: 600 }}>{item.label}</span>
+                      <strong style={{ color: item.color }}>{fmtR(item.total)} <span style={{ fontWeight: 400, color: "#94A3B8", marginLeft: 4 }}>({item.count} ped. · {fmtPct(item.pct)})</span></strong>
+                    </div>
+                    <div style={{ background: "#F1F5F9", height: 6, borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ background: item.color, height: "100%", width: `${item.pct}%`, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ height: "1px", background: "#F1F5F9" }} />
+
+          {/* Formas de Pagamento */}
+          <div>
+            <h3 style={{ margin: "0 0 10px", fontWeight: 900, fontSize: "0.88rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
+              <PieChart size={15} /> Meios de Pagamento (Breakdown)
+            </h3>
+            {paymentStats.length === 0 ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>Sem dados no período.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {paymentStats.map((item) => (
+                  <div key={item.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: 3 }}>
+                      <span style={{ fontWeight: 600 }}>{item.key}</span>
+                      <strong>{fmtR(item.total)} <span style={{ fontWeight: 400, color: "#94A3B8", marginLeft: 4 }}>({item.count} ped. · {fmtPct(item.pct)})</span></strong>
+                    </div>
+                    <div style={{ background: "#F1F5F9", height: 6, borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ background: item.color, height: "100%", width: `${item.pct}%`, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* ── CARD: RANKING COMPLETO DE PRODUTOS ── */}
+      <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+        
+        {/* Tabela Header com Barra de Pesquisa */}
+        <div style={{ padding: "1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", background: "#F8FAFC" }}>
+          <div>
+            <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
+              <BarChart2 size={18} color="#E8360C" /> Ranking Geral de Produtos ({productRanking.length})
+            </h2>
+            <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#64748B" }}>
+              Ordenado por quantidade vendida (do campeão ao mais fraco)
+            </p>
+          </div>
+
+          <div style={{ position: "relative", minWidth: 260 }}>
+            <Search size={14} color="#94A3B8" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+            <input
+              type="text"
+              placeholder="Buscar no ranking..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "8px 10px 8px 30px",
+                borderRadius: 10,
+                border: "1.5px solid #E2E8F0",
+                fontSize: "0.82rem",
+                outline: "none",
+                fontFamily: "inherit",
+                boxSizing: "border-box"
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Tabela do Ranking */}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
+            <thead>
+              <tr style={{ borderBottom: "1.5px solid #E2E8F0", background: "#fff", color: "#475569" }}>
+                <th style={{ padding: "12px 1.25rem", fontWeight: 700, width: 60 }}>Rank</th>
+                <th style={{ padding: "12px 1rem", fontWeight: 700 }}>Produto</th>
+                <th style={{ padding: "12px 1rem", fontWeight: 700 }}>Categoria</th>
+                <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>Preço Base</th>
+                <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>Qtd. Vendida</th>
+                <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>Receita total</th>
+                <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>CMV Total</th>
+                <th style={{ padding: "12px 1.25rem", fontWeight: 700, textAlign: "right" }}>Lucro estimado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productRanking.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ padding: "3rem", textAlign: "center", color: "#94A3B8" }}>
+                    Nenhum produto encontrado.
+                  </td>
+                </tr>
+              ) : (
+                productRanking.map((p, index) => {
+                  const isTop = index === 0 && p.qty > 0;
+                  const isZero = p.qty === 0;
+                  return (
+                    <tr
+                      key={p.id}
+                      style={{
+                        borderBottom: "1px solid #F1F5F9",
+                        background: isTop ? "#FFF7F5" : isZero ? "#FAFAFA" : "#fff",
+                        transition: "background 0.15s"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = isTop ? "#FFEFEA" : isZero ? "#F5F5F5" : "#F8FAFC";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = isTop ? "#FFF7F5" : isZero ? "#FAFAFA" : "#fff";
+                      }}
+                    >
+                      <td style={{ padding: "12px 1.25rem", fontWeight: 800, color: isTop ? "#E8360C" : "#64748B" }}>
+                        {isTop ? "🥇 1" : `${index + 1}`}
+                      </td>
+                      <td style={{ padding: "12px 1rem", fontWeight: 700, color: "#0F172A" }}>
+                        {p.name}
+                      </td>
+                      <td style={{ padding: "12px 1rem" }}>
+                        <span style={{ fontSize: "0.72rem", fontWeight: 600, color: "#475569", background: "#F1F5F9", padding: "2px 8px", borderRadius: 6 }}>
+                          {p.category}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 1rem", textAlign: "right", color: "#475569" }}>
+                        {fmtR(p.price)}
+                      </td>
+                      <td style={{ padding: "12px 1rem", textAlign: "right", fontWeight: 800, color: isZero ? "#94A3B8" : "#0F172A" }}>
+                        {p.qty} u.
+                      </td>
+                      <td style={{ padding: "12px 1rem", textAlign: "right", fontWeight: 700, color: isZero ? "#94A3B8" : "#16A34A" }}>
+                        {fmtR(p.revenue)}
+                      </td>
+                      <td style={{ padding: "12px 1rem", textAlign: "right", color: isZero ? "#94A3B8" : "#DC2626" }}>
+                        {fmtR(p.cost)}
+                      </td>
+                      <td style={{ padding: "12px 1.25rem", textAlign: "right", fontWeight: 800, color: isZero ? "#94A3B8" : "#FF6B35" }}>
+                        {fmtR(p.profit)}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
