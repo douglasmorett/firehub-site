@@ -51,8 +51,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ connected: false, message: "Loja desconectada pelo usuário" });
     }
 
-    const merchantId = user?.ifoodMerchantId || process.env.IFOOD_MERCHANT_UUID;
-    if (!merchantId) return NextResponse.json({ connected: false, error: "IFOOD_MERCHANT_UUID não configurado" });
+    const merchantId = user?.ifoodMerchantId;
+    if (!merchantId) {
+      return NextResponse.json({ connected: false, error: "Nenhuma loja iFood conectada." });
+    }
 
     try {
       const token = await getIfoodToken();

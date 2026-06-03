@@ -4,6 +4,8 @@
  * Usada em todos os cenários de homologação.
  */
 
+import { prisma } from "./prisma";
+
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
 
 // Cache de token em memória (válido por ~1h)
@@ -81,5 +83,16 @@ export async function ifoodMutate(
 export function getMerchantId(): string {
   const id = process.env.IFOOD_MERCHANT_UUID;
   if (!id) throw new Error("IFOOD_MERCHANT_UUID não configurado.");
+  return id;
+}
+
+/** Obtém o merchantId específico do usuário logado no banco */
+export async function getMerchantIdForUser(email: string): Promise<string> {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { ifoodMerchantId: true }
+  });
+  const id = user?.ifoodMerchantId;
+  if (!id) throw new Error("Você não possui uma loja iFood integrada.");
   return id;
 }

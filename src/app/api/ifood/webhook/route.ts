@@ -108,15 +108,14 @@ export async function GET(req: NextRequest) {
   const franchisee = await prisma.user.findFirst({
     where: { ifoodMerchantId: merchantId } as any,
   });
-  // Fallback: pega o primeiro usuário franqueado se nenhum tem o merchantId
-  const fallbackUser = franchisee ?? await prisma.user.findFirst({
-    where: { role: "FRANCHISEE" } as any,
-  });
+  if (!franchisee) {
+    return NextResponse.json({ events: [], error: `Nenhum franqueado encontrado para o merchantId: ${merchantId}` });
+  }
 
   // Processa cada evento
   for (const event of data ?? []) {
     try {
-      await processIfoodEvent(event, fallbackUser?.id);
+      await processIfoodEvent(event, franchisee.id);
     } catch (err) {
       console.error("[iFood Polling] Erro ao processar evento:", event?.id, err);
     }
@@ -151,20 +150,16 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     const { getIfoodToken } = await import("@/lib/ifood-api");
     const token = await getIfoodToken();
 
-    // Busca franqueado - usa IFOOD_MERCHANT_UUID do env para consistência
-    const envMerchantId = process.env.IFOOD_MERCHANT_UUID;
+    // Busca franqueado pelo merchantId do evento
     let franchisee = await prisma.user.findFirst({
-      where: { ifoodMerchantId: envMerchantId ?? merchantId } as any,
+      where: { ifoodMerchantId: merchantId } as any,
     });
-    // Fallback: usa o franchiseeId do override ou pega o primeiro franqueado
+    // Fallback: se fornecido override
     if (!franchisee && franchiseeIdOverride) {
       franchisee = await prisma.user.findUnique({ where: { id: franchiseeIdOverride } });
     }
     if (!franchisee) {
-      franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
-    }
-    if (!franchisee) {
-      console.error(`[iFood Webhook] ❌ Nenhum franqueado encontrado para pedido ${orderId}`);
+      console.error(`[iFood Webhook] ❌ Nenhum franqueado encontrado para merchantId: ${merchantId}`);
       return;
     }
     console.log(`[iFood Webhook] Usando franchisee: ${franchisee.id} para pedido ${orderId}`);

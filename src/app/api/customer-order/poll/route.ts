@@ -34,26 +34,13 @@ async function pollIfoodEvents(sessionUserId?: string) {
     const events = eventsText ? JSON.parse(eventsText) : [];
     if (!events || events.length === 0) return;
 
-    // Use session user if available, otherwise look up by merchantId
-    let franchisee: { id: string } | null = null;
-    if (sessionUserId) {
-      franchisee = { id: sessionUserId };
-      console.log(`[iFood Poll] Usando franchisee da sessão: ${sessionUserId}`);
-    } else {
-      franchisee = await prisma.user.findFirst({
-        where: { ifoodMerchantId: merchantId } as any,
-      });
-      if (!franchisee) {
-        franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
-      }
-      console.log(`[iFood Poll] Franchisee por lookup: ${franchisee?.id ?? 'NÃO ENCONTRADO'}`);
-    }
+
 
     // Process each event
     const processedEventIds: string[] = [];
     for (const event of events) {
       try {
-        const { code, orderId } = event;
+        const { code, orderId, merchantId } = event;
         if (!orderId) continue;
 
         // Log de debug para identificar códigos de eventos
@@ -156,8 +143,12 @@ async function pollIfoodEvents(sessionUserId?: string) {
             }
             const orderData = await orderRes.json();
 
-            if (!franchisee) {
-              console.error(`[iFood Poll] ❌ Nenhum franqueado encontrado para criar pedido ${orderId}`);
+            const eventMerchantId = merchantId || orderData.merchant?.id;
+            const eventFranchisee = await prisma.user.findFirst({
+              where: { ifoodMerchantId: eventMerchantId } as any,
+            });
+            if (!eventFranchisee) {
+              console.error(`[iFood Poll] ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
               continue;
             }
 
@@ -170,7 +161,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   where: { id: `ifood-${i.id}` } as any,
                   create: {
                     id: `ifood-${i.id}`,
-                    franchiseeId: franchisee.id,
+                    franchiseeId: eventFranchisee.id,
                     name: i.name ?? "Item iFood",
                     description: "",
                     price: i.unitPrice ?? i.price ?? 0,
@@ -299,7 +290,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
             await (prisma.customerOrder as any).create({
               data: {
-                franchiseeId: franchisee.id,
+                franchiseeId: eventFranchisee.id,
                 ifoodOrderId: orderId,
                 ifoodReference: orderData.displayId ?? undefined,
                 scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
@@ -328,7 +319,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 items: { create: items },
               },
             });
-            console.log(`[iFood Poll] ✅ Pedido ${orderId} criado com sucesso! (evento: ${code}/${event.fullCode}, status: ${initialStatus}, franchisee: ${franchisee.id})`);
+            console.log(`[iFood Poll] ✅ Pedido ${orderId} criado com sucesso! (evento: ${code}/${event.fullCode}, status: ${initialStatus}, franchisee: ${eventFranchisee.id})`);
 
             // Auto-confirm to iFood se ainda é PLACED
             if (isPlaced) {

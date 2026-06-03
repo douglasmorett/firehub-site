@@ -7,14 +7,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { ifoodFetch, ifoodMutate, getMerchantId } from "@/lib/ifood-api";
+import { ifoodFetch, ifoodMutate, getMerchantIdForUser } from "@/lib/ifood-api";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   try {
-    const merchantId = getMerchantId();
+    const email = session.user?.email || "";
+    const merchantId = await getMerchantIdForUser(email);
     const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/interruptions`);
 
     if (!res.ok) {
@@ -42,7 +43,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "start e end são obrigatórios (ISO 8601)" }, { status: 400 });
     }
 
-    const merchantId = getMerchantId();
+    const email = session.user?.email || "";
+    const merchantId = await getMerchantIdForUser(email);
     const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/interruptions`, {
       method: "POST",
       body: JSON.stringify({ description: description || "Pausa temporária", start, end }),

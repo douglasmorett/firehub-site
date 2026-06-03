@@ -63,19 +63,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, events: 0, log, durationMs: Date.now() - startTime });
     }
 
-    // Find franchisee
-    let franchisee = await prisma.user.findFirst({
-      where: { ifoodMerchantId: merchantId } as any,
-    });
-    if (!franchisee) {
-      franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
-    }
-    if (!franchisee) {
-      log.push("❌ Nenhum franqueado encontrado");
-      return NextResponse.json({ ok: false, log });
-    }
-    log.push(`👤 Franqueado: ${franchisee.id}`);
-
     // Process events
     const processedEventIds: string[] = [];
     let created = 0;
@@ -83,7 +70,7 @@ export async function GET(req: NextRequest) {
 
     for (const event of events) {
       try {
-        const { code, orderId } = event;
+        const { code, orderId, merchantId } = event;
         if (!orderId) continue;
 
         const isPlaced = code === "PLC" || event.fullCode === "PLACED";
@@ -156,6 +143,15 @@ export async function GET(req: NextRequest) {
 
           const orderData = await orderRes.json();
 
+          const eventMerchantId = merchantId || orderData.merchant?.id;
+          const eventFranchisee = await prisma.user.findFirst({
+            where: { ifoodMerchantId: eventMerchantId } as any,
+          });
+          if (!eventFranchisee) {
+            log.push(`  ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
+            continue;
+          }
+
           // Extract items
           const items = (orderData.items ?? []).map((i: any) => ({
             price: i.unitPrice ?? i.price ?? 0,
@@ -165,7 +161,7 @@ export async function GET(req: NextRequest) {
                 where: { id: `ifood-${i.id}` } as any,
                 create: {
                   id: `ifood-${i.id}`,
-                  franchiseeId: franchisee.id,
+                  franchiseeId: eventFranchisee.id,
                   name: i.name ?? "Item iFood",
                   description: "",
                   price: i.unitPrice ?? i.price ?? 0,
@@ -258,7 +254,7 @@ export async function GET(req: NextRequest) {
 
           await (prisma.customerOrder as any).create({
             data: {
-              franchiseeId: franchisee.id,
+              franchiseeId: eventFranchisee.id,
               ifoodOrderId: orderId,
               ifoodReference: orderData.displayId ?? undefined,
               scheduledDatetime: scheduledDatetime ?? deliveryDeadline,

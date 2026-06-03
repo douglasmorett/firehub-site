@@ -7,14 +7,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { ifoodMutate, getMerchantId } from "@/lib/ifood-api";
+import { ifoodMutate, getMerchantIdForUser } from "@/lib/ifood-api";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   try {
-    const merchantId = getMerchantId();
+    const email = session.user?.email || "";
+    const merchantId = await getMerchantIdForUser(email);
     const res  = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`);
     const data = res.ok ? await res.json() : null;
     return NextResponse.json({ merchantId, openingHours: data });
@@ -29,7 +30,8 @@ export async function PUT(req: NextRequest) {
 
   try {
     const body        = await req.json();
-    const merchantId  = getMerchantId();
+    const email       = session.user?.email || "";
+    const merchantId  = await getMerchantIdForUser(email);
 
     console.log("[iFood Opening Hours PUT] Enviando:", JSON.stringify(body, null, 2));
 

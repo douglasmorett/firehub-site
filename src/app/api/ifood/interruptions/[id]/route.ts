@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { ifoodMutate, getMerchantId } from "@/lib/ifood-api";
+import { ifoodMutate, getMerchantIdForUser } from "@/lib/ifood-api";
 
 export async function DELETE(
   _req: NextRequest,
@@ -16,7 +16,8 @@ export async function DELETE(
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   try {
-    const merchantId     = getMerchantId();
+    const email = session.user?.email || "";
+    const merchantId = await getMerchantIdForUser(email);
     const { id: interruptionId } = await params;
 
     const res = await ifoodMutate(

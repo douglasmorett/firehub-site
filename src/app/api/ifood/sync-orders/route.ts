@@ -17,27 +17,19 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, role: true },
+    select: { id: true, role: true, ifoodMerchantId: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
+  const merchantId = user.ifoodMerchantId;
+  if (!merchantId) {
+    return NextResponse.json({ error: "Você não possui uma loja iFood integrada no seu perfil." }, { status: 400 });
+  }
+
+  const franchisee = user;
+
   try {
     const token = await getIfoodToken();
-    const merchantId = process.env.IFOOD_MERCHANT_UUID;
-    if (!merchantId) {
-      return NextResponse.json({ error: "IFOOD_MERCHANT_UUID não configurado" }, { status: 500 });
-    }
-
-    // Find franchisee
-    let franchisee = await prisma.user.findFirst({
-      where: { ifoodMerchantId: merchantId } as any,
-    });
-    if (!franchisee) {
-      franchisee = await prisma.user.findFirst({ where: { role: "FRANCHISEE" } as any });
-    }
-    if (!franchisee) {
-      return NextResponse.json({ error: "Nenhum franqueado encontrado" }, { status: 404 });
-    }
 
     const imported: string[] = [];
     const errors: string[] = [];

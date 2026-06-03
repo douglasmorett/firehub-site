@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
-import { ifoodFetch, getMerchantId } from "@/lib/ifood-api";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { ifoodFetch, getMerchantIdForUser } from "@/lib/ifood-api";
 
 export async function GET() {
-  const merchantId = getMerchantId();
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
 
   try {
+    const email = session.user.email;
+    const merchantId = await getMerchantIdForUser(email);
     // Parallel requests to iFood API
     const [statusRes, hoursRes, interruptRes] = await Promise.allSettled([
       ifoodFetch(`/merchant/v1.0/merchants/${merchantId}/status`),

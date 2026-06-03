@@ -10,18 +10,17 @@ export default async function IfoodPage() {
   const session = await getServerSession(authOptions).catch(() => null);
   if (!session) redirect("/login");
 
-  const merchantId = process.env.IFOOD_MERCHANT_UUID || "";
   const clientId   = process.env.IFOOD_CLIENT_ID || "";
 
-  // Load per-store widget ID from database
+  // Load per-store widget ID and merchant ID from database
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { ifoodWidgetId: true },
+    select: { ifoodWidgetId: true, ifoodMerchantId: true },
   });
 
   return (
     <IfoodHomologacaoClient
-      merchantId={merchantId}
+      merchantId={user?.ifoodMerchantId || ""}
       clientId={clientId}
       ifoodWidgetId={user?.ifoodWidgetId || undefined}
     />

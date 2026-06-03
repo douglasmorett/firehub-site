@@ -6,14 +6,15 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { ifoodFetch, getMerchantId } from "@/lib/ifood-api";
+import { ifoodFetch, getMerchantIdForUser } from "@/lib/ifood-api";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   try {
-    const merchantId = getMerchantId();
+    const email = session.user?.email || "";
+    const merchantId = await getMerchantIdForUser(email);
 
     // 1. Detalhes da loja
     const detailRes = await ifoodFetch(`/merchant/v1.0/merchants/${merchantId}`);

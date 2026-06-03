@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { getIfoodToken, getMerchantId } from "@/lib/ifood-api";
+import { getIfoodToken, getMerchantIdForUser } from "@/lib/ifood-api";
 
 /**
  * GET /api/ifood/debug-orders
@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const token = await getIfoodToken();
-    const merchantId = getMerchantId();
+    const email = session.user.email;
+    const merchantId = await getMerchantIdForUser(email);
     results.tokenOk = true;
     results.merchantId = merchantId;
 

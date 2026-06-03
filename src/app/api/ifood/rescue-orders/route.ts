@@ -31,17 +31,16 @@ export async function GET(req: NextRequest) {
 
   try {
     const token = await getIfoodToken();
-    const merchantId = process.env.IFOOD_MERCHANT_UUID;
+    const merchantId = user.ifoodMerchantId;
     results.tokenOk = true;
     results.merchantId = merchantId;
     results.userId = user.id;
     results.userIfoodMerchantId = user.ifoodMerchantId;
-    results.merchantIdMatch = user.ifoodMerchantId === merchantId;
+    results.merchantIdMatch = true;
 
     // Check: user has ifoodMerchantId set?
-    if (!user.ifoodMerchantId || user.ifoodMerchantId !== merchantId) {
-      results.warning = "⚠️ ifoodMerchantId não está configurado corretamente no seu perfil!";
-      results.fix = "Chame POST /api/ifood/fix-ownership para corrigir";
+    if (!merchantId) {
+      results.warning = "⚠️ Você não possui uma loja iFood integrada no seu perfil!";
     }
 
     // 1. Check recent iFood orders in DB (across ALL users)
