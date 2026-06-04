@@ -38,5 +38,11 @@ export async function POST(req: Request) {
     },
   });
 
+  // Realiza a baixa imediata no estoque do pedido presencial
+  const { deductStockForOrder } = await import("@/lib/stock");
+  deductStockForOrder(order.id).catch(err =>
+    console.error("[Stock] Erro ao deduzir estoque de pedido presencial:", err)
+  );
+
   return NextResponse.json({ success: true, orderId: order.id });
 }

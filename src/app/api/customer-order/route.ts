@@ -95,10 +95,14 @@ export async function POST(req: Request) {
       data: { storeOrderCount: { increment: 1 } }
     });
 
-    // Se auto-aceito, já contabiliza no faturamento imediatamente
+    // Se auto-aceito, já contabiliza no faturamento e deduz estoque imediatamente
     if (franchisee.autoAcceptOrders) {
       trackSaleForBilling(franchisee.id).catch(err =>
         console.error("[Billing] Erro ao atualizar ciclo:", err)
+      );
+      const { deductStockForOrder } = await import("@/lib/stock");
+      deductStockForOrder(order.id).catch(err =>
+        console.error("[Stock] Erro ao deduzir estoque auto-aceito:", err)
       );
     }
 

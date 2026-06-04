@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
 
 const NAV_ITEMS = [
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/store/pedidos-clientes", label: "Pedidos", icon: ClipboardList, highlight: true },
   { href: "/store/venda-presencial", label: "PDV", icon: ShoppingBag },
   { href: "/store/cardapio", label: "Cardápio", icon: UtensilsCrossed },
+  { href: "/store/estoque", label: "Estoque", icon: Package },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
   { href: "/store/relatorios", label: "Relatórios", icon: PieChart },
   { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "IA" },
@@ -30,11 +31,16 @@ const METHODS = [
 export default function StoreTopNav({
   userName, userCity, userSlug, showCompras, isAdmin = false,
   initialStoreOpen = true, initialCashOpen = false,
+  showAntecipacao = false,
 }: {
   userName: string; userCity: string; userSlug?: string | null;
   showCompras: boolean; isAdmin?: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
+  showAntecipacao?: boolean;
 }) {
   const pathname = usePathname();
+  const menuItems = showAntecipacao
+    ? [...NAV_ITEMS, { href: "/store/antecipacao", label: "Antecipação", icon: Zap }]
+    : NAV_ITEMS;
   const router = useRouter();
   const [, startTransition] = useTransition();
   const isCompras = pathname?.startsWith("/store/compras") || pathname?.startsWith("/store/orders");
@@ -641,7 +647,7 @@ export default function StoreTopNav({
       {!isCompras && (
       <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.75rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
         <div style={{ maxWidth:"1400px", margin:"0 auto", display:"flex", alignItems:"stretch", gap:0, overflowX:"auto", scrollbarWidth:"none" }}>
-          {NAV_ITEMS.map(item => {
+          {menuItems.map(item => {
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
             return (

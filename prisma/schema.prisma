@@ -73,6 +73,7 @@ model User {
   storeReviews    StoreReview[]
   motoboys        Motoboy[]
   menuProducts    MenuProduct[]
+  stockItems      StockItem[]
 }
 
 model Product {
@@ -195,6 +196,7 @@ model MenuProduct {
   orderItems      CustomerOrderItem[]
   comboGroups     ComboGroup[]
   comboGroupItems ComboGroupItem[]
+  recipeItems     ProductRecipe[]
 }
 
 model ComboGroup {
@@ -504,5 +506,46 @@ model MetaAdsCampaign {
 
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+}
+
+// ========== ESTOQUE E RECEITAS ==========
+
+model StockItem {
+  id            String             @id @default(cuid())
+  franchiseeId  String
+  name          String
+  quantity      Float              @default(0)
+  unit          String             @default("un") // "un", "g", "kg", "ml", "l"
+  minQuantity   Float?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  user          User               @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  transactions  StockTransaction[]
+  recipeItems   ProductRecipe[]
+
+  @@unique([franchiseeId, name])
+}
+
+model StockTransaction {
+  id            String      @id @default(cuid())
+  stockItemId   String
+  quantity      Float       // Positiva (entrada), Negativa (saída)
+  type          String      // "INPUT", "OUTPUT", "SALE", "WASTE"
+  notes         String?
+  createdAt     DateTime    @default(now())
+  stockItem     StockItem   @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+}
+
+model ProductRecipe {
+  id               String       @id @default(cuid())
+  menuProductId    String
+  stockItemId      String
+  quantityConsumed Float
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  menuProduct      MenuProduct  @relation(fields: [menuProductId], references: [id], onDelete: Cascade)
+  stockItem        StockItem    @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@unique([menuProductId, stockItemId])
 }
 

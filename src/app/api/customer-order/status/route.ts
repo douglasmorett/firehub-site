@@ -157,5 +157,14 @@ export async function PUT(req: Request) {
     );
   }
 
+  // Realiza a baixa do estoque se o pedido for aceito ou entrar em preparo/entrega
+  const STOCK_DEDUCT_STATUSES = ["ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE"];
+  if (STOCK_DEDUCT_STATUSES.includes(status)) {
+    const { deductStockForOrder } = await import("@/lib/stock");
+    deductStockForOrder(orderId).catch(err =>
+      console.error("[Stock] Erro ao deduzir estoque:", err)
+    );
+  }
+
   return NextResponse.json({ success: true });
 }

@@ -25,8 +25,9 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   try {
     user = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, name: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
+      select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
     });
+    console.log("[StoreLayout] Session Email:", session.user?.email, "| User Email from DB:", user?.email);
   } catch (err) {
     console.error("[StoreLayout] Erro ao buscar usuário:", err);
   }
@@ -88,6 +89,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           isAdmin={isAdmin}
           initialStoreOpen={user?.storeOpen ?? true}
           initialCashOpen={user?.cashOpen ?? false}
+          showAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || user?.email?.toLowerCase() === "contatohakim@gmail.com"}
         />
 
         {/* Banner: Trial ativo (esconde no módulo de compras via client-side) */}
