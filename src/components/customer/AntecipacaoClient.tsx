@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from "react";
-import { Clock, Play, RotateCcw, Sparkles, AlertTriangle, Calendar, Info, CheckCircle2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Clock, AlertTriangle, Info } from "lucide-react";
 
 interface AntecipacaoClientProps {
   userName: string;
@@ -68,10 +68,6 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Estados de feedback do simulador
-  const [simulating, setSimulating] = useState<boolean>(false);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
   const [activeTab, setActiveTab] = useState<"day1" | "day2">("day1");
 
   const fetchData = async () => {
@@ -99,32 +95,6 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
     fetchData();
   }, [hours, referenceTime, dayOfWeek]);
 
-  const handleSimulate = async () => {
-    if (simulating) return;
-    setSimulating(true);
-    setSuccessMsg(null);
-    try {
-      const res = await fetch("/api/store/antecipacao/simulate", {
-        method: "POST"
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "Erro ao simular dados.");
-      }
-      setSuccessMsg(json.message);
-      // Recarregar os dados
-      fetchData();
-      // Ocultar a mensagem após 5 segundos
-      setTimeout(() => {
-        setSuccessMsg(null);
-      }, 7000);
-    } catch (err: any) {
-      alert("Erro ao simular: " + err.message);
-    } finally {
-      setSimulating(false);
-    }
-  };
-
   const getPredictionTimeRange = () => {
     if (!referenceTime) return "";
     const [h, m] = referenceTime.split(":").map(Number);
@@ -149,28 +119,8 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
               Previsão inteligente para <strong>{storeName}</strong> baseado nos hábitos dos clientes nas últimas duas semanas.
             </p>
           </div>
-          <div className="header-action">
-            <button
-              onClick={handleSimulate}
-              disabled={simulating}
-              className={`btn-simulate ${simulating ? "loading" : ""}`}
-            >
-              <Sparkles size={16} />
-              {simulating ? "Simulando..." : "Simular Dados de Teste"}
-            </button>
-          </div>
         </div>
       </div>
-
-      {/* FEEDBACK ALERTS */}
-      {successMsg && (
-        <div className="alert-success">
-          <CheckCircle2 size={20} className="icon-success" />
-          <div className="alert-text">
-            <strong>Sucesso!</strong> {successMsg}
-          </div>
-        </div>
-      )}
 
       {/* CONTROL BAR */}
       <div className="control-card">
