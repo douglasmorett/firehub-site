@@ -11,49 +11,34 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const email = session.user.email;
+    const email = session.user.email || "";
+    const emailLower = email.toLowerCase();
     const role = (session.user as any)?.role;
 
     // Apenas contatohakim@gmail.com ou ADMINs podem acessar
-    if (email !== "contatohakim@gmail.com" && role !== "ADMIN") {
+    if (emailLower !== "contatohakim@gmail.com" && role !== "ADMIN") {
       return NextResponse.json({ error: "Acesso não autorizado" }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
-    const hours = parseFloat(searchParams.get("hours") || "1");
-    const referenceTime = searchParams.get("referenceTime") || "18:00";
-    
-    // Obter o dia da semana atual local do servidor (0-6)
-    const now = new Date();
-    const defaultDay = now.getDay();
-    const dayOfWeek = parseInt(searchParams.get("dayOfWeek") ?? String(defaultDay), 10);
+    const start1Str = searchParams.get("start1");
+    const end1Str = searchParams.get("end1");
+    const start2Str = searchParams.get("start2");
+    const end2Str = searchParams.get("end2");
 
-    // Encontrar a ocorrência mais recente desse dia da semana
-    const targetDate = new Date();
-    targetDate.setHours(0, 0, 0, 0);
-    const diff = targetDate.getDay() - dayOfWeek;
-    const offset = diff >= 0 ? diff : diff + 7;
-    targetDate.setDate(targetDate.getDate() - offset);
+    if (!start1Str || !end1Str || !start2Str || !end2Str) {
+      return NextResponse.json({ error: "Parâmetros de data/hora ausentes." }, { status: 400 });
+    }
 
-    // Datas históricas: 7 e 14 dias atrás
-    const date1 = new Date(targetDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const date2 = new Date(targetDate.getTime() - 14 * 24 * 60 * 60 * 1000);
-
-    // Montar janelas de tempo
-    const [refHour, refMinute] = referenceTime.split(":").map(Number);
-    
-    const start1 = new Date(date1);
-    start1.setHours(refHour, refMinute, 0, 0);
-    const end1 = new Date(start1.getTime() + hours * 60 * 60 * 1000);
-
-    const start2 = new Date(date2);
-    start2.setHours(refHour, refMinute, 0, 0);
-    const end2 = new Date(start2.getTime() + hours * 60 * 60 * 1000);
+    const start1 = new Date(start1Str);
+    const end1 = new Date(end1Str);
+    const start2 = new Date(start2Str);
+    const end2 = new Date(end2Str);
 
     // Encontrar o franchiseeId correto
     let franchiseeId = "";
     const user = await prisma.user.findUnique({
-      where: { email: email || "" },
+      where: { email: emailLower },
       select: { id: true }
     });
     if (user) {
@@ -61,7 +46,7 @@ export async function GET(req: Request) {
     }
 
     // Se admin e não for hakim, usa o ID do hakim se ele existir para testar
-    if (role === "ADMIN" && email !== "contatohakim@gmail.com") {
+    if (role === "ADMIN" && emailLower !== "contatohakim@gmail.com") {
       const hakimUser = await prisma.user.findUnique({
         where: { email: "contatohakim@gmail.com" },
         select: { id: true }
@@ -156,17 +141,26 @@ export async function GET(req: Request) {
       };
     });
 
-    const formatLocaleDate = (d: Date) => {
-      return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const formatDateSP = (d: Date) => {
+      return d.toLocaleDateString("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric"
+      });
+    };
+    const formatTimeSP = (d: Date) => {
+      return d.toLocaleTimeString("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
     };
 
     return NextResponse.json({
       success: true,
-      dayOfWeek,
-      referenceTime,
-      hours,
-      labelDay1: `${formatLocaleDate(start1)} (${start1.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} - ${end1.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})`,
-      labelDay2: `${formatLocaleDate(start2)} (${start2.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} - ${end2.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})`,
+      labelDay1: `${formatDateSP(start1)} (${formatTimeSP(start1)} - ${formatTimeSP(end1)})`,
+      labelDay2: `${formatDateSP(start2)} (${formatTimeSP(start2)} - ${formatTimeSP(end2)})`,
       averages,
       ordersDay1: ordersDay1.map(o => ({
         id: o.id,

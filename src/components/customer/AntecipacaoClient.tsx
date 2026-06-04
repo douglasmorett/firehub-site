@@ -1,11 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Clock, AlertTriangle, Info } from "lucide-react";
+import { Clock, AlertTriangle, Info, Settings, Plus, Trash2, X, Check } from "lucide-react";
 
 interface AntecipacaoClientProps {
   userName: string;
   storeName: string;
+}
+
+interface Shift {
+  id: string;
+  name: string;
+  startTime: string; // "HH:MM"
+  endTime: string;   // "HH:MM"
 }
 
 const BASE_FLAVOR_LABELS: Record<string, string> = {
@@ -15,7 +22,6 @@ const BASE_FLAVOR_LABELS: Record<string, string> = {
   "queijo temperado": "Queijo Temperado",
   "quatro queijos": "Quatro Queijos",
   "massa vazia": "Massa Vazia (Doces)",
-  outros: "Outros"
 };
 
 const BASE_FLAVOR_EMOJIS: Record<string, string> = {
@@ -25,7 +31,6 @@ const BASE_FLAVOR_EMOJIS: Record<string, string> = {
   "queijo temperado": "🍃",
   "quatro queijos": "🧀🧀",
   "massa vazia": "🍫",
-  outros: "📦"
 };
 
 const BASE_FLAVOR_DESCS: Record<string, string> = {
@@ -35,7 +40,6 @@ const BASE_FLAVOR_DESCS: Record<string, string> = {
   "queijo temperado": "Base de queijo com ervas/temperos",
   "quatro queijos": "Mescla especial de 4 queijos",
   "massa vazia": "Massa aberta (para chocolate, ninho, etc.)",
-  outros: "Demais produtos não categorizados"
 };
 
 const DAYS_OF_WEEK = [
@@ -48,35 +52,120 @@ const DAYS_OF_WEEK = [
   "Sábado"
 ];
 
+const DEFAULT_SHIFTS: Shift[] = [
+  { id: "1", name: "Almoço", startTime: "11:00", endTime: "15:00" },
+  { id: "2", name: "Jantar", startTime: "18:00", endTime: "22:00" },
+  { id: "3", name: "Madrugada", startTime: "22:00", endTime: "02:00" }
+];
+
 export default function AntecipacaoClient({ userName, storeName }: AntecipacaoClientProps) {
-  // Pegar a hora atual local para o padrão
-  const getLocalTimeHM = () => {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
+  // Estados do Dispositivo/Computador
+  const [deviceTime, setDeviceTime] = useState<string>("");
+  const [deviceDayName, setDeviceDayName] = useState<string>("");
+  const [deviceDayOfWeek, setDeviceDayOfWeek] = useState<number>(0);
 
-  const getLocalDayOfWeek = () => {
-    return new Date().getDay();
-  };
+  // Estados dos Turnos
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
 
-  const [hours, setHours] = useState<number>(1);
-  const [referenceTime, setReferenceTime] = useState<string>(getLocalTimeHM());
-  const [dayOfWeek, setDayOfWeek] = useState<number>(getLocalDayOfWeek());
-  
+  // Estados do Formulário de Turno
+  const [newShiftName, setNewShiftName] = useState<string>("");
+  const [newShiftStart, setNewShiftStart] = useState<string>("18:00");
+  const [newShiftEnd, setNewShiftEnd] = useState<string>("22:00");
+
+  // Estados dos Dados e Cálculo
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-
   const [activeTab, setActiveTab] = useState<"day1" | "day2">("day1");
 
+  // Relógio do computador
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      setDeviceTime(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
+      setDeviceDayName(DAYS_OF_WEEK[now.getDay()]);
+      setDeviceDayOfWeek(now.getDay());
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 30000); // atualiza a cada 30 segundos
+    return () => clearInterval(interval);
+  }, []);
+
+  // Carregar turnos do localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("firehub_antecipacao_shifts");
+    let loadedShifts = DEFAULT_SHIFTS;
+    if (stored) {
+      try {
+        loadedShifts = JSON.parse(stored);
+      } catch (e) {
+        console.error("Erro ao carregar turnos do localStorage:", e);
+      }
+    }
+    setShifts(loadedShifts);
+
+    // Auto-selecionar turno baseado na hora atual do computador
+    const now = new Date();
+    const currentHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    
+    const active = loadedShifts.find(s => {
+      const { startTime, endTime } = s;
+      if (startTime <= endTime) {
+        return currentHM >= startTime && currentHM <= endTime;
+      } else {
+        // Turno da madrugada (ex: 22:00 às 02:00)
+        return currentHM >= startTime || currentHM <= endTime;
+      }
+    });
+
+    setSelectedShift(active || loadedShifts[0] || null);
+  }, []);
+
+  // Buscar dados de cálculo do backend
   const fetchData = async () => {
+    if (!selectedShift) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/store/antecipacao?hours=${hours}&referenceTime=${referenceTime}&dayOfWeek=${dayOfWeek}`
-      );
+      const now = new Date();
+      
+      // Datas históricas: 7 e 14 dias atrás
+      const d1 = new Date(now);
+      d1.setDate(now.getDate() - 7);
+      
+      const d2 = new Date(now);
+      d2.setDate(now.getDate() - 14);
+
+      const [startH, startM] = selectedShift.startTime.split(":").map(Number);
+      const [endH, endM] = selectedShift.endTime.split(":").map(Number);
+
+      const start1 = new Date(d1);
+      start1.setHours(startH, startM, 0, 0);
+      const end1 = new Date(d1);
+      end1.setHours(endH, endM, 0, 0);
+      if (end1 < start1) {
+        end1.setDate(end1.getDate() + 1);
+      }
+
+      const start2 = new Date(d2);
+      start2.setHours(startH, startM, 0, 0);
+      const end2 = new Date(d2);
+      end2.setHours(endH, endM, 0, 0);
+      if (end2 < start2) {
+        end2.setDate(end2.getDate() + 1);
+      }
+
+      const params = new URLSearchParams({
+        start1: start1.toISOString(),
+        end1: end1.toISOString(),
+        start2: start2.toISOString(),
+        end2: end2.toISOString()
+      });
+
+      const res = await fetch(`/api/store/antecipacao?${params.toString()}`);
       if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.error || "Erro ao carregar os dados.");
@@ -93,17 +182,40 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
 
   useEffect(() => {
     fetchData();
-  }, [hours, referenceTime, dayOfWeek]);
+  }, [selectedShift, deviceDayOfWeek]);
 
-  const getPredictionTimeRange = () => {
-    if (!referenceTime) return "";
-    const [h, m] = referenceTime.split(":").map(Number);
-    const start = new Date();
-    start.setHours(h, m, 0, 0);
-    const end = new Date(start.getTime() + hours * 60 * 60 * 1000);
+  // Cadastrar Turno
+  const handleAddShift = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newShiftName || !newShiftStart || !newShiftEnd) return;
+
+    const newShift: Shift = {
+      id: Date.now().toString(),
+      name: newShiftName,
+      startTime: newShiftStart,
+      endTime: newShiftEnd
+    };
+
+    const updated = [...shifts, newShift].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    setShifts(updated);
+    localStorage.setItem("firehub_antecipacao_shifts", JSON.stringify(updated));
+
+    // Reset formulário
+    setNewShiftName("");
+    setNewShiftStart("18:00");
+    setNewShiftEnd("22:00");
+  };
+
+  // Excluir Turno
+  const handleDeleteShift = (id: string) => {
+    const updated = shifts.filter(s => s.id !== id);
+    setShifts(updated);
+    localStorage.setItem("firehub_antecipacao_shifts", JSON.stringify(updated));
     
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${pad(start.getHours())}:${pad(start.getMinutes())} às ${pad(end.getHours())}:${pad(end.getMinutes())}`;
+    // Se o turno deletado era o selecionado, seleciona outro
+    if (selectedShift?.id === id) {
+      setSelectedShift(updated[0] || null);
+    }
   };
 
   return (
@@ -116,68 +228,63 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
             <span className="badge">🔮 MÓDULO EXCLUSIVO</span>
             <h1>Antecipação de Produção</h1>
             <p>
-              Previsão inteligente para <strong>{storeName}</strong> baseado nos hábitos dos clientes nas últimas duas semanas.
+              Previsão de vendas para <strong>{storeName}</strong> baseado nos hábitos dos clientes das últimas duas semanas.
             </p>
+          </div>
+          <div className="header-device-time">
+            <Clock size={16} />
+            <span>Dispositivo: <strong>{deviceDayName}</strong>, <strong>{deviceTime}</strong></span>
           </div>
         </div>
       </div>
 
-      {/* CONTROL BAR */}
+      {/* SHIFT SELECTION & CONFIG BAR */}
       <div className="control-card">
-        <h2><Clock size={18} /> Configurar Parâmetros de Análise</h2>
-        <div className="control-grid">
-          <div className="control-field">
-            <label>Dia da Semana</label>
-            <div className="select-wrapper">
-              <select
-                value={dayOfWeek}
-                onChange={e => setDayOfWeek(Number(e.target.value))}
-              >
-                {DAYS_OF_WEEK.map((day, idx) => (
-                  <option key={idx} value={idx}>
-                    {idx === new Date().getDay() ? `Hoje (${day})` : day}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="control-field">
-            <label>Horário de Referência (Início)</label>
-            <input
-              type="time"
-              value={referenceTime}
-              onChange={e => setReferenceTime(e.target.value)}
-            />
-          </div>
-
-          <div className="control-field">
-            <label>Tempo de Antecipação (Janela)</label>
-            <div className="number-input-group">
-              <input
-                type="number"
-                min="1"
-                max="12"
-                value={hours}
-                onChange={e => setHours(Math.max(1, Number(e.target.value)))}
-              />
-              <span className="unit">{hours === 1 ? "hora" : "horas"}</span>
-            </div>
-          </div>
+        <div className="control-header">
+          <h2><Clock size={18} /> Selecione o Turno de Trabalho</h2>
+          <button className="btn-config-shifts" onClick={() => setShowConfigModal(true)}>
+            <Settings size={15} /> Cadastrar Turnos
+          </button>
         </div>
-        <div className="control-helper">
-          <Info size={14} />
-          <span>
-            Análise focada na janela das <strong>{getPredictionTimeRange()}</strong> nas últimas duas <strong>{DAYS_OF_WEEK[dayOfWeek]}s</strong>.
-          </span>
-        </div>
+
+        {shifts.length === 0 ? (
+          <div className="no-shifts-alert">
+            <Info size={16} />
+            <span>Nenhum turno cadastrado. Clique em "Cadastrar Turnos" para configurar.</span>
+          </div>
+        ) : (
+          <div className="shifts-list-grid">
+            {shifts.map(shift => {
+              const active = selectedShift?.id === shift.id;
+              return (
+                <button
+                  key={shift.id}
+                  onClick={() => setSelectedShift(shift)}
+                  className={`shift-badge-btn ${active ? "active" : ""}`}
+                >
+                  <span className="shift-name">{shift.name}</span>
+                  <span className="shift-hours">{shift.startTime} às {shift.endTime}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {selectedShift && (
+          <div className="control-helper">
+            <Info size={14} />
+            <span>
+              Análise focada no turno <strong>{selectedShift.name} ({selectedShift.startTime} às {selectedShift.endTime})</strong> nas últimas duas <strong>{deviceDayName}s</strong>.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* LOADING & ERROR STATES */}
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>
-          <p>Analisando histórico de vendas e calculando médias...</p>
+          <p>Analisando histórico de vendas e calculando médias para o turno...</p>
         </div>
       ) : error ? (
         <div className="error-state">
@@ -356,7 +463,90 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         </>
       )}
 
-      {/* INLINE CSS FOR AESTHETICS */}
+      {/* MODAL: CADASTRO DE TURNOS */}
+      {showConfigModal && (
+        <div className="modal-overlay" onClick={() => setShowConfigModal(false)}>
+          <div className="modal-card modal-large" onClick={e => e.stopPropagation()}>
+            <button className="btn-close" onClick={() => setShowConfigModal(false)}><X size={20} /></button>
+            <h2>Gerenciamento de Turnos</h2>
+            <p className="modal-subtitle">Configure seus turnos de produção. Eles ficam salvos no seu navegador.</p>
+
+            <div className="modal-shifts-layout">
+              {/* Formulário Novo Turno */}
+              <form onSubmit={handleAddShift} className="new-shift-form">
+                <h3>Adicionar Novo Turno</h3>
+                <div className="form-group">
+                  <label>Nome do Turno</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Almoço, Jantar de Sexta"
+                    value={newShiftName}
+                    onChange={e => setNewShiftName(e.target.value)}
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Início (Hora)</label>
+                    <input
+                      type="time"
+                      required
+                      value={newShiftStart}
+                      onChange={e => setNewShiftStart(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Fim (Hora)</label>
+                    <input
+                      type="time"
+                      required
+                      value={newShiftEnd}
+                      onChange={e => setNewShiftEnd(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <button type="submit" className="btn-submit-shift">
+                  <Plus size={15} /> Adicionar Turno
+                </button>
+              </form>
+
+              {/* Lista de Turnos */}
+              <div className="modal-shifts-list-side">
+                <h3>Turnos Configurados</h3>
+                {shifts.length === 0 ? (
+                  <p className="no-shifts-inside">Nenhum turno cadastrado ainda.</p>
+                ) : (
+                  <div className="modal-shifts-scroll">
+                    {shifts.map(shift => (
+                      <div key={shift.id} className="modal-shift-row">
+                        <div className="modal-shift-info">
+                          <strong>{shift.name}</strong>
+                          <span>{shift.startTime} às {shift.endTime}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-delete-shift"
+                          onClick={() => handleDeleteShift(shift.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowConfigModal(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMPONENT STYLING */}
       <style jsx global>{`
         .antecipacao-container {
           max-width: 1400px;
@@ -417,6 +607,17 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           margin: 0;
         }
 
+        .header-device-time {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          padding: 0.5rem 1rem;
+          border-radius: 0.75rem;
+          font-size: 0.85rem;
+        }
+
         .badge {
           display: inline-block;
           background: rgba(198, 40, 40, 0.2);
@@ -429,33 +630,6 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           letter-spacing: 0.05em;
         }
 
-        .btn-simulate {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: linear-gradient(135deg, #c62828, #b71c1c);
-          color: white;
-          font-weight: 700;
-          font-size: 0.88rem;
-          padding: 0.75rem 1.25rem;
-          border: none;
-          border-radius: 0.75rem;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          box-shadow: 0 4px 12px rgba(198, 40, 40, 0.35);
-        }
-
-        .btn-simulate:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(198, 40, 40, 0.45);
-          filter: brightness(1.1);
-        }
-
-        .btn-simulate:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
         /* CONTROL CARD */
         .control-card {
           background: white;
@@ -466,80 +640,106 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         }
 
-        .control-card h2 {
+        .control-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1.25rem;
+        }
+
+        .control-header h2 {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           font-size: 1.1rem;
           font-weight: 800;
-          margin: 0 0 1.25rem 0;
+          margin: 0;
           color: #0f172a;
         }
 
-        .control-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-          gap: 1.25rem;
+        .btn-config-shifts {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          background: #f1f5f9;
+          border: 1px solid #cbd5e1;
+          color: #475569;
+          font-weight: 700;
+          font-size: 0.78rem;
+          padding: 0.5rem 1rem;
+          border-radius: 0.5rem;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .btn-config-shifts:hover {
+          background: #e2e8f0;
+          color: #0f172a;
+        }
+
+        .no-shifts-alert {
+          background: #fef3c7;
+          border: 1px solid #fde68a;
+          color: #b45309;
+          border-radius: 0.75rem;
+          padding: 1rem;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 0.85rem;
+          font-weight: 600;
+        }
+
+        .shifts-list-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.75rem;
           margin-bottom: 1rem;
         }
 
-        .control-field {
+        .shift-badge-btn {
+          flex: 1;
+          min-width: 160px;
+          max-width: 250px;
           display: flex;
           flex-direction: column;
-          gap: 0.4rem;
-        }
-
-        .control-field label {
-          font-size: 0.78rem;
-          font-weight: 700;
-          color: #475569;
-          text-transform: uppercase;
-          letter-spacing: 0.025em;
-        }
-
-        .control-field select,
-        .control-field input {
-          width: 100%;
-          padding: 0.75rem 1rem;
-          border-radius: 0.65rem;
-          border: 1.5px solid #cbd5e1;
-          font-size: 0.92rem;
-          font-weight: 600;
-          font-family: inherit;
-          color: #0f172a;
-          background: #f8fafc;
-          transition: all 0.2s ease;
-        }
-
-        .control-field select:focus,
-        .control-field input:focus {
-          outline: none;
-          border-color: #c62828;
-          background: white;
-          box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15);
-        }
-
-        .select-wrapper {
-          position: relative;
-        }
-
-        .number-input-group {
-          position: relative;
-          display: flex;
           align-items: center;
+          justify-content: center;
+          padding: 0.85rem 1rem;
+          border-radius: 0.75rem;
+          border: 2px solid #e2e8f0;
+          background: #f8fafc;
+          cursor: pointer;
+          transition: all 0.2s;
+          font-family: inherit;
         }
 
-        .number-input-group input {
-          padding-right: 4rem;
+        .shift-badge-btn:hover {
+          border-color: #cbd5e1;
+          background: #f1f5f9;
         }
 
-        .number-input-group .unit {
-          position: absolute;
-          right: 1rem;
-          font-size: 0.8rem;
-          font-weight: 700;
+        .shift-badge-btn.active {
+          border-color: #c62828;
+          background: #fff5f5;
+          box-shadow: 0 4px 12px rgba(198, 40, 40, 0.12);
+        }
+
+        .shift-badge-btn.active .shift-name {
+          color: #c62828;
+        }
+
+        .shift-name {
+          font-size: 0.95rem;
+          font-weight: 850;
+          color: #334155;
+        }
+
+        .shift-hours {
+          font-size: 0.72rem;
+          font-weight: 650;
           color: #64748b;
-          pointer-events: none;
+          margin-top: 0.15rem;
         }
 
         .control-helper {
@@ -551,30 +751,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           background: #f1f5f9;
           padding: 0.65rem 1rem;
           border-radius: 0.5rem;
-        }
-
-        /* ALERT ALERTS */
-        .alert-success {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          background: #f0fdf4;
-          border: 1px solid #bbf7d0;
-          color: #15803d;
-          padding: 1rem 1.25rem;
-          border-radius: 0.85rem;
-          margin-bottom: 1.5rem;
-          animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .alert-text {
-          font-size: 0.88rem;
-          line-height: 1.4;
+          margin-top: 0.75rem;
         }
 
         /* SECTIONS */
@@ -757,9 +934,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           margin-bottom: 1.25rem;
         }
 
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         .loading-state p {
           font-size: 0.95rem;
@@ -971,28 +1146,246 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           color: #1d4ed8;
         }
 
+        /* MODALS */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.6);
+          backdrop-filter: blur(4px);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem;
+        }
+
+        .modal-card {
+          background: white;
+          border-radius: 1.25rem;
+          width: 100%;
+          max-width: 480px;
+          padding: 1.75rem;
+          position: relative;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+          animation: slideUp 0.3s ease-out;
+        }
+
+        .modal-card.modal-large {
+          max-width: 720px;
+        }
+
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .btn-close {
+          position: absolute;
+          top: 1rem;
+          right: 1rem;
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: #64748b;
+          padding: 0.25rem;
+          border-radius: 0.25rem;
+        }
+
+        .btn-close:hover {
+          background: #f1f5f9;
+        }
+
+        .modal-card h2 {
+          font-size: 1.25rem;
+          font-weight: 900;
+          color: #0f172a;
+          margin: 0 0 0.5rem 0;
+        }
+
+        .modal-subtitle {
+          font-size: 0.85rem;
+          color: #64748b;
+          margin-bottom: 1.5rem;
+        }
+
+        .modal-shifts-layout {
+          display: grid;
+          grid-template-columns: 1fr 1.2fr;
+          gap: 1.5rem;
+          margin-bottom: 1.5rem;
+        }
+
+        .new-shift-form {
+          border-right: 1px solid #e2e8f0;
+          padding-right: 1.5rem;
+        }
+
+        .new-shift-form h3,
+        .modal-shifts-list-side h3 {
+          font-size: 0.95rem;
+          font-weight: 800;
+          color: #334155;
+          margin: 0 0 1rem 0;
+        }
+
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+          margin-bottom: 1rem;
+        }
+
+        .form-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 1rem;
+        }
+
+        .form-group label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #475569;
+          text-transform: uppercase;
+        }
+
+        .form-group input {
+          padding: 0.65rem 0.8rem;
+          border-radius: 0.5rem;
+          border: 1.5px solid #cbd5e1;
+          font-size: 0.88rem;
+          font-weight: 600;
+          outline: none;
+          background: #f8fafc;
+        }
+
+        .form-group input:focus {
+          border-color: #c62828;
+          background: white;
+        }
+
+        .btn-submit-shift {
+          width: 100%;
+          padding: 0.75rem;
+          background: linear-gradient(135deg, #c62828, #b71c1c);
+          color: white;
+          font-weight: 800;
+          font-size: 0.88rem;
+          border: none;
+          border-radius: 0.5rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.35rem;
+          box-shadow: 0 4px 10px rgba(198, 40, 40, 0.2);
+          transition: all 0.2s;
+        }
+
+        .btn-submit-shift:hover {
+          filter: brightness(1.08);
+        }
+
+        .modal-shifts-list-side {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .no-shifts-inside {
+          font-size: 0.85rem;
+          color: #94a3b8;
+          font-style: italic;
+        }
+
+        .modal-shifts-scroll {
+          max-height: 250px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          padding-right: 0.5rem;
+        }
+
+        .modal-shift-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          padding: 0.65rem 0.85rem;
+          border-radius: 0.65rem;
+        }
+
+        .modal-shift-info {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .modal-shift-info strong {
+          font-size: 0.88rem;
+          color: #1e293b;
+        }
+
+        .modal-shift-info span {
+          font-size: 0.72rem;
+          color: #64748b;
+          font-weight: 600;
+        }
+
+        .btn-delete-shift {
+          background: none;
+          border: none;
+          color: #ef4444;
+          cursor: pointer;
+          padding: 0.35rem;
+          border-radius: 0.35rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .btn-delete-shift:hover {
+          background: #fee2e2;
+        }
+
+        .modal-footer {
+          display: flex;
+          justify-content: flex-end;
+          border-top: 1px solid #e2e8f0;
+          padding-top: 1rem;
+        }
+
+        .btn-secondary {
+          background: #f1f5f9;
+          color: #475569;
+          border: none;
+          padding: 0.6rem 1.25rem;
+          border-radius: 0.5rem;
+          font-weight: 700;
+          font-size: 0.85rem;
+          cursor: pointer;
+        }
+
+        .btn-secondary:hover {
+          background: #e2e8f0;
+        }
+
         @media (max-width: 768px) {
           .header-content {
             flex-direction: column;
             align-items: flex-start;
           }
-          .header-action {
-            width: 100%;
-          }
-          .btn-simulate {
+          .header-device-time {
             width: 100%;
             justify-content: center;
           }
-          .history-header {
-            flex-direction: column;
-            align-items: flex-start;
+          .modal-shifts-layout {
+            grid-template-columns: 1fr;
           }
-          .tabs {
-            width: 100%;
-          }
-          .tab-btn {
-            flex: 1;
-            justify-content: center;
+          .new-shift-form {
+            border-right: none;
+            border-bottom: 1px solid #e2e8f0;
+            padding-right: 0;
+            padding-bottom: 1.5rem;
           }
         }
       `}</style>

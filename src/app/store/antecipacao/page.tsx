@@ -19,13 +19,13 @@ export default async function AntecipacaoPage() {
   const role = (session.user as any)?.role;
 
   // Apenas contatohakim@gmail.com e ADMINs podem acessar
-  if (email !== "contatohakim@gmail.com" && role !== "ADMIN") {
+  if (email.toLowerCase() !== "contatohakim@gmail.com" && role !== "ADMIN") {
     redirect("/store");
   }
 
   // Obter detalhes do usuário lojista
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: { email: email.toLowerCase() },
     select: {
       id: true,
       name: true,
