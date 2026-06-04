@@ -118,8 +118,7 @@ export async function GET(req: Request) {
       queijo: 0,
       "queijo temperado": 0,
       "quatro queijos": 0,
-      "massa vazia": 0,
-      outros: 0
+      "massa vazia": 0
     };
     const qtyDay2 = { ...qtyDay1 };
 
@@ -127,7 +126,9 @@ export async function GET(req: Request) {
       order.items.forEach(item => {
         const name = item.menuProduct?.name || "Outros";
         const base = classifyProduct(name);
-        qtyDay1[base] = (qtyDay1[base] || 0) + item.quantity;
+        if (base !== "outros") {
+          qtyDay1[base] = (qtyDay1[base] || 0) + item.quantity;
+        }
       });
     });
 
@@ -135,7 +136,9 @@ export async function GET(req: Request) {
       order.items.forEach(item => {
         const name = item.menuProduct?.name || "Outros";
         const base = classifyProduct(name);
-        qtyDay2[base] = (qtyDay2[base] || 0) + item.quantity;
+        if (base !== "outros") {
+          qtyDay2[base] = (qtyDay2[base] || 0) + item.quantity;
+        }
       });
     });
 
