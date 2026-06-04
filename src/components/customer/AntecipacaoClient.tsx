@@ -132,6 +132,11 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
     try {
       const now = new Date();
       
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const clientDateStr = `${year}-${month}-${day}`;
+
       // Datas históricas: 7 e 14 dias atrás
       const d1 = new Date(now);
       d1.setDate(now.getDate() - 7);
@@ -162,7 +167,8 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         start1: start1.toISOString(),
         end1: end1.toISOString(),
         start2: start2.toISOString(),
-        end2: end2.toISOString()
+        end2: end2.toISOString(),
+        clientDate: clientDateStr
       });
 
       const res = await fetch(`/api/store/antecipacao?${params.toString()}`);
@@ -297,6 +303,15 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         </div>
       ) : (
         <>
+          {data?.isHoliday && (
+            <div className="holiday-alert-banner">
+              <AlertTriangle size={18} />
+              <span>
+                <strong>Dia de Feriado ({data.holidayName}):</strong> A meta de antecipação foi aumentada automaticamente em <strong>30%</strong> devido ao feriado.
+              </span>
+            </div>
+          )}
+
           {/* PREDICTION CARDS */}
           <div className="section-title">
             <h2>Média Calculada & Sugestão de Preparo</h2>
@@ -688,6 +703,27 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           gap: 0.5rem;
           font-size: 0.85rem;
           font-weight: 600;
+        }
+
+        .holiday-alert-banner {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          background: #fff5f5;
+          border: 1px solid rgba(198, 40, 40, 0.2);
+          color: #c62828;
+          border-radius: 0.85rem;
+          padding: 1rem 1.25rem;
+          margin-bottom: 1.5rem;
+          font-size: 0.88rem;
+          font-weight: 600;
+          box-shadow: 0 4px 12px rgba(198, 40, 40, 0.05);
+          animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         .shifts-list-grid {

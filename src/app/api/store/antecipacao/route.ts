@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { classifyProduct } from "@/lib/antecipacao";
+import { checkIsHoliday } from "@/lib/holidays";
 
 export async function GET(req: Request) {
   try {
@@ -25,6 +26,7 @@ export async function GET(req: Request) {
     const end1Str = searchParams.get("end1");
     const start2Str = searchParams.get("start2");
     const end2Str = searchParams.get("end2");
+    const clientDate = searchParams.get("clientDate") || (start1Str ? start1Str.split("T")[0] : "");
 
     if (!start1Str || !end1Str || !start2Str || !end2Str) {
       return NextResponse.json({ error: "Parâmetros de data/hora ausentes." }, { status: 400 });
@@ -39,26 +41,33 @@ export async function GET(req: Request) {
     let franchiseeId = "";
     const user = await prisma.user.findUnique({
       where: { email: emailLower },
-      select: { id: true }
+      select: { id: true, city: true }
     });
     if (user) {
       franchiseeId = user.id;
     }
 
     // Se admin e não for hakim, usa o ID do hakim se ele existir para testar
+    let userCity = user?.city || null;
     if (role === "ADMIN" && emailLower !== "contatohakim@gmail.com") {
       const hakimUser = await prisma.user.findUnique({
         where: { email: "contatohakim@gmail.com" },
-        select: { id: true }
+        select: { id: true, city: true }
       });
       if (hakimUser) {
         franchiseeId = hakimUser.id;
+        userCity = hakimUser.city;
       }
     }
 
     if (!franchiseeId) {
       return NextResponse.json({ error: "Lojista não encontrado no banco de dados." }, { status: 404 });
     }
+
+    // Verificar se hoje (clientDate) é feriado
+    const holidayCheck = await checkIsHoliday(clientDate, userCity);
+    const isHoliday = holidayCheck.isHoliday;
+    const holidayName = holidayCheck.name;
 
     // Buscar pedidos da Semana 1 (7 dias atrás)
     const ordersDay1 = await prisma.customerOrder.findMany({
@@ -132,12 +141,13 @@ export async function GET(req: Request) {
       const q1 = qtyDay1[key];
       const q2 = qtyDay2[key];
       const avg = (q1 + q2) / 2;
+      const baseSuggested = isHoliday ? avg * 1.30 : avg;
       return {
         base: key,
         qtyDay1: q1,
         qtyDay2: q2,
         average: avg,
-        suggested: Math.ceil(avg)
+        suggested: Math.ceil(baseSuggested)
       };
     });
 
@@ -161,6 +171,8 @@ export async function GET(req: Request) {
       success: true,
       labelDay1: `${formatDateSP(start1)} (${formatTimeSP(start1)} - ${formatTimeSP(end1)})`,
       labelDay2: `${formatDateSP(start2)} (${formatTimeSP(start2)} - ${formatTimeSP(end2)})`,
+      isHoliday,
+      holidayName: holidayName || null,
       averages,
       ordersDay1: ordersDay1.map(o => ({
         id: o.id,
