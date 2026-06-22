@@ -208,14 +208,14 @@ export default function Home() {
                 <input
                   type="range"
                   min={0}
-                  max={30000}
+                  max={40000}
                   step={500}
                   value={sliderValue}
                   onChange={(e) => setSliderValue(Number(e.target.value))}
                   style={{width:"100%",accentColor:"#EF4444",cursor:"pointer"}}
                 />
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:".72rem",color:"#9CA3AF",marginTop:4}}>
-                  <span>R$ 0</span><span>R$ 5k</span><span>R$ 10k</span><span>R$ 20k</span><span>R$ 30k</span>
+                  <span>R$ 0</span><span>R$ 5k</span><span>R$ 10k</span><span>R$ 20k</span><span>R$ 30k</span><span>R$ 40k</span>
                 </div>
               </div>
 
