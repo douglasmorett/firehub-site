@@ -990,7 +990,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
                   disabled={assigningId === order.id}
                   onClick={e => e.stopPropagation()}
-                  style={{ padding: "3px 6px", borderRadius: "5px", border: "1px solid #E5E7EB", fontSize: "0.7rem", color: "#9CA3AF", background: "white", fontFamily: "inherit", cursor: "pointer", maxWidth: "110px" }}
+                  style={{ padding: "4px 10px", borderRadius: "6px", border: "1.5px solid #94A3B8", fontSize: "0.78rem", fontWeight: 600, color: "#1E293B", background: "#F8FAFC", fontFamily: "inherit", cursor: "pointer", minWidth: "120px", maxWidth: "160px" }}
                 >
                   <option value="">Motoboy</option>
                   {motoboys.map((m: any) => (
