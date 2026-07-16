@@ -6,7 +6,7 @@
 
 import { prisma } from "./prisma";
 
-const JOTAJA_BASE = process.env.JOTAJA_BASE_URL || "https://api.jotaja.com.br/opendelivery";
+const JOTAJA_BASE = process.env.JOTAJA_BASE_URL || "https://api.jotaja.com/openDelivery";
 
 // Cache de token em memória (válido por ~1h)
 let _token: string | null = null;

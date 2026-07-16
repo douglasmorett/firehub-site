@@ -205,8 +205,8 @@ export async function PUT(req: Request) {
           const r1 = await jotajaFetch(`/v1/orders/${odId}/readyToPickup`, { method: "POST" });
           console.log(`[Jotajá Sync] readyToPickup ${odId}: ${r1.status}`);
         }
-        const r2 = await jotajaFetch(`/v1/orders/${odId}/conclude`, { method: "POST" });
-        console.log(`[Jotajá Sync] conclude ${odId}: ${r2.status}`);
+        const r2 = await jotajaFetch(`/v1/orders/${odId}/delivered`, { method: "POST" });
+        console.log(`[Jotajá Sync] delivered ${odId}: ${r2.status}`);
       }
 
       if (status === "CANCELADO") {
@@ -218,7 +218,7 @@ export async function PUT(req: Request) {
 
         const cancelRes = await jotajaFetch(`/v1/orders/${odId}/requestCancellation`, {
           method: "POST",
-          body: JSON.stringify({ reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: String(codeToUse) }),
+          body: JSON.stringify({ code: String(codeToUse), mode: "MANUAL", reason: cancelReason || "CANCELLED_BY_RESTAURANT" }),
         });
         console.log(`[Jotajá Sync] cancel ${odId}: ${cancelRes.status}`);
       }

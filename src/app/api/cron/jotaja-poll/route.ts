@@ -66,7 +66,8 @@ export async function GET(req: NextRequest) {
       log.push(`  ${result.action === "error" ? "❌" : result.action === "created" ? "✅" : "🔄"} ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
       if (result.action !== "error" && result.action !== "skipped") {
-        if (event.id) processedEventIds.push(event.id);
+        const eid = event.id || event.eventId;
+        if (eid) processedEventIds.push(eid);
         if (result.action === "created")   created++;
         if (result.action === "updated")   updated++;
         if (result.action === "dispute")   disputes++;

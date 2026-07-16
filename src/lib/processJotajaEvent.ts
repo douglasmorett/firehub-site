@@ -7,8 +7,10 @@ import { prisma } from "@/lib/prisma";
 
 export interface JotajaEvent {
   id?: string;
+  eventId?: string;
   code?: string;
   fullCode?: string;
+  eventType?: string;
   orderId: string;
   metadata?: Record<string, any>;
 }
@@ -32,17 +34,20 @@ export async function processJotajaEvent(
   const { code, orderId } = event;
   if (!orderId) return { action: "skipped", orderId: "", message: "sem orderId" };
 
-  const isPlaced         = code === "PLC" || event.fullCode === "PLACED";
-  const isConfirmed      = code === "CFM" || event.fullCode === "CONFIRMED";
-  const isPreparation    = code === "PRP" || event.fullCode === "IN_PREPARATION" || event.fullCode === "PREPARATION_STARTED";
-  const isReadyPickup    = code === "RTP" || event.fullCode === "READY_TO_PICKUP";
-  const isDispatched     = code === "DSP" || event.fullCode === "DISPATCHED";
-  const isConcluded      = code === "CON" || event.fullCode === "CONCLUDED";
-  const isCancelled      = code === "CAN" || event.fullCode === "CANCELLED";
+  // Jotajá uses eventType (CREATED, CONFIRMED, etc.) in addition to code/fullCode
+  const et = event.eventType?.toUpperCase() ?? "";
+  const isPlaced         = code === "PLC" || event.fullCode === "PLACED" || et === "CREATED" || et === "PLACED";
+  const isConfirmed      = code === "CFM" || event.fullCode === "CONFIRMED" || et === "CONFIRMED";
+  const isPreparation    = code === "PRP" || event.fullCode === "IN_PREPARATION" || event.fullCode === "PREPARATION_STARTED" || et === "IN_PREPARATION" || et === "PREPARATION_STARTED";
+  const isReadyPickup    = code === "RTP" || event.fullCode === "READY_TO_PICKUP" || et === "READY_TO_PICKUP";
+  const isDispatched     = code === "DSP" || event.fullCode === "DISPATCHED" || et === "DISPATCHED";
+  const isConcluded      = code === "CON" || event.fullCode === "CONCLUDED" || et === "CONCLUDED";
+  const isCancelled      = code === "CAN" || event.fullCode === "CANCELLED" || et === "CANCELLED";
   const isCancellationRequest =
     code === "HSD" || code === "CRR" ||
     event.fullCode === "HANDSHAKE_DISPUTE" ||
-    event.fullCode === "CANCELLATION_REQUESTED";
+    event.fullCode === "CANCELLATION_REQUESTED" ||
+    et === "CANCELLATION_REQUESTED" || et === "HANDSHAKE_DISPUTE";
 
   try {
     // ── Negociação de cancelamento ─────────────────────────────────────────
@@ -106,35 +111,60 @@ export async function processJotajaEvent(
         return { action: "error", orderId, message: `Franqueado não encontrado para merchantId=${eventMerchantId}` };
       }
 
-      // Itens
-      const items = (orderData.items ?? []).map((i: any) => ({
-        price: i.unitPrice ?? i.price ?? 0,
-        quantity: i.quantity ?? 1,
-        menuProduct: {
-          connectOrCreate: {
-            where: { id: `jotaja-${i.id}` } as any,
-            create: {
-              id: `jotaja-${i.id}`,
-              franchiseeId: franchisee.id,
-              name: i.name ?? "Item Jotajá",
-              description: "",
-              price: i.unitPrice ?? i.price ?? 0,
-              category: "Jotajá",
-              active: true,
-            } as any,
-          } as any,
-        },
-      }));
+      // Helper: extract numeric value from price (handles {value, currency} objects or plain numbers)
+      const priceVal = (p: any): number => typeof p === "object" && p !== null ? (p.value ?? 0) : (p ?? 0);
 
-      // Totais
-      const total = typeof orderData.total === "object"
-        ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)
-        : (orderData.totalPrice ?? orderData.total ?? 0);
+      // Itens — include options (size, extras, combos) from Jotajá
+      const items = (orderData.items ?? []).map((i: any) => {
+        const options = Array.isArray(i.options) ? i.options : [];
+        const optionNames = options.map((o: any) => `${o.quantity > 1 ? o.quantity + 'x ' : ''}${o.name}`);
+        const fullName = optionNames.length > 0
+          ? `${i.name ?? "Item Jotajá"} | ${optionNames.join(" | ")}`
+          : (i.name ?? "Item Jotajá");
+        const itemPrice = priceVal(i.totalPrice) || priceVal(i.unitPrice) || priceVal(i.price) || 0;
+
+        // Build comboSelections from options for detailed display
+        const comboSelections = options.length > 0 ? options.map((o: any) => ({
+          id: o.id,
+          name: o.name,
+          quantity: o.quantity ?? 1,
+          price: priceVal(o.unitPrice) || priceVal(o.totalPrice) || 0,
+        })) : undefined;
+
+        return {
+          price: itemPrice,
+          quantity: i.quantity ?? 1,
+          comboSelections,
+          menuProduct: {
+            connectOrCreate: {
+              where: { id: `jotaja-${i.id}` } as any,
+              create: {
+                id: `jotaja-${i.id}`,
+                franchiseeId: franchisee.id,
+                name: fullName,
+                description: i.specialInstructions || "",
+                price: itemPrice,
+                category: "Jotajá",
+                active: true,
+              } as any,
+            } as any,
+          },
+        };
+      });
+
+      // Totais — handles {value, currency} objects
+      const rawTotal = orderData.total?.orderAmount ?? orderData.total?.subTotal ?? orderData.totalPrice ?? orderData.total;
+      const total = priceVal(rawTotal);
 
       const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
       const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
-      const deliveryFeeValue =
-        orderData.total?.deliveryFee ?? orderData.delivery?.deliveryFee ?? orderData.deliveryFee ?? 0;
+
+      // Delivery fee — Jotajá sends in otherFees array
+      let deliveryFeeValue = priceVal(orderData.total?.deliveryFee) || priceVal(orderData.delivery?.deliveryFee) || priceVal(orderData.deliveryFee) || 0;
+      if (!deliveryFeeValue && Array.isArray(orderData.otherFees)) {
+        const delFee = orderData.otherFees.find((f: any) => f.type === "DELIVERY_FEE" || f.name === "DELIVERY_FEE");
+        if (delFee) deliveryFeeValue = priceVal(delFee.price);
+      }
 
       // Agendamento
       const rawScheduled =
@@ -154,7 +184,7 @@ export async function processJotajaEvent(
       );
       const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
       const payMethodName = paymentList[0]?.method ?? "Jotajá Online";
-      const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
+      const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
       // Descontos/benefits (completo)
       const benefits = orderData.benefits ?? [];
@@ -186,11 +216,16 @@ export async function processJotajaEvent(
         });
       }
 
-      // Notas
-      const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
+      // Notas — customer observations prominent
+      const customerNote = orderData.extraInfo ?? orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
       const phone = orderData.customer?.phone;
       const phoneNumber = phone?.number ?? (typeof phone === "string" ? phone : "");
       const phoneLocalizer = phone?.localizer;
+
+      // Collect item-level special instructions
+      const itemNotes = (orderData.items ?? [])
+        .filter((i: any) => i.specialInstructions?.trim())
+        .map((i: any) => `${i.name}: ${i.specialInstructions.trim()}`);
 
       const notesArr = [
         `Pedido Jotajá #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
@@ -198,8 +233,9 @@ export async function processJotajaEvent(
         discountTotal > 0
           ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (Plataforma: R$${discountPlatform.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})`
           : null,
-        customerNote ? `💬 ${customerNote}` : null,
-      ].filter(Boolean).join(" | ");
+        customerNote ? `📝 OBS: ${customerNote}` : null,
+        ...itemNotes.map((n: string) => `📝 ${n}`),
+      ].filter(Boolean).join("\n");
 
       // Status inicial
       let initialStatus = "NOVO";

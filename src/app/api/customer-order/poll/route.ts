@@ -419,7 +419,8 @@ async function pollJotajaEvents(sessionUserId?: string) {
     for (const event of events) {
       const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
       if (result.action !== "error" && result.action !== "skipped") {
-        if (event.id) processedEventIds.push(event.id);
+        const eid = event.id || event.eventId;
+        if (eid) processedEventIds.push(eid);
         console.log(`[Jotaja Poll] ${result.action} - ${result.orderId}${result.message ? ": " + result.message : ""}`);
       } else if (result.action === "error") {
         console.error(`[Jotaja Poll] ERRO ${result.orderId}: ${result.message}`);
