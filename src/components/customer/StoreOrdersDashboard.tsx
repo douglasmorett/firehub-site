@@ -251,6 +251,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
       receipt += `Subtotal: R$ ${subtotal.toFixed(2)}\n`;
       if (isDelivery) receipt += `Taxa de Entrega: R$ ${Number(order.deliveryFee || 0).toFixed(2)}\n`;
+      if (order.discountTotal && order.discountTotal > 0) {
+        if (order.discountIfood && order.discountIfood > 0) {
+          receipt += `Desconto iFood: -R$ ${Number(order.discountIfood).toFixed(2)}\n`;
+        }
+        if (order.discountMerchant && order.discountMerchant > 0) {
+          receipt += `Desconto Loja: -R$ ${Number(order.discountMerchant).toFixed(2)}\n`;
+        }
+        if (!order.discountIfood && !order.discountMerchant) {
+          receipt += `Desconto: -R$ ${Number(order.discountTotal).toFixed(2)}\n`;
+        }
+      }
       receipt += `Total: R$ ${order.totalAmount.toFixed(2)}\n`;
       if (order.paymentMethod) receipt += `Forma de Pagamento: ${translatePayment(order.paymentMethod)}\n`;
       if (order.changeAmount != null && order.changeAmount > 0) receipt += `Troco para: R$ ${Number(order.changeAmount).toFixed(2)}\n`;
@@ -800,7 +811,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     cancelados: allInRange.filter(o => o.status === "CANCELADO"),
     total: allInRange.filter(o => o.status !== "CANCELADO"),
   };
-  const sumVal = (arr: any[]) => arr.reduce((s, o) => s + o.totalAmount, 0);
+  const sumVal = (arr: any[]) => arr.reduce((s, o) => s + o.totalAmount + (o.discountIfood ?? 0), 0);
   const fmtR = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
 
   const OrderCard = ({ order }: { order: any }) => {
@@ -1717,6 +1728,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       <span>Taxa de Entrega:</span>
                       <span>R$ {Number(order.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
                     </div>
+                  )}
+                  {order.discountTotal && order.discountTotal > 0 && (
+                    <>
+                      {order.discountIfood && order.discountIfood > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                          <span>Desconto iFood:</span>
+                          <span>-R$ {Number(order.discountIfood).toFixed(2).replace('.', ',')}</span>
+                        </div>
+                      )}
+                      {order.discountMerchant && order.discountMerchant > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                          <span>Desconto Loja:</span>
+                          <span>-R$ {Number(order.discountMerchant).toFixed(2).replace('.', ',')}</span>
+                        </div>
+                      )}
+                      {!order.discountIfood && !order.discountMerchant && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                          <span>Desconto:</span>
+                          <span>-R$ {Number(order.discountTotal).toFixed(2).replace('.', ',')}</span>
+                        </div>
+                      )}
+                    </>
                   )}
                   <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "15px", marginTop: "4px" }}>
                     <span>Total:</span>

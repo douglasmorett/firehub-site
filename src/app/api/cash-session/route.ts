@@ -29,12 +29,12 @@ export async function GET() {
         status: { notIn: ["CANCELADO"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true },
+      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true },
     });
 
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
-      const val = (o.totalAmount || 0) + (o.deliveryFee || 0);
+      const val = (o.totalAmount || 0) + (o.deliveryFee || 0) + (o.discountIfood || 0);
       const src = ((o as any).source || "").toUpperCase();
       const isPaidOnline = !!(o.paymentPaidAt || o.gatewayProvider);
 

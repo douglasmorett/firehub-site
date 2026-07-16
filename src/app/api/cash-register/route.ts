@@ -26,7 +26,7 @@ function groupOrders(orders: any[]) {
   let onlineTotal = 0;
 
   for (const o of orders) {
-    const amount = o.totalAmount ?? 0;
+    const amount = (o.totalAmount ?? 0) + (o.discountIfood ?? 0);
     const code   = mapMethod(o.paymentMethod);
 
     // iFood
