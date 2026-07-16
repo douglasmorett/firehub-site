@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock } from "lucide-react";
+import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -730,132 +730,335 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           userSelect: "none"
         }}
       >
-        <div style={{ padding: "0.6rem 0.75rem", cursor: "pointer" }} onClick={() => setExpandedId(expanded ? null : order.id)}>
+        {/* ─── COLLAPSED VIEW: All essential info always visible ─── */}
+        <div style={{ padding: "0.6rem 0.75rem" }}>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {canDrag && (
               <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0, alignSelf: "flex-start", paddingTop: "2px" }} onClick={e => e.stopPropagation()}>
                 <GripVertical size={14} />
               </div>
             )}
-            {/* Two-column layout */}
-            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr auto", gap: "0 16px", fontSize: "0.8rem", lineHeight: "1.7" }}>
-              {/* LEFT COLUMN */}
-              <div style={{ minWidth: 0 }}>
-                {/* Line 1: Sequential # + Customer name */}
-                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1F2937", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {seqNum} — {order.customerName}
+            <div style={{ flex: 1, minWidth: 0, fontSize: "0.8rem", lineHeight: "1.7" }}>
+              {/* Line 1: #{seqNum} - Name  |  Source badge + Ref */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+                  #{seqNum} — {order.customerName}
                 </div>
-                {/* Line 2: Phone */}
-                <div style={{ color: "#6B7280" }}>
-                  {order.customerPhone ? order.customerPhone.replace(/\s*ID:\s*\d+/i, "").trim() : "—"}
-                </div>
-                {/* Line 3: Payment method */}
-                <div style={{ color: "#6B7280" }}>
-                  {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-                </div>
-                {/* Line 4: Address/Bairro */}
-                <div style={{ color: "#6B7280", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {order.customerAddress
-                    ? (() => {
-                        // Try to extract bairro from address
-                        const parts = order.customerAddress.split(/[,\-–]/);
-                        return parts.length > 1 ? parts[parts.length - 2]?.trim() || order.customerAddress : order.customerAddress;
-                      })()
-                    : "—"
-                  }
-                </div>
-              </div>
-              {/* RIGHT COLUMN */}
-              <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                {/* Line 1: iFood ref or source */}
-                <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#6366F1" }}>
-                  {(order.ifoodReference || order.openDeliveryReference) ? `#${order.ifoodReference || order.openDeliveryReference}` : (order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online")}
-                </div>
-                {/* Line 2: Source (if iFood ref shown) or ID */}
-                <div style={{ color: "#6B7280" }}>
-                  {(order.ifoodReference || order.openDeliveryReference) ? (order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online") : `#${order.id.slice(-6).toUpperCase()}`}
-                </div>
-                {/* Line 3: Value */}
-                <div style={{ fontWeight: 700, color: "#1F2937" }}>
-                  R$ {order.totalAmount.toFixed(2)}
-                  {order.changeAmount != null && order.changeAmount > 0 && (
-                    <div style={{ fontSize: "0.65rem", fontWeight: 600, color: "#92400E", marginTop: "1px" }}>Troco p/ R$ {Number(order.changeAmount).toFixed(0)}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                  <span style={{ padding: "1px 8px", borderRadius: "10px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em",
+                    background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#ECFDF5",
+                    color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#059669"
+                  }}>
+                    {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
+                  </span>
+                  {(order.ifoodReference || order.openDeliveryReference) && (
+                    <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "#6366F1" }}>
+                      #{order.ifoodReference || order.openDeliveryReference}
+                    </span>
                   )}
                 </div>
-                {/* Line 4: Delivery type */}
-                <div style={{ color: "#6B7280" }}>
-                  {order.deliveryType === "DELIVERY" ? "Entrega" : "Retirada"}
-                </div>
               </div>
-            </div>
-            {/* Expand arrow */}
-            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, color: "#9CA3AF" }}>
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+
+              {/* Line 2: Phone  |  Date + time since */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", color: "#6B7280" }}>
+                <span>
+                  📞 {order.customerPhone ? order.customerPhone.replace(/\s*ID:\s*\d+/i, "").trim() : "—"}
+                </span>
+                <span style={{ flexShrink: 0, fontSize: "0.75rem" }}>
+                  {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  {" · "}
+                  <span style={{ fontWeight: isLate || isUrgent ? 700 : 500, color: timerColor }}>
+                    {timerLabel}
+                  </span>
+                </span>
+              </div>
+
+              {/* Line 3: Address (full, highlighted) */}
+              {order.customerAddress && (
+                <div style={{
+                  color: "#065F46", fontWeight: 500, fontSize: "0.78rem",
+                  background: "#ECFDF5", padding: "2px 8px", borderRadius: "5px", margin: "2px 0",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                }}>
+                  📍 {order.customerAddress}
+                </div>
+              )}
+              {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
+                <div style={{
+                  color: "#92400E", fontWeight: 600, fontSize: "0.78rem",
+                  background: "#FEF3C7", padding: "2px 8px", borderRadius: "5px", margin: "2px 0"
+                }}>
+                  🏪 Retirada no local
+                </div>
+              )}
+
+              {/* Line 4: Total + Payment + Delivery fee + Change */}
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px", marginTop: "2px" }}>
+                <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1F2937" }}>
+                  R$ {order.totalAmount.toFixed(2)}
+                </span>
+                <span style={{ color: "#6B7280" }}>—</span>
+                <span style={{ fontWeight: 600, color: "#374151" }}>
+                  {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+                </span>
+                {order.deliveryType === "DELIVERY" && order.deliveryFee > 0 && (
+                  <span style={{ fontSize: "0.72rem", color: "#6B7280", fontWeight: 500 }}>
+                    (+R$ {Number(order.deliveryFee).toFixed(2)} entrega)
+                  </span>
+                )}
+                {order.changeAmount != null && order.changeAmount > 0 && (
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#92400E", background: "#FEF3C7", padding: "1px 6px", borderRadius: "4px" }}>
+                    💵 Troco p/ R$ {Number(order.changeAmount).toFixed(0)}
+                  </span>
+                )}
+                {order.deliveryType === "DELIVERY" ? (
+                  <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>🛵 Entrega</span>
+                ) : (
+                  <span style={{ fontSize: "0.68rem", color: "#92400E" }}>🏪 Retirada</span>
+                )}
+              </div>
+
+              {/* Line 5: Customer notes (if any) */}
+              {order.notes && (
+                <div style={{
+                  background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "5px",
+                  padding: "3px 8px", margin: "3px 0", fontSize: "0.78rem", color: "#92400E", lineHeight: "1.4"
+                }}>
+                  📝 {order.notes}
+                </div>
+              )}
+
+              {/* Line 6: Items summary */}
+              <div style={{ fontSize: "0.75rem", color: "#4B5563", lineHeight: "1.4", marginTop: "2px" }}>
+                {order.items?.map((item: any, idx: number) => {
+                  const comboSels = (() => {
+                    if (!item.comboSelections) return [];
+                    try {
+                      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+                      if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name).map((s: any) => `${s.quantity > 1 ? s.quantity + "x " : ""}${s.name}`);
+                      return [];
+                    } catch { return []; }
+                  })();
+                  const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+                  const mainName = nameParts[0];
+                  const extras = nameParts.slice(1);
+                  const allDetails = comboSels.length > 0 ? comboSels : extras;
+                  return (
+                    <div key={item.id} style={{ marginBottom: "1px" }}>
+                      <span style={{ fontWeight: 600 }}>{item.quantity}×</span> {mainName}
+                      {allDetails.length > 0 && (
+                        <span style={{ color: "#9CA3AF" }}> · {allDetails.join(", ")}</span>
+                      )}
+                      {idx < (order.items?.length ?? 0) - 1 && <span style={{ color: "#D1D5DB" }}> |</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Motoboy / iFood driver info (compact) */}
+              {(order.ifoodDriverStatus && order.ifoodDriverStatus !== "FAILED") && (
+                <div style={{ fontSize: "0.73rem", color: "#1D4ED8", fontWeight: 600, marginTop: "2px" }}>
+                  🛵 {order.ifoodDriverName || "iFood"}
+                  <span style={{ marginLeft: "4px", padding: "1px 6px", borderRadius: "8px", fontSize: "0.62rem", fontWeight: 700,
+                    background: order.ifoodDriverStatus === "REQUESTED" ? "#FEF3C7" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#DBEAFE" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#D1FAE5" : "#E0E7FF",
+                    color: order.ifoodDriverStatus === "REQUESTED" ? "#92400E" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#1E40AF" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#065F46" : "#3730A3"
+                  }}>
+                    {order.ifoodDriverStatus === "REQUESTED" ? "Solicitando" : order.ifoodDriverStatus === "ASSIGNED" ? "Atribuído" : order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "A caminho" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" ? "Na loja" : order.ifoodDriverStatus === "COLLECTED" ? "Coletou" : order.ifoodDriverStatus === "DISPATCHED" ? "Entregando" : order.ifoodDriverStatus === "ARRIVED_AT_DESTINATION" ? "No destino" : order.ifoodDriverStatus === "DELIVERED" ? "Entregue" : order.ifoodDriverStatus}
+                  </span>
+                </div>
+              )}
+              {!order.ifoodDriverStatus && order.motoboy && (
+                <div style={{ fontSize: "0.73rem", color: "#374151", fontWeight: 500, marginTop: "2px" }}>
+                  🛵 {order.motoboy.name}
+                </div>
+              )}
             </div>
           </div>
-          {/* Bottom bar: motoboy + timer (always visible) */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", paddingTop: "4px", borderTop: "1px solid #F3F4F6", fontSize: "0.75rem", color: "#9CA3AF" }}>
-            <span onClick={e => e.stopPropagation()} style={{ flex: 1, minWidth: 0 }}>
-              {order.ifoodDriverStatus && order.ifoodDriverStatus !== "FAILED"
-                ? <span style={{ color: "#1D4ED8", fontWeight: 600, fontSize: "0.73rem" }}>
-                    🛵 {order.ifoodDriverName || "iFood"}
-                    <span style={{ marginLeft: "4px", padding: "1px 6px", borderRadius: "8px", fontSize: "0.62rem", fontWeight: 700, background: order.ifoodDriverStatus === "REQUESTED" ? "#FEF3C7" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#DBEAFE" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#D1FAE5" : "#E0E7FF", color: order.ifoodDriverStatus === "REQUESTED" ? "#92400E" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#1E40AF" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#065F46" : "#3730A3" }}>
-                      {order.ifoodDriverStatus === "REQUESTED" ? "Solicitando" : order.ifoodDriverStatus === "ASSIGNED" ? "Atribuído" : order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "A caminho" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" ? "Na loja" : order.ifoodDriverStatus === "COLLECTED" ? "Coletou" : order.ifoodDriverStatus === "DISPATCHED" ? "Entregando" : order.ifoodDriverStatus === "ARRIVED_AT_DESTINATION" ? "No destino" : order.ifoodDriverStatus === "DELIVERED" ? "Entregue" : order.ifoodDriverStatus}
-                    </span>
-                  </span>
-                : order.motoboy
-                  ? <span style={{ color: "#374151", fontWeight: 500 }}>{order.motoboy.name}</span>
-                  : order.deliveryType === "DELIVERY"
-                    ? <select
-                        value=""
-                        onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
-                        disabled={assigningId === order.id}
-                        style={{ padding: "2px 6px", borderRadius: "5px", border: "1px solid #E5E7EB", fontSize: "0.73rem", color: "#9CA3AF", background: "white", fontFamily: "inherit", cursor: "pointer", maxWidth: "130px" }}
-                      >
-                        <option value="">Sem motoboy</option>
-                        {motoboys.map((m: any) => (
-                          <option key={m.id} value={m.id}>{m.name}</option>
-                        ))}
-                      </select>
-                    : null
-              }
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              {/* Quick action buttons in collapsed view */}
-              {!expanded && order.status === "NOVO" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ACEITO"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Aceitar</button>
+
+          {/* ─── ACTION BAR: Always visible at bottom ─── */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            marginTop: "6px", paddingTop: "6px", borderTop: "1px solid #F3F4F6",
+            gap: "6px"
+          }}>
+            {/* Left: Status action button + motoboy select */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
+              {/* Status buttons */}
+              {order.status === "NOVO" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
               )}
-              {!expanded && order.status === "ACEITO" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "PREPARANDO"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Iniciar preparo</button>
+              {order.status === "ACEITO" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "PREPARANDO"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#D97706", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>👨‍🍳 Preparar</button>
               )}
-              {!expanded && order.status === "PREPARANDO" && order.deliveryType === "DELIVERY" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Saiu entrega</button>
+              {order.status === "PREPARANDO" && order.deliveryType === "DELIVERY" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🛵 Saiu</button>
               )}
-              {!expanded && order.status === "PREPARANDO" && order.deliveryType !== "DELIVERY" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Pronto</button>
+              {order.status === "PREPARANDO" && order.deliveryType !== "DELIVERY" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
               )}
-              {!expanded && order.status === "SAIU_ENTREGA" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Entregue</button>
+              {order.status === "SAIU_ENTREGA" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
               )}
               {order.status === "ENTREGUE" && (
-                <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#059669", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>
+                <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#059669", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>
                   {(order.ifoodOrderId || order.source === "IFOOD")
                     ? (order.ifoodDriverStatus === "CONCLUDED" ? "Concluído" : "Entregue")
                     : "Entregue"}
                 </span>
               )}
               {order.status === "CANCELADO" && (
-                <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#DC2626", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>Cancelado</span>
+                <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#DC2626", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Cancelado</span>
               )}
-              <span style={{ fontWeight: isLate || isUrgent ? 600 : 400, color: timerColor, fontSize: "0.73rem" }}>
-                {timerLabel}
-              </span>
+              {order.status === "ENCERRADO" && (
+                <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
+              )}
+
+              {/* Motoboy select (compact, in the bar) */}
+              {order.deliveryType === "DELIVERY" && !order.ifoodDriverStatus && !order.motoboy && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && order.status !== "ENTREGUE" && (
+                <select
+                  value=""
+                  onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
+                  disabled={assigningId === order.id}
+                  onClick={e => e.stopPropagation()}
+                  style={{ padding: "3px 6px", borderRadius: "5px", border: "1px solid #E5E7EB", fontSize: "0.7rem", color: "#9CA3AF", background: "white", fontFamily: "inherit", cursor: "pointer", maxWidth: "110px" }}
+                >
+                  <option value="">Motoboy</option>
+                  {motoboys.map((m: any) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Right: Icon buttons */}
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+              {/* WhatsApp */}
+              {order.customerPhone && (
+                <a
+                  href={`https://wa.me/55${(order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "")}`}
+                  target="_blank" rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  title="WhatsApp"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
+                >
+                  <MessageCircle size={15} />
+                </a>
+              )}
+
+              {/* Print */}
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  // Build receipt content
+                  const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
+                  const createdDate = new Date(order.createdAt);
+                  const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
+                  const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                  const isDelivery = order.deliveryType === "DELIVERY";
+
+                  let receipt = `#${seqNum} ${isDelivery ? "DELIVERY" : "RETIRADA"}\n`;
+                  receipt += `${order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "APP - JOTAJÁ" : order.source === "PDV" ? "PDV" : "ONLINE"}\n`;
+                  receipt += `Estabelecimento: ${storeName}\n`;
+                  if (order.ifoodReference || order.openDeliveryReference) receipt += `N° do Pedido: ${order.ifoodReference || order.openDeliveryReference}\n`;
+                  receipt += `Data: ${dateStr} ${timeStr}\n`;
+                  receipt += `\n`;
+                  receipt += `CLIENTE\n`;
+                  receipt += `Nome: ${order.customerName}\n`;
+                  receipt += `Telefone: ${phone}\n`;
+                  receipt += `\n`;
+                  if (isDelivery && order.customerAddress) {
+                    receipt += `ENTREGA\n`;
+                    receipt += `Endereço: ${order.customerAddress}\n`;
+                    if (order.notes) receipt += `Obs: ${order.notes}\n`;
+                    receipt += `\n`;
+                  }
+                  receipt += `RESUMO DO PEDIDO\n`;
+                  order.items?.forEach((item: any) => {
+                    const comboSels = (() => {
+                      if (!item.comboSelections) return [];
+                      try {
+                        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+                        if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
+                        return [];
+                      } catch { return []; }
+                    })();
+                    const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+                    const mainName = nameParts[0];
+                    const extras = nameParts.slice(1);
+                    receipt += `Qtd: ${item.quantity}x  Valor: R$ ${(item.price * item.quantity).toFixed(2)}\n`;
+                    receipt += `${mainName}\n`;
+                    if (comboSels.length > 0) {
+                      comboSels.forEach((sel: any) => {
+                        receipt += `  - ${sel.quantity > 1 ? sel.quantity + "x " : ""}${sel.name}\n`;
+                      });
+                    } else if (extras.length > 0) {
+                      extras.forEach((ext: string) => {
+                        receipt += `  - ${ext.trim()}\n`;
+                      });
+                    }
+                    receipt += `\n`;
+                  });
+                  const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
+                  receipt += `Subtotal: R$ ${subtotal.toFixed(2)}\n`;
+                  if (isDelivery) receipt += `Taxa de Entrega: R$ ${Number(order.deliveryFee || 0).toFixed(2)}\n`;
+                  receipt += `Total: R$ ${order.totalAmount.toFixed(2)}\n`;
+                  if (order.paymentMethod) receipt += `Forma de Pagamento: ${translatePayment(order.paymentMethod)}\n`;
+                  if (order.changeAmount != null && order.changeAmount > 0) receipt += `Troco para: R$ ${Number(order.changeAmount).toFixed(2)}\n`;
+
+                  // Open print window
+                  const printWin = window.open("", "_blank", "width=400,height=700");
+                  if (printWin) {
+                    printWin.document.write(`<html><head><title>Pedido #${seqNum}</title><style>body{font-family:'Courier New',monospace;font-size:13px;padding:20px;white-space:pre-wrap;line-height:1.5;}@media print{body{padding:0;}}</style></head><body>${receipt.replace(/\n/g, "<br>")}</body></html>`);
+                    printWin.document.close();
+                    printWin.focus();
+                    printWin.print();
+                  }
+                }}
+                title="Imprimir"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#3B82F6", color: "#fff", border: "none", cursor: "pointer" }}
+              >
+                <Printer size={15} />
+              </button>
+
+              {/* Copy */}
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
+                  const isDelivery = order.deliveryType === "DELIVERY";
+                  let text = `*#${seqNum} — ${order.customerName}*\n`;
+                  text += `📞 ${phone}\n`;
+                  if (isDelivery && order.customerAddress) text += `📍 ${order.customerAddress}\n`;
+                  if (order.notes) text += `📝 ${order.notes}\n`;
+                  text += `\n`;
+                  order.items?.forEach((item: any) => {
+                    text += `${item.quantity}× ${item.menuProduct?.name || "Item"}\n`;
+                  });
+                  text += `\n💰 *R$ ${order.totalAmount.toFixed(2)}* — ${order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}`;
+                  if (order.changeAmount != null && order.changeAmount > 0) text += `\n💵 Troco p/ R$ ${Number(order.changeAmount).toFixed(0)}`;
+                  navigator.clipboard.writeText(text).catch(() => {});
+                }}
+                title="Copiar resumo"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#6366F1", color: "#fff", border: "none", cursor: "pointer" }}
+              >
+                <Copy size={15} />
+              </button>
+
+              {/* Expand toggle */}
+              <button
+                onClick={e => { e.stopPropagation(); setExpandedId(expanded ? null : order.id); }}
+                title={expanded ? "Recolher" : "Detalhes"}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: expanded ? "#F3F4F6" : "#F9FAFB", color: "#6B7280", border: "1px solid #E5E7EB", cursor: "pointer" }}
+              >
+                {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+              </button>
             </div>
           </div>
         </div>
 
+        {/* ─── EXPANDED: Secondary details panel ─── */}
         {expanded && (
-          <div style={{ padding: "0 1rem 0.75rem", borderTop: "1px solid #E2E8F0" }}>
+          <div style={{ padding: "0 0.75rem 0.75rem", borderTop: "1px solid #E2E8F0" }}>
 
             {/* ── Agendamento / Prazo de entrega ── */}
             {deadline && (() => {
@@ -927,7 +1130,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             )}
 
-            {/* ── Dados do cliente ── */}
+            {/* ── Dados do cliente (detailed) ── */}
             <div style={{ margin: "0.6rem 0", display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: "0.82rem", lineHeight: "1.6" }}>
               <span style={{ color: "#9CA3AF", fontWeight: 500 }}>Telefone</span>
               <span>
@@ -1179,17 +1382,46 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {/* ── Observações ── */}
             {order.notes && <div style={{ padding: "8px 12px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: "0.8rem", color: "#374151", margin: "0.4rem 0", lineHeight: "1.5" }}>{order.notes}</div>}
 
-            {/* ── Itens do pedido ── */}
+            {/* ── Itens do pedido (detailed with sub-options) ── */}
             <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
-              {order.items?.map((item: any) => (
-                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid #F3F4F6" }}>
-                  <span style={{ color: "#374151" }}>{item.quantity}× {item.menuProduct?.name}</span>
-                  <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(item.price * item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
+              {order.items?.map((item: any) => {
+                const comboSels = (() => {
+                  if (!item.comboSelections) return [];
+                  try {
+                    const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+                    if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
+                    return [];
+                  } catch { return []; }
+                })();
+                const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+                const mainName = nameParts[0];
+                const extras = nameParts.slice(1);
+                return (
+                  <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F3F4F6" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "#374151", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
+                      <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                    </div>
+                    {comboSels.length > 0 && (
+                      <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
+                        {comboSels.map((sel: any, i: number) => (
+                          <div key={i}>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
+                        ))}
+                      </div>
+                    )}
+                    {comboSels.length === 0 && extras.length > 0 && (
+                      <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
+                        {extras.map((ext: string, i: number) => (
+                          <div key={i}>↳ {ext.trim()}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* ── Botões de ação ── */}
+            {/* ── Botões de ação (expanded - full width) ── */}
             {order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
                 {/* Primary action row */}
