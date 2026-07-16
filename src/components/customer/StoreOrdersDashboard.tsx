@@ -782,7 +782,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id));
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO");
-  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || o.status === "ENTREGUE");
+  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || o.status === "ENTREGUE" || o.status === "PRONTO");
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO");
 
   // Resumo de vendas
@@ -856,6 +856,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   #{seqNum} — {order.customerName}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                  {order.kdsStage === "FINISHING" && (
+                    <span style={{ padding: "1px 8px", borderRadius: "10px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em", background: "#DCFCE7", color: "#16A34A" }}>
+                      🍳 Pronto Cozinha
+                    </span>
+                  )}
                   <span style={{ padding: "1px 8px", borderRadius: "10px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em",
                     background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#ECFDF5",
                     color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#059669"
@@ -949,6 +954,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               )}
               {order.status === "SAIU_ENTREGA" && (
                 <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
+              )}
+              {order.status === "PRONTO" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🤝 Entregue</button>
               )}
               {order.status === "ENTREGUE" && (
                 <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#059669", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>

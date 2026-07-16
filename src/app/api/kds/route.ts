@@ -144,6 +144,7 @@ export async function PUT(req: NextRequest) {
         kdsStage: "FINISHING",
         kdsFinishingAt: new Date(),
         kdsStationId: null, // Reset station for finishing team to pick up
+        status: order.status === "ACEITO" ? "PREPARANDO" : undefined,
       },
     });
     return NextResponse.json({ success: true, stage: "FINISHING" });
