@@ -17,8 +17,10 @@ export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   
   // In production, verify the secret. Allow in dev mode.
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (process.env.NODE_ENV !== "development") {
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const startTime = Date.now();
@@ -305,9 +307,13 @@ export async function GET(req: NextRequest) {
           else if (isConcluded) newStatus = "ENTREGUE";
 
           if (newStatus) {
+            const updateData: any = { status: newStatus };
+            if (isConcluded) {
+              updateData.ifoodDriverStatus = "CONCLUDED";
+            }
             await (prisma.customerOrder as any).updateMany({
               where: { ifoodOrderId: orderId } as any,
-              data: { status: newStatus },
+              data: updateData,
             });
             log.push(`  🔄 Status atualizado: ${orderId} → ${newStatus}`);
             updated++;

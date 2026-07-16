@@ -73,6 +73,15 @@ export async function POST(req: Request) {
       }
     });
 
+    // Se for a loja de registro, não gera cobrança no Asaas
+    const userEmailClean = user.email?.toLowerCase().replace(/\s+/g, "");
+    const isSpecialStore = userEmailClean === "viniciusmenezes.ofc@gmail.com";
+
+    if (isSpecialStore) {
+      console.log(`[checkout-emergency] ✅ #${order.id.slice(-6).toUpperCase()} registrado (sem boleto Asaas)`);
+      return NextResponse.json({ success: true, orderId: order.id, boletoUrl: null, isSpecialStore: true });
+    }
+
     // ── Gerar boleto Asaas automaticamente ──────────────────────────────────
     let boletoUrl: string | null = null;
     const shortId = order.id.slice(-6).toUpperCase();

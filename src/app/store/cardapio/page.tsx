@@ -35,35 +35,43 @@ export default async function StoreCardapioPage() {
 
   let products: any[] = [];
   let availableItems: any[] = [];
+  let categories: any[] = [];
 
   try {
-    products = await prisma.menuProduct.findMany({
-      where: franchiseeFilter,
-      orderBy: [{ category: "asc" }, { name: "asc" }],
-      include: {
-        comboGroups: {
-          orderBy: { sortOrder: "asc" },
-          include: {
-            items: {
-              include: {
-                menuProduct: { select: { id: true, name: true, active: true } },
+    [products, availableItems, categories] = await Promise.all([
+      prisma.menuProduct.findMany({
+        where: franchiseeFilter,
+        orderBy: [{ category: "asc" }, { name: "asc" }],
+        include: {
+          comboGroups: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              items: {
+                include: {
+                  menuProduct: { select: { id: true, name: true, active: true } },
+                },
               },
             },
           },
         },
-      },
-    });
-
-    availableItems = await prisma.menuProduct.findMany({
-      where: { ...franchiseeFilter, isCombo: false },
-      select: { id: true, name: true, active: true },
-      orderBy: { name: "asc" },
-    });
+      }),
+      prisma.menuProduct.findMany({
+        where: { ...franchiseeFilter, isCombo: false },
+        select: { id: true, name: true, active: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.menuCategory.findMany({
+        where: user.role === "ADMIN" ? {} : { franchiseeId: user.id },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+    ]);
   } catch (err) {
-    console.error("[Cardapio] Erro ao buscar produtos:", err);
+    console.error("[Cardapio] Erro ao buscar dados:", err);
     products = [];
     availableItems = [];
+    categories = [];
   }
+
 
   return (
     <div className="container" style={{ marginTop: "1.5rem" }}>
@@ -137,7 +145,7 @@ export default async function StoreCardapioPage() {
         </div>
       ) : null}
 
-      <MenuProductManager products={products} availableItems={availableItems} />
+      <MenuProductManager products={products} availableItems={availableItems} categories={categories} />
     </div>
   );
 }

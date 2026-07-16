@@ -7,8 +7,12 @@ export async function POST(req: Request) {
     const receivedToken = req.headers.get("asaas-access-token");
 
     // Validação de segurança do Webhook
-    if (asaasToken && receivedToken !== asaasToken) {
-      console.error("[webhook/asaas] Token inválido!");
+    if (!asaasToken) {
+      console.error("[webhook/asaas] ASAAS_WEBHOOK_TOKEN não está configurada no ambiente!");
+      return NextResponse.json({ error: "Webhook token not configured" }, { status: 401 });
+    }
+    if (receivedToken !== asaasToken) {
+      console.error("[webhook/asaas] Token inválido recebido!");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

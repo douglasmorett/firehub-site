@@ -47,7 +47,10 @@ export default async function StoreLayout({ children }: { children: React.ReactN
 
   // === PAGAMENTO: verificar ciclo pendente ===
   let pendingPayment: { amount: number; url: string | null; isOverdue: boolean } | null = null;
-  if (isFranqueado && user) {
+  const userEmailClean = user?.email?.toLowerCase().replace(/\s+/g, "");
+  const isSpecialStore = userEmailClean === "viniciusmenezes.ofc@gmail.com";
+
+  if (isFranqueado && user && !isSpecialStore) {
     try {
       const closedCycle = await prisma.franchiseeBillingCycle.findFirst({
         where: {

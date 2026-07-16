@@ -61,6 +61,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [cancellationReasons, setCancellationReasons] = useState<{ cancelCodeId: string, description: string }[]>([]);
+  const [selectedCancelCode, setSelectedCancelCode] = useState<string>("");
+  const [loadingReasons, setLoadingReasons] = useState<boolean>(false);
   // === Motoboy iFood state ===
   const [ifoodDriverModalId, setIfoodDriverModalId] = useState<string | null>(null);
   const [ifoodDriverQuote, setIfoodDriverQuote] = useState<any>(null);
@@ -94,6 +97,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return 1;
   });
   const [scheduleLeadInput, setScheduleLeadInput] = useState("");
+  const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
+  const showToast = (text: string, color = "#10B981") => {
+    setToastMsg({ text, color });
+    setTimeout(() => setToastMsg(null), 4000);
+  };
 
   const activateAltaDemanda = () => {
     const now = new Date();
@@ -137,29 +145,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
   const [dateTo, setDateTo] = useState(todayStr + "T23:59");
   const [showResumo, setShowResumo] = useState(false);
-  const [cashSessionLoaded, setCashSessionLoaded] = useState(false);
-
   const storeName = user.storeName || user.name;
   const storeStatus = isStoreOpen(user.storeHours as any);
   const storeUrl = user.slug ? `/loja/${user.slug}` : null;
-
-  // Fetch cash session to use openedAt as date range start
-  useEffect(() => {
-    if (cashSessionLoaded) return;
-    fetch("/api/cash-session").then(r => r.json()).then(data => {
-      if (data.session?.openedAt) {
-        const opened = new Date(data.session.openedAt);
-        const openedStr = `${opened.getFullYear()}-${String(opened.getMonth() + 1).padStart(2, "0")}-${String(opened.getDate()).padStart(2, "0")}`;
-        const openedTimeStr = `${String(opened.getHours()).padStart(2, "0")}:${String(opened.getMinutes()).padStart(2, "0")}`;
-        setDateFrom(openedStr + "T" + openedTimeStr);
-        // End: now + some margin
-        const n = new Date();
-        const nowStr = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
-        setDateTo(nowStr + "T23:59");
-      }
-      setCashSessionLoaded(true);
-    }).catch(() => setCashSessionLoaded(true));
-  }, [cashSessionLoaded]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000);
@@ -207,6 +195,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, []);
 
   useEffect(() => { setOrders(initialOrders); }, [initialOrders]);
+
+  useEffect(() => {
+    if (!cancelConfirmId) {
+      setCancellationReasons([]);
+      setSelectedCancelCode("");
+      return;
+    }
+
+    setLoadingReasons(true);
+    fetch(`/api/customer-order/cancellation-reasons?orderId=${cancelConfirmId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setCancellationReasons(data);
+          setSelectedCancelCode(data[0].cancelCodeId);
+          setCancelReason(data[0].description);
+        }
+      })
+      .catch(err => {
+        console.error("Error fetching cancellation reasons:", err);
+      })
+      .finally(() => {
+        setLoadingReasons(false);
+      });
+  }, [cancelConfirmId]);
 
   // Auto-accept logic
   useEffect(() => {
@@ -389,8 +402,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
         router.refresh();
       }
-      else alert("Erro ao atualizar.");
-    } catch { alert("Erro."); } finally { setLoadingId(null); }
+      else showToast("Erro ao atualizar.", "#EF4444");
+    } catch { showToast("Erro.", "#EF4444"); } finally { setLoadingId(null); }
   };
 
   // === MOTOBOY IFOOD FUNCTIONS ===
@@ -439,21 +452,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const confirmCancel = async () => {
     if (!cancelConfirmId) return;
-    if (!cancelReason.trim()) { alert("Por favor, informe o motivo do cancelamento."); return; }
+    const finalReason = cancelReason.trim() || cancellationReasons.find(r => r.cancelCodeId === selectedCancelCode)?.description || "Cancelado pela loja";
     setLoadingId(cancelConfirmId);
     try {
       const res = await fetch("/api/customer-order/status", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: cancelConfirmId, status: "CANCELADO", cancelReason: cancelReason.trim() })
+        body: JSON.stringify({
+          orderId: cancelConfirmId,
+          status: "CANCELADO",
+          cancelReason: finalReason,
+          cancellationCode: selectedCancelCode
+        })
       });
       if (res.ok) {
         setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", motoboyId: null, motoboy: null } : o));
         router.refresh();
-      } else alert("Erro ao cancelar.");
-    } catch { alert("Erro."); } finally {
+      } else showToast("Erro ao cancelar.", "#EF4444");
+    } catch { showToast("Erro.", "#EF4444"); } finally {
       setLoadingId(null);
       setCancelConfirmId(null);
       setCancelReason("");
+      setSelectedCancelCode("");
     }
   };
   // --- DRAG HANDLERS ---
@@ -610,9 +629,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const filteredOrders = orders.filter(o => {
     if (o.status === "ENCERRADO") return false;
-    // Para pedidos agendados, usar scheduledDatetime como data de referência
-    const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
-    if (refDate < fromDate || refDate > toDate) return false;
+    
+    // Pedidos ativos (diferentes de CANCELADO) ou pedidos vindos de integrações (iFood/Jotajá)
+    // não são filtrados por data, garantindo que pedidos de teste continuem visíveis inclusive
+    // na aba/coluna de Cancelados após serem recusados.
+    const isActive = o.status !== "CANCELADO";
+    const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
+    
+    if (!isActive && !isIntegration) {
+      // Para pedidos cancelados não integrados, aplica o filtro de data
+      const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
+      if (refDate < fromDate || refDate > toDate) return false;
+    }
+    
     if (!searchTerm) return true;
     const s = searchTerm.toLowerCase();
     return o.customerName?.toLowerCase().includes(s) || o.customerPhone?.includes(s) || o.customerAddress?.toLowerCase().includes(s) || o.id.includes(s);
@@ -624,6 +653,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const map = new Map<string, number>();
     const allInPeriod = orders
       .filter(o => {
+        const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
+        const isActive = o.status !== "CANCELADO" && o.status !== "ENCERRADO";
+        if (isIntegration || isActive) return true;
+
         const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
         return refDate >= fromDate && refDate <= toDate;
       })
@@ -734,11 +767,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                 {/* Line 1: iFood ref or source */}
                 <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#6366F1" }}>
-                  {order.ifoodReference ? `#${order.ifoodReference}` : (order.source === "IFOOD" ? "iFood" : order.source === "PDV" ? "PDV" : "Online")}
+                  {(order.ifoodReference || order.openDeliveryReference) ? `#${order.ifoodReference || order.openDeliveryReference}` : (order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online")}
                 </div>
                 {/* Line 2: Source (if iFood ref shown) or ID */}
                 <div style={{ color: "#6B7280" }}>
-                  {order.ifoodReference ? (order.source === "IFOOD" ? "iFood" : order.source === "PDV" ? "PDV" : "Online") : `#${order.id.slice(-6).toUpperCase()}`}
+                  {(order.ifoodReference || order.openDeliveryReference) ? (order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online") : `#${order.id.slice(-6).toUpperCase()}`}
                 </div>
                 {/* Line 3: Value */}
                 <div style={{ fontWeight: 700, color: "#1F2937" }}>
@@ -803,7 +836,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "2px 10px", borderRadius: "5px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.7rem", fontFamily: "inherit" }}>Entregue</button>
               )}
               {order.status === "ENTREGUE" && (
-                <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#059669", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>Entregue</span>
+                <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#059669", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>
+                  {(order.ifoodOrderId || order.source === "IFOOD")
+                    ? (order.ifoodDriverStatus === "CONCLUDED" ? "Concluído" : "Entregue")
+                    : "Entregue"}
+                </span>
               )}
               {order.status === "CANCELADO" && (
                 <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#DC2626", color: "#fff", fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.02em" }}>Cancelado</span>
@@ -873,6 +910,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   {order.cancelledBy === "LOJA" ? "Cancelado pela loja"
                     : order.cancelledBy === "CUSTOMER" ? "Cancelado pelo cliente"
                     : order.cancelledBy === "IFOOD" ? "Cancelado pela plataforma"
+                    : order.cancelledBy === "JOTAJA" ? "Cancelado pela plataforma"
                     : "Cancelado"}
                 </div>
                 <div style={{ fontSize: "0.78rem", marginTop: "1px",
@@ -881,6 +919,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   {order.cancelledBy === "LOJA" ? "Você cancelou este pedido manualmente"
                     : order.cancelledBy === "CUSTOMER" ? "O cliente solicitou o cancelamento"
                     : order.cancelledBy === "IFOOD" ? "O iFood cancelou este pedido automaticamente"
+                    : order.cancelledBy === "JOTAJA" ? "O Jotajá cancelou este pedido automaticamente"
                     : "Pedido foi cancelado"}
                 </div>
               </div>
@@ -923,6 +962,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   const isPaidOnline = !isDinheiro && (
                     order.paymentPaidAt ||
                     order.source === "IFOOD" ||
+                    order.source === "JOTAJA" ||
                     order.gatewayProvider
                   );
                   return (
@@ -1154,7 +1194,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {order.status === "NOVO" && (
                   <div style={{ display: "flex", gap: "0.4rem" }}>
                     <button disabled={isLoading} onClick={() => updateStatus(order.id, "ACEITO")} style={{ flex: 1, padding: "0.6rem 1rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit", letterSpacing: "0.02em" }}>Aceitar pedido</button>
-                    <button disabled={isLoading} onClick={() => updateStatus(order.id, "CANCELADO")} style={{ padding: "0.6rem 0.75rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Recusar</button>
+                    <button disabled={isLoading} onClick={async () => {
+                      if (!confirm("Recusar este pedido?")) return;
+                      if ((order as any).openDeliveryOrderId && (order as any).source === "JOTAJA") {
+                        await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (order as any).openDeliveryOrderId, action: "deny" }) });
+                        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
+                      } else {
+                        updateStatus(order.id, "CANCELADO");
+                      }
+                    }} style={{ padding: "0.6rem 0.75rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Recusar</button>
                   </div>
                 )}
                 {order.status === "ACEITO" && (
@@ -1164,8 +1212,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <button disabled={isLoading} onClick={() => updateStatus(order.id, "SAIU_ENTREGA")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Saiu para entrega</button>
                 )}
                 {order.status === "PREPARANDO" && order.deliveryType !== "DELIVERY" && (
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Pronto para retirada</button>
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "PRONTO")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#0891B2", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>✅ Pronto para retirada</button>
                 )}
+                {(order.status as string) === "PRONTO" && (
+                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>🤝 Cliente retirou</button>
+                )}
+
                 {order.status === "SAIU_ENTREGA" && (
                   <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Marcar entregue</button>
                 )}
@@ -1254,14 +1306,38 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* MODAL CANCELAR PEDIDO */}
       {cancelConfirmId && (
-        <div onClick={() => { setCancelConfirmId(null); setCancelReason(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+        <div onClick={() => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ textAlign: "center", marginBottom: "16px" }}>
               <div style={{ fontSize: "2rem", marginBottom: "8px" }}>⚠️</div>
               <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1F2937" }}>Tem certeza que deseja cancelar esse pedido?</div>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Por favor, informe o motivo do cancelamento:</label>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Selecione o motivo do cancelamento:</label>
+              {loadingReasons ? (
+                <div style={{ fontSize: "0.82rem", color: "#6B7280", padding: "6px 0" }}>Carregando motivos do iFood...</div>
+              ) : cancellationReasons.length > 0 ? (
+                <select
+                  value={selectedCancelCode}
+                  onChange={e => {
+                    const code = e.target.value;
+                    setSelectedCancelCode(code);
+                    const desc = cancellationReasons.find(r => r.cancelCodeId === code)?.description || "";
+                    setCancelReason(desc);
+                  }}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #D1D5DB", fontSize: "0.85rem", fontFamily: "inherit", outline: "none", boxSizing: "border-box", background: "#fff", color: "#1F2937", marginBottom: "12px" }}
+                >
+                  {cancellationReasons.map(r => (
+                    <option key={r.cancelCodeId} value={r.cancelCodeId}>
+                      [{r.cancelCodeId}] {r.description}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div style={{ fontSize: "0.82rem", color: "#EF4444", padding: "6px 0" }}>Usando motivos padrão do sistema.</div>
+              )}
+
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Detalhes do motivo (opcional):</label>
               <textarea
                 value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)}
@@ -1271,7 +1347,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button onClick={() => { setCancelConfirmId(null); setCancelReason(""); }} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#374151", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Não</button>
+              <button onClick={() => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); }} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#374151", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Não</button>
               <button onClick={confirmCancel} disabled={!!loadingId} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>{loadingId ? "Cancelando..." : "Sim, cancelar"}</button>
             </div>
           </div>
@@ -1291,7 +1367,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {/* Order info */}
               {driverOrder && (
                 <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "0.82rem" }}>
-                  <div><strong>Pedido:</strong> #{driverOrder.ifoodReference || driverOrder.id.slice(-6).toUpperCase()}</div>
+                  <div><strong>Pedido:</strong> #{driverOrder.ifoodReference || driverOrder.openDeliveryReference || driverOrder.id.slice(-6).toUpperCase()}</div>
                   {driverOrder.customerAddress && <div style={{ color: "#6B7280", marginTop: "2px" }}>{driverOrder.customerAddress}</div>}
                 </div>
               )}
@@ -1363,7 +1439,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ textAlign: "center", marginBottom: "16px" }}>
                 <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>⚠️</div>
                 <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#92400E" }}>Pedido #{orderNum} em negociação</div>
-                <div style={{ fontSize: "0.82rem", color: "#6B7280", marginTop: "4px" }}>O cliente solicitou o cancelamento pelo iFood</div>
+                <div style={{ fontSize: "0.82rem", color: "#6B7280", marginTop: "4px" }}>O cliente solicitou o cancelamento {(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : "pelo iFood"}</div>
                 {timeLeftStr && (
                   <div style={{ marginTop: "8px", padding: "4px 12px", display: "inline-block", background: timeLeft! < 60 ? "#FEE2E2" : "#FEF3C7", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, color: timeLeft! < 60 ? "#DC2626" : "#92400E" }}>
                     ⏱ Tempo restante: {timeLeftStr}
@@ -1382,7 +1458,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ background: "#F9FAFB", borderRadius: "8px", padding: "10px", marginBottom: "16px", fontSize: "0.8rem", color: "#4B5563" }}>
                 <strong>Cliente:</strong> {disputeOrder.customerName} — {disputeOrder.customerPhone}<br/>
                 <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
-                {disputeOrder.ifoodReference && <><strong>iFood:</strong> #{disputeOrder.ifoodReference}</>}
+                {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? "Jotajá" : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
               </div>
               {/* Campo de motivo para recusa */}
               <div style={{ marginBottom: "16px" }}>
@@ -1400,10 +1476,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onClick={async () => {
                     const reasonEl = document.getElementById("dispute-deny-reason") as HTMLTextAreaElement;
                     const reason = reasonEl?.value?.trim();
-                    if (!reason) { alert("Por favor, informe o motivo da recusa."); reasonEl?.focus(); return; }
+                    if (!reason) { showToast("Por favor, informe o motivo da recusa.", "#EF4444"); reasonEl?.focus(); return; }
                     setLoadingId(disputeOrder.id);
                     try {
-                      const r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "deny", denyReason: reason }) });
+                      let r: Response;
+                      if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
+                        r = await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, action: "deny_cancellation", reason }) });
+                      } else {
+                        r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "deny", denyReason: reason }) });
+                      }
                       if (r.ok) { setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o)); router.refresh(); }
                     } catch {} finally { setLoadingId(null); }
                   }}
@@ -1417,8 +1498,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     if (!confirm("Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
                     setLoadingId(disputeOrder.id);
                     try {
-                      const r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "accept" }) });
-                      if (r.ok) { setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, status: "CANCELADO", cancelledBy: "CUSTOMER", cancelDispute: { ...dispute, pending: false } } : o)); router.refresh(); }
+                      let r: Response;
+                      if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
+                        r = await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, action: "accept_cancellation" }) });
+                      } else {
+                        r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "accept" }) });
+                      }
+                      if (r.ok) { setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", cancelDispute: { ...dispute, pending: false } } : o)); router.refresh(); }
                     } catch {} finally { setLoadingId(null); }
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
@@ -1664,7 +1750,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           {order.paymentMethod && (() => {
                             const method = translatePayment(order.paymentMethod);
                             const isDinheiro = method === "Dinheiro";
-                            const isPaidOnline = !isDinheiro && (order.paymentPaidAt || order.source === "IFOOD" || order.gatewayProvider);
+                            const isPaidOnline = !isDinheiro && (order.paymentPaidAt || order.source === "IFOOD" || order.source === "JOTAJA" || order.gatewayProvider);
                             return (
                               <>
                                 <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
@@ -1693,10 +1779,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                                 ));
                                 setShowAgendamentos(false);
                               } else {
-                                alert("Erro ao antecipar pedido.");
+                                showToast("Erro ao antecipar pedido.", "#EF4444");
                               }
                             } catch {
-                              alert("Erro de conexão.");
+                              showToast("Erro de conexão.", "#EF4444");
                             }
                           }}
                           style={{
@@ -1794,34 +1880,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {scheduledOrders.length}
               </span>
             </button>
-            <button
-              onClick={async () => {
-                try {
-                  const btn = document.getElementById("btn-sync-ifood");
-                  if (btn) { btn.textContent = "⏳ Sincronizando..."; btn.setAttribute("disabled", "true"); }
-                  const res = await fetch("/api/ifood/sync-orders", { method: "POST" });
-                  const data = await res.json();
-                  if (data.imported > 0) {
-                    alert(`✅ ${data.imported} pedido(s) importado(s) do iFood!`);
-                  } else {
-                    alert("✅ Nenhum pedido novo encontrado na fila do iFood.");
-                  }
-                  if (btn) { btn.textContent = "🔄 Sincronizar iFood"; btn.removeAttribute("disabled"); }
-                } catch {
-                  alert("❌ Erro ao sincronizar com iFood.");
-                  const btn = document.getElementById("btn-sync-ifood");
-                  if (btn) { btn.textContent = "🔄 Sincronizar iFood"; btn.removeAttribute("disabled"); }
-                }
-              }}
-              id="btn-sync-ifood"
+            <a
+              href="/store/venda-presencial"
               style={{
                 padding: "6px 14px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
-                background: "#FFF1F2", color: "#E11D48", outline: "1.5px solid #FECDD3"
+                background: "#F0FDF4", color: "#16A34A", outline: "1.5px solid #BBF7D0",
+                textDecoration: "none"
               }}
             >
-              🔄 Sincronizar iFood
-            </button>
+              🛒 Pedidos Balcão
+            </a>
+
           </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
@@ -1911,6 +1981,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           )}
         </div>
       </div>
+
+      {/* TOAST NOTIFICATION */}
+      {toastMsg && (
+        <div style={{
+          position: "fixed", bottom: "24px", right: "24px", zIndex: 99999,
+          background: toastMsg.color, color: "#fff", padding: "12px 24px",
+          borderRadius: "8px", fontWeight: 700, boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
+          display: "flex", alignItems: "center", gap: "8px", transition: "all 0.3s ease",
+          animation: "pulse 2s infinite"
+        }}>
+          {toastMsg.color === "#10B981" ? "✅" : "⚠️"} {toastMsg.text}
+        </div>
+      )}
 
       <style>{`
         @media(max-width: 900px) {

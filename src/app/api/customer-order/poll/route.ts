@@ -6,6 +6,9 @@ import { authOptions } from "@/lib/auth";
 // Throttle iFood polling — max once every 5s for faster order detection
 let lastIfoodPoll = 0;
 
+// Throttle Jotajá polling — max once every 5s
+let lastJotajaPoll = 0;
+
 async function pollIfoodEvents(sessionUserId?: string) {
   const now = Date.now();
   if (now - lastIfoodPoll < 5_000) return; // Skip if polled less than 5s ago
@@ -339,9 +342,13 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
             const newStatus = STATUS_EVENT_MAP[code];
             if (newStatus) {
+              const updateData: any = { status: newStatus };
+              if (isConcluded) {
+                updateData.ifoodDriverStatus = "CONCLUDED";
+              }
               await (prisma.customerOrder as any).updateMany({
                 where: { ifoodOrderId: orderId } as any,
-                data: { status: newStatus },
+                data: updateData,
               });
             }
           }
@@ -385,10 +392,56 @@ async function pollIfoodEvents(sessionUserId?: string) {
   }
 }
 
-// GET: Fast polling endpoint - returns orders + auto-polls iFood
+async function pollJotajaEvents(sessionUserId?: string) {
+  const now = Date.now();
+  if (now - lastJotajaPoll < 5_000) return;
+
+  lastJotajaPoll = now;
+
+  try {
+    const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+    const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
+    const merchantId = process.env.JOTAJA_MERCHANT_ID;
+    if (!merchantId) return;
+
+    const res = await jotajaFetch("/v1/events:polling", { method: "GET" });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.error(`[Jotaja Poll] events:polling falhou: ${res.status} - ${errBody.slice(0, 200)}`);
+      return;
+    }
+
+    const eventsText = await res.text();
+    const events = eventsText ? JSON.parse(eventsText) : [];
+    if (!events || events.length === 0) return;
+
+    const processedEventIds: string[] = [];
+    for (const event of events) {
+      const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
+      if (result.action !== "error" && result.action !== "skipped") {
+        if (event.id) processedEventIds.push(event.id);
+        console.log(`[Jotaja Poll] ${result.action} - ${result.orderId}${result.message ? ": " + result.message : ""}`);
+      } else if (result.action === "error") {
+        console.error(`[Jotaja Poll] ERRO ${result.orderId}: ${result.message}`);
+      }
+    }
+
+    if (processedEventIds.length > 0) {
+      await jotajaFetch("/v1/events/acknowledgment", {
+        method: "POST",
+        body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
+      });
+      console.log(`[Jotaja Poll] ${processedEventIds.length}/${events.length} eventos acknowledged`);
+    }
+  } catch (err) {
+    console.error("[Jotaja Poll] Erro geral:", err);
+  }
+}
+
+// GET: Fast polling endpoint - returns orders + auto-polls iFood & Jotaja
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  if (!session?.user?.email) return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
@@ -396,12 +449,13 @@ export async function GET(req: NextRequest) {
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  // Poll iFood events BEFORE returning orders (must await in serverless/Vercel
-  // to prevent the function from being killed before polling completes)
   try {
-    await pollIfoodEvents(user.id);
+    await Promise.all([
+      pollIfoodEvents(user.id),
+      pollJotajaEvents(user.id),
+    ]);
   } catch (err) {
-    console.error("[iFood Poll] Erro no polling (não bloqueante):", err);
+    console.error("[Poll] Erro no polling:", err);
   }
 
   const orders = await prisma.customerOrder.findMany({

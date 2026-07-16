@@ -16,6 +16,7 @@ export default function CartPage() {
   const [copied, setCopied] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [overduePayments, setOverduePayments] = useState<any[] | null>(null);
+  const [isSpecialStore, setIsSpecialStore] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -42,6 +43,7 @@ export default function CartPage() {
       if (res.ok && data) {
         setBoletoUrl(data.boletoUrl || null);
         setBoletoCode(data.boletoCode || data.barCode || null);
+        setIsSpecialStore(data.isSpecialStore || false);
         setCheckoutSuccess(true);
         clearCart();
       } else if (res.status === 403 && data?.overduePayments) {
@@ -116,10 +118,26 @@ export default function CartPage() {
             Pedido Confirmado!
           </h2>
 
-          {boletoUrl || boletoCode ? (
+          {isSpecialStore ? (
+            <div style={{
+              background: "#F0FDF4", borderRadius: 14, padding: "1.25rem",
+              marginBottom: "1.5rem", border: "1.5px solid #BBF7D0",
+              textAlign: "left"
+            }}>
+              <p style={{ color: "#166534", fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: 6 }}>
+                ✓ Conta de Registro
+              </p>
+              <p style={{ color: "#14532D", fontSize: "0.82rem", lineHeight: 1.5 }}>
+                Este pedido foi registrado com sucesso para fins de controle e histórico.
+              </p>
+              <p style={{ color: "#14532D", fontSize: "0.82rem", lineHeight: 1.5, marginTop: "0.5rem" }}>
+                Nenhuma cobrança ou boleto foi gerado para este pedido.
+              </p>
+            </div>
+          ) : boletoUrl || boletoCode ? (
             <>
               <p style={{ color: "#64748B", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
-                Seu boleto foi gerado com vencimento em <strong>10 dias</strong> via Asaas.
+                Seu boleto foi gerado com vencimento em <strong>7 dias</strong> via Asaas.
               </p>
 
               {boletoCode && (
@@ -644,7 +662,7 @@ export default function CartPage() {
 
             {total >= 300 && (
               <p style={{ fontSize: "0.78rem", color: "#94A3B8", textAlign: "center", marginBottom: "1rem" }}>
-                Boleto com vencimento em 10 dias via Asaas
+                Boleto com vencimento em 7 dias via Asaas
               </p>
             )}
 

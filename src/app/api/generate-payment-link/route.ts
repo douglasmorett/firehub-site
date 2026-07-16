@@ -123,7 +123,7 @@ export async function POST(req: Request) {
 
     // 2. Criar cobrança
     const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 10);
+    dueDate.setDate(dueDate.getDate() + 7);
 
     const payRes = await fetch(`${BASE}/payments`, {
       method: "POST",

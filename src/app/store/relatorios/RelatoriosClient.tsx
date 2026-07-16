@@ -240,11 +240,11 @@ export default function RelatoriosClient({
 
     return Object.entries(stats).map(([key, value]) => ({
       key,
-      label: key === "IFOOD" ? "🛵 iFood" : key === "PDV" ? "🛒 PDV" : "💻 Site",
+      label: key === "IFOOD" ? "🛵 iFood" : key === "JOTAJA" ? "📱 Jotajá" : key === "PDV" ? "🛒 PDV" : "💻 Site",
       count: value.count,
       total: value.total,
       pct: totalRevenue > 0 ? (value.total / totalRevenue) * 100 : 0,
-      color: key === "IFOOD" ? "#EA1D2C" : key === "PDV" ? "#FF8A00" : "#2563EB",
+      color: key === "IFOOD" ? "#EA1D2C" : key === "JOTAJA" ? "#7C3AED" : key === "PDV" ? "#FF8A00" : "#2563EB",
     })).sort((a, b) => b.total - a.total);
   }, [dateFilteredOrders]);
 

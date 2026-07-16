@@ -37,6 +37,30 @@ export default function IfoodHomologacaoClient({
   const [genError,   setGenError]   = useState("");
   const [showModal,  setShowModal]  = useState(false);
 
+  // Conexão direta por Merchant UUID (Aplicativos Centralizados)
+  const [connectMethod, setConnectMethod] = useState<"direct" | "code">("direct");
+  const [directId, setDirectId] = useState("");
+  const [directLoading, setDirectLoading] = useState(false);
+  const [directError, setDirectError] = useState("");
+
+  const linkDirectMerchantId = async () => {
+    setDirectLoading(true); setDirectError("");
+    try {
+      const r = await fetch("/api/ifood/auth/link-merchant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId: directId }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Erro ao conectar");
+      await testConnection();
+    } catch (e: any) {
+      setDirectError(e.message);
+    } finally {
+      setDirectLoading(false);
+    }
+  };
+
   const generateActivationCode = async () => {
     setGenLoading(true); setGenError(""); setGenCode(null); setGenVerifier(null);
     try {
@@ -49,7 +73,6 @@ export default function IfoodHomologacaoClient({
     } catch (e: any) { setGenError(e.message); }
     finally { setGenLoading(false); }
   };
-
 
   const testConnection = async (force = false) => {
     setConn("loading");
@@ -170,99 +193,90 @@ export default function IfoodHomologacaoClient({
               </button>
             </div>
           ) : connStatus !== "loading" ? (
-            <button onClick={() => testConnection(true)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#E8360C", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit" }}>
-              + Integrar loja no iFood
+            <button onClick={() => testConnection(true)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit" }}>
+              <ExternalLink size={14} /> Conectar conta iFood
             </button>
           ) : null}
         </div>
 
-
-        {/* Card body — wizard só aparece quando não conectado (1ª vez) */}
+        {/* Card body — só aparece quando não conectado */}
         {(connStatus === "idle" || connStatus === "error") && (
-          <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
 
-            {/* Passo 1: Gerar código */}
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#E8360C", color: "#fff", fontWeight: 900, fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>1</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Gere o código de ativação</p>
-                <p style={{ margin: "0 0 0.75rem", fontSize: "0.78rem", color: "#64748B" }}>
-                  Clique abaixo para gerar o código de 8 dígitos. Você vai inserir ele no Portal do Parceiro iFood para vincular sua loja.
+            {/* Banner: app centralizado — aguardando homologação completa */}
+            <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "14px 16px", display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <span style={{ fontSize: "1.2rem", flexShrink: 0, marginTop: 1 }}>⚠️</span>
+              <div>
+                <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "0.85rem", color: "#92400E" }}>App iFood aguardando homologação completa</p>
+                <p style={{ margin: 0, fontSize: "0.78rem", color: "#78350F", lineHeight: 1.6 }}>
+                  O FireHub usa um app do tipo <strong>Centralizado</strong> no iFood — atualmente com status <strong>"Parcialmente homologado"</strong>. 
+                  Para conectar lojas, você solicita o acesso pelo <strong>Portal do Desenvolvedor</strong> e o lojista aprova no Portal do Parceiro.
                 </p>
-                <button
-                  onClick={generateActivationCode}
-                  disabled={genLoading}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit", opacity: genLoading ? 0.7 : 1 }}
-                >
-                  {genLoading ? <><Loader size={15} /> Gerando...</> : "🔑 Gerar Código de Ativação"}
-                </button>
-                {genError && <p style={{ margin: "0.5rem 0 0", fontSize: "0.78rem", color: "#DC2626", fontWeight: 700 }}>⚠️ {genError}</p>}
+              </div>
+            </div>
 
-                {/* Código gerado — destaque visual */}
-                {genCode && (
-                  <div style={{ marginTop: "0.75rem", background: "#FFF5F3", border: "2px solid #E8360C", borderRadius: 12, padding: "1rem 1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                    <div>
-                      <p style={{ margin: "0 0 4px", fontSize: "0.72rem", fontWeight: 700, color: "#E8360C", textTransform: "uppercase", letterSpacing: "0.5px" }}>Seu código de ativação</p>
-                      <span style={{ fontFamily: "monospace", fontSize: "2rem", fontWeight: 900, color: "#0F172A", letterSpacing: "4px" }}>
-                        {genCode}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(genCode)}
-                      style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", background: "#fff", border: "1.5px solid #E8360C", color: "#E8360C", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
-                    >
-                      <Copy size={13} /> Copiar
-                    </button>
+            {/* Passo 1 */}
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", fontWeight: 900, fontSize: "0.88rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(232,54,12,0.3)" }}>1</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>Solicite o acesso à loja no Portal do Desenvolvedor</p>
+                <p style={{ margin: "0 0 10px", fontSize: "0.79rem", color: "#64748B", lineHeight: 1.6 }}>
+                  Acesse o Portal do Desenvolvedor → app <strong>FireHub</strong> → aba <strong>Permissões</strong> → solicite acesso pelo <strong>CNPJ ou Merchant UUID</strong> da loja. O iFood notificará o lojista para aprovar.
+                </p>
+                <a
+                  href="https://developer.ifood.com.br"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 20px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", borderRadius: 12, textDecoration: "none", fontWeight: 800, fontSize: "0.88rem", boxShadow: "0 4px 14px rgba(232,54,12,0.28)" }}
+                >
+                  <ExternalLink size={16} /> Abrir Portal do Desenvolvedor
+                </a>
+              </div>
+            </div>
+
+            {/* Divisor */}
+            <div style={{ borderTop: "1px dashed #E2E8F0" }} />
+
+            {/* Passo 2 */}
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#16A34A,#15803D)", color: "#fff", fontWeight: 900, fontSize: "0.88rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(22,163,74,0.3)" }}>2</div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>Após aprovação, cole o ID da loja e conecte</p>
+                <p style={{ margin: "0 0 10px", fontSize: "0.79rem", color: "#64748B" }}>
+                  Quando o lojista aprovar, cole o <strong>Merchant UUID</strong> da loja abaixo.
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    type="text"
+                    placeholder="Cole o Merchant UUID (ex: f2170891-3073-47ea-...)"
+                    value={directId}
+                    onChange={(e) => setDirectId(e.target.value)}
+                    disabled={directLoading}
+                    style={{ flex: 1, minWidth: 200, padding: "11px 14px", border: "1.5px solid #E2E8F0", borderRadius: 12, fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    onFocus={(e) => (e.target.style.borderColor = "#16A34A")}
+                    onBlur={(e) => (e.target.style.borderColor = "#E2E8F0")}
+                  />
+                  <button
+                    onClick={linkDirectMerchantId}
+                    disabled={directLoading || !directId.trim()}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 22px", background: directLoading || !directId.trim() ? "#E2E8F0" : "linear-gradient(135deg,#16A34A,#15803D)", color: directLoading || !directId.trim() ? "#94A3B8" : "#fff", border: "none", borderRadius: 12, fontWeight: 800, fontSize: "0.88rem", cursor: directLoading || !directId.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: directLoading || !directId.trim() ? "none" : "0 4px 14px rgba(22,163,74,0.28)", transition: "all 0.2s" }}
+                  >
+                    {directLoading ? <><Loader size={14} /> Conectando...</> : <><CheckCircle size={14} /> Conectar loja</>}
+                  </button>
+                </div>
+                {directError && (
+                  <div style={{ marginTop: 10, padding: "10px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, fontSize: "0.78rem", color: "#DC2626", fontWeight: 600, lineHeight: 1.5 }}>
+                    ⚠️ {directError}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Passo 2: Ir ao Portal */}
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, opacity: genCode ? 1 : 0.4 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: genCode ? "#E8360C" : "#CBD5E1", color: "#fff", fontWeight: 900, fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>2</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Insira o código no Portal do Parceiro iFood</p>
-                <p style={{ margin: "0 0 0.75rem", fontSize: "0.78rem", color: "#64748B" }}>
-                  Abra o Portal iFood → tela <strong>"Ativar por código"</strong> → digite o código acima.
-                  O portal vai exibir um <strong>código de confirmação</strong> — copie e cole no Passo 3.
-                </p>
-                <a
-                  href="https://portal.ifood.com.br/apps/code"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: genCode ? "#E8360C" : "#94A3B8", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 800, fontSize: "0.88rem", pointerEvents: genCode ? "auto" : "none" }}
-                >
-                  <ExternalLink size={15} /> Abrir Portal do Parceiro iFood
-                </a>
-              </div>
-            </div>
-
-            {/* Passo 3: Confirmar conexão */}
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, opacity: genCode ? 1 : 0.4 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", fontWeight: 900, fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>3</div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Confirme a conexão</p>
-                <p style={{ margin: "0 0 0.75rem", fontSize: "0.78rem", color: "#64748B" }}>
-                  Após inserir o código no portal, clique abaixo para confirmar que sua loja foi conectada ao FireHub.
-                </p>
-                <button
-                  onClick={() => testConnection(true)}
-                  disabled={!genCode}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: genCode ? "pointer" : "not-allowed", fontFamily: "inherit" }}
-                >
-                  <CheckCircle size={15} /> Já conectei — Verificar
-                </button>
-                {connStatus === "error" && connData && (
-                  <p style={{ margin: "0.5rem 0 0", fontSize: "0.78rem", color: "#DC2626", fontWeight: 700 }}>
-                    ⚠️ Ainda não conectado. Verifique se inseriu o código corretamente no portal.
-                  </p>
-                )}
-              </div>
-            </div>
           </div>
         )}
       </div>
+
+
 
       {/* Integrar nova loja — botão no topo + modal com o wizard */}
       {connStatus === "ok" && (

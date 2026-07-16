@@ -93,6 +93,65 @@ export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<Overdue
   }
 }
 
+/**
+ * Verifica se o cliente já possui 2 ou mais boletos pendentes (PENDING) no Asaas.
+ * Diferente de checkAsaasOverdue (que verifica OVERDUE/vencidos),
+ * esta função verifica boletos que foram gerados mas ainda não pagos,
+ * mesmo que não estejam vencidos.
+ * Regra: máximo de 2 boletos pendentes por cliente.
+ */
+export type PendingBoletosInfo = {
+  blocked: boolean;
+  pendingCount: number;
+  payments: { id: string; value: number; dueDate: string; invoiceUrl: string | null; description: string }[];
+};
+
+export async function checkAsaasPendingBoletos(cpfCnpj: string | null): Promise<PendingBoletosInfo> {
+  if (!cpfCnpj) return { blocked: false, pendingCount: 0, payments: [] };
+
+  const asaasKey = getAsaasKey();
+  if (!asaasKey) return { blocked: false, pendingCount: 0, payments: [] };
+
+  try {
+    const customerRes = await fetch(`https://api.asaas.com/v3/customers?cpfCnpj=${cpfCnpj}`, {
+      headers: ASAAS_HEADERS(asaasKey)
+    });
+    const customerData = await customerRes.json();
+
+    if (!customerRes.ok || !customerData.data || customerData.data.length === 0) {
+      return { blocked: false, pendingCount: 0, payments: [] };
+    }
+
+    const asaasCustomerId = customerData.data[0].id;
+
+    const paymentsRes = await fetch(`https://api.asaas.com/v3/payments?customer=${asaasCustomerId}&status=PENDING&limit=10`, {
+      headers: ASAAS_HEADERS(asaasKey)
+    });
+
+    const paymentsData = await paymentsRes.json();
+
+    if (paymentsRes.ok && paymentsData.data && paymentsData.data.length >= 2) {
+      console.warn(`[Asaas] Cliente ${cpfCnpj} possui ${paymentsData.data.length} boletos pendentes — bloqueado por acúmulo.`);
+      return {
+        blocked: true,
+        pendingCount: paymentsData.data.length,
+        payments: paymentsData.data.map((p: any) => ({
+          id: p.id,
+          value: p.value,
+          dueDate: p.dueDate,
+          invoiceUrl: p.invoiceUrl || p.bankSlipUrl || null,
+          description: p.description || `Cobrança ${p.id}`,
+        }))
+      };
+    }
+
+    return { blocked: false, pendingCount: paymentsData.data?.length || 0, payments: [] };
+  } catch (error) {
+    console.error("Erro ao checar boletos pendentes no Asaas:", error);
+    return { blocked: false, pendingCount: 0, payments: [] };
+  }
+}
+
 
 export async function getAsaasDashboardData(month: number, year: number) {
   const asaasKey = getAsaasKey();
@@ -227,9 +286,9 @@ export async function createAsaasPayment(opts: {
 
     if (!customerId) return null;
 
-    // 2. Cria cobrança (boleto) com vencimento em 10 dias
+    // 2. Cria cobrança (boleto) com vencimento em 7 dias
     const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 10);
+    dueDate.setDate(dueDate.getDate() + 7);
 
     const shortId = opts.orderId.slice(-6).toUpperCase();
     const payRes = await fetch(`${BASE}/payments`, {

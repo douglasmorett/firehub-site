@@ -5,7 +5,21 @@ import { authOptions } from "@/lib/auth";
 import { trackSaleForBilling } from "@/lib/billing";
 
 // Status que contam como venda confirmada para fins de faturamento
-const BILLING_TRIGGER_STATUSES = ["ACEITO", "ENTREGUE", "PRONTO", "SAIU_PARA_ENTREGA"];
+// Disparado apenas em ENTREGUE para evitar contagem duplicada
+const BILLING_TRIGGER_STATUSES = ["ENTREGUE"];
+
+// Transições de status permitidas (state machine)
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  NOVO:          ["ACEITO", "CANCELADO"],
+  CONFIRMADO:    ["ACEITO", "CANCELADO"],
+  ACEITO:        ["PREPARANDO", "CANCELADO"],
+  PREPARANDO:    ["PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "CANCELADO"],
+  PRONTO:        ["ENTREGUE", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "CANCELADO"],
+  SAIU_ENTREGA:  ["ENTREGUE"],
+  SAIU_PARA_ENTREGA: ["ENTREGUE"],
+  ENTREGUE:      [],
+  CANCELADO:     [],
+};
 
 // GET: Public status check (no auth required)
 export async function GET(req: NextRequest) {
@@ -44,7 +58,7 @@ export async function PUT(req: Request) {
 
   const role = (session.user as any)?.role;
   const body = await req.json();
-  const { orderId, status, scheduledDatetime, cancelReason } = body;
+  const { orderId, status, scheduledDatetime, cancelReason, cancellationCode } = body;
 
   if (!orderId || !status) {
     return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
@@ -64,10 +78,34 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
+  // State machine: só permite transições válidas (exceto ADMIN que tem controle total)
+  if (role !== "ADMIN") {
+    const allowedNext = ALLOWED_TRANSITIONS[order.status] ?? [];
+    if (!allowedNext.includes(status)) {
+      return NextResponse.json(
+        { error: `Transição inválida: ${order.status} → ${status}` },
+        { status: 400 }
+      );
+    }
+  }
+
   const updateData: any = { status };
   // Allow updating scheduledDatetime (e.g. when anticipating a scheduled order)
   if (scheduledDatetime !== undefined) {
     updateData.scheduledDatetime = scheduledDatetime ? new Date(scheduledDatetime) : null;
+  }
+
+  // ── Auto-set KDS stage ──
+  if (status === "ACEITO" || status === "PREPARANDO") {
+    // Only set kdsStage if not already set (avoid overwriting FINISHING)
+    if (!order.kdsStage) {
+      updateData.kdsStage = "PRODUCTION";
+      updateData.kdsProductionAt = new Date();
+    }
+  }
+  if (status === "CANCELADO") {
+    updateData.kdsStage = null;
+    updateData.kdsStationId = null;
   }
 
   // ── Sync with iFood ──
@@ -115,9 +153,11 @@ export async function PUT(req: Request) {
         updateData.cancelledBy = "LOJA";
         if (cancelReason) updateData.cancelReason = cancelReason;
 
+        const codeToUse = cancellationCode || "501";
+
         const cancelRes = await fetch(`${baseUrl}/requestCancellation`, {
           method: "POST", headers,
-          body: JSON.stringify({ reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: "501" }),
+          body: JSON.stringify({ reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: String(codeToUse) }),
         });
 
         if (!cancelRes.ok) {
@@ -125,7 +165,7 @@ export async function PUT(req: Request) {
           const fallbackUrl = order.status === "NOVO" ? `${baseUrl}/deny` : `${baseUrl}/cancel`;
           const fallbackRes = await fetch(fallbackUrl, {
             method: "POST", headers,
-            body: JSON.stringify({ reason: cancelReason || "Cancelado pela loja", cancelCodeId: "501" }),
+            body: JSON.stringify({ reason: cancelReason || "Cancelado pela loja", cancelCodeId: String(codeToUse) }),
           });
           console.log(`[iFood Sync] cancel fallback ${ifoodId}: ${fallbackRes.status}`);
         } else {
@@ -138,8 +178,58 @@ export async function PUT(req: Request) {
     }
   }
 
-  // Handle non-iFood cancellations
-  if (status === "CANCELADO" && !order.ifoodOrderId) {
+  // ── Sync with Jotajá (Open Delivery) ──
+  if (order.openDeliveryOrderId) {
+    try {
+      const { jotajaFetch } = await import("@/lib/jotaja-api");
+      const odId = order.openDeliveryOrderId;
+
+      if (status === "ACEITO") {
+        const r = await jotajaFetch(`/v1/orders/${odId}/confirm`, { method: "POST" });
+        console.log(`[Jotajá Sync] confirm ${odId}: ${r.status}`);
+      }
+
+      if (status === "PREPARANDO") {
+        const r = await jotajaFetch(`/v1/orders/${odId}/startPreparation`, { method: "POST" });
+        console.log(`[Jotajá Sync] startPreparation ${odId}: ${r.status}`);
+      }
+
+      if (status === "SAIU_ENTREGA") {
+        const r = await jotajaFetch(`/v1/orders/${odId}/dispatch`, { method: "POST" });
+        console.log(`[Jotajá Sync] dispatch ${odId}: ${r.status}`);
+      }
+
+      if (status === "ENTREGUE") {
+        const isPickup = order.deliveryType !== "DELIVERY";
+        if (isPickup) {
+          const r1 = await jotajaFetch(`/v1/orders/${odId}/readyToPickup`, { method: "POST" });
+          console.log(`[Jotajá Sync] readyToPickup ${odId}: ${r1.status}`);
+        }
+        const r2 = await jotajaFetch(`/v1/orders/${odId}/conclude`, { method: "POST" });
+        console.log(`[Jotajá Sync] conclude ${odId}: ${r2.status}`);
+      }
+
+      if (status === "CANCELADO") {
+        updateData.motoboyId = null;
+        updateData.cancelledBy = "LOJA";
+        if (cancelReason) updateData.cancelReason = cancelReason;
+
+        const codeToUse = cancellationCode || "501";
+
+        const cancelRes = await jotajaFetch(`/v1/orders/${odId}/requestCancellation`, {
+          method: "POST",
+          body: JSON.stringify({ reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: String(codeToUse) }),
+        });
+        console.log(`[Jotajá Sync] cancel ${odId}: ${cancelRes.status}`);
+      }
+    } catch (err: any) {
+      console.error(`[Jotajá Sync] Erro ${order.openDeliveryOrderId}:`, err?.message);
+      // Don't block local update even if Jotajá sync fails
+    }
+  }
+
+  // Handle non-iFood/non-Jotajá cancellations
+  if (status === "CANCELADO" && !order.ifoodOrderId && !order.openDeliveryOrderId) {
     updateData.motoboyId = null;
     updateData.cancelledBy = "LOJA";
     if (cancelReason) updateData.cancelReason = cancelReason;
@@ -157,9 +247,8 @@ export async function PUT(req: Request) {
     );
   }
 
-  // Realiza a baixa do estoque se o pedido for aceito ou entrar em preparo/entrega
-  const STOCK_DEDUCT_STATUSES = ["ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE"];
-  if (STOCK_DEDUCT_STATUSES.includes(status)) {
+  // Baixa de estoque — disparada APENAS no ACEITO para evitar débitos múltiplos
+  if (status === "ACEITO") {
     const { deductStockForOrder } = await import("@/lib/stock");
     deductStockForOrder(orderId).catch(err =>
       console.error("[Stock] Erro ao deduzir estoque:", err)

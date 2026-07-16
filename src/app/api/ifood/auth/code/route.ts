@@ -1,16 +1,14 @@
 /**
  * POST /api/ifood/auth/code
- * Gera o userCode (ex: "LHQX-ZZZZ") que o lojista digita no Portal do Parceiro
+ * Gera o userCode que o lojista digita no Portal do Parceiro
  * em portal.ifood.com.br/apps/code para vincular a loja ao app FireHub.
  *
  * Fluxo "Distributed Application" da iFood Merchant API:
- * 1. Nossa API chama POST /authentication/v1.0/oauth/userCode
+ * 1. Nossa API chama POST /authentication/v1.0/oauth/userCode  (só clientId, SEM clientSecret)
  * 2. iFood retorna { userCode, verificationUrl, authorizationCodeVerifier }
  * 3. Mostramos o userCode ao lojista
  * 4. Lojista entra em portal.ifood.com.br/apps/code e digita o userCode
- * 5. Portal do Parceiro exibe o authorizationCode
- * 6. Lojista cola o authorizationCode no nosso sistema
- * 7. Nossa API troca o authorizationCode + verifier pelo accessToken final
+ * 5. Nossa API troca o authorizationCode + verifier pelo accessToken final
  */
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -22,37 +20,43 @@ export async function POST() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const clientId     = process.env.IFOOD_CLIENT_ID;
-  const clientSecret = process.env.IFOOD_CLIENT_SECRET;
+  const clientId = process.env.IFOOD_CLIENT_ID;
 
-  if (!clientId || !clientSecret) {
-    return NextResponse.json({ error: "Credenciais iFood não configuradas" }, { status: 500 });
+  if (!clientId) {
+    return NextResponse.json({ error: "IFOOD_CLIENT_ID não configurado" }, { status: 500 });
   }
 
   try {
+    // ⚠️ iFood userCode endpoint aceita APENAS clientId — não enviar clientSecret aqui
     const res = await fetch(`${AUTH_BASE}/oauth/userCode`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ clientId, clientSecret }),
+      body: new URLSearchParams({ clientId }),
     });
 
-    const data = await res.json().catch(() => ({}));
+    const rawText = await res.text();
+    let data: any = {};
+    try { data = JSON.parse(rawText); } catch { data = { raw: rawText }; }
 
     if (!res.ok) {
+      console.error(`[iFood userCode] HTTP ${res.status}:`, rawText.slice(0, 500));
       return NextResponse.json(
-        { error: `iFood ${res.status}`, details: data },
+        {
+          error: `iFood retornou ${res.status}`,
+          details: data,
+          hint: res.status === 400
+            ? "O app pode estar registrado como 'Centralizado' no iFood — apps centralizados não suportam o fluxo userCode. Verifique o tipo do app em developer.ifood.com.br."
+            : undefined,
+        },
         { status: res.status }
       );
     }
 
-    // userCode   → exibe ao lojista para digitar em portal.ifood.com.br/apps/code
-    // verifier   → guardamos no cliente para trocar pelo token final
     return NextResponse.json({
-      success:             true,
-      userCode:            data.userCode,
-      verificationUrl:     data.verificationUrl,
-      verifier:            data.authorizationCodeVerifier,
-      expiresIn:           data.expiresIn,
+      success:  true,
+      userCode: data.userCode,
+      verifier: data.authorizationCodeVerifier,
+      expiresIn: data.expiresIn,
     });
   } catch (err: any) {
     console.error("[iFood userCode]", err.message);

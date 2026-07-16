@@ -53,6 +53,9 @@ export async function GET() {
       } else if (src === "IFOOD" && isPaidOnline) {
         // iFood online payment (credit card via app) — categorize as credit
         expected.credit += val;
+      } else if (src === "JOTAJA" && isPaidOnline) {
+        // Jotajá online payment — categorize as credit
+        expected.credit += val;
       } else {
         // Unknown method — count as credit (most common online)
         expected.credit += val;

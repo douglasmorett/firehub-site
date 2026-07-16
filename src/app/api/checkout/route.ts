@@ -46,7 +46,12 @@ export async function POST(req: Request) {
     }
 
     // ── Verifica inadimplência ───────────────────────────────────────────────
-    if (user.cpfCnpj) {
+    const userEmailClean = user.email?.toLowerCase().replace(/\s+/g, "");
+    // Contas isentas de verificação (configurar em BYPASS_BILLING_EMAILS no Vercel, separadas por vírgula)
+    const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+    const isSpecialStore = bypassEmails.includes(userEmailClean ?? "");
+
+    if (user.cpfCnpj && !isSpecialStore) {
       const overdueInfo = await checkAsaasOverdue(user.cpfCnpj);
       if (overdueInfo.blocked) {
         return NextResponse.json(
@@ -59,7 +64,9 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── Cria pedido no banco ─────────────────────────────────────────────────
+    // ── Acúmulo de boletos pendentes: sem restrição para compras de insumos ──
+    // (Apenas boletos VENCIDOS bloqueiam, verificado acima)
+
     const order = await prisma.order.create({
       data: {
         userId: user.id,
@@ -68,6 +75,12 @@ export async function POST(req: Request) {
         items: { create: itemsWithPrice }
       }
     });
+
+    // Se for a loja de registro, não gera cobrança no Asaas
+    if (isSpecialStore) {
+      console.log(`[checkout] ✅ #${order.id.slice(-6).toUpperCase()} registrado (sem boleto Asaas)`);
+      return NextResponse.json({ success: true, orderId: order.id, boletoUrl: null, isSpecialStore: true });
+    }
 
     // ── Gerar boleto Asaas automaticamente (com retry) ───────────────────
     let boletoUrl: string | null = null;

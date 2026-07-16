@@ -24,20 +24,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Buscar TODOS os dados do sistema para contexto
+    // Buscar dados do sistema para contexto — sem dados pessoais sensíveis (LGPD)
     const [users, products, orders, payables, invoices, routes] = await Promise.all([
-      prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, city: true, cpfCnpj: true, permissions: true, createdAt: true } }),
+      prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, city: true, permissions: true, createdAt: true } }),
       prisma.product.findMany({ select: { id: true, name: true, description: true, price: true, active: true, imageUrl: true, createdAt: true } }),
       prisma.order.findMany({ 
         include: { 
           items: { include: { product: { select: { name: true } } } },
           user: { select: { name: true, email: true, city: true } }
         },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
+        take: 100, // limitar para evitar full scan em produção
       }),
-      prisma.payable.findMany({ orderBy: { dueDate: "desc" } }),
-      prisma.purchaseInvoice.findMany({ orderBy: { createdAt: "desc" } }),
-      prisma.routeSchedule.findMany(),
+      prisma.payable.findMany({ orderBy: { dueDate: "desc" }, take: 200 }),
+      prisma.purchaseInvoice.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
+      prisma.routeSchedule.findMany({ take: 50 }),
     ]);
 
     // Calcular métricas

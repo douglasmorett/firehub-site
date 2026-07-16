@@ -92,6 +92,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Token inválido ou expirado." }, { status: 400 });
     }
 
+    if (newPassword.trim().length < 6) {
+      return NextResponse.json({ error: "A senha deve ter no mínimo 6 caracteres." }, { status: 400 });
+    }
+
+
     const hashed = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({
       where: { id: user.id },

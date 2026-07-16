@@ -28,8 +28,17 @@ export async function GET(req: NextRequest) {
 
 // POST: Submit a review
 export async function POST(req: Request) {
+  // Rate limiting por IP
+  const { checkRateLimit, getClientIp } = await import("@/lib/rateLimit");
+  const ip = getClientIp(req);
+  const { allowed } = checkRateLimit(`submit-review:${ip}`, { windowMs: 60000, maxRequests: 5 });
+  if (!allowed) {
+    return NextResponse.json({ error: "Muitas avaliações enviadas." }, { status: 429 });
+  }
+
   const body = await req.json();
   const { orderId, customerId, rating, comment } = body;
+
 
   if (!orderId || !customerId || !rating) {
     return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });

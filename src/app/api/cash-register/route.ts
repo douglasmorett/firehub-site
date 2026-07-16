@@ -22,6 +22,7 @@ function mapMethod(pm: string | null): string {
 function groupOrders(orders: any[]) {
   const byMethod: Record<string, number> = {};
   let ifoodTotal = 0;
+  let jotajaTotal = 0;
   let onlineTotal = 0;
 
   for (const o of orders) {
@@ -34,6 +35,12 @@ function groupOrders(orders: any[]) {
       byMethod["IFOOD"] = (byMethod["IFOOD"] || 0) + amount;
       continue;
     }
+    // Jotajá (Open Delivery)
+    if (o.source === "JOTAJA" || o.openDeliveryOrderId) {
+      jotajaTotal += amount;
+      byMethod["JOTAJA"] = (byMethod["JOTAJA"] || 0) + amount;
+      continue;
+    }
     // Pago online (Pagar.me)
     if (o.pagarmeStatus === "paid" || o.pagarmeChargeId) {
       onlineTotal += amount;
@@ -43,7 +50,7 @@ function groupOrders(orders: any[]) {
     byMethod[code] = (byMethod[code] || 0) + amount;
   }
 
-  return { byMethod, ifoodTotal, onlineTotal };
+  return { byMethod, ifoodTotal, jotajaTotal, onlineTotal };
 }
 
 // GET — busca caixa aberto | preview de esperado | histórico | histórico do dia
@@ -72,10 +79,13 @@ export async function GET(req: NextRequest) {
     if (!open) return NextResponse.json({ error: "Nenhum caixa aberto" }, { status: 404 });
 
     const orders = await prisma.customerOrder.findMany({
-      where: { status: "ENTREGUE", createdAt: { gte: open.openedAt } },
+      where: {
+        status: { in: ["ENTREGUE", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA"] },
+        createdAt: { gte: open.openedAt }
+      },
     });
 
-    const { byMethod, ifoodTotal, onlineTotal } = groupOrders(orders);
+    const { byMethod, ifoodTotal, jotajaTotal, onlineTotal } = groupOrders(orders);
     // Adiciona troco de abertura no dinheiro
     byMethod["CASH"] = (byMethod["CASH"] || 0) + open.openingAmount;
 
@@ -87,6 +97,7 @@ export async function GET(req: NextRequest) {
       openingAmount: open.openingAmount,
       byMethod,
       ifoodTotal,
+      jotajaTotal,
       onlineTotal,
       totalExpected,
       orderCount:    orders.length,
@@ -94,10 +105,15 @@ export async function GET(req: NextRequest) {
   }
 
   if (mode === "today") {
-    const start = new Date();
+    // Usar timezone de Brasília para calcular início do dia corretamente
+    const nowBR = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const start = new Date(nowBR);
     start.setHours(0, 0, 0, 0);
+    // Converter de volta para UTC para query no banco
+    const offsetMs = new Date().getTime() - nowBR.getTime();
+    const startUTC = new Date(start.getTime() + offsetMs);
     const registers = await prisma.cashRegister.findMany({
-      where: { openedAt: { gte: start } },
+      where: { openedAt: { gte: startUTC } },
       include: { entries: true },
       orderBy: { openedAt: "asc" },
     });
@@ -123,10 +139,14 @@ export async function POST(req: NextRequest) {
   const existing = await prisma.cashRegister.findFirst({ where: { status: "OPEN" } });
   if (existing) return NextResponse.json({ error: "Já existe um caixa aberto." }, { status: 400 });
 
-  const { openingAmount } = await req.json();
+  const body = await req.json();
+  const parsed = parseFloat(body.openingAmount || "0");
+  if (parsed < 0) {
+    return NextResponse.json({ error: "Valor de abertura não pode ser negativo." }, { status: 400 });
+  }
   const register = await prisma.cashRegister.create({
     data: {
-      openingAmount: parseFloat(openingAmount || "0"),
+      openingAmount: parsed,
       openedBy: session.user?.email || "admin",
       status: "OPEN",
     },
@@ -153,7 +173,7 @@ export async function PUT(req: NextRequest) {
     where: { status: "ENTREGUE", createdAt: { gte: register.openedAt } },
   });
 
-  const { byMethod, ifoodTotal, onlineTotal } = groupOrders(orders);
+  const { byMethod, ifoodTotal, jotajaTotal, onlineTotal } = groupOrders(orders);
   byMethod["CASH"] = (byMethod["CASH"] || 0) + register.openingAmount;
 
   const expectedTotal = Object.values(byMethod).reduce((a, b) => a + b, 0);
@@ -208,7 +228,7 @@ export async function PUT(req: NextRequest) {
 
   const METHOD_LABELS: Record<string, string> = {
     CASH: "💵 Dinheiro", CARD_CREDIT: "💳 Cartão Crédito", CARD_DEBIT: "💳 Cartão Débito",
-    PIX: "📱 PIX", VOUCHER: "🎟️ Voucher", IFOOD: "🛵 iFood", ONLINE: "💻 Online", OTHER: "🔄 Outro",
+    PIX: "📱 PIX", VOUCHER: "🎟️ Voucher", IFOOD: "🛵 iFood", JOTAJA: "📱 Jotajá", ONLINE: "💻 Online", OTHER: "🔄 Outro",
   };
 
   const methodLines = Object.entries(byMethod)
