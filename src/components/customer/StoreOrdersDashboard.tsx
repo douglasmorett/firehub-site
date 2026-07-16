@@ -29,6 +29,11 @@ const PAYMENT_LABELS: Record<string, string> = {
 };
 const translatePayment = (method: string) => PAYMENT_LABELS[method] || PAYMENT_LABELS[method.toUpperCase()] || method;
 
+const cleanAddress = (addr: string | null) => {
+  if (!addr) return "";
+  return addr.replace(/\s*-\s*null\s*$/gi, "").replace(/\s*-\s*undefined\s*$/gi, "").trim();
+};
+
 // Mapping columns to statuses for drag-and-drop
 const COLUMN_STATUS_MAP: Record<string, string> = {
   "col-novos": "NOVO",
@@ -213,7 +218,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       receipt += `\n`;
       if (isDelivery && order.customerAddress) {
         receipt += `ENTREGA\n`;
-        receipt += `Endereço: ${order.customerAddress}\n`;
+        receipt += `Endereço: ${cleanAddress(order.customerAddress)}\n`;
         if (order.notes) receipt += `Obs: ${order.notes}\n`;
         receipt += `\n`;
       }
@@ -896,7 +901,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   background: "#ECFDF5", padding: "4px 8px", borderRadius: "5px", margin: "4px 0",
                   wordBreak: "break-word"
                 }}>
-                  📍 {order.customerAddress}
+                  📍 {cleanAddress(order.customerAddress)}
                 </div>
               )}
               {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
@@ -1128,7 +1133,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {order.customerAddress && (
                 <>
                   <span style={{ color: "#9CA3AF", fontWeight: 500 }}>Endereço</span>
-                  <span style={{ fontWeight: 500, color: "#1F2937" }}>{order.customerAddress}</span>
+                  <span style={{ fontWeight: 500, color: "#1F2937" }}>{cleanAddress(order.customerAddress)}</span>
                 </>
               )}
             </div>
@@ -1767,7 +1772,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {driverOrder && (
                 <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "0.82rem" }}>
                   <div><strong>Pedido:</strong> #{driverOrder.ifoodReference || driverOrder.openDeliveryReference || driverOrder.id.slice(-6).toUpperCase()}</div>
-                  {driverOrder.customerAddress && <div style={{ color: "#6B7280", marginTop: "2px" }}>{driverOrder.customerAddress}</div>}
+                  {driverOrder.customerAddress && <div style={{ color: "#6B7280", marginTop: "2px" }}>{cleanAddress(driverOrder.customerAddress)}</div>}
                 </div>
               )}
 
