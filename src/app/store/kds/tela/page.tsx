@@ -877,12 +877,13 @@ function OrderCard({
       >
         {order.items.map((item) => {
           const comboItems = parseComboSelections(item.comboSelections);
+          const displayName = item.menuProduct.name.split(" | ")[0];
           return (
             <div key={item.id}>
               <div
                 style={{
-                  fontSize: 18,
-                  fontWeight: 600,
+                  fontSize: 22,
+                  fontWeight: 700,
                   color: "#e5e7eb",
                   display: "flex",
                   alignItems: "baseline",
@@ -893,27 +894,27 @@ function OrderCard({
                   style={{
                     color: accent,
                     fontWeight: 800,
-                    fontSize: 18,
+                    fontSize: 22,
                     minWidth: 30,
                   }}
                 >
                   {item.quantity}x
                 </span>
-                <span>{item.menuProduct.name}</span>
+                <span>{displayName}</span>
               </div>
               {/* Combo sub-items */}
               {comboItems.length > 0 && (
-                <div style={{ paddingLeft: 42, display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
+                <div style={{ paddingLeft: 42, display: "flex", flexDirection: "column", gap: 3, marginTop: 3 }}>
                   {comboItems.map((sub, i) => (
                     <span
                       key={i}
                       style={{
-                        fontSize: 14,
+                        fontSize: 18,
                         color: "#9ca3af",
-                        fontWeight: 400,
+                        fontWeight: 500,
                       }}
                     >
-                      ↳ {sub.quantity > 1 ? `${sub.quantity}x ` : ""}{sub.name}
+                      ↳ {sub.quantity}x {sub.name}
                     </span>
                   ))}
                 </div>
