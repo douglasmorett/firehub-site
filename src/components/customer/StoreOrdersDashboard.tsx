@@ -811,6 +811,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     💵 Troco p/ R$ {Number(order.changeAmount).toFixed(0)}
                   </span>
                 )}
+              </div>
             </div>
           </div>
 
