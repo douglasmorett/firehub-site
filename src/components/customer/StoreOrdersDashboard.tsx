@@ -858,7 +858,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
                   {order.kdsStage === "FINISHING" && (
                     <span style={{ padding: "1px 8px", borderRadius: "10px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em", background: "#DCFCE7", color: "#16A34A" }}>
-                      🍳 Pronto Cozinha
+                      ✅ Pronto Cozinha
                     </span>
                   )}
                   <span style={{ padding: "1px 8px", borderRadius: "10px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em",
