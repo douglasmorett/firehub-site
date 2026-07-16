@@ -811,67 +811,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     💵 Troco p/ R$ {Number(order.changeAmount).toFixed(0)}
                   </span>
                 )}
-                {order.deliveryType === "DELIVERY" ? (
-                  <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>🛵 Entrega</span>
-                ) : (
-                  <span style={{ fontSize: "0.68rem", color: "#92400E" }}>🏪 Retirada</span>
-                )}
-              </div>
-
-              {/* Line 5: Customer notes (if any) */}
-              {order.notes && (
-                <div style={{
-                  background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "5px",
-                  padding: "3px 8px", margin: "3px 0", fontSize: "0.78rem", color: "#92400E", lineHeight: "1.4"
-                }}>
-                  📝 {order.notes}
-                </div>
-              )}
-
-              {/* Line 6: Items summary */}
-              <div style={{ fontSize: "0.75rem", color: "#4B5563", lineHeight: "1.4", marginTop: "2px" }}>
-                {order.items?.map((item: any, idx: number) => {
-                  const comboSels = (() => {
-                    if (!item.comboSelections) return [];
-                    try {
-                      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-                      if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name).map((s: any) => `${s.quantity > 1 ? s.quantity + "x " : ""}${s.name}`);
-                      return [];
-                    } catch { return []; }
-                  })();
-                  const nameParts = (item.menuProduct?.name || "Item").split(" | ");
-                  const mainName = nameParts[0];
-                  const extras = nameParts.slice(1);
-                  const allDetails = comboSels.length > 0 ? comboSels : extras;
-                  return (
-                    <div key={item.id} style={{ marginBottom: "1px" }}>
-                      <span style={{ fontWeight: 600 }}>{item.quantity}×</span> {mainName}
-                      {allDetails.length > 0 && (
-                        <span style={{ color: "#9CA3AF" }}> · {allDetails.join(", ")}</span>
-                      )}
-                      {idx < (order.items?.length ?? 0) - 1 && <span style={{ color: "#D1D5DB" }}> |</span>}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Motoboy / iFood driver info (compact) */}
-              {(order.ifoodDriverStatus && order.ifoodDriverStatus !== "FAILED") && (
-                <div style={{ fontSize: "0.73rem", color: "#1D4ED8", fontWeight: 600, marginTop: "2px" }}>
-                  🛵 {order.ifoodDriverName || "iFood"}
-                  <span style={{ marginLeft: "4px", padding: "1px 6px", borderRadius: "8px", fontSize: "0.62rem", fontWeight: 700,
-                    background: order.ifoodDriverStatus === "REQUESTED" ? "#FEF3C7" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#DBEAFE" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#D1FAE5" : "#E0E7FF",
-                    color: order.ifoodDriverStatus === "REQUESTED" ? "#92400E" : order.ifoodDriverStatus === "ASSIGNED" || order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "#1E40AF" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" || order.ifoodDriverStatus === "COLLECTED" ? "#065F46" : "#3730A3"
-                  }}>
-                    {order.ifoodDriverStatus === "REQUESTED" ? "Solicitando" : order.ifoodDriverStatus === "ASSIGNED" ? "Atribuído" : order.ifoodDriverStatus === "GOING_TO_ORIGIN" ? "A caminho" : order.ifoodDriverStatus === "ARRIVED_AT_ORIGIN" ? "Na loja" : order.ifoodDriverStatus === "COLLECTED" ? "Coletou" : order.ifoodDriverStatus === "DISPATCHED" ? "Entregando" : order.ifoodDriverStatus === "ARRIVED_AT_DESTINATION" ? "No destino" : order.ifoodDriverStatus === "DELIVERED" ? "Entregue" : order.ifoodDriverStatus}
-                  </span>
-                </div>
-              )}
-              {!order.ifoodDriverStatus && order.motoboy && (
-                <div style={{ fontSize: "0.73rem", color: "#374151", fontWeight: 500, marginTop: "2px" }}>
-                  🛵 {order.motoboy.name}
-                </div>
-              )}
             </div>
           </div>
 
