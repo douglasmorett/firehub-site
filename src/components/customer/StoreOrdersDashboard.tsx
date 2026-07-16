@@ -833,10 +833,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         onDragEnd={canDrag ? handleDragEnd : undefined}
         onTouchStart={canDrag ? (e => handleTouchStart(e, order.id)) : undefined}
         style={{
-          background: "#fff", borderRadius: "10px",
-          border: `1.5px solid ${isLate ? "#FCA5A5" : isUrgent ? "#FCD34D" : st.color + "20"}`,
-          marginBottom: "0.5rem", overflow: "hidden",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+          background: "#fff", borderRadius: "12px",
+          border: isLate ? "1.5px solid #EF4444" : isUrgent ? "1.5px solid #F59E0B" : "1px solid #E2E8F0",
+          marginBottom: "0.75rem", overflow: "hidden",
+          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
           cursor: canDrag ? "grab" : "default",
           userSelect: "none"
         }}
@@ -849,9 +849,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <GripVertical size={14} />
               </div>
             )}
-            <div style={{ flex: 1, minWidth: 0, fontSize: "0.8rem", lineHeight: "1.7" }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: "0.8rem", lineHeight: "1.35" }}>
               {/* Line 1: #{seqNum} - Name  |  Source badge + Ref */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
                 <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937", whiteSpace: "normal", wordBreak: "break-word", minWidth: 0 }}>
                   #{seqNum} — {order.customerName}
                 </div>
@@ -876,7 +876,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
 
               {/* Line 2: Phone  |  Date + time since */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", color: "#6B7280" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", color: "#6B7280", marginBottom: "4px" }}>
                 <span>
                   📞 {order.customerPhone ? order.customerPhone.replace(/\s*ID:\s*\d+/i, "").trim() : "—"}
                 </span>
@@ -893,8 +893,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {order.customerAddress && (
                 <div style={{
                   color: "#065F46", fontWeight: 500, fontSize: "0.78rem",
-                  background: "#ECFDF5", padding: "2px 8px", borderRadius: "5px", margin: "2px 0",
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                  background: "#ECFDF5", padding: "4px 8px", borderRadius: "5px", margin: "4px 0",
+                  wordBreak: "break-word"
                 }}>
                   📍 {order.customerAddress}
                 </div>
@@ -902,7 +902,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
                 <div style={{
                   color: "#92400E", fontWeight: 600, fontSize: "0.78rem",
-                  background: "#FEF3C7", padding: "2px 8px", borderRadius: "5px", margin: "2px 0"
+                  background: "#FEF3C7", padding: "4px 8px", borderRadius: "5px", margin: "4px 0"
                 }}>
                   🏪 Retirada no local
                 </div>
@@ -934,7 +934,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           {/* ─── ACTION BAR: Always visible at bottom ─── */}
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
-            marginTop: "6px", paddingTop: "6px", borderTop: "1px solid #F3F4F6",
+            marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #E2E8F0",
             gap: "6px"
           }}>
             {/* Left: Status action button + motoboy select */}
@@ -1480,11 +1480,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         onDrop={canDrop ? (e => handleDrop(e, columnId)) : undefined}
         style={{
           flex: 1, minWidth: "360px",
-          background: isOver ? "#E0F2FE" : "#FAFAFA",
+          background: isOver ? "#EFF6FF" : "#F8FAFC",
           borderRadius: "14px",
           border: isOver ? "2px dashed #3B82F6" : "1px solid #E2E8F0",
           display: "flex", flexDirection: "column",
           minHeight: "calc(100vh - 175px)", maxHeight: "calc(100vh - 175px)",
+          boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05)",
         }}
       >
         <div style={{ padding: "0.85rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: "14px 14px 0 0", gap: "0.5rem" }}>
