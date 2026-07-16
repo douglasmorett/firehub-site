@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle } from "lucide-react";
+import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -98,6 +98,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   });
   const [scheduleLeadInput, setScheduleLeadInput] = useState("");
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
+  const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
+  const [viewReceiptOrderId, setViewReceiptOrderId] = useState<string | null>(null);
   const showToast = (text: string, color = "#10B981") => {
     setToastMsg({ text, color });
     setTimeout(() => setToastMsg(null), 4000);
@@ -148,6 +150,115 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const storeName = user.storeName || user.name;
   const storeStatus = isStoreOpen(user.storeHours as any);
   const storeUrl = user.slug ? `/loja/${user.slug}` : null;
+
+  const handlePrint = (order: any, type: "cozinha" | "completo") => {
+    const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
+    const createdDate = new Date(order.createdAt);
+    const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
+    const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const isDelivery = order.deliveryType === "DELIVERY";
+    const seqNum = orderNumberMap.get(order.id) ?? "—";
+
+    let receipt = "";
+
+    if (type === "cozinha") {
+      receipt += `#${seqNum} ${isDelivery ? "DELIVERY" : "RETIRADA"}\n`;
+      receipt += `COZINHA\n`;
+      if (order.ifoodReference || order.openDeliveryReference) receipt += `N° do Pedido: ${order.ifoodReference || order.openDeliveryReference}\n`;
+      receipt += `Data: ${dateStr} ${timeStr}\n`;
+      receipt += `\n`;
+      receipt += `CLIENTE\n`;
+      receipt += `Nome: ${order.customerName}\n`;
+      if (order.notes) {
+        receipt += `Obs: ${order.notes}\n`;
+      }
+      receipt += `\n`;
+      receipt += `RESUMO DO PEDIDO\n`;
+      order.items?.forEach((item: any) => {
+        const comboSels = (() => {
+          if (!item.comboSelections) return [];
+          try {
+            const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+            if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
+            return [];
+          } catch { return []; }
+        })();
+        const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+        const mainName = nameParts[0];
+        const extras = nameParts.slice(1);
+        
+        receipt += `Qtd: ${item.quantity}x\n`;
+        receipt += `${mainName}\n`;
+        if (comboSels.length > 0) {
+          comboSels.forEach((sel: any) => {
+            receipt += `  - ${sel.quantity > 1 ? sel.quantity + "x " : ""}${sel.name}\n`;
+          });
+        } else if (extras.length > 0) {
+          extras.forEach((ext: string) => {
+            receipt += `  - ${ext.trim()}\n`;
+          });
+        }
+        receipt += `\n`;
+      });
+    } else {
+      receipt += `#${seqNum} ${isDelivery ? "DELIVERY" : "RETIRADA"}\n`;
+      receipt += `${order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "APP - JOTAJÁ" : order.source === "PDV" ? "PDV" : "ONLINE"}\n`;
+      receipt += `Estabelecimento: ${storeName}\n`;
+      if (order.ifoodReference || order.openDeliveryReference) receipt += `N° do Pedido: ${order.ifoodReference || order.openDeliveryReference}\n`;
+      receipt += `Data: ${dateStr} ${timeStr}\n`;
+      receipt += `\n`;
+      receipt += `CLIENTE\n`;
+      receipt += `Nome: ${order.customerName}\n`;
+      receipt += `Telefone: ${phone}\n`;
+      receipt += `\n`;
+      if (isDelivery && order.customerAddress) {
+        receipt += `ENTREGA\n`;
+        receipt += `Endereço: ${order.customerAddress}\n`;
+        if (order.notes) receipt += `Obs: ${order.notes}\n`;
+        receipt += `\n`;
+      }
+      receipt += `RESUMO DO PEDIDO\n`;
+      order.items?.forEach((item: any) => {
+        const comboSels = (() => {
+          if (!item.comboSelections) return [];
+          try {
+            const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+            if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
+            return [];
+          } catch { return []; }
+        })();
+        const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+        const mainName = nameParts[0];
+        const extras = nameParts.slice(1);
+        receipt += `Qtd: ${item.quantity}x  Valor: R$ ${(item.price * item.quantity).toFixed(2)}\n`;
+        receipt += `${mainName}\n`;
+        if (comboSels.length > 0) {
+          comboSels.forEach((sel: any) => {
+            receipt += `  - ${sel.quantity > 1 ? sel.quantity + "x " : ""}${sel.name}\n`;
+          });
+        } else if (extras.length > 0) {
+          extras.forEach((ext: string) => {
+            receipt += `  - ${ext.trim()}\n`;
+          });
+        }
+        receipt += `\n`;
+      });
+      const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
+      receipt += `Subtotal: R$ ${subtotal.toFixed(2)}\n`;
+      if (isDelivery) receipt += `Taxa de Entrega: R$ ${Number(order.deliveryFee || 0).toFixed(2)}\n`;
+      receipt += `Total: R$ ${order.totalAmount.toFixed(2)}\n`;
+      if (order.paymentMethod) receipt += `Forma de Pagamento: ${translatePayment(order.paymentMethod)}\n`;
+      if (order.changeAmount != null && order.changeAmount > 0) receipt += `Troco para: R$ ${Number(order.changeAmount).toFixed(2)}\n`;
+    }
+
+    const printWin = window.open("", "_blank", "width=400,height=700");
+    if (printWin) {
+      printWin.document.write(`<html><head><title>Pedido #${seqNum}</title><style>body{font-family:'Courier New',monospace;font-size:13px;padding:20px;white-space:pre-wrap;line-height:1.5;}@media print{body{padding:0;}}</style></head><body>${receipt.replace(/\n/g, "<br>")}</body></html>`);
+      printWin.document.close();
+      printWin.focus();
+      printWin.print();
+    }
+  };
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30_000);
@@ -889,70 +1000,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <button
                 onClick={e => {
                   e.stopPropagation();
-                  // Build receipt content
-                  const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
-                  const createdDate = new Date(order.createdAt);
-                  const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
-                  const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-                  const isDelivery = order.deliveryType === "DELIVERY";
-
-                  let receipt = `#${seqNum} ${isDelivery ? "DELIVERY" : "RETIRADA"}\n`;
-                  receipt += `${order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "APP - JOTAJÁ" : order.source === "PDV" ? "PDV" : "ONLINE"}\n`;
-                  receipt += `Estabelecimento: ${storeName}\n`;
-                  if (order.ifoodReference || order.openDeliveryReference) receipt += `N° do Pedido: ${order.ifoodReference || order.openDeliveryReference}\n`;
-                  receipt += `Data: ${dateStr} ${timeStr}\n`;
-                  receipt += `\n`;
-                  receipt += `CLIENTE\n`;
-                  receipt += `Nome: ${order.customerName}\n`;
-                  receipt += `Telefone: ${phone}\n`;
-                  receipt += `\n`;
-                  if (isDelivery && order.customerAddress) {
-                    receipt += `ENTREGA\n`;
-                    receipt += `Endereço: ${order.customerAddress}\n`;
-                    if (order.notes) receipt += `Obs: ${order.notes}\n`;
-                    receipt += `\n`;
-                  }
-                  receipt += `RESUMO DO PEDIDO\n`;
-                  order.items?.forEach((item: any) => {
-                    const comboSels = (() => {
-                      if (!item.comboSelections) return [];
-                      try {
-                        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-                        if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-                        return [];
-                      } catch { return []; }
-                    })();
-                    const nameParts = (item.menuProduct?.name || "Item").split(" | ");
-                    const mainName = nameParts[0];
-                    const extras = nameParts.slice(1);
-                    receipt += `Qtd: ${item.quantity}x  Valor: R$ ${(item.price * item.quantity).toFixed(2)}\n`;
-                    receipt += `${mainName}\n`;
-                    if (comboSels.length > 0) {
-                      comboSels.forEach((sel: any) => {
-                        receipt += `  - ${sel.quantity > 1 ? sel.quantity + "x " : ""}${sel.name}\n`;
-                      });
-                    } else if (extras.length > 0) {
-                      extras.forEach((ext: string) => {
-                        receipt += `  - ${ext.trim()}\n`;
-                      });
-                    }
-                    receipt += `\n`;
-                  });
-                  const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
-                  receipt += `Subtotal: R$ ${subtotal.toFixed(2)}\n`;
-                  if (isDelivery) receipt += `Taxa de Entrega: R$ ${Number(order.deliveryFee || 0).toFixed(2)}\n`;
-                  receipt += `Total: R$ ${order.totalAmount.toFixed(2)}\n`;
-                  if (order.paymentMethod) receipt += `Forma de Pagamento: ${translatePayment(order.paymentMethod)}\n`;
-                  if (order.changeAmount != null && order.changeAmount > 0) receipt += `Troco para: R$ ${Number(order.changeAmount).toFixed(2)}\n`;
-
-                  // Open print window
-                  const printWin = window.open("", "_blank", "width=400,height=700");
-                  if (printWin) {
-                    printWin.document.write(`<html><head><title>Pedido #${seqNum}</title><style>body{font-family:'Courier New',monospace;font-size:13px;padding:20px;white-space:pre-wrap;line-height:1.5;}@media print{body{padding:0;}}</style></head><body>${receipt.replace(/\n/g, "<br>")}</body></html>`);
-                    printWin.document.close();
-                    printWin.focus();
-                    printWin.print();
-                  }
+                  setPrintSelectOrderId(order.id);
                 }}
                 title="Imprimir"
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#3B82F6", color: "#fff", border: "none", cursor: "pointer" }}
@@ -960,37 +1008,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <Printer size={15} />
               </button>
 
-              {/* Copy */}
+              {/* View Receipt Modal */}
               <button
                 onClick={e => {
                   e.stopPropagation();
-                  const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
-                  const isDelivery = order.deliveryType === "DELIVERY";
-                  let text = `*#${seqNum} — ${order.customerName}*\n`;
-                  text += `📞 ${phone}\n`;
-                  if (isDelivery && order.customerAddress) text += `📍 ${order.customerAddress}\n`;
-                  if (order.notes) text += `📝 ${order.notes}\n`;
-                  text += `\n`;
-                  order.items?.forEach((item: any) => {
-                    text += `${item.quantity}× ${item.menuProduct?.name || "Item"}\n`;
-                  });
-                  text += `\n💰 *R$ ${order.totalAmount.toFixed(2)}* — ${order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}`;
-                  if (order.changeAmount != null && order.changeAmount > 0) text += `\n💵 Troco p/ R$ ${Number(order.changeAmount).toFixed(0)}`;
-                  navigator.clipboard.writeText(text).catch(() => {});
+                  setViewReceiptOrderId(order.id);
                 }}
-                title="Copiar resumo"
+                title="Ver pedido"
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#6366F1", color: "#fff", border: "none", cursor: "pointer" }}
               >
-                <Copy size={15} />
-              </button>
-
-              {/* Expand toggle */}
-              <button
-                onClick={e => { e.stopPropagation(); setExpandedId(expanded ? null : order.id); }}
-                title={expanded ? "Recolher" : "Detalhes"}
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: expanded ? "#F3F4F6" : "#F9FAFB", color: "#6B7280", border: "1px solid #E5E7EB", cursor: "pointer" }}
-              >
-                {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                <FileText size={15} />
               </button>
             </div>
           </div>
@@ -1527,6 +1554,195 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         </div>
       )}
+
+      {/* PRINT SELECT MODAL */}
+      {printSelectOrderId && (() => {
+        const order = orders.find(o => o.id === printSelectOrderId);
+        if (!order) return null;
+        return (
+          <div onClick={() => setPrintSelectOrderId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "380px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)", textAlign: "center" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "8px" }}>🖨️</div>
+              <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#1E293B", marginBottom: "16px" }}>Como deseja imprimir o pedido?</div>
+              
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+                <button
+                  onClick={() => {
+                    handlePrint(order, "cozinha");
+                    setPrintSelectOrderId(null);
+                  }}
+                  style={{ padding: "12px", borderRadius: "10px", border: "1px solid #D1D5DB", background: "#F8FAFC", color: "#374151", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
+                >
+                  🍳 Cupom da Cozinha (Sem Valores)
+                </button>
+                <button
+                  onClick={() => {
+                    handlePrint(order, "completo");
+                    setPrintSelectOrderId(null);
+                  }}
+                  style={{ padding: "12px", borderRadius: "10px", border: "none", background: "#3B82F6", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
+                >
+                  📄 Cupom Completo (Com Valores)
+                </button>
+              </div>
+
+              <button onClick={() => setPrintSelectOrderId(null)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem" }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* DIGITAL RECEIPT PREVIEW MODAL */}
+      {viewReceiptOrderId && (() => {
+        const order = orders.find(o => o.id === viewReceiptOrderId);
+        if (!order) return null;
+
+        const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
+        const createdDate = new Date(order.createdAt);
+        const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
+        const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        const isDelivery = order.deliveryType === "DELIVERY";
+        const seqNum = orderNumberMap.get(order.id) ?? "—";
+        const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
+
+        return (
+          <div onClick={() => setViewReceiptOrderId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "450px", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+              
+              <div style={{
+                fontFamily: "'Courier New', monospace",
+                fontSize: "13px",
+                color: "#000",
+                lineHeight: "1.5",
+                border: "2px solid #000",
+                padding: "20px",
+                borderRadius: "8px",
+                background: "#FFF"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "1px dashed #000", paddingBottom: "10px", marginBottom: "10px" }}>
+                  <span style={{ fontSize: "24px", fontWeight: "bold" }}>{seqNum}</span>
+                  <span style={{ fontSize: "20px", fontWeight: "bold" }}>{isDelivery ? "DELIVERY" : "RETIRADA"}</span>
+                </div>
+
+                <div style={{ marginBottom: "12px" }}>
+                  <div style={{ fontWeight: "bold" }}>{order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "APP - JOTAJÁ" : order.source === "PDV" ? "PDV" : "ONLINE"}</div>
+                  <div>Estabelecimento: <strong style={{ textTransform: "uppercase" }}>{storeName}</strong></div>
+                  {(order.ifoodReference || order.openDeliveryReference) && (
+                    <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference}</div>
+                  )}
+                  <div>Data: {dateStr} {timeStr}</div>
+                </div>
+
+                <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
+                  <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>CLIENTE</span>
+                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px solid #000", zIndex: 1 }}></div>
+                </div>
+
+                <div style={{ marginBottom: "14px" }}>
+                  <div>Nome: {order.customerName}</div>
+                  <div>Telefone: {phone}</div>
+                  <div>Qtd Pedidos: 1</div>
+                  {order.notes && <div>Obs: {order.notes}</div>}
+                </div>
+
+                <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
+                  <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>RESUMO DO PEDIDO</span>
+                  <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px solid #000", zIndex: 1 }}></div>
+                </div>
+
+                <div style={{ marginBottom: "14px" }}>
+                  {order.items?.map((item: any) => {
+                    const comboSels = (() => {
+                      if (!item.comboSelections) return [];
+                      try {
+                        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+                        if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
+                        return [];
+                      } catch { return []; }
+                    })();
+                    const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+                    const mainName = nameParts[0];
+                    const extras = nameParts.slice(1);
+
+                    return (
+                      <div key={item.id} style={{
+                        border: "1.5px solid #000",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        marginBottom: "8px"
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", marginBottom: "4px" }}>
+                          <span>Qtd: {item.quantity}x</span>
+                          <span>Valor: R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}</span>
+                        </div>
+                        <div style={{ fontWeight: "bold" }}>{mainName}</div>
+                        
+                        {comboSels.length > 0 && (
+                          <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
+                            {comboSels.map((sel: any, i: number) => (
+                              <div key={i}>• {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
+                            ))}
+                          </div>
+                        )}
+                        {comboSels.length === 0 && extras.length > 0 && (
+                          <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
+                            {extras.map((ext: string, i: number) => (
+                              <div key={i}>• {ext.trim()}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ borderTop: "1px dashed #000", paddingTop: "8px", marginBottom: "10px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Subtotal:</span>
+                    <span>R$ {subtotal.toFixed(2).replace('.', ',')}</span>
+                  </div>
+                  {isDelivery && (
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Taxa de Entrega:</span>
+                      <span>R$ {Number(order.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "15px", marginTop: "4px" }}>
+                    <span>Total:</span>
+                    <span>R$ {order.totalAmount.toFixed(2).replace('.', ',')}</span>
+                  </div>
+                </div>
+
+                <div style={{ fontWeight: "bold" }}>Forma de Pagamento: {translatePayment(order.paymentMethod)}</div>
+                {order.changeAmount != null && order.changeAmount > 0 && (
+                  <div>Troco para: R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}</div>
+                )}
+              </div>
+
+              <div style={{ marginTop: "16px", display: "flex", justifyContent: "center" }}>
+                <button
+                  onClick={() => setViewReceiptOrderId(null)}
+                  style={{
+                    padding: "8px 24px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#1E293B",
+                    color: "#FFF",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: "0.85rem"
+                  }}
+                >
+                  Fechar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
       {/* MODAL MOTOBOY IFOOD — Cotação + Confirmação */}
       {ifoodDriverModalId && (() => {
         const driverOrder = orders.find(o => o.id === ifoodDriverModalId);
