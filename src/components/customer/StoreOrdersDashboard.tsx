@@ -741,7 +741,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <div style={{ flex: 1, minWidth: 0, fontSize: "0.8rem", lineHeight: "1.7" }}>
               {/* Line 1: #{seqNum} - Name  |  Source badge + Ref */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-                <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937", whiteSpace: "normal", wordBreak: "break-word", minWidth: 0 }}>
                   #{seqNum} — {order.customerName}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
@@ -1444,7 +1444,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         onDragLeave={canDrop ? handleDragLeave : undefined}
         onDrop={canDrop ? (e => handleDrop(e, columnId)) : undefined}
         style={{
-          flex: 1, minWidth: "300px",
+          flex: 1, minWidth: "360px",
           background: isOver ? "#E0F2FE" : "#FAFAFA",
           borderRadius: "14px",
           border: isOver ? "2px dashed #3B82F6" : "1px solid #E2E8F0",
@@ -2118,7 +2118,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       </div>
 
       {/* 3 COLUMNS */}
-      <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0.75rem 1.25rem" }}>
+      <div style={{ maxWidth: "100%", margin: "0 auto", padding: "0.75rem 1.25rem" }}>
         <div style={{ display: "flex", gap: "0.75rem" }}>
           <Column
             columnId="col-novos"
