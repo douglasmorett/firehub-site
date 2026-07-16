@@ -922,11 +922,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <span style={{ fontWeight: 600, color: "#374151" }}>
                   {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
                 </span>
-                {order.deliveryType === "DELIVERY" && order.deliveryFee > 0 && (
-                  <span style={{ fontSize: "0.72rem", color: "#6B7280", fontWeight: 500 }}>
-                    (+R$ {Number(order.deliveryFee).toFixed(2)} entrega)
-                  </span>
-                )}
                 {order.changeAmount != null && order.changeAmount > 0 && (
                   <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#92400E", background: "#FEF3C7", padding: "1px 6px", borderRadius: "4px" }}>
                     💵 Troco p/ R$ {Number(order.changeAmount).toFixed(0)}
