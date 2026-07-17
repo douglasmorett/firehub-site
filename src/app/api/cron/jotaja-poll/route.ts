@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Process events using shared lib
-    const processedEventIds: string[] = [];
+    const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     let created = 0, updated = 0, disputes = 0, cancelled = 0;
 
     for (const event of events) {
@@ -67,7 +67,13 @@ export async function GET(req: NextRequest) {
 
       if (result.action !== "error" && result.action !== "skipped") {
         const eid = event.id || event.eventId;
-        if (eid) processedEventIds.push(eid);
+        if (eid) {
+          processedEvents.push({
+            id: eid,
+            orderId: event.orderId || "",
+            eventType: event.fullCode || event.code || "",
+          });
+        }
         if (result.action === "created")   created++;
         if (result.action === "updated")   updated++;
         if (result.action === "dispute")   disputes++;
@@ -76,13 +82,13 @@ export async function GET(req: NextRequest) {
     }
 
     // Acknowledge processed events
-    if (processedEventIds.length > 0) {
+    if (processedEvents.length > 0) {
       try {
         await jotajaMutate("/v1/events/acknowledgment", {
           method: "POST",
-          body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
+          body: JSON.stringify(processedEvents),
         });
-        log.push(`✅ ${processedEventIds.length} eventos acknowledged`);
+        log.push(`✅ ${processedEvents.length} eventos acknowledged`);
       } catch (ackErr: any) {
         log.push(`⚠️ Acknowledgment falhou: ${ackErr.message}`);
       }
@@ -92,7 +98,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       events: events.length,
       created, updated, disputes, cancelled,
-      acknowledged: processedEventIds.length,
+      acknowledged: processedEvents.length,
       durationMs: Date.now() - startTime,
       log,
     });

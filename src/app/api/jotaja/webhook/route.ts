@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     const rawEvents = JSON.parse(bodyText);
     const events = Array.isArray(rawEvents) ? rawEvents : [rawEvents];
 
-    const processedEventIds: string[] = [];
+    const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     let created = 0, updated = 0, disputes = 0, cancelled = 0;
 
     for (const event of events) {
@@ -65,7 +65,14 @@ export async function POST(req: NextRequest) {
       console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
       if (result.action !== "error" && result.action !== "skipped") {
-        if (event.id) processedEventIds.push(event.id);
+        const eid = event.id || event.eventId;
+        if (eid) {
+          processedEvents.push({
+            id: eid,
+            orderId: event.orderId || "",
+            eventType: event.fullCode || event.code || "",
+          });
+        }
         if (result.action === "created")  created++;
         if (result.action === "updated")  updated++;
         if (result.action === "dispute")  disputes++;
@@ -74,11 +81,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Acknowledge
-    if (processedEventIds.length > 0) {
+    if (processedEvents.length > 0) {
       try {
         await jotajaMutate("/v1/events/acknowledgment", {
           method: "POST",
-          body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
+          body: JSON.stringify(processedEvents),
         });
       } catch { /* não crítico */ }
     }
