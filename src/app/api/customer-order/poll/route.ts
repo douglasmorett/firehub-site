@@ -436,12 +436,12 @@ async function pollJotajaEvents(sessionUserId?: string) {
     const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     for (const event of events) {
       const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
-      const eid = event.id || event.eventId;
+      const eid = event.eventId || event.id;
       if (result.action !== "error" && eid) {
         processedEvents.push({
           id: eid,
           orderId: event.orderId || "",
-          eventType: event.fullCode || event.code || "",
+          eventType: event.eventType || event.fullCode || event.code || "",
         });
       }
       if (result.action !== "error" && result.action !== "skipped") {

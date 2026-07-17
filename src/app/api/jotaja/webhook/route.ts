@@ -64,12 +64,12 @@ export async function POST(req: NextRequest) {
       const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
       console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
-      const eid = event.id || event.eventId;
+      const eid = event.eventId || event.id;
       if (result.action !== "error" && eid) {
         processedEvents.push({
           id: eid,
           orderId: event.orderId || "",
-          eventType: event.fullCode || event.code || "",
+          eventType: event.eventType || event.fullCode || event.code || "",
         });
       }
       if (result.action === "created")  created++;

@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Process events using shared lib
-    const processedEventIds: string[] = [];
+    const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
     let created = 0, updated = 0, disputes = 0, cancelled = 0;
 
     for (const event of events) {
@@ -65,9 +65,14 @@ export async function GET(req: NextRequest) {
       log.push(`  ${result.action === "error" ? "❌" : result.action === "created" ? "✅" : "🔄"} ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
       // Acknowledge ALL events (except errors) to clear the queue
+      // Collect event data for acknowledgment (requires id + orderId + eventType)
       const eid = event.eventId || event.id;
       if (result.action !== "error" && eid) {
-        processedEventIds.push(eid);
+        processedEventIds.push({
+          id: eid,
+          orderId: event.orderId || "",
+          eventType: event.eventType || event.fullCode || event.code || "",
+        });
       }
       if (result.action === "created")   created++;
       if (result.action === "updated")   updated++;
@@ -75,20 +80,18 @@ export async function GET(req: NextRequest) {
       if (result.action === "cancelled") cancelled++;
     }
 
-    // Acknowledge processed events
+    // Acknowledge processed events — format: [{id, orderId, eventType}]
     if (processedEventIds.length > 0) {
       try {
-        // Try Open Delivery standard format: [{id: "eventId"}]
         const ackRes = await jotajaMutate("/v1/events/acknowledgment", {
           method: "POST",
-          body: JSON.stringify(processedEventIds.map(id => ({ id }))),
+          body: JSON.stringify(processedEventIds),
         });
         if (ackRes.ok) {
           log.push(`✅ ${processedEventIds.length} eventos acknowledged`);
         } else {
           const ackBody = await ackRes.text().catch(() => "");
           log.push(`⚠️ Acknowledge ${ackRes.status}: ${ackBody.slice(0, 200)}`);
-          // Non-blocking: events were processed, acknowledge failure doesn't block orders
         }
       } catch (ackErr: any) {
         log.push(`⚠️ Acknowledge falhou: ${ackErr.message}`);
