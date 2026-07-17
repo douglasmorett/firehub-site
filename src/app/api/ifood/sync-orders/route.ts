@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       const eventsText = await eventsRes.text();
       const events = eventsText ? JSON.parse(eventsText) : [];
       if (Array.isArray(events)) {
-        const processedEventIds: string[] = [];
+        const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
 
         for (const event of events) {
           const { orderId } = event;
@@ -68,7 +68,13 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            if (event.id) processedEventIds.push(event.id);
+            if (event.id) {
+              processedEventIds.push({
+                id: event.id,
+                orderId: event.orderId || "",
+                eventType: event.fullCode || event.code || "",
+              });
+            }
           }
         }
 
@@ -77,7 +83,7 @@ export async function POST(req: NextRequest) {
           await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
             method: "POST",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
+            body: JSON.stringify(processedEventIds),
           });
         }
       }

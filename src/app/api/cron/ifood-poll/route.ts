@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Process events
-    const processedEventIds: string[] = [];
+    const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
     let created = 0;
     let updated = 0;
 
@@ -101,7 +101,13 @@ export async function GET(req: NextRequest) {
               data: { cancelDispute: disputeData },
             });
             log.push(`  ⚠️ Negociação: ${orderId} — disputeId=${meta.disputeId}, motivo="${meta.message}"`);
-            if (event.id) processedEventIds.push(event.id);
+            if (event.id) {
+              processedEventIds.push({
+                id: event.id,
+                orderId: event.orderId || "",
+                eventType: event.fullCode || event.code || "",
+              });
+            }
             continue;
           }
         }
@@ -120,7 +126,13 @@ export async function GET(req: NextRequest) {
             data: cancelData,
           });
           log.push(`  🚫 Cancelado: ${orderId}`);
-          if (event.id) processedEventIds.push(event.id);
+          if (event.id) {
+            processedEventIds.push({
+              id: event.id,
+              orderId: event.orderId || "",
+              eventType: event.fullCode || event.code || "",
+            });
+          }
           continue;
         }
 
@@ -314,7 +326,13 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        if (event.id) processedEventIds.push(event.id);
+        if (event.id) {
+          processedEventIds.push({
+            id: event.id,
+            orderId: event.orderId || "",
+            eventType: event.fullCode || event.code || "",
+          });
+        }
       } catch (err: any) {
         log.push(`  ❌ Erro: ${err.message}`);
       }
@@ -325,7 +343,7 @@ export async function GET(req: NextRequest) {
       await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
+        body: JSON.stringify(processedEventIds),
       });
       log.push(`✅ ${processedEventIds.length} eventos acknowledged`);
     }

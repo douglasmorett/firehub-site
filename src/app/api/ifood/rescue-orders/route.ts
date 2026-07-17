@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
       // If there are events, process them now (don't just peek)
       if (events.length > 0) {
         results.processingEvents = true;
-        const processedIds: string[] = [];
+        const processedIds: { id: string; orderId: string; eventType: string }[] = [];
         
         for (const event of events) {
           try {
@@ -107,7 +107,13 @@ export async function GET(req: NextRequest) {
               }
             }
             
-            if (event.id) processedIds.push(event.id);
+            if (event.id) {
+              processedIds.push({
+                id: event.id,
+                orderId: event.orderId || "",
+                eventType: event.fullCode || event.code || "",
+              });
+            }
           } catch (err: any) {
             results[`error_${event?.orderId?.slice(-6)}`] = err.message;
           }
@@ -118,7 +124,7 @@ export async function GET(req: NextRequest) {
           await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
             method: "POST",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify(processedIds.map((id: string) => ({ id }))),
+            body: JSON.stringify(processedIds),
           });
         }
       }

@@ -122,19 +122,23 @@ export async function GET(req: NextRequest) {
   }
 
   // Confirma recebimento dos eventos (acknowledgment)
-  const eventIds = (data ?? []).map((e: any) => e.id);
-  if (eventIds.length > 0) {
+  const eventsToAck = (data ?? []).filter((e: any) => e.id).map((e: any) => ({
+    id: e.id,
+    orderId: e.orderId || "",
+    eventType: e.fullCode || e.code || "",
+  }));
+  if (eventsToAck.length > 0) {
     await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(eventIds.map((id: string) => ({ id }))),
+      body: JSON.stringify(eventsToAck),
     });
   }
 
-  return NextResponse.json({ processed: eventIds.length, events: data ?? [] });
+  return NextResponse.json({ processed: eventsToAck.length, events: data ?? [] });
 }
 
 // ─── Processa um evento do iFood ──────────────────────────────────────────

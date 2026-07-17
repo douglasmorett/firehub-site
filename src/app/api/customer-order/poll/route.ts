@@ -37,7 +37,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
 
     // Process each event
-    const processedEventIds: string[] = [];
+    const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
     for (const event of events) {
       try {
         const { code, orderId, merchantId } = event;
@@ -73,7 +73,13 @@ async function pollIfoodEvents(sessionUserId?: string) {
               data: { cancelDispute: disputeData },
             });
             console.log(`[iFood Poll] ⚠️ Negociação: ${orderId} — disputeId=${meta.disputeId}, motivo="${meta.message}"`);
-            if (event.id) processedEventIds.push(event.id);
+            if (event.id) {
+              processedEventIds.push({
+                id: event.id,
+                orderId: event.orderId || "",
+                eventType: event.fullCode || event.code || "",
+              });
+            }
             continue;
           }
         }
@@ -118,7 +124,13 @@ async function pollIfoodEvents(sessionUserId?: string) {
             });
             console.log(`[iFood Poll] 🛵 Driver status: ${driverUpdate.ifoodDriverStatus} para ${orderId}`);
           }
-          if (event.id) processedEventIds.push(event.id);
+          if (event.id) {
+            processedEventIds.push({
+              id: event.id,
+              orderId: event.orderId || "",
+              eventType: event.fullCode || event.code || "",
+            });
+          }
           continue;
         }
 
@@ -364,7 +376,13 @@ async function pollIfoodEvents(sessionUserId?: string) {
         }
 
         // Evento processado com sucesso
-        if (event.id) processedEventIds.push(event.id);
+        if (event.id) {
+          processedEventIds.push({
+            id: event.id,
+            orderId: event.orderId || "",
+            eventType: event.fullCode || event.code || "",
+          });
+        }
       } catch (err: any) {
         console.error(`[iFood Poll] ❌ Erro processando evento ${event?.orderId}:`, err?.message ?? err);
         // NÃO adiciona ao processedIds — evento não foi processado, será reprocessado no próximo poll
@@ -376,7 +394,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
       await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
+        body: JSON.stringify(processedEventIds),
       });
       console.log(`[iFood Poll] ✅ ${processedEventIds.length}/${events.length} eventos acknowledged`);
     }
