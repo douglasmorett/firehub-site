@@ -20,7 +20,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-
   const startTime = Date.now();
   const log: string[] = [];
 
@@ -52,31 +51,23 @@ export async function GET(req: NextRequest) {
     const eventsText = await res.text();
     const events = eventsText ? JSON.parse(eventsText) : [];
     log.push(`📥 ${events.length} evento(s) recebido(s)`);
-    // Log raw event structure for debugging
-    if (events.length > 0) {
-      log.push(`📋 Raw event[0]: ${JSON.stringify(events[0]).slice(0, 500)}`);
-    }
 
     if (!events || events.length === 0) {
       return NextResponse.json({ ok: true, events: 0, log, durationMs: Date.now() - startTime });
     }
 
     // Process events using shared lib
-    const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
+    const processedEventIds: string[] = [];
     let created = 0, updated = 0, disputes = 0, cancelled = 0;
 
     for (const event of events) {
       const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
       log.push(`  ${result.action === "error" ? "❌" : result.action === "created" ? "✅" : "🔄"} ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
-      // Acknowledge todos os eventos (exceto erros) — inclusive skipped, para limpar a fila
-      const eid = event.id || event.eventId;
+      // Acknowledge ALL events (except errors) to clear the queue
+      const eid = event.eventId || event.id;
       if (result.action !== "error" && eid) {
-        processedEvents.push({
-          id: eid,
-          orderId: event.orderId || "",
-          eventType: event.fullCode || event.code || "",
-        });
+        processedEventIds.push(eid);
       }
       if (result.action === "created")   created++;
       if (result.action === "updated")   updated++;
@@ -84,41 +75,23 @@ export async function GET(req: NextRequest) {
       if (result.action === "cancelled") cancelled++;
     }
 
-    // Acknowledge processed events — try formats using eventId (actual field from polling)
-    if (processedEvents.length > 0) {
-      const ackIds = processedEvents.map(e => e.id); // eventId from raw event
-      // Formatos de payload para tentar (do mais provável ao menos)
-      const payloads = [
-        { label: "eventId-objects", body: JSON.stringify(ackIds.map(id => ({ eventId: id }))) },
-        { label: "id-objects", body: JSON.stringify(ackIds.map(id => ({ id }))) },
-        { label: "ids-only", body: JSON.stringify(ackIds) },
-      ];
-      // Endpoints para tentar
-      const endpoints = ["/v1/events/acknowledgment"];
-
-      let acked = false;
-      for (const ep of endpoints) {
-        for (const pl of payloads) {
-          if (acked) break;
-          try {
-            const ackRes = await jotajaMutate(ep, {
-              method: "POST",
-              body: pl.body,
-            });
-            const ackBody = await ackRes.text().catch(() => "");
-            log.push(`📤 ${ep} [${pl.label}] → ${ackRes.status}: ${ackBody.slice(0, 200)}`);
-            if (ackRes.ok) {
-              log.push(`✅ ${processedEvents.length} eventos acknowledged via ${ep} [${pl.label}]`);
-              acked = true;
-            }
-          } catch (ackErr: any) {
-            log.push(`⚠️ ${ep} [${pl.label}] falhou: ${ackErr.message}`);
-          }
+    // Acknowledge processed events
+    if (processedEventIds.length > 0) {
+      try {
+        // Try Open Delivery standard format: [{id: "eventId"}]
+        const ackRes = await jotajaMutate("/v1/events/acknowledgment", {
+          method: "POST",
+          body: JSON.stringify(processedEventIds.map(id => ({ id }))),
+        });
+        if (ackRes.ok) {
+          log.push(`✅ ${processedEventIds.length} eventos acknowledged`);
+        } else {
+          const ackBody = await ackRes.text().catch(() => "");
+          log.push(`⚠️ Acknowledge ${ackRes.status}: ${ackBody.slice(0, 200)}`);
+          // Non-blocking: events were processed, acknowledge failure doesn't block orders
         }
-        if (acked) break;
-      }
-      if (!acked) {
-        log.push(`❌ Nenhum formato de acknowledge funcionou`);
+      } catch (ackErr: any) {
+        log.push(`⚠️ Acknowledge falhou: ${ackErr.message}`);
       }
     }
 
@@ -126,7 +99,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       events: events.length,
       created, updated, disputes, cancelled,
-      acknowledged: processedEvents.length,
+      acknowledged: processedEventIds.length,
       durationMs: Date.now() - startTime,
       log,
     });
