@@ -83,13 +83,14 @@ export async function GET(req: NextRequest) {
     // Acknowledge processed events — try multiple endpoint formats
     if (processedEvents.length > 0) {
       const ackIds = processedEvents.map(e => e.id);
-      // Formatos de payload para tentar
+      // Formatos de payload para tentar (do mais provável ao menos)
       const payloads = [
+        { label: "id-objects", body: JSON.stringify(ackIds.map(id => ({ id }))) },
         { label: "ids-only", body: JSON.stringify(ackIds) },
-        { label: "objects", body: JSON.stringify(processedEvents) },
+        { label: "full-objects", body: JSON.stringify(processedEvents) },
       ];
-      // Endpoints para tentar (colon-style como :polling, e slash-style)
-      const endpoints = ["/v1/events:acknowledgment", "/v1/events/acknowledgment"];
+      // Endpoints para tentar
+      const endpoints = ["/v1/events/acknowledgment"];
 
       let acked = false;
       for (const ep of endpoints) {
