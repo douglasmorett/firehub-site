@@ -32,12 +32,56 @@ function ChannelBadges({ product, onToggle }: { product: any; onToggle: (key: st
   );
 }
 
-export default function MenuProductManager({ products, availableItems }: { products: any[]; availableItems: any[] }) {
+export default function MenuProductManager({
+  products,
+  availableItems,
+  categories: initialCategories = [],
+}: {
+  products: any[];
+  availableItems: any[];
+  categories?: { id: string; name: string; emoji: string; color: string; sortOrder: number }[];
+}) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"items" | "combos">("items");
+
+  // Categorias dinâmicas (inicia com as do servidor, pode adicionar novas)
+  const [dynCategories, setDynCategories] = useState(initialCategories);
+
+  // Mini-modal de nova categoria
+  const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatEmoji, setNewCatEmoji] = useState("🍽️");
+  const [newCatColor, setNewCatColor] = useState("#E8360C");
+  const [newCatSaving, setNewCatSaving] = useState(false);
+
+  const handleCreateCategory = async () => {
+    if (!newCatName.trim()) return;
+    setNewCatSaving(true);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newCatName.trim(), emoji: newCatEmoji, color: newCatColor }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setDynCategories(prev => [...prev, created]);
+        setCategory(created.name);
+        setShowNewCat(false);
+        setNewCatName(""); setNewCatEmoji("🍽️"); setNewCatColor("#E8360C");
+        showToast("Categoria criada!");
+      } else {
+        showToast("Erro ao criar categoria", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao criar categoria", "#EF4444");
+    } finally {
+      setNewCatSaving(false);
+    }
+  };
 
   // Modal de confirmação customizado
   const [confirmModal, setConfirmModal] = useState<{ id: string; name: string } | null>(null);
@@ -71,10 +115,10 @@ export default function MenuProductManager({ products, availableItems }: { produ
   const [activeGarcom, setActiveGarcom] = useState(false);
   const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; itemIds: string[] }[]>([]);
 
-  const categories = ["Promoção do Dia", "Combos", "Esfihas Salgadas", "Esfihas Doces", "Acompanhamentos", "Bebidas", "Outros"];
 
   const resetForm = () => {
-    setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]); setCategory("Esfihas Salgadas");
+    setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]);
+    setCategory(dynCategories[0]?.name || "");
     setImageUrl(""); setActive(true); setIsCombo(false); setComboGroups([]);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(false); setActiveGarcom(false);
     setShowForm(false); setEditingId(null);
@@ -101,7 +145,10 @@ export default function MenuProductManager({ products, availableItems }: { produ
 
   const handleSubmit = async () => {
     if (!name || !description || !price) { alert("Preencha nome, descrição e preço."); return; }
+    if (dynCategories.length === 0) { alert("Cadastre pelo menos uma categoria antes de salvar."); return; }
+    if (!category || category.trim() === "") { alert("Selecione uma categoria válida."); return; }
     setLoading(true);
+
     try {
       const res = await fetch("/api/admin/menu-products", {
         method: editingId ? "PUT" : "POST",
@@ -426,7 +473,7 @@ export default function MenuProductManager({ products, availableItems }: { produ
         <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`}><Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})</button>
       </div>
 
-      <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? "Combos" : "Esfihas Salgadas"); setShowForm(true); }} className="btn btn-primary mb-4">
+      <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? (dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || "") : (dynCategories[0]?.name || "")); setShowForm(true); }} className="btn btn-primary mb-4">
         <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
       </button>
 
@@ -441,7 +488,72 @@ export default function MenuProductManager({ products, availableItems }: { produ
             <div className="input-group"><label>Nome</label><input className="input-field" value={name} onChange={e => setName(e.target.value)} /></div>
             <div className="input-group"><label>Preço (R$)</label><input className="input-field" type="number" step="0.01" value={price} onChange={e => setPrice(e.target.value)} /></div>
             <div className="input-group"><label>Descrição</label><textarea className="input-field" rows={2} value={description} onChange={e => setDescription(e.target.value)} style={{ resize: "vertical" }} /></div>
-            <div className="input-group"><label>Categoria</label><select className="input-field" value={category} onChange={e => setCategory(e.target.value)}>{categories.map(c => <option key={c}>{c}</option>)}</select></div>
+            <div className="input-group">
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Categoria</span>
+                <button
+                  type="button"
+                  onClick={() => setShowNewCat(true)}
+                  style={{ fontSize: "0.72rem", color: "#E8360C", background: "none", border: "none", cursor: "pointer", fontWeight: 700, padding: 0 }}
+                >+ Nova categoria</button>
+              </label>
+              {dynCategories.length === 0 ? (
+                <div style={{ padding: "10px 12px", background: "#FFF5F3", border: "1.5px dashed #FCA5A5", borderRadius: 10, fontSize: "0.8rem", color: "#DC2626" }}>
+                  ⚠️ Cadastre sua primeira categoria abaixo para poder salvar produtos:
+                </div>
+              ) : (
+                <select className="input-field" value={category} onChange={e => setCategory(e.target.value)}>
+                  {dynCategories.map(c => (
+                    <option key={c.id} value={c.name}>{c.emoji} {c.name}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Mini-modal nova categoria */}
+              {(showNewCat || dynCategories.length === 0) && (
+
+                <div style={{ marginTop: 10, padding: "14px", background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: "0.85rem", color: "#0F172A" }}>Nova Categoria</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      placeholder="Emoji (ex: 🍟)"
+                      value={newCatEmoji}
+                      onChange={e => setNewCatEmoji(e.target.value)}
+                      style={{ width: 70, padding: "8px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "1rem", textAlign: "center" }}
+                    />
+                    <input
+                      placeholder="Nome da categoria"
+                      value={newCatName}
+                      onChange={e => setNewCatName(e.target.value)}
+                      style={{ flex: 1, padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "0.88rem" }}
+                    />
+                    <input
+                      type="color"
+                      value={newCatColor}
+                      onChange={e => setNewCatColor(e.target.value)}
+                      title="Cor da categoria"
+                      style={{ width: 40, height: 38, border: "1.5px solid #E2E8F0", borderRadius: 8, cursor: "pointer", padding: 2 }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={handleCreateCategory}
+                      disabled={newCatSaving || !newCatName.trim()}
+                      style={{ flex: 1, padding: "9px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: newCatSaving || !newCatName.trim() ? "not-allowed" : "pointer", opacity: newCatSaving || !newCatName.trim() ? 0.6 : 1 }}
+                    >{newCatSaving ? "Salvando..." : "✓ Criar"}</button>
+                    {dynCategories.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowNewCat(false); setNewCatName(""); }}
+                        style={{ padding: "9px 16px", background: "#F1F5F9", color: "#64748B", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                      >Cancelar</button>
+                    )}
+
+                  </div>
+                </div>
+              )}
+            </div>
             {/* Campo Custo */}
             <div className="input-group" style={{ position: "relative" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>

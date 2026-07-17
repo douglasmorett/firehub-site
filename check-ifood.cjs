@@ -6,6 +6,6 @@ async function main() {
     select: { id:true, ifoodOrderId:true, status:true, customerName:true, totalAmount:true, source:true }
   });
   console.log('PEDIDOS ENCONTRADOS:', JSON.stringify(orders, null, 2));
-  await prisma.();
+  await prisma.$disconnect();
 }
 main().catch(e => { console.error('ERRO:', e.message); process.exit(1); });

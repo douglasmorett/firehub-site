@@ -14,12 +14,15 @@ export default function IceboxCartPage() {
   const [copied, setCopied] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [overduePayments, setOverduePayments] = useState<any[] | null>(null);
+  const [pendingBoletos, setPendingBoletos] = useState<any[] | null>(null);
+  const [isSpecialStore, setIsSpecialStore] = useState(false);
   const router = useRouter();
 
   const handleCheckout = async () => {
     if (items.length === 0 || total < 300) return;
     setLoading(true);
     setOverduePayments(null);
+    setPendingBoletos(null);
 
     try {
       const res = await fetch("/api/checkout", {
@@ -33,10 +36,14 @@ export default function IceboxCartPage() {
       if (res.ok && data) {
         setBoletoUrl(data.boletoUrl || null);
         setBoletoCode(data.boletoCode || data.barCode || null);
+        setIsSpecialStore(data.isSpecialStore || false);
         setCheckoutSuccess(true);
         clearCart();
       } else if (res.status === 403 && data?.overduePayments) {
         setOverduePayments(data.overduePayments);
+        setLoading(false);
+      } else if (res.status === 403 && data?.pendingBoletos) {
+        setPendingBoletos(data.pendingBoletos);
         setLoading(false);
       } else if (res.status === 401) {
         alert("Sessão expirada. Faça login novamente.");
@@ -80,10 +87,26 @@ export default function IceboxCartPage() {
             Pedido Confirmado!
           </h2>
 
-          {boletoUrl || boletoCode ? (
+          {isSpecialStore ? (
+            <div style={{
+              background: "#F0FDF4", borderRadius: 14, padding: "1.25rem",
+              marginBottom: "1.5rem", border: "1.5px solid #BBF7D0",
+              textAlign: "left"
+            }}>
+              <p style={{ color: "#166534", fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: 6 }}>
+                ✓ Conta de Registro
+              </p>
+              <p style={{ color: "#14532D", fontSize: "0.82rem", lineHeight: 1.5 }}>
+                Este pedido foi registrado com sucesso para fins de controle e histórico.
+              </p>
+              <p style={{ color: "#14532D", fontSize: "0.82rem", lineHeight: 1.5, marginTop: "0.5rem" }}>
+                Nenhuma cobrança ou boleto foi gerado para este pedido.
+              </p>
+            </div>
+          ) : boletoUrl || boletoCode ? (
             <>
               <p style={{ color: "#64748B", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
-                Seu boleto foi gerado com vencimento em <strong>10 dias</strong> via Asaas.
+                Seu boleto foi gerado com vencimento em <strong>7 dias</strong> via Asaas.
               </p>
 
               {boletoCode && (
@@ -178,7 +201,7 @@ export default function IceboxCartPage() {
   }
 
   /* ── TELA: CARRINHO VAZIO ── */
-  if (items.length === 0 && !overduePayments) {
+  if (items.length === 0 && !overduePayments && !pendingBoletos) {
     return (
       <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
         <div style={{ textAlign: "center", maxWidth: 360 }}>
@@ -263,6 +286,81 @@ export default function IceboxCartPage() {
 
             <button
               onClick={() => setOverduePayments(null)}
+              style={{
+                width: "100%", padding: "0.85rem", borderRadius: 12,
+                border: "1px solid #E2E8F0", background: "#F8FAFC",
+                color: "#64748B", fontWeight: 700, fontSize: "0.9rem",
+                cursor: "pointer", fontFamily: "inherit",
+              }}
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL ACÚMULO DE BOLETOS ── */}
+      {pendingBoletos && pendingBoletos.length > 0 && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.6)", zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "1rem",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 20, maxWidth: 480, width: "100%",
+            padding: "2rem", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+              <AlertTriangle size={48} color="#D97706" style={{ margin: "0 auto 0.75rem" }} />
+              <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#B45309", marginBottom: "0.5rem" }}>
+                Limite de Boletos Atingido
+              </h2>
+              <p style={{ color: "#64748B", fontSize: "0.9rem", lineHeight: 1.5 }}>
+                Você já possui <strong>{pendingBoletos.length} boletos pendentes</strong>. 
+                Mesmo que não estejam vencidos, é necessário pagar pelo menos 1 antes de fazer um novo pedido.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.5rem" }}>
+              {pendingBoletos.map((p: any, i: number) => (
+                <div key={i} style={{
+                  background: "#FFF7ED", border: "1px solid #FDBA74", borderRadius: 12,
+                  padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between",
+                  gap: "0.75rem", flexWrap: "wrap",
+                }}>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#92400E" }}>
+                      R$ {p.value?.toFixed(2)}
+                    </p>
+                    <p style={{ fontSize: "0.8rem", color: "#B45309" }}>
+                      Vence em {new Date(p.dueDate + "T12:00:00").toLocaleDateString("pt-BR")}
+                    </p>
+                  </div>
+                  {p.invoiceUrl && (
+                    <a
+                      href={p.invoiceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "0.6rem 1.2rem", borderRadius: 10,
+                        background: "linear-gradient(135deg, #16A34A, #22C55E)",
+                        color: "#fff", fontWeight: 700, fontSize: "0.85rem",
+                        textDecoration: "none", whiteSpace: "nowrap",
+                        boxShadow: "0 3px 10px rgba(22,163,74,0.3)",
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      Pagar Agora
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setPendingBoletos(null)}
               style={{
                 width: "100%", padding: "0.85rem", borderRadius: 12,
                 border: "1px solid #E2E8F0", background: "#F8FAFC",
@@ -396,7 +494,7 @@ export default function IceboxCartPage() {
 
             {total >= 300 && (
               <p style={{ fontSize: "0.78rem", color: "#94A3B8", textAlign: "center" }}>
-                Boleto com vencimento em 10 dias via Asaas
+                Boleto com vencimento em 7 dias via Asaas
               </p>
             )}
           </div>

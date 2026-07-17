@@ -29,12 +29,12 @@ export async function GET() {
         status: { notIn: ["CANCELADO"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true },
+      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true },
     });
 
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
-      const val = (o.totalAmount || 0) + (o.deliveryFee || 0);
+      const val = (o.totalAmount || 0) + (o.deliveryFee || 0) + (o.discountIfood || 0);
       const src = ((o as any).source || "").toUpperCase();
       const isPaidOnline = !!(o.paymentPaidAt || o.gatewayProvider);
 
@@ -52,6 +52,9 @@ export async function GET() {
         expected.voucher += val;
       } else if (src === "IFOOD" && isPaidOnline) {
         // iFood online payment (credit card via app) — categorize as credit
+        expected.credit += val;
+      } else if (src === "JOTAJA" && isPaidOnline) {
+        // Jotajá online payment — categorize as credit
         expected.credit += val;
       } else {
         // Unknown method — count as credit (most common online)

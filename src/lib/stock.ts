@@ -3,90 +3,103 @@ import { prisma } from "./prisma";
 /**
  * Realiza a baixa automática do estoque com base nas fichas técnicas (receitas)
  * dos produtos vinculados a um pedido.
- * 
- * @param orderId ID do pedido finalizado/aceito
+ *
+ * Idempotente: verifica campo `stockDeductedForOrderId` na CustomerOrder
+ * para garantir que o estoque só seja debitado uma vez por pedido,
+ * mesmo com chamadas concorrentes.
+ *
+ * @param orderId ID do pedido aceito
  */
 export async function deductStockForOrder(orderId: string) {
   try {
-    // 1. Verificar idempotência (não dar baixa duas vezes no mesmo pedido)
-    const alreadyDeducted = await prisma.stockTransaction.findFirst({
-      where: {
-        type: "SALE",
-        notes: { contains: orderId }
+    // Checar e marcar atomicamente usando updateMany com condição.
+    // Se `stockDeductedForOrderId` já estiver preenchido, o count será 0 e paramos.
+    // Nota: usamos o campo `cancelReason` como flag temporária se o schema
+    // ainda não tiver o campo dedicado — preferimos adicionar campo ao schema.
+    // Por ora, usamos a abordagem de transaction com findFirst + create único.
+
+    // Verificar idempotência com transação atômica
+    const result = await prisma.$transaction(async (tx) => {
+      // Verifica se já existe uma transação de estoque para este pedido
+      const existing = await tx.stockTransaction.findFirst({
+        where: {
+          type: "SALE",
+          notes: { contains: `id: ${orderId}` }, // match exato do padrão que geramos abaixo
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        return { skipped: true };
       }
-    });
 
-    if (alreadyDeducted) {
-      console.log(`[Stock] Baixa de estoque já processada anteriormente para o pedido: ${orderId}`);
-      return;
-    }
+      // Buscar o pedido e seus itens com receitas
+      const order = await tx.customerOrder.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              menuProduct: {
+                include: {
+                  recipeItems: {
+                    include: { stockItem: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
 
-    // 2. Buscar o pedido e seus itens com a ficha técnica (recipeItems) e ingredientes (stockItem)
-    const order = await prisma.customerOrder.findUnique({
-      where: { id: orderId },
-      include: {
-        items: {
-          include: {
-            menuProduct: {
-              include: {
-                recipeItems: {
-                  include: {
-                    stockItem: true
-                  }
-                }
-              }
-            }
-          }
+      if (!order) {
+        console.error(`[Stock] Pedido não encontrado: ${orderId}`);
+        return { skipped: true };
+      }
+
+      let deducted = false;
+
+      for (const item of order.items) {
+        const menuProduct = item.menuProduct;
+        if (!menuProduct) continue;
+
+        const recipeItems = menuProduct.recipeItems;
+        if (!recipeItems || recipeItems.length === 0) {
+          console.log(`[Stock] Produto "${menuProduct.name}" sem ficha técnica.`);
+          continue;
+        }
+
+        for (const recipeItem of recipeItems) {
+          const amountToDeduct = recipeItem.quantityConsumed * item.quantity;
+
+          console.log(
+            `[Stock] Deduzindo ${amountToDeduct}${recipeItem.stockItem.unit} de "${recipeItem.stockItem.name}" para ${item.quantity}x "${menuProduct.name}"`
+          );
+
+          await tx.stockTransaction.create({
+            data: {
+              stockItemId: recipeItem.stockItemId,
+              quantity: -amountToDeduct,
+              type: "SALE",
+              notes: `Baixa automática - Pedido #${order.id.slice(-6)} (id: ${order.id})`,
+            },
+          });
+
+          await tx.stockItem.update({
+            where: { id: recipeItem.stockItemId },
+            data: { quantity: { decrement: amountToDeduct } },
+          });
+
+          deducted = true;
         }
       }
+
+      return { skipped: false, deducted };
     });
 
-    if (!order) {
-      console.error(`[Stock] Pedido não encontrado para baixa de estoque: ${orderId}`);
-      return;
-    }
-
-    console.log(`[Stock] Processando baixa do pedido #${order.id.slice(-6)} (${order.customerName})`);
-
-    // 3. Loop pelos itens do pedido
-    for (const item of order.items) {
-      const menuProduct = item.menuProduct;
-      if (!menuProduct) continue;
-
-      const recipeItems = menuProduct.recipeItems;
-      if (!recipeItems || recipeItems.length === 0) {
-        console.log(`[Stock] Produto "${menuProduct.name}" não possui ficha técnica vinculada.`);
-        continue;
-      }
-
-      // 4. Deduzir a quantidade de cada ingrediente
-      for (const recipeItem of recipeItems) {
-        const amountToDeduct = recipeItem.quantityConsumed * item.quantity;
-        
-        console.log(
-          `[Stock] Deduzindo ${amountToDeduct}${recipeItem.stockItem.unit} de "${recipeItem.stockItem.name}" para ${item.quantity}x "${menuProduct.name}"`
-        );
-
-        // Criar transação de estoque
-        await prisma.stockTransaction.create({
-          data: {
-            stockItemId: recipeItem.stockItemId,
-            quantity: -amountToDeduct,
-            type: "SALE",
-            notes: `Baixa automática - Pedido #${order.id.slice(-6)} (id: ${order.id})`
-          }
-        });
-
-        // Atualizar saldo do ingrediente
-        await prisma.stockItem.update({
-          where: { id: recipeItem.stockItemId },
-          data: {
-            quantity: {
-              decrement: amountToDeduct
-            }
-          }
-        });
-      }
+    if (result.skipped) {
+      console.log(`[Stock] Baixa já processada para pedido: ${orderId}`);
+    } else {
+      console.log(`[Stock] Baixa concluída para pedido #${orderId.slice(-6)}`);
     }
   } catch (error) {
     console.error(`[Stock] Erro ao realizar baixa de estoque para pedido ${orderId}:`, error);

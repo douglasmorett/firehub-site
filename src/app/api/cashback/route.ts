@@ -56,7 +56,6 @@ export async function POST(req: NextRequest) {
   const customer = await prisma.storeCustomer.findUnique({ where: { phone } });
   if (!customer) return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
 
-  const history = (customer.cashbackHistory as any[]) || [];
   const event = {
     orderId: orderId || null,
     amount,
@@ -65,17 +64,23 @@ export async function POST(req: NextRequest) {
     date: new Date().toISOString(),
   };
 
-  const newBalance = type === "earn"
-    ? customer.cashbackBalance + amount
-    : Math.max(0, customer.cashbackBalance - amount);
-
+  // Usar increment/decrement atômico para evitar race condition
   await prisma.storeCustomer.update({
     where: { phone },
     data: {
-      cashbackBalance: newBalance,
-      cashbackHistory: [...history, event],
+      cashbackBalance: type === "earn"
+        ? { increment: amount }
+        : { decrement: amount },
+      // Append ao histórico de forma segura
+      cashbackHistory: { push: event } as any,
     }
   });
+
+  const updated = await prisma.storeCustomer.findUnique({
+    where: { phone },
+    select: { cashbackBalance: true }
+  });
+  const newBalance = updated?.cashbackBalance ?? 0;
 
   // Atualiza o pedido se informado
   if (orderId) {

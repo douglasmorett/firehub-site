@@ -2,13 +2,14 @@ const ALLOWED_ORIGINS = [
   'https://firehubfood.com.br',
   'https://www.firehubfood.com.br',
   'https://hakim-portal-grupohakim.vercel.app',
+  'https://firehub-site-zb7j-grupohakim.vercel.app',
   'http://localhost:3000',
   'http://localhost:3001',
 ];
 
 export function getCorsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get('origin') || '';
-  const isAllowed = ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app');
+  const isAllowed = ALLOWED_ORIGINS.includes(origin);
 
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],

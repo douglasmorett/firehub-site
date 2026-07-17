@@ -1,19 +1,55 @@
 /**
  * POST /api/webhooks/mercadopago
- * Recebe notificações do Mercado Pago sobre pagamentos com cartão.
+ * Recebe notificações do Mercado Pago sobre pagamentos com cartão/PIX.
  * Endpoint deve ser registrado no painel MP → Suas integrações → Webhooks.
+ *
+ * Validação: verifica assinatura HMAC-SHA256 enviada pelo MP no header x-signature
+ * conforme documentação: https://www.mercadopago.com.br/developers/pt/docs/notifications/webhooks
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkMpPaymentStatus } from "@/lib/mercadopago";
+import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    console.log("[MP Webhook]", JSON.stringify(body).slice(0, 300));
+    const rawBody = await req.text();
+    const body = JSON.parse(rawBody);
+    console.log("[MP Webhook]", rawBody.slice(0, 300));
+
+    // ── Validação de Assinatura HMAC (se secret configurado) ──────────────────
+    const mpSecret = process.env.MP_WEBHOOK_SECRET;
+    if (mpSecret) {
+      const xSignature = req.headers.get("x-signature") ?? "";
+      const xRequestId = req.headers.get("x-request-id") ?? "";
+
+      // Extrair ts e v1 do header x-signature (formato: "ts=...,v1=...")
+      const parts: Record<string, string> = {};
+      for (const part of xSignature.split(",")) {
+        const [k, v] = part.split("=");
+        if (k && v) parts[k.trim()] = v.trim();
+      }
+
+      const ts = parts["ts"] ?? "";
+      const receivedHash = parts["v1"] ?? "";
+
+      const manifest = `id:${body.data?.id};request-id:${xRequestId};ts:${ts};`;
+      const expectedHash = crypto
+        .createHmac("sha256", mpSecret)
+        .update(manifest)
+        .digest("hex");
+
+      if (receivedHash && !crypto.timingSafeEqual(
+        Buffer.from(expectedHash),
+        Buffer.from(receivedHash)
+      )) {
+        console.warn("[MP Webhook] Assinatura inválida — request rejeitado");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    }
 
     // MP envia { action, type, data: { id } }
-    const { type, action, data } = body;
+    const { type, data } = body;
 
     // Só processamos eventos de payment
     if (type !== "payment") {
@@ -25,7 +61,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true, msg: "sem payment id" });
     }
 
-    // Busca status na API do MP (confirma autenticidade)
+    // Busca status na API do MP (confirma autenticidade do pagamento)
     const { paid, failed, status } = await checkMpPaymentStatus(mpPaymentId);
 
     // Busca o pedido pelo gatewayPaymentId
@@ -36,6 +72,7 @@ export async function POST(req: NextRequest) {
           { pagarmeChargeId:  mpPaymentId },
         ],
       },
+      select: { id: true, paymentPaidAt: true },
     });
 
     if (!order) {
@@ -43,9 +80,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    if (paid && !order.paymentPaidAt) {
-      await prisma.customerOrder.update({
-        where: { id: order.id },
+    if (paid) {
+      // Atômico: só atualiza se ainda não foi pago (evita race com polling)
+      const result = await prisma.customerOrder.updateMany({
+        where: { id: order.id, paymentPaidAt: null },
         data: {
           paymentPaidAt:   new Date(),
           status:          "CONFIRMADO",
@@ -53,7 +91,11 @@ export async function POST(req: NextRequest) {
           gatewayProvider: "mercadopago",
         },
       });
-      console.log(`[MP] Pedido ${order.id} marcado como PAGO ✅`);
+      if (result.count > 0) {
+        console.log(`[MP Webhook] Pedido ${order.id} marcado como PAGO ✅`);
+      } else {
+        console.log(`[MP Webhook] Pedido ${order.id} já estava pago (race condition prevenida)`);
+      }
     } else if (failed) {
       await prisma.customerOrder.update({
         where: { id: order.id },

@@ -68,13 +68,20 @@ model User {
   ifoodClientId     String?        // Client ID do app cadastrado no iFood Developer
   ifoodConnected    Boolean        @default(false) // Módulo iFood ativo
   ifoodWidgetId     String?        // ID do widget iFood (chat integrado — do Portal do Parceiro)
+  // === JOTAJA / OPEN DELIVERY ===
+  jotajaMerchantId  String?        // UUID da loja no Jotajá
+  jotajaConnected   Boolean        @default(false) // Módulo Jotajá ativo
   orders          Order[]
   customerOrders  CustomerOrder[]
   storeReviews    StoreReview[]
   motoboys        Motoboy[]
   menuProducts    MenuProduct[]
   stockItems      StockItem[]
+  menuCategories  MenuCategory[]
+
+  @@index([ifoodMerchantId])
 }
+
 
 model Product {
   id          String      @id @default(cuid())
@@ -197,6 +204,22 @@ model MenuProduct {
   comboGroups     ComboGroup[]
   comboGroupItems ComboGroupItem[]
   recipeItems     ProductRecipe[]
+
+  @@index([franchiseeId])
+  @@index([franchiseeId, active])
+}
+
+
+model MenuCategory {
+  id           String   @id @default(cuid())
+  franchiseeId String?
+  name         String
+  emoji        String   @default("🍽️")
+  color        String   @default("#64748B")
+  sortOrder    Int      @default(0)
+  franchisee   User?    @relation(fields: [franchiseeId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model ComboGroup {
@@ -271,6 +294,15 @@ model CustomerOrder {
   ifoodDriverStatus      String?            // REQUESTED, ASSIGNED, GOING_TO_ORIGIN, ARRIVED_AT_ORIGIN, COLLECTED, DISPATCHED, ARRIVED_AT_DESTINATION, DELIVERED, FAILED
   ifoodDriverRequestedAt DateTime?          // Quando o motoboy foi solicitado
   ifoodDeliveryEta       DateTime?          // Previsão de entrega
+  // === OPEN DELIVERY / JOTAJA ===
+  openDeliveryOrderId     String?   @unique   // ID do pedido no Open Delivery (idempotência)
+  openDeliveryReference   String?             // Número de exibição do pedido (#1234)
+  openDeliveryChannel     String?             // Canal de origem: "JOTAJA"
+  // === KDS (Kitchen Display System) ===
+  kdsStage          String?             // "PRODUCTION" | "FINISHING" | null
+  kdsStationId      Int?                // Estação que pegou o pedido (1, 2, etc.)
+  kdsProductionAt   DateTime?           // Quando entrou em produção
+  kdsFinishingAt    DateTime?           // Quando entrou em finalização
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   franchisee       User                @relation(fields: [franchiseeId], references: [id])
@@ -278,7 +310,13 @@ model CustomerOrder {
   motoboy          Motoboy?            @relation(fields: [motoboyId], references: [id])
   items            CustomerOrderItem[]
   review           StoreReview?
+
+  @@index([franchiseeId])
+  @@index([franchiseeId, status])
+  @@index([franchiseeId, createdAt])
+  @@index([motoboyId])
 }
+
 
 model CustomerOrderItem {
   id              String        @id @default(cuid())
@@ -392,7 +430,10 @@ model Motoboy {
   orders           CustomerOrder[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+
+  @@index([franchiseeId])
 }
+
 
 // ========== SESSÕES DE CAIXA ==========
 model CashSession {
@@ -423,7 +464,10 @@ model CashSession {
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  @@index([franchiseeId])
 }
+
 
 // ========== FATURAMENTO: USE FIRST, PAY LATER ==========
 // Ciclo mensal de cobrança por franqueado. 
@@ -534,7 +578,10 @@ model StockTransaction {
   notes         String?
   createdAt     DateTime    @default(now())
   stockItem     StockItem   @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@index([stockItemId])
 }
+
 
 model ProductRecipe {
   id               String       @id @default(cuid())
