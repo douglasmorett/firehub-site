@@ -436,15 +436,15 @@ async function pollJotajaEvents(sessionUserId?: string) {
     const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     for (const event of events) {
       const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
+      const eid = event.id || event.eventId;
+      if (result.action !== "error" && eid) {
+        processedEvents.push({
+          id: eid,
+          orderId: event.orderId || "",
+          eventType: event.fullCode || event.code || "",
+        });
+      }
       if (result.action !== "error" && result.action !== "skipped") {
-        const eid = event.id || event.eventId;
-        if (eid) {
-          processedEvents.push({
-            id: eid,
-            orderId: event.orderId || "",
-            eventType: event.fullCode || event.code || "",
-          });
-        }
         console.log(`[Jotaja Poll] ${result.action} - ${result.orderId}${result.message ? ": " + result.message : ""}`);
       } else if (result.action === "error") {
         console.error(`[Jotaja Poll] ERRO ${result.orderId}: ${result.message}`);
