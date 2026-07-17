@@ -121,7 +121,13 @@ export async function processJotajaEvent(
         const fullName = optionNames.length > 0
           ? `${i.name ?? "Item Jotajá"} | ${optionNames.join(" | ")}`
           : (i.name ?? "Item Jotajá");
-        const itemPrice = priceVal(i.totalPrice) || priceVal(i.unitPrice) || priceVal(i.price) || 0;
+        const qty = i.quantity ?? 1;
+        // Prioriza unitPrice (preço unitário correto) sobre totalPrice (que é qty × unitPrice)
+        const rawUnit = priceVal(i.unitPrice) || priceVal(i.price) || 0;
+        const rawTotal = priceVal(i.totalPrice) || 0;
+        // Se temos unitPrice, usar ele. Senão, derivar de totalPrice / quantidade.
+        const itemPrice = rawUnit > 0 ? rawUnit : (rawTotal > 0 && qty > 0 ? rawTotal / qty : 0);
+
 
         // Build comboSelections from options for detailed display
         const comboSelections = options.length > 0 ? options.map((o: any) => ({

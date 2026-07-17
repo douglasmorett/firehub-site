@@ -433,24 +433,30 @@ async function pollJotajaEvents(sessionUserId?: string) {
     const events = eventsText ? JSON.parse(eventsText) : [];
     if (!events || events.length === 0) return;
 
-    const processedEventIds: string[] = [];
+    const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     for (const event of events) {
       const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
       if (result.action !== "error" && result.action !== "skipped") {
         const eid = event.id || event.eventId;
-        if (eid) processedEventIds.push(eid);
+        if (eid) {
+          processedEvents.push({
+            id: eid,
+            orderId: event.orderId || "",
+            eventType: event.fullCode || event.code || "",
+          });
+        }
         console.log(`[Jotaja Poll] ${result.action} - ${result.orderId}${result.message ? ": " + result.message : ""}`);
       } else if (result.action === "error") {
         console.error(`[Jotaja Poll] ERRO ${result.orderId}: ${result.message}`);
       }
     }
 
-    if (processedEventIds.length > 0) {
-      await jotajaFetch("/v1/events/acknowledgment", {
+    if (processedEvents.length > 0) {
+      await jotajaMutate("/v1/events/acknowledgment", {
         method: "POST",
-        body: JSON.stringify(processedEventIds.map((id: string) => ({ id }))),
+        body: JSON.stringify(processedEvents),
       });
-      console.log(`[Jotaja Poll] ${processedEventIds.length}/${events.length} eventos acknowledged`);
+      console.log(`[Jotaja Poll] ${processedEvents.length}/${events.length} eventos acknowledged`);
     }
   } catch (err) {
     console.error("[Jotaja Poll] Erro geral:", err);
