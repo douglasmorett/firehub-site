@@ -84,14 +84,14 @@ export async function GET(req: NextRequest) {
       if (result.action === "cancelled") cancelled++;
     }
 
-    // Acknowledge processed events — try multiple endpoint formats
+    // Acknowledge processed events — try formats using eventId (actual field from polling)
     if (processedEvents.length > 0) {
-      const ackIds = processedEvents.map(e => e.id);
+      const ackIds = processedEvents.map(e => e.id); // eventId from raw event
       // Formatos de payload para tentar (do mais provável ao menos)
       const payloads = [
+        { label: "eventId-objects", body: JSON.stringify(ackIds.map(id => ({ eventId: id }))) },
         { label: "id-objects", body: JSON.stringify(ackIds.map(id => ({ id }))) },
         { label: "ids-only", body: JSON.stringify(ackIds) },
-        { label: "full-objects", body: JSON.stringify(processedEvents) },
       ];
       // Endpoints para tentar
       const endpoints = ["/v1/events/acknowledgment"];
