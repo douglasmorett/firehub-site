@@ -52,6 +52,10 @@ export async function GET(req: NextRequest) {
     const eventsText = await res.text();
     const events = eventsText ? JSON.parse(eventsText) : [];
     log.push(`📥 ${events.length} evento(s) recebido(s)`);
+    // Log raw event structure for debugging
+    if (events.length > 0) {
+      log.push(`📋 Raw event[0]: ${JSON.stringify(events[0]).slice(0, 500)}`);
+    }
 
     if (!events || events.length === 0) {
       return NextResponse.json({ ok: true, events: 0, log, durationMs: Date.now() - startTime });
