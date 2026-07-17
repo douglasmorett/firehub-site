@@ -83,11 +83,18 @@ export async function GET(req: NextRequest) {
     // Acknowledge processed events
     if (processedEvents.length > 0) {
       try {
-        await jotajaMutate("/v1/events/acknowledgment", {
+        const ackPayload = processedEvents;
+        log.push(`📤 Acknowledge payload: ${JSON.stringify(ackPayload)}`);
+        const ackRes = await jotajaMutate("/v1/events/acknowledgment", {
           method: "POST",
-          body: JSON.stringify(processedEvents),
+          body: JSON.stringify(ackPayload),
         });
-        log.push(`✅ ${processedEvents.length} eventos acknowledged`);
+        if (ackRes.ok) {
+          log.push(`✅ ${processedEvents.length} eventos acknowledged (${ackRes.status})`);
+        } else {
+          const ackBody = await ackRes.text().catch(() => "");
+          log.push(`⚠️ Acknowledge retornou ${ackRes.status}: ${ackBody.slice(0, 300)}`);
+        }
       } catch (ackErr: any) {
         log.push(`⚠️ Acknowledgment falhou: ${ackErr.message}`);
       }
