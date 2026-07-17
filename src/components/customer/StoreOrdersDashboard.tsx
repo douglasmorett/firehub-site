@@ -757,16 +757,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const filteredOrders = orders.filter(o => {
     if (o.status === "ENCERRADO") return false;
     
-    // Pedidos ativos de integrações (iFood/Jotajá) não são filtrados por data,
-    // garantindo que pedidos em andamento fiquem sempre visíveis.
-    // Pedidos CANCELADOS sempre respeitam o filtro de data, independente da origem.
-    const isActive = o.status !== "CANCELADO";
+    // Pedidos de integrações (iFood/Jotajá) que estão EM ANDAMENTO ignoram filtro de data,
+    // garantindo que pedidos ativos fiquem sempre visíveis.
+    // Pedidos ENTREGUE, CANCELADOS e ENCERRADOS respeitam o filtro de data.
+    const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
+    const isInProgress = activeStatuses.includes(o.status);
     const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
     
-    if (isActive && isIntegration) {
-      // Pedidos ativos de integração: sempre visíveis (sem filtro de data)
+    if (isInProgress && isIntegration) {
+      // Pedidos em andamento de integração: sempre visíveis (sem filtro de data)
     } else {
-      // Pedidos cancelados (qualquer origem) e pedidos manuais: filtro de data
+      // Pedidos finalizados (ENTREGUE), cancelados e pedidos manuais: filtro de data
       const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
       if (refDate < fromDate || refDate > toDate) return false;
     }
@@ -783,8 +784,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const allInPeriod = orders
       .filter(o => {
         const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
-        const isActive = o.status !== "CANCELADO" && o.status !== "ENCERRADO";
-        if (isActive && isIntegration) return true;
+        const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
+        const isInProgress = activeStatuses.includes(o.status) && o.status !== "ENCERRADO";
+        if (isInProgress && isIntegration) return true;
 
         const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
         return refDate >= fromDate && refDate <= toDate;
