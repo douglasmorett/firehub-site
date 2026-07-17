@@ -80,23 +80,40 @@ export async function GET(req: NextRequest) {
       if (result.action === "cancelled") cancelled++;
     }
 
-    // Acknowledge processed events
+    // Acknowledge processed events — try multiple endpoint formats
     if (processedEvents.length > 0) {
-      try {
-        const ackPayload = processedEvents;
-        log.push(`📤 Acknowledge payload: ${JSON.stringify(ackPayload)}`);
-        const ackRes = await jotajaMutate("/v1/events/acknowledgment", {
-          method: "POST",
-          body: JSON.stringify(ackPayload),
-        });
-        if (ackRes.ok) {
-          log.push(`✅ ${processedEvents.length} eventos acknowledged (${ackRes.status})`);
-        } else {
-          const ackBody = await ackRes.text().catch(() => "");
-          log.push(`⚠️ Acknowledge retornou ${ackRes.status}: ${ackBody.slice(0, 300)}`);
+      const ackIds = processedEvents.map(e => e.id);
+      // Formatos de payload para tentar
+      const payloads = [
+        { label: "ids-only", body: JSON.stringify(ackIds) },
+        { label: "objects", body: JSON.stringify(processedEvents) },
+      ];
+      // Endpoints para tentar (colon-style como :polling, e slash-style)
+      const endpoints = ["/v1/events:acknowledgment", "/v1/events/acknowledgment"];
+
+      let acked = false;
+      for (const ep of endpoints) {
+        for (const pl of payloads) {
+          if (acked) break;
+          try {
+            const ackRes = await jotajaMutate(ep, {
+              method: "POST",
+              body: pl.body,
+            });
+            const ackBody = await ackRes.text().catch(() => "");
+            log.push(`📤 ${ep} [${pl.label}] → ${ackRes.status}: ${ackBody.slice(0, 200)}`);
+            if (ackRes.ok) {
+              log.push(`✅ ${processedEvents.length} eventos acknowledged via ${ep} [${pl.label}]`);
+              acked = true;
+            }
+          } catch (ackErr: any) {
+            log.push(`⚠️ ${ep} [${pl.label}] falhou: ${ackErr.message}`);
+          }
         }
-      } catch (ackErr: any) {
-        log.push(`⚠️ Acknowledgment falhou: ${ackErr.message}`);
+        if (acked) break;
+      }
+      if (!acked) {
+        log.push(`❌ Nenhum formato de acknowledge funcionou`);
       }
     }
 
