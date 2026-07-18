@@ -71,13 +71,24 @@ export async function POST(req: Request) {
       data: {
         userId: user.id,
         totalAmount: calculatedTotal,
-        status: "PENDING_PAYMENT",
+        status: isSpecialStore ? "PAID" : "PENDING_PAYMENT",
         items: { create: itemsWithPrice }
       }
     });
 
     // Se for a loja de registro, não gera cobrança no Asaas
     if (isSpecialStore) {
+      await prisma.orderHistory.create({
+        data: {
+          orderId: order.id,
+          statusFrom: "PENDING_PAYMENT",
+          statusTo: "PAID",
+          actionBy: "Sistema",
+          actionEmail: user.email || "",
+          notes: "Pedido marcado como pago automaticamente (Loja Própria - Isenta)",
+        }
+      });
+
       console.log(`[checkout] ✅ #${order.id.slice(-6).toUpperCase()} registrado (sem boleto Asaas)`);
       return NextResponse.json({ success: true, orderId: order.id, boletoUrl: null, isSpecialStore: true });
     }

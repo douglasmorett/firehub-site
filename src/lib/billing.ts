@@ -126,13 +126,20 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
   const amountPending = parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
 
-  // Nada a cobrar
-  if (amountPending < 1 || totalSales === 0) {
+  const userEmailClean = cycle.franchisee.email?.toLowerCase().replace(/\s+/g, "");
+  const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+  if (!bypassEmails.includes("viniciusmenezes.ofc@gmail.com")) {
+    bypassEmails.push("viniciusmenezes.ofc@gmail.com");
+  }
+  const isSpecialStore = bypassEmails.includes(userEmailClean ?? "");
+
+  // Nada a cobrar ou loja isenta
+  if (amountPending < 1 || totalSales === 0 || isSpecialStore) {
     await prisma.franchiseeBillingCycle.update({
       where: { id: cycle.id },
       data: { totalSales, amountDue, amountPending: 0, status: "PAID", closedAt: new Date() },
     });
-    return { charged: false, amountPending: 0, message: "Nada a cobrar neste mês." };
+    return { charged: false, amountPending: 0, message: isSpecialStore ? "Isento (loja própria)." : "Nada a cobrar neste mês." };
   }
 
   // Gera cobrança Asaas pelo valor restante

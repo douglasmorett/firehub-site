@@ -41,6 +41,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Pedido não está aguardando pagamento" }, { status: 400 });
     }
 
+    // Se for loja própria isenta, não permite gerar link
+    const userEmailClean = user.email?.toLowerCase().replace(/\s+/g, "");
+    const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+    if (!bypassEmails.includes("viniciusmenezes.ofc@gmail.com")) {
+      bypassEmails.push("viniciusmenezes.ofc@gmail.com");
+    }
+    const isSpecialStore = bypassEmails.includes(userEmailClean ?? "");
+
+    if (isSpecialStore) {
+      return NextResponse.json({ error: "Este pedido é de uma loja isenta e não necessita de link de pagamento." }, { status: 400 });
+    }
+
     // ── Gerar diretamente no Asaas com erros detalhados ──
     const asaasKey = getAsaasKey();
     if (!asaasKey) {

@@ -215,6 +215,16 @@ export async function createAsaasPayment(opts: {
   orderId: string;
   description?: string;
 }): Promise<{ paymentId: string; boletoUrl: string | null } | null> {
+  const userEmailClean = opts.userEmail?.toLowerCase().replace(/\s+/g, "");
+  const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+  if (!bypassEmails.includes("viniciusmenezes.ofc@gmail.com")) {
+    bypassEmails.push("viniciusmenezes.ofc@gmail.com");
+  }
+  if (bypassEmails.includes(userEmailClean ?? "")) {
+    console.log(`[Asaas API Bypass] Email ${opts.userEmail} is exempt. Skip payment creation.`);
+    return null;
+  }
+
   const asaasKey = getAsaasKey();
   if (!asaasKey) {
     console.warn("[Asaas] Chave não configurada — cobrança não gerada.");

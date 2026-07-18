@@ -61,23 +61,38 @@ export async function POST(req: Request) {
       finalTotal = calculatedTotal * 1.30;
     }
 
-    // Cria o pedido no BD como Emergência Pendente
+    // Se for a loja de registro, não gera cobrança no Asaas
+    const userEmailClean = user.email?.toLowerCase().replace(/\s+/g, "");
+    const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+    if (!bypassEmails.includes("viniciusmenezes.ofc@gmail.com")) {
+      bypassEmails.push("viniciusmenezes.ofc@gmail.com");
+    }
+    const isSpecialStore = bypassEmails.includes(userEmailClean ?? "");
+
+    // Cria o pedido no BD
     const order = await prisma.order.create({
       data: {
         userId: user.id,
         totalAmount: finalTotal,
-        status: "EMERGENCIA_PENDENTE",
+        status: isSpecialStore ? "PAID" : "EMERGENCIA_PENDENTE",
         isEmergency: true,
-        emergencyStatus: "PENDING_APPROVAL",
+        emergencyStatus: isSpecialStore ? "APPROVED" : "PENDING_APPROVAL",
         items: { create: itemsWithPrice }
       }
     });
 
-    // Se for a loja de registro, não gera cobrança no Asaas
-    const userEmailClean = user.email?.toLowerCase().replace(/\s+/g, "");
-    const isSpecialStore = userEmailClean === "viniciusmenezes.ofc@gmail.com";
-
     if (isSpecialStore) {
+      await prisma.orderHistory.create({
+        data: {
+          orderId: order.id,
+          statusFrom: "EMERGENCIA_PENDENTE",
+          statusTo: "PAID",
+          actionBy: "Sistema",
+          actionEmail: user.email || "",
+          notes: "Pedido de emergência aprovado e marcado como pago automaticamente (Loja Própria - Isenta)",
+        }
+      });
+
       console.log(`[checkout-emergency] ✅ #${order.id.slice(-6).toUpperCase()} registrado (sem boleto Asaas)`);
       return NextResponse.json({ success: true, orderId: order.id, boletoUrl: null, isSpecialStore: true });
     }
