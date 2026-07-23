@@ -50,7 +50,25 @@ export async function PUT(req: Request) {
       const disputeId = order.cancelDispute?.disputeId;
       const baseUrl = "https://merchant-api.ifood.com.br/order/v1.0";
 
-      if (action === "accept") {
+      if (action === "update_prediction") {
+        const { additionalTimeMinutes = 10, delayReason = "Pedido saiu para entrega" } = body;
+        if (disputeId) {
+          const r = await fetch(`${baseUrl}/disputes/${disputeId}/accept`, {
+            method: "POST", headers,
+            body: JSON.stringify({ reason: delayReason, additionalTimeMinutes: Number(additionalTimeMinutes) }),
+          });
+          const respText = await r.text().catch(() => "");
+          console.log(`[iFood Dispute] UPDATE PREDICTION disputes/${disputeId}/accept: ${r.status} ${respText}`);
+          ifoodResult = `disputes_update:${r.status}`;
+        }
+        const r2 = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/updatePreparationTime`, {
+          method: "POST", headers,
+          body: JSON.stringify({ additionalTimeMinutes: Number(additionalTimeMinutes), reason: delayReason }),
+        });
+        const respText2 = await r2.text().catch(() => "");
+        console.log(`[iFood Dispute] UPDATE PREDICTION updatePreparationTime: ${r2.status} ${respText2}`);
+        ifoodResult += `,prepTime:${r2.status}`;
+      } else if (action === "accept") {
         // Try Disputes API first (correct endpoint)
         if (disputeId) {
           const r = await fetch(`${baseUrl}/disputes/${disputeId}/accept`, {
@@ -119,6 +137,13 @@ export async function PUT(req: Request) {
         cancelledBy: "CUSTOMER",
         motoboyId: null,
         cancelDispute: { ...dispute, pending: false, resolved: "accepted", resolvedAt: new Date().toISOString(), ifoodResult },
+      } as any,
+    });
+  } else if (action === "update_prediction") {
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: {
+        cancelDispute: { ...dispute, pending: false, resolved: "prediction_updated", resolvedAt: new Date().toISOString(), ifoodResult },
       } as any,
     });
   } else {

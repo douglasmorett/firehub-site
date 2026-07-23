@@ -61,8 +61,14 @@ function getSourceInfo(order: Order): { label: string; color: string; bg: string
 
 function getElapsedSeconds(order: Order, stage: string): number {
   let ref: string | null = null;
-  if (stage === "production") ref = order.kdsProductionAt;
-  else if (stage === "finishing") ref = order.kdsFinishingAt;
+  if (stage === "production") {
+    // Tela de Produção: conta o tempo do pedido na produção
+    ref = order.kdsProductionAt || order.createdAt;
+  } else if (stage === "finishing") {
+    // Tela de Finalização: conta especificamente o tempo desde que a produção deu OK (kdsFinishingAt)
+    ref = order.kdsFinishingAt;
+    if (!ref) return 0; // se ainda não passou pela produção, inicia zerado (00:00)
+  }
   if (!ref) ref = order.createdAt;
   return Math.max(0, Math.floor((Date.now() - new Date(ref).getTime()) / 1000));
 }
@@ -945,20 +951,24 @@ function OrderCard({
           {order.deliveryType === "DELIVERY" ? "🛵 Delivery" : "🏠 Retirada"}
         </span>
 
-        {/* Timer — pushed to the right */}
-        <span
-          style={{
-            marginLeft: "auto",
-            fontSize: 22,
-            fontWeight: 700,
-            fontFamily: MONO_FONT,
-            color: tColor,
-            transition: "color 0.5s ease",
-            textShadow: elapsed >= 600 ? `0 0 10px ${tColor}66` : "none",
-          }}
-        >
-          {formatTimer(elapsed)}
-        </span>
+        {/* Timer — pushed to the right com indicação de etapa (Produção / Finalização) */}
+        <div style={{ marginLeft: "auto", textAlign: "right" }}>
+          <span
+            style={{
+              fontSize: 22,
+              fontWeight: 700,
+              fontFamily: MONO_FONT,
+              color: tColor,
+              transition: "color 0.5s ease",
+              textShadow: elapsed >= 600 ? `0 0 10px ${tColor}66` : "none",
+            }}
+          >
+            {formatTimer(elapsed)}
+          </span>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", marginTop: -2, letterSpacing: "0.05em" }}>
+            {stage === "production" ? "Produção" : "Finalização"}
+          </div>
+        </div>
       </div>
 
       {/* ─── Customer name (if available) ──────────────────────────── */}
