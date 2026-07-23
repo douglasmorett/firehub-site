@@ -323,6 +323,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         customerPhone: order.customerPhone,
         customerAddress: order.customerAddress,
         deliveryType: order.deliveryType || "DELIVERY",
+        deliveryBy: order.deliveryBy || "MERCHANT",
         paymentMethod: translatePayment(order.paymentMethod || ""),
         items: (order.items || []).map((i: any) => ({
           name: i.menuProduct?.name || i.name || "Item",
