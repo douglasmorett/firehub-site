@@ -9,6 +9,29 @@ export async function PUT(req: Request) {
   const body = await req.json();
   const data: any = {};
 
+  const currentUser = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" }
+  });
+  if (!currentUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+  const isSecondary = currentUser.role === "STAFF" || Boolean((currentUser as any).ownerId);
+
+  // Nome, Cidade e E-mail só podem ser alterados pela conta principal (não secundária)
+  if (!isSecondary) {
+    if (body.name !== undefined) data.name = body.name.trim();
+    if (body.city !== undefined) data.city = body.city.trim();
+    if (body.email !== undefined && body.email.trim()) {
+      const cleanEmail = body.email.trim().toLowerCase();
+      if (cleanEmail !== currentUser.email) {
+        const existing = await prisma.user.findUnique({ where: { email: cleanEmail } });
+        if (existing) {
+          return NextResponse.json({ error: "Este e-mail já está em uso por outra conta." }, { status: 400 });
+        }
+        data.email = cleanEmail;
+      }
+    }
+  }
+
   // CPF/CNPJ (editável pelo dono da loja)
   if (body.cpfCnpj !== undefined) data.cpfCnpj = body.cpfCnpj;
 
@@ -29,7 +52,7 @@ export async function PUT(req: Request) {
   if (body.storeAlertSound !== undefined) data.storeAlertSound = body.storeAlertSound;
   if (body.ifoodSyncDeliveryTime !== undefined) data.ifoodSyncDeliveryTime = Boolean(body.ifoodSyncDeliveryTime);
 
-  const updatedUser = await prisma.user.update({ where: { email: session.user?.email || "" }, data });
+  const updatedUser = await prisma.user.update({ where: { id: currentUser.id }, data });
 
   // ── Sincronização automática do tempo de preparo/entrega com o iFood ──
   let ifoodSyncResult: any = null;

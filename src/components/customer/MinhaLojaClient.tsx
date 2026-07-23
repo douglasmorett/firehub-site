@@ -211,6 +211,15 @@ export default function MinhaLojaClient({ user }: { user: any }) {
 
 // ── Seção Conta: dados + senha ───────────────────────────────────────────────
 function ContaSection({ user }: { user: any }) {
+  const isSecondaryAccount = user.role === "STAFF" || Boolean(user.ownerId);
+
+  const [name, setName] = useState(user.name || "");
+  const [city, setCity] = useState(user.city || "");
+  const [email, setEmail] = useState(user.email || "");
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [accountSuccess, setAccountSuccess] = useState(false);
+  const [accountError, setAccountError] = useState("");
+
   const [storeName, setStoreName] = useState(user.storeName || "");
   const [cpfCnpj, setCpfCnpj] = useState(user.cpfCnpj || "");
   const [profileLoading, setProfileLoading] = useState(false);
@@ -225,6 +234,29 @@ function ContaSection({ user }: { user: any }) {
   const [passLoading, setPassLoading] = useState(false);
   const [passError, setPassError] = useState("");
   const [passSuccess, setPassSuccess] = useState(false);
+
+  const handleAccountSave = async () => {
+    setAccountLoading(true);
+    setAccountSuccess(false);
+    setAccountError("");
+    try {
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, city, email }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAccountSuccess(true);
+      } else {
+        setAccountError(data.error || "Erro ao salvar dados da conta.");
+      }
+    } catch {
+      setAccountError("Erro ao salvar dados da conta.");
+    } finally {
+      setAccountLoading(false);
+    }
+  };
 
   const handleProfileSave = async () => {
     setProfileLoading(true);
@@ -268,29 +300,77 @@ function ContaSection({ user }: { user: any }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
 
-      {/* ── Dados Internos (somente leitura) ── */}
+      {/* ── Dados da Conta ── */}
       <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E2E8F0", boxShadow: "0 1px 6px rgba(0,0,0,0.05)", overflow: "hidden" }}>
         <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: 8 }}>
-          <ShieldCheck size={18} color="#94A3B8" />
+          <ShieldCheck size={18} color={isSecondaryAccount ? "#94A3B8" : "#0277BD"} />
           <span style={{ fontWeight: 800, color: "#475569", fontSize: "0.92rem" }}>Dados da Conta</span>
-          <span style={{ marginLeft: "auto", fontSize: "0.68rem", background: "#F1F5F9", color: "#94A3B8", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>Somente Admin altera</span>
+          {isSecondaryAccount ? (
+            <span style={{ marginLeft: "auto", fontSize: "0.68rem", background: "#F1F5F9", color: "#94A3B8", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>
+              Somente Admin altera
+            </span>
+          ) : accountSuccess ? (
+            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: "#16A34A", fontWeight: 700 }}>
+              <CheckCircle size={14} /> Salvo!
+            </span>
+          ) : null}
         </div>
         <div style={{ padding: "1.25rem", display: "grid", gap: "1rem" }}>
-          <p style={{ margin: 0, fontSize: "0.75rem", color: "#94A3B8" }}>Esses dados são gerenciados pela administração do FireHub.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#64748B", marginBottom: 5 }}>Nome do Responsável</label>
-              <div style={roInp}>{user.name || "—"}</div>
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#64748B", marginBottom: 5 }}>Cidade</label>
-              <div style={roInp}>{user.city || "Não definida"}</div>
-            </div>
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#64748B", marginBottom: 5 }}>E-mail de Acesso</label>
-            <div style={roInp}>{user.email || "—"}</div>
-          </div>
+          {isSecondaryAccount ? (
+            <>
+              <p style={{ margin: 0, fontSize: "0.75rem", color: "#94A3B8" }}>Esses dados são gerenciados pela administração do FireHub.</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#64748B", marginBottom: 5 }}>Nome do Responsável</label>
+                  <div style={roInp}>{user.name || "—"}</div>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#64748B", marginBottom: 5 }}>Cidade</label>
+                  <div style={roInp}>{user.city || "Não definida"}</div>
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#64748B", marginBottom: 5 }}>E-mail de Acesso</label>
+                <div style={roInp}>{user.email || "—"}</div>
+              </div>
+            </>
+          ) : (
+            <>
+              {accountError && (
+                <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "8px 12px", borderRadius: 8, fontSize: "0.82rem", fontWeight: 600 }}>
+                  ⚠️ {accountError}
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Nome do Responsável</label>
+                  <input type="text" value={name} onChange={e => setName(e.target.value)} style={inp} placeholder="Ex: João da Silva" />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Cidade</label>
+                  <input type="text" value={city} onChange={e => setCity(e.target.value)} style={inp} placeholder="Ex: Rio de Janeiro - RJ" />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>E-mail de Acesso</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={inp} placeholder="seu.email@exemplo.com" />
+              </div>
+              <button
+                onClick={handleAccountSave}
+                disabled={accountLoading}
+                style={{
+                  width: "100%", padding: "11px", borderRadius: 10,
+                  background: "linear-gradient(135deg,#0277BD,#01579B)",
+                  color: "#fff", border: "none", fontWeight: 800,
+                  fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                  opacity: accountLoading ? 0.7 : 1,
+                }}
+              >
+                <Save size={15} /> {accountLoading ? "Salvando..." : "Salvar Dados da Conta"}
+              </button>
+            </>
+          )}
         </div>
       </div>
 

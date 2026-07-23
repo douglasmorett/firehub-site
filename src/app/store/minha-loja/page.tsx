@@ -18,6 +18,8 @@ export default async function StoreSettingsPage() {
   return (
     <MinhaLojaClient user={{
       id: user.id,
+      role: user.role || "FRANCHISEE",
+      ownerId: (user as any).ownerId || null,
       slug: user.slug || "",
       name: user.name || "",
       email: user.email || "",
