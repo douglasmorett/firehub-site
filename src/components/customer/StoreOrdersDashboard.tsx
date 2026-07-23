@@ -297,6 +297,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       receipt += `\n`;
       receipt += `CLIENTE\n`;
       receipt += `Nome: ${order.customerName}\n`;
+      if (isDelivery && order.customerAddress) {
+        receipt += `Endereço: ${cleanAddress(order.customerAddress)}\n`;
+      }
       if (order.notes) {
         receipt += `Obs: ${order.notes}\n`;
       }
@@ -339,13 +342,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       receipt += `CLIENTE\n`;
       receipt += `Nome: ${order.customerName}\n`;
       receipt += `Telefone: ${phone}\n`;
-      receipt += `\n`;
       if (isDelivery && order.customerAddress) {
-        receipt += `ENTREGA\n`;
         receipt += `Endereço: ${cleanAddress(order.customerAddress)}\n`;
-        if (order.notes) receipt += `Obs: ${order.notes}\n`;
-        receipt += `\n`;
       }
+      if (order.notes) receipt += `Obs: ${order.notes}\n`;
+      receipt += `\n`;
       receipt += `RESUMO DO PEDIDO\n`;
       order.items?.forEach((item: any) => {
         const comboSels = (() => {
@@ -1876,6 +1877,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ marginBottom: "14px" }}>
                   <div>Nome: {order.customerName}</div>
                   <div>Telefone: {phone}</div>
+                  {order.customerAddress && <div>Endereço: {cleanAddress(order.customerAddress)}</div>}
                   <div>Qtd Pedidos: 1</div>
                   {order.notes && <div>Obs: {order.notes}</div>}
                 </div>
