@@ -43,18 +43,20 @@ interface Order {
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
 function getOrderLabel(order: Order): string {
+  if (order.dailyOrderNumber) return `#${order.dailyOrderNumber}`;
   if (order.ifoodReference) return `#${order.ifoodReference}`;
   if (order.openDeliveryReference) return `#${order.openDeliveryReference}`;
-  if (order.dailyOrderNumber) return `#${order.dailyOrderNumber}`;
   return `#${order.id.slice(-4).toUpperCase()}`;
 }
 
 function getSourceInfo(order: Order): { label: string; color: string; bg: string } {
   const src = (order.source || "").toLowerCase();
-  if (src.includes("ifood")) return { label: "iFood", color: "#fff", bg: "#EA1D2C" };
+  const ref = order.ifoodReference || order.openDeliveryReference;
+  const refStr = ref ? ` #${ref}` : "";
+  if (src.includes("ifood")) return { label: `iFood${refStr}`, color: "#fff", bg: "#EA1D2C" };
   if (src.includes("jotaja") || src.includes("jotajá"))
-    return { label: "Jotajá", color: "#fff", bg: "#7c3aed" };
-  return { label: "Online", color: "#fff", bg: "#2563EB" };
+    return { label: `Jotajá${refStr}`, color: "#fff", bg: "#7c3aed" };
+  return { label: `Online${refStr}`, color: "#fff", bg: "#2563EB" };
 }
 
 function getElapsedSeconds(order: Order, stage: string): number {
