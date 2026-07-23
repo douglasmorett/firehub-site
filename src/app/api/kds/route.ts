@@ -159,30 +159,18 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === "finish_order") {
-    // Finishing done → order is ready
-    const newStatus = order.deliveryType === "RETIRADA" ? "ENTREGUE" : "SAIU_ENTREGA";
+    // Finalização concluída no KDS: marca kdsStage como FINISHED (exibe "✅ Pronto Cozinha" no Kanban)
+    // O status principal permanece para ser alterado manualmente ao selecionar o motoboy no painel de pedidos.
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
-        kdsStage: null,
+        kdsStage: "FINISHED",
+        kdsFinishingAt: new Date(),
         kdsStationId: null,
-        status: newStatus,
       },
     });
 
-    // Track billing
-    try {
-      const { trackSaleForBilling } = await import("@/lib/billing");
-      const fullOrder = await prisma.customerOrder.findUnique({
-        where: { id: orderId },
-        select: { franchiseeId: true },
-      });
-      if (fullOrder) {
-        trackSaleForBilling(fullOrder.franchiseeId).catch(() => {});
-      }
-    } catch {}
-
-    return NextResponse.json({ success: true, stage: null, status: newStatus });
+    return NextResponse.json({ success: true, stage: "FINISHED" });
   }
 
   return NextResponse.json({ error: "Action inválida" }, { status: 400 });
