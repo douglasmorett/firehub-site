@@ -492,27 +492,29 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true }
+    select: { id: true, ownerId: true }
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
+  const targetFranchiseeId = user.ownerId || user.id;
+
   try {
     await Promise.allSettled([
-      pollIfoodEvents(user.id),
-      pollJotajaEvents(user.id),
+      pollIfoodEvents(targetFranchiseeId),
+      pollJotajaEvents(targetFranchiseeId),
     ]);
   } catch (err) {
     console.error("[Poll] Erro no polling:", err);
   }
 
   const orders = await prisma.customerOrder.findMany({
-    where: { franchiseeId: user.id },
+    where: { franchiseeId: targetFranchiseeId },
     include: {
-      items: { include: { menuProduct: { select: { id: true, name: true, cost: true } } } },
+      items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
       motoboy: { select: { id: true, name: true, phone: true } },
     },
     orderBy: { createdAt: "desc" },
-    take: 100
+    take: 200
   });
 
   return NextResponse.json(orders);

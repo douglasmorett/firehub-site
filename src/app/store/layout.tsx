@@ -46,26 +46,28 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const isFranqueado = user?.role === "FRANCHISEE" || user?.role === "STAFF";
   const isAdmin = user?.role === "ADMIN";
 
-  // === TRIAL: calcular dias restantes ===
+  // === TRIAL: calcular dias restantes baseado na conta proprietária ===
   let trialDaysLeft = 0;
   let isInTrial = false;
-  if (user?.createdAt) {
-    const diffMs = Date.now() - new Date(user.createdAt).getTime();
+  const ownerCreatedAt = storeOwner?.createdAt || user?.createdAt;
+  if (ownerCreatedAt) {
+    const diffMs = Date.now() - new Date(ownerCreatedAt).getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     trialDaysLeft = Math.max(0, FIREHUB_PLAN.TRIAL_DAYS - diffDays);
     isInTrial = trialDaysLeft > 0;
   }
 
-  // === PAGAMENTO: verificar ciclo pendente ===
+  // === PAGAMENTO: verificar ciclo pendente da loja proprietária ===
   let pendingPayment: { amount: number; url: string | null; isOverdue: boolean } | null = null;
-  const userEmailClean = user?.email?.toLowerCase().replace(/\s+/g, "");
+  const targetFranchiseeId = storeOwner?.id || user?.id;
+  const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
   const isSpecialStore = userEmailClean === "viniciusmenezes.ofc@gmail.com";
 
-  if (isFranqueado && user && !isSpecialStore) {
+  if (isFranqueado && targetFranchiseeId && !isSpecialStore) {
     try {
       const closedCycle = await prisma.franchiseeBillingCycle.findFirst({
         where: {
-          franchiseeId: user.id,
+          franchiseeId: targetFranchiseeId,
           status: "CLOSED",
           amountPending: { gt: 0 },
         },

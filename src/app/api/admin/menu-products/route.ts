@@ -9,11 +9,12 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true },
+    select: { id: true, role: true, ownerId: true },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  const where = user.role === "ADMIN" ? {} : { franchiseeId: user.id };
+  const targetFranchiseeId = user.ownerId || user.id;
+  const where = user.role === "ADMIN" ? {} : { franchiseeId: targetFranchiseeId };
 
   const products = await prisma.menuProduct.findMany({
     where,
@@ -34,12 +35,13 @@ export async function POST(req: Request) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true },
+    select: { id: true, role: true, ownerId: true },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const data = await req.json();
-  const franchiseeId = user.role === "ADMIN" && data.franchiseeId ? data.franchiseeId : user.id;
+  const targetFranchiseeId = user.ownerId || user.id;
+  const franchiseeId = user.role === "ADMIN" && data.franchiseeId ? data.franchiseeId : targetFranchiseeId;
 
   const { id, comboGroups, ...rest } = data;
 

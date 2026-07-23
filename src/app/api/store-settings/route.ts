@@ -73,10 +73,19 @@ export async function PUT(req: Request) {
   if (updatedUser.ifoodSyncDeliveryTime) {
     try {
       const zones = (updatedUser.deliveryZones as any[]) || [];
-      if (zones.length > 0) {
+      console.log(`[iFood Sync] Toggle ativo. Zonas salvas: ${zones.length}`, JSON.stringify(zones));
+
+      if (zones.length === 0) {
+        ifoodSyncResult = { success: false, error: "Nenhuma zona de entrega configurada. Configure pelo menos uma zona antes de sincronizar." };
+      } else {
         const times = zones.map(z => Number(z.time)).filter(t => t > 0);
-        if (times.length > 0) {
+        console.log(`[iFood Sync] Tempos válidos encontrados: ${times.length}`, times);
+
+        if (times.length === 0) {
+          ifoodSyncResult = { success: false, error: "Nenhum tempo de entrega válido nas zonas configuradas." };
+        } else {
           const mainTime = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+          console.log(`[iFood Sync] Tempo médio calculado: ${mainTime} min`);
           const { ifoodFetch, updateIfoodPreparationTime } = await import("@/lib/ifood-api");
 
           // 1. Descobrir lojas autorizadas ativas no iFood
@@ -87,6 +96,8 @@ export async function PUT(req: Request) {
             const listData = await listRes.json();
             const listArr = Array.isArray(listData) ? listData : [listData];
             targetIds = listArr.map((m: any) => m.id || m.merchantId).filter(Boolean);
+          } else {
+            console.warn(`[iFood Sync] Falha ao listar lojas: ${listRes.status} ${listRes.statusText}`);
           }
 
           if (updatedUser.ifoodMerchantId && !targetIds.includes(updatedUser.ifoodMerchantId)) {
@@ -99,28 +110,34 @@ export async function PUT(req: Request) {
 
           console.log(`[iFood Sync] Lojas encontradas no iFood:`, targetIds);
 
-          let syncSuccess = false;
-          let lastError = "";
+          if (targetIds.length === 0) {
+            ifoodSyncResult = { success: false, error: "Nenhuma loja iFood encontrada. Verifique se a integração iFood está configurada." };
+          } else {
+            let syncSuccess = false;
+            let lastError = "";
 
-          for (const mId of targetIds) {
-            console.log(`[iFood Sync] Tentando sincronizar ${mainTime} min para loja ${mId}...`);
-            const res = await updateIfoodPreparationTime(mId, mainTime);
-            if (res.success) {
-              syncSuccess = true;
-              ifoodSyncResult = { success: true, sentMinutes: mainTime, merchantId: mId };
-              // Salvar o merchantId funcional no usuário
-              await prisma.user.update({
-                where: { id: updatedUser.id },
-                data: { ifoodMerchantId: mId }
-              });
-              break;
-            } else {
-              lastError = res.error || "Erro ao atualizar";
+            for (const mId of targetIds) {
+              console.log(`[iFood Sync] Tentando sincronizar ${mainTime} min para loja ${mId}...`);
+              const res = await updateIfoodPreparationTime(mId, mainTime);
+              if (res.success) {
+                syncSuccess = true;
+                ifoodSyncResult = { success: true, sentMinutes: mainTime, merchantId: mId };
+                // Salvar o merchantId funcional no usuário
+                await prisma.user.update({
+                  where: { id: updatedUser.id },
+                  data: { ifoodMerchantId: mId }
+                });
+                console.log(`[iFood Sync] ✅ Sincronizado com sucesso: ${mainTime} min para loja ${mId}`);
+                break;
+              } else {
+                lastError = res.error || "Erro ao atualizar";
+                console.warn(`[iFood Sync] ❌ Falha para loja ${mId}: ${lastError}`);
+              }
             }
-          }
 
-          if (!syncSuccess) {
-            ifoodSyncResult = { success: false, error: lastError || "Nenhuma loja autorizada respondeu com sucesso" };
+            if (!syncSuccess) {
+              ifoodSyncResult = { success: false, error: lastError || "Nenhuma loja autorizada respondeu com sucesso" };
+            }
           }
         }
       }

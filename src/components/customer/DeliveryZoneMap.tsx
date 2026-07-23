@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation } from "lucide-react";
+import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
 
 const ZONE_COLORS = ["#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
 
@@ -20,6 +20,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const circlesRef = useRef<any[]>([]);
+  const editingAddressRef = useRef(!initialLatLng);
 
   const [address, setAddress] = useState(initialAddress || "");
   const [latLng, setLatLng] = useState<{ lat: number; lng: number } | null>(initialLatLng);
@@ -136,18 +137,21 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       if (latLng) {
         markerRef.current = L.marker([latLng.lat, latLng.lng], { icon: storeIcon, draggable: true }).addTo(map);
         markerRef.current.on("dragend", (e: any) => {
+          if (!editingAddressRef.current) return;
           const pos = e.target.getLatLng();
           updateLocationAndAddress(pos.lat, pos.lng);
         });
       }
 
       map.on("click", (e: any) => {
+        if (!editingAddressRef.current) return;
         const pos = e.latlng;
         if (markerRef.current) {
           markerRef.current.setLatLng(pos);
         } else {
           markerRef.current = L.marker(pos, { icon: storeIcon, draggable: true }).addTo(map);
           markerRef.current.on("dragend", (ev: any) => {
+            if (!editingAddressRef.current) return;
             const p = ev.target.getLatLng();
             updateLocationAndAddress(p.lat, p.lng);
           });
@@ -280,6 +284,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     setAddress(item.display_name);
     setSuggestions([]);
     setShowSuggestions(false);
+    editingAddressRef.current = true;
     setConfirmed(false);
     setMsg("");
 
@@ -300,6 +305,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       } else {
         markerRef.current = L.marker([newLatLng.lat, newLatLng.lng], { icon: storeIcon, draggable: true }).addTo(map);
         markerRef.current.on("dragend", (e: any) => {
+          if (!editingAddressRef.current) return;
           const p = e.target.getLatLng();
           setLatLng({ lat: p.lat, lng: p.lng });
           setConfirmed(false);
@@ -328,6 +334,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       const newLatLng = { lat: parseFloat(lat), lng: parseFloat(lon) };
       setLatLng(newLatLng);
       setAddress(display_name.split(",").slice(0, 3).join(","));
+      editingAddressRef.current = true;
       setConfirmed(false);
 
       if (leafletMapRef.current) {
@@ -347,6 +354,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         } else {
           markerRef.current = L.marker([newLatLng.lat, newLatLng.lng], { icon: storeIcon, draggable: true }).addTo(map);
           markerRef.current.on("dragend", (e: any) => {
+            if (!editingAddressRef.current) return;
             const p = e.target.getLatLng();
             setLatLng({ lat: p.lat, lng: p.lng });
             setConfirmed(false);
@@ -363,8 +371,15 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const confirmLocation = () => {
     if (!latLng) return;
     setConfirmed(true);
+    editingAddressRef.current = false;
     setMsg("✅ Localização confirmada! Os raios de entrega foram atualizados.");
     drawCircles();
+  };
+
+  const startEditingAddress = () => {
+    editingAddressRef.current = true;
+    setConfirmed(false);
+    setMsg("");
   };
 
   const addZone = () => {
@@ -556,8 +571,14 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           )}
 
           {confirmed && (
-            <div style={{ position: "absolute", top: "12px", left: "12px", zIndex: 1000, background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.8rem", fontWeight: 700, color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
-              <Check size={14} /> Localização confirmada
+            <div style={{ position: "absolute", top: "12px", left: "12px", right: "12px", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+              <div style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.8rem", fontWeight: 700, color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+                <Check size={14} /> Localização confirmada
+              </div>
+              <button onClick={startEditingAddress}
+                style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.78rem", fontWeight: 700, color: "#DC2626", border: "1px solid #FCA5A5", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", fontFamily: "inherit" }}>
+                <Pencil size={13} /> Editar Endereço
+              </button>
             </div>
           )}
 

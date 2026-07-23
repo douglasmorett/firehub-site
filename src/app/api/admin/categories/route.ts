@@ -4,10 +4,12 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 async function getUser(session: any) {
-  return prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true },
+    select: { id: true, role: true, ownerId: true },
   });
+  if (!user) return null;
+  return { ...user, targetFranchiseeId: user.ownerId || user.id };
 }
 
 // GET — lista categorias do franchisee ordenadas por sortOrder
@@ -18,7 +20,7 @@ export async function GET() {
   const user = await getUser(session);
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  const where = user.role === "ADMIN" ? {} : { franchiseeId: user.id };
+  const where = user.role === "ADMIN" ? {} : { franchiseeId: user.targetFranchiseeId };
 
   const categories = await prisma.menuCategory.findMany({
     where,
@@ -48,7 +50,7 @@ export async function POST(req: Request) {
       emoji,
       color,
       sortOrder,
-      franchiseeId: user.role === "ADMIN" ? null : user.id,
+      franchiseeId: user.role === "ADMIN" ? null : user.targetFranchiseeId,
     },
   });
 
@@ -68,7 +70,7 @@ export async function PUT(req: Request) {
 
   const existing = await prisma.menuCategory.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
-  if (user.role !== "ADMIN" && existing.franchiseeId !== user.id) {
+  if (user.role !== "ADMIN" && existing.franchiseeId !== user.targetFranchiseeId) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
@@ -98,7 +100,7 @@ export async function DELETE(req: Request) {
 
   const existing = await prisma.menuCategory.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
-  if (user.role !== "ADMIN" && existing.franchiseeId !== user.id) {
+  if (user.role !== "ADMIN" && existing.franchiseeId !== user.targetFranchiseeId) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 

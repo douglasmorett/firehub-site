@@ -138,6 +138,7 @@ export async function POST(req: NextRequest) {
       data: {
         ifoodConnected: true,
         ifoodMerchantId: merchantId,
+        ifoodAccessToken: data.accessToken,
       },
     });
   }

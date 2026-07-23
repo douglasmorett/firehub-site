@@ -218,6 +218,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const todayStr = `${_ref.getFullYear()}-${String(_ref.getMonth() + 1).padStart(2, "0")}-${String(_ref.getDate()).padStart(2, "0")}`;
   const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
   const [dateTo, setDateTo] = useState(todayStr + "T23:59");
+
+  // Auto-sync dateFrom with active cash session openedAt
+  useEffect(() => {
+    fetch("/api/cash-session")
+      .then(r => r.json())
+      .then(d => {
+        if (d?.session?.openedAt) {
+          const opened = new Date(d.session.openedAt);
+          const pad = (n: number) => String(n).padStart(2, "0");
+          const localIso = `${opened.getFullYear()}-${pad(opened.getMonth() + 1)}-${pad(opened.getDate())}T${pad(opened.getHours())}:${pad(opened.getMinutes())}`;
+          setDateFrom(localIso);
+        }
+      })
+      .catch(() => {});
+  }, [user.cashOpen]);
   const [showResumo, setShowResumo] = useState(false);
   const storeName = user.storeName || user.name;
   const storeStatus = isStoreOpen(user.storeHours as any);
@@ -1631,7 +1646,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         onDragLeave={canDrop ? handleDragLeave : undefined}
         onDrop={canDrop ? (e => handleDrop(e, columnId)) : undefined}
         style={{
-          flex: 1, minWidth: "360px",
+          flex: "1 1 260px", minWidth: "260px",
           background: isOver ? "#EFF6FF" : "#F8FAFC",
           borderRadius: "14px",
           border: isOver ? "2.5px dashed #3B82F6" : "1px solid #E2E8F0",
@@ -2601,7 +2616,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", overflowX: "auto", paddingBottom: "0.5rem", maxWidth: "100%" }}>
           <Column
             columnId="col-novos"
             title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length} columnOrders={novos}

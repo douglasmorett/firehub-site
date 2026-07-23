@@ -4,7 +4,10 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
 async function getUser(session: any) {
-  return prisma.user.findUnique({ where: { email: session.user?.email || "" } });
+  const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
+  if (!u) return null;
+  const targetId = u.ownerId || u.id;
+  return { ...u, targetId };
 }
 
 // GET - retorna sessão aberta atual e pedidos presenciais do período
@@ -16,7 +19,7 @@ export async function GET() {
 
   // Sessão aberta atual
   const openSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.id, status: "OPEN" },
+    where: { franchiseeId: user.targetId, status: "OPEN" },
     orderBy: { openedAt: "desc" },
   });
 
@@ -25,7 +28,7 @@ export async function GET() {
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
-        franchiseeId: user.id,
+        franchiseeId: user.targetId,
         status: { notIn: ["CANCELADO"] },
         createdAt: { gte: openSession.openedAt },
       },
@@ -80,17 +83,20 @@ export async function POST(req: Request) {
 
   // Fechar qualquer sessão aberta anterior
   await prisma.cashSession.updateMany({
-    where: { franchiseeId: user.id, status: "OPEN" },
+    where: { franchiseeId: user.targetId, status: "OPEN" },
     data: { status: "CLOSED", closedAt: new Date() },
   });
 
   // Criar nova sessão
   const cashSession = await prisma.cashSession.create({
-    data: { franchiseeId: user.id, openingAmount: Number(openingAmount), status: "OPEN" },
+    data: { franchiseeId: user.targetId, openingAmount: Number(openingAmount), status: "OPEN" },
   });
 
-  // Marcar caixa como aberto no user
-  await prisma.user.update({ where: { id: user.id }, data: { cashOpen: true } });
+  // Marcar caixa como aberto no user e no owner
+  await prisma.user.updateMany({
+    where: { OR: [{ id: user.targetId }, { ownerId: user.targetId }] },
+    data: { cashOpen: true },
+  });
 
   return NextResponse.json({ success: true, session: cashSession });
 }
@@ -112,7 +118,7 @@ export async function PUT(req: Request) {
   const difference = totalInformed - (expectedTotal || 0);
 
   const openSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.id, status: "OPEN" },
+    where: { franchiseeId: user.targetId, status: "OPEN" },
     orderBy: { openedAt: "desc" },
   });
 
@@ -139,8 +145,11 @@ export async function PUT(req: Request) {
     });
   }
 
-  // Marcar caixa como fechado no user
-  await prisma.user.update({ where: { id: user.id }, data: { cashOpen: false } });
+  // Marcar caixa como fechado no user e no owner
+  await prisma.user.updateMany({
+    where: { OR: [{ id: user.targetId }, { ownerId: user.targetId }] },
+    data: { cashOpen: false },
+  });
 
   return NextResponse.json({ success: true, difference });
 }
