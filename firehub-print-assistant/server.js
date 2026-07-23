@@ -60,11 +60,13 @@ public class RawPrint {
   public static extern bool EndDocPrinter(IntPtr h);
   [DllImport("winspool.drv",SetLastError=true)]
   public static extern bool ClosePrinter(IntPtr h);
+
   public static bool Send(string name, byte[] data) {
+    if (string.IsNullOrEmpty(name)) return false;
     IntPtr h;
     if (!OpenPrinter(name, out h, IntPtr.Zero)) return false;
     var di = new DOCINFOA { pDocName="FireHub", pDataType="RAW" };
-    StartDocPrinter(h, 1, ref di);
+    if (!StartDocPrinter(h, 1, ref di)) { ClosePrinter(h); return false; }
     StartPagePrinter(h);
     IntPtr p = Marshal.AllocCoTaskMem(data.Length);
     Marshal.Copy(data, 0, p, data.Length);
@@ -77,8 +79,31 @@ public class RawPrint {
 "@
 
 $bytes = [System.IO.File]::ReadAllBytes($FilePath)
-$ok = [RawPrint]::Send($PrinterName, $bytes)
-if (-not $ok) { throw "Falha ao enviar dados para impressora" }
+$ok = $false
+
+if ($PrinterName -and $PrinterName.Trim() -ne "") {
+  $ok = [RawPrint]::Send($PrinterName, $bytes)
+}
+
+if (-not $ok) {
+  # Tenta buscar impressora padrão do Windows
+  try {
+    $defaultPrinter = (Get-WmiObject -Class Win32_Printer -ErrorAction SilentlyContinue | Where-Object { $_.Default -eq $true }).Name
+    if ($defaultPrinter) { $ok = [RawPrint]::Send($defaultPrinter, $bytes) }
+  } catch {}
+}
+
+if (-not $ok) {
+  # Tenta primeira impressora USB / Térmica física instalada
+  try {
+    $anyPrinter = (Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.PortName -like "USB*" -or $_.PortName -like "LPT*" -or $_.DriverName -like "*elgin*" -or $_.DriverName -like "*pos*" -or $_.DriverName -like "*epson*" -or $_.DriverName -like "*bematech*" } | Select-Object -First 1).Name
+    if ($anyPrinter) { $ok = [RawPrint]::Send($anyPrinter, $bytes) }
+  } catch {}
+}
+
+if (-not $ok) {
+  throw "Falha ao enviar dados para impressora ($PrinterName)"
+}
 Write-Output "OK"
 `, "utf-8");
 
