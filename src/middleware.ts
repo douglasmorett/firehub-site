@@ -23,21 +23,14 @@ export async function middleware(request: NextRequest) {
       secret: process.env.NEXTAUTH_SECRET,
     });
 
-    console.log("[Middleware] Path:", pathname, "| Token:", token ? `role=${token.role}` : "NO TOKEN");
-
     if (!token) {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("callbackUrl", request.url);
       return NextResponse.redirect(loginUrl);
     }
 
-    const role = token.role as string;
-    if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") {
-      console.log("[Middleware] BLOCKED: role =", role);
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-
-    console.log("[Middleware] ALLOWED: role =", role);
+    // Controle de role é feito em cada página server-side (layout.tsx / page.tsx)
+    // O middleware apenas garante que o usuário está autenticado
   }
 
   return NextResponse.next();
