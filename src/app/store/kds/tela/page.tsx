@@ -157,6 +157,45 @@ export default function KDSTelaPage() {
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollDown = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ top: 350, behavior: "smooth" });
+    } else {
+      window.scrollBy({ top: 350, behavior: "smooth" });
+    }
+  }, []);
+
+  const scrollUp = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ top: -350, behavior: "smooth" });
+    } else {
+      window.scrollBy({ top: -350, behavior: "smooth" });
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const key = e.key;
+      const code = e.keyCode;
+
+      // Smart TV Remote keys: Seta para baixo, PageDown, CH- (keyCodes: 40, 34, 428)
+      if (key === "ArrowDown" || key === "PageDown" || key === "ChannelDown" || code === 40 || code === 34 || code === 428) {
+        e.preventDefault();
+        scrollDown();
+      }
+      // Smart TV Remote keys: Seta para cima, PageUp, CH+ (keyCodes: 38, 33, 427)
+      else if (key === "ArrowUp" || key === "PageUp" || key === "ChannelUp" || code === 38 || code === 33 || code === 427) {
+        e.preventDefault();
+        scrollUp();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [scrollDown, scrollUp]);
+
   // ─── Redirect if no stage ───────────────────────────────────────────────────
 
   useEffect(() => {
@@ -575,10 +614,13 @@ export default function KDSTelaPage() {
 
         {/* ─── Content ─────────────────────────────────────────────────── */}
         <div
+          ref={scrollContainerRef}
+          tabIndex={0}
           style={{
             flex: 1,
-            overflow: "auto",
+            overflowY: "auto",
             padding: "20px 20px 80px 20px",
+            outline: "none",
           }}
         >
           {filteredOrders.length === 0 ? (
@@ -686,6 +728,63 @@ export default function KDSTelaPage() {
             </span>
           </div>
         </footer>
+
+        {/* Botões visuais de rolagem para TV / Controle Remoto */}
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            right: 24,
+            display: "flex",
+            gap: 10,
+            zIndex: 999,
+          }}
+        >
+          <button
+            type="button"
+            onClick={scrollUp}
+            style={{
+              background: "rgba(15, 23, 42, 0.9)",
+              color: "#F8FAFC",
+              border: "1.5px solid rgba(255,255,255,0.25)",
+              padding: "10px 18px",
+              borderRadius: 14,
+              fontWeight: 800,
+              fontSize: "0.95rem",
+              cursor: "pointer",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+              backdropFilter: "blur(12px)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontFamily: FONT,
+            }}
+          >
+            ⬆️ Rolar Cima
+          </button>
+          <button
+            type="button"
+            onClick={scrollDown}
+            style={{
+              background: "rgba(15, 23, 42, 0.9)",
+              color: "#F8FAFC",
+              border: "1.5px solid rgba(255,255,255,0.25)",
+              padding: "10px 18px",
+              borderRadius: 14,
+              fontWeight: 800,
+              fontSize: "0.95rem",
+              cursor: "pointer",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+              backdropFilter: "blur(12px)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontFamily: FONT,
+            }}
+          >
+            ⬇️ Rolar Baixo
+          </button>
+        </div>
 
         {/* ─── Toast ──────────────────────────────────────────────────── */}
         {toast && (
