@@ -669,6 +669,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
         // 🖨️ Impressão Automática ao Aceitar Pedido (se autoprint estiver ativado)
         if (newStatus === "ACEITO" && printerConfig?.autoprint !== false) {
+          autoPrintedIdsRef.current.add(orderId); // Marca como já impresso para o polling não duplicar
           const targetOrder = orders.find(o => o.id === orderId);
           if (targetOrder) {
             handlePrint(targetOrder, "cozinha");
