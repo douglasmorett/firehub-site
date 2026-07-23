@@ -12,9 +12,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  const targetFranchiseeId = user.ownerId || user.id;
+
   // Verifica se o motoboy pertence a este franqueado
   const existing = await prisma.motoboy.findFirst({
-    where: { id, franchiseeId: user.id },
+    where: { id, franchiseeId: targetFranchiseeId },
   });
   if (!existing) return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
 
@@ -47,8 +49,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  const targetFranchiseeId = user.ownerId || user.id;
+
   const existing = await prisma.motoboy.findFirst({
-    where: { id, franchiseeId: user.id },
+    where: { id, franchiseeId: targetFranchiseeId },
   });
   if (!existing) return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
 

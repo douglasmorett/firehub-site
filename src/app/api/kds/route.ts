@@ -19,9 +19,10 @@ export async function GET(req: NextRequest) {
   const email = session.user?.email;
   if (!email) return NextResponse.json({ error: "Email não encontrado" }, { status: 400 });
 
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  const targetFranchiseeId = user.ownerId || user.id;
   const stage = req.nextUrl.searchParams.get("stage") || "production";
 
   let where: any;
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (stage === "production") {
     // Show orders that are ACEITO/PREPARANDO and in production stage (or not yet assigned to any stage)
     where = {
-      franchiseeId: user.role === "ADMIN" ? undefined : user.id,
+      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
       status: { in: ["ACEITO", "PREPARANDO"] },
       OR: [
         { kdsStage: "PRODUCTION" },
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
   } else if (stage === "finishing") {
     // Show orders in finishing stage (only active ones: ACEITO/PREPARANDO)
     where = {
-      franchiseeId: user.role === "ADMIN" ? undefined : user.id,
+      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
       status: { in: ["ACEITO", "PREPARANDO"] },
       kdsStage: "FINISHING",
     };
@@ -105,8 +106,10 @@ export async function PUT(req: NextRequest) {
   const email = session.user?.email;
   if (!email) return NextResponse.json({ error: "Email não encontrado" }, { status: 400 });
 
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+  const targetFranchiseeId = user.ownerId || user.id;
 
   const order = await prisma.customerOrder.findUnique({
     where: { id: orderId },
@@ -118,7 +121,7 @@ export async function PUT(req: NextRequest) {
   }
 
   // Security check: only ADMIN or the order owner (franchiseeId) can update KDS
-  if (user.role !== "ADMIN" && order.franchiseeId !== user.id) {
+  if (user.role !== "ADMIN" && order.franchiseeId !== targetFranchiseeId) {
     return NextResponse.json({ error: "Sem permissão para este pedido." }, { status: 403 });
   }
 

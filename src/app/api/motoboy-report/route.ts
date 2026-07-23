@@ -11,9 +11,11 @@ export async function GET(req: Request) {
   // Segurança e otimização: buscar apenas o id do usuário (evita carregar tokens e dados sensíveis)
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true }
+    select: { id: true, ownerId: true }
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+  const targetFranchiseeId = user.ownerId || user.id;
 
   const url = new URL(req.url);
   const motoboyId = url.searchParams.get("motoboyId");
@@ -29,7 +31,7 @@ export async function GET(req: Request) {
   // Buscar motoboys do franqueado
   const motoboyFilter = motoboyId ? { id: motoboyId } : {};
   const motoboys = await prisma.motoboy.findMany({
-    where: { franchiseeId: user.id, ...motoboyFilter },
+    where: { franchiseeId: targetFranchiseeId, ...motoboyFilter },
     orderBy: { name: "asc" },
   });
 
@@ -37,7 +39,7 @@ export async function GET(req: Request) {
   const motoboyIds = motoboys.map(mb => mb.id);
   const allOrders = await prisma.customerOrder.findMany({
     where: {
-      franchiseeId: user.id,
+      franchiseeId: targetFranchiseeId,
       motoboyId: { in: motoboyIds },
       createdAt: { gte: fromDate, lte: toDate },
       deliveryType: "DELIVERY",

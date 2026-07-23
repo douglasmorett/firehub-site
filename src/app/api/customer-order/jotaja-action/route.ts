@@ -37,12 +37,14 @@ export async function POST(req: NextRequest) {
   // Verifica que o pedido pertence ao franqueado logado
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true },
+    select: { id: true, ownerId: true },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  const targetFranchiseeId = user.ownerId || user.id;
+
   const order = await prisma.customerOrder.findFirst({
-    where: { openDeliveryOrderId: orderId, franchiseeId: user.id } as any,
+    where: { openDeliveryOrderId: orderId, franchiseeId: targetFranchiseeId } as any,
     select: { id: true, openDeliveryOrderId: true, cancelDispute: true } as any,
   });
   if (!order) {

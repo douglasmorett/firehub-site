@@ -11,11 +11,12 @@ export async function GET() {
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  const targetFranchiseeId = user.ownerId || user.id;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const motoboys = await prisma.motoboy.findMany({
-    where: { franchiseeId: user.id },
+    where: { franchiseeId: targetFranchiseeId },
     orderBy: [{ active: "desc" }, { name: "asc" }],
     include: {
       orders: {
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  const targetFranchiseeId = user.ownerId || user.id;
   const body = await req.json();
   const { name, phone, paymentType, dailyRate, perDeliveryRate, perKmRate, notes } = body;
 
@@ -75,7 +77,7 @@ export async function POST(req: Request) {
 
   const motoboy = await prisma.motoboy.create({
     data: {
-      franchiseeId: user.id,
+      franchiseeId: targetFranchiseeId,
       name: name.trim(),
       phone: phone?.trim() || null,
       paymentType: paymentType || "PER_DELIVERY",
