@@ -15,7 +15,7 @@ export default async function FranchiseeCustomerOrdersPage() {
   if (!session) redirect("/login");
 
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
 
   // Busca do usuário FORA do try/catch — redirect() precisa propagar
   const user = await prisma.user.findUnique({
@@ -29,6 +29,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       slug: true,
       city: true,
       role: true,
+      ownerId: true,
       storeHours: true,
       storeDeliveryOnly: true,
       storeLogo: true,
@@ -40,11 +41,13 @@ export default async function FranchiseeCustomerOrdersPage() {
   });
   if (!user) redirect("/login");
 
+  const targetFranchiseeId = (user as any).ownerId || user.id;
+
   // Apenas a busca de pedidos dentro de try/catch (não faz redirect)
   let orders: any[] = [];
   try {
     orders = await prisma.customerOrder.findMany({
-      where: { franchiseeId: user.id },
+      where: { franchiseeId: targetFranchiseeId },
       include: {
         items: {
           include: {
@@ -73,7 +76,7 @@ export default async function FranchiseeCustomerOrdersPage() {
     <StoreOrdersDashboard
       user={user}
       orders={orders}
-      isFranqueado={user.role === "FRANCHISEE"}
+      isFranqueado={user.role === "FRANCHISEE" || user.role === "STAFF"}
     />
   );
 }

@@ -15,7 +15,7 @@ export default async function StoreFinanceiroPage() {
   if (!session) redirect("/login");
 
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
 
   // Busca do usuário FORA de try/catch
   const user = await prisma.user.findUnique({
@@ -23,7 +23,7 @@ export default async function StoreFinanceiroPage() {
     select: {
       id: true, paymentFees: true, storeName: true,
       storeOrderCount: true, createdAt: true,
-      fixedCosts: true, financialGoals: true, role: true,
+      fixedCosts: true, financialGoals: true, role: true, ownerId: true,
     }
   }).catch((err) => {
     console.error("[Financeiro] Erro ao buscar usuário:", err);
@@ -31,13 +31,15 @@ export default async function StoreFinanceiroPage() {
   });
   if (!user) redirect("/login");
 
+  const targetFranchiseeId = (user as any).ownerId || user.id;
+
   const since = new Date();
   since.setDate(since.getDate() - 365);
 
-  // ADMIN vê tudo, FRANCHISEE só vê os seus
+  // ADMIN vê tudo, FRANCHISEE / STAFF vê os produtos da sua loja
   const franchiseeFilter = user.role === "ADMIN"
     ? { createdAt: { gte: since } }
-    : { franchiseeId: user.id, createdAt: { gte: since } };
+    : { franchiseeId: targetFranchiseeId, createdAt: { gte: since } };
 
   let orders: any[] = [];
   let produtosSemCusto: any[] = [];
@@ -55,7 +57,7 @@ export default async function StoreFinanceiroPage() {
     // Produtos sem custo filtrados por franqueado
     const produtoFilter = user.role === "ADMIN"
       ? { OR: [{ cost: null }, { cost: 0 }] }
-      : { franchiseeId: user.id, OR: [{ cost: null }, { cost: 0 }] };
+      : { franchiseeId: targetFranchiseeId, OR: [{ cost: null }, { cost: 0 }] };
 
     produtosSemCusto = await prisma.menuProduct.findMany({
       where: produtoFilter,

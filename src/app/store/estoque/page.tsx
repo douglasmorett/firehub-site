@@ -18,8 +18,8 @@ export default async function EstoquePage() {
   const email = session.user?.email || "";
   const role = (session.user as any)?.role;
 
-  // Garantir que é um lojista ou admin
-  if (role !== "FRANCHISEE" && role !== "ADMIN") {
+  // Garantir que é um lojista, funcionário ou admin
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") {
     redirect("/store");
   }
 

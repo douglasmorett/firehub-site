@@ -19,20 +19,31 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   }
   if (!session) redirect("/login");
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
 
   let user: any = null;
   try {
     user = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
+      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
     });
     console.log("[StoreLayout] Session Email:", session.user?.email, "| User Email from DB:", user?.email);
   } catch (err) {
     console.error("[StoreLayout] Erro ao buscar usuário:", err);
   }
 
-  const isFranqueado = user?.role === "FRANCHISEE";
+  let storeOwner = user;
+  if (user?.ownerId) {
+    try {
+      const owner = await prisma.user.findUnique({
+        where: { id: user.ownerId },
+        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
+      });
+      if (owner) storeOwner = owner;
+    } catch (e) {}
+  }
+
+  const isFranqueado = user?.role === "FRANCHISEE" || user?.role === "STAFF";
   const isAdmin = user?.role === "ADMIN";
 
   // === TRIAL: calcular dias restantes ===
@@ -86,13 +97,13 @@ export default async function StoreLayout({ children }: { children: React.ReactN
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#F5F5F5" }}>
         <StoreTopNav
           userName={session.user?.name || user?.name || ""}
-          userCity={(session.user as any)?.city || user?.city || ""}
-          userSlug={user?.slug}
-          showCompras={user?.isFranqueadoHakim === true}
+          userCity={(session.user as any)?.city || storeOwner?.city || user?.city || ""}
+          userSlug={storeOwner?.slug || user?.slug}
+          showCompras={storeOwner?.isFranqueadoHakim === true}
           isAdmin={isAdmin}
-          initialStoreOpen={user?.storeOpen ?? true}
-          initialCashOpen={user?.cashOpen ?? false}
-          showAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || user?.email?.toLowerCase() === "contatohakim@gmail.com"}
+          initialStoreOpen={storeOwner?.storeOpen ?? true}
+          initialCashOpen={storeOwner?.cashOpen ?? false}
+          showAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
         />
 
         {/* Banner: Trial ativo (esconde no módulo de compras via client-side) */}

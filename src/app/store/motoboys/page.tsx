@@ -8,13 +8,15 @@ export default async function MotoboysPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/");
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/");
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/");
 
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) redirect("/");
 
+  const targetFranchiseeId = (user as any).ownerId || user.id;
+
   const motoboys = await prisma.motoboy.findMany({
-    where: { franchiseeId: user.id },
+    where: { franchiseeId: targetFranchiseeId },
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });
 

@@ -16,7 +16,7 @@ export default async function StoreOrdersPage() {
     select: { id: true, role: true, name: true, email: true, cpfCnpj: true },
   });
   if (!user) redirect("/login");
-  if (user.role !== "ADMIN" && user.role !== "FRANCHISEE") redirect("/store");
+  if (user.role !== "ADMIN" && user.role !== "FRANCHISEE" && user.role !== "STAFF") redirect("/store");
 
   const orders = await prisma.order.findMany({
     where: { userId: user.id },

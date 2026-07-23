@@ -14,7 +14,7 @@ export default async function StoreRelatoriosPage() {
   if (!session) redirect("/login");
 
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
@@ -22,6 +22,7 @@ export default async function StoreRelatoriosPage() {
       id: true,
       storeName: true,
       role: true,
+      ownerId: true,
     }
   }).catch((err) => {
     console.error("[Relatorios] Erro ao buscar usuário:", err);
@@ -29,12 +30,14 @@ export default async function StoreRelatoriosPage() {
   });
   if (!user) redirect("/login");
 
+  const targetFranchiseeId = (user as any).ownerId || user.id;
+
   const since = new Date();
   since.setDate(since.getDate() - 365); // Últimos 365 dias
 
   const franchiseeFilter = user.role === "ADMIN"
     ? { createdAt: { gte: since } }
-    : { franchiseeId: user.id, createdAt: { gte: since } };
+    : { franchiseeId: targetFranchiseeId, createdAt: { gte: since } };
 
   let orders: any[] = [];
   let products: any[] = [];
@@ -61,7 +64,7 @@ export default async function StoreRelatoriosPage() {
 
     const menuFilter = user.role === "ADMIN"
       ? {}
-      : { franchiseeId: user.id };
+      : { franchiseeId: targetFranchiseeId };
 
     products = await prisma.menuProduct.findMany({
       where: menuFilter,

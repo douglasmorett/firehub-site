@@ -16,22 +16,24 @@ export default async function StoreCardapioPage() {
   if (!session) redirect("/login");
 
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
 
   // Buscar o usuário FORA do try/catch para que redirect() propague
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true },
+    select: { id: true, role: true, ownerId: true },
   }).catch((err) => {
     console.error("[Cardapio] Erro ao buscar usuário:", err);
     return null;
   });
   if (!user) redirect("/login");
 
-  // ADMIN vê tudo; FRANCHISEE só vê os seus próprios produtos
+  const targetFranchiseeId = (user as any).ownerId || user.id;
+
+  // ADMIN vê tudo; FRANCHISEE / STAFF só vê os produtos da sua loja
   const franchiseeFilter = user.role === "ADMIN"
     ? {}
-    : { franchiseeId: user.id };
+    : { franchiseeId: targetFranchiseeId };
 
   let products: any[] = [];
   let availableItems: any[] = [];
@@ -61,7 +63,7 @@ export default async function StoreCardapioPage() {
         orderBy: { name: "asc" },
       }),
       prisma.menuCategory.findMany({
-        where: user.role === "ADMIN" ? {} : { franchiseeId: user.id },
+        where: user.role === "ADMIN" ? {} : { franchiseeId: targetFranchiseeId },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
     ]);

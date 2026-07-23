@@ -15,7 +15,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   if (!session) redirect("/login");
 
   const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN") redirect("/login");
+  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
 
   const resolvedParams = await searchParams;
 
@@ -85,11 +85,11 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
     }
   }
 
-  // ── FRANCHISEE: busca FORA de try/catch para que redirect() propague ─────
+  // ── FRANCHISEE / STAFF: busca FORA de try/catch para que redirect() propague ─────
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
     select: {
-      id: true, slug: true,
+      id: true, slug: true, ownerId: true,
       storeLogo: true, storeBanner: true, storeHours: true,
       paymentFees: true, deliveryZones: true, storeOrderCount: true,
     }
@@ -99,14 +99,16 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   });
   if (!user) redirect("/login");
 
+  const targetFranchiseeId = (user as any).ownerId || user.id;
+
   try {
     const since = new Date();
     since.setDate(since.getDate() - 90);
 
-    const menuCount = await prisma.menuProduct.count({ where: { franchiseeId: user.id } });
+    const menuCount = await prisma.menuProduct.count({ where: { franchiseeId: targetFranchiseeId } });
 
     const orders = await prisma.customerOrder.findMany({
-      where: { franchiseeId: user.id, createdAt: { gte: since } },
+      where: { franchiseeId: targetFranchiseeId, createdAt: { gte: since } },
       include: { items: { include: { menuProduct: { select: { name: true, cost: true } } } } },
       orderBy: { createdAt: "desc" }
     });
