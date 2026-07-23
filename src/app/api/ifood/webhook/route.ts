@@ -290,6 +290,9 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           ? orderData.deliveryFee
           : 0;
 
+    const deliveryByRaw = (orderData.deliveryBy || orderData.delivery?.deliveryBy || orderData.merchant?.deliveryBy || "").toUpperCase();
+    const deliveryBy = deliveryByRaw === "IFOOD" || deliveryByRaw === "TOGO" || deliveryByRaw === "TAKEOUT" ? "IFOOD" : "MERCHANT";
+
       const createdOrder = await (prisma.customerOrder as any).create({
         data: {
           franchiseeId:     franchisee.id,
@@ -298,6 +301,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           scheduledDatetime,
           changeAmount,
           customerCpfCnpj,
+          deliveryBy,
           deliveryFee,
           discountTotal: discountTotal > 0 ? discountTotal : null,
           discountIfood: discountIfood > 0 ? discountIfood : null,

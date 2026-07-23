@@ -44,26 +44,17 @@ const cleanAddress = (addr: string | null) => {
 
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
-  
-  // 1. Se for entrega de logística do iFood (ou se o telefone for 0800 200 - Central de Entregadores iFood)
+  // 1. Se explicitamente for entrega própria da loja (MERCHANT), NUNCA é entregador do iFood!
+  if (order.deliveryBy === "MERCHANT" || order.ifoodDeliveryBy === "MERCHANT") {
+    return false;
+  }
+  // 2. Apenas se a API do iFood definir deliveryBy === "IFOOD" ou tiver nome/telefone do motorista do iFood
   if (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD") {
     return true;
   }
-
   if (order.ifoodDriverName || order.ifoodDriverPhone) {
     return true;
   }
-
-  const phone = String(order.customerPhone || "");
-  if (phone.includes("0800 200") || phone.includes("0800200") || phone.includes("0800-200")) {
-    return true;
-  }
-
-  // 2. Se as observações tiverem menção explícita de "ENTREGA PARCEIRA" ou "LOGISTICA IFOOD"
-  if (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD"))) {
-    return true;
-  }
-
   return false;
 };
 
@@ -1225,32 +1216,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
               )}
 
-              {/* Motoboy select: se for Motoboy iFood (Entrega Parceira), avisa para NÃO atribuir motoboy da loja! */}
-              {order.deliveryType === "DELIVERY" && !order.ifoodDriverStatus && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
-                isIfoodMotoboy(order) ? (
-                  <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#DC2626", background: "#FEF2F2", padding: "3px 8px", borderRadius: "6px", border: "1px solid #FECACA", whiteSpace: "nowrap" }}>
-                    🚫 Motoboy iFood
-                  </span>
-                ) : (
-                  <select
-                    value={order.motoboyId || ""}
-                    onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
-                    disabled={assigningId === order.id}
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                      padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
-                      fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
-                      background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
-                      cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
-                      marginRight: "4px"
-                    }}
-                  >
-                    <option value="">Motoboy</option>
-                    {motoboys.map((m: any) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
-                )
+              {/* Motoboy select: sempre liberado para a loja atrelar o motoboy da equipe */}
+              {order.deliveryType === "DELIVERY" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
+                <select
+                  value={order.motoboyId || ""}
+                  onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
+                  disabled={assigningId === order.id}
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
+                    fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
+                    background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
+                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
+                    marginRight: "4px"
+                  }}
+                >
+                  <option value="">Motoboy</option>
+                  {motoboys.map((m: any) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
               )}
             </div>
 

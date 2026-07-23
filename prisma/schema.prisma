@@ -292,6 +292,7 @@ model CustomerOrder {
   discountMerchant    Float?             // Quanto a loja subsidia (sponsorship: MERCHANT)
   discountDetails     Json?              // JSON com detalhes: [{target, value, sponsor, description}]
   // === LOGÍSTICA IFOOD (Motoboy iFood) ===
+  deliveryBy             String?            // "IFOOD" (Entrega Parceira) ou "MERCHANT" (Entrega Própria)
   ifoodDriverName        String?            // Nome do entregador iFood
   ifoodDriverPhone       String?            // Telefone do entregador
   ifoodDriverVehicle     String?            // Veículo (MOTORCYCLE, BICYCLE, CAR)
