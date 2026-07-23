@@ -93,7 +93,33 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  return NextResponse.json(orders);
+  // Buscar o início do dia atual (00:00:00) para calcular a numeração sequencial de pedidos do dia (#1, #2, #3...)
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const allStoreOrdersToday = await prisma.customerOrder.findMany({
+    where: {
+      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
+      OR: [
+        { createdAt: { gte: startOfDay } },
+        { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA"] } },
+      ],
+    },
+    select: { id: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const dailyNumMap = new Map<string, number>();
+  allStoreOrdersToday.forEach((o, i) => {
+    dailyNumMap.set(o.id, i + 1);
+  });
+
+  const ordersWithDailyNum = orders.map((o) => ({
+    ...o,
+    dailyOrderNumber: dailyNumMap.get(o.id) || null,
+  }));
+
+  return NextResponse.json(ordersWithDailyNum);
 }
 
 export async function PUT(req: NextRequest) {

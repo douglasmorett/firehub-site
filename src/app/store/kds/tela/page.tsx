@@ -36,13 +36,16 @@ interface Order {
   kdsFinishingAt: string | null;
   createdAt: string;
   updatedAt: string;
+  dailyOrderNumber?: number | null;
   items: OrderItem[];
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
-function getOrderLabel(order: Order, seqNum?: number): string {
-  if (seqNum !== undefined) return `#${seqNum}`;
+function getOrderLabel(order: Order): string {
+  if (order.ifoodReference) return `#${order.ifoodReference}`;
+  if (order.openDeliveryReference) return `#${order.openDeliveryReference}`;
+  if (order.dailyOrderNumber) return `#${order.dailyOrderNumber}`;
   return `#${order.id.slice(-4).toUpperCase()}`;
 }
 
@@ -807,7 +810,7 @@ function OrderCard({
             letterSpacing: "-0.5px",
           }}
         >
-          {getOrderLabel(order, position)}
+          {getOrderLabel(order)}
         </span>
 
         {/* Source badge */}
