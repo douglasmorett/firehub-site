@@ -44,25 +44,37 @@ export default function PrinterSetupClient({
 
   const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
-    try {
-      const res = await fetch(`${ASSISTANT_URL}/status`, { signal: AbortSignal.timeout(3000) });
-      const data = await res.json();
-      if (data.ok) {
-        setStatus("connected");
-        setAvailablePrinters(data.printers || []);
-        if (userClicked) {
-          alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(data.printers || []).length} impressora(s) detectada(s) no seu computador.`);
+    const urls = ["http://localhost:7891", "http://127.0.0.1:7891"];
+    let connectedData = null;
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(3000) });
+        const data = await res.json();
+        if (data.ok) {
+          connectedData = data;
+          break;
         }
-      } else {
-        setStatus("disconnected");
-        if (userClicked) {
-          alert("❌ Não foi possível conectar ao Assistente FireHub.\n\nVerifique se o aplicativo FireHub Assistente está aberto no seu computador.");
-        }
+      } catch {}
+    }
+
+    if (connectedData) {
+      setStatus("connected");
+      setAvailablePrinters(connectedData.printers || []);
+      if (userClicked) {
+        alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(connectedData.printers || []).length} impressora(s) detectada(s) neste computador.`);
       }
-    } catch {
+    } else {
       setStatus("disconnected");
       if (userClicked) {
-        alert("❌ Não foi possível conectar ao Assistente FireHub em http://localhost:7891.\n\nAbra o programa FireHub Assistente no seu computador e tente novamente.");
+        alert(
+          "❌ O Assistente FireHub não está ativo neste computador.\n\n" +
+          "👉 Se a impressora está ligada NESTE computador:\n" +
+          "1. Baixe o 'Instalador Windows (.exe)' acima neste computador.\n" +
+          "2. Instale e abra o aplicativo FireHub Assistente.\n\n" +
+          "👉 Se a impressora está no OUTRO computador da loja:\n" +
+          "O aplicativo FireHub Assistente precisa estar instalado e aberto no computador onde a impressora está fisicamente conectada pelo cabo USB."
+        );
       }
     }
   }, []);

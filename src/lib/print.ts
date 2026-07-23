@@ -3,7 +3,7 @@
    Usa o Assistente FireHub (localhost:7891) para impressão
    ───────────────────────────────────────────────────────────── */
 
-const ASSISTANT_URL = "http://localhost:7891";
+const ASSISTANT_URLS = ["http://localhost:7891", "http://127.0.0.1:7891"];
 
 type OrderItem = { name: string; qty: number; price: number; notes?: string };
 
@@ -35,15 +35,22 @@ type PrinterConfig = {
   printers: PrinterEntry[];
 };
 
+/* ─── Tenta obter URL ativa do assistente (localhost ou 127.0.0.1) ── */
+async function getAssistantUrl(): Promise<string | null> {
+  for (const url of ASSISTANT_URLS) {
+    try {
+      const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(2000) });
+      const data = await res.json();
+      if (data.ok) return url;
+    } catch {}
+  }
+  return null;
+}
+
 /* ─── Verifica se o assistente está rodando ──────────────── */
 async function isAssistantRunning(): Promise<boolean> {
-  try {
-    const res = await fetch(`${ASSISTANT_URL}/status`, { signal: AbortSignal.timeout(2000) });
-    const data = await res.json();
-    return data.ok === true;
-  } catch {
-    return false;
-  }
+  const activeUrl = await getAssistantUrl();
+  return activeUrl !== null;
 }
 
 /* ─── Imprime em uma impressora específica ───────────────── */
@@ -55,7 +62,9 @@ async function printToDevice(
   paperWidth = "80mm"
 ): Promise<boolean> {
   try {
-    const res = await fetch(`${ASSISTANT_URL}/print`, {
+    const baseUrl = await getAssistantUrl();
+    if (!baseUrl) return false;
+    const res = await fetch(`${baseUrl}/print`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -127,7 +136,9 @@ export async function printTestReceipt(
   paperWidth: "58mm" | "80mm" = "80mm"
 ): Promise<boolean> {
   try {
-    const res = await fetch(`${ASSISTANT_URL}/print-test`, {
+    const baseUrl = await getAssistantUrl();
+    if (!baseUrl) return false;
+    const res = await fetch(`${baseUrl}/print-test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ printer: printerName, storeName, paperWidth }),
