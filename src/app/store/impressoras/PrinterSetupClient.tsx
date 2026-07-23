@@ -126,14 +126,17 @@ export default function PrinterSetupClient({
 
       const firstPrinter = config.printers[0];
       if (firstPrinter) {
-        fetch("http://localhost:7891/config", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            printer: firstPrinter.name,
-            paperWidth: firstPrinter.paperWidth || "80mm",
-          }),
-        }).catch(() => {});
+        const ports = [7899, 7900, 7901, 7891];
+        for (const p of ports) {
+          fetch(`http://localhost:${p}/config`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              printer: firstPrinter.name,
+              paperWidth: firstPrinter.paperWidth || "80mm",
+            }),
+          }).catch(() => {});
+        }
       }
 
       setSaved(true);

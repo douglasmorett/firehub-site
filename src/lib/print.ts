@@ -3,7 +3,12 @@
    Usa o Assistente FireHub (localhost:7891) para impressão
    ───────────────────────────────────────────────────────────── */
 
-const ASSISTANT_URLS = ["http://localhost:7891", "http://127.0.0.1:7891"];
+const ASSISTANT_URLS = [
+  "http://localhost:7899", "http://127.0.0.1:7899",
+  "http://localhost:7900", "http://127.0.0.1:7900",
+  "http://localhost:7901", "http://127.0.0.1:7901",
+  "http://localhost:7891", "http://127.0.0.1:7891",
+];
 
 type OrderItem = { name: string; qty: number; price: number; notes?: string };
 
