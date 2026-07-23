@@ -87,8 +87,23 @@ export default function PrinterSetupClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
+
+      const firstPrinter = config.printers[0];
+      if (firstPrinter) {
+        fetch("http://localhost:7891/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            printer: firstPrinter.name,
+            paperWidth: firstPrinter.paperWidth || "80mm",
+          }),
+        }).catch(() => {});
+      }
+
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      alert("Erro ao salvar configurações.");
     } finally {
       setSaving(false);
     }

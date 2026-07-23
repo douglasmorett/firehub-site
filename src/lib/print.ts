@@ -146,11 +146,23 @@ export async function printOrder(
     // Filtra itens por categoria se configurado
     let itemsToPrint = order.items;
     if (printer.categories && printer.categories.length > 0) {
-      itemsToPrint = order.items.filter(item => {
-        const cat = itemCategories[item.name] || "";
-        return printer.categories.includes(cat);
+      const matchesChannel = printer.categories.some(c => {
+        const cLower = c.toLowerCase().trim();
+        const srcLower = (order as any).source?.toLowerCase()?.trim() || "";
+        return cLower === srcLower || (cLower === "ifood" && srcLower === "ifood") || (cLower === "jotaja" && srcLower === "jotaja") || (cLower === "jotajá" && srcLower === "jotaja");
       });
-      if (itemsToPrint.length === 0) continue;
+
+      if (!matchesChannel) {
+        itemsToPrint = order.items.filter(item => {
+          const cat = (itemCategories[item.name] || (item as any).category || "").toLowerCase().trim();
+          return printer.categories.some(c => c.toLowerCase().trim() === cat);
+        });
+      }
+
+      // Se nenhum item foi filtrado (ex: nome da categoria sutilmente diferente), imprime tudo para não perder o pedido!
+      if (itemsToPrint.length === 0) {
+        itemsToPrint = order.items;
+      }
     }
 
     const filteredOrder = { ...order, items: itemsToPrint };

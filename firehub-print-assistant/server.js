@@ -299,20 +299,71 @@ function buildEscPos(order, storeName, columns = 48) {
   return Buffer.from(res, "binary");
 }
 
+/* ─── Configuração Local & Fila da Nuvem ───────────────────── */
+const CONFIG_FILE = path.join(tmpDir, "config.json");
+let currentConfig = { franchiseeId: "", printer: "", paperWidth: "80mm" };
+if (fs.existsSync(CONFIG_FILE)) {
+  try { currentConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")); } catch {}
+}
+
+app.post("/config", (req, res) => {
+  const { franchiseeId, printer, paperWidth } = req.body || {};
+  if (franchiseeId) currentConfig.franchiseeId = franchiseeId;
+  if (printer) currentConfig.printer = printer;
+  if (paperWidth) currentConfig.paperWidth = paperWidth;
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2));
+  console.log("[Config] Configuração atualizada:", currentConfig);
+  res.json({ ok: true, config: currentConfig });
+});
+
+// Polling background da Fila de Impressão na Nuvem (roda a cada 3s)
+setInterval(async () => {
+  if (!currentConfig.franchiseeId) return;
+  try {
+    const fetch = (await import("node-fetch")).default || globalThis.fetch;
+    const url = `https://firehubfood.com.br/api/store/print-queue?franchiseeId=${currentConfig.franchiseeId}`;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.ok && Array.isArray(data.jobs) && data.jobs.length > 0) {
+      for (const job of data.jobs) {
+        const detectedPrinters = listPrinters();
+        const targetPrinter = currentConfig.printer || (detectedPrinters[0]?.name);
+        if (!targetPrinter) {
+          console.warn("[CloudPrint] Nenhum nome de impressora configurado ou detectado");
+          continue;
+        }
+        const cols = (job.paperWidth || currentConfig.paperWidth) === "58mm" ? 32 : 48;
+        const escPosData = buildEscPos(job.order || {}, job.storeName || "FIREHUB", cols);
+        await rawPrint(targetPrinter, escPosData);
+        console.log(`[CloudPrint] ✅ Impresso job ${job.id} na impressora ${targetPrinter}`);
+      }
+    }
+  } catch (err) {
+    // Erros silenciosos quando offline
+  }
+}, 3000);
+
 /* ─── Rotas ────────────────────────────────────────────────── */
 app.get("/status", (req, res) => {
-  res.json({ ok: true, version: "1.0.0", name: "FireHub Assistente de Impressão", printers: listPrinters() });
+  res.json({ ok: true, version: "1.0.0", name: "FireHub Assistente de Impressão", printers: listPrinters(), config: currentConfig });
 });
 app.get("/printers", (req, res) => res.json(listPrinters()));
 
 app.post("/print", async (req, res) => {
   try {
     const { printer, order, storeName, copies = 1, paperWidth = "80mm", columns } = req.body;
-    if (!printer) return res.status(400).json({ error: "Impressora não especificada" });
+    let targetPrinter = printer || currentConfig.printer;
+    if (!targetPrinter) {
+      const detected = listPrinters();
+      if (detected.length > 0) targetPrinter = detected[0].name;
+    }
+    if (!targetPrinter) return res.status(400).json({ error: "Impressora não especificada e nenhuma detectada" });
+
     const cols = columns || (paperWidth === "58mm" ? 32 : 48);
     const data = buildEscPos(order || {}, storeName || "FIREHUB", cols);
-    for (let i = 0; i < copies; i++) await rawPrint(printer, data);
-    res.json({ ok: true, message: `Impresso em ${printer} (${copies}x - ${cols} cols)` });
+    for (let i = 0; i < copies; i++) await rawPrint(targetPrinter, data);
+    res.json({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols)` });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -321,9 +372,14 @@ app.post("/print", async (req, res) => {
 app.post("/print-raw", async (req, res) => {
   try {
     const { printer, data, copies = 1 } = req.body;
-    if (!printer || !data) return res.status(400).json({ error: "Dados faltando" });
+    let targetPrinter = printer || currentConfig.printer;
+    if (!targetPrinter) {
+      const detected = listPrinters();
+      if (detected.length > 0) targetPrinter = detected[0].name;
+    }
+    if (!targetPrinter || !data) return res.status(400).json({ error: "Dados ou impressora faltando" });
     const buf = Buffer.from(data, "base64");
-    for (let i = 0; i < copies; i++) await rawPrint(printer, buf);
+    for (let i = 0; i < copies; i++) await rawPrint(targetPrinter, buf);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -333,7 +389,13 @@ app.post("/print-raw", async (req, res) => {
 app.post("/print-test", async (req, res) => {
   try {
     const { printer, storeName, paperWidth = "80mm" } = req.body;
-    if (!printer) return res.status(400).json({ error: "Impressora não especificada" });
+    let targetPrinter = printer || currentConfig.printer;
+    if (!targetPrinter) {
+      const detected = listPrinters();
+      if (detected.length > 0) targetPrinter = detected[0].name;
+    }
+    if (!targetPrinter) return res.status(400).json({ error: "Impressora não especificada" });
+
     const cols = paperWidth === "58mm" ? 32 : 48;
     const dummyOrder = {
       id: "TESTE",
@@ -350,7 +412,7 @@ app.post("/print-test", async (req, res) => {
       notes: `Impressão de Teste FireHub (${paperWidth})`,
     };
     const data = buildEscPos(dummyOrder, storeName || "FIREHUB TESTE", cols);
-    await rawPrint(printer, data);
+    await rawPrint(targetPrinter, data);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
