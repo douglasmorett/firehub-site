@@ -42,6 +42,18 @@ const cleanAddress = (addr: string | null) => {
   return addr.replace(/\s*-\s*null\s*$/gi, "").replace(/\s*-\s*undefined\s*$/gi, "").trim();
 };
 
+export const isIfoodMotoboy = (order: any): boolean => {
+  if (!order) return false;
+  if (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD") return true;
+  if (order.ifoodDriverName || order.ifoodDriverPhone || order.ifoodDriverStatus) return true;
+  if (order.source === "IFOOD") {
+    const phone = String(order.customerPhone || "");
+    if (phone.includes("0800") || phone.toUpperCase().includes("ID:")) return true;
+    if (order.notes && (order.notes.toUpperCase().includes("PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA") || order.notes.toUpperCase().includes("MOTOBOY IFOOD"))) return true;
+  }
+  return false;
+};
+
 const getNeighborhoodOnly = (addr: string | null) => {
   if (!addr) return "";
   const cleaned = cleanAddress(addr);
@@ -1076,6 +1088,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </span>
               </div>
 
+              {/* Destaque MOTOBOY IFOOD (Entrega Parceira iFood) */}
+              {isIfoodMotoboy(order) && (
+                <div style={{ margin: "4px 0 6px", display: "flex", alignItems: "center" }}>
+                  <span style={{
+                    background: "linear-gradient(135deg, #EF4444, #DC2626)",
+                    color: "#FFFFFF",
+                    padding: "4px 10px",
+                    borderRadius: "8px",
+                    fontWeight: 900,
+                    fontSize: "0.8rem",
+                    letterSpacing: "0.02em",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 2px 6px rgba(239, 68, 68, 0.4)",
+                    border: "1px solid #B91C1C"
+                  }}>
+                    🛵 MOTOBOY IFOOD (ENTREGADOR IFOOD)
+                  </span>
+                </div>
+              )}
+
               {/* Line 3: Extra Badges (e.g. Pronto Cozinha) */}
               {(order.kdsStage === "FINISHING" || order.kdsStage === "FINISHED" || order.kdsFinishingAt) && (
                 <div style={{ marginBottom: "4px" }}>
@@ -1170,26 +1204,32 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
               )}
 
-              {/* Motoboy select: disponível em Em Produção, Saiu para Entrega e Finalizado */}
+              {/* Motoboy select: se for Motoboy iFood (Entrega Parceira), avisa para NÃO atribuir motoboy da loja! */}
               {order.deliveryType === "DELIVERY" && !order.ifoodDriverStatus && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
-                <select
-                  value={order.motoboyId || ""}
-                  onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
-                  disabled={assigningId === order.id}
-                  onClick={e => e.stopPropagation()}
-                  style={{
-                    padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
-                    fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
-                    background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
-                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
-                    marginRight: "4px"
-                  }}
-                >
-                  <option value="">Motoboy</option>
-                  {motoboys.map((m: any) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
+                isIfoodMotoboy(order) ? (
+                  <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#DC2626", background: "#FEF2F2", padding: "3px 8px", borderRadius: "6px", border: "1px solid #FECACA", whiteSpace: "nowrap" }}>
+                    🚫 Motoboy iFood
+                  </span>
+                ) : (
+                  <select
+                    value={order.motoboyId || ""}
+                    onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
+                    disabled={assigningId === order.id}
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
+                      fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
+                      background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
+                      cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
+                      marginRight: "4px"
+                    }}
+                  >
+                    <option value="">Motoboy</option>
+                    {motoboys.map((m: any) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                )
               )}
             </div>
 

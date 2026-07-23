@@ -278,7 +278,13 @@ function buildEscPos(order, storeName, columns = 48) {
   const refTag = order.ifoodReference ? `#${order.ifoodReference}` : order.openDeliveryReference ? `#${order.openDeliveryReference}` : "";
   const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
+  const isIfoodDriver = order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD" ||
+    (order.source === "IFOOD" && (String(order.customerPhone || "").includes("0800") || String(order.customerPhone || "").toUpperCase().includes("ID:")));
+
   res += CENTER + BOLD_ON + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
+  if (isIfoodDriver) {
+    res += BOLD_ON + DOUBLE_HEIGHT + "🛵 MOTOBOY IFOOD (ENTREGA PARCEIRA)" + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + BOLD_OFF + LF;
+  }
   res += LEFT + divider;
   res += BOLD_ON + "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + BOLD_OFF + LF;
   if (order.ifoodReference || order.openDeliveryReference || order.id) {

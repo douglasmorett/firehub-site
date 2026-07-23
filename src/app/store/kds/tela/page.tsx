@@ -935,6 +935,35 @@ function OrderCard({
           {sourceInfo.label}
         </span>
 
+        {/* MOTOBOY IFOOD BADGE DESTACADO */}
+        {(() => {
+          const isIfoodDriver = (order as any).deliveryBy === "IFOOD" || (order as any).ifoodDeliveryBy === "IFOOD" ||
+            (order as any).ifoodDriverName || (order as any).ifoodDriverPhone || (order as any).ifoodDriverStatus ||
+            (order.source === "IFOOD" && (String(order.customerPhone || "").includes("0800") || String(order.customerPhone || "").toUpperCase().includes("ID:")));
+          
+          if (!isIfoodDriver) return null;
+          return (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "4px 12px",
+                borderRadius: 12,
+                background: "linear-gradient(135deg, #EF4444, #DC2626)",
+                color: "#FFFFFF",
+                fontSize: 13,
+                fontWeight: 900,
+                letterSpacing: "0.5px",
+                boxShadow: "0 0 14px rgba(239, 68, 68, 0.6)",
+                border: "1px solid #B91C1C",
+              }}
+            >
+              🛵 MOTOBOY IFOOD
+            </span>
+          );
+        })()}
+
         {/* Delivery type badge */}
         <span
           style={{
