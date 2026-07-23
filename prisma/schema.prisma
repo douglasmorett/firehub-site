@@ -46,6 +46,7 @@ model User {
   storeLoyalty    Json?           // { type: cashback|points, rate: 2, active: true }
   storeOrderCount Int             @default(0) // Contador de pedidos (Pay as You Grow)
   printerConfig   Json?           // Config de impressoras: { autoprint, printers: [{name, label, categories, copies}] }
+  kdsScreens      Json?           // Telas KDS configuradas da loja: [{id, name, stage, filter, categoryFilter}]
   fixedCosts      Json?           // Custos fixos mensais: [{id, label, value}] ex: aluguel, funcionários
   financialGoals  Json?           // Metas financeiras mensais: { faturamento, margemLiquida, cmvPct, pedidos, ticketMedio }
   resetToken      String?         // Token de recuperação de senha

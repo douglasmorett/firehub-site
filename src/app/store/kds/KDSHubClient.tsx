@@ -29,11 +29,39 @@ export default function KDSHubClient() {
   const [formCategories, setFormCategories] = useState<string[]>([]); // categorias selecionadas
 
   useEffect(() => {
+    let localScreens: KDSScreenConfig[] = [];
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try { setScreens(JSON.parse(saved)); } catch {}
+      try { localScreens = JSON.parse(saved); } catch {}
     }
-    setLoaded(true);
+
+    // Carregar telas da API do banco de dados (sincronizado por loja)
+    fetch("/api/store/kds-screens")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((data: KDSScreenConfig[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setScreens(data);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } else if (localScreens.length > 0) {
+          // Se o banco estiver vazio mas houver telas salvas localmente neste PC, migra para o banco
+          setScreens(localScreens);
+          fetch("/api/store/kds-screens", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(localScreens),
+          }).catch(() => {});
+        } else {
+          setScreens([]);
+        }
+      })
+      .catch(() => {
+        // Fallback local se estiver offline
+        setScreens(localScreens);
+      })
+      .finally(() => {
+        setLoaded(true);
+      });
+
     // Buscar categorias
     fetch("/api/admin/categories")
       .then(r => r.json())
@@ -44,6 +72,11 @@ export default function KDSHubClient() {
   const save = (s: KDSScreenConfig[]) => {
     setScreens(s);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    fetch("/api/store/kds-screens", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(s),
+    }).catch(() => {});
   };
 
   const openForm = (existing?: KDSScreenConfig) => {
