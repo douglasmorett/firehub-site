@@ -27,6 +27,7 @@ type PrinterEntry = {
   label: string;
   categories: string[];
   copies: number;
+  paperWidth?: "58mm" | "80mm";
 };
 
 type PrinterConfig = {
@@ -50,7 +51,8 @@ async function printToDevice(
   printerName: string,
   order: PrintOrder,
   storeName: string,
-  copies = 1
+  copies = 1,
+  paperWidth = "80mm"
 ): Promise<boolean> {
   try {
     const res = await fetch(`${ASSISTANT_URL}/print`, {
@@ -58,6 +60,7 @@ async function printToDevice(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         printer: printerName,
+        paperWidth,
         order: {
           id: order.id,
           customerName: order.customerName,
@@ -110,7 +113,7 @@ export async function printOrder(
     }
 
     const filteredOrder = { ...order, items: itemsToPrint };
-    const result = await printToDevice(printer.name, filteredOrder, storeName, printer.copies);
+    const result = await printToDevice(printer.name, filteredOrder, storeName, printer.copies, printer.paperWidth || "80mm");
     if (result) printed++;
   }
 
@@ -121,12 +124,13 @@ export async function printOrder(
 export async function printTestReceipt(
   printerName: string,
   storeName: string,
+  paperWidth: "58mm" | "80mm" = "80mm"
 ): Promise<boolean> {
   try {
     const res = await fetch(`${ASSISTANT_URL}/print-test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printer: printerName, storeName }),
+      body: JSON.stringify({ printer: printerName, storeName, paperWidth }),
     });
     const data = await res.json();
     return data.ok === true;

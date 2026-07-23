@@ -174,11 +174,12 @@ app.get("/printers", (req, res) => res.json(listPrinters()));
 
 app.post("/print", async (req, res) => {
   try {
-    const { printer, order, storeName, copies = 1, columns = 48 } = req.body;
+    const { printer, order, storeName, copies = 1, paperWidth = "80mm", columns } = req.body;
     if (!printer) return res.status(400).json({ error: "Impressora não especificada" });
-    const data = buildEscPos(order || {}, storeName || "FIREHUB", columns);
+    const cols = columns || (paperWidth === "58mm" ? 32 : 48);
+    const data = buildEscPos(order || {}, storeName || "FIREHUB", cols);
     for (let i = 0; i < copies; i++) await rawPrint(printer, data);
-    res.json({ ok: true, message: `Impresso em ${printer} (${copies}x)` });
+    res.json({ ok: true, message: `Impresso em ${printer} (${copies}x - ${cols} cols)` });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -198,20 +199,26 @@ app.post("/print-raw", async (req, res) => {
 
 app.post("/print-test", async (req, res) => {
   try {
-    const { printer, storeName = "FIREHUB", columns = 48 } = req.body;
+    const { printer, storeName, paperWidth = "80mm" } = req.body;
     if (!printer) return res.status(400).json({ error: "Impressora não especificada" });
-    const testOrder = {
-      id: "TESTE001", customerName: "Cliente Teste", customerPhone: "(11) 99999-9999",
-      deliveryType: "DELIVERY", customerAddress: "Rua Exemplo, 123", paymentMethod: "PIX",
+    const cols = paperWidth === "58mm" ? 32 : 48;
+    const dummyOrder = {
+      id: "TESTE",
+      customerName: "Cliente Teste FireHub",
+      customerPhone: "(00) 00000-0000",
+      customerAddress: "Rua Exemplo, 123 - Centro - Cidade/UF",
+      deliveryType: "DELIVERY",
+      paymentMethod: "Pix (Online)",
       items: [
-        { name: "X-Burguer Duplo", qty: 2, price: 28.90 },
-        { name: "Coca-Cola 600ml", qty: 1, price: 8.00 },
-        { name: "Batata Frita Grande", qty: 1, price: 14.50 },
+        { name: "Item Teste 1 (58mm/80mm)", qty: 1, price: 15.00 },
+        { name: "Item Teste 2 Comanda", qty: 2, price: 10.00 },
       ],
-      totalAmount: 80.30, notes: "Sem cebola no burguer",
+      totalAmount: 35.00,
+      notes: `Impressão de Teste FireHub (${paperWidth})`,
     };
-    await rawPrint(printer, buildEscPos(testOrder, storeName, columns));
-    res.json({ ok: true, message: "Impressão de teste enviada!" });
+    const data = buildEscPos(dummyOrder, storeName || "FIREHUB TESTE", cols);
+    await rawPrint(printer, data);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

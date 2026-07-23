@@ -14,6 +14,7 @@ type PrinterEntry = {
   label: string;      // apelido (ex: "Cozinha", "Bar")
   categories: string[]; // categorias que imprime
   copies: number;
+  paperWidth?: "58mm" | "80mm"; // 58mm (32 colunas) ou 80mm (48 colunas)
 };
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
@@ -84,6 +85,7 @@ export default function PrinterSetupClient({
       label: `Impressora ${config.printers.length + 1}`,
       categories: [],
       copies: 1,
+      paperWidth: "80mm",
     };
     setConfig(c => ({ ...c, printers: [...c.printers, p] }));
   };
@@ -526,6 +528,39 @@ export default function PrinterSetupClient({
                 <option value="">Selecione uma impressora...</option>
                 {availablePrinters.map(p => <option key={p.name} value={p.name}>{p.name} {p.port && `(${p.port})`}</option>)}
               </select>
+            </div>
+
+            {/* Largura da Bobina / Papel */}
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>LARGURA DA BOBINA (PAPEL)</label>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => updatePrinter(printer.id, { paperWidth: "80mm" })}
+                  style={{
+                    flex: 1, padding: "8px 12px", borderRadius: 10,
+                    border: `1.5px solid ${(!printer.paperWidth || printer.paperWidth === "80mm") ? "#C62828" : "#E2E8F0"}`,
+                    background: (!printer.paperWidth || printer.paperWidth === "80mm") ? "#C6282810" : "#fff",
+                    color: (!printer.paperWidth || printer.paperWidth === "80mm") ? "#C62828" : "#64748B",
+                    fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s"
+                  }}
+                >
+                  📄 POS 80 (80mm / 48 colunas)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updatePrinter(printer.id, { paperWidth: "58mm" })}
+                  style={{
+                    flex: 1, padding: "8px 12px", borderRadius: 10,
+                    border: `1.5px solid ${printer.paperWidth === "58mm" ? "#C62828" : "#E2E8F0"}`,
+                    background: printer.paperWidth === "58mm" ? "#C6282810" : "#fff",
+                    color: printer.paperWidth === "58mm" ? "#C62828" : "#64748B",
+                    fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s"
+                  }}
+                >
+                  🧾 POS 58 (58mm / 32 colunas)
+                </button>
+              </div>
             </div>
 
             {/* Cópias */}

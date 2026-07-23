@@ -136,6 +136,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (typeof window !== "undefined") return localStorage.getItem("autoAcceptOrders") === "true";
     return false;
   });
+  const [receiptPaperSize, setReceiptPaperSize] = useState<"58mm" | "80mm">("80mm");
   const prevOrderCount = useRef(initialOrders.filter(o => o.status === "NOVO").length);
 
   // === SELEÇÃO E AÇÕES EM MASSA (Bulk Actions) ===
@@ -1850,17 +1851,50 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
         return (
           <div onClick={() => setViewReceiptOrderId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "450px", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: receiptPaperSize === "58mm" ? "380px" : "450px", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
               
+              {/* Toggle de Formato POS 80 / POS 58 */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", background: "#F9FAFB", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E5E7EB" }}>
+                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#374151" }}>🖨️ Bobina:</span>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptPaperSize("80mm")}
+                    style={{
+                      padding: "4px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
+                      border: `1.5px solid ${receiptPaperSize === "80mm" ? "#C62828" : "#E5E7EB"}`,
+                      background: receiptPaperSize === "80mm" ? "#C6282810" : "#FFF",
+                      color: receiptPaperSize === "80mm" ? "#C62828" : "#6B7280", cursor: "pointer", fontFamily: "inherit"
+                    }}
+                  >
+                    📄 POS 80 (80mm)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptPaperSize("58mm")}
+                    style={{
+                      padding: "4px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
+                      border: `1.5px solid ${receiptPaperSize === "58mm" ? "#C62828" : "#E5E7EB"}`,
+                      background: receiptPaperSize === "58mm" ? "#C6282810" : "#FFF",
+                      color: receiptPaperSize === "58mm" ? "#C62828" : "#6B7280", cursor: "pointer", fontFamily: "inherit"
+                    }}
+                  >
+                    🧾 POS 58 (58mm)
+                  </button>
+                </div>
+              </div>
+
               <div style={{
                 fontFamily: "'Courier New', monospace",
-                fontSize: "13px",
+                fontSize: receiptPaperSize === "58mm" ? "11px" : "13px",
                 color: "#000",
-                lineHeight: "1.5",
+                lineHeight: "1.4",
                 border: "2px solid #000",
-                padding: "20px",
+                padding: receiptPaperSize === "58mm" ? "12px" : "20px",
                 borderRadius: "8px",
-                background: "#FFF"
+                background: "#FFF",
+                maxWidth: receiptPaperSize === "58mm" ? "280px" : "100%",
+                margin: "0 auto"
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "1px dashed #000", paddingBottom: "10px", marginBottom: "10px" }}>
                   <span style={{ fontSize: "24px", fontWeight: "bold" }}>{seqNum}</span>
