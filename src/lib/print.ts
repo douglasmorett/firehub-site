@@ -64,22 +64,39 @@ async function printToDevice(
   try {
     const baseUrl = await getAssistantUrl();
     if (!baseUrl) return false;
+
+    let targetPrinter = printerName;
+    if (!targetPrinter) {
+      const printers = await fetch(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
+      if (Array.isArray(printers) && printers.length > 0) {
+        targetPrinter = printers[0].name;
+      }
+    }
+    if (!targetPrinter) return false;
+
     const res = await fetch(`${baseUrl}/print`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        printer: printerName,
+        printer: targetPrinter,
         paperWidth,
         order: {
           id: order.id,
+          dailyOrderNumber: (order as any).dailyOrderNumber,
           customerName: order.customerName,
           customerPhone: order.customerPhone,
           customerAddress: order.customerAddress,
           deliveryType: order.deliveryType,
           paymentMethod: order.paymentMethod,
-          items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, notes: i.notes })),
+          items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, notes: i.notes, comboSelections: (i as any).comboSelections })),
           totalAmount: order.totalAmount,
           deliveryFee: order.deliveryFee,
+          discountTotal: (order as any).discountTotal,
+          discountIfood: (order as any).discountIfood,
+          discountMerchant: (order as any).discountMerchant,
+          ifoodReference: (order as any).ifoodReference,
+          openDeliveryReference: (order as any).openDeliveryReference,
+          source: (order as any).source,
           notes: order.notes,
         },
         storeName,
@@ -101,28 +118,43 @@ export async function printOrder(
   printerConfig: PrinterConfig,
   itemCategories: Record<string, string> = {} // { "item name" => "categoria" }
 ): Promise<{ success: boolean; printed: number }> {
-  if (!printerConfig.printers.length) return { success: false, printed: 0 };
+  const baseUrl = await getAssistantUrl();
+  if (!baseUrl) return { success: false, printed: 0 };
 
-  const running = await isAssistantRunning();
-  if (!running) return { success: false, printed: 0 };
+  let printersToUse = printerConfig?.printers || [];
+  if (!printersToUse.length || printersToUse.every(p => !p.name)) {
+    const detected = await fetch(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
+    if (Array.isArray(detected) && detected.length > 0) {
+      printersToUse = [{
+        id: "detected",
+        name: detected[0].name,
+        label: "Impressora Padrão",
+        categories: [],
+        copies: 1,
+        paperWidth: "80mm"
+      }];
+    }
+  }
+
+  if (!printersToUse.length) return { success: false, printed: 0 };
 
   let printed = 0;
 
-  for (const printer of printerConfig.printers) {
+  for (const printer of printersToUse) {
     if (!printer.name) continue;
 
     // Filtra itens por categoria se configurado
     let itemsToPrint = order.items;
-    if (printer.categories.length > 0) {
+    if (printer.categories && printer.categories.length > 0) {
       itemsToPrint = order.items.filter(item => {
         const cat = itemCategories[item.name] || "";
         return printer.categories.includes(cat);
       });
-      if (itemsToPrint.length === 0) continue; // pula se nenhum item dessa categoria
+      if (itemsToPrint.length === 0) continue;
     }
 
     const filteredOrder = { ...order, items: itemsToPrint };
-    const result = await printToDevice(printer.name, filteredOrder, storeName, printer.copies, printer.paperWidth || "80mm");
+    const result = await printToDevice(printer.name, filteredOrder, storeName, printer.copies || 1, printer.paperWidth || "80mm");
     if (result) printed++;
   }
 
