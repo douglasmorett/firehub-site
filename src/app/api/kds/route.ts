@@ -100,6 +100,7 @@ export async function GET(req: NextRequest) {
   const allStoreOrdersToday = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
+      status: { not: "CANCELADO" },
       OR: [
         { createdAt: { gte: startOfDay } },
         { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA"] } },
