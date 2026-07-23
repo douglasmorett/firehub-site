@@ -296,14 +296,15 @@ function buildEscPos(order, storeName, columns = 48) {
   const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
   const phone = String(order.customerPhone || "");
-  const isIfoodDriver = order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD" ||
+  const isIfoodDriver = (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD" ||
     order.ifoodDriverName || order.ifoodDriverPhone ||
     phone.includes("0800 200") || phone.includes("0800200") || phone.includes("0800-200") ||
-    (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD")));
+    (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD")))) &&
+    order.deliveryBy !== "MERCHANT" && order.ifoodDeliveryBy !== "MERCHANT";
 
   res += CENTER + BOLD_ON + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
   if (isIfoodDriver) {
-    res += BOLD_ON + DOUBLE_HEIGHT + "🛵 MOTOBOY IFOOD (ENTREGA PARCEIRA)" + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + BOLD_OFF + LF;
+    res += BOLD_ON + DOUBLE_HEIGHT + "*** MOTOBOY IFOOD (ENTREGA PARCEIRA) ***" + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + BOLD_OFF + LF;
   }
   res += LEFT + divider;
   res += BOLD_ON + "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + BOLD_OFF + LF;
