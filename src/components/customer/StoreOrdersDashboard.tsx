@@ -42,6 +42,45 @@ const cleanAddress = (addr: string | null) => {
   return addr.replace(/\s*-\s*null\s*$/gi, "").replace(/\s*-\s*undefined\s*$/gi, "").trim();
 };
 
+const getNeighborhoodOnly = (addr: string | null) => {
+  if (!addr) return "";
+  const cleaned = cleanAddress(addr);
+  if (!cleaned) return "";
+
+  // Split by '-'
+  const dashParts = cleaned.split("-").map(p => p.trim()).filter(Boolean);
+  if (dashParts.length >= 2) {
+    let candidate = dashParts[1];
+    if (candidate.includes(",")) {
+      candidate = candidate.split(",")[0].trim();
+    }
+    const stateCodes = /^(sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i;
+    if (candidate.length > 2 && !stateCodes.test(candidate)) {
+      return candidate;
+    }
+    if (dashParts.length >= 3) {
+      let candidate2 = dashParts[2].split(",")[0].trim();
+      if (candidate2.length > 2 && !stateCodes.test(candidate2)) {
+        return candidate2;
+      }
+    }
+  }
+
+  // Split by ','
+  const commaParts = cleaned.split(",").map(p => p.trim()).filter(Boolean);
+  if (commaParts.length >= 3) {
+    let candidate = commaParts[2];
+    if (candidate.includes("-")) {
+      candidate = candidate.split("-")[0].trim();
+    }
+    if (candidate.length > 2 && !/^\d+$/.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  return cleaned;
+};
+
 // Mapping columns to statuses for drag-and-drop
 const COLUMN_STATUS_MAP: Record<string, string> = {
   "col-novos": "NOVO",
@@ -1066,7 +1105,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   background: "#ECFDF5", padding: "4px 8px", borderRadius: "5px", margin: "4px 0",
                   wordBreak: "break-word"
                 }}>
-                  📍 {cleanAddress(order.customerAddress)}
+                  📍 {getNeighborhoodOnly(order.customerAddress)}
                 </div>
               )}
               {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
