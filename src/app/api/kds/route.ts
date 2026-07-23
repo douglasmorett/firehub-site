@@ -93,19 +93,18 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  // Buscar início do dia no fuso do Brasil (America/Sao_Paulo) para numeração sequencial idêntica ao painel da loja
+  // Buscar início do dia no fuso do Brasil (America/Sao_Paulo = GMT-3 -> T00:00:00-03:00)
   const now = new Date();
-  const brazilDateStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo" });
-  const startOfTodayBrazil = new Date(brazilDateStr);
+  const yearStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
+  const monthStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
+  const dayStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
+  const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
 
   const storeOrdersToday = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
       status: { notIn: ["CANCELADO"] },
-      OR: [
-        { createdAt: { gte: startOfTodayBrazil } },
-        { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"] } },
-      ],
+      createdAt: { gte: startOfTodayBrazil },
     },
     select: { id: true, createdAt: true },
     orderBy: { createdAt: "asc" },
