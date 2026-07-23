@@ -303,7 +303,24 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
             const localizer = phone?.localizer;
             return localizer ? `${number} ID: ${localizer}` : number;
           })(),
-          customerAddress:  orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
+          customerAddress:  (() => {
+            const addr = orderData.delivery?.deliveryAddress;
+            if (!addr) return "";
+            const formatted = addr.formattedAddress || "";
+            const neighborhood = addr.neighborhood || "";
+            const city = addr.city || "";
+            const parts: string[] = [];
+            if (formatted) {
+              parts.push(formatted);
+            } else if (addr.streetName) {
+              parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
+            }
+            if (neighborhood && (!parts[0] || !parts[0].toLowerCase().includes(neighborhood.toLowerCase()))) {
+              parts.push(neighborhood);
+            }
+            if (city) parts.push(city);
+            return parts.join(" - ");
+          })(),
           deliveryType:     orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
           paymentMethod:    cashPayment ? "Dinheiro" : payMethodName,
           totalAmount:      total,
