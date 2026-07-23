@@ -63,39 +63,29 @@ async function pollIfoodEvents(sessionUserId?: string) {
         const isDispatched = code === "DSP" || event.fullCode === "DISPATCHED";
         const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
         const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
-        const isCancellationRequest = code === "HSD" || code === "CRR" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED" || event.fullCode === "DUE_DATE_CHANGE_REQUEST";
+        const isDispute = code === "HSD" || code === "CRR" || code === "DDC" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED" || event.fullCode === "DUE_DATE_CHANGE_REQUESTED";
 
-        // Handle cancellation or prediction REQUEST (negotiation) — don't cancel yet, let merchant decide
-        if (isCancellationRequest) {
+        // Handle cancellation or due date change REQUEST (negotiation) — don't cancel yet, let merchant decide
+        if (isDispute) {
           const meta = event.metadata || {};
-          const msg = (meta.message || meta.cancelCodeDescription || meta.reason || "").toLowerCase();
-          const isPredictionRequest =
-            meta.action === "PREDICTION" ||
-            meta.action === "DUE_DATE" ||
-            meta.handshakeType === "DELIVERY_TIME" ||
-            meta.handshakeType === "PREDICTION" ||
-            event.fullCode === "DUE_DATE_CHANGE_REQUEST" ||
-            msg.includes("previsão") ||
-            msg.includes("previsao") ||
-            msg.includes("atrasado");
-
-          const disputeType = isPredictionRequest ? "PREDICTION" : "CANCELLATION";
+          const actionType = (meta.action || meta.handshakeType || event.fullCode || "").toUpperCase();
+          const isDueDateChange = actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC";
 
           const disputeData = {
             pending: true,
             disputeId: meta.disputeId || "",
-            type: disputeType,
-            reason: meta.message || meta.cancelCodeDescription || (isPredictionRequest ? "O pedido está atrasado. Quero uma nova previsão de entrega." : "Cliente solicitou cancelamento"),
+            type: isDueDateChange ? "DUE_DATE_CHANGE" : "CANCELLATION",
+            reason: meta.message || meta.cancelCodeDescription || (isDueDateChange ? "O pedido está atrasado. Quero uma nova previsão de entrega." : "Cliente solicitou cancelamento"),
+            customerName: meta.customerName || "",
             handshakeType: meta.handshakeType || "",
             expiresAt: meta.expiresAt || "",
             requestedAt: meta.createdAt || new Date().toISOString(),
           };
-
           await (prisma.customerOrder as any).updateMany({
             where: { ifoodOrderId: orderId } as any,
             data: { cancelDispute: disputeData },
           });
-          console.log(`[iFood Poll] ⚠️ Solicitação (${disputeType}): ${orderId} — disputeId=${meta.disputeId}, motivo="${meta.message}"`);
+          console.log(`[iFood Poll] ⚠️ Negociação (${disputeData.type}): ${orderId} — disputeId=${meta.disputeId}, motivo="${meta.message}"`);
           if (event.id) {
             processedEventIds.push({
               id: event.id,

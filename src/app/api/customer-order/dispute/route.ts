@@ -50,24 +50,31 @@ export async function PUT(req: Request) {
       const disputeId = order.cancelDispute?.disputeId;
       const baseUrl = "https://merchant-api.ifood.com.br/order/v1.0";
 
-      if (action === "update_prediction") {
-        const { additionalTimeMinutes = 10, delayReason = "Pedido saiu para entrega" } = body;
+      if (action === "update_delivery_time") {
+        const { additionalMinutes = 10, reason = "OUT_FOR_DELIVERY" } = body;
         if (disputeId) {
           const r = await fetch(`${baseUrl}/disputes/${disputeId}/accept`, {
             method: "POST", headers,
-            body: JSON.stringify({ reason: delayReason, additionalTimeMinutes: Number(additionalTimeMinutes) }),
+            body: JSON.stringify({ additionalMinutes, reason }),
           });
           const respText = await r.text().catch(() => "");
-          console.log(`[iFood Dispute] UPDATE PREDICTION disputes/${disputeId}/accept: ${r.status} ${respText}`);
-          ifoodResult = `disputes_update:${r.status}`;
+          console.log(`[iFood Dispute] UPDATE_TIME disputes/${disputeId}/accept: ${r.status} ${respText}`);
+          ifoodResult = `disputes_accept_time:${r.status}`;
+        } else {
+          const r = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/updateEta`, {
+            method: "POST", headers,
+            body: JSON.stringify({ additionalMinutes }),
+          });
+          ifoodResult = `updateEta:${r.status}`;
         }
-        const r2 = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/updatePreparationTime`, {
-          method: "POST", headers,
-          body: JSON.stringify({ additionalTimeMinutes: Number(additionalTimeMinutes), reason: delayReason }),
-        });
-        const respText2 = await r2.text().catch(() => "");
-        console.log(`[iFood Dispute] UPDATE PREDICTION updatePreparationTime: ${r2.status} ${respText2}`);
-        ifoodResult += `,prepTime:${r2.status}`;
+      } else if (action === "deny_delivery") {
+        if (disputeId) {
+          const r = await fetch(`${baseUrl}/disputes/${disputeId}/reject`, {
+            method: "POST", headers,
+            body: JSON.stringify({ reason: "CANNOT_DELIVER" }),
+          });
+          ifoodResult = `disputes_reject_time:${r.status}`;
+        }
       } else if (action === "accept") {
         // Try Disputes API first (correct endpoint)
         if (disputeId) {
@@ -80,20 +87,17 @@ export async function PUT(req: Request) {
           ifoodResult = `disputes_accept:${r.status}`;
 
           if (!r.ok) {
-            // Fallback: try acceptCancellation
             const r2 = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/acceptCancellation`, { method: "POST", headers });
             console.log(`[iFood Dispute] ACCEPT fallback acceptCancellation: ${r2.status}`);
             ifoodResult += `,fallback:${r2.status}`;
           }
         } else {
-          // No disputeId — use acceptCancellation directly
           const r = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/acceptCancellation`, { method: "POST", headers });
           console.log(`[iFood Dispute] ACCEPT acceptCancellation (no disputeId): ${r.status}`);
           ifoodResult = `acceptCancellation:${r.status}`;
         }
       } else if (action === "deny") {
         const reason = denyReason || "Pedido já em andamento";
-        // Try Disputes API first
         if (disputeId) {
           const r = await fetch(`${baseUrl}/disputes/${disputeId}/reject`, {
             method: "POST", headers,
@@ -104,7 +108,6 @@ export async function PUT(req: Request) {
           ifoodResult = `disputes_reject:${r.status}`;
 
           if (!r.ok) {
-            // Fallback: try denyCancellation
             const r2 = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/denyCancellation`, {
               method: "POST", headers,
               body: JSON.stringify({ reason }),
@@ -139,11 +142,18 @@ export async function PUT(req: Request) {
         cancelDispute: { ...dispute, pending: false, resolved: "accepted", resolvedAt: new Date().toISOString(), ifoodResult },
       } as any,
     });
-  } else if (action === "update_prediction") {
+  } else if (action === "update_delivery_time") {
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
-        cancelDispute: { ...dispute, pending: false, resolved: "prediction_updated", resolvedAt: new Date().toISOString(), ifoodResult },
+        cancelDispute: { ...dispute, pending: false, resolved: "accepted_time_update", resolvedAt: new Date().toISOString(), ifoodResult },
+      } as any,
+    });
+  } else if (action === "deny_delivery") {
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: {
+        cancelDispute: { ...dispute, pending: false, resolved: "denied_delivery", resolvedAt: new Date().toISOString(), ifoodResult },
       } as any,
     });
   } else {

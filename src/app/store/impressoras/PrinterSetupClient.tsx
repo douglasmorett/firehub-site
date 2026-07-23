@@ -68,12 +68,10 @@ export default function PrinterSetupClient({
       setStatus("disconnected");
       if (userClicked) {
         alert(
-          "❌ O Assistente FireHub não está ativo neste computador.\n\n" +
-          "👉 Se a impressora está ligada NESTE computador:\n" +
-          "1. Baixe o 'Instalador Windows (.exe)' acima neste computador.\n" +
-          "2. Instale e abra o aplicativo FireHub Assistente.\n\n" +
-          "👉 Se a impressora está no OUTRO computador da loja:\n" +
-          "O aplicativo FireHub Assistente precisa estar instalado e aberto no computador onde a impressora está fisicamente conectada pelo cabo USB."
+          "ℹ️ Informação sobre a Conexão de Impressão:\n\n" +
+          "• O Assistente FireHub roda no computador onde a impressora está ligada no cabo USB (PC Principal da loja).\n\n" +
+          "✅ Se a impressora está ligada no outro computador e os pedidos estão imprimindo normalmente lá, TUDO ESTÁ FUNCIONANDO PERFEITAMENTE! Não precisa instalar nada neste 2º computador.\n\n" +
+          "👉 Só instale o assistente neste computador se um dia você mudar o cabo da impressora para este PC."
         );
       }
     }

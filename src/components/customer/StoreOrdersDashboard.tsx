@@ -137,6 +137,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return false;
   });
   const [receiptPaperSize, setReceiptPaperSize] = useState<"58mm" | "80mm">("80mm");
+  const [dueDateExtraMinutes, setDueDateExtraMinutes] = useState<number>(10);
+  const [dueDateReason, setDueDateReason] = useState<string>("OUT_FOR_DELIVERY");
   const prevOrderCount = useRef(initialOrders.filter(o => o.status === "NOVO").length);
 
   // === SELEÇÃO E AÇÕES EM MASSA (Bulk Actions) ===
@@ -2133,120 +2135,103 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         );
       })()}
-      {/* MODAL SOLICITAÇÃO IFOOD (PREVISÃO DE ENTREGA OU CANCELAMENTO) */}
+      {/* MODAL NEGOCIAÇÃO DE CANCELAMENTO OU PREVISÃO DE ENTREGA (iFood) */}
       {(() => {
         const disputeOrder = orders.find((o: any) => o.cancelDispute?.pending === true);
         if (!disputeOrder) return null;
         const dispute = (disputeOrder as any).cancelDispute;
-        const orderNum = orderNumberMap.get(disputeOrder.id) || "?";
+        const orderNum = orderNumberMap.get(disputeOrder.id) || disputeOrder.ifoodReference || disputeOrder.openDeliveryReference || disputeOrder.id.slice(-4);
         const expiresAt = dispute.expiresAt ? new Date(dispute.expiresAt) : null;
         const timeLeft = expiresAt ? Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000)) : null;
-        const timeLeftStr = timeLeft != null ? `${Math.floor(timeLeft / 60)} minutos e ${String(timeLeft % 60).padStart(2, "0")} segundos` : null;
+        const timeLeftMin = timeLeft != null ? Math.floor(timeLeft / 60) : 0;
+        const timeLeftSec = timeLeft != null ? String(timeLeft % 60).padStart(2, "0") : "00";
 
-        const reasonMsg = (dispute.reason || "").toLowerCase();
-        const isPrediction =
-          dispute.type === "PREDICTION" ||
-          reasonMsg.includes("previsão") ||
-          reasonMsg.includes("previsao") ||
-          reasonMsg.includes("atrasado");
+        const isDueDateChange = dispute.type === "DUE_DATE_CHANGE" || dispute.reason?.toLowerCase().includes("previsão") || dispute.reason?.toLowerCase().includes("atrasado");
 
-        if (isPrediction) {
+        if (isDueDateChange) {
           return (
             <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-              <div style={{ background: "#fff", borderRadius: "20px", padding: "24px", width: "100%", maxWidth: "460px", boxShadow: "0 25px 60px rgba(0,0,0,0.4)", fontFamily: "'Inter', sans-serif" }}>
+              <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "460px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", position: "relative" }}>
                 
                 {/* Header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                  <div>
-                    <h3 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0, color: "#111827" }}>
-                      Informe uma nova previsão de entrega pro pedido #{orderNum}
-                    </h3>
-                  </div>
-                  <button onClick={() => setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem", color: "#EA1D2C", fontWeight: 700 }}>✕</button>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                  <h3 style={{ fontWeight: 800, fontSize: "1.05rem", color: "#0F172A", margin: 0 }}>
+                    Informe uma nova previsão de entrega pro pedido #{orderNum}
+                  </h3>
                 </div>
 
-                {/* Countdown */}
-                {timeLeftStr && (
-                  <div style={{ marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#111827" }}>
-                      Você tem <span style={{ color: "#EA1D2C" }}>{timeLeftStr}</span> para responder
-                    </div>
-                    <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "2px" }}>
-                      Caso não responda, {disputeOrder.customerName || "o cliente"} pode recorrer ao iFood
-                    </div>
-                    <div style={{ width: "100%", height: 4, background: "#E5E7EB", borderRadius: 2, marginTop: 8, overflow: "hidden" }}>
-                      <div style={{ width: `${Math.min(100, ((timeLeft || 0) / 300) * 100)}%`, height: "100%", background: "#EA1D2C", transition: "width 1s linear" }} />
-                    </div>
+                {/* Countdown banner */}
+                <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 14px", marginBottom: "16px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#991B1B" }}>
+                    Você tem {timeLeftMin} minutos e {timeLeftSec} segundos para responder
                   </div>
-                )}
+                  <div style={{ fontSize: "0.78rem", color: "#7F1D1D", marginTop: 2 }}>
+                    Caso não responda, {disputeOrder.customerName || "o cliente"} pode recorrer ao iFood
+                  </div>
+                </div>
 
-                {/* Customer Request Box */}
-                <div style={{ background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: "14px", padding: "16px", marginBottom: "18px" }}>
-                  <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#111827", marginBottom: "6px" }}>
+                {/* Customer Query Card Box */}
+                <div style={{ background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "14px 16px", marginBottom: "18px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: 4 }}>
                     Meu pedido está atrasado
                   </div>
-                  <p style={{ margin: "0 0 12px", fontSize: "0.85rem", color: "#4B5563", lineHeight: 1.4 }}>
-                    O pedido está atrasado. Quero uma nova previsão de entrega.
+                  <p style={{ margin: "0 0 12px", fontSize: "0.82rem", color: "#475569", lineHeight: 1.4 }}>
+                    {dispute.reason || "O pedido está atrasado. Quero uma nova previsão de entrega."}
                   </p>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#EA1D2C", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.85rem" }}>
-                      {(disputeOrder.customerName || "C").slice(0, 2).toUpperCase()}
+                    <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#EA1D2C", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.82rem", flexShrink: 0 }}>
+                      {disputeOrder.customerName ? disputeOrder.customerName.slice(0, 2).toUpperCase() : "IF"}
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#111827" }}>{disputeOrder.customerName}</div>
-                      <div style={{ fontSize: "0.75rem", color: "#6B7280" }}>Pedido iFood #{(disputeOrder as any).ifoodReference || disputeOrder.id.slice(-4)}</div>
+                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#0F172A" }}>{disputeOrder.customerName}</div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748B" }}>0 pedidos na loja</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Form Field 1: Time */}
-                <div style={{ marginBottom: "14px" }}>
-                  <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>
+                {/* Dropdown 1: Quanto tempo a mais */}
+                <div style={{ marginBottom: "16px" }}>
+                  <label style={{ display: "block", fontWeight: 700, fontSize: "0.82rem", color: "#0F172A", marginBottom: 6 }}>
                     Quanto tempo a mais você precisa para entregar o pedido?
                   </label>
                   <select
-                    id="prediction-extra-time"
-                    defaultValue="10"
-                    style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1.5px solid #D1D5DB", fontSize: "0.9rem", fontWeight: 600, fontFamily: "inherit", background: "#FFF", color: "#111827" }}
+                    value={dueDateExtraMinutes}
+                    onChange={(e) => setDueDateExtraMinutes(Number(e.target.value))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", fontWeight: 600, background: "#fff", color: "#0F172A" }}
                   >
-                    <option value="10">10 minutos</option>
-                    <option value="15">15 minutos</option>
-                    <option value="20">20 minutos</option>
-                    <option value="25">25 minutos</option>
-                    <option value="30">30 minutos</option>
+                    <option value={10}>10 minutos</option>
+                    <option value={15}>15 minutos</option>
+                    <option value={20}>20 minutos</option>
+                    <option value={30}>30 minutos</option>
+                    <option value={45}>45 minutos</option>
                   </select>
-                  <div style={{ fontSize: "0.75rem", color: "#6B7280", marginTop: "4px" }}>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: 4 }}>
                     O cliente pode ou não aceitar sua proposta de tempo.
                   </div>
                 </div>
 
-                {/* Form Field 2: Reason */}
+                {/* Dropdown 2: Motivo do atraso */}
                 <div style={{ marginBottom: "20px" }}>
-                  <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>
-                    Selecione qual é motivo do atraso
+                  <label style={{ display: "block", fontWeight: 700, fontSize: "0.82rem", color: "#0F172A", marginBottom: 6 }}>
+                    Selecione qual é o motivo do atraso
                   </label>
                   <select
-                    id="prediction-delay-reason"
-                    defaultValue="Pedido saiu para entrega"
-                    style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1.5px solid #D1D5DB", fontSize: "0.9rem", fontWeight: 600, fontFamily: "inherit", background: "#FFF", color: "#111827" }}
+                    value={dueDateReason}
+                    onChange={(e) => setDueDateReason(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", fontWeight: 600, background: "#fff", color: "#0F172A" }}
                   >
-                    <option value="Pedido saiu para entrega">Pedido saiu para entrega</option>
-                    <option value="Atraso no preparo">Atraso no preparo</option>
-                    <option value="Problema com o entregador">Problema com o entregador</option>
-                    <option value="Alta demanda na cozinha">Alta demanda na cozinha</option>
+                    <option value="OUT_FOR_DELIVERY">Pedido saiu para entrega</option>
+                    <option value="HIGH_DEMAND">Alta demanda de pedidos</option>
+                    <option value="PREPARATION_DELAY">Problema no preparo</option>
+                    <option value="WEATHER">Alagamento / Chuva</option>
                   </select>
                 </div>
 
-                {/* Action Buttons */}
+                {/* Buttons */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <button
                     disabled={!!loadingId}
                     onClick={async () => {
-                      const timeEl = document.getElementById("prediction-extra-time") as HTMLSelectElement;
-                      const reasonEl = document.getElementById("prediction-delay-reason") as HTMLSelectElement;
-                      const additionalTimeMinutes = timeEl?.value || "10";
-                      const delayReason = reasonEl?.value || "Pedido saiu para entrega";
-
                       setLoadingId(disputeOrder.id);
                       try {
                         const r = await fetch("/api/customer-order/dispute", {
@@ -2254,19 +2239,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
                             orderId: disputeOrder.id,
-                            action: "update_prediction",
-                            additionalTimeMinutes,
-                            delayReason,
+                            action: "update_delivery_time",
+                            additionalMinutes: dueDateExtraMinutes,
+                            reason: dueDateReason,
                           }),
                         });
                         if (r.ok) {
-                          showToast(`✅ Previsão de +${additionalTimeMinutes} min enviada ao iFood!`, "#16A34A");
-                          setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o));
+                          setOrders((prev) => prev.map((o) => (o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o)));
+                          showToast("✅ Previsão de entrega enviada ao iFood com sucesso!", "#16A34A");
                           router.refresh();
                         }
-                      } catch {} finally { setLoadingId(null); }
+                      } catch {} finally {
+                        setLoadingId(null);
+                      }
                     }}
-                    style={{ width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: "#EA1D2C", color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: "0.95rem", fontFamily: "inherit", boxShadow: "0 4px 14px rgba(234,29,44,0.3)" }}
+                    style={{ width: "100%", padding: "12px", borderRadius: 10, border: "none", background: "#EA1D2C", color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                   >
                     {loadingId === disputeOrder.id ? "Enviando..." : "Atualizar previsão de entrega"}
                   </button>
@@ -2274,23 +2261,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <button
                     disabled={!!loadingId}
                     onClick={async () => {
-                      if (!confirm("Tem certeza que o pedido NÃO será entregue? O pedido será cancelado.")) return;
+                      if (!confirm("Tem certeza que o pedido não será entregue?")) return;
                       setLoadingId(disputeOrder.id);
                       try {
                         const r = await fetch("/api/customer-order/dispute", {
                           method: "PUT",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ orderId: disputeOrder.id, action: "accept" }),
+                          body: JSON.stringify({ orderId: disputeOrder.id, action: "deny_delivery" }),
                         });
                         if (r.ok) {
-                          setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", cancelDispute: { ...dispute, pending: false } } : o));
+                          setOrders((prev) => prev.map((o) => (o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o)));
+                          showToast("Resposta enviada ao iFood.", "#374151");
                           router.refresh();
                         }
-                      } catch {} finally { setLoadingId(null); }
+                      } catch {} finally {
+                        setLoadingId(null);
+                      }
                     }}
-                    style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "1.5px solid #EA1D2C", background: "#FFF", color: "#EA1D2C", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", fontFamily: "inherit" }}
+                    style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #EA1D2C", background: "#fff", color: "#EA1D2C", fontWeight: 800, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                   >
-                    Pedido não será entregue
+                    Pedido não será mais entregue
                   </button>
                 </div>
 
@@ -2299,7 +2289,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           );
         }
 
-        // Standard Cancellation Dispute Modal
+        const timeLeftStr = timeLeft != null ? `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, "0")}` : null;
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
             <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "440px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: "3px solid #F59E0B" }}>
