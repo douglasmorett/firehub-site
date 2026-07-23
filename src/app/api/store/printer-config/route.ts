@@ -26,5 +26,5 @@ export async function GET() {
     select: { printerConfig: true },
   });
 
-  return NextResponse.json(user?.printerConfig || { autoprint: false, printers: [] });
+  return NextResponse.json(user?.printerConfig || { autoprint: true, printers: [] });
 }

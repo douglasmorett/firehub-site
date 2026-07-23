@@ -1897,12 +1897,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 margin: "0 auto"
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "1px dashed #000", paddingBottom: "10px", marginBottom: "10px" }}>
-                  <span style={{ fontSize: "24px", fontWeight: "bold" }}>{seqNum}</span>
-                  <span style={{ fontSize: "20px", fontWeight: "bold" }}>{isDelivery ? "DELIVERY" : "RETIRADA"}</span>
+                  <span style={{ fontSize: "22px", fontWeight: "bold" }}>{seqNum}   {isDelivery ? "DELIVERY" : "RETIRADA"}</span>
+                  <span style={{ fontSize: "16px", fontWeight: "bold" }}>{(order.ifoodReference || order.openDeliveryReference) ? `#${order.ifoodReference || order.openDeliveryReference}` : ""}</span>
                 </div>
 
                 <div style={{ marginBottom: "12px" }}>
-                  <div style={{ fontWeight: "bold" }}>{order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "APP - JOTAJÁ" : order.source === "PDV" ? "PDV" : "ONLINE"}</div>
                   <div>Estabelecimento: <strong style={{ textTransform: "uppercase" }}>{storeName}</strong></div>
                   {(order.ifoodReference || order.openDeliveryReference) && (
                     <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference}</div>
@@ -1918,10 +1917,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ marginBottom: "14px" }}>
                   <div>Nome: {order.customerName}</div>
                   <div>Telefone: {phone}</div>
-                  {order.customerAddress && <div>Endereço: {cleanAddress(order.customerAddress)}</div>}
                   <div>Qtd Pedidos: 1</div>
-                  {order.notes && <div>Obs: {order.notes}</div>}
                 </div>
+
+                {isDelivery && order.customerAddress && (
+                  <>
+                    <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
+                      <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>ENTREGA</span>
+                      <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px solid #000", zIndex: 1 }}></div>
+                    </div>
+                    <div style={{ marginBottom: "14px" }}>
+                      <div>Endereço: {cleanAddress(order.customerAddress)}</div>
+                      {order.notes && <div>Obs: {order.notes}</div>}
+                    </div>
+                  </>
+                )}
 
                 <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
                   <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>RESUMO DO PEDIDO</span>
@@ -1946,7 +1956,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       <div key={item.id} style={{
                         border: "1.5px solid #000",
                         padding: "8px 10px",
-                        borderRadius: "6px",
+                        borderRadius: "4px",
                         marginBottom: "8px"
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", marginBottom: "4px" }}>
@@ -1960,7 +1970,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             {comboSels.map((sel: any, i: number) => {
                               const totalQty = (sel.quantity || 1) * (item.quantity || 1);
                               return (
-                                <div key={i}>• {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</div>
+                                <div key={i}>- {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</div>
                               );
                             })}
                           </div>
@@ -1968,7 +1978,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         {comboSels.length === 0 && extras.length > 0 && (
                           <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
                             {extras.map((ext: string, i: number) => (
-                              <div key={i}>• {ext.trim()}</div>
+                              <div key={i}>- {ext.trim()}</div>
                             ))}
                           </div>
                         )}
@@ -1977,49 +1987,47 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   })}
                 </div>
 
-                <div style={{ borderTop: "1px dashed #000", paddingTop: "8px", marginBottom: "10px" }}>
+                <div style={{ paddingTop: "8px", marginBottom: "10px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Subtotal:</span>
                     <span>R$ {subtotal.toFixed(2).replace('.', ',')}</span>
                   </div>
+                  {order.discountTotal && order.discountTotal > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                      <span>Desconto (Cupom - Loja):</span>
+                      <span>-R$ {Number(order.discountTotal).toFixed(2).replace('.', ',')}</span>
+                    </div>
+                  )}
                   {isDelivery && (
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Taxa de Entrega:</span>
                       <span>R$ {Number(order.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
                     </div>
                   )}
-                  {order.discountTotal && order.discountTotal > 0 && (
-                    <>
-                      {order.discountIfood && order.discountIfood > 0 && (
-                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
-                          <span>Desconto iFood:</span>
-                          <span>-R$ {Number(order.discountIfood).toFixed(2).replace('.', ',')}</span>
-                        </div>
-                      )}
-                      {order.discountMerchant && order.discountMerchant > 0 && (
-                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
-                          <span>Desconto Loja:</span>
-                          <span>-R$ {Number(order.discountMerchant).toFixed(2).replace('.', ',')}</span>
-                        </div>
-                      )}
-                      {!order.discountIfood && !order.discountMerchant && (
-                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
-                          <span>Desconto:</span>
-                          <span>-R$ {Number(order.discountTotal).toFixed(2).replace('.', ',')}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "15px", marginTop: "4px" }}>
+                  
+                  {/* Total Box */}
+                  <div style={{ border: "1.5px solid #000", padding: "6px 10px", borderRadius: "4px", margin: "8px 0", display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "15px" }}>
                     <span>Total:</span>
                     <span>R$ {order.totalAmount.toFixed(2).replace('.', ',')}</span>
                   </div>
                 </div>
 
-                <div style={{ fontWeight: "bold" }}>Forma de Pagamento: {translatePayment(order.paymentMethod)}</div>
+                <div style={{ fontWeight: "bold", marginBottom: "6px" }}>Forma de Pagamento: {translatePayment(order.paymentMethod)}</div>
                 {order.changeAmount != null && order.changeAmount > 0 && (
-                  <div>Troco para: R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}</div>
+                  <div style={{ marginBottom: "6px" }}>Troco para: R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}</div>
                 )}
+
+                {/* Nota de Segurança / Cobrança */}
+                <div style={{ marginTop: "12px", paddingTop: "8px", borderTop: "1px dashed #000", fontSize: "11px", lineHeight: "1.4" }}>
+                  {/pix|online|crédito \(online\)|cartão \(online\)/i.test(order.paymentMethod || "") ? (
+                    <>
+                      <div>Dica de Segurança: Não aceite cobranças extras na entrega. Seu pedido já está pago.</div>
+                      <div style={{ fontWeight: "bold", marginTop: "4px" }}>✔ Pago via {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online"}, não precisa cobrar na entrega</div>
+                    </>
+                  ) : (
+                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>⚠️ COBRAR DO CLIENTE NA ENTREGA: R$ {order.totalAmount.toFixed(2).replace('.', ',')}</div>
+                  )}
+                </div>
               </div>
 
               <div style={{ marginTop: "16px", display: "flex", justifyContent: "center" }}>

@@ -33,14 +33,16 @@ export default function PrinterSetupClient({
   const [status, setStatus] = useState<AssistantStatus>("checking");
   const [availablePrinters, setAvailablePrinters] = useState<DetectedPrinter[]>([]);
   const [config, setConfig] = useState<PrinterConfig>(
-    initialConfig || { autoprint: false, printers: [] }
+    initialConfig
+      ? { ...initialConfig, autoprint: initialConfig.autoprint !== undefined ? initialConfig.autoprint : true }
+      : { autoprint: true, printers: [] }
   );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testingPrinter, setTestingPrinter] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
-  const tryConnect = useCallback(async () => {
+  const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
     try {
       const res = await fetch(`${ASSISTANT_URL}/status`, { signal: AbortSignal.timeout(3000) });
@@ -48,11 +50,20 @@ export default function PrinterSetupClient({
       if (data.ok) {
         setStatus("connected");
         setAvailablePrinters(data.printers || []);
+        if (userClicked) {
+          alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(data.printers || []).length} impressora(s) detectada(s) no seu computador.`);
+        }
       } else {
         setStatus("disconnected");
+        if (userClicked) {
+          alert("❌ Não foi possível conectar ao Assistente FireHub.\n\nVerifique se o aplicativo FireHub Assistente está aberto no seu computador.");
+        }
       }
     } catch {
       setStatus("disconnected");
+      if (userClicked) {
+        alert("❌ Não foi possível conectar ao Assistente FireHub em http://localhost:7891.\n\nAbra o programa FireHub Assistente no seu computador e tente novamente.");
+      }
     }
   }, []);
 
@@ -307,7 +318,7 @@ export default function PrinterSetupClient({
                 <p style={{ fontSize: "0.82rem", color: "#475569", margin: "0 0 12px" }}>
                   Após abrir o assistente e permitir o acesso, clique abaixo para verificar.
                 </p>
-                <button onClick={tryConnect} style={{ padding: "10px 20px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => tryConnect(true)} style={{ padding: "10px 20px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <RefreshCw size={14} /> Verificar conexão
                 </button>
               </div>
