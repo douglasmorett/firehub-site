@@ -352,14 +352,50 @@ export default function PrinterSetupClient({
             {/* Seletor de impressora */}
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>IMPRESSORA DO COMPUTADOR</label>
-              <select
-                value={printer.name}
-                onChange={e => updatePrinter(printer.id, { name: e.target.value })}
-                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontFamily: "inherit", background: "#fff" }}
-              >
-                <option value="">Selecione uma impressora...</option>
-                {availablePrinters.map(p => <option key={p.name} value={p.name}>{p.name} {p.port && `(${p.port})`}</option>)}
-              </select>
+              {(() => {
+                const defaultModels = [
+                  "ELGIN L42PRO FULL (USB001)",
+                  "ELGIN L42PRO",
+                  "ELGIN i9",
+                  "POS-80",
+                  "POS-58",
+                  "Epson TM-T20",
+                  "Epson TM-T20X",
+                  "Bematech MP-4200 TH",
+                  "Impressora Padrão do Windows",
+                ];
+                const options = Array.from(new Set([
+                  ...availablePrinters.map(p => p.name),
+                  ...defaultModels,
+                  ...(printer.name ? [printer.name] : []),
+                ]));
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <select
+                      value={printer.name || options[0]}
+                      onChange={e => updatePrinter(printer.id, { name: e.target.value })}
+                      style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontFamily: "inherit", background: "#fff", fontWeight: 600 }}
+                    >
+                      {options.map(name => {
+                        const detected = availablePrinters.find(p => p.name === name);
+                        return (
+                          <option key={name} value={name}>
+                            {name} {detected?.port ? `(${detected.port})` : ""} {detected ? "🟢 Detectada" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <input
+                      type="text"
+                      value={printer.name}
+                      onChange={e => updatePrinter(printer.id, { name: e.target.value })}
+                      placeholder="Ou digite o nome exato da impressora no Windows..."
+                      style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px dashed #CBD5E1", fontSize: "0.8rem", color: "#475569", fontFamily: "inherit" }}
+                    />
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Largura da Bobina / Papel */}
