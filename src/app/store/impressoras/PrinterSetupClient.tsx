@@ -44,14 +44,19 @@ export default function PrinterSetupClient({
 
   const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
-    const urls = ["http://localhost:7891", "http://127.0.0.1:7891"];
+    const urls = [
+      "http://localhost:7899", "http://127.0.0.1:7899",
+      "http://localhost:7900", "http://127.0.0.1:7900",
+      "http://localhost:7901", "http://127.0.0.1:7901",
+      "http://localhost:7891", "http://127.0.0.1:7891",
+    ];
     let connectedData = null;
 
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(3000) });
+        const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(2000) });
         const data = await res.json();
-        if (data.ok) {
+        if (data.ok && (data.app === "FireHub-Thermal-Printer-v2" || (data.printers && data.printers.length > 0))) {
           connectedData = data;
           break;
         }

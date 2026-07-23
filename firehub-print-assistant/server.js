@@ -402,7 +402,15 @@ setInterval(async () => {
 
 /* ─── Rotas ────────────────────────────────────────────────── */
 app.get("/status", (req, res) => {
-  res.json({ ok: true, version: "1.0.0", name: "FireHub Assistente de Impressão", printers: listPrinters(), config: currentConfig });
+  const printers = listPrinters();
+  res.json({
+    ok: true,
+    app: "FireHub-Thermal-Printer-v2",
+    version: "2.0.0",
+    name: "FireHub Assistente de Impressão",
+    printers,
+    config: currentConfig
+  });
 });
 app.get("/printers", (req, res) => res.json(listPrinters()));
 
@@ -475,23 +483,34 @@ app.post("/print-test", async (req, res) => {
   }
 });
 
-/* ─── Start ────────────────────────────────────────────────── */
-const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log("");
-  console.log("  🔥 FireHub Assistente de Impressão v1.0");
-  console.log("  ────────────────────────────────────────");
-  console.log(`  ✅ Rodando em http://localhost:${PORT}`);
-  console.log(`  📋 Impressoras: http://localhost:${PORT}/printers`);
-  console.log("");
-  console.log("  Mantenha esta janela aberta para");
-  console.log("  impressão automática funcionar.");
-  console.log("");
-});
+/* ─── Start com fallback de portas (7899, 7900, 7901, 7891) ── */
+const PORTS = [7899, 7900, 7901, 7891];
+let server;
 
-server.on("error", (err) => {
-  if (err.code === "EADDRINUSE") {
-    console.log(`[PrintServer] Porta ${PORT} já em uso por outro assistente ativo.`);
-  } else {
-    console.error("[PrintServer] Erro no servidor de impressão:", err);
+function startServer(portIndex = 0) {
+  if (portIndex >= PORTS.length) {
+    console.error("[PrintServer] Erro: Não foi possível vincular a nenhuma porta.");
+    return;
   }
-});
+
+  const currentPort = PORTS[portIndex];
+  server = app.listen(currentPort, "0.0.0.0", () => {
+    console.log("");
+    console.log("  🔥 FireHub Assistente de Impressão v2.0");
+    console.log("  ────────────────────────────────────────");
+    console.log(`  ✅ Rodando em http://localhost:${currentPort}`);
+    console.log(`  📋 Impressoras: http://localhost:${currentPort}/printers`);
+    console.log("");
+  });
+
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`[PrintServer] Porta ${currentPort} ocupada. Tentando próxima porta...`);
+      startServer(portIndex + 1);
+    } else {
+      console.error("[PrintServer] Erro no servidor de impressão:", err);
+    }
+  });
+}
+
+startServer(0);
