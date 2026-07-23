@@ -30,7 +30,7 @@ export async function middleware(request: NextRequest) {
     }
 
     const role = token.role as string;
-    if (role !== "FRANCHISEE" && role !== "ADMIN") {
+    if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") {
       return NextResponse.redirect(new URL("/login", request.url));
     }
   }
