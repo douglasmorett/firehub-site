@@ -395,6 +395,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // FAST POLLING — 3s via lightweight API (pauses during drag)
   const isDraggingRef = useRef(false);
   const lastPollHash = useRef("");
+  const knownOrderIdsRef = useRef<Set<string>>(new Set(initialOrders.map((o: any) => o.id)));
+  const autoPrintedIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Initialize known IDs with current orders
+    knownOrderIdsRef.current = new Set(initialOrders.map((o: any) => o.id));
+  }, []);
+
   useEffect(() => {
     let active = true;
     const poll = async () => {
@@ -406,7 +414,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             // Only update if data actually changed — prevents re-render closing dropdowns
             if (text !== lastPollHash.current) {
               lastPollHash.current = text;
-              setOrders(JSON.parse(text));
+              const newOrders = JSON.parse(text);
+              setOrders(newOrders);
+
+              // 🖨️ AUTO-PRINT: Detectar pedidos novos e imprimir automaticamente
+              if (printerConfig?.autoprint !== false) {
+                for (const order of newOrders) {
+                  if (!knownOrderIdsRef.current.has(order.id) && !autoPrintedIdsRef.current.has(order.id)) {
+                    // Pedido novo detectado! Imprimir automaticamente.
+                    autoPrintedIdsRef.current.add(order.id);
+                    console.log(`[AutoPrint] 🖨️ Novo pedido detectado: ${order.customerName} (#${order.ifoodReference || order.id.slice(-4)}) — imprimindo automaticamente!`);
+                    try {
+                      handlePrint(order, "cozinha");
+                    } catch (printErr) {
+                      console.warn("[AutoPrint] Erro ao imprimir:", printErr);
+                    }
+                  }
+                }
+              }
+
+              // Atualizar IDs conhecidos
+              knownOrderIdsRef.current = new Set(newOrders.map((o: any) => o.id));
             }
           }
         }
@@ -415,7 +443,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     };
     const timeout = setTimeout(poll, 1000);
     return () => { active = false; clearTimeout(timeout); };
-  }, []);
+  }, [printerConfig]);
 
   useEffect(() => { setOrders(initialOrders); }, [initialOrders]);
 
