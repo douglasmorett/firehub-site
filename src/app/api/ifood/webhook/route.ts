@@ -290,8 +290,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           ? orderData.deliveryFee
           : 0;
 
-    try {
-      await (prisma.customerOrder as any).create({
+      const createdOrder = await (prisma.customerOrder as any).create({
         data: {
           franchiseeId:     franchisee.id,
           ifoodOrderId:     orderId,
@@ -339,9 +338,38 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
         },
       });
       console.log(`[iFood Webhook] 🎉 Pedido ${orderId} (${orderData.customer?.name}) criado no FireHub`);
-    } catch (createErr: any) {
-      console.error(`[iFood Webhook] ❌ Erro ao criar pedido ${orderId}:`, createErr.message);
-    }
+
+      // 🖨️ AUTO-PRINT: Enfileira na Fila de Impressão na Nuvem para impressão automática imediata!
+      try {
+        const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
+        const formattedForPrint = {
+          id: createdOrder.id,
+          dailyOrderNumber: createdOrder.ifoodReference || createdOrder.id.slice(-4),
+          customerName: createdOrder.customerName,
+          customerPhone: createdOrder.customerPhone,
+          customerAddress: createdOrder.customerAddress,
+          deliveryType: createdOrder.deliveryType,
+          paymentMethod: createdOrder.paymentMethod,
+          items: (orderData.items || []).map((i: any) => ({
+            name: i.name || i.description || "Item",
+            qty: i.quantity || 1,
+            price: i.unitPrice || i.price || 0,
+            comboSelections: i.options ? JSON.stringify(i.options) : null,
+          })),
+          totalAmount: createdOrder.totalAmount,
+          deliveryFee: createdOrder.deliveryFee,
+          discountTotal: createdOrder.discountTotal,
+          discountIfood: createdOrder.discountIfood,
+          discountMerchant: createdOrder.discountMerchant,
+          ifoodReference: createdOrder.ifoodReference,
+          source: "IFOOD",
+          notes: createdOrder.notes,
+          createdAt: createdOrder.createdAt,
+        };
+        pushJobToPrintQueue(franchisee.id, formattedForPrint, franchisee.storeName || "HAKIM CENTRO");
+      } catch (printErr: any) {
+        console.warn("[iFood Webhook] Erro ao enfileirar impressão automática:", printErr?.message);
+      }
 
     await autoConfirmIfoodOrder(orderId, token);
   }

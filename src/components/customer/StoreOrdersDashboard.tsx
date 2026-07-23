@@ -644,6 +644,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       if (res.ok) {
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
         router.refresh();
+
+        // 🖨️ Impressão Automática ao Aceitar Pedido (se autoprint estiver ativado)
+        if (newStatus === "ACEITO" && printerConfig?.autoprint !== false) {
+          const targetOrder = orders.find(o => o.id === orderId);
+          if (targetOrder) {
+            handlePrint(targetOrder, "cozinha");
+          }
+        }
       } else {
         const errData = await res.json().catch(() => ({}));
         const msg = errData?.error || `Erro ${res.status}`;

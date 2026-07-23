@@ -6,6 +6,25 @@ import { authOptions } from "@/lib/auth";
 // Fila em memória por franqueado (rápido e sem overhead)
 const queueMap = new Map<string, any[]>();
 
+export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
+  if (!targetId) return;
+  const job = {
+    id: "job_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+    order,
+    storeName: storeName || "FIREHUB",
+    paperWidth: paperWidth || "80mm",
+    createdAt: new Date().toISOString(),
+  };
+
+  if (!queueMap.has(targetId)) {
+    queueMap.set(targetId, []);
+  }
+  const q = queueMap.get(targetId)!;
+  q.push(job);
+  if (q.length > 50) q.shift();
+  console.log(`[PrintQueue] 🖨️ Auto-print job ${job.id} enfileirado para o franqueado ${targetId}!`);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -25,23 +44,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Franchisee ID obrigatorio" }, { status: 400 });
     }
 
-    const job = {
-      id: "job_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
-      order,
-      storeName: storeName || "FIREHUB",
-      paperWidth: paperWidth || "80mm",
-      createdAt: new Date().toISOString(),
-    };
+    pushJobToPrintQueue(targetId, order, storeName, paperWidth);
 
-    if (!queueMap.has(targetId)) {
-      queueMap.set(targetId, []);
-    }
-    const q = queueMap.get(targetId)!;
-    q.push(job);
-    // Limita tamanho da fila a 50 jobs
-    if (q.length > 50) q.shift();
-
-    return NextResponse.json({ ok: true, jobId: job.id });
+    return NextResponse.json({ ok: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
