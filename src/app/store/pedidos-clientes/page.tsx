@@ -81,7 +81,30 @@ export default async function FranchiseeCustomerOrdersPage() {
         select: { id: true, name: true, phone: true },
       }),
     ]);
-    orders = ordersRes;
+    // Compute server-authoritative daily sequence numbers starting at 00:00 AM Brazil time (matching KDS)
+    const now = new Date();
+    const yearStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
+    const monthStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
+    const dayStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
+    const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
+
+    const storeOrdersToday = await prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: targetFranchiseeId,
+        createdAt: { gte: startOfTodayBrazil },
+      },
+      select: { id: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const dailyNumMap = new Map<string, number>();
+    storeOrdersToday.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
+
+    orders = ordersRes.map((o: any) => ({
+      ...o,
+      dailyOrderNumber: dailyNumMap.get(o.id) || null,
+    }));
+
     motoboys = motoboysRes;
     if (cashSessionRes?.openedAt) {
       activeCashSessionOpenedAt = cashSessionRes.openedAt.toISOString();

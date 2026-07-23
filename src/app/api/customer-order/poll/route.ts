@@ -537,5 +537,28 @@ export async function GET(req: NextRequest) {
     take: 200
   });
 
-  return NextResponse.json(orders);
+  const now = new Date();
+  const yearStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
+  const monthStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
+  const dayStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
+  const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
+
+  const storeOrdersToday = await prisma.customerOrder.findMany({
+    where: {
+      franchiseeId: targetFranchiseeId,
+      createdAt: { gte: startOfTodayBrazil },
+    },
+    select: { id: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const dailyNumMap = new Map<string, number>();
+  storeOrdersToday.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
+
+  const ordersWithDailyNum = orders.map((o) => ({
+    ...o,
+    dailyOrderNumber: dailyNumMap.get(o.id) || null,
+  }));
+
+  return NextResponse.json(ordersWithDailyNum);
 }
