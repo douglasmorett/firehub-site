@@ -108,55 +108,86 @@ Write-Output "OK"
 `, "utf-8");
 
 /**
- * Lista impressoras reais instaladas no Windows (Get-Printer -> Win32_Printer -> WMIC)
+ * Parse seguro de JSON com fallback via Regex se o encoding do Windows falhar
+ */
+function safeJsonParse(str) {
+  if (!str) return null;
+  try {
+    const clean = str.replace(/^\uFEFF/, "").trim();
+    return JSON.parse(clean);
+  } catch (e) {
+    try {
+      const names = [];
+      const matches = str.matchAll(/"Name"\s*:\s*"([^"]+)"/gi);
+      for (const m of matches) {
+        if (m[1]) names.push({ Name: m[1] });
+      }
+      return names.length > 0 ? names : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function dedupePrinters(list) {
+  const seen = new Set();
+  const res = [];
+  for (const item of list) {
+    if (item && item.name && !seen.has(item.name.toLowerCase())) {
+      seen.add(item.name.toLowerCase());
+      res.push(item);
+    }
+  }
+  return res;
+}
+
+/**
+ * Lista impressoras reais instaladas no Windows (PowerShell UTF-8 -> WMI -> Plain Text)
  */
 function listPrinters() {
-  // 1. Tenta Get-Printer via PowerShell
+  const list = [];
+
+  // 1. Tenta Get-Printer com UTF-8 explícito
   try {
-    const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json"`;
+    const cmd = `powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json -Compress"`;
     const raw = execSync(cmd, { encoding: "utf-8", timeout: 8000 });
-    const parsed = JSON.parse(raw);
-    const arr = Array.isArray(parsed) ? parsed : [parsed];
-    const res = arr.filter(p => p && p.Name).map(p => ({
-      name: String(p.Name).trim(),
-      driver: String(p.DriverName || "").trim(),
-      port: String(p.PortName || "").trim(),
-      status: "online",
-    }));
-    if (res.length > 0) return res;
+    const parsed = safeJsonParse(raw);
+    if (parsed) {
+      const arr = Array.isArray(parsed) ? parsed : [parsed];
+      for (const p of arr) {
+        if (p && p.Name) list.push({ name: String(p.Name).trim(), driver: String(p.DriverName || "").trim(), port: String(p.PortName || "").trim(), status: "online" });
+      }
+    }
   } catch (e1) {}
+
+  if (list.length > 0) return dedupePrinters(list);
 
   // 2. Fallback Get-WmiObject Win32_Printer
   try {
-    const cmd = `powershell -NoProfile -Command "Get-WmiObject -Class Win32_Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json"`;
+    const cmd = `powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-WmiObject Win32_Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json -Compress"`;
     const raw = execSync(cmd, { encoding: "utf-8", timeout: 8000 });
-    const parsed = JSON.parse(raw);
-    const arr = Array.isArray(parsed) ? parsed : [parsed];
-    const res = arr.filter(p => p && p.Name).map(p => ({
-      name: String(p.Name).trim(),
-      driver: String(p.DriverName || "").trim(),
-      port: String(p.PortName || "").trim(),
-      status: "online",
-    }));
-    if (res.length > 0) return res;
-  } catch (e2) {}
-
-  // 3. Fallback WMIC CSV
-  try {
-    const raw = execSync(`wmic printer get Name,DriverName,PortName /format:csv`, { encoding: "utf-8", timeout: 8000 });
-    const lines = raw.split("\n").filter(l => l.trim() && !l.startsWith("Node"));
-    const res = [];
-    for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split(",");
-      if (parts.length >= 4) {
-        const name = parts[2]?.trim();
-        if (name) res.push({ name, driver: parts[1]?.trim() || "", port: parts[3]?.trim() || "", status: "online" });
+    const parsed = safeJsonParse(raw);
+    if (parsed) {
+      const arr = Array.isArray(parsed) ? parsed : [parsed];
+      for (const p of arr) {
+        if (p && p.Name) list.push({ name: String(p.Name).trim(), driver: String(p.DriverName || "").trim(), port: String(p.PortName || "").trim(), status: "online" });
       }
     }
-    if (res.length > 0) return res;
+  } catch (e2) {}
+
+  if (list.length > 0) return dedupePrinters(list);
+
+  // 3. Fallback super simples em Texto Puro (uma linha por impressora)
+  try {
+    const cmd = `powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; (Get-Printer).Name"`;
+    const raw = execSync(cmd, { encoding: "utf-8", timeout: 6000 });
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const name of lines) {
+      list.push({ name, driver: "", port: "", status: "online" });
+    }
   } catch (e3) {}
 
-  return [];
+  return dedupePrinters(list);
 }
 
 /**
