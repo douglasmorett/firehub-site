@@ -79,15 +79,8 @@ const getNeighborhoodOnly = (addr: string | null) => {
     }
   }
 
-  // 3. Fallback for single street+number strings like "R. Barra do Piraí, 20" or "Estr. Prof. Leandro Faria Sarzedas, 759"
-  // Strip street prefixes (Rua, R., Av., Avenida, Estr., Estrada, Al., Alameda, Tv., Travessa, Pça., Praça)
-  // and trailing house numbers (, 123 / , n 123 / , nº 123)
-  const stripped = cleaned
-    .replace(/^(rua|r\.|av\.|avenida|estrada|estr\.|alameda|al\.|travessa|tv\.|praça|pça\.)\s+/i, "")
-    .replace(/,\s*(nº|n°|n|num|número)?\s*\d+\s*[a-z]?$/i, "")
-    .trim();
-
-  return stripped || cleaned;
+  // Se não houver hífen ou separador de bairro no texto armazenado, não confunde rua com bairro
+  return "Sem bairro informado";
 };
 
 // Mapping columns to statuses for drag-and-drop
