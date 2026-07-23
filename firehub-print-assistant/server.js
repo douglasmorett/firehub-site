@@ -108,24 +108,55 @@ Write-Output "OK"
 `, "utf-8");
 
 /**
- * Lista impressoras do Windows via PowerShell
+ * Lista impressoras reais instaladas no Windows (Get-Printer -> Win32_Printer -> WMIC)
  */
 function listPrinters() {
+  // 1. Tenta Get-Printer via PowerShell
   try {
-    const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, DriverName, PortName, PrinterStatus | ConvertTo-Json"`;
-    const raw = execSync(cmd, { encoding: "utf-8", timeout: 10000 });
+    const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json"`;
+    const raw = execSync(cmd, { encoding: "utf-8", timeout: 8000 });
     const parsed = JSON.parse(raw);
     const arr = Array.isArray(parsed) ? parsed : [parsed];
-    return arr.map((p) => ({
-      name: p.Name,
-      driver: p.DriverName || "",
-      port: p.PortName || "",
-      status: p.PrinterStatus === 0 ? "online" : "offline",
+    const res = arr.filter(p => p && p.Name).map(p => ({
+      name: String(p.Name).trim(),
+      driver: String(p.DriverName || "").trim(),
+      port: String(p.PortName || "").trim(),
+      status: "online",
     }));
-  } catch (e) {
-    console.error("[Printers] Erro ao listar:", e.message);
-    return [];
-  }
+    if (res.length > 0) return res;
+  } catch (e1) {}
+
+  // 2. Fallback Get-WmiObject Win32_Printer
+  try {
+    const cmd = `powershell -NoProfile -Command "Get-WmiObject -Class Win32_Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json"`;
+    const raw = execSync(cmd, { encoding: "utf-8", timeout: 8000 });
+    const parsed = JSON.parse(raw);
+    const arr = Array.isArray(parsed) ? parsed : [parsed];
+    const res = arr.filter(p => p && p.Name).map(p => ({
+      name: String(p.Name).trim(),
+      driver: String(p.DriverName || "").trim(),
+      port: String(p.PortName || "").trim(),
+      status: "online",
+    }));
+    if (res.length > 0) return res;
+  } catch (e2) {}
+
+  // 3. Fallback WMIC CSV
+  try {
+    const raw = execSync(`wmic printer get Name,DriverName,PortName /format:csv`, { encoding: "utf-8", timeout: 8000 });
+    const lines = raw.split("\n").filter(l => l.trim() && !l.startsWith("Node"));
+    const res = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length >= 4) {
+        const name = parts[2]?.trim();
+        if (name) res.push({ name, driver: parts[1]?.trim() || "", port: parts[3]?.trim() || "", status: "online" });
+      }
+    }
+    if (res.length > 0) return res;
+  } catch (e3) {}
+
+  return [];
 }
 
 /**
