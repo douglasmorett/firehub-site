@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron .",
     "start:server": "node server.js",
-    "build": "electron-builder --win",
+    "build": "electron-builder --win nsis portable",
+    "build:nsis": "electron-builder --win nsis",
     "build:portable": "electron-builder --win portable"
   },
   "dependencies": {
@@ -19,12 +20,20 @@
   },
   "build": {
     "appId": "com.firehub.print-assistant",
-    "productName": "FireHub Assistente de Impressão",
+    "productName": "FireHub Assistente de Impressao",
     "win": {
-      "icon": "icon.ico",
       "target": [
+        "nsis",
         "portable"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FireHub Assistente de Impressao",
+      "artifactName": "FireHub-Assistente-Impressao-Setup.exe"
     },
     "portable": {
       "artifactName": "FireHub-Assistente-Impressao.exe"

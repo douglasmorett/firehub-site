@@ -175,12 +175,22 @@ export default function PrinterSetupClient({
                 <p style={{ fontSize: "0.82rem", color: "#475569", margin: "0 0 12px", lineHeight: 1.5 }}>
                   Baixe o assistente e execute no computador que está conectado à impressora. <strong>Não feche a janela</strong> enquanto quiser impressão automática.
                 </p>
-                <a
-                  href="/downloads/FireHub-Assistente-Impressao.exe"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 20px", background: "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.88rem" }}
-                >
-                  <Download size={15} /> Baixar Assistente FireHub
-                </a>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  <a
+                    href="/downloads/FireHub-Assistente-Impressao-Setup.exe"
+                    download
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 20px", background: "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.88rem" }}
+                  >
+                    <Download size={15} /> Baixar Instalador Windows (.exe)
+                  </a>
+                  <a
+                    href="/downloads/FireHub-Assistente-Impressao.exe"
+                    download
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "#F1F5F9", color: "#334155", borderRadius: 10, textDecoration: "none", fontWeight: 600, fontSize: "0.82rem", border: "1px solid #CBD5E1" }}
+                  >
+                    <Download size={14} /> Versão Portátil
+                  </a>
+                </div>
               </div>
 
               {/* Passo 2 — Mockup visual REALISTA do Chrome */}
@@ -381,10 +391,11 @@ export default function PrinterSetupClient({
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <a
-                href="/downloads/FireHub-Assistente-Impressao.exe"
+                href="/downloads/FireHub-Assistente-Impressao-Setup.exe"
+                download
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.78rem", whiteSpace: "nowrap" }}
               >
-                <Download size={14} /> Baixar Assistente
+                <Download size={14} /> Baixar Instalador (.exe)
               </a>
               <button onClick={() => setShowHelp(v => !v)} style={{ padding: "8px 14px", borderRadius: 10, background: "#F1F5F9", border: "none", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", color: "#64748B", whiteSpace: "nowrap" }}>
                 ❓ Ajuda
