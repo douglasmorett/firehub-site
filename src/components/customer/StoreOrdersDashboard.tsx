@@ -65,14 +65,14 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
 }
 
 
-export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado }: { user: any; orders: any[]; isFranqueado: boolean }) {
+export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[] }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [now, setNow] = useState(new Date());
-  const [motoboys, setMotoboys] = useState<any[]>([]);
+  const [motoboys, setMotoboys] = useState<any[]>(initialMotoboys || []);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
@@ -581,7 +581,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   useEffect(() => {
     fetch("/api/motoboys")
       .then(r => r.ok ? r.json() : [])
-      .then(data => setMotoboys(Array.isArray(data) ? data.filter((m: any) => m.active !== false) : []))
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setMotoboys(data.filter((m: any) => m.active !== false));
+        }
+      })
       .catch(() => {});
   }, []);
 

@@ -25,8 +25,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
   }
 
+  const currentUser = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true }
+  });
+  if (!currentUser) {
+    return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  }
+
+  const targetFranchiseeId = currentUser.ownerId || currentUser.id;
   const role = (session.user as any)?.role;
-  if (role !== "ADMIN" && order.franchisee.email !== session.user?.email) {
+
+  if (role !== "ADMIN" && order.franchiseeId !== targetFranchiseeId) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 

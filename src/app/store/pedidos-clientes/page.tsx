@@ -43,11 +43,12 @@ export default async function FranchiseeCustomerOrdersPage() {
 
   const targetFranchiseeId = (user as any).ownerId || user.id;
 
-  // Busca do caixa aberto e pedidos
+  // Busca do caixa aberto, motoboys e pedidos
   let orders: any[] = [];
   let activeCashSessionOpenedAt: string | null = null;
+  let motoboys: any[] = [];
   try {
-    const [ordersRes, cashSessionRes] = await Promise.all([
+    const [ordersRes, cashSessionRes, motoboysRes] = await Promise.all([
       prisma.customerOrder.findMany({
         where: { franchiseeId: targetFranchiseeId },
         include: {
@@ -74,13 +75,19 @@ export default async function FranchiseeCustomerOrdersPage() {
         select: { openedAt: true },
         orderBy: { openedAt: "desc" },
       }),
+      prisma.motoboy.findMany({
+        where: { franchiseeId: targetFranchiseeId, active: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, phone: true },
+      }),
     ]);
     orders = ordersRes;
+    motoboys = motoboysRes;
     if (cashSessionRes?.openedAt) {
       activeCashSessionOpenedAt = cashSessionRes.openedAt.toISOString();
     }
   } catch (err) {
-    console.error("[PedidosClientes] Erro ao buscar pedidos/caixa:", err);
+    console.error("[PedidosClientes] Erro ao buscar pedidos/caixa/motoboys:", err);
     orders = [];
   }
 
@@ -90,6 +97,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       orders={orders}
       isFranqueado={user.role === "FRANCHISEE" || user.role === "STAFF"}
       initialCashSessionOpenedAt={activeCashSessionOpenedAt}
+      initialMotoboys={motoboys}
     />
   );
 }

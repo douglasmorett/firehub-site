@@ -73,8 +73,18 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
   }
 
-  // Security: only admin or the franchisee owner can update
-  if (role !== "ADMIN" && order.franchisee.email !== session.user?.email) {
+  const currentUser = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true }
+  });
+  if (!currentUser) {
+    return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  }
+
+  const targetFranchiseeId = currentUser.ownerId || currentUser.id;
+
+  // Security: only admin or the franchisee (owner/staff) can update
+  if (role !== "ADMIN" && order.franchiseeId !== targetFranchiseeId) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
