@@ -43,32 +43,44 @@ export default async function FranchiseeCustomerOrdersPage() {
 
   const targetFranchiseeId = (user as any).ownerId || user.id;
 
-  // Apenas a busca de pedidos dentro de try/catch (não faz redirect)
+  // Busca do caixa aberto e pedidos
   let orders: any[] = [];
+  let activeCashSessionOpenedAt: string | null = null;
   try {
-    orders = await prisma.customerOrder.findMany({
-      where: { franchiseeId: targetFranchiseeId },
-      include: {
-        items: {
-          include: {
-            menuProduct: {
-              select: {
-                id: true,
-                name: true,
-                price: true,
-                imageUrl: true,
-                category: true,
-                active: true,
+    const [ordersRes, cashSessionRes] = await Promise.all([
+      prisma.customerOrder.findMany({
+        where: { franchiseeId: targetFranchiseeId },
+        include: {
+          items: {
+            include: {
+              menuProduct: {
+                select: {
+                  id: true,
+                  name: true,
+                  price: true,
+                  imageUrl: true,
+                  category: true,
+                  active: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    });
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      }),
+      prisma.cashSession.findFirst({
+        where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+        select: { openedAt: true },
+        orderBy: { openedAt: "desc" },
+      }),
+    ]);
+    orders = ordersRes;
+    if (cashSessionRes?.openedAt) {
+      activeCashSessionOpenedAt = cashSessionRes.openedAt.toISOString();
+    }
   } catch (err) {
-    console.error("[PedidosClientes] Erro ao buscar pedidos:", err);
+    console.error("[PedidosClientes] Erro ao buscar pedidos/caixa:", err);
     orders = [];
   }
 
@@ -77,6 +89,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       user={user}
       orders={orders}
       isFranqueado={user.role === "FRANCHISEE" || user.role === "STAFF"}
+      initialCashSessionOpenedAt={activeCashSessionOpenedAt}
     />
   );
 }
