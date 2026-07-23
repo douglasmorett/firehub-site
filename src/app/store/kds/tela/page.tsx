@@ -940,8 +940,8 @@ function OrderCard({
           const o = order as any;
           if (o.deliveryBy === "MERCHANT" || o.ifoodDeliveryBy === "MERCHANT") return null;
           const isIfoodDriver = o.deliveryBy === "IFOOD" || o.ifoodDeliveryBy === "IFOOD" ||
-            o.ifoodDriverName || o.ifoodDriverPhone || (o.ifoodDriverStatus && o.ifoodDriverStatus !== "IDLE") ||
-            (o.notes && (o.notes.toUpperCase().includes("ENTREGA PARCEIRA") || o.notes.toUpperCase().includes("LOGISTICA IFOOD") || o.notes.toUpperCase().includes("MOTOBOY IFOOD")));
+            o.ifoodDriverName || o.ifoodDriverPhone ||
+            (o.notes && (o.notes.toUpperCase().includes("ENTREGA PARCEIRA") || o.notes.toUpperCase().includes("LOGISTICA IFOOD")));
           
           if (!isIfoodDriver) return null;
           return (

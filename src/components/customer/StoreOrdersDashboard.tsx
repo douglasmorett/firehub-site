@@ -50,16 +50,18 @@ export const isIfoodMotoboy = (order: any): boolean => {
     return false;
   }
 
-  // 2. Se explicitamente tiver entregador iFood alocado ou status de logística do iFood
+  // 2. Se explicitamente for entrega de logística do iFood
   if (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD") {
     return true;
   }
-  if (order.ifoodDriverName || order.ifoodDriverPhone || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "IDLE")) {
+
+  // 3. Se tiver nome ou telefone do entregador do iFood (alocado pelo iFood)
+  if (order.ifoodDriverName || order.ifoodDriverPhone) {
     return true;
   }
 
-  // 3. Se as observações tiverem menção explícita de "ENTREGA PARCEIRA" ou "LOGISTICA IFOOD"
-  if (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD") || order.notes.toUpperCase().includes("MOTOBOY IFOOD"))) {
+  // 4. Se as observações tiverem menção explícita de "ENTREGA PARCEIRA" ou "LOGISTICA IFOOD"
+  if (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD"))) {
     return true;
   }
 

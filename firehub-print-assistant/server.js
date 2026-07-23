@@ -296,8 +296,8 @@ function buildEscPos(order, storeName, columns = 48) {
   const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
   const isIfoodDriver = (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD" ||
-    order.ifoodDriverName || order.ifoodDriverPhone || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "IDLE") ||
-    (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD") || order.notes.toUpperCase().includes("MOTOBOY IFOOD")))) &&
+    order.ifoodDriverName || order.ifoodDriverPhone ||
+    (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD")))) &&
     order.deliveryBy !== "MERCHANT" && order.ifoodDeliveryBy !== "MERCHANT";
 
   res += CENTER + BOLD_ON + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
