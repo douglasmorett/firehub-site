@@ -100,22 +100,11 @@ export async function GET(req: NextRequest) {
   const dayStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
   const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
 
-  // Buscar caixa aberto para sincronizar início da contagem diária com o Gestor de Pedidos
-  const activeCashSession = await prisma.cashSession.findFirst({
-    where: {
-      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: "OPEN",
-    },
-    select: { openedAt: true },
-    orderBy: { openedAt: "desc" },
-  });
-
-  const startDate = activeCashSession?.openedAt || startOfTodayBrazil;
-
+  // Buscar pedidos criados hoje a partir da meia-noite (America/Sao_Paulo)
   const storeOrdersToday = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      createdAt: { gte: startDate },
+      createdAt: { gte: startOfTodayBrazil },
     },
     select: { id: true, createdAt: true },
     orderBy: { createdAt: "asc" },

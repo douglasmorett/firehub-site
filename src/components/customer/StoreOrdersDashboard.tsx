@@ -950,30 +950,44 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // Sequential order numbering — includes ALL orders in period (even ENCERRADO)
   // so numbers stay stable. Resets when date range / cash session changes.
+  // Sequential order numbering — 100% IDENTICAL TO KDS (always counts from 00:00 AM Brazil time)
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-    const allInPeriod = orders
-      .filter(o => {
-        if ((o as any).dailyOrderNumber) {
-          map.set(o.id, (o as any).dailyOrderNumber);
-        }
-        const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
-        const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
-        const isInProgress = activeStatuses.includes(o.status) && o.status !== "ENCERRADO";
-        if (isInProgress && isIntegration) return true;
 
-        const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
-        return refDate >= fromDate && refDate <= toDate;
-      })
+    // 1. If dailyOrderNumber was sent by API, use it
+    orders.forEach((o: any) => {
+      if (o.dailyOrderNumber) {
+        map.set(o.id, o.dailyOrderNumber);
+      }
+    });
+
+    // 2. Compute sequence from all orders of today sorted by createdAt asc
+    const _today = new Date();
+    const yearStr = _today.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
+    const monthStr = _today.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
+    const dayStr = _today.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
+    const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
+
+    const sortedToday = [...orders]
+      .filter((o: any) => new Date(o.createdAt) >= startOfTodayBrazil)
       .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    allInPeriod.forEach((o: any, i: number) => {
+    sortedToday.forEach((o: any, i: number) => {
       if (!map.has(o.id)) {
         map.set(o.id, i + 1);
       }
     });
+
+    // 3. Fallback for older orders
+    const sortedAll = [...orders].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    sortedAll.forEach((o: any, i: number) => {
+      if (!map.has(o.id)) {
+        map.set(o.id, i + 1);
+      }
+    });
+
     return map;
-  }, [orders, fromDate, toDate]);
+  }, [orders]);
 
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
