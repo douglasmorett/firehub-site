@@ -938,9 +938,10 @@ function OrderCard({
         {/* MOTOBOY IFOOD BADGE DESTACADO */}
         {(() => {
           const o = order as any;
-          if (o.deliveryBy === "MERCHANT" || o.ifoodDeliveryBy === "MERCHANT") return null;
+          const phone = String(o.customerPhone || "");
           const isIfoodDriver = o.deliveryBy === "IFOOD" || o.ifoodDeliveryBy === "IFOOD" ||
             o.ifoodDriverName || o.ifoodDriverPhone ||
+            phone.includes("0800 200") || phone.includes("0800200") || phone.includes("0800-200") ||
             (o.notes && (o.notes.toUpperCase().includes("ENTREGA PARCEIRA") || o.notes.toUpperCase().includes("LOGISTICA IFOOD")));
           
           if (!isIfoodDriver) return null;

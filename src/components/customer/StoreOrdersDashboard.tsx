@@ -45,22 +45,21 @@ const cleanAddress = (addr: string | null) => {
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
   
-  // 1. Se for entrega própria da loja (MERCHANT), NUNCA é entregador do iFood!
-  if (order.deliveryBy === "MERCHANT" || order.ifoodDeliveryBy === "MERCHANT") {
-    return false;
-  }
-
-  // 2. Se explicitamente for entrega de logística do iFood
+  // 1. Se for entrega de logística do iFood (ou se o telefone for 0800 200 - Central de Entregadores iFood)
   if (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD") {
     return true;
   }
 
-  // 3. Se tiver nome ou telefone do entregador do iFood (alocado pelo iFood)
   if (order.ifoodDriverName || order.ifoodDriverPhone) {
     return true;
   }
 
-  // 4. Se as observações tiverem menção explícita de "ENTREGA PARCEIRA" ou "LOGISTICA IFOOD"
+  const phone = String(order.customerPhone || "");
+  if (phone.includes("0800 200") || phone.includes("0800200") || phone.includes("0800-200")) {
+    return true;
+  }
+
+  // 2. Se as observações tiverem menção explícita de "ENTREGA PARCEIRA" ou "LOGISTICA IFOOD"
   if (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD"))) {
     return true;
   }
