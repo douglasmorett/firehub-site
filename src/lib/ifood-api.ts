@@ -40,28 +40,26 @@ export async function getIfoodToken(): Promise<string> {
   return _token!;
 }
 
-/** Wrapper autenticado para LEITURAS (com header de homologação para os cenários de teste) */
+/** Wrapper autenticado para LEITURAS */
 export async function ifoodFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
   const token = await getIfoodToken();
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    ...(options.headers as Record<string, string> ?? {}),
+  };
   return fetch(`${IFOOD_BASE}${path}`, {
     ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "x-request-homologation": "true",
-      ...(options.headers ?? {}),
-    },
+    headers,
   });
 }
 
 /**
  * Wrapper para ESCRITAS reais (POST/PUT/DELETE).
- * Sem x-request-homologation para que as mudanças
- * reflitam de verdade no Portal do Parceiro iFood.
  */
 export async function ifoodMutate(
   path: string,
@@ -95,4 +93,65 @@ export async function getMerchantIdForUser(email: string): Promise<string> {
   const id = user?.ifoodMerchantId;
   if (!id) throw new Error("Você não possui uma loja iFood integrada.");
   return id;
+}
+
+/**
+ * Atualiza o tempo de preparo da loja no iFood (myPreparationTime).
+ * Testa as variações oficiais da iFood Merchant API.
+ */
+export async function updateIfoodPreparationTime(merchantId: string, minutes: number): Promise<{ success: boolean; error?: string }> {
+  try {
+    const validMinutes = Math.min(70, Math.max(5, Math.round(minutes)));
+    const token = await getIfoodToken();
+
+    const headersBase = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+
+    // Strategy 1: Standard PUT /merchant/v1.0/merchants/{merchantId}/myPreparationTime with integer body
+    let res = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants/${merchantId}/myPreparationTime`, {
+      method: "PUT",
+      headers: headersBase,
+      body: JSON.stringify(validMinutes),
+    });
+
+    if (res.ok) {
+      console.log(`[iFood Sync] ✅ Tempo de preparo da loja ${merchantId} atualizado no iFood: ${validMinutes} min`);
+      return { success: true };
+    }
+
+    let lastErr = await res.text();
+
+    // Strategy 2: PUT with X-iFood-Customer-ID
+    res = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants/${merchantId}/myPreparationTime`, {
+      method: "PUT",
+      headers: { ...headersBase, "X-iFood-Customer-ID": merchantId },
+      body: JSON.stringify(validMinutes),
+    });
+    if (res.ok) return { success: true };
+
+    // Strategy 3: PUT with object payload { "preparationTime": validMinutes }
+    res = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants/${merchantId}/myPreparationTime`, {
+      method: "PUT",
+      headers: headersBase,
+      body: JSON.stringify({ preparationTime: validMinutes }),
+    });
+    if (res.ok) return { success: true };
+
+    // Strategy 4: POST /merchant/v1.0/merchants/{merchantId}/myPreparationTime
+    res = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants/${merchantId}/myPreparationTime`, {
+      method: "POST",
+      headers: headersBase,
+      body: JSON.stringify(validMinutes),
+    });
+    if (res.ok) return { success: true };
+
+    console.error(`[iFood Sync] Erro ao atualizar tempo de preparo (${validMinutes}m) para loja ${merchantId}:`, lastErr);
+    return { success: false, error: lastErr };
+  } catch (err: any) {
+    console.error(`[iFood Sync] Exceção ao atualizar tempo no iFood:`, err?.message);
+    return { success: false, error: err?.message };
+  }
 }

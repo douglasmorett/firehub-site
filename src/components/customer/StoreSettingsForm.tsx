@@ -28,6 +28,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [storeName, setStoreName] = useState(user.storeName || "");
   const [storePhone, setStorePhone] = useState(user.storePhone || "");
   const [storeAddress, setStoreAddress] = useState(user.storeAddress || "");
+  const [city, setCity] = useState(user.city || "Rio de Janeiro - RJ");
+  const [storeTimezone, setStoreTimezone] = useState(user.storeTimezone || "America/Sao_Paulo");
   const [storeBanner, setStoreBanner] = useState(user.storeBanner || "");
   const [storeLogo, setStoreLogo] = useState(user.storeLogo || "");
   const [storeDeliveryOnly, setStoreDeliveryOnly] = useState(user.storeDeliveryOnly || false);
@@ -112,7 +114,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     "Quinta": "THURSDAY", "Sexta": "FRIDAY", "Sábado": "SATURDAY", "Domingo": "SUNDAY"
   };
 
-  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, storeAddress, storeDeliveryOnly }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
+  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, storeAddress, storeDeliveryOnly, city, storeTimezone }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
 
   // Valida sobreposição de turnos no mesmo dia
   const validateShifts = (): string | null => {
@@ -314,7 +316,21 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <div className="input-group"><label>Nome da Loja</label><input className="input-field" value={storeName} onChange={e => { setStoreName(e.target.value); setDirtyInfo(true); }} /></div>
           <div className="input-group"><label>Telefone / WhatsApp</label><input className="input-field" value={storePhone} onChange={e => { setStorePhone(e.target.value); setDirtyInfo(true); }} /></div>
-          <div className="input-group" style={{ gridColumn: "span 2" }}><label>Endereço</label><input className="input-field" value={storeAddress} onChange={e => { setStoreAddress(e.target.value); setDirtyInfo(true); }} /></div>
+          <div className="input-group"><label>Cidade / Estado (UF)</label><input className="input-field" placeholder="Ex: Rio de Janeiro - RJ" value={city} onChange={e => { setCity(e.target.value); setDirtyInfo(true); }} /></div>
+          <div className="input-group"><label>Fuso Horário (Timezone)</label>
+            <select className="input-field" value={storeTimezone} onChange={e => { setStoreTimezone(e.target.value); setDirtyInfo(true); }} style={{ background: "#fff", cursor: "pointer" }}>
+              <option value="America/Sao_Paulo">🇧🇷 Brasília / Rio de Janeiro / São Paulo (GMT-3)</option>
+              <option value="America/Bahia">🇧🇷 Bahia / Nordeste (GMT-3)</option>
+              <option value="America/Fortaleza">🇧🇷 Ceará / Fortaleza (GMT-3)</option>
+              <option value="America/Recife">🇧🇷 Pernambuco / Recife (GMT-3)</option>
+              <option value="America/Belem">🇧🇷 Pará / Belém (GMT-3)</option>
+              <option value="America/Manaus">🇧🇷 Amazonas / Manaus (GMT-4)</option>
+              <option value="America/Cuiaba">🇧🇷 Mato Grosso / Cuiabá (GMT-4)</option>
+              <option value="America/Rio_Branco">🇧🇷 Acre / Rio Branco (GMT-5)</option>
+              <option value="America/Noronha">🇧🇷 Fernando de Noronha (GMT-2)</option>
+            </select>
+          </div>
+          <div className="input-group" style={{ gridColumn: "span 2" }}><label>Endereço Completo</label><input className="input-field" value={storeAddress} onChange={e => { setStoreAddress(e.target.value); setDirtyInfo(true); }} /></div>
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "0.75rem", cursor: "pointer" }}>
           <input type="checkbox" checked={storeDeliveryOnly} onChange={e => { setStoreDeliveryOnly(e.target.checked); setDirtyInfo(true); }} />
@@ -675,8 +691,9 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           initialLatLng={(user.storeLatLng as any) || null}
           initialZones={(user.deliveryZones as any) || []}
           zoneType={user.deliveryZoneType || "KM"}
+          initialIfoodSyncDeliveryTime={(user as any).ifoodSyncDeliveryTime ?? false}
           onSave={async (data) => {
-            await fetch("/api/store-settings", {
+            const res = await fetch("/api/store-settings", {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -684,8 +701,16 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 deliveryZones: data.deliveryZones,
                 deliveryZoneType: data.deliveryZoneType,
                 storeAddress: data.storeAddress,
+                ifoodSyncDeliveryTime: data.ifoodSyncDeliveryTime,
               }),
             });
+            const result = await res.json();
+            if (result.ifoodSync && !result.ifoodSync.success) {
+              throw new Error(`iFood: ${result.ifoodSync.error || "Erro desconhecido"}`);
+            }
+            if (result.ifoodSync && result.ifoodSync.success) {
+              (window as any).__ifoodSyncOk = result.ifoodSync.sentMinutes;
+            }
             router.refresh();
           }}
         />

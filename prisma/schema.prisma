@@ -63,11 +63,12 @@ model User {
   mpRefreshToken    String?  @db.Text // Refresh token MP
   celcoinAccountId  String?        // Subconta Celcoin do restaurante (quando disponível)
   // === IFOOD INTEGRATION ===
-  ifoodMerchantId   String?        // UUID da loja no iFood
-  ifoodAccessToken  String?        @db.Text  // Bearer token (OAuth iFood Merchant API)
-  ifoodClientId     String?        // Client ID do app cadastrado no iFood Developer
-  ifoodConnected    Boolean        @default(false) // Módulo iFood ativo
-  ifoodWidgetId     String?        // ID do widget iFood (chat integrado — do Portal do Parceiro)
+  ifoodMerchantId       String?        // UUID da loja no iFood
+  ifoodAccessToken      String?        @db.Text  // Bearer token (OAuth iFood Merchant API)
+  ifoodClientId         String?        // Client ID do app cadastrado no iFood Developer
+  ifoodConnected        Boolean        @default(false) // Módulo iFood ativo
+  ifoodWidgetId         String?        // ID do widget iFood (chat integrado — do Portal do Parceiro)
+  ifoodSyncDeliveryTime Boolean        @default(false) // Sincronizar tempo de entrega/preparo com iFood
   // === JOTAJA / OPEN DELIVERY ===
   jotajaMerchantId  String?        // UUID da loja no Jotajá
   jotajaConnected   Boolean        @default(false) // Módulo Jotajá ativo

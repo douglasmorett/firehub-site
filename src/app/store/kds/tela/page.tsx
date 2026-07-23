@@ -41,9 +41,8 @@ interface Order {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
-function getOrderLabel(order: Order): string {
-  if (order.ifoodReference) return `#${order.ifoodReference}`;
-  if (order.openDeliveryReference) return `#${order.openDeliveryReference}`;
+function getOrderLabel(order: Order, seqNum?: number): string {
+  if (seqNum !== undefined) return `#${seqNum}`;
   return `#${order.id.slice(-4).toUpperCase()}`;
 }
 
@@ -81,7 +80,7 @@ function timerGlow(totalSeconds: number): string {
   return "none";
 }
 
-function parseComboSelections(raw: string | null): { name: string; quantity: number }[] {
+function parseComboSelections(raw: string | null, parentQuantity: number = 1): { name: string; quantity: number }[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -89,7 +88,7 @@ function parseComboSelections(raw: string | null): { name: string; quantity: num
       return parsed
         .map((item: any) => ({
           name: item.name || item.productName || item.label || "",
-          quantity: item.quantity || 1,
+          quantity: (item.quantity || 1) * (parentQuantity || 1),
         }))
         .filter((item: any) => item.name);
     }
@@ -131,6 +130,14 @@ export default function KDSTelaPage() {
   const [exitingOrderId, setExitingOrderId] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasEnteredIds, setHasEnteredIds] = useState<Set<string>>(new Set());
+
+  // Mapeamento sequencial de números do sistema (#1, #2, #3...)
+  const orderNumberMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const sorted = [...orders].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    sorted.forEach((o, i) => map.set(o.id, i + 1));
+    return map;
+  }, [orders]);
 
   // Buscar todas as categorias no mount para o seletor de filtros
   useEffect(() => {
@@ -800,7 +807,7 @@ function OrderCard({
             letterSpacing: "-0.5px",
           }}
         >
-          {getOrderLabel(order)}
+          {getOrderLabel(order, position)}
         </span>
 
         {/* Source badge */}
@@ -876,7 +883,7 @@ function OrderCard({
         }}
       >
         {order.items.map((item) => {
-          const comboItems = parseComboSelections(item.comboSelections);
+          const comboItems = parseComboSelections(item.comboSelections, item.quantity);
           const displayName = item.menuProduct.name.split(" | ")[0];
           return (
             <div key={item.id}>
@@ -924,26 +931,45 @@ function OrderCard({
         })}
       </div>
 
-      {/* ─── Notes / Observations ──────────────────────────────────── */}
-      {order.notes && (
-        <div
-          style={{
-            background: "rgba(234,179,8,0.12)",
-            border: "1px solid rgba(234,179,8,0.3)",
-            borderRadius: 10,
-            padding: "8px 14px",
-            fontSize: 15,
-            fontWeight: 600,
-            color: "#eab308",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 8,
-          }}
-        >
-          <span style={{ fontSize: 16, flexShrink: 0 }}>📝</span>
-          <span>{order.notes}</span>
-        </div>
-      )}
+      {/* ─── Notes / Observations (filter out system-generated lines) ──────────────────────────────────── */}
+      {(() => {
+        if (!order.notes) return null;
+        const customerNotes = order.notes
+          .split("\n")
+          .filter((line: string) => {
+            const l = line.trim();
+            if (!l) return false;
+            // Filter out system-generated iFood info lines
+            if (l.startsWith("Pedido iFood")) return false;
+            if (l.startsWith("🏷️ Desconto")) return false;
+            if (l.startsWith("Fonte:")) return false;
+            if (l.startsWith("📦")) return false;
+            if (l.match(/^(Ref|ID|iFood|#\d)/i)) return false;
+            return true;
+          })
+          .join("\n")
+          .trim();
+        if (!customerNotes) return null;
+        return (
+          <div
+            style={{
+              background: "rgba(234,179,8,0.12)",
+              border: "1px solid rgba(234,179,8,0.3)",
+              borderRadius: 10,
+              padding: "8px 14px",
+              fontSize: 15,
+              fontWeight: 600,
+              color: "#eab308",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 16, flexShrink: 0 }}>📝</span>
+            <span>{customerNotes}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

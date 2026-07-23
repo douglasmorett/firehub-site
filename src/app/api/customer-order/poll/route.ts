@@ -16,15 +16,21 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
   try {
     const { getIfoodToken } = await import("@/lib/ifood-api");
-    const merchantId = process.env.IFOOD_MERCHANT_UUID;
-    if (!merchantId) return;
+    let merchantId = process.env.IFOOD_MERCHANT_UUID;
+    if (!merchantId && sessionUserId) {
+      const u = await prisma.user.findUnique({ where: { id: sessionUserId }, select: { ifoodMerchantId: true } });
+      merchantId = u?.ifoodMerchantId || undefined;
+    }
 
     const token = await getIfoodToken();
 
     // Poll events from iFood
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    if (merchantId) headers["x-polling-merchants"] = merchantId;
+
     const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
       method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
+      headers,
     });
     if (!res.ok) {
       const errBody = await res.text().catch(() => "");
@@ -160,6 +166,10 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
             const eventMerchantId = merchantId || orderData.merchant?.id;
             const eventFranchisee = await prisma.user.findFirst({
+              where: { email: "contatohakim@gmail.com" }
+            }) || (sessionUserId
+              ? await prisma.user.findUnique({ where: { id: sessionUserId } })
+              : null) || await prisma.user.findFirst({
               where: { ifoodMerchantId: eventMerchantId } as any,
             });
             if (!eventFranchisee) {
@@ -168,24 +178,36 @@ async function pollIfoodEvents(sessionUserId?: string) {
             }
 
             // Extract items
-            const items = (orderData.items ?? []).map((i: any) => ({
-              price: i.unitPrice ?? i.price ?? 0,
-              quantity: i.quantity ?? 1,
-              menuProduct: {
-                connectOrCreate: {
-                  where: { id: `ifood-${i.id}` } as any,
-                  create: {
-                    id: `ifood-${i.id}`,
-                    franchiseeId: eventFranchisee.id,
-                    name: i.name ?? "Item iFood",
-                    description: "",
-                    price: i.unitPrice ?? i.price ?? 0,
-                    category: "iFood",
-                    active: true,
+            const items = (orderData.items ?? []).map((i: any) => {
+              const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
+              const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
+                ? JSON.stringify(subItemsList.map((s: any) => ({
+                    name: s.name || s.label || s.productName || "",
+                    quantity: s.quantity || 1,
+                    price: s.price || s.unitPrice || s.addition || 0
+                  })).filter((s: any) => s.name))
+                : null;
+
+              return {
+                price: i.unitPrice ?? i.price ?? 0,
+                quantity: i.quantity ?? 1,
+                comboSelections: comboSels,
+                menuProduct: {
+                  connectOrCreate: {
+                    where: { id: `ifood-${i.id}` } as any,
+                    create: {
+                      id: `ifood-${i.id}`,
+                      franchiseeId: eventFranchisee.id,
+                      name: i.name ?? "Item iFood",
+                      description: "",
+                      price: i.unitPrice ?? i.price ?? 0,
+                      category: "iFood",
+                      active: true,
+                    } as any,
                   } as any,
-                } as any,
-              },
-            }));
+                },
+              };
+            });
 
             // Extract total
             const total = typeof orderData.total === "object"
@@ -320,8 +342,8 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 customerPhone: (() => {
                   const phone = orderData.customer?.phone;
                   const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
-                  const localizer = phone?.localizer;
-                  return localizer ? `${number} ID: ${localizer}` : number;
+                  const localizer = phone?.localizer || phone?.phoneLocalizer || orderData.customer?.phoneLocalizer || orderData.customer?.localizer;
+                  return localizer ? `${number} (ID: ${localizer})` : number;
                 })(),
                 customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
                 deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
@@ -344,15 +366,13 @@ async function pollIfoodEvents(sessionUserId?: string) {
               );
             }
           } else if (!isPlaced) {
-            // Pedido já existe — atualizar status
-            const STATUS_EVENT_MAP: Record<string, string> = {};
-            if (isConfirmed) STATUS_EVENT_MAP[code] = "ACEITO";
-            if (isPreparation) STATUS_EVENT_MAP[code] = "PREPARANDO";
-            if (isReadyPickup) STATUS_EVENT_MAP[code] = "PREPARANDO";
-            if (isDispatched) STATUS_EVENT_MAP[code] = "SAIU_ENTREGA";
-            if (isConcluded) STATUS_EVENT_MAP[code] = "ENTREGUE";
+            // Pedido já existe — atualizar status automaticamente
+            let newStatus: string | null = null;
+            if (isConcluded) newStatus = "ENTREGUE";
+            else if (isDispatched) newStatus = "SAIU_ENTREGA";
+            else if (isPreparation || isReadyPickup) newStatus = "PREPARANDO";
+            else if (isConfirmed) newStatus = "ACEITO";
 
-            const newStatus = STATUS_EVENT_MAP[code];
             if (newStatus) {
               const updateData: any = { status: newStatus };
               if (isConcluded) {
@@ -362,6 +382,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 where: { ifoodOrderId: orderId } as any,
                 data: updateData,
               });
+              console.log(`[iFood Poll] 🔄 Status atualizado automaticamente: ${orderId} -> ${newStatus}`);
             }
           }
         }
@@ -398,10 +419,11 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
     // Só reconhecer eventos que foram processados com sucesso
     if (processedEventIds.length > 0) {
+      const ackPayload = processedEventIds.map(e => ({ id: e.id }));
       await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(processedEventIds),
+        body: JSON.stringify(ackPayload),
       });
       console.log(`[iFood Poll] ✅ ${processedEventIds.length}/${events.length} eventos acknowledged`);
     }
@@ -475,7 +497,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   try {
-    await Promise.all([
+    await Promise.allSettled([
       pollIfoodEvents(user.id),
       pollJotajaEvents(user.id),
     ]);

@@ -3,13 +3,14 @@ import { useState } from "react";
 import {
   Store, Clock, Truck, CreditCard, Tag, Gift, ArrowLeft,
   Settings, Image, Phone, MapPin, ChevronRight,
-  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff
+  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users
 } from "lucide-react";
 import StoreSettingsForm from "@/components/customer/StoreSettingsForm";
 import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
+import StoreTeamManager from "@/components/customer/StoreTeamManager";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "conta";
+type Section = "menu" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "conta" | "equipe";
 
 const SECTIONS = [
   {
@@ -43,6 +44,14 @@ const SECTIONS = [
     bg: "#F3E5F5",
     title: "Pagamentos",
     desc: "PIX, cartão, dinheiro — taxas por bandeira",
+  },
+  {
+    id: "equipe" as Section,
+    icon: <Users size={28} />,
+    color: "#2563EB",
+    bg: "#EFF6FF",
+    title: "Cadastrar Equipe",
+    desc: "Crie logins para a equipe e escolha quais módulos cada um pode acessar",
   },
   {
     id: "coupons" as Section,
@@ -164,6 +173,16 @@ export default function MinhaLojaClient({ user }: { user: any }) {
           initialConfig={user.storeLoyalty || {}}
           onSave={saveLoyalty}
         />
+      </div>
+    );
+  }
+
+  // ── Seção Cadastrar Equipe & Permissões ────────────────────────────────────
+  if (section === "equipe") {
+    return (
+      <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="👥 Cadastrar Equipe & Permissões" />
+        <StoreTeamManager />
       </div>
     );
   }

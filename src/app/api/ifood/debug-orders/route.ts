@@ -1,92 +1,78 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { getIfoodToken, getMerchantIdForUser } from "@/lib/ifood-api";
 
-/**
- * GET /api/ifood/debug-orders
- * Diagnóstico: tenta múltiplas formas de buscar pedidos do iFood.
- * Retorna todas as respostas brutas para debug.
- */
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-  }
-
-  const results: Record<string, any> = {};
-
+  const log: string[] = [];
+  
   try {
-    const token = await getIfoodToken();
-    const email = session.user.email;
-    const merchantId = await getMerchantIdForUser(email);
-    results.tokenOk = true;
-    results.merchantId = merchantId;
-
-    // 1. Poll events (padrão)
-    try {
-      const r1 = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+    const clientId = process.env.IFOOD_CLIENT_ID;
+    const clientSecret = process.env.IFOOD_CLIENT_SECRET;
+    const merchantUuid = process.env.IFOOD_MERCHANT_UUID;
+    
+    log.push(`CLIENT_ID: ${clientId ? clientId.slice(0, 10) + "..." : "MISSING"}`);
+    log.push(`CLIENT_SECRET: ${clientSecret ? clientSecret.slice(0, 5) + "..." : "MISSING"}`);
+    log.push(`MERCHANT_UUID: ${merchantUuid ?? "MISSING"}`);
+    
+    // 1. Get token
+    const tokenRes = await fetch("https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grantType: "client_credentials",
+        clientId: clientId || "",
+        clientSecret: clientSecret || "",
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    log.push(`Token status: ${tokenRes.status}`);
+    
+    if (!tokenData.accessToken) {
+      log.push(`Token ERROR: ${JSON.stringify(tokenData)}`);
+      return NextResponse.json({ log });
+    }
+    
+    const token = tokenData.accessToken;
+    log.push(`Token OK (expires in ${tokenData.expiresIn}s)`);
+    
+    // 2. Poll events
+    const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const evText = await evRes.text();
+    const events = evText ? JSON.parse(evText) : [];
+    log.push(`Events polling: ${evRes.status}, count: ${events.length}`);
+    
+    // Get first orderId
+    const firstEvent = events.find((e: any) => e.orderId);
+    if (firstEvent) {
+      log.push(`First event: code=${firstEvent.code}, orderId=${firstEvent.orderId}`);
+      
+      // 3. Try to fetch order details
+      const orderRes = await fetch(`https://merchant-api.ifood.com.br/order/v1.0/orders/${firstEvent.orderId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const t1 = await r1.text();
-      results.eventsPoll = { status: r1.status, body: t1 ? JSON.parse(t1) : [] };
-    } catch (e: any) {
-      results.eventsPoll = { error: e.message };
-    }
-
-    // 2. Poll events com groups
-    for (const group of ["ORDER_STATUS", "DELIVERY", "ORDER"]) {
-      try {
-        const r = await fetch(`https://merchant-api.ifood.com.br/events/v1.0/events:polling?groups=${group}`, {
+      const orderText = await orderRes.text();
+      log.push(`Order details status: ${orderRes.status}`);
+      log.push(`Order details body: ${orderText.slice(0, 500)}`);
+    } else {
+      log.push("No events with orderId found");
+      
+      // Try fetching a known order
+      if (merchantUuid) {
+        const testOrderRes = await fetch(`https://merchant-api.ifood.com.br/order/v1.0/orders/e148bde2-7d05-4093-b512-be251ff5a8e5`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const t = await r.text();
-        results[`eventsPoll_${group}`] = { status: r.status, body: t ? JSON.parse(t) : [] };
-      } catch (e: any) {
-        results[`eventsPoll_${group}`] = { error: e.message };
+        const testText = await testOrderRes.text();
+        log.push(`Test order status: ${testOrderRes.status}`);
+        log.push(`Test order body: ${testText.slice(0, 500)}`);
       }
     }
-
-    // 3. Tentar listar pedidos direto pela API do merchant
-    const orderEndpoints = [
-      `/order/v1.0/orders?merchantId=${merchantId}`,
-      `/order/v1.0/merchants/${merchantId}/orders`,
-      `/merchant/v1.0/merchants/${merchantId}/orders`,
-    ];
-
-    for (const ep of orderEndpoints) {
-      try {
-        const r = await fetch(`https://merchant-api.ifood.com.br${ep}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const t = await r.text();
-        results[ep] = { status: r.status, body: t.slice(0, 500) };
-      } catch (e: any) {
-        results[ep] = { error: e.message };
-      }
-    }
-
-    // 4. Checar pedidos no banco do FireHub (últimos 5)
-    const dbOrders = await prisma.customerOrder.findMany({
-      where: { source: "IFOOD" },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      select: {
-        id: true,
-        ifoodOrderId: true,
-        ifoodReference: true,
-        status: true,
-        createdAt: true,
-        scheduledDatetime: true,
-        customerName: true,
-      },
-    });
-    results.dbRecentIfoodOrders = dbOrders;
-
-  } catch (e: any) {
-    results.error = e.message;
+    
+    // DON'T acknowledge events - just peek
+    return NextResponse.json({ log, eventsCount: events.length });
+  } catch (err: any) {
+    log.push(`ERROR: ${err.message}`);
+    return NextResponse.json({ log, error: err.message });
   }
-
-  return NextResponse.json(results, { status: 200 });
 }

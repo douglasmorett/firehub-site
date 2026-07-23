@@ -8,17 +8,17 @@ import { trackSaleForBilling } from "@/lib/billing";
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
 const BILLING_TRIGGER_STATUSES = ["ENTREGUE"];
 
-// Transições de status permitidas (state machine)
+// Transições de status permitidas (state machine flexível para a operação do restaurante)
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  NOVO:          ["ACEITO", "CANCELADO"],
-  CONFIRMADO:    ["ACEITO", "CANCELADO"],
-  ACEITO:        ["PREPARANDO", "CANCELADO"],
-  PREPARANDO:    ["PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "CANCELADO"],
-  PRONTO:        ["ENTREGUE", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "CANCELADO"],
-  SAIU_ENTREGA:  ["ENTREGUE"],
-  SAIU_PARA_ENTREGA: ["ENTREGUE"],
-  ENTREGUE:      [],
-  CANCELADO:     [],
+  NOVO:          ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  CONFIRMADO:    ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  ACEITO:        ["PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  PREPARANDO:    ["ACEITO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  PRONTO:        ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  SAIU_ENTREGA:  ["ACEITO", "PREPARANDO", "ENTREGUE", "CANCELADO"],
+  SAIU_PARA_ENTREGA: ["ACEITO", "PREPARANDO", "ENTREGUE", "CANCELADO"],
+  ENTREGUE:      ["SAIU_ENTREGA", "PREPARANDO", "ACEITO", "CANCELADO"],
+  CANCELADO:     ["NOVO", "ACEITO", "PREPARANDO"],
 };
 
 // GET: Public status check (no auth required)
@@ -103,7 +103,7 @@ export async function PUT(req: Request) {
       updateData.kdsProductionAt = new Date();
     }
   }
-  if (status === "CANCELADO") {
+  if (["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"].includes(status)) {
     updateData.kdsStage = null;
     updateData.kdsStationId = null;
   }
@@ -130,6 +130,10 @@ export async function PUT(req: Request) {
       }
 
       if (status === "SAIU_ENTREGA") {
+        // Guarantee startPreparation occurred if jumping directly from ACEITO/NOVO
+        if (order.status === "ACEITO" || order.status === "NOVO") {
+          await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers }).catch(() => {});
+        }
         // Dispatch (delivery orders)
         const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
         console.log(`[iFood Sync] dispatch ${ifoodId}: ${r.status}`);
@@ -138,9 +142,9 @@ export async function PUT(req: Request) {
       if (status === "ENTREGUE") {
         const isPickup = order.deliveryType !== "DELIVERY";
         if (isPickup) {
-          // For pickup: readyToPickup then conclude
-          const r1 = await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers });
-          console.log(`[iFood Sync] readyToPickup ${ifoodId}: ${r1.status}`);
+          await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
+        } else {
+          await fetch(`${baseUrl}/dispatch`, { method: "POST", headers }).catch(() => {});
         }
         // Conclude order (works for both delivery and pickup)
         const r2 = await fetch(`${baseUrl}/conclude`, { method: "POST", headers, body: JSON.stringify({}) });

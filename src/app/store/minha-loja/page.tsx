@@ -37,6 +37,7 @@ export default async function StoreSettingsPage() {
       storeLatLng: user.storeLatLng || null,
       storeLoyalty: (user as any).storeLoyalty || null,
       deliveryConfig: (user as any).deliveryConfig || null,
+      storeTimezone: (user as any).storeTimezone || "America/Sao_Paulo",
     }} />
   );
 }

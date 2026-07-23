@@ -22,10 +22,18 @@ const PAYMENT_LABELS: Record<string, string> = {
   CASH: "Dinheiro",
   DINHEIRO: "Dinheiro",
   VOUCHER: "Voucher",
+  DIGITAL_WALLET: "iFood Online (Carteira Digital)",
+  ONLINE: "iFood Online",
+  IFOOD_PAY: "iFood Pay",
+  OTHER: "iFood Online (Pago no App)",
+  MEAL_VOUCHER: "Vale Refeição (iFood)",
+  FOOD_VOUCHER: "Vale Alimentação (iFood)",
   credit_card: "Crédito",
   debit_card: "Débito",
   pix: "Pix",
   cash: "Dinheiro",
+  digital_wallet: "iFood Online (Carteira Digital)",
+  other: "iFood Online (Pago no App)",
 };
 const translatePayment = (method: string) => PAYMENT_LABELS[method] || PAYMENT_LABELS[method.toUpperCase()] || method;
 
@@ -39,6 +47,8 @@ const COLUMN_STATUS_MAP: Record<string, string> = {
   "col-novos": "NOVO",
   "col-preparo": "PREPARANDO",
   "col-transporte": "SAIU_ENTREGA",
+  "col-finalizado": "ENTREGUE",
+  "col-cancelados": "CANCELADO"
 };
 
 function isStoreOpen(hours: any[]): { open: boolean; text: string } {
@@ -79,6 +89,63 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return false;
   });
   const prevOrderCount = useRef(initialOrders.filter(o => o.status === "NOVO").length);
+
+  // === SELEÇÃO E AÇÕES EM MASSA (Bulk Actions) ===
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [bulkTargetStatus, setBulkTargetStatus] = useState<string>("");
+  const [bulkUpdating, setBulkUpdating] = useState<boolean>(false);
+
+  const toggleSelectOrder = (id: string) => {
+    setSelectedOrderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectColumn = (columnOrders: any[]) => {
+    const allIds = columnOrders.map(o => o.id);
+    const allSelected = allIds.length > 0 && allIds.every(id => selectedOrderIds.has(id));
+
+    setSelectedOrderIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        allIds.forEach(id => next.delete(id));
+      } else {
+        allIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const handleBulkStatusUpdate = async () => {
+    if (!bulkTargetStatus || selectedOrderIds.size === 0) return;
+    setBulkUpdating(true);
+    const ids = Array.from(selectedOrderIds);
+
+    try {
+      let successCount = 0;
+      for (const orderId of ids) {
+        const res = await fetch("/api/customer-order/status", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId, status: bulkTargetStatus })
+        });
+        if (res.ok) successCount++;
+      }
+
+      setOrders(prev => prev.map(o => selectedOrderIds.has(o.id) ? { ...o, status: bulkTargetStatus } : o));
+      showToast(`${successCount} pedido(s) atualizados com sucesso!`, "#10B981");
+      setSelectedOrderIds(new Set());
+      setBulkTargetStatus("");
+      router.refresh();
+    } catch {
+      showToast("Erro ao atualizar pedidos em massa.", "#EF4444");
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
 
   // ===== ALTA DEMANDA (Surge Pricing) =====
   const [altaDemanda, setAltaDemanda] = useState(() => {
@@ -157,7 +224,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const storeUrl = user.slug ? `/loja/${user.slug}` : null;
 
   const handlePrint = (order: any, type: "cozinha" | "completo") => {
-    const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
+    const phone = order.customerPhone || "";
     const createdDate = new Date(order.createdAt);
     const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
     const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -196,7 +263,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         receipt += `${mainName}\n`;
         if (comboSels.length > 0) {
           comboSels.forEach((sel: any) => {
-            receipt += `  - ${sel.quantity > 1 ? sel.quantity + "x " : ""}${sel.name}\n`;
+            const totalQty = (sel.quantity || 1) * (item.quantity || 1);
+            receipt += `  - ${totalQty > 1 ? totalQty + "x " : ""}${sel.name}\n`;
           });
         } else if (extras.length > 0) {
           extras.forEach((ext: string) => {
@@ -239,7 +307,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         receipt += `${mainName}\n`;
         if (comboSels.length > 0) {
           comboSels.forEach((sel: any) => {
-            receipt += `  - ${sel.quantity > 1 ? sel.quantity + "x " : ""}${sel.name}\n`;
+            const totalQty = (sel.quantity || 1) * (item.quantity || 1);
+            receipt += `  - ${totalQty > 1 ? totalQty + "x " : ""}${sel.name}\n`;
           });
         } else if (extras.length > 0) {
           extras.forEach((ext: string) => {
@@ -525,12 +594,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         body: JSON.stringify({ orderId, status: newStatus })
       });
       if (res.ok) {
-        // Optimistic update
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
         router.refresh();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData?.error || `Erro ${res.status}`;
+        console.warn(`[updateStatus] ${orderId} → ${newStatus}: ${msg}`);
+        showToast(msg, "#EF4444");
       }
-      else showToast("Erro ao atualizar.", "#EF4444");
-    } catch { showToast("Erro.", "#EF4444"); } finally { setLoadingId(null); }
+    } catch (err: any) {
+      console.warn("[updateStatus] network error:", err?.message);
+      showToast("Erro de conexão. Tente novamente.", "#EF4444");
+    } finally { setLoadingId(null); }
   };
 
   // === MOTOBOY IFOOD FUNCTIONS ===
@@ -602,17 +677,38 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       setSelectedCancelCode("");
     }
   };
-  // --- DRAG HANDLERS ---
-  const handleDragStart = (e: React.DragEvent, orderId: string) => {
-    isDraggingRef.current = true;
-    setDraggedOrderId(orderId);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", orderId);
+  // --- DRAG HANDLERS (DOM-DRIVEN FOR INSTANT 1-CLICK DRAG) ---
+  const activeDragElRef = useRef<HTMLElement | null>(null);
+
+  const highlightCard = (el: HTMLElement) => {
+    activeDragElRef.current = el;
+    el.style.borderColor = "#3B82F6";
+    el.style.borderWidth = "2.5px";
+    el.style.boxShadow = "0 16px 32px -4px rgba(59, 130, 246, 0.4), 0 0 0 4px rgba(59, 130, 246, 0.15)";
+    el.style.transform = "scale(1.02) translateY(-2px)";
+    el.style.background = "#F0F9FF";
   };
 
-  const handleDragEnd = () => {
+  const resetCard = (el: HTMLElement | null) => {
+    if (!el) return;
+    el.style.borderColor = "";
+    el.style.borderWidth = "";
+    el.style.boxShadow = "";
+    el.style.transform = "";
+    el.style.background = "";
+    activeDragElRef.current = null;
+  };
+
+  const handleDragStart = (e: React.DragEvent, orderId: string) => {
+    isDraggingRef.current = true;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", orderId);
+    highlightCard(e.currentTarget as HTMLElement);
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
     isDraggingRef.current = false;
-    setDraggedOrderId(null);
+    resetCard(e.currentTarget as HTMLElement);
     setDragOverColumn(null);
   };
 
@@ -634,6 +730,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const handleDrop = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
     setDragOverColumn(null);
+    resetCard(activeDragElRef.current);
 
     // Never allow dropping into Novos Pedidos
     if (columnId === "col-novos") return;
@@ -665,6 +762,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     isDraggingRef.current = true;
     const touch = e.touches[0];
     const el = e.currentTarget as HTMLElement;
+    highlightCard(el);
     touchRef.current = { orderId, startX: touch.clientX, startY: touch.clientY, el };
   };
 
@@ -705,6 +803,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const handleTouchEnd = useCallback((e: TouchEvent) => {
     if (!touchRef.current) return;
+
+    resetCard(touchRef.current.el);
 
     // Remove ghost
     if (ghostRef.current) {
@@ -798,10 +898,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
-  const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id));
-  const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO");
-  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || o.status === "ENTREGUE" || o.status === "PRONTO");
-  const cancelados = filteredOrders.filter(o => o.status === "CANCELADO");
+  const sortByOrderNumberAsc = (a: any, b: any) => {
+    const numA = orderNumberMap.get(a.id) ?? 0;
+    const numB = orderNumberMap.get(b.id) ?? 0;
+    if (numA !== numB) return numA - numB;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  };
+
+  const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
+  const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO").sort(sortByOrderNumberAsc);
+  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || o.status === "PRONTO").sort(sortByOrderNumberAsc);
+  const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO").sort(sortByOrderNumberAsc);
+  const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberAsc);
 
   // Resumo de vendas
   const allInRange = orders.filter(o => { const d = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt); return d >= fromDate && d <= toDate; });
@@ -851,17 +959,38 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         onDragEnd={canDrag ? handleDragEnd : undefined}
         onTouchStart={canDrag ? (e => handleTouchStart(e, order.id)) : undefined}
         style={{
-          background: "#fff", borderRadius: "12px",
-          border: isLate ? "1.5px solid #EF4444" : isUrgent ? "1.5px solid #F59E0B" : "1px solid #E2E8F0",
-          marginBottom: "0.75rem", overflow: "hidden",
-          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
-          cursor: canDrag ? "grab" : "default",
-          userSelect: "none"
+          background: isDragging ? "#DBEAFE" : "#fff",
+          borderRadius: "14px",
+          border: isDragging
+            ? "2.5px solid #2563EB"
+            : isLate
+              ? "1.5px solid #EF4444"
+              : isUrgent
+                ? "1.5px solid #F59E0B"
+                : "1px solid #E2E8F0",
+          marginBottom: "0.75rem",
+          overflow: "hidden",
+          boxShadow: isDragging
+            ? "0 20px 40px -4px rgba(37, 99, 235, 0.45), 0 0 0 5px rgba(59, 130, 246, 0.2)"
+            : "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+          transform: isDragging ? "scale(1.05) rotate(-1.5deg)" : "scale(1)",
+          transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease",
+          cursor: canDrag ? (isDragging ? "grabbing" : "grab") : "default",
+          userSelect: "none",
+          opacity: isDragging ? 0.92 : 1,
+          zIndex: isDragging ? 50 : "auto" as any,
         }}
       >
         {/* ─── COLLAPSED VIEW: All essential info always visible ─── */}
         <div style={{ padding: "0.6rem 0.75rem" }}>
           <div style={{ display: "flex", gap: "0.5rem" }}>
+            <input
+              type="checkbox"
+              checked={selectedOrderIds.has(order.id)}
+              onChange={(e) => { e.stopPropagation(); toggleSelectOrder(order.id); }}
+              style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#3B82F6", alignSelf: "flex-start", marginTop: "2px" }}
+              title="Selecionar pedido"
+            />
             {canDrag && (
               <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0, alignSelf: "flex-start", paddingTop: "2px" }} onClick={e => e.stopPropagation()}>
                 <GripVertical size={14} />
@@ -869,24 +998,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             )}
             <div style={{ flex: 1, minWidth: 0, fontSize: "0.8rem", lineHeight: "1.35" }}>
               {/* Line 1: #{seqNum} - Name  |  Source badge + Ref */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937", whiteSpace: "normal", wordBreak: "break-word", minWidth: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "6px", marginBottom: "3px" }}>
+                <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "#1F2937", minWidth: 0, flex: 1, lineHeight: 1.3, wordBreak: "break-word" }}>
                   #{seqNum} — {order.customerName}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-                  {order.kdsStage === "FINISHING" && (
-                    <span style={{ padding: "1px 8px", borderRadius: "10px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em", background: "#DCFCE7", color: "#16A34A" }}>
-                      ✅ Pronto Cozinha
-                    </span>
-                  )}
-                  <span style={{ padding: "1px 8px", borderRadius: "10px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.03em",
+                <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+                  <span style={{ padding: "1px 7px", borderRadius: "8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.02em",
                     background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#ECFDF5",
                     color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#059669"
                   }}>
                     {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
                   </span>
                   {(order.ifoodReference || order.openDeliveryReference) && (
-                    <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "#6366F1" }}>
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#4F46E5" }}>
                       #{order.ifoodReference || order.openDeliveryReference}
                     </span>
                   )}
@@ -894,11 +1018,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
 
               {/* Line 2: Phone  |  Date + time since */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", color: "#6B7280", marginBottom: "4px" }}>
-                <span>
-                  📞 {order.customerPhone ? order.customerPhone.replace(/\s*ID:\s*\d+/i, "").trim() : "—"}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", color: "#6B7280", marginBottom: "3px" }}>
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>
+                  📞 {order.customerPhone || "—"}
                 </span>
-                <span style={{ flexShrink: 0, fontSize: "0.75rem" }}>
+                <span style={{ flexShrink: 0, fontSize: "0.72rem" }}>
                   {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                   {" · "}
                   <span style={{ fontWeight: isLate || isUrgent ? 700 : 500, color: timerColor }}>
@@ -906,6 +1030,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </span>
                 </span>
               </div>
+
+              {/* Line 3: Extra Badges (e.g. Pronto Cozinha) */}
+              {order.kdsStage === "FINISHING" && (
+                <div style={{ marginBottom: "4px" }}>
+                  <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block" }}>
+                    ✅ Pronto Cozinha
+                  </span>
+                </div>
+              )}
 
               {/* Line 3: Address (full, highlighted) */}
               {order.customerAddress && (
@@ -948,28 +1081,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
             marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #E2E8F0",
-            gap: "6px"
+            gap: "8px"
           }}>
             {/* Left: Status action button + motoboy select */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
               {/* Status buttons */}
               {order.status === "NOVO" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
               )}
-              {order.status === "ACEITO" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "PREPARANDO"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#D97706", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>👨‍🍳 Preparar</button>
+              {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType === "DELIVERY" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🛵 Saiu</button>
               )}
-              {order.status === "PREPARANDO" && order.deliveryType === "DELIVERY" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🛵 Saiu</button>
-              )}
-              {order.status === "PREPARANDO" && order.deliveryType !== "DELIVERY" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
+              {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType !== "DELIVERY" && (
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
               )}
               {order.status === "SAIU_ENTREGA" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
               )}
               {order.status === "PRONTO" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 14px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🤝 Entregue</button>
+                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🤝 Entregue</button>
               )}
               {order.status === "ENTREGUE" && (
                 <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#059669", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>
@@ -985,14 +1115,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
               )}
 
-              {/* Motoboy select (compact, in the bar) */}
-              {order.deliveryType === "DELIVERY" && !order.ifoodDriverStatus && !order.motoboy && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && order.status !== "ENTREGUE" && (
+              {/* Motoboy select: disponível em Em Produção, Saiu para Entrega e Finalizado */}
+              {order.deliveryType === "DELIVERY" && !order.ifoodDriverStatus && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
                 <select
-                  value=""
+                  value={order.motoboyId || ""}
                   onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
                   disabled={assigningId === order.id}
                   onClick={e => e.stopPropagation()}
-                  style={{ padding: "4px 10px", borderRadius: "6px", border: "1.5px solid #94A3B8", fontSize: "0.78rem", fontWeight: 600, color: "#1E293B", background: "#F8FAFC", fontFamily: "inherit", cursor: "pointer", minWidth: "120px", maxWidth: "160px" }}
+                  style={{
+                    padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
+                    fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
+                    background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
+                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
+                    marginRight: "4px"
+                  }}
                 >
                   <option value="">Motoboy</option>
                   {motoboys.map((m: any) => (
@@ -1004,8 +1140,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
             {/* Right: Icon buttons */}
             <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
-              {/* WhatsApp */}
-              {order.customerPhone && (
+              {/* WhatsApp — hide for iFood orders (0800 numbers don't work on WhatsApp) */}
+              {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (
                 <a
                   href={`https://wa.me/55${(order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "")}`}
                   target="_blank" rel="noopener noreferrer"
@@ -1465,7 +1601,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // Scroll position refs — persists scroll across re-renders
   const scrollRefs = useRef<Record<string, number>>({});
 
-  const Column = ({ columnId, title, emoji, color, count, children, headerExtra }: { columnId: string; title: string; emoji: string; color: string; count: number; children: React.ReactNode; headerExtra?: React.ReactNode }) => {
+  const Column = ({ columnId, title, emoji, color, count, children, headerExtra, columnOrders }: { columnId: string; title: string; emoji: string; color: string; count: number; children: React.ReactNode; headerExtra?: React.ReactNode; columnOrders?: any[] }) => {
 
     const canDrop = columnId !== "col-novos";
     const isOver = canDrop && dragOverColumn === columnId;
@@ -1485,6 +1621,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     };
 
+    const hasOrders = columnOrders && columnOrders.length > 0;
+    const isAllSelected = hasOrders && columnOrders.every(o => selectedOrderIds.has(o.id));
+
     return (
       <div
         data-droppable={columnId}
@@ -1495,14 +1634,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           flex: 1, minWidth: "360px",
           background: isOver ? "#EFF6FF" : "#F8FAFC",
           borderRadius: "14px",
-          border: isOver ? "2px dashed #3B82F6" : "1px solid #E2E8F0",
+          border: isOver ? "2.5px dashed #3B82F6" : "1px solid #E2E8F0",
           display: "flex", flexDirection: "column",
           minHeight: "calc(100vh - 175px)", maxHeight: "calc(100vh - 175px)",
-          boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05)",
+          boxShadow: isOver ? "0 0 24px rgba(59, 130, 246, 0.25)" : "0 1px 3px 0 rgba(0,0,0,0.05)",
+          transition: "all 0.15s ease",
         }}
       >
         <div style={{ padding: "0.85rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: "14px 14px 0 0", gap: "0.5rem" }}>
-          <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0 }}>{emoji} {title}</h3>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            {hasOrders && (
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                onChange={() => toggleSelectColumn(columnOrders)}
+                style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#3B82F6" }}
+                title="Selecionar / Desmarcar todos desta coluna"
+              />
+            )}
+            <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0 }}>{emoji} {title}</h3>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             {headerExtra}
             <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
@@ -1621,7 +1772,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const order = orders.find(o => o.id === viewReceiptOrderId);
         if (!order) return null;
 
-        const phone = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").trim();
+        const phone = order.customerPhone || "";
         const createdDate = new Date(order.createdAt);
         const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
         const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -1703,9 +1854,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         
                         {comboSels.length > 0 && (
                           <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
-                            {comboSels.map((sel: any, i: number) => (
-                              <div key={i}>• {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
-                            ))}
+                            {comboSels.map((sel: any, i: number) => {
+                              const totalQty = (sel.quantity || 1) * (item.quantity || 1);
+                              return (
+                                <div key={i}>• {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</div>
+                              );
+                            })}
                           </div>
                         )}
                         {comboSels.length === 0 && extras.length > 0 && (
@@ -2264,25 +2418,83 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
       {/* FILTER BAR */}
 
-      <div style={{ background: "#fff", borderBottom: "1px solid #E2E8F0", padding: "0.5rem 1.5rem" }}>
-        <div style={{ maxWidth: "1400px", margin: "0 auto", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ position: "relative", flex: 1, maxWidth: "400px" }}>
-            <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
-            <input
-              type="text" placeholder="Nome, número, telefone, endereço..."
-              value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-              style={{ width: "100%", padding: "0.5rem 0.5rem 0.5rem 36px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none" }}
-            />
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>De</span>
-            <input type="datetime-local" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ padding: "5px 8px", borderRadius: "8px", border: "1.5px solid #E2E8F0", fontSize: "0.78rem", outline: "none" }} />
-            <span style={{ fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Ate</span>
-            <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ padding: "5px 8px", borderRadius: "8px", border: "1.5px solid #E2E8F0", fontSize: "0.78rem", outline: "none" }} />
-            <button onClick={() => setShowResumo(true)} style={{ padding: "6px 14px", background: "#1E293B", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}>💰 Resumo das vendas</button>
+      <div style={{ background: "#fff", borderBottom: "1px solid #E2E8F0", padding: "0.6rem 1.5rem" }}>
+        <div style={{ maxWidth: "1400px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+
+          {/* Row 1: Search + Date range + Weather/Clock */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            {/* Search */}
+            <div style={{ position: "relative", flex: 1, minWidth: "180px", maxWidth: "320px" }}>
+              <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
+              <input
+                type="text" placeholder="Nome, número, telefone, endereço..."
+                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                style={{ width: "100%", padding: "0.45rem 0.5rem 0.45rem 36px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none" }}
+              />
+            </div>
+
+            {/* Date range */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#F8FAFC", padding: "4px 10px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+              <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>De</span>
+              <input type="datetime-local" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+              <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>Até</span>
+              <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+            </div>
+
+            {/* Weather + Clock — right aligned */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
+              {weather && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#F0F9FF", padding: "0.3rem 0.7rem", borderRadius: "10px", border: "1px solid #BAE6FD" }}>
+                  <span style={{ fontSize: "1.2rem" }}>{weather.current.icon}</span>
+                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>{weather.current.temp}°</span>
+                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>{weather.current.text}</span>
+                  </div>
+                  <div style={{ width: "1px", height: "22px", background: "#CBD5E1" }} />
+                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>💧 {weather.current.humidity}%</span>
+                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>💨 {weather.current.wind} km/h</span>
+                  </div>
+                  {weather.forecast?.length > 0 && (
+                    <>
+                      <div style={{ width: "1px", height: "22px", background: "#CBD5E1" }} />
+                      <div style={{ display: "flex", gap: "0.4rem" }}>
+                        {weather.forecast.map((f: any, i: number) => (
+                          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.2 }}>
+                            <span style={{ fontSize: "0.55rem", color: "#94A3B8" }}>
+                              {new Date(f.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
+                            </span>
+                            <span style={{ fontSize: "0.8rem" }}>{f.icon}</span>
+                            <span style={{ fontSize: "0.55rem", color: "#0F172A", fontWeight: 600 }}>{f.tempMax}°/{f.tempMin}°</span>
+                            {f.rainChance > 20 && <span style={{ fontSize: "0.5rem", color: "#3B82F6" }}>🌧 {f.rainChance}%</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                <span style={{ fontSize: "0.72rem", color: "#64748B" }}>{weather?.city || user.city || ""}{weather?.state ? `/${weather.state}` : ""}</span>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
+                  <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "#0F172A" }}>
+                    {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                  <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>
+                    {now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Action buttons */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <button onClick={() => setShowResumo(true)} style={{ padding: "5px 12px", background: "#1E293B", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px" }}>💰 Resumo das vendas</button>
             <button
               onClick={() => setShowAltaDemandaModal(true)}
               style={{
-                padding: "6px 14px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem",
+                padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
                 background: altaDemanda.active ? "linear-gradient(135deg,#EF4444,#F97316)" : "#FFF7ED",
                 color: altaDemanda.active ? "#fff" : "#EA580C",
@@ -2295,7 +2507,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <button
               onClick={() => setShowAgendamentos(true)}
               style={{
-                padding: "6px 14px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem",
+                padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
                 background: scheduledOrders.length > 0 ? "linear-gradient(135deg,#8B5CF6,#6366F1)" : "#F5F3FF",
                 color: scheduledOrders.length > 0 ? "#fff" : "#7C3AED",
@@ -2307,9 +2519,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <span style={{
                 background: scheduledOrders.length > 0 ? "#fff" : "#7C3AED",
                 color: scheduledOrders.length > 0 ? "#7C3AED" : "#fff",
-                borderRadius: "50%", minWidth: "20px", height: "20px",
+                borderRadius: "50%", minWidth: "18px", height: "18px",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "0.72rem", fontWeight: 800, marginLeft: "2px"
+                fontSize: "0.68rem", fontWeight: 800, marginLeft: "2px"
               }}>
                 {scheduledOrders.length}
               </span>
@@ -2317,7 +2529,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <a
               href="/store/venda-presencial"
               style={{
-                padding: "6px 14px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem",
+                padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
                 background: "#F0FDF4", color: "#16A34A", outline: "1.5px solid #BBF7D0",
                 textDecoration: "none"
@@ -2325,64 +2537,74 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               🛒 Pedidos Balcão
             </a>
+          </div>
 
-          </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
-            {/* Weather Widget */}
-            {weather && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#F0F9FF", padding: "0.35rem 0.75rem", borderRadius: "10px", border: "1px solid #BAE6FD" }}>
-                <span style={{ fontSize: "1.3rem" }}>{weather.current.icon}</span>
-                <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                  <span style={{ fontWeight: 800, fontSize: "1rem", color: "#0F172A" }}>{weather.current.temp}°</span>
-                  <span style={{ fontSize: "0.6rem", color: "#64748B" }}>{weather.current.text}</span>
-                </div>
-                <div style={{ width: "1px", height: "24px", background: "#CBD5E1" }} />
-                <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                  <span style={{ fontSize: "0.6rem", color: "#64748B" }}>💧 {weather.current.humidity}%</span>
-                  <span style={{ fontSize: "0.6rem", color: "#64748B" }}>💨 {weather.current.wind} km/h</span>
-                </div>
-                {weather.forecast?.length > 0 && (
-                  <>
-                    <div style={{ width: "1px", height: "24px", background: "#CBD5E1" }} />
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      {weather.forecast.map((f: any, i: number) => (
-                        <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.2 }}>
-                          <span style={{ fontSize: "0.6rem", color: "#94A3B8" }}>
-                            {new Date(f.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
-                          </span>
-                          <span style={{ fontSize: "0.85rem" }}>{f.icon}</span>
-                          <span style={{ fontSize: "0.6rem", color: "#0F172A", fontWeight: 600 }}>{f.tempMax}°/{f.tempMin}°</span>
-                          {f.rainChance > 20 && <span style={{ fontSize: "0.55rem", color: "#3B82F6" }}>🌧 {f.rainChance}%</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            {/* Clock */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-              <span style={{ fontSize: "0.75rem", color: "#64748B" }}>{weather?.city || user.city || ""}{weather?.state ? `/${weather.state}` : ""}</span>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
-                <span style={{ fontSize: "1.1rem", fontWeight: 700 }}>
-                  {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                </span>
-                <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
-                  {now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
       {/* 3 COLUMNS */}
       <div style={{ maxWidth: "100%", margin: "0 auto", padding: "0.75rem 1.25rem" }}>
+
+        {/* ─── BARRA DE AÇÕES EM MASSA ─── */}
+        {selectedOrderIds.size > 0 && (
+          <div style={{
+            position: "sticky", top: "10px", zIndex: 100, marginBottom: "1rem",
+            background: "#1E293B", color: "#fff", padding: "0.85rem 1.25rem",
+            borderRadius: "14px", boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <span style={{ background: "#3B82F6", padding: "4px 12px", borderRadius: "20px", fontSize: "0.85rem", fontWeight: 700 }}>
+                ✓ {selectedOrderIds.size} selecionado{selectedOrderIds.size > 1 ? "s" : ""}
+              </span>
+              <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Ações em Massa:</span>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <select
+                value={bulkTargetStatus}
+                onChange={(e) => setBulkTargetStatus(e.target.value)}
+                style={{
+                  background: "#334155", color: "#fff", border: "1px solid #475569",
+                  padding: "8px 14px", borderRadius: "8px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <option value="">Mudar para...</option>
+                <option value="ACEITO">✅ Aceito</option>
+                <option value="PREPARANDO">👨‍🍳 Em Preparo</option>
+                <option value="SAIU_ENTREGA">🛵 Saiu para Entrega</option>
+                <option value="ENTREGUE">📦 Entregue / Concluído</option>
+                <option value="CANCELADO">❌ Cancelar</option>
+              </select>
+
+              <button
+                onClick={handleBulkStatusUpdate}
+                disabled={!bulkTargetStatus || bulkUpdating}
+                style={{
+                  background: bulkTargetStatus ? "#3B82F6" : "#64748B",
+                  color: "#fff", border: "none", padding: "8px 18px",
+                  borderRadius: "8px", fontWeight: 700, fontSize: "0.85rem",
+                  cursor: bulkTargetStatus ? "pointer" : "not-allowed",
+                  display: "flex", alignItems: "center", gap: "0.4rem"
+                }}
+              >
+                {bulkUpdating ? "Atualizando..." : "Mudar todos selecionados →"}
+              </button>
+
+              <button
+                onClick={() => setSelectedOrderIds(new Set())}
+                style={{ background: "transparent", color: "#94A3B8", border: "none", fontSize: "0.85rem", cursor: "pointer", textDecoration: "underline" }}
+              >
+                Desmarcar todos
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: "0.75rem" }}>
           <Column
             columnId="col-novos"
-            title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length}
+            title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length} columnOrders={novos}
             headerExtra={
               <button
                 onClick={toggleAutoAccept}
@@ -2402,17 +2624,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           >
             {novos.map(o => <OrderCard key={o.id} order={o} />)}
           </Column>
-          <Column columnId="col-preparo" title="Em Preparo" emoji="👨‍🍳" color="#F59E0B" count={preparo.length}>
+          <Column columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#F59E0B" count={preparo.length} columnOrders={preparo}>
             {preparo.map(o => <OrderCard key={o.id} order={o} />)}
           </Column>
-          <Column columnId="col-transporte" title="Em Transporte/Finalizados" emoji="🛵" color="#8B5CF6" count={transporte.length}>
+          <Column columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#7C3AED" count={transporte.length} columnOrders={transporte}>
             {transporte.map(o => <OrderCard key={o.id} order={o} />)}
           </Column>
-          {cancelados.length > 0 && (
-            <Column columnId="col-cancelados" title="Cancelados" emoji="🚫" color="#DC2626" count={cancelados.length}>
-              {cancelados.map(o => <OrderCard key={o.id} order={o} />)}
-            </Column>
-          )}
+          <Column columnId="col-finalizado" title="Finalizado" emoji="✅" color="#10B981" count={finalizados.length} columnOrders={finalizados}>
+            {finalizados.map(o => <OrderCard key={o.id} order={o} />)}
+          </Column>
+          <Column columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}>
+            {cancelados.map(o => <OrderCard key={o.id} order={o} />)}
+          </Column>
         </div>
       </div>
 

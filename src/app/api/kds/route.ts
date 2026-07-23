@@ -37,9 +37,10 @@ export async function GET(req: NextRequest) {
       ],
     };
   } else if (stage === "finishing") {
-    // Show orders in finishing stage
+    // Show orders in finishing stage (only active ones: ACEITO/PREPARANDO)
     where = {
       franchiseeId: user.role === "ADMIN" ? undefined : user.id,
+      status: { in: ["ACEITO", "PREPARANDO"] },
       kdsStage: "FINISHING",
     };
   } else {
