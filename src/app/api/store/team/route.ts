@@ -36,13 +36,10 @@ export async function GET(req: NextRequest) {
 
   const ownerId = (currentUser as any).ownerId || currentUser.id;
 
-  // Busca todos os funcionários associados a este franqueado/dono
+  // Busca apenas os funcionários cadastrados para a equipe desta loja
   const teamMembers = await prisma.user.findMany({
     where: {
-      OR: [
-        { ownerId: ownerId },
-        { id: currentUser.id === ownerId ? { not: ownerId } : undefined, role: "STAFF" }
-      ].filter(Boolean) as any
+      ownerId: ownerId,
     },
     select: {
       id: true,
