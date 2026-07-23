@@ -117,130 +117,127 @@ function rawPrint(printerName, dataBuffer) {
 }
 
 /* ─── ESC/POS builder ─────────────────────────────────────── */
+function cleanAscii(str) {
+  if (!str) return "";
+  return String(str)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/º/g, ".")
+    .replace(/ª/g, ".")
+    .replace(/Ç/g, "C")
+    .replace(/ç/g, "c");
+}
+
 function buildEscPos(order, storeName, columns = 48) {
   const ESC = "\x1B", GS = "\x1D", LF = "\x0A";
   const INIT = ESC + "@";
   const BOLD_ON = ESC + "E\x01" + ESC + "G\x01"; // Negrito + Impressão Dupla (Double-Strike) para letras bem escuras!
   const BOLD_OFF = ESC + "E\x00" + ESC + "G\x00";
   const CENTER = ESC + "a\x01", LEFT = ESC + "a\x00";
-  const DOUBLE_ON = GS + "!\x11", DOUBLE_OFF = GS + "!\x00";
+  const DOUBLE_HEIGHT = GS + "!\x01";
+  const DOUBLE_SIZE = GS + "!\x11";
+  const DOUBLE_OFF = GS + "!\x00";
   const CUT = GS + "V\x00", FEED = ESC + "d\x04";
 
+  const divider = "-".repeat(columns) + LF;
+
   const makeHeaderTitle = (title) => {
-    const padLen = Math.max(0, Math.floor((columns - title.length - 2) / 2));
+    const cleanT = cleanAscii(title).toUpperCase();
+    const padLen = Math.max(0, Math.floor((columns - cleanT.length - 2) / 2));
     const dashes = "-".repeat(padLen);
-    return dashes + " " + title + " " + dashes + LF;
+    return dashes + " " + cleanT + " " + dashes + LF;
   };
 
-  const rightAlign = (l, r) => {
+  const rightAlign = (leftStr, rightStr) => {
+    const l = cleanAscii(leftStr);
+    const r = cleanAscii(rightStr);
     const sp = Math.max(1, columns - l.length - r.length);
     return l + " ".repeat(sp) + r + LF;
   };
 
-  const makeBoxLine = (l, r) => {
-    const innerWidth = Math.max(10, columns - 4);
-    const sp = Math.max(1, innerWidth - l.length - r.length);
-    return "| " + l + " ".repeat(sp) + r + " |" + LF;
-  };
-
-  const makeBoxText = (text) => {
-    const innerWidth = Math.max(10, columns - 4);
-    const trimmed = text.length > innerWidth ? text.slice(0, innerWidth) : text;
-    const sp = Math.max(0, innerWidth - trimmed.length);
-    return "| " + trimmed + " ".repeat(sp) + " |" + LF;
-  };
-
-  const boxBorder = "+" + "-".repeat(Math.max(10, columns - 2)) + "+" + LF;
-
-  let r = INIT;
+  let res = INIT + ESC + "t\x03"; // CP860 / Portuguese
 
   // 1. TOP HEADER (Número + Tipo + Tag)
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
-  const seqTag = seqNumStr ? `${seqNumStr}  ` : "";
+  const seqTag = seqNumStr ? `#${seqNumStr}  ` : "";
   const deliveryTypeTag = order.deliveryType === "DELIVERY" ? "DELIVERY" : "RETIRADA";
   const refTag = order.ifoodReference ? `#${order.ifoodReference}` : order.openDeliveryReference ? `#${order.openDeliveryReference}` : "";
-  const headerLine = `${seqTag}${deliveryTypeTag}  ${refTag}`.trim();
+  const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
-  r += CENTER + DOUBLE_ON + BOLD_ON + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
-  r += LEFT;
-  r += "Estabelecimento: " + (storeName || "HAKIM - CENTRO").toUpperCase() + LF;
+  res += CENTER + BOLD_ON + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
+  res += LEFT + divider;
+  res += BOLD_ON + "Estabelecimento: " + cleanAscii(storeName || "HAKIM - CENTRO").toUpperCase() + BOLD_OFF + LF;
   if (order.ifoodReference || order.openDeliveryReference || order.id) {
-    r += "Nº do Pedido: " + (order.ifoodReference || order.openDeliveryReference || order.id) + LF;
+    res += "N. do Pedido: " + cleanAscii(order.ifoodReference || order.openDeliveryReference || order.id) + LF;
   }
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
   const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
-  if (dateStr) r += "Data: " + dateStr + " " + timeStr + LF;
+  if (dateStr) res += "Data: " + dateStr + " " + timeStr + LF;
 
   // 2. CLIENTE SECTION
-  r += BOLD_ON + makeHeaderTitle("CLIENTE") + BOLD_OFF;
-  if (order.customerName) r += "Nome: " + order.customerName + LF;
-  if (order.customerPhone) r += "Telefone: " + order.customerPhone + LF;
-  r += "Qtd Pedidos: 1" + LF;
+  res += BOLD_ON + makeHeaderTitle("CLIENTE") + BOLD_OFF;
+  if (order.customerName) res += "Nome: " + cleanAscii(order.customerName) + LF;
+  if (order.customerPhone) res += "Telefone: " + cleanAscii(order.customerPhone) + LF;
 
   // 3. ENTREGA SECTION
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
-    r += BOLD_ON + makeHeaderTitle("ENTREGA") + BOLD_OFF;
-    r += "Endereço: " + order.customerAddress + LF;
+    res += BOLD_ON + makeHeaderTitle("ENTREGA") + BOLD_OFF;
+    res += "Endereco: " + cleanAscii(order.customerAddress) + LF;
     if (order.notes && !order.notes.toLowerCase().includes("pedido ifood")) {
-      r += "Obs: " + order.notes + LF;
+      res += "Obs: " + cleanAscii(order.notes) + LF;
     }
   }
 
-  // 4. RESUMO DO PEDIDO SECTION (Each item inside a Box!)
-  r += BOLD_ON + makeHeaderTitle("RESUMO DO PEDIDO") + BOLD_OFF;
+  // 4. RESUMO DO PEDIDO SECTION
+  res += BOLD_ON + makeHeaderTitle("RESUMO DO PEDIDO") + BOLD_OFF;
 
   if (order.items && order.items.length) {
     order.items.forEach(item => {
       const qty = item.qty || item.quantity || 1;
       const price = typeof item.price === "number" ? item.price * qty : 0;
       const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
-      const name = item.name || item.menuProduct?.name || "Item";
+      const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
-      r += boxBorder;
-      r += BOLD_ON + makeBoxLine(`Qtd: ${qty}x`, `Valor: ${priceStr}`) + BOLD_OFF;
-      r += makeBoxText(name);
-      
+      res += BOLD_ON + rightAlign(`${qty}x ${name}`, priceStr) + BOLD_OFF;
+
       if (item.notes) {
-        r += makeBoxText(`  > ${item.notes}`);
+        res += "   Obs: " + cleanAscii(item.notes) + LF;
       }
-      r += boxBorder;
     });
   }
 
   // 5. TOTALS
-  r += LF;
+  res += divider;
   const subtotal = order.items?.reduce((sum, it) => sum + ((it.price || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
-  r += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
+  res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
 
   if (order.discountTotal && order.discountTotal > 0) {
-    r += rightAlign("Desconto (Cupom - Loja):", "-R$ " + Number(order.discountTotal).toFixed(2).replace(".", ","));
+    res += rightAlign("Desconto:", "-R$ " + Number(order.discountTotal).toFixed(2).replace(".", ","));
   }
   if (order.deliveryFee !== undefined) {
-    r += rightAlign("Taxa de Entrega:", "R$ " + Number(order.deliveryFee).toFixed(2).replace(".", ","));
+    res += rightAlign("Taxa de Entrega:", "R$ " + Number(order.deliveryFee).toFixed(2).replace(".", ","));
   }
 
-  // TOTAL BOX (Bold box)
+  res += divider;
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
-  r += boxBorder;
-  r += BOLD_ON + DOUBLE_ON + makeBoxLine("Total:", totalValStr) + DOUBLE_OFF + BOLD_OFF;
-  r += boxBorder;
+  res += BOLD_ON + DOUBLE_HEIGHT + rightAlign("TOTAL DO PEDIDO:", totalValStr) + DOUBLE_OFF + BOLD_OFF;
+  res += divider;
 
   // 6. PAYMENT METHOD & SAFETY NOTE
   if (order.paymentMethod) {
-    r += BOLD_ON + "Forma de Pagamento: " + order.paymentMethod + BOLD_OFF + LF;
+    res += BOLD_ON + "Forma de Pagamento: " + cleanAscii(order.paymentMethod) + BOLD_OFF + LF;
   }
 
-  r += LF;
-  const isOnlinePayment = /pix|online|crédito \(online\)|cartão \(online\)/i.test(order.paymentMethod || "");
+  const isOnlinePayment = /pix|online|credito \(online\)|cartao \(online\)/i.test(cleanAscii(order.paymentMethod || ""));
   if (isOnlinePayment) {
-    r += "Dica de Seguranca: Nao aceite cobrancas extras na entrega. Seu pedido ja esta pago." + LF;
-    r += BOLD_ON + "[X] Pago via " + (order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJa" : "Online") + ", nao precisa cobrar na entrega" + BOLD_OFF + LF;
+    res += "Dica de Seguranca: Nao aceite cobrancas extras na entrega. Seu pedido ja esta pago." + LF;
+    res += BOLD_ON + "[X] PAGO VIA " + (order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "JOTAJA" : "ONLINE") + " - NAO COBRAR NA ENTREGA" + BOLD_OFF + LF;
   } else {
-    r += BOLD_ON + ">> COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " <<" + BOLD_OFF + LF;
+    res += BOLD_ON + ">> COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " <<" + BOLD_OFF + LF;
   }
 
-  r += LF + CENTER + "Obrigado pela preferencia!" + LF + FEED + CUT;
-  return Buffer.from(r, "binary");
+  res += LF + CENTER + "Obrigado pela preferencia!" + LF + FEED + CUT;
+  return Buffer.from(res, "binary");
 }
 
 /* ─── Rotas ────────────────────────────────────────────────── */
