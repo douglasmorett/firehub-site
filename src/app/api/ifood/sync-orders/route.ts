@@ -209,8 +209,13 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
   else if (["CONCLUDED", "DELIVERED"].includes(ifoodStatus)) status = "ENTREGUE";
   else if (["CANCELLED"].includes(ifoodStatus)) status = "CANCELADO";
 
-  const deliveryByRaw = (orderData.deliveryBy || orderData.delivery?.deliveryBy || orderData.merchant?.deliveryBy || "").toUpperCase();
-  const deliveryBy = deliveryByRaw === "IFOOD" || deliveryByRaw === "TOGO" || deliveryByRaw === "TAKEOUT" ? "IFOOD" : "MERCHANT";
+  const deliveredByRaw = (
+    orderData.deliveredBy || orderData.deliveryBy ||
+    orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
+    orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
+    ""
+  ).toString().toUpperCase();
+  const deliveryBy = deliveredByRaw === "IFOOD" ? "IFOOD" : "MERCHANT";
 
   await (prisma.customerOrder as any).create({
     data: {

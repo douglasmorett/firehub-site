@@ -44,18 +44,10 @@ const cleanAddress = (addr: string | null) => {
 
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
-  // 1. Se explicitamente for entrega própria da loja (MERCHANT), NUNCA é entregador do iFood!
-  if (order.deliveryBy === "MERCHANT" || order.ifoodDeliveryBy === "MERCHANT") {
-    return false;
-  }
-  // 2. Apenas se a API do iFood definir deliveryBy === "IFOOD" ou tiver nome/telefone do motorista do iFood
-  if (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD") {
-    return true;
-  }
-  if (order.ifoodDriverName || order.ifoodDriverPhone) {
-    return true;
-  }
-  return false;
+  // ÚNICA verificação confiável: campo deliveryBy salvo diretamente da API do iFood no momento da criação do pedido.
+  // NÃO usar ifoodDriverName/ifoodDriverPhone (são setados pelo botão "Solicitar Motoboy iFood" para qualquer pedido).
+  // NÃO usar telefone 0800 (todos os pedidos iFood usam 0800).
+  return order.deliveryBy === "IFOOD";
 };
 
 const getNeighborhoodOnly = (addr: string | null) => {

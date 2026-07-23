@@ -290,8 +290,15 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           ? orderData.deliveryFee
           : 0;
 
-    const deliveryByRaw = (orderData.deliveryBy || orderData.delivery?.deliveryBy || orderData.merchant?.deliveryBy || "").toUpperCase();
-    const deliveryBy = deliveryByRaw === "IFOOD" || deliveryByRaw === "TOGO" || deliveryByRaw === "TAKEOUT" ? "IFOOD" : "MERCHANT";
+    // iFood API usa "deliveredBy" (não "deliveryBy") para indicar quem entrega.
+    // "MERCHANT" = entrega própria da loja. "IFOOD" ou qualquer outro valor = entrega parceira/logística iFood.
+    const deliveredByRaw = (
+      orderData.deliveredBy || orderData.deliveryBy ||
+      orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
+      orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
+      ""
+    ).toString().toUpperCase();
+    const deliveryBy = deliveredByRaw === "IFOOD" ? "IFOOD" : (deliveredByRaw === "MERCHANT" || deliveredByRaw === "" ? "MERCHANT" : "MERCHANT");
 
       const createdOrder = await (prisma.customerOrder as any).create({
         data: {

@@ -938,8 +938,7 @@ function OrderCard({
         {/* MOTOBOY IFOOD BADGE DESTACADO */}
         {(() => {
           const o = order as any;
-          if (o.deliveryBy === "MERCHANT" || o.ifoodDeliveryBy === "MERCHANT") return null;
-          const isIfoodDriver = o.deliveryBy === "IFOOD" || o.ifoodDeliveryBy === "IFOOD" || o.ifoodDriverName || o.ifoodDriverPhone;
+          const isIfoodDriver = o.deliveryBy === "IFOOD";
           
           if (!isIfoodDriver) return null;
           return (
