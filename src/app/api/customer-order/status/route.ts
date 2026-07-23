@@ -107,14 +107,15 @@ export async function PUT(req: Request) {
 
   // ── Auto-set KDS stage ──
   if (status === "ACEITO" || status === "PREPARANDO") {
-    // Only set kdsStage if not already set (avoid overwriting FINISHING)
-    if (!order.kdsStage) {
+    // Voltando para preparo/produção: reseta kdsStage para PRODUCTION para reaparecer em ambos os KDS
+    if (order.kdsStage === "FINISHED" || !order.kdsStage) {
       updateData.kdsStage = "PRODUCTION";
       updateData.kdsProductionAt = new Date();
     }
   }
   if (["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"].includes(status)) {
-    updateData.kdsStage = null;
+    // Saiu para entrega/cancelou/entregou: marca como FINISHED para sair de ambos os KDS
+    updateData.kdsStage = "FINISHED";
     updateData.kdsStationId = null;
   }
 
