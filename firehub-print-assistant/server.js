@@ -295,8 +295,10 @@ function buildEscPos(order, storeName, columns = 48) {
   const refTag = order.ifoodReference ? `#${order.ifoodReference}` : order.openDeliveryReference ? `#${order.openDeliveryReference}` : "";
   const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
-  const isIfoodDriver = order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD" ||
-    (order.source === "IFOOD" && (String(order.customerPhone || "").includes("0800") || String(order.customerPhone || "").toUpperCase().includes("ID:")));
+  const isIfoodDriver = (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD" ||
+    order.ifoodDriverName || order.ifoodDriverPhone || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "IDLE") ||
+    (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD") || order.notes.toUpperCase().includes("MOTOBOY IFOOD")))) &&
+    order.deliveryBy !== "MERCHANT" && order.ifoodDeliveryBy !== "MERCHANT";
 
   res += CENTER + BOLD_ON + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
   if (isIfoodDriver) {

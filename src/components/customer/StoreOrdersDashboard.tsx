@@ -44,13 +44,25 @@ const cleanAddress = (addr: string | null) => {
 
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
-  if (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD") return true;
-  if (order.ifoodDriverName || order.ifoodDriverPhone || order.ifoodDriverStatus) return true;
-  if (order.source === "IFOOD") {
-    const phone = String(order.customerPhone || "");
-    if (phone.includes("0800") || phone.toUpperCase().includes("ID:")) return true;
-    if (order.notes && (order.notes.toUpperCase().includes("PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA") || order.notes.toUpperCase().includes("MOTOBOY IFOOD"))) return true;
+  
+  // 1. Se for entrega própria da loja (MERCHANT), NUNCA é entregador do iFood!
+  if (order.deliveryBy === "MERCHANT" || order.ifoodDeliveryBy === "MERCHANT") {
+    return false;
   }
+
+  // 2. Se explicitamente tiver entregador iFood alocado ou status de logística do iFood
+  if (order.deliveryBy === "IFOOD" || order.ifoodDeliveryBy === "IFOOD") {
+    return true;
+  }
+  if (order.ifoodDriverName || order.ifoodDriverPhone || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "IDLE")) {
+    return true;
+  }
+
+  // 3. Se as observações tiverem menção explícita de "ENTREGA PARCEIRA" ou "LOGISTICA IFOOD"
+  if (order.notes && (order.notes.toUpperCase().includes("ENTREGA PARCEIRA") || order.notes.toUpperCase().includes("LOGISTICA IFOOD") || order.notes.toUpperCase().includes("MOTOBOY IFOOD"))) {
+    return true;
+  }
+
   return false;
 };
 
