@@ -5,6 +5,14 @@
 const { app, Tray, Menu, nativeImage, BrowserWindow, dialog } = require("electron");
 const path = require("path");
 
+process.on("uncaughtException", (err) => {
+  if (err.code === "EADDRINUSE" || err.message?.includes("EADDRINUSE")) {
+    console.log("[Main] Porta 7891 já em uso por outro assistente ativo.");
+    return;
+  }
+  console.error("[Main] UncaughtException:", err);
+});
+
 // Inicia o servidor HTTP local na porta 7891
 require("./server.js");
 

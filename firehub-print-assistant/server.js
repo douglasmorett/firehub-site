@@ -225,7 +225,7 @@ app.post("/print-test", async (req, res) => {
 });
 
 /* ─── Start ────────────────────────────────────────────────── */
-app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("");
   console.log("  🔥 FireHub Assistente de Impressão v1.0");
   console.log("  ────────────────────────────────────────");
@@ -235,4 +235,12 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("  Mantenha esta janela aberta para");
   console.log("  impressão automática funcionar.");
   console.log("");
+});
+
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.log(`[PrintServer] Porta ${PORT} já em uso por outro assistente ativo.`);
+  } else {
+    console.error("[PrintServer] Erro no servidor de impressão:", err);
+  }
 });
