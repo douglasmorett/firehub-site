@@ -1123,8 +1123,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
               )}
 
-              {/* Line 3: Extra Badges (e.g. Pronto Cozinha) */}
-              {(order.kdsStage === "FINISHING" || order.kdsStage === "FINISHED" || order.kdsFinishingAt) && (
+              {/* Line 3: Extra Badges (Pronto Cozinha exibe APENAS após dar baixa na tela de Finalização) */}
+              {order.kdsStage === "FINISHED" && (
                 <div style={{ marginBottom: "4px" }}>
                   <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block" }}>
                     ✅ Pronto Cozinha
