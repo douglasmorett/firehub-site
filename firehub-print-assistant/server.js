@@ -374,15 +374,17 @@ app.post("/config", (req, res) => {
 
 // Polling background da Fila de Impressão na Nuvem (roda a cada 3s)
 setInterval(async () => {
-  if (!currentConfig.franchiseeId) return;
   try {
     const fetch = (await import("node-fetch")).default || globalThis.fetch;
-    const url = `https://firehubfood.com.br/api/store/print-queue?franchiseeId=${currentConfig.franchiseeId}`;
+    const url = currentConfig.franchiseeId
+      ? `https://firehubfood.com.br/api/store/print-queue?franchiseeId=${currentConfig.franchiseeId}`
+      : `https://firehubfood.com.br/api/store/print-queue?all=true`;
     const res = await fetch(url);
     if (!res.ok) return;
     const data = await res.json();
-    if (data.ok && Array.isArray(data.jobs) && data.jobs.length > 0) {
-      for (const job of data.jobs) {
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    if (jobs.length > 0) {
+      for (const job of jobs) {
         const detectedPrinters = listPrinters();
         const targetPrinter = currentConfig.printer || (detectedPrinters[0]?.name);
         if (!targetPrinter) {

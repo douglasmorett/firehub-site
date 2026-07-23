@@ -51,17 +51,20 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const franchiseeId = searchParams.get("franchiseeId");
+    const all = searchParams.get("all") === "true";
 
-    if (!franchiseeId) {
-      return NextResponse.json({ jobs: [] });
+    if (all || !franchiseeId) {
+      const allJobs: any[] = [];
+      for (const [_, jobs] of queueMap.entries()) {
+        allJobs.push(...jobs);
+      }
+      queueMap.clear();
+      return NextResponse.json({ jobs: allJobs });
     }
 
     const q = queueMap.get(franchiseeId) || [];
-    // Retorna todos os jobs pendentes e esvazia a fila
-    const jobs = [...q];
     queueMap.set(franchiseeId, []);
-
-    return NextResponse.json({ ok: true, jobs });
+    return NextResponse.json({ jobs: q });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

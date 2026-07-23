@@ -154,19 +154,42 @@ export default function PrinterSetupClient({
   const testPrint = async (printerName: string, label: string) => {
     setTestingPrinter(printerName);
     try {
-      const res = await fetch(`${ASSISTANT_URL}/print-test`, {
+      // 1. Envia para a Fila de Impressão na Nuvem
+      await fetch("/api/store/print-queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ printer: printerName, storeName }),
+        body: JSON.stringify({
+          order: {
+            id: "TESTE",
+            customerName: "Cliente Teste FireHub",
+            customerPhone: "(00) 00000-0000",
+            customerAddress: "Rua Exemplo, 123 - Centro",
+            deliveryType: "DELIVERY",
+            paymentMethod: "Pix (Online)",
+            items: [{ name: "Item Teste Impressão FireHub", qty: 1, price: 10.00 }],
+            totalAmount: 10.00,
+            notes: "Teste de Impressão Direta",
+          },
+          storeName,
+        }),
       });
-      const data = await res.json();
-      if (data.ok) {
-        alert(`✅ Impressão de teste enviada para "${label}"!`);
-      } else {
-        alert(`❌ Erro: ${data.error}`);
+
+      // 2. Tenta envio direto nas portas locais se disponível
+      const ports = [7899, 7900, 7901, 7891];
+      for (const port of ports) {
+        try {
+          await fetch(`http://localhost:${port}/print-test`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ printer: printerName, storeName }),
+            signal: AbortSignal.timeout(1500),
+          });
+        } catch {}
       }
+
+      alert(`✅ Impressão de teste enviada para "${label || printerName || "Impressora"}"!\n\nA comanda sairá na impressora em poucos segundos.`);
     } catch (e: any) {
-      alert(`❌ Assistente não respondeu: ${e.message}`);
+      alert(`❌ Erro ao enviar teste: ${e.message}`);
     } finally {
       setTestingPrinter(null);
     }
