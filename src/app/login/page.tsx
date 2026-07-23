@@ -34,7 +34,8 @@ export default function FireHubLoginPage() {
       const meRes = await fetch("/api/me");
       const meData = meRes.ok ? await meRes.json() : null;
       const role = meData?.role;
-      router.push(role === "ADMIN" ? "/admin" : "/store");
+      // Redireciona com navegação completa (full page) para garantir que cookies sejam lidos
+      window.location.href = role === "ADMIN" ? "/admin" : "/store";
     } else {
       setError("E-mail ou senha incorretos. Tente novamente.");
     }
