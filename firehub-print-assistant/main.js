@@ -5,6 +5,15 @@
 const { app, Tray, Menu, nativeImage, BrowserWindow, dialog } = require("electron");
 const path = require("path");
 
+const { execSync } = require("child_process");
+
+// Mata qualquer processo antigo rodando na porta 7891 para garantir o carregamento do novo modelo
+try {
+  if (process.platform === "win32") {
+    execSync('powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 7891 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"', { stdio: "ignore" });
+  }
+} catch (e) {}
+
 process.on("uncaughtException", (err) => {
   if (err.code === "EADDRINUSE" || err.message?.includes("EADDRINUSE")) {
     console.log("[Main] Porta 7891 já em uso por outro assistente ativo.");
