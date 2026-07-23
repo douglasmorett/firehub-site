@@ -28,21 +28,25 @@ export async function GET(req: NextRequest) {
   let where: any;
 
   if (stage === "production") {
-    // Show orders that are ACEITO/PREPARANDO and in production stage (or not yet assigned to any stage)
+    // Tela de Preparo: mostra pedidos em produção (NOVO, ACEITO, PREPARANDO) que ainda não foram concluídos pela produção
     where = {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: { in: ["ACEITO", "PREPARANDO"] },
+      status: { in: ["NOVO", "ACEITO", "PREPARANDO"] },
       OR: [
         { kdsStage: "PRODUCTION" },
         { kdsStage: null },
       ],
     };
   } else if (stage === "finishing") {
-    // Show orders in finishing stage (only active ones: ACEITO/PREPARANDO)
+    // Tela de Finalização: mostra TODOS os pedidos ativos (NOVO, ACEITO, PREPARANDO), tanto os que estão em produção quanto os prontos na cozinha
     where = {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: { in: ["ACEITO", "PREPARANDO"] },
-      kdsStage: "FINISHING",
+      status: { in: ["NOVO", "ACEITO", "PREPARANDO"] },
+      OR: [
+        { kdsStage: "PRODUCTION" },
+        { kdsStage: "FINISHING" },
+        { kdsStage: null },
+      ],
     };
   } else {
     return NextResponse.json({ error: "Stage inválido" }, { status: 400 });
