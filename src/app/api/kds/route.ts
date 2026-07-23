@@ -93,26 +93,18 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  // Buscar início do caixa aberto ou início do dia no fuso do Brasil (America/Sao_Paulo)
+  // Buscar início do dia no fuso do Brasil (America/Sao_Paulo) para numeração sequencial idêntica ao painel da loja
   const now = new Date();
   const brazilDateStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo" });
   const startOfTodayBrazil = new Date(brazilDateStr);
 
-  const activeCashSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
-    select: { openedAt: true },
-    orderBy: { openedAt: "desc" },
-  });
-
-  const referenceStartDate = activeCashSession?.openedAt || startOfTodayBrazil;
-
-  const storeOrdersInSession = await prisma.customerOrder.findMany({
+  const storeOrdersToday = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
       status: { notIn: ["CANCELADO"] },
       OR: [
-        { createdAt: { gte: referenceStartDate } },
-        { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA"] } },
+        { createdAt: { gte: startOfTodayBrazil } },
+        { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"] } },
       ],
     },
     select: { id: true, createdAt: true },
@@ -120,7 +112,7 @@ export async function GET(req: NextRequest) {
   });
 
   const dailyNumMap = new Map<string, number>();
-  storeOrdersInSession.forEach((o, i) => {
+  storeOrdersToday.forEach((o, i) => {
     dailyNumMap.set(o.id, i + 1);
   });
 
