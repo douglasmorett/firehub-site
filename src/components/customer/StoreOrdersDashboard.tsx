@@ -338,132 +338,30 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       const result = await printOrder(formattedOrder as any, storeName, activeConfig);
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
-        return; // Impresso diretamente via Assistente RAW — NÃO ABRE JANELA DO NAVEGADOR!
+        return; // Impresso diretamente via Assistente RAW
+      }
+
+      // 2. Se o assistente local não respondeu, envia para a Fila de Impressão na nuvem
+      const queueRes = await fetch("/api/store/print-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          franchiseeId: user.ownerId || user.id,
+          order: formattedOrder,
+          storeName,
+          paperWidth: receiptPaperSize || "80mm",
+        }),
+      });
+
+      if (queueRes.ok) {
+        showToast("✅ Enviado para a fila de impressão da impressora!", "#10B981");
+        return;
       }
     } catch (err) {
-      console.warn("[Print] Assistente offline, caindo para janela de impressão do navegador:", err);
+      console.warn("[Print] Erro na impressão:", err);
     }
 
-    // 2. Se o assistente não estiver ativo neste PC, abre janela de impressão como fallback
-    const phone = order.customerPhone || "";
-    const createdDate = new Date(order.createdAt);
-    const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
-    const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    const isDelivery = order.deliveryType === "DELIVERY";
-
-    let receipt = "";
-
-    if (type === "cozinha") {
-      receipt += `#${seqNum} ${isDelivery ? "DELIVERY" : "RETIRADA"}\n`;
-      receipt += `COZINHA\n`;
-      if (order.ifoodReference || order.openDeliveryReference) receipt += `N° do Pedido: ${order.ifoodReference || order.openDeliveryReference}\n`;
-      receipt += `Data: ${dateStr} ${timeStr}\n`;
-      receipt += `\n`;
-      receipt += `CLIENTE\n`;
-      receipt += `Nome: ${order.customerName}\n`;
-      if (isDelivery && order.customerAddress) {
-        receipt += `Endereço: ${cleanAddress(order.customerAddress)}\n`;
-      }
-      if (order.notes) {
-        receipt += `Obs: ${order.notes}\n`;
-      }
-      receipt += `\n`;
-      receipt += `RESUMO DO PEDIDO\n`;
-      order.items?.forEach((item: any) => {
-        const comboSels = (() => {
-          if (!item.comboSelections) return [];
-          try {
-            const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-            if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-            return [];
-          } catch { return []; }
-        })();
-        const nameParts = (item.menuProduct?.name || "Item").split(" | ");
-        const mainName = nameParts[0];
-        const extras = nameParts.slice(1);
-        
-        receipt += `Qtd: ${item.quantity}x\n`;
-        receipt += `${mainName}\n`;
-        if (comboSels.length > 0) {
-          comboSels.forEach((sel: any) => {
-            const totalQty = (sel.quantity || 1) * (item.quantity || 1);
-            receipt += `  - ${totalQty > 1 ? totalQty + "x " : ""}${sel.name}\n`;
-          });
-        } else if (extras.length > 0) {
-          extras.forEach((ext: string) => {
-            receipt += `  - ${ext.trim()}\n`;
-          });
-        }
-        receipt += `\n`;
-      });
-    } else {
-      receipt += `#${seqNum} ${isDelivery ? "DELIVERY" : "RETIRADA"}\n`;
-      receipt += `${order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "APP - JOTAJÁ" : order.source === "PDV" ? "PDV" : "ONLINE"}\n`;
-      receipt += `Estabelecimento: ${storeName}\n`;
-      if (order.ifoodReference || order.openDeliveryReference) receipt += `N° do Pedido: ${order.ifoodReference || order.openDeliveryReference}\n`;
-      receipt += `Data: ${dateStr} ${timeStr}\n`;
-      receipt += `\n`;
-      receipt += `CLIENTE\n`;
-      receipt += `Nome: ${order.customerName}\n`;
-      receipt += `Telefone: ${phone}\n`;
-      if (isDelivery && order.customerAddress) {
-        receipt += `Endereço: ${cleanAddress(order.customerAddress)}\n`;
-      }
-      if (order.notes) receipt += `Obs: ${order.notes}\n`;
-      receipt += `\n`;
-      receipt += `RESUMO DO PEDIDO\n`;
-      order.items?.forEach((item: any) => {
-        const comboSels = (() => {
-          if (!item.comboSelections) return [];
-          try {
-            const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-            if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-            return [];
-          } catch { return []; }
-        })();
-        const nameParts = (item.menuProduct?.name || "Item").split(" | ");
-        const mainName = nameParts[0];
-        const extras = nameParts.slice(1);
-        receipt += `Qtd: ${item.quantity}x  Valor: R$ ${(item.price * item.quantity).toFixed(2)}\n`;
-        receipt += `${mainName}\n`;
-        if (comboSels.length > 0) {
-          comboSels.forEach((sel: any) => {
-            const totalQty = (sel.quantity || 1) * (item.quantity || 1);
-            receipt += `  - ${totalQty > 1 ? totalQty + "x " : ""}${sel.name}\n`;
-          });
-        } else if (extras.length > 0) {
-          extras.forEach((ext: string) => {
-            receipt += `  - ${ext.trim()}\n`;
-          });
-        }
-        receipt += `\n`;
-      });
-      const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
-      receipt += `Subtotal: R$ ${subtotal.toFixed(2)}\n`;
-      if (isDelivery) receipt += `Taxa de Entrega: R$ ${Number(order.deliveryFee || 0).toFixed(2)}\n`;
-      if (order.discountTotal && order.discountTotal > 0) {
-        if (order.discountIfood && order.discountIfood > 0) {
-          receipt += `Desconto iFood: -R$ ${Number(order.discountIfood).toFixed(2)}\n`;
-        }
-        if (order.discountMerchant && order.discountMerchant > 0) {
-          receipt += `Desconto Loja: -R$ ${Number(order.discountMerchant).toFixed(2)}\n`;
-        }
-        if (!order.discountIfood && !order.discountMerchant) {
-          receipt += `Desconto: -R$ ${Number(order.discountTotal).toFixed(2)}\n`;
-        }
-      }
-      receipt += `Total: R$ ${order.totalAmount.toFixed(2)}\n`;
-      if (order.paymentMethod) receipt += `Forma de Pagamento: ${translatePayment(order.paymentMethod)}\n`;
-      if (order.changeAmount != null && order.changeAmount > 0) receipt += `Troco para: R$ ${Number(order.changeAmount).toFixed(2)}\n`;
-    }
-
-    const printWin = window.open("", "_blank", "width=400,height=700");
-    if (printWin) {
-      printWin.document.write(`<html><head><title>Pedido #${seqNum}</title><style>body{font-family:'Courier New',monospace;font-size:13px;padding:20px;white-space:pre-wrap;line-height:1.5;}@media print{body{padding:0;}}</style></head><body>${receipt.replace(/\n/g, "<br>")}</body></html>`);
-      printWin.document.close();
-      printWin.focus();
-      printWin.print();
-    }
+    showToast("⚠️ Verifique se o FireHub Assistente está rodando no PC com a impressora.", "#EF4444");
   };
 
   useEffect(() => {
