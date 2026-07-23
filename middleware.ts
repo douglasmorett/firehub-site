@@ -63,11 +63,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Só FRANCHISEE e ADMIN podem acessar /store
-    const role = token.role as string;
-    if (role !== "FRANCHISEE" && role !== "ADMIN") {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
+    // Controle de role é feito server-side em cada page/layout
   }
 
   // ─── Build response with security headers ───
