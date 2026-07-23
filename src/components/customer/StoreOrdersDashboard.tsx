@@ -398,6 +398,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const lastPollHash = useRef("");
   const knownOrderIdsRef = useRef<Set<string>>(new Set(initialOrders.map((o: any) => o.id)));
   const autoPrintedIdsRef = useRef<Set<string>>(new Set());
+  const previousStatusRef = useRef<Map<string, string>>(new Map(initialOrders.map((o: any) => [o.id, o.status])));
 
   useEffect(() => {
     // Initialize known IDs with current orders
@@ -418,13 +419,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               const newOrders = JSON.parse(text);
               setOrders(newOrders);
 
-              // 🖨️ AUTO-PRINT: Detectar pedidos novos e imprimir automaticamente
+              // 🖨️ AUTO-PRINT para qualquer fonte (iFood, JotaJá, Site, etc.)
+              // Imprime quando:
+              // 1. Pedido NOVO aparece já com status ACEITO ou posterior (auto-confirmado)
+              // 2. Pedido existente mudou de NOVO para ACEITO (aceito manualmente ou por webhook)
               if (printerConfig?.autoprint !== false) {
                 for (const order of newOrders) {
-                  if (!knownOrderIdsRef.current.has(order.id) && !autoPrintedIdsRef.current.has(order.id)) {
-                    // Pedido novo detectado! Imprimir automaticamente.
+                  if (autoPrintedIdsRef.current.has(order.id)) continue;
+
+                  const isNew = !knownOrderIdsRef.current.has(order.id);
+                  const wasNovo = previousStatusRef.current.get(order.id) === "NOVO";
+                  const isAccepted = order.status !== "NOVO" && order.status !== "CANCELADO" && order.status !== "ENCERRADO";
+
+                  if ((isNew && isAccepted) || (wasNovo && isAccepted)) {
                     autoPrintedIdsRef.current.add(order.id);
-                    console.log(`[AutoPrint] 🖨️ Novo pedido detectado: ${order.customerName} (#${order.ifoodReference || order.id.slice(-4)}) — imprimindo automaticamente!`);
+                    console.log(`[AutoPrint] 🖨️ Pedido aceito: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id.slice(-4)}) [${order.source}] — imprimindo!`);
                     try {
                       handlePrint(order, "cozinha");
                     } catch (printErr) {
@@ -434,8 +443,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 }
               }
 
-              // Atualizar IDs conhecidos
+              // Atualizar IDs e status conhecidos
               knownOrderIdsRef.current = new Set(newOrders.map((o: any) => o.id));
+              previousStatusRef.current = new Map(newOrders.map((o: any) => [o.id, o.status]));
             }
           }
         }
