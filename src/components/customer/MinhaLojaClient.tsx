@@ -209,6 +209,58 @@ export default function MinhaLojaClient({ user }: { user: any }) {
   );
 }
 
+const BRAZILIAN_CITIES = [
+  "Rio das Ostras - RJ",
+  "Macaé - RJ",
+  "Cabo Frio - RJ",
+  "Rio de Janeiro - RJ",
+  "Niterói - RJ",
+  "São Gonçalo - RJ",
+  "Campos dos Goytacazes - RJ",
+  "Petrópolis - RJ",
+  "Volta Redonda - RJ",
+  "Nova Friburgo - RJ",
+  "Resende - RJ",
+  "Maricá - RJ",
+  "Araruama - RJ",
+  "Angra dos Reis - RJ",
+  "São Pedro da Aldeia - RJ",
+  "Itaboraí - RJ",
+  "Barra Mansa - RJ",
+  "Teresópolis - RJ",
+  "Magé - RJ",
+  "Duque de Caxias - RJ",
+  "Nova Iguaçu - RJ",
+  "Belford Roxo - RJ",
+  "São João de Meriti - RJ",
+  "Nilópolis - RJ",
+  "Mesquita - RJ",
+  "Saquarema - RJ",
+  "Armação dos Búzios - RJ",
+  "Rio Bonito - RJ",
+  "São Paulo - SP",
+  "Campinas - SP",
+  "Santos - SP",
+  "Guarulhos - SP",
+  "São Bernardo do Campo - SP",
+  "Santo André - SP",
+  "Osasco - SP",
+  "Ribeirão Preto - SP",
+  "Belo Horizonte - MG",
+  "Juiz de Fora - MG",
+  "Uberlândia - MG",
+  "Vitória - ES",
+  "Vila Velha - ES",
+  "Curitiba - PR",
+  "Florianópolis - SC",
+  "Porto Alegre - RS",
+  "Brasília - DF",
+  "Salvador - BA",
+  "Recife - PE",
+  "Fortaleza - CE",
+  "Goiânia - GO",
+];
+
 // ── Seção Conta: dados + senha ───────────────────────────────────────────────
 function ContaSection({ user }: { user: any }) {
   const isSecondaryAccount = user.role === "STAFF" || Boolean(user.ownerId);
@@ -300,6 +352,13 @@ function ContaSection({ user }: { user: any }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
 
+      {/* Datalist de sugestões de cidades */}
+      <datalist id="cidades-list">
+        {BRAZILIAN_CITIES.map(c => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+
       {/* ── Dados da Conta ── */}
       <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E2E8F0", boxShadow: "0 1px 6px rgba(0,0,0,0.05)", overflow: "hidden" }}>
         <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: 8 }}>
@@ -348,7 +407,15 @@ function ContaSection({ user }: { user: any }) {
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Cidade</label>
-                  <input type="text" value={city} onChange={e => setCity(e.target.value)} style={inp} placeholder="Ex: Rio de Janeiro - RJ" />
+                  <input
+                    type="text"
+                    list="cidades-list"
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
+                    style={inp}
+                    placeholder="Digite ou selecione a cidade (ex: Rio das Ostras - RJ)"
+                    autoComplete="on"
+                  />
                 </div>
               </div>
               <div>
