@@ -1115,7 +1115,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   background: "#ECFDF5", padding: "4px 8px", borderRadius: "5px", margin: "4px 0",
                   wordBreak: "break-word"
                 }}>
-                  📍 {getNeighborhoodOnly(order.customerAddress)}
+                  📍 {cleanAddress(order.customerAddress)}
                 </div>
               )}
               {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
