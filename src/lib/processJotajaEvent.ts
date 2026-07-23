@@ -266,7 +266,21 @@ export async function processJotajaEvent(
           source: "JOTAJA",
           customerName: orderData.customer?.name ?? "Cliente Jotajá",
           customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
-          customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress ?? "",
+          customerAddress: (() => {
+            const addr = orderData.delivery?.deliveryAddress;
+            if (!addr) return "";
+            const formatted = addr.formattedAddress || "";
+            const street = addr.streetName ? `${addr.streetName}${addr.streetNumber ? ` ${addr.streetNumber}` : ""}${addr.complement ? ` ${addr.complement}` : ""}` : formatted;
+            const neighborhood = addr.neighborhood || "";
+            const city = addr.city || "";
+            const parts: string[] = [];
+            if (street) parts.push(street);
+            if (neighborhood && (!street || !street.toLowerCase().includes(neighborhood.toLowerCase()))) {
+              parts.push(neighborhood);
+            }
+            if (city) parts.push(city);
+            return parts.join(" - ");
+          })(),
           deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
           paymentMethod: cashPayment ? "Dinheiro" : payMethodName,
           totalAmount: total,
