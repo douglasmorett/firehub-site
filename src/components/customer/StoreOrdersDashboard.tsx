@@ -79,8 +79,15 @@ const getNeighborhoodOnly = (addr: string | null) => {
     }
   }
 
-  // Se não houver hífen ou separador de bairro no texto armazenado, não confunde rua com bairro
-  return "Sem bairro informado";
+  // 3. Fallback for single street+number strings:
+  // Strip street prefix (Rua, R., Av., Avenida, Estr., Estrada, Al., Alameda, Tv., Travessa, Pça., Praça)
+  // and trailing house number (, 123 / , n 123 / , nº 123) to show clean location name (e.g. "Barra do Piraí", "Cinco", "das Casuarinas")
+  const stripped = cleaned
+    .replace(/^(rua|r\.|av\.|avenida|estrada|estr\.|alameda|al\.|travessa|tv\.|praça|pça\.)\s+/i, "")
+    .replace(/,\s*(nº|n°|n|num|número)?\s*\d+\s*[a-z]?$/i, "")
+    .trim();
+
+  return stripped || cleaned;
 };
 
 // Mapping columns to statuses for drag-and-drop
