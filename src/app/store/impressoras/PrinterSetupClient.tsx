@@ -44,6 +44,42 @@ export default function PrinterSetupClient({
 
   const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
+
+    // 1. Tenta conectar via WebSocket (Bypassa bloqueios CORS/PNA do Chrome em HTTPS!)
+    const wsPorts = [7899, 7900, 7901, 7891];
+    for (const port of wsPorts) {
+      try {
+        const wsData = await new Promise<any>((resolve) => {
+          let timer: any;
+          try {
+            const ws = new WebSocket(`ws://localhost:${port}`);
+            timer = setTimeout(() => { try { ws.close(); } catch {} resolve(null); }, 1200);
+            ws.onmessage = (evt) => {
+              clearTimeout(timer);
+              try {
+                const parsed = JSON.parse(evt.data);
+                if (parsed.ok) resolve(parsed); else resolve(null);
+              } catch { resolve(null); }
+            };
+            ws.onerror = () => { clearTimeout(timer); resolve(null); };
+          } catch {
+            clearTimeout(timer);
+            resolve(null);
+          }
+        });
+
+        if (wsData) {
+          setStatus("connected");
+          setAvailablePrinters(wsData.printers || []);
+          if (userClicked) {
+            alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(wsData.printers || []).length} impressora(s) detectada(s) no Windows.`);
+          }
+          return;
+        }
+      } catch {}
+    }
+
+    // 2. Fallback HTTP fetch
     const urls = [
       "http://localhost:7899", "http://127.0.0.1:7899",
       "http://localhost:7900", "http://127.0.0.1:7900",
@@ -54,7 +90,7 @@ export default function PrinterSetupClient({
 
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(2000) });
+        const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(1500) });
         const data = await res.json();
         if (data.ok && (data.app === "FireHub-Thermal-Printer-v2" || (data.printers && data.printers.length > 0))) {
           connectedData = data;
@@ -72,12 +108,7 @@ export default function PrinterSetupClient({
     } else {
       setStatus("disconnected");
       if (userClicked) {
-        alert(
-          "ℹ️ Informação sobre a Conexão de Impressão:\n\n" +
-          "• O Assistente FireHub roda no computador onde a impressora está ligada no cabo USB (PC Principal da loja).\n\n" +
-          "✅ Se a impressora está ligada no outro computador e os pedidos estão imprimindo normalmente lá, TUDO ESTÁ FUNCIONANDO PERFEITAMENTE! Não precisa instalar nada neste 2º computador.\n\n" +
-          "👉 Só instale o assistente neste computador se um dia você mudar o cabo da impressora para este PC."
-        );
+        alert("⚠️ Não foi possível conectar ao Assistente local.");
       }
     }
   }, []);

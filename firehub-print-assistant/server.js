@@ -485,6 +485,40 @@ app.post("/print-test", async (req, res) => {
   }
 });
 
+/* ─── WebSocket Server ─────────────────────────────────────── */
+const { WebSocketServer } = require("ws");
+
+function attachWebSocket(httpServer) {
+  try {
+    const wss = new WebSocketServer({ server: httpServer });
+    wss.on("connection", (ws) => {
+      console.log("[WebSocket] Cliente conectado");
+      ws.send(JSON.stringify({
+        type: "status",
+        ok: true,
+        app: "FireHub-Thermal-Printer-v2",
+        printers: listPrinters(),
+      }));
+
+      ws.on("message", (msg) => {
+        try {
+          const payload = JSON.parse(msg.toString());
+          if (payload.action === "getPrinters" || payload.action === "status") {
+            ws.send(JSON.stringify({
+              type: "status",
+              ok: true,
+              app: "FireHub-Thermal-Printer-v2",
+              printers: listPrinters(),
+            }));
+          }
+        } catch {}
+      });
+    });
+  } catch (err) {
+    console.error("[WebSocket] Erro ao iniciar WS:", err);
+  }
+}
+
 /* ─── Start com fallback de portas (7899, 7900, 7901, 7891) ── */
 const PORTS = [7899, 7900, 7901, 7891];
 let server;
@@ -498,11 +532,12 @@ function startServer(portIndex = 0) {
   const currentPort = PORTS[portIndex];
   server = app.listen(currentPort, "0.0.0.0", () => {
     console.log("");
-    console.log("  🔥 FireHub Assistente de Impressão v2.0");
+    console.log("  🔥 FireHub Assistente de Impressão v2.0 (HTTP + WebSocket)");
     console.log("  ────────────────────────────────────────");
-    console.log(`  ✅ Rodando em http://localhost:${currentPort}`);
+    console.log(`  ✅ Rodando em http://localhost:${currentPort} & ws://localhost:${currentPort}`);
     console.log(`  📋 Impressoras: http://localhost:${currentPort}/printers`);
     console.log("");
+    attachWebSocket(server);
   });
 
   server.on("error", (err) => {
