@@ -954,6 +954,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const map = new Map<string, number>();
     const allInPeriod = orders
       .filter(o => {
+        if ((o as any).dailyOrderNumber) {
+          map.set(o.id, (o as any).dailyOrderNumber);
+        }
         const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
         const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
         const isInProgress = activeStatuses.includes(o.status) && o.status !== "ENCERRADO";
@@ -963,7 +966,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         return refDate >= fromDate && refDate <= toDate;
       })
       .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    allInPeriod.forEach((o: any, i: number) => map.set(o.id, i + 1));
+
+    allInPeriod.forEach((o: any, i: number) => {
+      if (!map.has(o.id)) {
+        map.set(o.id, i + 1);
+      }
+    });
     return map;
   }, [orders, fromDate, toDate]);
 
