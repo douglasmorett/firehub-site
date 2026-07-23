@@ -289,13 +289,67 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const storeStatus = isStoreOpen(user.storeHours as any);
   const storeUrl = user.slug ? `/loja/${user.slug}` : null;
 
-  const handlePrint = (order: any, type: "cozinha" | "completo") => {
+  const [printerConfig, setPrinterConfig] = useState<any>(null);
+
+  useEffect(() => {
+    fetch("/api/store/printer-config")
+      .then(r => r.json())
+      .then(d => { if (d) setPrinterConfig(d); })
+      .catch(() => {});
+  }, []);
+
+  const handlePrint = async (order: any, type: "cozinha" | "completo") => {
+    const seqNum = orderNumberMap.get(order.id) ?? (order.dailyOrderNumber || "—");
+
+    // 1. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
+    try {
+      const { printOrder } = await import("@/lib/print");
+      const activeConfig = printerConfig && printerConfig.printers?.length > 0
+        ? printerConfig
+        : { autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
+
+      const formattedOrder = {
+        id: order.id,
+        dailyOrderNumber: seqNum,
+        customerName: order.customerName || "Cliente",
+        customerPhone: order.customerPhone,
+        customerAddress: order.customerAddress,
+        deliveryType: order.deliveryType || "DELIVERY",
+        paymentMethod: translatePayment(order.paymentMethod || ""),
+        items: (order.items || []).map((i: any) => ({
+          name: i.menuProduct?.name || i.name || "Item",
+          qty: i.quantity || i.qty || 1,
+          price: i.price || 0,
+          notes: i.notes || "",
+          comboSelections: i.comboSelections,
+        })),
+        totalAmount: order.totalAmount || 0,
+        deliveryFee: order.deliveryFee || 0,
+        discountTotal: order.discountTotal,
+        discountIfood: order.discountIfood,
+        discountMerchant: order.discountMerchant,
+        ifoodReference: order.ifoodReference,
+        openDeliveryReference: order.openDeliveryReference,
+        source: order.source,
+        notes: order.notes,
+        createdAt: order.createdAt,
+      };
+
+      const result = await printOrder(formattedOrder as any, storeName, activeConfig);
+      if (result.success) {
+        showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
+        return; // Impresso diretamente via Assistente RAW — NÃO ABRE JANELA DO NAVEGADOR!
+      }
+    } catch (err) {
+      console.warn("[Print] Assistente offline, caindo para janela de impressão do navegador:", err);
+    }
+
+    // 2. Se o assistente não estiver ativo neste PC, abre janela de impressão como fallback
     const phone = order.customerPhone || "";
     const createdDate = new Date(order.createdAt);
     const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
     const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     const isDelivery = order.deliveryType === "DELIVERY";
-    const seqNum = orderNumberMap.get(order.id) ?? "—";
 
     let receipt = "";
 

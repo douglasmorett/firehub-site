@@ -155,18 +155,36 @@ function buildEscPos(order, storeName, columns = 48) {
     return l + " ".repeat(sp) + r + LF;
   };
 
-  let res = INIT + ESC + "t\x03"; // CP860 / Portuguese
+  const makeBoxLine = (l, r) => {
+    const cl = cleanAscii(l);
+    const cr = cleanAscii(r);
+    const innerWidth = Math.max(10, columns - 4);
+    const sp = Math.max(1, innerWidth - cl.length - cr.length);
+    return "| " + cl + " ".repeat(sp) + cr + " |" + LF;
+  };
+
+  const makeBoxText = (text) => {
+    const ct = cleanAscii(text);
+    const innerWidth = Math.max(10, columns - 4);
+    const trimmed = ct.length > innerWidth ? ct.slice(0, innerWidth) : ct;
+    const sp = Math.max(0, innerWidth - trimmed.length);
+    return "| " + trimmed + " ".repeat(sp) + " |" + LF;
+  };
+
+  const boxBorder = "+" + "-".repeat(Math.max(10, columns - 2)) + "+" + LF;
+
+  let res = INIT + ESC + "t\x03"; // Codepage 860 / Portuguese
 
   // 1. TOP HEADER (Número + Tipo + Tag)
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
-  const seqTag = seqNumStr ? `#${seqNumStr}  ` : "";
+  const seqTag = seqNumStr ? `${seqNumStr}  ` : "";
   const deliveryTypeTag = order.deliveryType === "DELIVERY" ? "DELIVERY" : "RETIRADA";
   const refTag = order.ifoodReference ? `#${order.ifoodReference}` : order.openDeliveryReference ? `#${order.openDeliveryReference}` : "";
   const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
   res += CENTER + BOLD_ON + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
   res += LEFT + divider;
-  res += BOLD_ON + "Estabelecimento: " + cleanAscii(storeName || "HAKIM - CENTRO").toUpperCase() + BOLD_OFF + LF;
+  res += BOLD_ON + "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + BOLD_OFF + LF;
   if (order.ifoodReference || order.openDeliveryReference || order.id) {
     res += "N. do Pedido: " + cleanAscii(order.ifoodReference || order.openDeliveryReference || order.id) + LF;
   }
@@ -175,21 +193,22 @@ function buildEscPos(order, storeName, columns = 48) {
   if (dateStr) res += "Data: " + dateStr + " " + timeStr + LF;
 
   // 2. CLIENTE SECTION
-  res += BOLD_ON + makeHeaderTitle("CLIENTE") + BOLD_OFF;
+  res += LF + BOLD_ON + makeHeaderTitle("CLIENTE") + BOLD_OFF + LF;
   if (order.customerName) res += "Nome: " + cleanAscii(order.customerName) + LF;
   if (order.customerPhone) res += "Telefone: " + cleanAscii(order.customerPhone) + LF;
+  res += "Qtd Pedidos: 1" + LF;
 
   // 3. ENTREGA SECTION
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
-    res += BOLD_ON + makeHeaderTitle("ENTREGA") + BOLD_OFF;
+    res += LF + BOLD_ON + makeHeaderTitle("ENTREGA") + BOLD_OFF + LF;
     res += "Endereco: " + cleanAscii(order.customerAddress) + LF;
     if (order.notes && !order.notes.toLowerCase().includes("pedido ifood")) {
       res += "Obs: " + cleanAscii(order.notes) + LF;
     }
   }
 
-  // 4. RESUMO DO PEDIDO SECTION
-  res += BOLD_ON + makeHeaderTitle("RESUMO DO PEDIDO") + BOLD_OFF;
+  // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
+  res += LF + BOLD_ON + makeHeaderTitle("RESUMO DO PEDIDO") + BOLD_OFF + LF;
 
   if (order.items && order.items.length) {
     order.items.forEach(item => {
@@ -198,42 +217,73 @@ function buildEscPos(order, storeName, columns = 48) {
       const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
-      res += BOLD_ON + rightAlign(`${qty}x ${name}`, priceStr) + BOLD_OFF;
+      res += boxBorder;
+      res += BOLD_ON + makeBoxLine(`Qtd: ${qty}x`, `Valor: ${priceStr}`) + BOLD_OFF;
+      res += makeBoxText(name);
+
+      const comboSels = (() => {
+        if (!item.comboSelections) return [];
+        try {
+          const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+          if (Array.isArray(parsed)) return parsed.filter((s) => s.name);
+          return [];
+        } catch { return []; }
+      })();
+
+      if (comboSels.length > 0) {
+        comboSels.forEach((sel) => {
+          const totalQty = (sel.quantity || 1) * qty;
+          const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
+          res += makeBoxText(`  - ${qPrefix}${sel.name}`);
+        });
+      }
 
       if (item.notes) {
-        res += "   Obs: " + cleanAscii(item.notes) + LF;
+        res += makeBoxText(`  Obs: ${item.notes}`);
       }
+
+      res += boxBorder;
     });
   }
 
   // 5. TOTALS
-  res += divider;
+  res += LF;
   const subtotal = order.items?.reduce((sum, it) => sum + ((it.price || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
   res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
 
   if (order.discountTotal && order.discountTotal > 0) {
-    res += rightAlign("Desconto:", "-R$ " + Number(order.discountTotal).toFixed(2).replace(".", ","));
+    if (order.discountIfood && order.discountIfood > 0) {
+      res += rightAlign("Desconto iFood:", "-R$ " + Number(order.discountIfood).toFixed(2).replace(".", ","));
+    }
+    if (order.discountMerchant && order.discountMerchant > 0) {
+      res += rightAlign("Desconto Loja:", "-R$ " + Number(order.discountMerchant).toFixed(2).replace(".", ","));
+    }
+    if (!order.discountIfood && !order.discountMerchant) {
+      res += rightAlign("Desconto (Cupom - Loja):", "-R$ " + Number(order.discountTotal).toFixed(2).replace(".", ","));
+    }
   }
   if (order.deliveryFee !== undefined) {
     res += rightAlign("Taxa de Entrega:", "R$ " + Number(order.deliveryFee).toFixed(2).replace(".", ","));
   }
 
-  res += divider;
+  // TOTAL BOX
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
-  res += BOLD_ON + DOUBLE_HEIGHT + rightAlign("TOTAL DO PEDIDO:", totalValStr) + DOUBLE_OFF + BOLD_OFF;
-  res += divider;
+  res += boxBorder;
+  res += BOLD_ON + DOUBLE_HEIGHT + makeBoxLine("Total:", totalValStr) + DOUBLE_OFF + BOLD_OFF;
+  res += boxBorder;
 
   // 6. PAYMENT METHOD & SAFETY NOTE
   if (order.paymentMethod) {
     res += BOLD_ON + "Forma de Pagamento: " + cleanAscii(order.paymentMethod) + BOLD_OFF + LF;
   }
 
+  res += divider;
   const isOnlinePayment = /pix|online|credito \(online\)|cartao \(online\)/i.test(cleanAscii(order.paymentMethod || ""));
   if (isOnlinePayment) {
     res += "Dica de Seguranca: Nao aceite cobrancas extras na entrega. Seu pedido ja esta pago." + LF;
     res += BOLD_ON + "[X] PAGO VIA " + (order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "JOTAJA" : "ONLINE") + " - NAO COBRAR NA ENTREGA" + BOLD_OFF + LF;
   } else {
-    res += BOLD_ON + ">> COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " <<" + BOLD_OFF + LF;
+    res += BOLD_ON + "!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!" + BOLD_OFF + LF;
   }
 
   res += LF + CENTER + "Obrigado pela preferencia!" + LF + FEED + CUT;
