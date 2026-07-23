@@ -47,14 +47,15 @@ const getNeighborhoodOnly = (addr: string | null) => {
   const cleaned = cleanAddress(addr);
   if (!cleaned) return "";
 
-  // Split by '-'
+  const stateCodes = /^(sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i;
+
+  // 1. Split by '-' (e.g. "Rua X, 123 - Jardim Primavera" or "Rua X, 123 - Centro - São Paulo")
   const dashParts = cleaned.split("-").map(p => p.trim()).filter(Boolean);
   if (dashParts.length >= 2) {
     let candidate = dashParts[1];
     if (candidate.includes(",")) {
       candidate = candidate.split(",")[0].trim();
     }
-    const stateCodes = /^(sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i;
     if (candidate.length > 2 && !stateCodes.test(candidate)) {
       return candidate;
     }
@@ -66,19 +67,27 @@ const getNeighborhoodOnly = (addr: string | null) => {
     }
   }
 
-  // Split by ','
+  // 2. Split by ',' (e.g. "Rua X, 123, Bairro, Cidade")
   const commaParts = cleaned.split(",").map(p => p.trim()).filter(Boolean);
   if (commaParts.length >= 3) {
     let candidate = commaParts[2];
     if (candidate.includes("-")) {
       candidate = candidate.split("-")[0].trim();
     }
-    if (candidate.length > 2 && !/^\d+$/.test(candidate)) {
+    if (candidate.length > 2 && !/^\d+$/.test(candidate) && !stateCodes.test(candidate)) {
       return candidate;
     }
   }
 
-  return cleaned;
+  // 3. Fallback for single street+number strings like "R. Barra do Piraí, 20" or "Estr. Prof. Leandro Faria Sarzedas, 759"
+  // Strip street prefixes (Rua, R., Av., Avenida, Estr., Estrada, Al., Alameda, Tv., Travessa, Pça., Praça)
+  // and trailing house numbers (, 123 / , n 123 / , nº 123)
+  const stripped = cleaned
+    .replace(/^(rua|r\.|av\.|avenida|estrada|estr\.|alameda|al\.|travessa|tv\.|praça|pça\.)\s+/i, "")
+    .replace(/,\s*(nº|n°|n|num|número)?\s*\d+\s*[a-z]?$/i, "")
+    .trim();
+
+  return stripped || cleaned;
 };
 
 // Mapping columns to statuses for drag-and-drop
