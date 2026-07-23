@@ -113,7 +113,6 @@ export async function POST(req: NextRequest) {
         permissions: permsList.join(","),
         // Compartilha dados da loja do dono para o funcionário visualizar a mesma loja
         storeName: currentUser.storeName,
-        slug: currentUser.slug,
         ifoodMerchantId: currentUser.ifoodMerchantId,
         jotajaMerchantId: currentUser.jotajaMerchantId,
         city: currentUser.city,

@@ -15,31 +15,36 @@ export default async function StoreSettingsPage() {
   }).catch(() => null);
   if (!user) redirect("/login");
 
+  const owner = (user as any).ownerId
+    ? await prisma.user.findUnique({ where: { id: (user as any).ownerId } }).catch(() => null)
+    : null;
+  const storeOwner = owner || user;
+
   return (
     <MinhaLojaClient user={{
       id: user.id,
       role: user.role || "FRANCHISEE",
       ownerId: (user as any).ownerId || null,
-      slug: user.slug || "",
+      slug: storeOwner.slug || "",
       name: user.name || "",
       email: user.email || "",
-      cpfCnpj: user.cpfCnpj || "",
-      city: user.city || "",
-      storeName: user.storeName || "",
-      storePhone: user.storePhone || "",
-      storeAddress: user.storeAddress || "",
-      storeBanner: user.storeBanner || "",
-      storeLogo: user.storeLogo || "",
-      storeHours: user.storeHours || null,
-      storePause: (user as any).storePause || null,
-      storeCoupons: (user as any).storeCoupons || [],
-      paymentFees: user.paymentFees || null,
-      deliveryZoneType: user.deliveryZoneType || null,
-      deliveryZones: user.deliveryZones || null,
-      storeLatLng: user.storeLatLng || null,
-      storeLoyalty: (user as any).storeLoyalty || null,
-      deliveryConfig: (user as any).deliveryConfig || null,
-      storeTimezone: (user as any).storeTimezone || "America/Sao_Paulo",
+      cpfCnpj: storeOwner.cpfCnpj || user.cpfCnpj || "",
+      city: storeOwner.city || user.city || "",
+      storeName: storeOwner.storeName || user.storeName || "",
+      storePhone: storeOwner.storePhone || "",
+      storeAddress: storeOwner.storeAddress || "",
+      storeBanner: storeOwner.storeBanner || "",
+      storeLogo: storeOwner.storeLogo || "",
+      storeHours: storeOwner.storeHours || null,
+      storePause: (storeOwner as any).storePause || null,
+      storeCoupons: (storeOwner as any).storeCoupons || [],
+      paymentFees: storeOwner.paymentFees || null,
+      deliveryZoneType: storeOwner.deliveryZoneType || null,
+      deliveryZones: storeOwner.deliveryZones || null,
+      storeLatLng: storeOwner.storeLatLng || null,
+      storeLoyalty: (storeOwner as any).storeLoyalty || null,
+      deliveryConfig: (storeOwner as any).deliveryConfig || null,
+      storeTimezone: (storeOwner as any).storeTimezone || "America/Sao_Paulo",
     }} />
   );
 }
