@@ -373,20 +373,18 @@ function buildEscPos(order, storeName, columns = 48) {
   const subtotal = order.items?.reduce((sum, it) => sum + ((it.price || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
   res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
 
-  if (order.discountTotal && order.discountTotal > 0) {
-    if (order.discountIfood && order.discountIfood > 0) {
-      res += rightAlign("Desconto iFood:", "-R$ " + Number(order.discountIfood).toFixed(2).replace(".", ","));
-    }
-    if (order.discountMerchant && order.discountMerchant > 0) {
-      res += rightAlign("Desconto Loja:", "-R$ " + Number(order.discountMerchant).toFixed(2).replace(".", ","));
-    }
-    if (!order.discountIfood && !order.discountMerchant) {
-      res += rightAlign("Desconto (Cupom - Loja):", "-R$ " + Number(order.discountTotal).toFixed(2).replace(".", ","));
-    }
+  if (order.discountIfood && Number(order.discountIfood) > 0) {
+    res += rightAlign("Desconto (iFood):", "-R$ " + Number(order.discountIfood).toFixed(2).replace(".", ","));
   }
-  if (order.deliveryFee !== undefined) {
-    res += rightAlign("Taxa de Entrega:", "R$ " + Number(order.deliveryFee).toFixed(2).replace(".", ","));
+  if (order.discountMerchant && Number(order.discountMerchant) > 0) {
+    res += rightAlign("Desconto (Cupom - Loja):", "-R$ " + Number(order.discountMerchant).toFixed(2).replace(".", ","));
+  } else if (!order.discountIfood && order.discountTotal && Number(order.discountTotal) > 0) {
+    res += rightAlign("Desconto (Cupom - Loja):", "-R$ " + Number(order.discountTotal).toFixed(2).replace(".", ","));
   }
+
+  const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
+  const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";
+  res += rightAlign(dFeeLabel, "R$ " + Number(dFee).toFixed(2).replace(".", ","));
 
   // TOTAL BOX
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");

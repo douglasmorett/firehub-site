@@ -282,6 +282,14 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
     const payMethodName = paymentList[0]?.method ?? paymentList[0]?.name ?? "iFood Online";
 
+    const deliveryFee = typeof orderData.total?.deliveryFee === "number"
+      ? orderData.total.deliveryFee
+      : typeof orderData.delivery?.deliveryFee === "number"
+        ? orderData.delivery.deliveryFee
+        : typeof orderData.deliveryFee === "number"
+          ? orderData.deliveryFee
+          : 0;
+
     try {
       await (prisma.customerOrder as any).create({
         data: {
@@ -291,6 +299,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           scheduledDatetime,
           changeAmount,
           customerCpfCnpj,
+          deliveryFee,
           discountTotal: discountTotal > 0 ? discountTotal : null,
           discountIfood: discountIfood > 0 ? discountIfood : null,
           discountMerchant: discountMerchant > 0 ? discountMerchant : null,
