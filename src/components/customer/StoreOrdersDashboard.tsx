@@ -22,18 +22,18 @@ const PAYMENT_LABELS: Record<string, string> = {
   CASH: "Dinheiro",
   DINHEIRO: "Dinheiro",
   VOUCHER: "Voucher",
-  DIGITAL_WALLET: "iFood Online (Carteira Digital)",
+  DIGITAL_WALLET: "iFood Online (Carteira)",
   ONLINE: "iFood Online",
   IFOOD_PAY: "iFood Pay",
-  OTHER: "iFood Online (Pago no App)",
+  OTHER: "iFood Online (App)",
   MEAL_VOUCHER: "Vale Refeição (iFood)",
   FOOD_VOUCHER: "Vale Alimentação (iFood)",
   credit_card: "Crédito",
   debit_card: "Débito",
   pix: "Pix",
   cash: "Dinheiro",
-  digital_wallet: "iFood Online (Carteira Digital)",
-  other: "iFood Online (Pago no App)",
+  digital_wallet: "iFood Online (Carteira)",
+  other: "iFood Online (App)",
 };
 const translatePayment = (method: string) => PAYMENT_LABELS[method] || PAYMENT_LABELS[method.toUpperCase()] || method;
 
@@ -1128,17 +1128,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
               )}
 
-              {/* Line 4: Total + Payment + Delivery fee + Change */}
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px", marginTop: "2px" }}>
-                <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1F2937" }}>
-                  R$ {order.totalAmount.toFixed(2)}
+              {/* Line 4: Total + Payment + Change (Sempre na mesma reta) */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden" }}>
+                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#1F2937", flexShrink: 0 }}>
+                  R$ {order.totalAmount.toFixed(2).replace('.', ',')}
                 </span>
-                <span style={{ color: "#6B7280" }}>—</span>
-                <span style={{ fontWeight: 600, color: "#374151" }}>
+                <span style={{ color: "#9CA3AF", flexShrink: 0 }}>—</span>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "0.82rem",
+                    color: "#374151",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+                >
                   {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
                 </span>
                 {order.changeAmount != null && order.changeAmount > 0 && (
-                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#92400E", background: "#FEF3C7", padding: "1px 6px", borderRadius: "4px" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#92400E", background: "#FEF3C7", padding: "1px 6px", borderRadius: "4px", flexShrink: 0 }}>
                     💵 Troco p/ R$ {Number(order.changeAmount).toFixed(0)}
                   </span>
                 )}
