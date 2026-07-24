@@ -252,12 +252,12 @@ function buildEscPos(order, storeName, columns = 48) {
   const DOUBLE_OFF = GS + "!\x00";
   const CUT = GS + "V\x00", FEED = ESC + "d\x04";
 
-  const divider = "- ".repeat(Math.floor(columns / 2)) + LF;
+  const divider = "-".repeat(columns) + LF;
 
   const makeHeaderTitle = (title) => {
     const cleanT = cleanAscii(title).toUpperCase();
     const padLen = Math.max(0, Math.floor((columns - cleanT.length - 2) / 2));
-    const dashes = "- ".repeat(Math.floor(padLen / 2));
+    const dashes = "-".repeat(padLen);
     return dashes + " " + cleanT + " " + dashes + LF;
   };
 
@@ -271,18 +271,21 @@ function buildEscPos(order, storeName, columns = 48) {
   const makeBoxLine = (l, r) => {
     const cl = cleanAscii(l);
     const cr = cleanAscii(r);
-    const sp = Math.max(1, columns - cl.length - cr.length);
-    return cl + " ".repeat(sp) + cr + LF;
+    const innerWidth = Math.max(10, columns - 4);
+    const sp = Math.max(1, innerWidth - cl.length - cr.length);
+    return "| " + cl + " ".repeat(sp) + cr + " |" + LF;
   };
 
   const makeBoxText = (text) => {
     const ct = cleanAscii(text);
-    const trimmed = ct.length > columns ? ct.slice(0, columns) : ct;
-    return trimmed + LF;
+    const innerWidth = Math.max(10, columns - 4);
+    const trimmed = ct.length > innerWidth ? ct.slice(0, innerWidth) : ct;
+    const sp = Math.max(0, innerWidth - trimmed.length);
+    return "| " + trimmed + " ".repeat(sp) + " |" + LF;
   };
 
-  // Separador pontilhado fino entre itens (como JotaJá)
-  const boxBorder = ". ".repeat(Math.floor(columns / 2)) + LF;
+  // Caixinha retângulo com linhas retas sólidas
+  const boxBorder = "+" + "-".repeat(Math.max(10, columns - 2)) + "+" + LF;
 
   let res = INIT + ESC + "t\x03"; // Codepage 860 / Portuguese
 
@@ -330,7 +333,7 @@ function buildEscPos(order, storeName, columns = 48) {
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
 
   if (order.items && order.items.length) {
-    order.items.forEach(item => {
+    order.items.forEach((item, idx) => {
       const qty = item.qty || item.quantity || 1;
       const price = typeof item.price === "number" ? item.price * qty : 0;
       const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
@@ -360,7 +363,6 @@ function buildEscPos(order, storeName, columns = 48) {
       if (item.notes) {
         res += makeBoxText(`  Obs: ${item.notes}`);
       }
-
       res += boxBorder;
     });
   }
