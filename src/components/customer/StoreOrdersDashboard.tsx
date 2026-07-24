@@ -337,7 +337,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       .catch(() => {});
   }, []);
 
+  const printingInProgressRef = useRef<Set<string>>(new Set());
+
   const handlePrint = async (order: any, type: "cozinha" | "completo") => {
+    if (!order) return;
+    const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
+    if (orderKey && printingInProgressRef.current.has(orderKey)) {
+      console.log(`[Print] ⚠️ Impressão já em andamento para o pedido ${orderKey}. Ignorando chamada duplicada.`);
+      return;
+    }
+    if (orderKey) printingInProgressRef.current.add(orderKey);
+
+    markAutoPrinted(order);
+
     const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
 
     // 1. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
@@ -400,6 +412,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     } catch (err) {
       console.warn("[Print] Erro na impressão:", err);
+    } finally {
+      setTimeout(() => {
+        if (orderKey) printingInProgressRef.current.delete(orderKey);
+      }, 10000);
     }
 
     showToast("⚠️ Verifique se o FireHub Assistente está rodando no PC com a impressora.", "#EF4444");
@@ -723,9 +739,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
         // 🖨️ Impressão Automática ao Aceitar Pedido (se autoprint estiver ativado)
         if (newStatus === "ACEITO" && printerConfig?.autoprint !== false) {
-          autoPrintedIdsRef.current.add(orderId); // Marca como já impresso para o polling não duplicar
           const targetOrder = orders.find(o => o.id === orderId);
           if (targetOrder) {
+            markAutoPrinted(targetOrder);
             handlePrint(targetOrder, "cozinha");
           }
         }
