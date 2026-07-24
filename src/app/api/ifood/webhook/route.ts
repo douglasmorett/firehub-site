@@ -428,6 +428,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           discountTotal: createdOrder.discountTotal,
           discountIfood: createdOrder.discountIfood,
           discountMerchant: createdOrder.discountMerchant,
+          changeAmount: createdOrder.changeAmount,
           ifoodReference: createdOrder.ifoodReference,
           source: "IFOOD",
           notes: createdOrder.notes,

@@ -409,6 +409,17 @@ function buildEscPos(order, storeName, columns = 48) {
     res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " (Online) - Pago via " + onlineSource + " nao cobrar" + DOUBLE_OFF + LF;
   } else {
     res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + DOUBLE_OFF + LF;
+
+    if (order.changeAmount != null && Number(order.changeAmount) > 0) {
+      const changeFor = Number(order.changeAmount);
+      const totalVal = Number(order.totalAmount || 0);
+      const changeToReturn = Math.max(0, changeFor - totalVal);
+      const changeForStr = "R$ " + changeFor.toFixed(2).replace(".", ",");
+      const changeToReturnStr = "R$ " + changeToReturn.toFixed(2).replace(".", ",");
+
+      res += DOUBLE_HEIGHT + "Troco para: " + changeForStr + " (Levar " + changeToReturnStr + " de troco)" + DOUBLE_OFF + LF;
+    }
+
     res += divider;
     res += DOUBLE_HEIGHT + "!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!" + DOUBLE_OFF + LF;
   }

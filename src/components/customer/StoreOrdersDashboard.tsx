@@ -337,6 +337,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         discountTotal: order.discountTotal,
         discountIfood: order.discountIfood,
         discountMerchant: order.discountMerchant,
+        changeAmount: order.changeAmount,
         ifoodReference: order.ifoodReference,
         openDeliveryReference: order.openDeliveryReference,
         source: order.source,
