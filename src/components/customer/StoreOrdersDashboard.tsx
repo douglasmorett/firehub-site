@@ -360,14 +360,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const printingInProgressRef = useRef<Set<string>>(new Set());
 
-  const handlePrint = async (order: any, type: "cozinha" | "completo") => {
+  const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false) => {
     if (!order) return;
     const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
-    if (orderKey && printingInProgressRef.current.has(orderKey)) {
+    if (!isManual && orderKey && printingInProgressRef.current.has(orderKey)) {
       console.log(`[Print] ⚠️ Impressão já em andamento para o pedido ${orderKey}. Ignorando chamada duplicada.`);
       return;
     }
     if (orderKey) printingInProgressRef.current.add(orderKey);
+    if (isManual && orderKey) printingInProgressRef.current.delete(orderKey);
 
     markAutoPrinted(order);
 
@@ -409,7 +410,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         createdAt: order.createdAt,
       };
 
-      const result = await printOrder(formattedOrder as any, storeName, activeConfig);
+      const result = await printOrder(formattedOrder as any, storeName, activeConfig, {}, isManual);
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
         return; // Impresso diretamente via Assistente RAW
@@ -2053,7 +2054,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
                 <button
                   onClick={() => {
-                    handlePrint(order, "cozinha");
+                    handlePrint(order, "cozinha", true);
                     setPrintSelectOrderId(null);
                   }}
                   style={{ padding: "12px", borderRadius: "10px", border: "1px solid #D1D5DB", background: "#F8FAFC", color: "#374151", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
@@ -2062,7 +2063,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </button>
                 <button
                   onClick={() => {
-                    handlePrint(order, "completo");
+                    handlePrint(order, "completo", true);
                     setPrintSelectOrderId(null);
                   }}
                   style={{ padding: "12px", borderRadius: "10px", border: "none", background: "#3B82F6", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}

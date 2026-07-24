@@ -64,7 +64,8 @@ async function printToDevice(
   order: PrintOrder,
   storeName: string,
   copies = 1,
-  paperWidth = "80mm"
+  paperWidth = "80mm",
+  force = false
 ): Promise<boolean> {
   try {
     const baseUrl = await getAssistantUrl();
@@ -85,6 +86,7 @@ async function printToDevice(
       body: JSON.stringify({
         printer: targetPrinter,
         paperWidth,
+        force,
         order: {
           id: order.id,
           dailyOrderNumber: (order as any).dailyOrderNumber,
@@ -122,7 +124,8 @@ export async function printOrder(
   order: PrintOrder,
   storeName: string,
   printerConfig: PrinterConfig,
-  itemCategories: Record<string, string> = {} // { "item name" => "categoria" }
+  itemCategories: Record<string, string> = {}, // { "item name" => "categoria" }
+  force = false
 ): Promise<{ success: boolean; printed: number; attempted: boolean }> {
   const baseUrl = await getAssistantUrl();
   if (!baseUrl) return { success: false, printed: 0, attempted: false };
@@ -183,7 +186,7 @@ export async function printOrder(
     }
 
     const filteredOrder = { ...order, items: itemsToPrint };
-    const result = await printToDevice(printer.name, filteredOrder, storeName, printer.copies || 1, printer.paperWidth || "80mm");
+    const result = await printToDevice(printer.name, filteredOrder, storeName, printer.copies || 1, printer.paperWidth || "80mm", force);
     if (result) printed++;
   }
 

@@ -489,9 +489,8 @@ function isOrderAlreadyPrinted(order) {
   if (!order) return false;
   const keys = [
     order.id,
-    order.ifoodReference,
-    order.openDeliveryReference,
-    order.dailyOrderNumber ? `daily_${order.dailyOrderNumber}` : null
+    order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
+    order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null
   ].filter(Boolean);
 
   const now = Date.now();
@@ -509,9 +508,8 @@ function markOrderAsPrinted(order) {
   const now = Date.now();
   const keys = [
     order.id,
-    order.ifoodReference,
-    order.openDeliveryReference,
-    order.dailyOrderNumber ? `daily_${order.dailyOrderNumber}` : null
+    order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
+    order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null
   ].filter(Boolean);
 
   for (const k of keys) {
@@ -523,6 +521,65 @@ function markOrderAsPrinted(order) {
       if (now - time > 3600000) printedOrdersCache.delete(k);
     }
   }
+}
+
+/* ─── Fila Serial de Impressão (FIFO Queue — Evita gargalos, spooler lock e ordem errada) ─ */
+const printJobQueue = [];
+let isProcessingPrintQueue = false;
+
+async function processPrintQueue() {
+  if (isProcessingPrintQueue) return;
+  isProcessingPrintQueue = true;
+
+  while (printJobQueue.length > 0) {
+    const job = printJobQueue.shift();
+    const { printer, order, storeName, copies = 1, paperWidth = "80mm", columns, force = false, resolve, reject } = job;
+
+    try {
+      let targetPrinter = printer || currentConfig.printer;
+      if (!targetPrinter) {
+        const detected = listPrinters();
+        if (detected.length > 0) targetPrinter = detected[0].name;
+      }
+      if (!targetPrinter) {
+        reject(new Error("Impressora não especificada e nenhuma detectada"));
+        continue;
+      }
+
+      // Se NÃO for impressão manual forçada (force = false), respeita a trava de 5 min anti-duplicidade
+      if (!force && isOrderAlreadyPrinted(order)) {
+        console.log(`[PrintServer] ⚠️ Pedido #${order?.ifoodReference || order?.openDeliveryReference || order?.id} já impresso nos últimos 5 min. Ignorando duplicação automática.`);
+        resolve({ ok: true, duplicated: true, message: "Pedido já impresso recentemente." });
+        continue;
+      }
+
+      markOrderAsPrinted(order);
+
+      const cols = columns || (paperWidth === "58mm" ? 32 : 48);
+      const data = buildEscPos(order || {}, storeName || "FIREHUB", cols);
+
+      for (let i = 0; i < copies; i++) {
+        await rawPrint(targetPrinter, data);
+      }
+
+      // Pausa de 150ms entre impressões para liberar a spooler do Windows com segurança
+      await new Promise(r => setTimeout(r, 150));
+
+      resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols)` });
+    } catch (e) {
+      console.error("[PrintServer] Erro ao imprimir job:", e.message);
+      reject(e);
+    }
+  }
+
+  isProcessingPrintQueue = false;
+}
+
+function enqueuePrintJob(jobParams) {
+  return new Promise((resolve, reject) => {
+    printJobQueue.push({ ...jobParams, resolve, reject });
+    processPrintQueue();
+  });
 }
 
 // Polling background da Fila de Impressão na Nuvem (roda a cada 3s)
@@ -538,21 +595,14 @@ setInterval(async () => {
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     if (jobs.length > 0) {
       for (const job of jobs) {
-        if (isOrderAlreadyPrinted(job.order)) {
-          console.log(`[CloudPrint] ⚠️ Job ${job.id} (#${job.order?.ifoodReference || job.order?.id}) já foi impresso recentemente. Ignorando duplicação.`);
-          continue;
-        }
-        const detectedPrinters = listPrinters();
-        const targetPrinter = currentConfig.printer || (detectedPrinters[0]?.name);
-        if (!targetPrinter) {
-          console.warn("[CloudPrint] Nenhum nome de impressora configurado ou detectado");
-          continue;
-        }
-        markOrderAsPrinted(job.order);
-        const cols = (job.paperWidth || currentConfig.paperWidth) === "58mm" ? 32 : 48;
-        const escPosData = buildEscPos(job.order || {}, job.storeName || "FIREHUB", cols);
-        await rawPrint(targetPrinter, escPosData);
-        console.log(`[CloudPrint] ✅ Impresso job ${job.id} na impressora ${targetPrinter}`);
+        enqueuePrintJob({
+          printer: currentConfig.printer,
+          order: job.order,
+          storeName: job.storeName || "FIREHUB",
+          copies: 1,
+          paperWidth: job.paperWidth || currentConfig.paperWidth,
+          force: false
+        }).catch(() => {});
       }
     }
   } catch (err) {
@@ -576,24 +626,9 @@ app.get("/printers", (req, res) => res.json(listPrinters()));
 
 app.post("/print", async (req, res) => {
   try {
-    const { printer, order, storeName, copies = 1, paperWidth = "80mm", columns } = req.body;
-    let targetPrinter = printer || currentConfig.printer;
-    if (!targetPrinter) {
-      const detected = listPrinters();
-      if (detected.length > 0) targetPrinter = detected[0].name;
-    }
-    if (!targetPrinter) return res.status(400).json({ error: "Impressora não especificada e nenhuma detectada" });
-
-    if (isOrderAlreadyPrinted(order)) {
-      console.log(`[PrintServer] ⚠️ Pedido #${order?.ifoodReference || order?.dailyOrderNumber || order?.id} já impresso nos últimos 5 min. Ignorando duplicação.`);
-      return res.json({ ok: true, duplicated: true, message: "Pedido já impresso recentemente." });
-    }
-    markOrderAsPrinted(order);
-
-    const cols = columns || (paperWidth === "58mm" ? 32 : 48);
-    const data = buildEscPos(order || {}, storeName || "FIREHUB", cols);
-    for (let i = 0; i < copies; i++) await rawPrint(targetPrinter, data);
-    res.json({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols)` });
+    const { printer, order, storeName, copies = 1, paperWidth = "80mm", columns, force = false } = req.body;
+    const result = await enqueuePrintJob({ printer, order, storeName, copies, paperWidth, columns, force });
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
