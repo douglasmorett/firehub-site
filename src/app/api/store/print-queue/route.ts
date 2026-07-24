@@ -5,9 +5,22 @@ import { authOptions } from "@/lib/auth";
 
 // Fila em memória por franqueado (rápido e sem overhead)
 const queueMap = new Map<string, any[]>();
+const queuedOrderKeys = new Set<string>();
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
-  if (!targetId) return;
+  if (!targetId || !order) return;
+
+  const key = `${targetId}:${order.id || order.ifoodReference || order.openDeliveryReference || order.dailyOrderNumber}`;
+  if (queuedOrderKeys.has(key)) {
+    console.log(`[PrintQueue] ⚠️ Pedido ${key} já enfileirado. Ignorando duplicata.`);
+    return;
+  }
+  queuedOrderKeys.add(key);
+
+  if (queuedOrderKeys.size > 2000) {
+    queuedOrderKeys.clear();
+  }
+
   const job = {
     id: "job_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
     order,

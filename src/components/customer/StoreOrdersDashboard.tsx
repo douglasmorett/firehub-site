@@ -497,6 +497,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 for (const order of newOrders) {
                   if (isAutoPrinted(order)) continue;
 
+                  // Pedidos do iFood são enfileirados e impressos pelo webhook do iFood no momento em que chegam (pushJobToPrintQueue).
+                  // Marcamos como impresso para não disparar uma 2ª via quando o iFood altera o status para ACEITO.
+                  if (order.source === "IFOOD") {
+                    markAutoPrinted(order);
+                    continue;
+                  }
+
                   const isNew = !knownOrderIdsRef.current.has(order.id);
                   const wasNovo = previousStatusRef.current.get(order.id) === "NOVO";
                   const isAccepted = order.status !== "NOVO" && order.status !== "CANCELADO" && order.status !== "ENCERRADO";
