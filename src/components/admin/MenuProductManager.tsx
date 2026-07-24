@@ -624,34 +624,40 @@ export default function MenuProductManager({
             </div>
 
             {/* GRID DE CAMPOS DE EDIÇÃO */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-              <div className="input-group">
-                <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>Nome do Produto</label>
-                <input className="input-field" placeholder="Ex: Esfirra de Carne" value={name} onChange={e => setName(e.target.value)} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem 1rem" }}>
+              {/* LINHA 1: NOME & PREÇO */}
+              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+                <div style={{ height: "24px", display: "flex", alignItems: "center", marginBottom: "6px" }}>
+                  <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Nome do Produto</label>
+                </div>
+                <input className="input-field" style={{ height: "44px", boxSizing: "border-box" }} placeholder="Ex: Esfirra de Carne" value={name} onChange={e => setName(e.target.value)} />
               </div>
 
-              <div className="input-group">
-                <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>Preço de Venda (R$)</label>
-                <input className="input-field" type="number" step="0.01" placeholder="Ex: 9.90" value={price} onChange={e => setPrice(e.target.value)} />
+              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+                <div style={{ height: "24px", display: "flex", alignItems: "center", marginBottom: "6px" }}>
+                  <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Preço de Venda (R$)</label>
+                </div>
+                <input className="input-field" style={{ height: "44px", boxSizing: "border-box" }} type="number" step="0.01" placeholder="Ex: 9.90" value={price} onChange={e => setPrice(e.target.value)} />
               </div>
 
-              <div className="input-group">
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>
-                  <span>Categoria</span>
+              {/* LINHA 2: CATEGORIA & CUSTO (ALINHAMENTO 100% PERFEITO EM LINHA RETA) */}
+              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+                <div style={{ height: "24px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Categoria</label>
                   <button
                     type="button"
                     onClick={() => setShowNewCat(prev => !prev)}
                     style={{ fontSize: "0.72rem", color: "#E8360C", background: "none", border: "none", cursor: "pointer", fontWeight: 700, padding: 0 }}
                   >
-                    {showNewCat ? "✕ Fechar Gerenciador" : "⚙️ Gerenciar / Nova Categoria"}
+                    {showNewCat ? "✕ Fechar" : "⚙️ Gerenciar / Nova Categoria"}
                   </button>
-                </label>
+                </div>
                 {dynCategories.length === 0 ? (
                   <div style={{ padding: "10px 12px", background: "#FFF5F3", border: "1.5px dashed #FCA5A5", borderRadius: 10, fontSize: "0.8rem", color: "#DC2626" }}>
                     ⚠️ Cadastre sua primeira categoria abaixo para poder salvar produtos:
                   </div>
                 ) : (
-                  <select className="input-field" value={category} onChange={e => setCategory(e.target.value)}>
+                  <select className="input-field" style={{ height: "44px", boxSizing: "border-box" }} value={category} onChange={e => setCategory(e.target.value)}>
                     {dynCategories.map(c => (
                       <option key={c.id} value={c.name}>{c.emoji} {c.name}</option>
                     ))}
@@ -761,15 +767,16 @@ export default function MenuProductManager({
               </div>
 
               {/* Campo Custo */}
-              <div className="input-group" style={{ position: "relative" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>
-                  Custo do Produto (R$)
-                  <span style={{ fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
+              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+                <div style={{ height: "24px", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Custo do Produto (R$)</label>
+                  <span style={{ fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: "4px", fontWeight: 700, lineHeight: 1 }}>
                     Usado no CMV
                   </span>
-                </label>
+                </div>
                 <input
                   className="input-field"
+                  style={{ height: "44px", boxSizing: "border-box" }}
                   type="number"
                   step="0.01"
                   min="0"
