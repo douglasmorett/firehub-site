@@ -1262,26 +1262,43 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
               )}
 
-              {/* Motoboy select: sempre liberado para a loja atrelar o motoboy da equipe */}
+              {/* Motoboy select: desabilitado para Entrega Parceira iFood */}
               {order.deliveryType === "DELIVERY" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
-                <select
-                  value={order.motoboyId || ""}
-                  onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
-                  disabled={assigningId === order.id}
-                  onClick={e => e.stopPropagation()}
-                  style={{
-                    padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
-                    fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
-                    background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
-                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
-                    marginRight: "4px"
-                  }}
-                >
-                  <option value="">Motoboy</option>
-                  {motoboys.map((m: any) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
+                isIfoodMotoboy(order) ? (
+                  <select
+                    disabled
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1",
+                      fontSize: "0.75rem", fontWeight: 700, color: "#64748B",
+                      background: "#F1F5F9", fontFamily: "inherit",
+                      cursor: "not-allowed", flex: 1, minWidth: "90px", maxWidth: "135px",
+                      marginRight: "4px"
+                    }}
+                    title="Entrega parceira do iFood — motoboy próprio do iFood"
+                  >
+                    <option value="">🛵 Motoboy iFood</option>
+                  </select>
+                ) : (
+                  <select
+                    value={order.motoboyId || ""}
+                    onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
+                    disabled={assigningId === order.id}
+                    onClick={e => e.stopPropagation()}
+                    style={{
+                      padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
+                      fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
+                      background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
+                      cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
+                      marginRight: "4px"
+                    }}
+                  >
+                    <option value="">Motoboy</option>
+                    {motoboys.map((m: any) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                )
               )}
             </div>
 
@@ -1622,17 +1639,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 ) : !order.ifoodDriverStatus || order.ifoodDriverStatus === "FAILED" ? (
                   <>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      <select
-                        value={order.motoboyId || ""}
-                        onChange={e => assignMotoboy(order.id, e.target.value)}
-                        disabled={assigningId === order.id}
-                        style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #D1D5DB", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit", color: "#374151" }}
-                      >
-                        <option value="">— Motoboy próprio —</option>
-                        {motoboys.map((m: any) => (
-                          <option key={m.id} value={m.id}>{m.name}{m.phone ? ` · ${m.phone}` : ""}</option>
-                        ))}
-                      </select>
+                      {isIfoodMotoboy(order) ? (
+                        <select
+                          disabled
+                          style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.82rem", outline: "none", background: "#F1F5F9", fontFamily: "inherit", color: "#64748B", cursor: "not-allowed", fontWeight: 600 }}
+                          title="Entrega parceira do iFood — motoboy alocado pelo iFood"
+                        >
+                          <option value="">🛵 Motoboy iFood (Entrega Parceira)</option>
+                        </select>
+                      ) : (
+                        <select
+                          value={order.motoboyId || ""}
+                          onChange={e => assignMotoboy(order.id, e.target.value)}
+                          disabled={assigningId === order.id}
+                          style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #D1D5DB", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit", color: "#374151" }}
+                        >
+                          <option value="">— Motoboy próprio —</option>
+                          {motoboys.map((m: any) => (
+                            <option key={m.id} value={m.id}>{m.name}{m.phone ? ` · ${m.phone}` : ""}</option>
+                          ))}
+                        </select>
+                      )}
                       {order.motoboy && (
                         <a
                           href={`https://wa.me/55${(order.motoboy.phone || "").replace(/\D/g, "")}`}
