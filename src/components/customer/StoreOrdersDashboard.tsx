@@ -2124,14 +2124,24 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 {/* Nota de Segurança / Cobrança */}
                 <div style={{ marginTop: "12px", paddingTop: "8px", borderTop: "1px dashed #000", fontSize: "11px", lineHeight: "1.4" }}>
-                  {/pix|online|crédito \(online\)|cartão \(online\)/i.test(order.paymentMethod || "") ? (
-                    <>
-                      <div>Dica de Segurança: Não aceite cobranças extras na entrega. Seu pedido já está pago.</div>
-                      <div style={{ fontWeight: "bold", marginTop: "4px" }}>✔ Pago via {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online"}, não precisa cobrar na entrega</div>
-                    </>
-                  ) : (
-                    <div style={{ fontWeight: "bold", fontSize: "12px" }}>⚠️ COBRAR DO CLIENTE NA ENTREGA: R$ {order.totalAmount.toFixed(2).replace('.', ',')}</div>
-                  )}
+                  {(() => {
+                    const payMethodClean = (order.paymentMethod || "").toLowerCase();
+                    const isExplicitOffline = /dinheiro|cobrar|maquininha|entrega/i.test(payMethodClean);
+                    const isOnline = /online|pix|pago|app/i.test(payMethodClean) || (order.source === "IFOOD" && !isExplicitOffline);
+
+                    if (isOnline) {
+                      return (
+                        <>
+                          <div>Dica de Segurança: Não aceite cobranças extras na entrega. Seu pedido já está pago.</div>
+                          <div style={{ fontWeight: "bold", marginTop: "4px" }}>✔ Pago via {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online"}, não precisa cobrar na entrega</div>
+                        </>
+                      );
+                    } else {
+                      return (
+                        <div style={{ fontWeight: "bold", fontSize: "12px" }}>⚠️ COBRAR DO CLIENTE NA ENTREGA: R$ {order.totalAmount.toFixed(2).replace('.', ',')}</div>
+                      );
+                    }
+                  })()}
                 </div>
               </div>
 
