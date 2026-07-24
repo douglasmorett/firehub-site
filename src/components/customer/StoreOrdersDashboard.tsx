@@ -432,10 +432,32 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const autoPrintedIdsRef = useRef<Set<string>>(new Set());
   const previousStatusRef = useRef<Map<string, string>>(new Map(initialOrders.map((o: any) => [o.id, o.status])));
 
+  const markAutoPrinted = (o: any) => {
+    if (!o) return;
+    if (o.id) autoPrintedIdsRef.current.add(o.id);
+    if (o.ifoodReference) autoPrintedIdsRef.current.add(o.ifoodReference);
+    if (o.openDeliveryReference) autoPrintedIdsRef.current.add(o.openDeliveryReference);
+  };
+
+  const isAutoPrinted = (o: any) => {
+    if (!o) return false;
+    return (
+      (o.id && autoPrintedIdsRef.current.has(o.id)) ||
+      (o.ifoodReference && autoPrintedIdsRef.current.has(o.ifoodReference)) ||
+      (o.openDeliveryReference && autoPrintedIdsRef.current.has(o.openDeliveryReference))
+    );
+  };
+
   useEffect(() => {
-    // Initialize known IDs with current orders
+    // Marca todos os pedidos iniciais como conhecidos e já impressos se não forem NOVOS
     knownOrderIdsRef.current = new Set(initialOrders.map((o: any) => o.id));
-  }, []);
+    previousStatusRef.current = new Map(initialOrders.map((o: any) => [o.id, o.status]));
+    initialOrders.forEach((o: any) => {
+      if (o.status !== "NOVO" && o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
+        markAutoPrinted(o);
+      }
+    });
+  }, [initialOrders]);
 
   useEffect(() => {
     let active = true;
@@ -457,14 +479,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               // 2. Pedido existente mudou de NOVO para ACEITO (aceito manualmente ou por webhook)
               if (printerConfig?.autoprint !== false) {
                 for (const order of newOrders) {
-                  if (autoPrintedIdsRef.current.has(order.id)) continue;
+                  if (isAutoPrinted(order)) continue;
 
                   const isNew = !knownOrderIdsRef.current.has(order.id);
                   const wasNovo = previousStatusRef.current.get(order.id) === "NOVO";
                   const isAccepted = order.status !== "NOVO" && order.status !== "CANCELADO" && order.status !== "ENCERRADO";
 
                   if ((isNew && isAccepted) || (wasNovo && isAccepted)) {
-                    autoPrintedIdsRef.current.add(order.id);
+                    markAutoPrinted(order);
                     console.log(`[AutoPrint] 🖨️ Pedido aceito: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id.slice(-4)}) [${order.source}] — imprimindo!`);
                     try {
                       handlePrint(order, "cozinha");

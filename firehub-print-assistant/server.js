@@ -482,6 +482,49 @@ app.post("/config", (req, res) => {
   res.json({ ok: true, config: currentConfig });
 });
 
+/* ─── Deduplicação de Impressões (Trava de 5 minutos anti-duplicidade) ─ */
+const printedOrdersCache = new Map();
+
+function isOrderAlreadyPrinted(order) {
+  if (!order) return false;
+  const keys = [
+    order.id,
+    order.ifoodReference,
+    order.openDeliveryReference,
+    order.dailyOrderNumber ? `daily_${order.dailyOrderNumber}` : null
+  ].filter(Boolean);
+
+  const now = Date.now();
+  for (const k of keys) {
+    const printedAt = printedOrdersCache.get(String(k));
+    if (printedAt && (now - printedAt) < 300000) { // 5 minutos de trava
+      return true;
+    }
+  }
+  return false;
+}
+
+function markOrderAsPrinted(order) {
+  if (!order) return;
+  const now = Date.now();
+  const keys = [
+    order.id,
+    order.ifoodReference,
+    order.openDeliveryReference,
+    order.dailyOrderNumber ? `daily_${order.dailyOrderNumber}` : null
+  ].filter(Boolean);
+
+  for (const k of keys) {
+    printedOrdersCache.set(String(k), now);
+  }
+
+  if (printedOrdersCache.size > 500) {
+    for (const [k, time] of printedOrdersCache.entries()) {
+      if (now - time > 3600000) printedOrdersCache.delete(k);
+    }
+  }
+}
+
 // Polling background da Fila de Impressão na Nuvem (roda a cada 3s)
 setInterval(async () => {
   try {
@@ -495,12 +538,17 @@ setInterval(async () => {
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     if (jobs.length > 0) {
       for (const job of jobs) {
+        if (isOrderAlreadyPrinted(job.order)) {
+          console.log(`[CloudPrint] ⚠️ Job ${job.id} (#${job.order?.ifoodReference || job.order?.id}) já foi impresso recentemente. Ignorando duplicação.`);
+          continue;
+        }
         const detectedPrinters = listPrinters();
         const targetPrinter = currentConfig.printer || (detectedPrinters[0]?.name);
         if (!targetPrinter) {
           console.warn("[CloudPrint] Nenhum nome de impressora configurado ou detectado");
           continue;
         }
+        markOrderAsPrinted(job.order);
         const cols = (job.paperWidth || currentConfig.paperWidth) === "58mm" ? 32 : 48;
         const escPosData = buildEscPos(job.order || {}, job.storeName || "FIREHUB", cols);
         await rawPrint(targetPrinter, escPosData);
@@ -535,6 +583,12 @@ app.post("/print", async (req, res) => {
       if (detected.length > 0) targetPrinter = detected[0].name;
     }
     if (!targetPrinter) return res.status(400).json({ error: "Impressora não especificada e nenhuma detectada" });
+
+    if (isOrderAlreadyPrinted(order)) {
+      console.log(`[PrintServer] ⚠️ Pedido #${order?.ifoodReference || order?.dailyOrderNumber || order?.id} já impresso nos últimos 5 min. Ignorando duplicação.`);
+      return res.json({ ok: true, duplicated: true, message: "Pedido já impresso recentemente." });
+    }
+    markOrderAsPrinted(order);
 
     const cols = columns || (paperWidth === "58mm" ? 32 : 48);
     const data = buildEscPos(order || {}, storeName || "FIREHUB", cols);
