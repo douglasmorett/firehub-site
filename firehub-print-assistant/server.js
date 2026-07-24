@@ -252,12 +252,12 @@ function buildEscPos(order, storeName, columns = 48) {
   const DOUBLE_OFF = GS + "!\x00";
   const CUT = GS + "V\x00", FEED = ESC + "d\x04";
 
-  const divider = "-".repeat(columns) + LF;
+  const divider = "- ".repeat(Math.floor(columns / 2)) + LF;
 
   const makeHeaderTitle = (title) => {
     const cleanT = cleanAscii(title).toUpperCase();
     const padLen = Math.max(0, Math.floor((columns - cleanT.length - 2) / 2));
-    const dashes = "-".repeat(padLen);
+    const dashes = "- ".repeat(Math.floor(padLen / 2));
     return dashes + " " + cleanT + " " + dashes + LF;
   };
 
@@ -271,22 +271,23 @@ function buildEscPos(order, storeName, columns = 48) {
   const makeBoxLine = (l, r) => {
     const cl = cleanAscii(l);
     const cr = cleanAscii(r);
-    const innerWidth = Math.max(10, columns - 4);
-    const sp = Math.max(1, innerWidth - cl.length - cr.length);
-    return "| " + cl + " ".repeat(sp) + cr + " |" + LF;
+    const sp = Math.max(1, columns - cl.length - cr.length);
+    return cl + " ".repeat(sp) + cr + LF;
   };
 
   const makeBoxText = (text) => {
     const ct = cleanAscii(text);
-    const innerWidth = Math.max(10, columns - 4);
-    const trimmed = ct.length > innerWidth ? ct.slice(0, innerWidth) : ct;
-    const sp = Math.max(0, innerWidth - trimmed.length);
-    return "| " + trimmed + " ".repeat(sp) + " |" + LF;
+    const trimmed = ct.length > columns ? ct.slice(0, columns) : ct;
+    return trimmed + LF;
   };
 
-  const boxBorder = "+" + "-".repeat(Math.max(10, columns - 2)) + "+" + LF;
+  // Separador pontilhado fino entre itens (como JotaJá)
+  const boxBorder = ". ".repeat(Math.floor(columns / 2)) + LF;
 
   let res = INIT + ESC + "t\x03"; // Codepage 860 / Portuguese
+
+  // === ATIVAR NEGRITO GLOBAL para toda a comanda (letras mais robustas) ===
+  res += BOLD_ON;
 
   // 1. TOP HEADER (Número + Tipo + Tag)
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
@@ -297,12 +298,12 @@ function buildEscPos(order, storeName, columns = 48) {
 
   const isIfoodDriver = order.deliveryBy === "IFOOD";
 
-  res += CENTER + BOLD_ON + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF + BOLD_OFF;
+  res += CENTER + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF;
   if (isIfoodDriver) {
-    res += BOLD_ON + DOUBLE_HEIGHT + "*** MOTOBOY IFOOD (ENTREGA PARCEIRA) ***" + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + BOLD_OFF + LF;
+    res += DOUBLE_HEIGHT + "*** MOTOBOY IFOOD (ENTREGA PARCEIRA) ***" + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + LF;
   }
   res += LEFT + divider;
-  res += BOLD_ON + "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + BOLD_OFF + LF;
+  res += "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + LF;
   if (order.ifoodReference || order.openDeliveryReference || order.id) {
     res += "N. do Pedido: " + cleanAscii(order.ifoodReference || order.openDeliveryReference || order.id) + LF;
   }
@@ -311,14 +312,14 @@ function buildEscPos(order, storeName, columns = 48) {
   if (dateStr) res += "Data: " + dateStr + " " + timeStr + LF;
 
   // 2. CLIENTE SECTION
-  res += LF + BOLD_ON + makeHeaderTitle("CLIENTE") + BOLD_OFF + LF;
+  res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LEFT + LF;
   if (order.customerName) res += "Nome: " + cleanAscii(order.customerName) + LF;
   if (order.customerPhone) res += "Telefone: " + cleanAscii(order.customerPhone) + LF;
   res += "Qtd Pedidos: 1" + LF;
 
   // 3. ENTREGA SECTION
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
-    res += LF + BOLD_ON + makeHeaderTitle("ENTREGA") + BOLD_OFF + LF;
+    res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LEFT + LF;
     res += "Endereco: " + cleanAscii(order.customerAddress) + LF;
     if (order.notes && !order.notes.toLowerCase().includes("pedido ifood")) {
       res += "Obs: " + cleanAscii(order.notes) + LF;
@@ -326,7 +327,7 @@ function buildEscPos(order, storeName, columns = 48) {
   }
 
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
-  res += LF + BOLD_ON + makeHeaderTitle("RESUMO DO PEDIDO") + BOLD_OFF + LF;
+  res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
 
   if (order.items && order.items.length) {
     order.items.forEach(item => {
@@ -336,7 +337,7 @@ function buildEscPos(order, storeName, columns = 48) {
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
       res += boxBorder;
-      res += BOLD_ON + makeBoxLine(`Qtd: ${qty}x`, `Valor: ${priceStr}`) + BOLD_OFF;
+      res += makeBoxLine(`Qtd: ${qty}x`, `Valor: ${priceStr}`);
       res += makeBoxText(name);
 
       const comboSels = (() => {
@@ -382,26 +383,28 @@ function buildEscPos(order, storeName, columns = 48) {
   const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";
   res += rightAlign(dFeeLabel, "R$ " + Number(dFee).toFixed(2).replace(".", ","));
 
-  // TOTAL BOX
+  // TOTAL BOX — extra destaque com double-size
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
   res += boxBorder;
-  res += BOLD_ON + DOUBLE_HEIGHT + makeBoxLine("Total:", totalValStr) + DOUBLE_OFF + BOLD_OFF;
+  res += DOUBLE_HEIGHT + makeBoxLine("Total:", totalValStr) + DOUBLE_OFF;
   res += boxBorder;
 
   // 6. PAYMENT METHOD & SAFETY NOTE
   if (order.paymentMethod) {
-    res += BOLD_ON + "Forma de Pagamento: " + cleanAscii(order.paymentMethod) + BOLD_OFF + LF;
+    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + cleanAscii(order.paymentMethod) + DOUBLE_OFF + LF;
   }
 
   res += divider;
   const isOnlinePayment = /pix|online|credito \(online\)|cartao \(online\)/i.test(cleanAscii(order.paymentMethod || ""));
   if (isOnlinePayment) {
     res += "Dica de Seguranca: Nao aceite cobrancas extras na entrega. Seu pedido ja esta pago." + LF;
-    res += BOLD_ON + "[X] PAGO VIA " + (order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "JOTAJA" : "ONLINE") + " - NAO COBRAR NA ENTREGA" + BOLD_OFF + LF;
+    res += DOUBLE_HEIGHT + "[X] PAGO VIA " + (order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "JOTAJA" : "ONLINE") + " - NAO COBRAR NA ENTREGA" + DOUBLE_OFF + LF;
   } else {
-    res += BOLD_ON + "!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!" + BOLD_OFF + LF;
+    res += DOUBLE_HEIGHT + "!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!" + DOUBLE_OFF + LF;
   }
 
+  // Desliga negrito global no final
+  res += BOLD_OFF;
   res += LF + CENTER + "Obrigado pela preferencia!" + LF + FEED + CUT;
   return Buffer.from(res, "binary");
 }
