@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
+import { parseIfoodPaymentInfo } from "@/app/api/ifood/webhook/route";
 
 /**
  * POST /api/ifood/sync-orders
@@ -157,11 +158,7 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
 
   const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 
-  const cashPayment = paymentList.find((p: any) =>
-    p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
-  );
-  const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-  const payMethodName = paymentList[0]?.method ?? "iFood Online";
+  const { paymentMethod: parsedPaymentMethod, changeAmount } = parseIfoodPaymentInfo(orderData);
   const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
 
   // Descontos
@@ -258,7 +255,7 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
         return parts.join(" - ");
       })(),
       deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-      paymentMethod: cashPayment ? "Dinheiro" : payMethodName,
+      paymentMethod: parsedPaymentMethod,
       totalAmount: total,
       status,
       notes: notesArr,

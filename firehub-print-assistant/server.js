@@ -391,7 +391,10 @@ function buildEscPos(order, storeName, columns = 48) {
   }
 
   res += divider;
-  const isOnlinePayment = /pix|online|credito \(online\)|cartao \(online\)/i.test(cleanAscii(order.paymentMethod || ""));
+  const payMethodClean = cleanAscii(order.paymentMethod || "").toLowerCase();
+  const isExplicitOffline = /dinheiro|cobrar|maquininha|entrega/i.test(payMethodClean);
+  const isOnlinePayment = /online|pix|pago|app/i.test(payMethodClean) || (order.source === "IFOOD" && !isExplicitOffline);
+
   if (isOnlinePayment) {
     res += "Dica de Seguranca: Nao aceite cobrancas extras na entrega. Seu pedido ja esta pago." + LF;
     res += DOUBLE_HEIGHT + "[X] PAGO VIA " + (order.source === "IFOOD" ? "IFOOD" : order.source === "JOTAJA" ? "JOTAJA" : "ONLINE") + " - NAO COBRAR NA ENTREGA" + DOUBLE_OFF + LF;

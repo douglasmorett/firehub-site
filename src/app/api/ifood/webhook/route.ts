@@ -12,6 +12,54 @@ function validateIfoodSignature(body: string, signature: string | null): boolean
   return `sha256=${expected}` === signature;
 }
 
+export function parseIfoodPaymentInfo(orderData: any): { paymentMethod: string; changeAmount: number | null } {
+  const paymentsObj = orderData.payments || {};
+  const methods = paymentsObj.methods || (Array.isArray(orderData.payments) ? orderData.payments : []);
+  const paymentList = Array.isArray(methods) ? methods : [];
+  const firstPayment = paymentList[0] || {};
+
+  const totalPrepaid = typeof paymentsObj.prepaid === "number" ? paymentsObj.prepaid : 0;
+  const totalPending = typeof paymentsObj.pending === "number" ? paymentsObj.pending : 0;
+
+  const cashPayment = paymentList.find((p: any) =>
+    p.method === "CASH" || (p.name && p.name.toLowerCase().includes("dinheir"))
+  );
+  const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
+
+  const isOnline = totalPrepaid > 0 ||
+                   firstPayment.prepaid === true ||
+                   firstPayment.type === "ONLINE" ||
+                   (totalPending === 0 && paymentList.length > 0 && !cashPayment);
+
+  const rawMethod = (firstPayment.method || firstPayment.name || "").toString().toUpperCase();
+
+  let methodName = "Crédito";
+  if (cashPayment || rawMethod === "CASH" || rawMethod.includes("DINHEIR")) {
+    methodName = "Dinheiro";
+  } else if (rawMethod === "DEBIT" || rawMethod.includes("DEBITO")) {
+    methodName = "Débito";
+  } else if (rawMethod === "PIX") {
+    methodName = "Pix";
+  } else if (rawMethod.includes("MEAL_VOUCHER") || rawMethod.includes("VALE") || rawMethod.includes("VR") || rawMethod.includes("VA") || rawMethod.includes("VOUCHER")) {
+    methodName = "Vale Refeição";
+  } else if (rawMethod.includes("CREDIT") || rawMethod.includes("CREDITO")) {
+    methodName = "Crédito";
+  } else if (rawMethod) {
+    methodName = rawMethod;
+  }
+
+  let paymentMethod = "";
+  if (isOnline) {
+    paymentMethod = `${methodName} (Online)`;
+  } else if (methodName === "Dinheiro") {
+    paymentMethod = "Dinheiro";
+  } else {
+    paymentMethod = `${methodName} (Cobrar na Entrega)`;
+  }
+
+  return { paymentMethod, changeAmount };
+}
+
 // Mapeia status do iFood (curto e longo) para status do FireHub
 const STATUS_MAP: Record<string, string> = {
   PLC:                 "NOVO",
@@ -205,17 +253,11 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
       ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)
       : (orderData.totalPrice ?? orderData.total ?? 0);
 
-    const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
-    const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
-
     const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
       ? new Date(orderData.scheduledDatetime)
       : null;
 
-    const cashPayment = paymentList.find((p: any) =>
-      p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
-    );
-    const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
+    const { paymentMethod: parsedPaymentMethod, changeAmount } = parseIfoodPaymentInfo(orderData);
     const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber
       ?? orderData.customer?.documentNumber
       ?? orderData.customer?.cpf
@@ -280,8 +322,6 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
       customerNote ? `💬 ${customerNote}` : null,
     ].filter(Boolean).join(" | ");
 
-    const payMethodName = paymentList[0]?.method ?? paymentList[0]?.name ?? "iFood Online";
-
     const deliveryFee = typeof orderData.total?.deliveryFee === "number"
       ? orderData.total.deliveryFee
       : typeof orderData.delivery?.deliveryFee === "number"
@@ -341,7 +381,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
             return parts.join(" - ");
           })(),
           deliveryType:     orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-          paymentMethod:    cashPayment ? "Dinheiro" : payMethodName,
+          paymentMethod:    parsedPaymentMethod,
           totalAmount:      total,
           status:           "NOVO",
           notes:            notesArr,
