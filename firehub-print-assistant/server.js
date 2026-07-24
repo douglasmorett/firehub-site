@@ -401,7 +401,7 @@ function buildEscPos(order, storeName, columns = 48) {
   let baseMethodName = cleanAscii(order.paymentMethod || "Credito")
     .replace(/\s*\([^)]*\)/gi, "")
     .trim();
-  if (!baseMethodName) baseMethodName = "Credito";
+  if (!baseMethodName || baseMethodName.toUpperCase() === "OTHER") baseMethodName = "iFood App";
 
   const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online";
 

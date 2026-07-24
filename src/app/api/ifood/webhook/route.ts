@@ -44,6 +44,8 @@ export function parseIfoodPaymentInfo(orderData: any): { paymentMethod: string; 
     methodName = "Vale Refeição";
   } else if (rawMethod.includes("CREDIT") || rawMethod.includes("CREDITO")) {
     methodName = "Crédito";
+  } else if (rawMethod === "OTHER" || rawMethod === "DIGITAL_WALLET" || rawMethod === "ONLINE" || rawMethod === "IFOOD_PAY" || rawMethod === "APP") {
+    methodName = "iFood App";
   } else if (rawMethod) {
     methodName = rawMethod;
   }
