@@ -180,6 +180,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [dueDateReason, setDueDateReason] = useState<string>("OUT_FOR_DELIVERY");
   const prevOrderCount = useRef(initialOrders.filter(o => o.status === "NOVO").length);
 
+  // === CONFIGURAÇÕES DE ALERTAS VISUAIS DE TEMPO (Amarelo / Vermelho) ===
+  const [timeAlertConfig, setTimeAlertConfig] = useState<{
+    yellowEnabled: boolean;
+    yellowMinutes: number;
+    redEnabled: boolean;
+    redMinutes: number;
+  }>({
+    yellowEnabled: true,
+    yellowMinutes: 10,
+    redEnabled: true,
+    redMinutes: 5,
+  });
+  const [showAlertModal, setShowAlertModal] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/store/time-alert-config")
+      .then(r => r.json())
+      .then(d => { if (d && d.yellowMinutes !== undefined) setTimeAlertConfig(d); })
+      .catch(() => {});
+  }, []);
+
   // === SELEÇÃO E AÇÕES EM MASSA (Bulk Actions) ===
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [bulkTargetStatus, setBulkTargetStatus] = useState<string>("");
@@ -1112,9 +1133,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     // Delivery deadline countdown (scheduledDatetime stores the delivery deadline for iFood orders)
     const isFinished = order.status === "ENTREGUE" || order.status === "CANCELADO" || order.status === "ENCERRADO";
-    const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : null;
+    const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : new Date(new Date(order.createdAt).getTime() + 45 * 60000);
     const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
     const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
+
+    // 🟡🔴 ALERTAS VISUAIS DE TEMPO (EXCLUSIVO DA ABA "EM PRODUÇÃO")
+    const isInProduction = order.status === "ACEITO" || order.status === "PREPARANDO";
+    const redActive = timeAlertConfig.redEnabled && Number(timeAlertConfig.redMinutes) > 0;
+    const yellowActive = timeAlertConfig.yellowEnabled && Number(timeAlertConfig.yellowMinutes) > 0;
+    const redThreshold = redActive ? Number(timeAlertConfig.redMinutes) : null;
+    const yellowThreshold = yellowActive ? Number(timeAlertConfig.yellowMinutes) : null;
+
+    let isRedAlert = false;
+    let isYellowAlert = false;
+
+    if (isInProduction && remainingMins !== null) {
+      if (redThreshold !== null && remainingMins <= redThreshold) {
+        isRedAlert = true;
+      } else if (yellowThreshold !== null && remainingMins <= yellowThreshold) {
+        isYellowAlert = true;
+      }
+    }
+
     // Don't flag as late/urgent once the order is finished
     const isLate = !isFinished && remainingMins !== null && remainingMins < 0;
     const isUrgent = !isFinished && remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
@@ -1129,6 +1169,34 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
 
+    const cardBackground = isDragging
+      ? "#DBEAFE"
+      : isRedAlert
+        ? "#FEF2F2"
+        : isYellowAlert
+          ? "#FFFBEB"
+          : "#fff";
+
+    const cardBorder = isDragging
+      ? "2.5px solid #2563EB"
+      : isRedAlert
+        ? "2.5px solid #EF4444"
+        : isYellowAlert
+          ? "2.5px solid #F59E0B"
+          : isLate
+            ? "1.5px solid #EF4444"
+            : isUrgent
+              ? "1.5px solid #F59E0B"
+              : "1px solid #E2E8F0";
+
+    const cardBoxShadow = isDragging
+      ? "0 20px 40px -4px rgba(37, 99, 235, 0.45), 0 0 0 5px rgba(59, 130, 246, 0.2)"
+      : isRedAlert
+        ? "0 0 16px rgba(239, 68, 68, 0.45), 0 2px 8px rgba(239, 68, 68, 0.2)"
+        : isYellowAlert
+          ? "0 0 16px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(245, 158, 11, 0.2)"
+          : "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)";
+
     return (
       <div
         draggable={canDrag}
@@ -1136,20 +1204,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         onDragEnd={canDrag ? handleDragEnd : undefined}
         onTouchStart={canDrag ? (e => handleTouchStart(e, order.id)) : undefined}
         style={{
-          background: isDragging ? "#DBEAFE" : "#fff",
+          background: cardBackground,
           borderRadius: "14px",
-          border: isDragging
-            ? "2.5px solid #2563EB"
-            : isLate
-              ? "1.5px solid #EF4444"
-              : isUrgent
-                ? "1.5px solid #F59E0B"
-                : "1px solid #E2E8F0",
+          border: cardBorder,
           marginBottom: "0.75rem",
           overflow: "hidden",
-          boxShadow: isDragging
-            ? "0 20px 40px -4px rgba(37, 99, 235, 0.45), 0 0 0 5px rgba(59, 130, 246, 0.2)"
-            : "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+          boxShadow: cardBoxShadow,
           transform: isDragging ? "scale(1.05) rotate(-1.5deg)" : "scale(1)",
           transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease",
           cursor: canDrag ? (isDragging ? "grabbing" : "grab") : "default",
@@ -2981,6 +3041,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {scheduledOrders.length}
               </span>
             </button>
+
+            {/* Configurações de Alerta de Tempo */}
+            <button
+              onClick={() => setShowAlertModal(true)}
+              style={{
+                padding: "5px 12px", border: "1.5px solid #F59E0B", borderRadius: "8px",
+                fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: "5px",
+                background: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#FFFBEB" : "#F8FAFC",
+                color: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#D97706" : "#64748B",
+              }}
+              title="Configurar Alertas Visuais de Tempo Limite (Amarelo / Vermelho)"
+            >
+              <Bell size={14} /> ⏱️ Alertas de Tempo
+            </button>
             <a
               href="/store/venda-presencial"
               style={{
@@ -3093,6 +3168,125 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </Column>
         </div>
       </div>
+
+      {/* ===== MODAL CONFIGURAÇÃO DE ALERTAS DE TEMPO ===== */}
+      {showAlertModal && (
+        <div onClick={() => setShowAlertModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "28px", width: "100%", maxWidth: "480px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ width: 42, height: 42, borderRadius: "12px", background: "linear-gradient(135deg, #F59E0B, #D97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>
+                  ⏱️
+                </div>
+                <div>
+                  <h3 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0, color: "#0F172A" }}>Configurações de Alerta de Tempo</h3>
+                  <p style={{ fontSize: "0.78rem", color: "#64748B", margin: 0 }}>Destaque visual de prazos na aba 'Em Produção'</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAlertModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8" }}>×</button>
+            </div>
+
+            {/* Explicação */}
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "12px 14px", marginBottom: "20px", fontSize: "0.8rem", color: "#475569", lineHeight: 1.4 }}>
+              💡 Configure com quantos minutos de antecedência a borda do pedido na aba <strong>Em Produção</strong> deve ficar amarela ou vermelha para alertar a equipe. Se desativado ou 0, o alerta não é exibido.
+            </div>
+
+            {/* 🟡 Alerta Amarelo */}
+            <div style={{ background: "#FFFBEB", border: "1.5px solid #FCD34D", borderRadius: "14px", padding: "16px", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "1.2rem" }}>🟡</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#92400E" }}>Alerta Amarelo (Aviso)</span>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={timeAlertConfig.yellowEnabled}
+                    onChange={e => setTimeAlertConfig(c => ({ ...c, yellowEnabled: e.target.checked }))}
+                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#F59E0B" }}
+                  />
+                </label>
+              </div>
+              {timeAlertConfig.yellowEnabled && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px" }}>
+                  <span style={{ fontSize: "0.82rem", color: "#78350F", fontWeight: 600 }}>Ativar quando faltarem</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={timeAlertConfig.yellowMinutes}
+                    onChange={e => setTimeAlertConfig(c => ({ ...c, yellowMinutes: Math.max(0, Number(e.target.value)) }))}
+                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #F59E0B", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
+                  />
+                  <span style={{ fontSize: "0.82rem", color: "#78350F", fontWeight: 600 }}>minutos para o cliente</span>
+                </div>
+              )}
+            </div>
+
+            {/* 🔴 Alerta Vermelho */}
+            <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "14px", padding: "16px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "1.2rem" }}>🔴</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#991B1B" }}>Alerta Vermelho (Urgente)</span>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={timeAlertConfig.redEnabled}
+                    onChange={e => setTimeAlertConfig(c => ({ ...c, redEnabled: e.target.checked }))}
+                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#EF4444" }}
+                  />
+                </label>
+              </div>
+              {timeAlertConfig.redEnabled && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px" }}>
+                  <span style={{ fontSize: "0.82rem", color: "#7F1D1D", fontWeight: 600 }}>Ativar quando faltarem</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={timeAlertConfig.redMinutes}
+                    onChange={e => setTimeAlertConfig(c => ({ ...c, redMinutes: Math.max(0, Number(e.target.value)) }))}
+                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #EF4444", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
+                  />
+                  <span style={{ fontSize: "0.82rem", color: "#7F1D1D", fontWeight: 600 }}>minutos para o cliente</span>
+                </div>
+              )}
+            </div>
+
+            {/* Botões de Ação */}
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                onClick={() => setShowAlertModal(false)}
+                style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#FFF", color: "#475569", fontWeight: 700, cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/store/time-alert-config", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(timeAlertConfig),
+                    });
+                    if (res.ok) {
+                      showToast("✅ Configurações de alerta salvas com sucesso!", "#10B981");
+                      setShowAlertModal(false);
+                    }
+                  } catch {
+                    showToast("Erro ao salvar alertas.", "#EF4444");
+                  }
+                }}
+                style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#FFF", fontWeight: 800, cursor: "pointer" }}
+              >
+                💾 Salvar Configurações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TOAST NOTIFICATION */}
       {toastMsg && (
