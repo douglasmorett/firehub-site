@@ -319,8 +319,16 @@ function buildEscPos(order, storeName, columns = 48) {
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
     res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LEFT + LF;
     res += "Endereco: " + cleanAscii(order.customerAddress) + LF;
-    if (order.notes && !order.notes.toLowerCase().includes("pedido ifood")) {
-      res += "Obs: " + cleanAscii(order.notes) + LF;
+    if (order.notes) {
+      const cleanObs = cleanAscii(order.notes)
+        .replace(/Pedido iFood #[A-Z0-9]+/gi, "")
+        .replace(/🏷️?\s*Desconto R\$[\d.,]+\s*\([^)]*\)/gi, "")
+        .replace(/\|\s*\|/g, "|")
+        .replace(/^[\s|]+|[\s|]+$/g, "")
+        .trim();
+      if (cleanObs) {
+        res += "Obs: " + cleanObs + LF;
+      }
     }
   }
 
