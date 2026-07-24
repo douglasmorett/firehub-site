@@ -284,8 +284,8 @@ function buildEscPos(order, storeName, columns = 48) {
     return "| " + trimmed + " ".repeat(sp) + " |" + LF;
   };
 
-  // Caixinha retângulo com linhas retas sólidas
-  const boxBorder = "+" + "-".repeat(Math.max(10, columns - 2)) + "+" + LF;
+  // Caixinha retângulo com linhas retas sólidas (underscores conectam na impressora térmica)
+  const boxBorder = "+" + "_".repeat(Math.max(10, columns - 2)) + "+" + LF;
 
   let res = INIT + ESC + "t\x03"; // Codepage 860 / Portuguese
 
