@@ -144,9 +144,20 @@ export async function printOrder(
 
   if (!printersToUse.length) return { success: false, printed: 0 };
 
+  // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
+  const uniquePrinters: PrinterEntry[] = [];
+  const seenPrinterNames = new Set<string>();
+  for (const p of printersToUse) {
+    const key = (p.name || "").toLowerCase().trim();
+    if (key && !seenPrinterNames.has(key)) {
+      seenPrinterNames.add(key);
+      uniquePrinters.push(p);
+    }
+  }
+
   let printed = 0;
 
-  for (const printer of printersToUse) {
+  for (const printer of uniquePrinters) {
     if (!printer.name) continue;
 
     // Filtra itens por categoria se configurado

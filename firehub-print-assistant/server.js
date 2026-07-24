@@ -244,8 +244,8 @@ function cleanAscii(str) {
 function buildEscPos(order, storeName, columns = 48) {
   const ESC = "\x1B", GS = "\x1D", LF = "\x0A";
   const INIT = ESC + "@";
-  const BOLD_ON = ESC + "E\x01" + ESC + "G\x01"; // Negrito + Impressão Dupla (Double-Strike) para letras bem escuras!
-  const BOLD_OFF = ESC + "E\x00" + ESC + "G\x00";
+  const BOLD_ON = ESC + "E\x01"; // Negrito padrão ESC/POS (Emphasized)
+  const BOLD_OFF = ESC + "E\x00";
   const CENTER = ESC + "a\x01", LEFT = ESC + "a\x00";
   const DOUBLE_HEIGHT = GS + "!\x01";
   const DOUBLE_SIZE = GS + "!\x11";
