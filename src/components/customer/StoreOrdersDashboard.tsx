@@ -83,50 +83,35 @@ const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount
 
 const getNeighborhoodOnly = (addr: string | null) => {
   if (!addr) return "";
-  const cleaned = cleanAddress(addr);
+  const cleaned = cleanAddress(addr).trim();
   if (!cleaned) return "";
 
-  const stateCodes = /^(sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i;
+  const isCityOrState = (str: string) =>
+    /^(rio das ostras|macaé|macae|cabo frio|buzios|búzios|casimiro|niteroi|niterói|rio de janeiro|sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i.test(str.trim());
 
-  // 1. Split by '-' (e.g. "Rua X, 123 - Jardim Primavera" or "Rua X, 123 - Centro - São Paulo")
   const dashParts = cleaned.split("-").map(p => p.trim()).filter(Boolean);
   if (dashParts.length >= 2) {
-    let candidate = dashParts[1];
-    if (candidate.includes(",")) {
-      candidate = candidate.split(",")[0].trim();
+    for (let i = dashParts.length - 1; i >= 0; i--) {
+      const part = dashParts[i];
+      if (isCityOrState(part)) continue;
+      if (/^(comp|complemento|ref|referencia|ponto de referencia):/i.test(part)) continue;
+      if (i === 0 && dashParts.length > 1) continue;
+      return part;
     }
-    if (candidate.length > 2 && !stateCodes.test(candidate)) {
-      return candidate;
-    }
-    if (dashParts.length >= 3) {
-      let candidate2 = dashParts[2].split(",")[0].trim();
-      if (candidate2.length > 2 && !stateCodes.test(candidate2)) {
-        return candidate2;
+  }
+
+  const commaParts = cleaned.split(",").map(p => p.trim()).filter(Boolean);
+  if (commaParts.length >= 3) {
+    for (let i = commaParts.length - 1; i >= 1; i--) {
+      let candidate = commaParts[i];
+      if (candidate.includes("-")) candidate = candidate.split("-")[0].trim();
+      if (!isCityOrState(candidate) && candidate.length > 2 && !/^\d+$/.test(candidate)) {
+        return candidate;
       }
     }
   }
 
-  // 2. Split by ',' (e.g. "Rua X, 123, Bairro, Cidade")
-  const commaParts = cleaned.split(",").map(p => p.trim()).filter(Boolean);
-  if (commaParts.length >= 3) {
-    let candidate = commaParts[2];
-    if (candidate.includes("-")) {
-      candidate = candidate.split("-")[0].trim();
-    }
-    if (candidate.length > 2 && !/^\d+$/.test(candidate) && !stateCodes.test(candidate)) {
-      return candidate;
-    }
-  }
-
-  // 3. Fallback for single street+number strings:
-  // Strip street prefix (Rua, R., Av., Avenida, Estr., Estrada, Al., Alameda, Tv., Travessa, Pça., Praça)
-  // and trailing house number (, 123 / , n 123 / , nº 123) to show clean location name (e.g. "Barra do Piraí", "Cinco", "das Casuarinas")
-  const stripped = cleaned
-    .replace(/^(rua|r\.|av\.|avenida|estrada|estr\.|alameda|al\.|travessa|tv\.|praça|pça\.)\s+/i, "")
-    .replace(/,\s*(nº|n°|n|num|número)?\s*\d+\s*[a-z]?$/i, "")
-    .trim();
-
-  return stripped || cleaned;
+  return dashParts[dashParts.length - 1] || cleaned;
 };
 
 // Mapping columns to statuses for drag-and-drop
@@ -1301,15 +1286,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             )}
 
-            {/* Endereço Completo em caixa destacada com 100% de largura */}
+            {/* Endereço Resumido (Apenas Bairro) em caixa destacada com 100% de largura */}
             {order.customerAddress && (
               <div style={{
-                color: "#065F46", fontWeight: 600, fontSize: "0.8rem",
+                color: "#065F46", fontWeight: 700, fontSize: "0.82rem",
                 background: "#ECFDF5", border: "1px solid #A7F3D0",
-                padding: "5px 10px", borderRadius: "8px", margin: "5px 0",
-                lineHeight: "1.35", wordBreak: "break-word"
+                padding: "4px 10px", borderRadius: "8px", margin: "4px 0",
+                lineHeight: "1.3", wordBreak: "break-word"
               }}>
-                📍 {cleanAddress(order.customerAddress)}
+                📍 {getNeighborhoodOnly(order.customerAddress) || cleanAddress(order.customerAddress)}
               </div>
             )}
             {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
