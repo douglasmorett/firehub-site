@@ -465,12 +465,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   };
 
   useEffect(() => {
-    // Marca todos os pedidos iniciais como conhecidos e já impressos se não forem NOVOS
+    // Marca como já impressos apenas pedidos ANTIGOS (criados há mais de 10 minutos)
+    // Pedidos recentes (criados nos últimos 10 min) não são marcados como impressos na carga inicial para garantir o auto-print!
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+
     knownOrderIdsRef.current = new Set(initialOrders.map((o: any) => o.id));
     previousStatusRef.current = new Map(initialOrders.map((o: any) => [o.id, o.status]));
+
     initialOrders.forEach((o: any) => {
-      if (o.status !== "NOVO" && o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
-        markAutoPrinted(o);
+      const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : 0;
+      if (orderTime > 0 && orderTime < tenMinutesAgo) {
+        if (o.status !== "NOVO" && o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
+          markAutoPrinted(o);
+        }
       }
     });
   }, [initialOrders]);
@@ -490,20 +497,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               setOrders(newOrders);
 
               // 🖨️ AUTO-PRINT para qualquer fonte (iFood, JotaJá, Site, etc.)
-              // Imprime quando:
-              // 1. Pedido NOVO aparece já com status ACEITO ou posterior (auto-confirmado)
-              // 2. Pedido existente mudou de NOVO para ACEITO (aceito manualmente ou por webhook)
+              // Imprime automaticamente qualquer pedido ACEITO nos últimos 10 minutos que ainda não foi impresso
               if (printerConfig?.autoprint !== false) {
+                const now = Date.now();
                 for (const order of newOrders) {
                   if (isAutoPrinted(order)) continue;
 
-                  const isNew = !knownOrderIdsRef.current.has(order.id);
-                  const wasNovo = previousStatusRef.current.get(order.id) === "NOVO";
                   const isAccepted = order.status !== "NOVO" && order.status !== "CANCELADO" && order.status !== "ENCERRADO";
+                  const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
+                  const isRecent = (now - orderTime) < 10 * 60 * 1000; // Criado nos últimos 10 minutos
 
-                  if ((isNew && isAccepted) || (wasNovo && isAccepted)) {
+                  if (isAccepted && isRecent) {
                     markAutoPrinted(order);
-                    console.log(`[AutoPrint] 🖨️ Pedido aceito: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id.slice(-4)}) [${order.source}] — imprimindo!`);
+                    console.log(`[AutoPrint] 🖨️ Pedido aceito recente: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id.slice(-4)}) [${order.source}] — imprimindo!`);
                     try {
                       handlePrint(order, "cozinha");
                     } catch (printErr) {
