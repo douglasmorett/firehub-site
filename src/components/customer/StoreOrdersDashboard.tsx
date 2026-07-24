@@ -3042,20 +3042,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </span>
             </button>
 
-            {/* Configurações de Alerta de Tempo */}
-            <button
-              onClick={() => setShowAlertModal(true)}
-              style={{
-                padding: "5px 12px", border: "1.5px solid #F59E0B", borderRadius: "8px",
-                fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
-                display: "flex", alignItems: "center", gap: "5px",
-                background: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#FFFBEB" : "#F8FAFC",
-                color: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#D97706" : "#64748B",
-              }}
-              title="Configurar Alertas Visuais de Tempo Limite (Amarelo / Vermelho)"
-            >
-              <Bell size={14} /> ⏱️ Alertas de Tempo
-            </button>
             <a
               href="/store/venda-presencial"
               style={{
@@ -3067,6 +3053,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               🛒 Pedidos Balcão
             </a>
+
+            {/* Configurações de Alerta de Produção */}
+            <button
+              onClick={() => setShowAlertModal(true)}
+              style={{
+                padding: "5px 12px", border: "1.5px solid #F59E0B", borderRadius: "8px",
+                fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: "5px",
+                background: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#FFFBEB" : "#F8FAFC",
+                color: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#D97706" : "#64748B",
+              }}
+              title="Configurar Alertas Visuais de Tempo Limite (Amarelo / Vermelho)"
+            >
+              <Bell size={14} /> ⏱️ Alertas de Produção
+            </button>
           </div>
 
         </div>
@@ -3179,7 +3180,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   ⏱️
                 </div>
                 <div>
-                  <h3 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0, color: "#0F172A" }}>Configurações de Alerta de Tempo</h3>
+                  <h3 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0, color: "#0F172A" }}>Alertas de Produção</h3>
                   <p style={{ fontSize: "0.78rem", color: "#64748B", margin: 0 }}>Destaque visual de prazos na aba 'Em Produção'</p>
                 </div>
               </div>
