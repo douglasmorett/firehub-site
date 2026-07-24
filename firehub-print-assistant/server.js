@@ -271,21 +271,18 @@ function buildEscPos(order, storeName, columns = 48) {
   const makeBoxLine = (l, r) => {
     const cl = cleanAscii(l);
     const cr = cleanAscii(r);
-    const innerWidth = Math.max(10, columns - 4);
-    const sp = Math.max(1, innerWidth - cl.length - cr.length);
-    return "| " + cl + " ".repeat(sp) + cr + " |" + LF;
+    const sp = Math.max(1, columns - cl.length - cr.length);
+    return cl + " ".repeat(sp) + cr + LF;
   };
 
   const makeBoxText = (text) => {
     const ct = cleanAscii(text);
-    const innerWidth = Math.max(10, columns - 4);
-    const trimmed = ct.length > innerWidth ? ct.slice(0, innerWidth) : ct;
-    const sp = Math.max(0, innerWidth - trimmed.length);
-    return "| " + trimmed + " ".repeat(sp) + " |" + LF;
+    const trimmed = ct.length > columns ? ct.slice(0, columns) : ct;
+    return trimmed + LF;
   };
 
-  // Caixinha retângulo com linhas retas sólidas (underscores conectam na impressora térmica)
-  const boxBorder = "+" + "_".repeat(Math.max(10, columns - 2)) + "+" + LF;
+  // Separador horizontal sólido entre itens (underscores conectam na impressora térmica)
+  const boxBorder = "_".repeat(columns) + LF;
 
   let res = INIT + ESC + "t\x03"; // Codepage 860 / Portuguese
 
