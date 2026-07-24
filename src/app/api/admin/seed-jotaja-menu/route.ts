@@ -6,10 +6,13 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get("secret");
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email && secret !== "hakim123") {
-    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  const { searchParams } = new URL(req.url);
+  const secret = searchParams.get("secret");
+  if (secret !== "hakim123") {
+    const session = await getServerSession(authOptions).catch(() => null);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
   }
 
   const user = await prisma.user.findFirst({
