@@ -328,13 +328,13 @@ function buildEscPos(order, storeName, columns = 48) {
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
 
   if (order.items && order.items.length) {
+    res += boxBorder;
     order.items.forEach((item, idx) => {
       const qty = item.qty || item.quantity || 1;
       const price = typeof item.price === "number" ? item.price * qty : 0;
       const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
-      res += boxBorder;
       res += makeBoxLine(`${qty}x ${name}`, priceStr);
 
       const comboSels = (() => {
