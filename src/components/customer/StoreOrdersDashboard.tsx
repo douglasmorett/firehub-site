@@ -1222,23 +1222,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         {/* ─── COLLAPSED VIEW: All essential info always visible ─── */}
         <div style={{ padding: "0.6rem 0.75rem" }}>
           {/* Header Row com Checkbox, Drag Handle, Nome e Badge do Canal */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", marginBottom: "4px" }}>
             <input
               type="checkbox"
               checked={selectedOrderIds.has(order.id)}
               onChange={(e) => { e.stopPropagation(); toggleSelectOrder(order.id); }}
-              style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#3B82F6", flexShrink: 0 }}
+              style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#3B82F6", flexShrink: 0, marginTop: "2px" }}
               title="Selecionar pedido"
             />
             {canDrag && (
-              <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+              <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0, marginTop: "3px" }} onClick={e => e.stopPropagation()}>
                 <GripVertical size={14} />
               </div>
             )}
-            <div style={{ fontWeight: 800, fontSize: "0.96rem", color: "#0F172A", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.2px" }}>
+            <div style={{ fontWeight: 800, fontSize: "0.96rem", color: "#0F172A", flex: 1, minWidth: 0, wordBreak: "break-word", lineHeight: "1.25", letterSpacing: "-0.2px" }}>
               #{seqNum} — {order.customerName}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
               <span style={{
                 padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
                 background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
