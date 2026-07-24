@@ -99,6 +99,7 @@ async function printToDevice(
           discountTotal: (order as any).discountTotal,
           discountIfood: (order as any).discountIfood,
           discountMerchant: (order as any).discountMerchant,
+          changeAmount: (order as any).changeAmount,
           ifoodReference: (order as any).ifoodReference,
           openDeliveryReference: (order as any).openDeliveryReference,
           source: (order as any).source,
