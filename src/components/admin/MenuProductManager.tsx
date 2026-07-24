@@ -477,209 +477,350 @@ export default function MenuProductManager({
         <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
       </button>
 
-      {/* FORM */}
+      {/* FORM MODAL OVERLAY */}
       {showForm && (
-        <div className="card mb-6">
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
-            <h3 className="font-bold">{editingId ? "Editar" : "Novo"} {isCombo ? "Combo" : "Produto"}</h3>
-            <button onClick={resetForm} style={{ cursor: "pointer" }}><X size={20} /></button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-            <div className="input-group"><label>Nome</label><input className="input-field" value={name} onChange={e => setName(e.target.value)} /></div>
-            <div className="input-group"><label>Preço (R$)</label><input className="input-field" type="number" step="0.01" value={price} onChange={e => setPrice(e.target.value)} /></div>
-            <div className="input-group"><label>Descrição</label><textarea className="input-field" rows={2} value={description} onChange={e => setDescription(e.target.value)} style={{ resize: "vertical" }} /></div>
-            <div className="input-group">
-              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>Categoria</span>
-                <button
-                  type="button"
-                  onClick={() => setShowNewCat(true)}
-                  style={{ fontSize: "0.72rem", color: "#E8360C", background: "none", border: "none", cursor: "pointer", fontWeight: 700, padding: 0 }}
-                >+ Nova categoria</button>
-              </label>
-              {dynCategories.length === 0 ? (
-                <div style={{ padding: "10px 12px", background: "#FFF5F3", border: "1.5px dashed #FCA5A5", borderRadius: 10, fontSize: "0.8rem", color: "#DC2626" }}>
-                  ⚠️ Cadastre sua primeira categoria abaixo para poder salvar produtos:
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 99999,
+          background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(8px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "1rem",
+        }}>
+          <div style={{
+            background: "#FFFFFF", borderRadius: "24px",
+            width: "100%", maxWidth: "780px", maxHeight: "90vh", overflowY: "auto",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)",
+            border: "1px solid #E2E8F0", padding: "1.75rem", position: "relative"
+          }}>
+            {/* Header com botão Fechar X */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", borderBottom: "1px solid #F1F5F9", paddingBottom: "1rem" }}>
+              <div>
+                <span style={{ fontSize: "0.72rem", background: "#FEF2F2", color: "#DC2626", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  {editingId ? "✏️ Editar Produto" : "✨ Novo Produto"}
+                </span>
+                <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#0F172A", margin: "6px 0 0", letterSpacing: "-0.5px" }}>
+                  {editingId ? (name || "Editar Produto") : (isCombo ? "Novo Combo" : "Novo Produto")}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={resetForm}
+                style={{
+                  width: "36px", height: "36px", borderRadius: "50%",
+                  background: "#F1F5F9", border: "none", color: "#64748B",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", transition: "all 0.2s"
+                }}
+                title="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* PREVIEW HERO COM A FOTO DESTACADA DO PRODUTO */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: "1.25rem",
+              background: "linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%)",
+              border: "1.5px solid #E2E8F0", borderRadius: "16px",
+              padding: "1rem", marginBottom: "1.5rem"
+            }}>
+              {imageUrl && imageUrl.trim() !== "" ? (
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <img
+                    src={imageUrl}
+                    alt={name || "Prévia"}
+                    style={{ width: "84px", height: "84px", objectFit: "cover", borderRadius: "14px", border: "2px solid #FFF", boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}
+                    onError={(e: any) => { e.target.style.display = 'none'; }}
+                  />
+                  <span style={{ position: "absolute", bottom: "-6px", left: "50%", transform: "translateX(-50%)", background: "#16A34A", color: "#FFF", fontSize: "0.6rem", fontWeight: 800, padding: "1px 6px", borderRadius: "10px", whiteSpace: "nowrap" }}>
+                    FOTO ATIVA
+                  </span>
                 </div>
               ) : (
-                <select className="input-field" value={category} onChange={e => setCategory(e.target.value)}>
-                  {dynCategories.map(c => (
-                    <option key={c.id} value={c.name}>{c.emoji} {c.name}</option>
-                  ))}
-                </select>
-              )}
-
-              {/* Mini-modal nova categoria */}
-              {(showNewCat || dynCategories.length === 0) && (
-
-                <div style={{ marginTop: 10, padding: "14px", background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <p style={{ margin: 0, fontWeight: 700, fontSize: "0.85rem", color: "#0F172A" }}>Nova Categoria</p>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      placeholder="Emoji (ex: 🍟)"
-                      value={newCatEmoji}
-                      onChange={e => setNewCatEmoji(e.target.value)}
-                      style={{ width: 70, padding: "8px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "1rem", textAlign: "center" }}
-                    />
-                    <input
-                      placeholder="Nome da categoria"
-                      value={newCatName}
-                      onChange={e => setNewCatName(e.target.value)}
-                      style={{ flex: 1, padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "0.88rem" }}
-                    />
-                    <input
-                      type="color"
-                      value={newCatColor}
-                      onChange={e => setNewCatColor(e.target.value)}
-                      title="Cor da categoria"
-                      style={{ width: 40, height: 38, border: "1.5px solid #E2E8F0", borderRadius: 8, cursor: "pointer", padding: 2 }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      type="button"
-                      onClick={handleCreateCategory}
-                      disabled={newCatSaving || !newCatName.trim()}
-                      style={{ flex: 1, padding: "9px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: newCatSaving || !newCatName.trim() ? "not-allowed" : "pointer", opacity: newCatSaving || !newCatName.trim() ? 0.6 : 1 }}
-                    >{newCatSaving ? "Salvando..." : "✓ Criar"}</button>
-                    {dynCategories.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => { setShowNewCat(false); setNewCatName(""); }}
-                        style={{ padding: "9px 16px", background: "#F1F5F9", color: "#64748B", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
-                      >Cancelar</button>
-                    )}
-
-                  </div>
+                <div style={{
+                  width: "84px", height: "84px", borderRadius: "14px",
+                  background: "#E2E8F0", border: "2px dashed #94A3B8",
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                  color: "#64748B", flexShrink: 0
+                }}>
+                  <ImageIcon size={28} />
+                  <span style={{ fontSize: "0.62rem", fontWeight: 700, marginTop: "2px" }}>SEM FOTO</span>
                 </div>
               )}
-            </div>
-            {/* Campo Custo */}
-            <div className="input-group" style={{ position: "relative" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                Custo do Produto (R$)
-                <span style={{ fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
-                  Usado no CMV
-                </span>
-              </label>
-              <input
-                className="input-field"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Ex: 8.50"
-                value={cost}
-                onChange={e => setCost(e.target.value)}
-              />
-              {cost && parseFloat(price) > 0 && parseFloat(cost) > 0 && (
-                <p style={{ fontSize: "0.72rem", color: "#16A34A", marginTop: "4px", fontWeight: 600 }}>
-                  Margem bruta: {(((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100).toFixed(1)}%
-                </p>
-              )}
-            </div>
-            <div className="input-group"><label>URL da Imagem</label><input className="input-field" value={imageUrl} onChange={e => setImageUrl(e.target.value)} /></div>
-          </div>
 
-          {/* TAGS DE PRODUTO */}
-          {!isCombo && (
-            <div style={{ marginTop: "1rem", padding: "0.875rem 1rem", background: "#FFF7ED", borderRadius: "10px", border: "1.5px solid #FCD34D" }}>
-              <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#92400E" }}>🏷️ Tags do Produto <span style={{ fontSize: "0.7rem", fontWeight: 400, color: "#B45309" }}>(aparecem no cardápio digital)</span></p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {[
-                  { label: "🔥 Mais Vendido", color: "#EF4444" },
-                  { label: "✨ Novo", color: "#8B5CF6" },
-                  { label: "🏷️ Promoção", color: "#10B981" },
-                  { label: "🌱 Vegano", color: "#16A34A" },
-                  { label: "🌶️ Picante", color: "#F59E0B" },
-                  { label: "⭐ Destaque", color: "#F59E0B" },
-                  { label: "❄️ Gelado", color: "#3B82F6" },
-                  { label: "🎉 Especial do Dia", color: "#EC4899" },
-                ].map(tag => {
-                  const active = tags.includes(tag.label);
+              <div style={{ flex: 1 }}>
+                <h4 style={{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 800, color: "#0F172A" }}>
+                  {name || "Digite o nome do produto..."}
+                </h4>
+                <p style={{ margin: "0 0 8px", fontSize: "0.82rem", color: "#64748B", lineClamp: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {description || "Sem descrição informada."}
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "0.95rem", fontWeight: 900, color: "#DC2626", background: "#FEF2F2", padding: "2px 10px", borderRadius: "8px" }}>
+                    R$ {price ? parseFloat(price).toFixed(2).replace(".", ",") : "0,00"}
+                  </span>
+                  {category && (
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", background: "#FFF", border: "1px solid #CBD5E1", padding: "2px 8px", borderRadius: "6px" }}>
+                      📁 {category}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* GRID DE CAMPOS DE EDIÇÃO */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div className="input-group">
+                <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>Nome do Produto</label>
+                <input className="input-field" placeholder="Ex: Esfirra de Carne" value={name} onChange={e => setName(e.target.value)} />
+              </div>
+
+              <div className="input-group">
+                <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>Preço de Venda (R$)</label>
+                <input className="input-field" type="number" step="0.01" placeholder="Ex: 9.90" value={price} onChange={e => setPrice(e.target.value)} />
+              </div>
+
+              <div className="input-group">
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>
+                  <span>Categoria</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewCat(true)}
+                    style={{ fontSize: "0.72rem", color: "#E8360C", background: "none", border: "none", cursor: "pointer", fontWeight: 700, padding: 0 }}
+                  >+ Nova categoria</button>
+                </label>
+                {dynCategories.length === 0 ? (
+                  <div style={{ padding: "10px 12px", background: "#FFF5F3", border: "1.5px dashed #FCA5A5", borderRadius: 10, fontSize: "0.8rem", color: "#DC2626" }}>
+                    ⚠️ Cadastre sua primeira categoria abaixo para poder salvar produtos:
+                  </div>
+                ) : (
+                  <select className="input-field" value={category} onChange={e => setCategory(e.target.value)}>
+                    {dynCategories.map(c => (
+                      <option key={c.id} value={c.name}>{c.emoji} {c.name}</option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Mini-modal nova categoria */}
+                {(showNewCat || dynCategories.length === 0) && (
+                  <div style={{ marginTop: 10, padding: "14px", background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <p style={{ margin: 0, fontWeight: 700, fontSize: "0.85rem", color: "#0F172A" }}>Nova Categoria</p>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        placeholder="Emoji (ex: 🍟)"
+                        value={newCatEmoji}
+                        onChange={e => setNewCatEmoji(e.target.value)}
+                        style={{ width: 70, padding: "8px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "1rem", textAlign: "center" }}
+                      />
+                      <input
+                        placeholder="Nome da categoria"
+                        value={newCatName}
+                        onChange={e => setNewCatName(e.target.value)}
+                        style={{ flex: 1, padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "0.88rem" }}
+                      />
+                      <input
+                        type="color"
+                        value={newCatColor}
+                        onChange={e => setNewCatColor(e.target.value)}
+                        title="Cor da categoria"
+                        style={{ width: 40, height: 38, border: "1.5px solid #E2E8F0", borderRadius: 8, cursor: "pointer", padding: 2 }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={handleCreateCategory}
+                        disabled={newCatSaving || !newCatName.trim()}
+                        style={{ flex: 1, padding: "9px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: newCatSaving || !newCatName.trim() ? "not-allowed" : "pointer", opacity: newCatSaving || !newCatName.trim() ? 0.6 : 1 }}
+                      >{newCatSaving ? "Salvando..." : "✓ Criar"}</button>
+                      {dynCategories.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setShowNewCat(false); setNewCatName(""); }}
+                          style={{ padding: "9px 16px", background: "#F1F5F9", color: "#64748B", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                        >Cancelar</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Campo Custo */}
+              <div className="input-group" style={{ position: "relative" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>
+                  Custo do Produto (R$)
+                  <span style={{ fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
+                    Usado no CMV
+                  </span>
+                </label>
+                <input
+                  className="input-field"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Ex: 4.50"
+                  value={cost}
+                  onChange={e => setCost(e.target.value)}
+                />
+                {cost && parseFloat(price) > 0 && parseFloat(cost) > 0 && (
+                  <p style={{ fontSize: "0.72rem", color: "#16A34A", marginTop: "4px", fontWeight: 600 }}>
+                    Margem bruta: {(((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100).toFixed(1)}%
+                  </p>
+                )}
+              </div>
+
+              {/* URL DA IMAGEM */}
+              <div className="input-group" style={{ gridColumn: "span 2" }}>
+                <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>URL da Imagem / Foto do Produto</label>
+                <input
+                  className="input-field"
+                  placeholder="https://imagens.jotaja.com/produtos/..."
+                  value={imageUrl}
+                  onChange={e => setImageUrl(e.target.value)}
+                />
+              </div>
+
+              {/* DESCRIÇÃO */}
+              <div className="input-group" style={{ gridColumn: "span 2" }}>
+                <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>Descrição do Produto</label>
+                <textarea
+                  className="input-field"
+                  rows={2}
+                  placeholder="Escreva os detalhes, ingredientes ou observações do produto..."
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  style={{ resize: "vertical" }}
+                />
+              </div>
+            </div>
+
+            {/* TAGS DE PRODUTO */}
+            {!isCombo && (
+              <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#FFF7ED", borderRadius: "14px", border: "1.5px solid #FCD34D" }}>
+                <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#92400E" }}>🏷️ Tags do Produto <span style={{ fontSize: "0.7rem", fontWeight: 400, color: "#B45309" }}>(aparecem no cardápio digital)</span></p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {[
+                    { label: "🔥 Mais Vendido", color: "#EF4444" },
+                    { label: "✨ Novo", color: "#8B5CF6" },
+                    { label: "🏷️ Promoção", color: "#10B981" },
+                    { label: "🌱 Vegano", color: "#16A34A" },
+                    { label: "🌶️ Picante", color: "#F59E0B" },
+                    { label: "⭐ Destaque", color: "#F59E0B" },
+                    { label: "❄️ Gelado", color: "#3B82F6" },
+                    { label: "🎉 Especial do Dia", color: "#EC4899" },
+                  ].map(tag => {
+                    const active = tags.includes(tag.label);
+                    return (
+                      <button
+                        key={tag.label}
+                        type="button"
+                        onClick={() => setTags(prev => active ? prev.filter(t => t !== tag.label) : [...prev, tag.label])}
+                        style={{
+                          padding: "5px 14px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700,
+                          border: `2px solid ${active ? tag.color : "#E2E8F0"}`,
+                          background: active ? tag.color + "18" : "#FFF",
+                          color: active ? tag.color : "#64748B",
+                          cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit",
+                        }}
+                      >{tag.label}</button>
+                    );
+                  })}
+                </div>
+                {tags.length > 0 && (
+                  <p style={{ fontSize: "0.72rem", color: "#92400E", marginTop: "6px" }}>
+                    ✅ {tags.length} tag{tags.length > 1 ? "s" : ""} selecionada{tags.length > 1 ? "s" : ""}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* CANAIS DE VENDA */}
+            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
+              <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#0F172A" }}>📡 Canais de Venda Disponíveis</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                {CHANNELS.map(ch => {
+                  const stateMap: Record<string, [boolean, (v: boolean) => void]> = {
+                    activePDV: [activePDV, setActivePDV],
+                    activeDelivery: [activeDelivery, setActiveDelivery],
+                    activeTotem: [activeTotem, setActiveTotem],
+                    activeGarcom: [activeGarcom, setActiveGarcom],
+                  };
+                  const [val, setter] = stateMap[ch.key];
                   return (
-                    <button
-                      key={tag.label}
-                      onClick={() => setTags(prev => active ? prev.filter(t => t !== tag.label) : [...prev, tag.label])}
-                      style={{
-                        padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700,
-                        border: `2px solid ${active ? tag.color : "#E2E8F0"}`,
-                        background: active ? tag.color + "18" : "#F8FAFC",
-                        color: active ? tag.color : "#94A3B8",
-                        cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit",
-                      }}
-                    >{tag.label}</button>
+                    <label key={ch.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", borderRadius: "10px", border: `1.5px solid ${val ? ch.color : "#E2E8F0"}`, background: val ? ch.color + "10" : "#fff", cursor: "pointer" }}>
+                      <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} style={{ accentColor: ch.color }} />
+                      <span style={{ fontSize: "0.85rem" }}>{ch.icon}</span>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: "0.82rem", color: val ? ch.color : "#64748B", margin: 0 }}>{ch.label}</p>
+                        <p style={{ fontSize: "0.68rem", color: "#94A3B8", margin: 0 }}>{ch.desc}</p>
+                      </div>
+                    </label>
                   );
                 })}
               </div>
-              {tags.length > 0 && (
-                <p style={{ fontSize: "0.72rem", color: "#92400E", marginTop: "6px" }}>
-                  ✅ {tags.length} tag{tags.length > 1 ? "s" : ""} selecionada{tags.length > 1 ? "s" : ""}
-                </p>
-              )}
             </div>
-          )}
 
-          {/* CANAIS DE VENDA */}
-          <div style={{ marginTop: "1rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "10px", border: "1.5px solid #E2E8F0" }}>
-            <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem" }}>📡 Canais de Venda</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-              {CHANNELS.map(ch => {
-                const stateMap: Record<string, [boolean, (v: boolean) => void]> = {
-                  activePDV: [activePDV, setActivePDV],
-                  activeDelivery: [activeDelivery, setActiveDelivery],
-                  activeTotem: [activeTotem, setActiveTotem],
-                  activeGarcom: [activeGarcom, setActiveGarcom],
-                };
-                const [val, setter] = stateMap[ch.key];
-                return (
-                  <label key={ch.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", borderRadius: "8px", border: `1.5px solid ${val ? ch.color : "#E2E8F0"}`, background: val ? ch.color + "10" : "#fff", cursor: "pointer" }}>
-                    <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} style={{ accentColor: ch.color }} />
-                    <span style={{ fontSize: "0.85rem" }}>{ch.icon}</span>
-                    <div>
-                      <p style={{ fontWeight: 700, fontSize: "0.82rem", color: val ? ch.color : "#64748B" }}>{ch.label}</p>
-                      <p style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{ch.desc}</p>
+            {/* COMBO BUILDER */}
+            {isCombo && (
+              <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#F8FAFC", borderRadius: "14px", border: "2px dashed #CBD5E1" }}>
+                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", marginBottom: "0.75rem", color: "#0F172A" }}>📦 Construtor de Combo</h4>
+                {comboGroups.map((group, gIdx) => (
+                  <div key={gIdx} style={{ marginBottom: "1rem", padding: "0.75rem", backgroundColor: "#FFF", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "end" }}>
+                      <div style={{ flex: 1 }}><label style={{ fontSize: "0.75rem", fontWeight: 600 }}>Título do Grupo</label><input className="input-field" value={group.title} onChange={e => updateGroup(gIdx, "title", e.target.value)} placeholder="Ex: Escolha suas esfirras" /></div>
+                      <div style={{ width: "80px" }}><label style={{ fontSize: "0.75rem", fontWeight: 600 }}>Qtd</label><input className="input-field" type="number" min={1} value={group.maxQty} onChange={e => updateGroup(gIdx, "maxQty", parseInt(e.target.value) || 1)} /></div>
+                      <button type="button" onClick={() => removeGroup(gIdx)} style={{ cursor: "pointer", color: "#EF4444", padding: "0.5rem", background: "none", border: "none" }}><Trash2 size={16} /></button>
                     </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+                    <p style={{ fontSize: "0.75rem", color: "#64748B", marginBottom: "0.5rem" }}>Selecione os itens disponíveis ({group.itemIds.length} selecionados):</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                      {availableItems.map(item => (
+                        <button key={item.id} type="button" onClick={() => toggleGroupItem(gIdx, item.id)}
+                          style={{
+                            padding: "0.25rem 0.5rem", borderRadius: "6px", fontSize: "0.7rem", cursor: "pointer",
+                            border: group.itemIds.includes(item.id) ? "2px solid #E8360C" : "1px solid #E2E8F0",
+                            backgroundColor: group.itemIds.includes(item.id) ? "#FEF2F2" : "#FFF",
+                            color: group.itemIds.includes(item.id) ? "#E8360C" : "#475569",
+                            fontWeight: group.itemIds.includes(item.id) ? 700 : 400,
+                            opacity: item.active ? 1 : 0.4
+                          }}>{item.name} {!item.active && "⏸️"}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={addGroup} className="btn btn-outline" style={{ width: "100%", fontSize: "0.85rem", borderRadius: "10px" }}>
+                  <Plus size={14} style={{ marginRight: "4px" }} /> Adicionar Grupo de Seleção
+                </button>
+              </div>
+            )}
 
-          {/* COMBO BUILDER */}
-          {isCombo && (
-            <div style={{ marginTop: "1rem", padding: "1rem", backgroundColor: "var(--bg-color)", borderRadius: "var(--radius-md)", border: "2px dashed var(--primary)" }}>
-              <h4 className="font-bold" style={{ marginBottom: "0.75rem" }}>📦 Construtor de Combo</h4>
-              {comboGroups.map((group, gIdx) => (
-                <div key={gIdx} style={{ marginBottom: "1rem", padding: "0.75rem", backgroundColor: "var(--surface)", borderRadius: "8px", border: "1px solid var(--border-color)" }}>
-                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "end" }}>
-                    <div style={{ flex: 1 }}><label style={{ fontSize: "0.75rem", fontWeight: 600 }}>Título do Grupo</label><input className="input-field" value={group.title} onChange={e => updateGroup(gIdx, "title", e.target.value)} placeholder="Ex: Escolha suas esfirras" /></div>
-                    <div style={{ width: "80px" }}><label style={{ fontSize: "0.75rem", fontWeight: 600 }}>Qtd</label><input className="input-field" type="number" min={1} value={group.maxQty} onChange={e => updateGroup(gIdx, "maxQty", parseInt(e.target.value) || 1)} /></div>
-                    <button onClick={() => removeGroup(gIdx)} style={{ cursor: "pointer", color: "var(--danger)", padding: "0.5rem" }}><Trash2 size={16} /></button>
-                  </div>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>Selecione os itens disponíveis ({group.itemIds.length} selecionados):</p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                    {availableItems.map(item => (
-                      <button key={item.id} onClick={() => toggleGroupItem(gIdx, item.id)}
-                        style={{
-                          padding: "0.25rem 0.5rem", borderRadius: "6px", fontSize: "0.7rem", cursor: "pointer",
-                          border: group.itemIds.includes(item.id) ? "2px solid var(--primary)" : "1px solid var(--border-color)",
-                          backgroundColor: group.itemIds.includes(item.id) ? "var(--primary-light)" : "var(--surface)",
-                          fontWeight: group.itemIds.includes(item.id) ? 700 : 400,
-                          opacity: item.active ? 1 : 0.4
-                        }}>{item.name} {!item.active && "⏸️"}</button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <button onClick={addGroup} className="btn btn-outline" style={{ width: "100%", fontSize: "0.85rem" }}>
-                <Plus size={14} style={{ marginRight: "4px" }} /> Adicionar Grupo de Seleção
+            {/* BOTOES DE AÇÃO */}
+            <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.75rem", borderTop: "1px solid #F1F5F9", paddingTop: "1.25rem" }}>
+              <button
+                type="button"
+                onClick={resetForm}
+                style={{
+                  flex: 1, padding: "12px", borderRadius: "12px",
+                  background: "#F1F5F9", color: "#64748B", border: "none",
+                  fontWeight: 700, fontSize: "0.9rem", cursor: "pointer"
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading}
+                style={{
+                  flex: 2, padding: "12px", borderRadius: "12px",
+                  background: "linear-gradient(135deg, #E8360C, #C62828)",
+                  color: "#FFF", border: "none", fontWeight: 800,
+                  fontSize: "0.95rem", cursor: loading ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.7 : 1, boxShadow: "0 4px 14px rgba(232,54,12,0.35)"
+                }}
+              >
+                {loading ? "Salvando Alterações..." : (editingId ? "✓ Salvar Alterações" : "✓ Cadastrar Produto")}
               </button>
             </div>
-          )}
-
-          <button onClick={handleSubmit} disabled={loading} className="btn btn-primary mt-4" style={{ width: "100%" }}>
-            {loading ? "Salvando..." : (editingId ? "Salvar Alterações" : "Cadastrar")}
-          </button>
+          </div>
         </div>
       )}
 
