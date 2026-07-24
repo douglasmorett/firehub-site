@@ -604,55 +604,117 @@ export default function MenuProductManager({
               </button>
             </div>
 
-            {/* PREVIEW HERO COM A FOTO DESTACADA DO PRODUTO */}
+            {/* PREVIEW HERO COM A FOTO DESTACADA DO PRODUTO & CONTROLES DE FOTO DIRETO AO LADO */}
             <div style={{
-              display: "flex", alignItems: "center", gap: "1.25rem",
               background: "linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%)",
-              border: "1.5px solid #E2E8F0", borderRadius: "16px",
-              padding: "1rem", marginBottom: "1.5rem"
+              border: "1.5px solid #E2E8F0", borderRadius: "18px",
+              padding: "1.15rem", marginBottom: "1.5rem"
             }}>
-              {imageUrl && imageUrl.trim() !== "" ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
+                {/* THUMBNAIL DA FOTO */}
                 <div style={{ position: "relative", flexShrink: 0 }}>
-                  <img
-                    src={imageUrl}
-                    alt={name || "Prévia"}
-                    style={{ width: "84px", height: "84px", objectFit: "cover", borderRadius: "14px", border: "2px solid #FFF", boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}
-                    onError={(e: any) => { e.target.style.display = 'none'; }}
-                  />
-                  <span style={{ position: "absolute", bottom: "-6px", left: "50%", transform: "translateX(-50%)", background: "#16A34A", color: "#FFF", fontSize: "0.6rem", fontWeight: 800, padding: "1px 6px", borderRadius: "10px", whiteSpace: "nowrap" }}>
-                    FOTO ATIVA
-                  </span>
-                </div>
-              ) : (
-                <div style={{
-                  width: "84px", height: "84px", borderRadius: "14px",
-                  background: "#E2E8F0", border: "2px dashed #94A3B8",
-                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                  color: "#64748B", flexShrink: 0
-                }}>
-                  <ImageIcon size={28} />
-                  <span style={{ fontSize: "0.62rem", fontWeight: 700, marginTop: "2px" }}>SEM FOTO</span>
-                </div>
-              )}
-
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 800, color: "#0F172A" }}>
-                  {name || "Digite o nome do produto..."}
-                </h4>
-                <p style={{ margin: "0 0 8px", fontSize: "0.82rem", color: "#64748B", lineClamp: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                  {description || "Sem descrição informada."}
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "0.95rem", fontWeight: 900, color: "#DC2626", background: "#FEF2F2", padding: "2px 10px", borderRadius: "8px" }}>
-                    R$ {price ? parseFloat(price).toFixed(2).replace(".", ",") : "0,00"}
-                  </span>
-                  {category && (
-                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", background: "#FFF", border: "1px solid #CBD5E1", padding: "2px 8px", borderRadius: "6px" }}>
-                      📁 {category}
-                    </span>
+                  {imageUrl && imageUrl.trim() !== "" ? (
+                    <div style={{ position: "relative" }}>
+                      <img
+                        src={imageUrl}
+                        alt={name || "Prévia"}
+                        style={{ width: "90px", height: "90px", objectFit: "cover", borderRadius: "16px", border: "2.5px solid #FFF", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
+                        onError={(e: any) => { e.target.style.display = 'none'; }}
+                      />
+                      <span style={{ position: "absolute", bottom: "-6px", left: "50%", transform: "translateX(-50%)", background: "#16A34A", color: "#FFF", fontSize: "0.58rem", fontWeight: 800, padding: "1px 6px", borderRadius: "10px", whiteSpace: "nowrap" }}>
+                        FOTO ATIVA
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{
+                      width: "90px", height: "90px", borderRadius: "16px",
+                      background: "#E2E8F0", border: "2px dashed #94A3B8",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      color: "#64748B"
+                    }}>
+                      <ImageIcon size={30} />
+                      <span style={{ fontSize: "0.62rem", fontWeight: 700, marginTop: "2px" }}>SEM FOTO</span>
+                    </div>
                   )}
                 </div>
+
+                {/* INFORMAÇÕES E BOTÕES DE INSERIR FOTO PERTO DA FOTO */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <h4 style={{ margin: "0 0 2px", fontSize: "1.05rem", fontWeight: 800, color: "#0F172A" }}>
+                        {name || "Digite o nome do produto..."}
+                      </h4>
+                      <p style={{ margin: "0 0 8px", fontSize: "0.8rem", color: "#64748B" }}>
+                        {category ? `📁 ${category}` : "Sem categoria"} • R$ {price ? parseFloat(price).toFixed(2).replace(".", ",") : "0,00"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* BOTOES DE INSERIR FOTO DIRETO AO LADO DA FOTO */}
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginTop: "4px" }}>
+                    <input
+                      type="file"
+                      id="hero-photo-file-input"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      style={{ display: "none" }}
+                    />
+                    <label
+                      htmlFor="hero-photo-file-input"
+                      style={{
+                        padding: "6px 14px", borderRadius: "8px", background: "#0F172A", color: "#FFF",
+                        fontSize: "0.78rem", fontWeight: 700, cursor: "pointer", display: "inline-flex",
+                        alignItems: "center", gap: "6px", boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
+                      }}
+                    >
+                      📷 Inserir Foto (Upload)
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => setImageMode(prev => prev === "url" ? "file" : "url")}
+                      style={{
+                        padding: "6px 14px", borderRadius: "8px", background: imageMode === "url" ? "#E2E8F0" : "#FFF",
+                        color: "#334155", border: "1.5px solid #CBD5E1", fontSize: "0.78rem", fontWeight: 700,
+                        cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px"
+                      }}
+                    >
+                      🔗 Inserir Link / URL Externa
+                    </button>
+
+                    {imageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setImageUrl("")}
+                        style={{
+                          padding: "6px 10px", borderRadius: "8px", background: "#FEF2F2",
+                          color: "#DC2626", border: "1px solid #FCA5A5", fontSize: "0.75rem",
+                          fontWeight: 700, cursor: "pointer"
+                        }}
+                      >
+                        🗑️ Remover Foto
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
+
+              {/* CAMPO PARA DIGITAR OU COLAR A URL SE CLICOU EM INSERIR LINK */}
+              {imageMode === "url" && (
+                <div style={{ marginTop: "12px", borderTop: "1px dashed #CBD5E1", paddingTop: "10px" }}>
+                  <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    Cole a URL / Link externo da imagem:
+                  </label>
+                  <input
+                    className="input-field"
+                    style={{ height: "40px", fontSize: "0.85rem", background: "#FFF" }}
+                    placeholder="https://imagens.jotaja.com/produtos/..."
+                    value={imageUrl}
+                    onChange={e => setImageUrl(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             {/* GRID DE CAMPOS DE EDIÇÃO */}
@@ -820,99 +882,6 @@ export default function MenuProductManager({
                   <p style={{ fontSize: "0.72rem", color: "#16A34A", marginTop: "4px", fontWeight: 600 }}>
                     Margem bruta: {(((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100).toFixed(1)}%
                   </p>
-                )}
-              </div>
-
-              {/* DUAL OPTION FOTO DO PRODUTO (ARQUIVO DO DISPOSITIVO OU URL) */}
-              <div className="input-group" style={{ gridColumn: "span 2" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>
-                    🖼️ Foto do Produto
-                  </label>
-
-                  {/* Seletor de Modo: Arquivo ou URL */}
-                  <div style={{ display: "flex", gap: "4px", background: "#F1F5F9", padding: "2px", borderRadius: "8px" }}>
-                    <button
-                      type="button"
-                      onClick={() => setImageMode("file")}
-                      style={{
-                        padding: "3px 10px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700,
-                        border: "none", background: imageMode === "file" ? "#FFF" : "transparent",
-                        color: imageMode === "file" ? "#0F172A" : "#64748B", cursor: "pointer",
-                        boxShadow: imageMode === "file" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
-                      }}
-                    >
-                      📁 Arquivo do Dispositivo
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImageMode("url")}
-                      style={{
-                        padding: "3px 10px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700,
-                        border: "none", background: imageMode === "url" ? "#FFF" : "transparent",
-                        color: imageMode === "url" ? "#0F172A" : "#64748B", cursor: "pointer",
-                        boxShadow: imageMode === "url" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
-                      }}
-                    >
-                      🔗 Link / URL Externa
-                    </button>
-                  </div>
-                </div>
-
-                {imageMode === "file" ? (
-                  <div style={{
-                    border: "2px dashed #CBD5E1", borderRadius: "14px", padding: "1.25rem 1rem",
-                    background: "#F8FAFC", textAlign: "center", display: "flex", flexDirection: "column",
-                    alignItems: "center", justifyContent: "center", gap: "8px"
-                  }}>
-                    <input
-                      type="file"
-                      id="product-image-file-input"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      style={{ display: "none" }}
-                    />
-                    <label
-                      htmlFor="product-image-file-input"
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: "8px",
-                        padding: "10px 20px", background: "#0F172A", color: "#FFF",
-                        borderRadius: "10px", fontWeight: 700, fontSize: "0.85rem",
-                        cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.15)"
-                      }}
-                    >
-                      📷 Escolher foto do Computador ou Celular
-                    </label>
-                    <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748B" }}>
-                      Suporta PNG, JPG, WEBP até 5MB. A prévia aparecerá imediatamente acima.
-                    </p>
-
-                    {imageUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setImageUrl("")}
-                        style={{
-                          fontSize: "0.72rem", color: "#DC2626", background: "#FEF2F2",
-                          border: "1px solid #FCA5A5", borderRadius: "6px", padding: "2px 8px",
-                          fontWeight: 700, cursor: "pointer", marginTop: "4px"
-                        }}
-                      >
-                        🗑️ Remover foto atual
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      className="input-field"
-                      placeholder="Cole o link da foto (ex: https://imagens.jotaja.com/produtos/...)"
-                      value={imageUrl}
-                      onChange={e => setImageUrl(e.target.value)}
-                    />
-                    <p style={{ margin: "4px 0 0", fontSize: "0.72rem", color: "#64748B" }}>
-                      Cole o link direto da foto do produto na internet.
-                    </p>
-                  </div>
                 )}
               </div>
 
