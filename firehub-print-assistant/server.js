@@ -291,7 +291,8 @@ function buildEscPos(order, storeName, columns = 48) {
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
   const seqTag = seqNumStr ? `${seqNumStr}  ` : "";
   const deliveryTypeTag = order.deliveryType === "DELIVERY" ? "DELIVERY" : "RETIRADA";
-  const refTag = order.ifoodReference ? `#${order.ifoodReference}` : order.openDeliveryReference ? `#${order.openDeliveryReference}` : "";
+  const orderRef = order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "");
+  const refTag = orderRef ? `#${orderRef}` : "";
   const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
   const isIfoodDriver = order.deliveryBy === "IFOOD";
@@ -302,8 +303,8 @@ function buildEscPos(order, storeName, columns = 48) {
   }
   res += LEFT + divider;
   res += "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + LF;
-  if (order.ifoodReference || order.openDeliveryReference || order.id) {
-    res += "N. do Pedido: " + cleanAscii(order.ifoodReference || order.openDeliveryReference || order.id) + LF;
+  if (orderRef) {
+    res += "N. do Pedido: " + cleanAscii(orderRef) + LF;
   }
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
   const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";

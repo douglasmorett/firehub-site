@@ -2035,14 +2035,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "1px dashed #000", paddingBottom: "10px", marginBottom: "10px" }}>
                   <span style={{ fontSize: "22px", fontWeight: "bold" }}>{seqNum}   {isDelivery ? "DELIVERY" : "RETIRADA"}</span>
-                  <span style={{ fontSize: "16px", fontWeight: "bold" }}>{(order.ifoodReference || order.openDeliveryReference) ? `#${order.ifoodReference || order.openDeliveryReference}` : ""}</span>
+                  <span style={{ fontSize: "16px", fontWeight: "bold" }}>{`#${order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}`}</span>
                 </div>
 
                 <div style={{ marginBottom: "12px" }}>
                   <div>Estabelecimento: <strong style={{ textTransform: "uppercase" }}>{storeName}</strong></div>
-                  {(order.ifoodReference || order.openDeliveryReference) && (
-                    <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference}</div>
-                  )}
+                  <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
                   <div>Data: {dateStr} {timeStr}</div>
                 </div>
 

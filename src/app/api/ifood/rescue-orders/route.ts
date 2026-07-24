@@ -23,9 +23,19 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, role: true, ifoodMerchantId: true },
+    select: { id: true, role: true, ifoodMerchantId: true, ownerId: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+  let merchantId = user.ifoodMerchantId;
+  const targetFranchiseeId = user.ownerId || user.id;
+  if (!merchantId && user.ownerId) {
+    const owner = await prisma.user.findUnique({
+      where: { id: user.ownerId },
+      select: { ifoodMerchantId: true }
+    });
+    if (owner?.ifoodMerchantId) merchantId = owner.ifoodMerchantId;
+  }
 
   const results: any = {};
 
@@ -161,9 +171,11 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true },
+    select: { id: true, ownerId: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+  const targetFranchiseeId = user.ownerId || user.id;
 
   const body = await req.json().catch(() => ({}));
   const orderId = body.orderId;
@@ -178,10 +190,10 @@ export async function POST(req: NextRequest) {
     });
     if (exists) {
       // If exists but under wrong user, fix it
-      if (exists.franchiseeId !== user.id) {
+      if (exists.franchiseeId !== targetFranchiseeId) {
         await (prisma.customerOrder as any).update({
           where: { id: exists.id },
-          data: { franchiseeId: user.id },
+          data: { franchiseeId: targetFranchiseeId },
         });
         return NextResponse.json({ success: true, action: "reassigned", orderId });
       }
@@ -195,12 +207,11 @@ export async function POST(req: NextRequest) {
     );
 
     if (!orderRes.ok) {
-      const err = await orderRes.text();
-      return NextResponse.json({ error: `iFood API: ${orderRes.status}`, details: err.slice(0, 300) }, { status: 404 });
+      return NextResponse.json({ error: `iFood API error: ${orderRes.status}` }, { status: orderRes.status });
     }
 
     const orderData = await orderRes.json();
-    await createOrderFromIfoodData(orderId, orderData, user.id, token);
+    await createOrderFromIfoodData(orderId, orderData, targetFranchiseeId, token);
 
     return NextResponse.json({ success: true, action: "imported", orderId });
   } catch (err: any) {

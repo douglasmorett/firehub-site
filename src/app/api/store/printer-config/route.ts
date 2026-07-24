@@ -9,8 +9,15 @@ export async function PUT(req: NextRequest) {
 
   const config = await req.json();
 
-  await prisma.user.update({
+  const user = await prisma.user.findUnique({
     where: { email: session.user.email },
+    select: { id: true, ownerId: true },
+  });
+  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const targetId = user.ownerId || user.id;
+
+  await prisma.user.update({
+    where: { id: targetId },
     data: { printerConfig: config },
   });
 
@@ -21,8 +28,15 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-  const user = await prisma.user.findUnique({
+  const currentUser = await prisma.user.findUnique({
     where: { email: session.user.email },
+    select: { id: true, ownerId: true },
+  });
+  if (!currentUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const targetId = currentUser.ownerId || currentUser.id;
+
+  const user = await prisma.user.findUnique({
+    where: { id: targetId },
     select: { printerConfig: true },
   });
 

@@ -515,11 +515,11 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true }
+    select: { id: true, ownerId: true }
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const targetFranchiseeId = (user as any).ownerId || user.id;
+  const targetFranchiseeId = user.ownerId || user.id;
 
   try {
     await Promise.allSettled([

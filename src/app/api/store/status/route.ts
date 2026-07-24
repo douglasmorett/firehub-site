@@ -17,11 +17,17 @@ export async function GET(req: Request) {
     return NextResponse.json(user);
   }
 
-  // Autenticado: retorna status do próprio usuário
+  // Autenticado: retorna status do próprio usuário / loja principal
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  const user = await prisma.user.findUnique({
+  const currentUser = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true, storeOpen: true, cashOpen: true },
+  });
+  if (!currentUser) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
+  const targetId = currentUser.ownerId || currentUser.id;
+  const user = await prisma.user.findUnique({
+    where: { id: targetId },
     select: { storeOpen: true, cashOpen: true },
   });
   return NextResponse.json(user);
@@ -37,8 +43,15 @@ export async function PATCH(req: Request) {
   if (body.storeOpen !== undefined) data.storeOpen = body.storeOpen;
   if (body.cashOpen !== undefined) data.cashOpen = body.cashOpen;
 
-  const user = await prisma.user.update({
+  const currentUser = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true },
+  });
+  if (!currentUser) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
+  const targetId = currentUser.ownerId || currentUser.id;
+
+  const user = await prisma.user.update({
+    where: { id: targetId },
     data,
     select: { storeOpen: true, cashOpen: true },
   });
