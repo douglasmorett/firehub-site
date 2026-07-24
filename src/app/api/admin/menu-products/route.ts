@@ -22,7 +22,7 @@ export async function GET() {
     select: {
       id: true, name: true, price: true, category: true,
       imageUrl: true, active: true, isCombo: true,
-      activePDV: true, cost: true, tags: true, description: true,
+      activePDV: true, cost: true, tags: true, availableDays: true, description: true,
     },
   });
 
@@ -49,6 +49,7 @@ export async function POST(req: Request) {
     data: {
       ...rest,
       tags: rest.tags ? JSON.stringify(rest.tags) : null,
+      availableDays: rest.availableDays ? JSON.stringify(rest.availableDays) : null,
       franchiseeId,
     }
   });
@@ -65,6 +66,9 @@ export async function PUT(req: Request) {
 
   if (updateData.tags) {
     updateData.tags = JSON.stringify(updateData.tags);
+  }
+  if (updateData.availableDays !== undefined) {
+    updateData.availableDays = updateData.availableDays ? JSON.stringify(updateData.availableDays) : null;
   }
 
   const product = await prisma.menuProduct.update({

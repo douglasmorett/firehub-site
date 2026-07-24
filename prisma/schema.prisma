@@ -192,6 +192,7 @@ model MenuProduct {
   price           Float
   cost            Float?
   tags            String?             // JSON array: ["Novo","Mais Vendido","Promoção","Esgotado","Vegano","Picante"]
+  availableDays   String?             // JSON array: ["SEG","TER","QUA","QUI","SEX","SAB","DOM"] (null/empty = todos os dias)
   imageUrl        String?
   category        String              @default("Lanches")
   active          Boolean             @default(true)

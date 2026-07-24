@@ -155,6 +155,19 @@ export default function MenuProductManager({
     setTimeout(() => setToastMsg(null), 4000);
   };
 
+  const WEEKDAYS = [
+    { key: "SEG", label: "Seg", full: "Segunda-feira" },
+    { key: "TER", label: "Ter", full: "Terça-feira" },
+    { key: "QUA", label: "Qua", full: "Quarta-feira" },
+    { key: "QUI", label: "Qui", full: "Quinta-feira" },
+    { key: "SEX", label: "Sex", full: "Sexta-feira" },
+    { key: "SAB", label: "Sáb", full: "Sábado" },
+    { key: "DOM", label: "Dom", full: "Domingo" },
+  ];
+
+  const [availableDaysMode, setAvailableDaysMode] = useState<"all" | "specific">("all");
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+
   // Form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -177,6 +190,7 @@ export default function MenuProductManager({
     setCategory(dynCategories[0]?.name || "");
     setImageUrl(""); setActive(true); setIsCombo(false); setComboGroups([]);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(false); setActiveGarcom(false);
+    setAvailableDaysMode("all"); setSelectedDays([]);
     setShowForm(false); setEditingId(null);
   };
 
@@ -184,6 +198,21 @@ export default function MenuProductManager({
     setName(p.name); setDescription(p.description); setPrice(String(p.price));
     setCost(p.cost != null && p.cost > 0 ? String(p.cost) : "");
     try { setTags(p.tags ? JSON.parse(p.tags) : []); } catch { setTags([]); }
+    
+    let parsedDays: string[] = [];
+    try {
+      if (p.availableDays) {
+        parsedDays = typeof p.availableDays === "string" ? JSON.parse(p.availableDays) : p.availableDays;
+      }
+    } catch {}
+    if (parsedDays && Array.isArray(parsedDays) && parsedDays.length > 0) {
+      setAvailableDaysMode("specific");
+      setSelectedDays(parsedDays);
+    } else {
+      setAvailableDaysMode("all");
+      setSelectedDays([]);
+    }
+
     setCategory(p.category); setImageUrl(p.imageUrl || ""); setActive(p.active);
     setIsCombo(p.isCombo);
     setActivePDV(p.activePDV ?? true);
@@ -206,6 +235,8 @@ export default function MenuProductManager({
     setLoading(true);
 
     try {
+      const availableDaysPayload = availableDaysMode === "specific" && selectedDays.length > 0 ? selectedDays : null;
+
       const res = await fetch("/api/admin/menu-products", {
         method: editingId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -213,6 +244,7 @@ export default function MenuProductManager({
           id: editingId, name, description, price: parseFloat(price),
           cost: cost ? parseFloat(cost) : 0,
           tags: tags.length > 0 ? tags : null,
+          availableDays: availableDaysPayload,
           category,
           imageUrl: imageUrl || null, active, isCombo,
           activePDV, activeDelivery, activeTotem, activeGarcom,
@@ -937,6 +969,105 @@ export default function MenuProductManager({
                 )}
               </div>
             )}
+
+            {/* DISPONIBILIDADE POR DIAS DA SEMANA */}
+            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                <p style={{ fontWeight: 700, fontSize: "0.85rem", color: "#0F172A", margin: 0 }}>
+                  📅 Dias de Disponibilidade no Cardápio
+                </p>
+                <span style={{ fontSize: "0.7rem", fontWeight: 700, background: availableDaysMode === "all" ? "#DCFCE7" : "#FEF3C7", color: availableDaysMode === "all" ? "#166534" : "#92400E", padding: "2px 8px", borderRadius: "6px" }}>
+                  {availableDaysMode === "all" ? "🟢 Sempre Ativo" : `📅 ${selectedDays.length} dia(s) selecionado(s)`}
+                </span>
+              </div>
+
+              {/* OPÇÕES: TODOS OS DIAS OU DIAS ESPECÍFICOS */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: availableDaysMode === "specific" ? "0.875rem" : 0 }}>
+                <button
+                  type="button"
+                  onClick={() => setAvailableDaysMode("all")}
+                  style={{
+                    padding: "10px 14px", borderRadius: "10px", fontSize: "0.82rem", fontWeight: 700,
+                    border: `1.5px solid ${availableDaysMode === "all" ? "#16A34A" : "#CBD5E1"}`,
+                    background: availableDaysMode === "all" ? "#F0FDF4" : "#FFF",
+                    color: availableDaysMode === "all" ? "#15803D" : "#64748B",
+                    cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+                    textAlign: "left"
+                  }}
+                >
+                  <span style={{ fontSize: "1rem" }}>🟢</span>
+                  <div>
+                    <div style={{ fontWeight: 800 }}>Sempre Ativo</div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: 400, color: "#64748B" }}>Disponível todos os dias da semana</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAvailableDaysMode("specific");
+                    if (selectedDays.length === 0) setSelectedDays(["SEG","TER","QUA","QUI","SEX","SAB","DOM"]);
+                  }}
+                  style={{
+                    padding: "10px 14px", borderRadius: "10px", fontSize: "0.82rem", fontWeight: 700,
+                    border: `1.5px solid ${availableDaysMode === "specific" ? "#E8360C" : "#CBD5E1"}`,
+                    background: availableDaysMode === "specific" ? "#FEF2F2" : "#FFF",
+                    color: availableDaysMode === "specific" ? "#DC2626" : "#64748B",
+                    cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+                    textAlign: "left"
+                  }}
+                >
+                  <span style={{ fontSize: "1rem" }}>📅</span>
+                  <div>
+                    <div style={{ fontWeight: 800 }}>Dias Específicos</div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: 400, color: "#64748B" }}>Escolha em quais dias aparece no cardápio</div>
+                  </div>
+                </button>
+              </div>
+
+              {/* SELETOR DOS 7 DIAS DA SEMANA */}
+              {availableDaysMode === "specific" && (
+                <div style={{ padding: "10px", background: "#FFF", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <p style={{ margin: "0 0 8px", fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>
+                    Selecione os dias em que o produto estará ATIVO:
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "6px" }}>
+                    {WEEKDAYS.map(day => {
+                      const active = selectedDays.includes(day.key);
+                      return (
+                        <button
+                          key={day.key}
+                          type="button"
+                          title={day.full}
+                          onClick={() => {
+                            setSelectedDays(prev =>
+                              active ? prev.filter(d => d !== day.key) : [...prev, day.key]
+                            );
+                          }}
+                          style={{
+                            padding: "8px 2px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 800,
+                            border: `2px solid ${active ? "#16A34A" : "#E2E8F0"}`,
+                            background: active ? "#DCFCE7" : "#F8FAFC",
+                            color: active ? "#15803D" : "#94A3B8",
+                            cursor: "pointer", textAlign: "center", transition: "all 0.15s"
+                          }}
+                        >
+                          {day.label}
+                          <div style={{ fontSize: "0.6rem", marginTop: "2px", fontWeight: 700 }}>
+                            {active ? "✓" : "✕"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedDays.length === 0 && (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#DC2626", fontWeight: 700 }}>
+                      ⚠️ Selecione pelo menos 1 dia da semana para o produto ficar visível.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* CANAIS DE VENDA */}
             <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
