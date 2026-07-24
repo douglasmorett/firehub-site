@@ -256,9 +256,7 @@ function buildEscPos(order, storeName, columns = 48) {
 
   const makeHeaderTitle = (title) => {
     const cleanT = cleanAscii(title).toUpperCase();
-    const padLen = Math.max(0, Math.floor((columns - cleanT.length - 2) / 2));
-    const dashes = "-".repeat(padLen);
-    return dashes + " " + cleanT + " " + dashes + LF;
+    return cleanT + LF;
   };
 
   const rightAlign = (leftStr, rightStr) => {
@@ -337,8 +335,7 @@ function buildEscPos(order, storeName, columns = 48) {
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
       res += boxBorder;
-      res += makeBoxLine(`Qtd: ${qty}x`, `Valor: ${priceStr}`);
-      res += makeBoxText(name);
+      res += makeBoxLine(`${qty}x ${name}`, priceStr);
 
       const comboSels = (() => {
         if (!item.comboSelections) return [];
