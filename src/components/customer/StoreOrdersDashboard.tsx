@@ -389,12 +389,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       };
 
       const result = await printOrder(formattedOrder as any, storeName, activeConfig);
-      if (result.success) {
+      if (result.success || result.attempted) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
-        return; // Impresso diretamente via Assistente RAW
+        return; // Impresso diretamente via Assistente RAW — NÃO enviar para a fila na nuvem para não duplicar!
       }
 
-      // 2. Se o assistente local não respondeu, envia para a Fila de Impressão na nuvem
+      // 2. Apenas se o assistente local estiver 100% offline (nenhum assistente local detectado), envia para a Fila de Impressão na nuvem
       const queueRes = await fetch("/api/store/print-queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

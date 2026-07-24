@@ -123,9 +123,9 @@ export async function printOrder(
   storeName: string,
   printerConfig: PrinterConfig,
   itemCategories: Record<string, string> = {} // { "item name" => "categoria" }
-): Promise<{ success: boolean; printed: number }> {
+): Promise<{ success: boolean; printed: number; attempted: boolean }> {
   const baseUrl = await getAssistantUrl();
-  if (!baseUrl) return { success: false, printed: 0 };
+  if (!baseUrl) return { success: false, printed: 0, attempted: false };
 
   let printersToUse = printerConfig?.printers || [];
   if (!printersToUse.length || printersToUse.every(p => !p.name)) {
@@ -142,7 +142,7 @@ export async function printOrder(
     }
   }
 
-  if (!printersToUse.length) return { success: false, printed: 0 };
+  if (!printersToUse.length) return { success: false, printed: 0, attempted: true };
 
   // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
   const uniquePrinters: PrinterEntry[] = [];
@@ -187,7 +187,7 @@ export async function printOrder(
     if (result) printed++;
   }
 
-  return { success: printed > 0, printed };
+  return { success: printed > 0, printed, attempted: true };
 }
 
 /* ─── Comanda de teste ───────────────────────────────────── */
