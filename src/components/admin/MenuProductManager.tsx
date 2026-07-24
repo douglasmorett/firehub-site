@@ -83,6 +83,34 @@ export default function MenuProductManager({
     }
   };
 
+  const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
+
+  const handleDeleteCategory = async (catId: string, catName: string) => {
+    if (!confirm(`Tem certeza que deseja excluir a categoria "${catName}"?`)) return;
+    setDeletingCatId(catId);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: catId }),
+      });
+      if (res.ok) {
+        setDynCategories(prev => prev.filter(c => c.id !== catId));
+        if (category === catName) {
+          const nextCat = dynCategories.find(c => c.id !== catId)?.name || "";
+          setCategory(nextCat);
+        }
+        showToast(`🗑️ Categoria "${catName}" excluída!`);
+      } else {
+        showToast("Erro ao excluir categoria", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao excluir categoria", "#EF4444");
+    } finally {
+      setDeletingCatId(null);
+    }
+  };
+
   // Modal de confirmação customizado
   const [confirmModal, setConfirmModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -584,9 +612,11 @@ export default function MenuProductManager({
                   <span>Categoria</span>
                   <button
                     type="button"
-                    onClick={() => setShowNewCat(true)}
+                    onClick={() => setShowNewCat(prev => !prev)}
                     style={{ fontSize: "0.72rem", color: "#E8360C", background: "none", border: "none", cursor: "pointer", fontWeight: 700, padding: 0 }}
-                  >+ Nova categoria</button>
+                  >
+                    {showNewCat ? "✕ Fechar Gerenciador" : "⚙️ Gerenciar / Nova Categoria"}
+                  </button>
                 </label>
                 {dynCategories.length === 0 ? (
                   <div style={{ padding: "10px 12px", background: "#FFF5F3", border: "1.5px dashed #FCA5A5", borderRadius: 10, fontSize: "0.8rem", color: "#DC2626" }}>
@@ -600,45 +630,103 @@ export default function MenuProductManager({
                   </select>
                 )}
 
-                {/* Mini-modal nova categoria */}
+                {/* PAINEL DE GERENCIAMENTO DE CATEGORIAS (INCLUIR & EXCLUIR) */}
                 {(showNewCat || dynCategories.length === 0) && (
-                  <div style={{ marginTop: 10, padding: "14px", background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                    <p style={{ margin: 0, fontWeight: 700, fontSize: "0.85rem", color: "#0F172A" }}>Nova Categoria</p>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <input
-                        placeholder="Emoji (ex: 🍟)"
-                        value={newCatEmoji}
-                        onChange={e => setNewCatEmoji(e.target.value)}
-                        style={{ width: 70, padding: "8px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "1rem", textAlign: "center" }}
-                      />
-                      <input
-                        placeholder="Nome da categoria"
-                        value={newCatName}
-                        onChange={e => setNewCatName(e.target.value)}
-                        style={{ flex: 1, padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "0.88rem" }}
-                      />
-                      <input
-                        type="color"
-                        value={newCatColor}
-                        onChange={e => setNewCatColor(e.target.value)}
-                        title="Cor da categoria"
-                        style={{ width: 40, height: 38, border: "1.5px solid #E2E8F0", borderRadius: 8, cursor: "pointer", padding: 2 }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        type="button"
-                        onClick={handleCreateCategory}
-                        disabled={newCatSaving || !newCatName.trim()}
-                        style={{ flex: 1, padding: "9px", background: "#16A34A", color: "#fff", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: newCatSaving || !newCatName.trim() ? "not-allowed" : "pointer", opacity: newCatSaving || !newCatName.trim() ? 0.6 : 1 }}
-                      >{newCatSaving ? "Salvando..." : "✓ Criar"}</button>
+                  <div style={{
+                    marginTop: 10, padding: "14px", background: "#F8FAFC",
+                    border: "1.5px solid #E2E8F0", borderRadius: 14,
+                    display: "flex", flexDirection: "column", gap: 12
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <p style={{ margin: 0, fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
+                        📁 Gerenciar Categorias
+                      </p>
                       {dynCategories.length > 0 && (
                         <button
                           type="button"
                           onClick={() => { setShowNewCat(false); setNewCatName(""); }}
-                          style={{ padding: "9px 16px", background: "#F1F5F9", color: "#64748B", border: "none", borderRadius: 9, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
-                        >Cancelar</button>
+                          style={{ fontSize: "0.75rem", color: "#64748B", background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}
+                        >
+                          ✕ Fechar
+                        </button>
                       )}
+                    </div>
+
+                    {/* FORM PARA CRIAR NOVA CATEGORIA */}
+                    <div style={{ background: "#FFF", padding: "10px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                      <p style={{ margin: "0 0 6px", fontSize: "0.75rem", fontWeight: 700, color: "#475569" }}>+ Adicionar Nova Categoria</p>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                        <input
+                          placeholder="Emoji (ex: 🍟)"
+                          value={newCatEmoji}
+                          onChange={e => setNewCatEmoji(e.target.value)}
+                          style={{ width: 65, padding: "8px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "1rem", textAlign: "center" }}
+                        />
+                        <input
+                          placeholder="Nome da categoria"
+                          value={newCatName}
+                          onChange={e => setNewCatName(e.target.value)}
+                          style={{ flex: 1, padding: "8px 12px", border: "1.5px solid #E2E8F0", borderRadius: 8, fontSize: "0.88rem" }}
+                        />
+                        <input
+                          type="color"
+                          value={newCatColor}
+                          onChange={e => setNewCatColor(e.target.value)}
+                          title="Cor da categoria"
+                          style={{ width: 40, height: 38, border: "1.5px solid #E2E8F0", borderRadius: 8, cursor: "pointer", padding: 2 }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCreateCategory}
+                        disabled={newCatSaving || !newCatName.trim()}
+                        style={{
+                          width: "100%", padding: "8px", background: "#16A34A", color: "#fff",
+                          border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.82rem",
+                          cursor: newCatSaving || !newCatName.trim() ? "not-allowed" : "pointer",
+                          opacity: newCatSaving || !newCatName.trim() ? 0.6 : 1
+                        }}
+                      >
+                        {newCatSaving ? "Criando..." : "✓ Adicionar Categoria"}
+                      </button>
+                    </div>
+
+                    {/* LISTA DE CATEGORIAS EXISTENTES COM OPÇÃO DE EXCLUIR */}
+                    <div>
+                      <p style={{ margin: "0 0 6px", fontSize: "0.78rem", fontWeight: 700, color: "#475569" }}>
+                        Categorias Atuais ({dynCategories.length}):
+                      </p>
+                      <div style={{ maxHeight: "150px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {dynCategories.map(c => (
+                          <div
+                            key={c.id}
+                            style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between",
+                              padding: "6px 10px", background: "#FFF", borderRadius: "8px",
+                              border: "1px solid #E2E8F0", fontSize: "0.82rem"
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span style={{ fontSize: "1rem" }}>{c.emoji}</span>
+                              <span style={{ width: 10, height: 10, borderRadius: "50%", background: c.color || "#64748B" }}></span>
+                              <span style={{ fontWeight: 700, color: "#1E293B" }}>{c.name}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(c.id, c.name)}
+                              disabled={deletingCatId === c.id}
+                              style={{
+                                border: "none", background: "#FEF2F2", color: "#DC2626",
+                                borderRadius: "6px", padding: "4px 8px", cursor: "pointer",
+                                fontSize: "0.75rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px"
+                              }}
+                              title={`Excluir categoria ${c.name}`}
+                            >
+                              <Trash2 size={13} /> {deletingCatId === c.id ? "Excluindo..." : "Excluir"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
