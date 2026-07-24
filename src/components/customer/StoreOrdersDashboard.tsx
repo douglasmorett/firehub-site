@@ -1182,28 +1182,42 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
               )}
 
-              {/* Line 4: Total + Payment + Change (Sempre na mesma reta) */}
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden" }}>
-                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#1F2937", flexShrink: 0 }}>
-                  R$ {order.totalAmount.toFixed(2).replace('.', ',')}
-                </span>
-                <span style={{ color: "#9CA3AF", flexShrink: 0 }}>—</span>
-                <span
-                  style={{
-                    fontWeight: 600,
-                    fontSize: "0.82rem",
-                    color: "#374151",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-                >
-                  {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-                </span>
+              {/* Line 4: Total + Payment + Change */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#1F2937", flexShrink: 0 }}>
+                    R$ {order.totalAmount.toFixed(2).replace('.', ',')}
+                  </span>
+                  <span style={{ color: "#9CA3AF", flexShrink: 0 }}>—</span>
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "0.82rem",
+                      color: "#374151",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+                  >
+                    {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+                  </span>
+                </div>
                 {order.changeAmount != null && order.changeAmount > 0 && (
-                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#92400E", background: "#FEF3C7", padding: "1px 6px", borderRadius: "4px", flexShrink: 0 }}>
-                    💵 Troco p/ R$ {Number(order.changeAmount).toFixed(0)}
+                  <span style={{
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
+                    color: "#92400E",
+                    background: "#FEF3C7",
+                    border: "1px solid #FCD34D",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    whiteSpace: "nowrap",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "2px"
+                  }}>
+                    💵 Troco p/ R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
                   </span>
                 )}
               </div>
