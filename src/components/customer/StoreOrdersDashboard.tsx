@@ -1138,143 +1138,145 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       >
         {/* ─── COLLAPSED VIEW: All essential info always visible ─── */}
         <div style={{ padding: "0.6rem 0.75rem" }}>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
+          {/* Header Row com Checkbox, Drag Handle, Nome e Badge do Canal */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
             <input
               type="checkbox"
               checked={selectedOrderIds.has(order.id)}
               onChange={(e) => { e.stopPropagation(); toggleSelectOrder(order.id); }}
-              style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#3B82F6", alignSelf: "flex-start", marginTop: "2px" }}
+              style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#3B82F6", flexShrink: 0 }}
               title="Selecionar pedido"
             />
             {canDrag && (
-              <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0, alignSelf: "flex-start", paddingTop: "2px" }} onClick={e => e.stopPropagation()}>
+              <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                 <GripVertical size={14} />
               </div>
             )}
-            <div style={{ flex: 1, minWidth: 0, fontSize: "0.8rem", lineHeight: "1.35" }}>
-              {/* Line 1: #{seqNum} - Name  |  Source badge + Ref */}
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "6px", marginBottom: "3px" }}>
-                <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "#1F2937", minWidth: 0, flex: 1, lineHeight: 1.3, wordBreak: "break-word" }}>
-                  #{seqNum} — {order.customerName}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
-                  <span style={{ padding: "1px 7px", borderRadius: "8px", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.02em",
-                    background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#ECFDF5",
-                    color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#059669"
-                  }}>
-                    {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
-                  </span>
-                  {(order.ifoodReference || order.openDeliveryReference) && (
-                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#4F46E5" }}>
-                      #{order.ifoodReference || order.openDeliveryReference}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Line 2: Phone  |  Date + time since */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", color: "#6B7280", marginBottom: "3px" }}>
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }}>
-                  📞 {order.customerPhone || "—"}
+            <div style={{ fontWeight: 800, fontSize: "0.96rem", color: "#0F172A", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.2px" }}>
+              #{seqNum} — {order.customerName}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+              <span style={{
+                padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
+                background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
+                color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
+              }}>
+                {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
+              </span>
+              {(order.ifoodReference || order.openDeliveryReference) && (
+                <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#4F46E5" }}>
+                  #{order.ifoodReference || order.openDeliveryReference}
                 </span>
-                <span style={{ flexShrink: 0, fontSize: "0.72rem" }}>
-                  {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                  {" · "}
-                  <span style={{ fontWeight: isLate || isUrgent ? 700 : 500, color: timerColor }}>
-                    {timerLabel}
-                  </span>
+              )}
+            </div>
+          </div>
+
+          {/* Conteúdo Principal — Ocupa 100% da largura total do card sem recuo */}
+          <div style={{ fontSize: "0.82rem", lineHeight: "1.4" }}>
+            {/* Telefone / ID  |  Data + Horário */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", color: "#64748B", fontSize: "0.75rem", marginBottom: "4px" }}>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1, fontWeight: 500 }}>
+                📞 {order.customerPhone || "—"}
+              </span>
+              <span style={{ flexShrink: 0, fontSize: "0.74rem", fontWeight: 600, color: "#475569" }}>
+                🕒 {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                <span style={{ margin: "0 4px", color: "#CBD5E1" }}>|</span>
+                <span style={{ fontWeight: isLate || isUrgent ? 800 : 700, color: timerColor }}>
+                  {timerLabel}
+                </span>
+              </span>
+            </div>
+
+            {/* Destaque MOTOBOY IFOOD (Entrega Parceira iFood) */}
+            {isIfoodMotoboy(order) && (
+              <div style={{ margin: "4px 0 6px", display: "flex", alignItems: "center" }}>
+                <span style={{
+                  background: "linear-gradient(135deg, #EF4444, #DC2626)",
+                  color: "#FFFFFF",
+                  padding: "4px 10px",
+                  borderRadius: "8px",
+                  fontWeight: 900,
+                  fontSize: "0.78rem",
+                  letterSpacing: "0.02em",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: "0 2px 6px rgba(239, 68, 68, 0.4)",
+                  border: "1px solid #B91C1C"
+                }}>
+                  🛵 MOTOBOY IFOOD (ENTREGADOR IFOOD)
                 </span>
               </div>
+            )}
 
-              {/* Destaque MOTOBOY IFOOD (Entrega Parceira iFood) */}
-              {isIfoodMotoboy(order) && (
-                <div style={{ margin: "4px 0 6px", display: "flex", alignItems: "center" }}>
-                  <span style={{
-                    background: "linear-gradient(135deg, #EF4444, #DC2626)",
-                    color: "#FFFFFF",
-                    padding: "4px 10px",
-                    borderRadius: "8px",
-                    fontWeight: 900,
-                    fontSize: "0.8rem",
-                    letterSpacing: "0.02em",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    boxShadow: "0 2px 6px rgba(239, 68, 68, 0.4)",
-                    border: "1px solid #B91C1C"
-                  }}>
-                    🛵 MOTOBOY IFOOD (ENTREGADOR IFOOD)
-                  </span>
-                </div>
-              )}
+            {/* Extra Badges (Pronto Cozinha) */}
+            {order.kdsStage === "FINISHED" && (
+              <div style={{ marginBottom: "4px" }}>
+                <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block" }}>
+                  ✅ Pronto Cozinha
+                </span>
+              </div>
+            )}
 
-              {/* Line 3: Extra Badges (Pronto Cozinha exibe APENAS após dar baixa na tela de Finalização) */}
-              {order.kdsStage === "FINISHED" && (
-                <div style={{ marginBottom: "4px" }}>
-                  <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block" }}>
-                    ✅ Pronto Cozinha
-                  </span>
-                </div>
-              )}
+            {/* Endereço Completo em caixa destacada com 100% de largura */}
+            {order.customerAddress && (
+              <div style={{
+                color: "#065F46", fontWeight: 600, fontSize: "0.8rem",
+                background: "#ECFDF5", border: "1px solid #A7F3D0",
+                padding: "5px 10px", borderRadius: "8px", margin: "5px 0",
+                lineHeight: "1.35", wordBreak: "break-word"
+              }}>
+                📍 {cleanAddress(order.customerAddress)}
+              </div>
+            )}
+            {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
+              <div style={{
+                color: "#92400E", fontWeight: 700, fontSize: "0.8rem",
+                background: "#FEF3C7", border: "1px solid #FCD34D",
+                padding: "5px 10px", borderRadius: "8px", margin: "5px 0"
+              }}>
+                🏪 Retirada no local
+              </div>
+            )}
 
-              {/* Line 3: Address (full, highlighted) */}
-              {order.customerAddress && (
-                <div style={{
-                  color: "#065F46", fontWeight: 500, fontSize: "0.78rem",
-                  background: "#ECFDF5", padding: "4px 8px", borderRadius: "5px", margin: "4px 0",
-                  wordBreak: "break-word"
-                }}>
-                  📍 {cleanAddress(order.customerAddress)}
-                </div>
-              )}
-              {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
-                <div style={{
-                  color: "#92400E", fontWeight: 600, fontSize: "0.78rem",
-                  background: "#FEF3C7", padding: "4px 8px", borderRadius: "5px", margin: "4px 0"
-                }}>
-                  🏪 Retirada no local
-                </div>
-              )}
-
-              {/* Line 4: Total + Payment + Change */}
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                  <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#1F2937", flexShrink: 0 }}>
-                    R$ {order.totalAmount.toFixed(2).replace('.', ',')}
-                  </span>
-                  <span style={{ color: "#9CA3AF", flexShrink: 0 }}>—</span>
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      fontSize: "0.82rem",
-                      color: "#374151",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                    title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-                  >
-                    {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-                  </span>
-                </div>
-                {order.changeAmount != null && order.changeAmount > 0 && (
-                  <span style={{
-                    fontSize: "0.72rem",
-                    fontWeight: 700,
-                    color: "#92400E",
-                    background: "#FEF3C7",
-                    border: "1px solid #FCD34D",
-                    padding: "2px 6px",
-                    borderRadius: "4px",
+            {/* Total + Forma de Pagamento + Troco */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", flexShrink: 0 }}>
+                  R$ {order.totalAmount.toFixed(2).replace('.', ',')}
+                </span>
+                <span style={{ color: "#CBD5E1", flexShrink: 0 }}>—</span>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "0.82rem",
+                    color: "#475569",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "2px"
-                  }}>
-                    💵 Troco p/ R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
-                  </span>
-                )}
+                  }}
+                  title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+                >
+                  {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+                </span>
               </div>
+              {order.changeAmount != null && order.changeAmount > 0 && (
+                <span style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  color: "#92400E",
+                  background: "#FEF3C7",
+                  border: "1px solid #FCD34D",
+                  padding: "2px 8px",
+                  borderRadius: "6px",
+                  whiteSpace: "nowrap",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}>
+                  💵 Troco p/ R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
+                </span>
+              )}
             </div>
           </div>
 
