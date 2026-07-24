@@ -392,10 +392,15 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
       // 🖨️ AUTO-PRINT: Enfileira na Fila de Impressão na Nuvem para impressão automática imediata!
       try {
+        const startOfTodayBrazil = new Date(new Date().toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo" }) + "T00:00:00-03:00");
+        const countToday = await prisma.customerOrder.count({
+          where: { franchiseeId: franchisee.id, createdAt: { gte: startOfTodayBrazil } }
+        });
+
         const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
         const formattedForPrint = {
           id: createdOrder.id,
-          dailyOrderNumber: createdOrder.ifoodReference || createdOrder.id.slice(-4),
+          dailyOrderNumber: countToday,
           customerName: createdOrder.customerName,
           customerPhone: createdOrder.customerPhone,
           customerAddress: createdOrder.customerAddress,

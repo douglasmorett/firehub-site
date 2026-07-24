@@ -307,7 +307,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, []);
 
   const handlePrint = async (order: any, type: "cozinha" | "completo") => {
-    const seqNum = orderNumberMap.get(order.id) ?? (order.dailyOrderNumber || "—");
+    const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
 
     // 1. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
     try {
@@ -1000,8 +1000,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
   const sortByOrderNumberAsc = (a: any, b: any) => {
-    const numA = orderNumberMap.get(a.id) ?? 0;
-    const numB = orderNumberMap.get(b.id) ?? 0;
+    const numA = a.dailyOrderNumber ?? orderNumberMap.get(a.id) ?? 0;
+    const numB = b.dailyOrderNumber ?? orderNumberMap.get(b.id) ?? 0;
     if (numA !== numB) return numA - numB;
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   };
@@ -1032,7 +1032,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const isDragging = draggedOrderId === order.id;
     const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
     const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
-    const seqNum = orderNumberMap.get(order.id) ?? "—";
+    const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
 
     // Delivery deadline countdown (scheduledDatetime stores the delivery deadline for iFood orders)
     const isFinished = order.status === "ENTREGUE" || order.status === "CANCELADO" || order.status === "ENCERRADO";
@@ -1924,7 +1924,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
         const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
         const isDelivery = order.deliveryType === "DELIVERY";
-        const seqNum = orderNumberMap.get(order.id) ?? "—";
+        const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
         const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
 
         return (
