@@ -84,6 +84,34 @@ export default function MenuProductManager({
   };
 
   const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
+  const [imageMode, setImageMode] = useState<"file" | "url">("file");
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("A imagem selecionada é muito grande (máximo 5MB).");
+      return;
+    }
+
+    setUploadingImage(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        setImageUrl(result);
+        showToast("📷 Foto carregada do dispositivo!");
+      }
+      setUploadingImage(false);
+    };
+    reader.onerror = () => {
+      alert("Erro ao ler o arquivo de imagem.");
+      setUploadingImage(false);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleDeleteCategory = async (catId: string, catName: string) => {
     if (!confirm(`Tem certeza que deseja excluir a categoria "${catName}"?`)) return;
@@ -756,15 +784,97 @@ export default function MenuProductManager({
                 )}
               </div>
 
-              {/* URL DA IMAGEM */}
+              {/* DUAL OPTION FOTO DO PRODUTO (ARQUIVO DO DISPOSITIVO OU URL) */}
               <div className="input-group" style={{ gridColumn: "span 2" }}>
-                <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>URL da Imagem / Foto do Produto</label>
-                <input
-                  className="input-field"
-                  placeholder="https://imagens.jotaja.com/produtos/..."
-                  value={imageUrl}
-                  onChange={e => setImageUrl(e.target.value)}
-                />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>
+                    🖼️ Foto do Produto
+                  </label>
+
+                  {/* Seletor de Modo: Arquivo ou URL */}
+                  <div style={{ display: "flex", gap: "4px", background: "#F1F5F9", padding: "2px", borderRadius: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setImageMode("file")}
+                      style={{
+                        padding: "3px 10px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700,
+                        border: "none", background: imageMode === "file" ? "#FFF" : "transparent",
+                        color: imageMode === "file" ? "#0F172A" : "#64748B", cursor: "pointer",
+                        boxShadow: imageMode === "file" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                      }}
+                    >
+                      📁 Arquivo do Dispositivo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageMode("url")}
+                      style={{
+                        padding: "3px 10px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700,
+                        border: "none", background: imageMode === "url" ? "#FFF" : "transparent",
+                        color: imageMode === "url" ? "#0F172A" : "#64748B", cursor: "pointer",
+                        boxShadow: imageMode === "url" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                      }}
+                    >
+                      🔗 Link / URL Externa
+                    </button>
+                  </div>
+                </div>
+
+                {imageMode === "file" ? (
+                  <div style={{
+                    border: "2px dashed #CBD5E1", borderRadius: "14px", padding: "1.25rem 1rem",
+                    background: "#F8FAFC", textAlign: "center", display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center", gap: "8px"
+                  }}>
+                    <input
+                      type="file"
+                      id="product-image-file-input"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      style={{ display: "none" }}
+                    />
+                    <label
+                      htmlFor="product-image-file-input"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: "8px",
+                        padding: "10px 20px", background: "#0F172A", color: "#FFF",
+                        borderRadius: "10px", fontWeight: 700, fontSize: "0.85rem",
+                        cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.15)"
+                      }}
+                    >
+                      📷 Escolher foto do Computador ou Celular
+                    </label>
+                    <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748B" }}>
+                      Suporta PNG, JPG, WEBP até 5MB. A prévia aparecerá imediatamente acima.
+                    </p>
+
+                    {imageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setImageUrl("")}
+                        style={{
+                          fontSize: "0.72rem", color: "#DC2626", background: "#FEF2F2",
+                          border: "1px solid #FCA5A5", borderRadius: "6px", padding: "2px 8px",
+                          fontWeight: 700, cursor: "pointer", marginTop: "4px"
+                        }}
+                      >
+                        🗑️ Remover foto atual
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      className="input-field"
+                      placeholder="Cole o link da foto (ex: https://imagens.jotaja.com/produtos/...)"
+                      value={imageUrl}
+                      onChange={e => setImageUrl(e.target.value)}
+                    />
+                    <p style={{ margin: "4px 0 0", fontSize: "0.72rem", color: "#64748B" }}>
+                      Cole o link direto da foto do produto na internet.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* DESCRIÇÃO */}
