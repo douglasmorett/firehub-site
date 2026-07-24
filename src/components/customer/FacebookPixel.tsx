@@ -1,7 +1,7 @@
 "use client";
 /**
  * FireHub — Facebook Pixel automático por loja
- * Injeta o pixel do Meta/Facebook no cardápio de cada franqueado
+ * Injeta o pixel do Meta/Facebook no cardápio de cada lojista
  * O pixelId é configurado em Minha Loja → Integrações
  */
 import { useEffect } from "react";

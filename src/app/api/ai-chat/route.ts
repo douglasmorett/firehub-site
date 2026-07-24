@@ -74,7 +74,7 @@ DATA ATUAL: ${today.toLocaleDateString("pt-BR")} ${today.toLocaleTimeString("pt-
 ADMINISTRADOR: ${session.user?.name} (${session.user?.email})
 
 ═══ RESUMO EXECUTIVO ═══
-• Franqueados cadastrados: ${franchisees.length}
+• Lojistas cadastrados: ${franchisees.length}
 • Funcionários (equipe): ${staff.length}
 • Produtos no catálogo: ${products.length} (${products.filter(p => p.active).length} ativos)
 • Total de pedidos: ${orders.length}
@@ -85,7 +85,7 @@ ADMINISTRADOR: ${session.user?.name} (${session.user?.email})
 • Contas a pagar pendentes: ${pendingPayables.length} (R$ ${pendingPayables.reduce((a, p) => a + p.value, 0).toFixed(2)})
 • Contas já pagas: ${paidPayables.length} (R$ ${paidPayables.reduce((a, p) => a + p.value, 0).toFixed(2)})
 
-═══ FRANQUEADOS ═══
+═══ LOJISTAS ═══
 ${franchisees.map(f => `• ${f.name} (${f.email}) — Cidade: ${f.city || "N/I"} — Desde: ${new Date(f.createdAt).toLocaleDateString("pt-BR")}`).join("\n")}
 
 ═══ EQUIPE / FUNCIONÁRIOS ═══

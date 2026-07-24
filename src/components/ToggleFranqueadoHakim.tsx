@@ -52,7 +52,7 @@ export default function ToggleFranqueadoHakim({ userId, initialValue }: { userId
         fontSize: "0.82rem", fontWeight: checked ? 700 : 500,
         color: checked ? "#C62828" : "#64748B"
       }} onClick={handleToggle}>
-        Franqueado Hakim
+        Lojista Hakim
       </span>
       {checked && (
         <span style={{ fontSize: "0.65rem", background: "#C62828", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>

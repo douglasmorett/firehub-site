@@ -20,9 +20,9 @@ export default function FranchiseeForm({ availableCities }: { availableCities: s
     try {
       await createFranchisee(formData);
       setFormData({ name: "", email: "", city: availableCities.length > 0 ? availableCities[0] : "", password: "", cpfCnpj: "" });
-      alert("Franqueado cadastrado com sucesso!");
+      alert("Lojista cadastrado com sucesso!");
     } catch (err) {
-      alert("Erro ao cadastrar franqueado");
+      alert("Erro ao cadastrar lojista");
     } finally {
       setLoading(false);
     }
@@ -30,7 +30,7 @@ export default function FranchiseeForm({ availableCities }: { availableCities: s
 
   return (
     <form onSubmit={handleSubmit} className="card mb-8" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <h2 className="font-bold text-lg">Cadastrar Novo Franqueado</h2>
+      <h2 className="font-bold text-lg">Cadastrar Novo Lojista</h2>
       
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
         <div>
@@ -98,7 +98,7 @@ export default function FranchiseeForm({ availableCities }: { availableCities: s
       </div>
 
       <button type="submit" className="btn btn-primary" disabled={loading} style={{ alignSelf: "flex-start", marginTop: "0.5rem" }}>
-        {loading ? "Cadastrando..." : "Cadastrar Franqueado"}
+        {loading ? "Cadastrando..." : "Cadastrar Lojista"}
       </button>
     </form>
   );
@@ -108,12 +108,12 @@ export function DeleteFranchiseeButton({ id }: { id: string }) {
   const [loading, setLoading] = useState(false);
 
   const handleDelete = async () => {
-    if (!confirm("Tem certeza que deseja excluir este franqueado? O acesso dele será revogado.")) return;
+    if (!confirm("Tem certeza que deseja excluir este lojista? O acesso dele será revogado.")) return;
     setLoading(true);
     try {
       await deleteFranchisee(id);
     } catch (e) {
-      alert("Erro ao excluir franqueado. Ele pode ter pedidos atrelados.");
+      alert("Erro ao excluir lojista. Ele pode ter pedidos atrelados.");
     } finally {
       setLoading(false);
     }
@@ -169,7 +169,7 @@ export function ImpersonateButton({ id }: { id: string }) {
   const [loading, setLoading] = useState(false);
 
   const handleImpersonate = async () => {
-    if (!confirm("Isso fará você entrar na conta deste franqueado e ver o portal como ele. Você precisará relogar como Admin depois. Continuar?")) return;
+    if (!confirm("Isso fará você entrar na conta deste lojista e ver o portal como ele. Você precisará relogar como Admin depois. Continuar?")) return;
     setLoading(true);
     await signIn("credentials", {
       impersonateId: id,

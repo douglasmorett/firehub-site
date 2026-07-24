@@ -92,7 +92,7 @@ export default function DashboardClient({
 
       {/* Seção: A Receber (Asaas) */}
       <h2 style={{ fontSize: "1rem", fontWeight: "bold", marginBottom: "1rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        📊 Cobranças de Franqueados (Asaas) — {MONTHS[month - 1]} {year}
+        📊 Cobranças de Lojistas (Asaas) — {MONTHS[month - 1]} {year}
       </h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         <StatCard
@@ -114,7 +114,7 @@ export default function DashboardClient({
         <StatCard
           title="Cobranças Vencidas"
           value={formatCurrency(asaasData?.overdue?.value || 0)}
-          subtitle={`${asaasData?.overdue?.count || 0} franqueados inadimplentes`}
+          subtitle={`${asaasData?.overdue?.count || 0} lojistas inadimplentes`}
           icon={<AlertTriangle size={22} />}
           color="#ef4444"
           bg="rgba(239,68,68,0.1)"
@@ -127,7 +127,7 @@ export default function DashboardClient({
       </h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         <StatCard
-          title="Franqueados Ativos"
+          title="Lojistas Ativos"
           value={String(totalFranchisees)}
           subtitle="Cadastrados no sistema"
           icon={<Users size={22} />}
@@ -171,7 +171,7 @@ export default function DashboardClient({
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border-color)", textAlign: "left" }}>
-                <th style={{ padding: "0.5rem" }}>Franqueado</th>
+                <th style={{ padding: "0.5rem" }}>Lojista</th>
                 <th style={{ padding: "0.5rem" }}>Cidade</th>
                 <th style={{ padding: "0.5rem" }}>Valor</th>
                 <th style={{ padding: "0.5rem" }}>Data</th>

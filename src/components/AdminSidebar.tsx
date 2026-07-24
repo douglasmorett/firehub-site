@@ -76,7 +76,7 @@ export default async function AdminSidebar() {
           </div>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{session?.user?.name}</p>
           <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", opacity: 0.6 }}>
-            {role === "ADMIN" ? "Administrador" : isFranchisee ? "Franqueado" : "Equipe"}
+            {role === "ADMIN" ? "Administrador" : isFranchisee ? "Lojista" : "Equipe"}
           </p>
         </div>
 

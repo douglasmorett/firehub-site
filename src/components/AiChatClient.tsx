@@ -12,12 +12,12 @@ const SUGGESTIONS = [
   { icon: <BarChart3 size={16} />, text: "Relatório financeiro do mês" },
   { icon: <FileText size={16} />, text: "Resumo de todas as notas fiscais" },
   { icon: <DollarSign size={16} />, text: "Contas pendentes a vencer" },
-  { icon: <Users size={16} />, text: "Lista de franqueados e pedidos" },
+  { icon: <Users size={16} />, text: "Lista de lojistas e pedidos" },
 ];
 
 export default function AiChatClient() {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "ai", content: "Olá! Sou o **FireHub IA**, seu assistente administrativo inteligente. 🤖\n\nTenho acesso a todos os dados do sistema — pedidos, notas fiscais, contas a pagar, franqueados, produtos e muito mais.\n\nComo posso te ajudar?" }
+    { role: "ai", content: "Olá! Sou o **FireHub IA**, seu assistente administrativo inteligente. 🤖\n\nTenho acesso a todos os dados do sistema — pedidos, notas fiscais, contas a pagar, lojistas, produtos e muito mais.\n\nComo posso te ajudar?" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);

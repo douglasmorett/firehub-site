@@ -119,7 +119,7 @@ export default function ProductsClient({ products }: { products: any[] }) {
           }}
         >
           <ExternalLink size={18} />
-          Ver Site do Franqueado
+          Ver Site do Lojista
         </a>
       </div>
 
