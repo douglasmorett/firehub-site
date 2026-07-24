@@ -398,17 +398,15 @@ function buildEscPos(order, storeName, columns = 48) {
   const isExplicitOffline = /dinheiro|cobrar|maquininha|entrega/i.test(payMethodClean);
   const isOnlinePayment = /online|pix|pago|app/i.test(payMethodClean) || (order.source === "IFOOD" && !isExplicitOffline);
 
-  let baseMethodName = cleanAscii(order.paymentMethod || "Online")
+  let baseMethodName = cleanAscii(order.paymentMethod || "Credito")
     .replace(/\s*\([^)]*\)/gi, "")
     .trim();
+  if (!baseMethodName) baseMethodName = "Credito";
 
   const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online";
 
   if (isOnlinePayment) {
-    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " - Pago Online (Nao Cobrar)" + DOUBLE_OFF + LF;
-    res += divider;
-    res += "Dica de Seguranca: Nao aceite cobrancas extras na entrega. Seu pedido ja esta pago." + LF;
-    res += DOUBLE_HEIGHT + "[V] Pago via " + onlineSource + ", nao precisa cobrar na entrega" + DOUBLE_OFF + LF;
+    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " (Online) - Pago via " + onlineSource + " nao cobrar" + DOUBLE_OFF + LF;
   } else {
     res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + DOUBLE_OFF + LF;
     res += divider;
