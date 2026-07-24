@@ -497,19 +497,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               setOrders(newOrders);
 
               // 🖨️ AUTO-PRINT para qualquer fonte (iFood, JotaJá, Site, etc.)
-              // Imprime automaticamente qualquer pedido ACEITO nos últimos 10 minutos que ainda não foi impresso
+              // Imprime automaticamente qualquer pedido ativo criado nos últimos 10 minutos que ainda não foi impresso
               if (printerConfig?.autoprint !== false) {
                 const now = Date.now();
                 for (const order of newOrders) {
                   if (isAutoPrinted(order)) continue;
 
-                  const isAccepted = order.status !== "NOVO" && order.status !== "CANCELADO" && order.status !== "ENCERRADO";
+                  const isPrintable = order.status !== "CANCELADO" && order.status !== "ENCERRADO";
                   const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
                   const isRecent = (now - orderTime) < 10 * 60 * 1000; // Criado nos últimos 10 minutos
 
-                  if (isAccepted && isRecent) {
+                  if (isPrintable && isRecent) {
                     markAutoPrinted(order);
-                    console.log(`[AutoPrint] 🖨️ Pedido aceito recente: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id.slice(-4)}) [${order.source}] — imprimindo!`);
+                    console.log(`[AutoPrint] 🖨️ Pedido recente: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id.slice(-4)}) [${order.source}] — imprimindo!`);
                     try {
                       handlePrint(order, "cozinha");
                     } catch (printErr) {
