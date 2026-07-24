@@ -28,7 +28,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [storeName, setStoreName] = useState(user.storeName || "");
   const [storePhone, setStorePhone] = useState(user.storePhone || "");
   const [storeAddress, setStoreAddress] = useState(user.storeAddress || "");
-  const [city, setCity] = useState(user.city || "Rio de Janeiro - RJ");
+  const [city, setCity] = useState(user.city || "");
   const [storeTimezone, setStoreTimezone] = useState(user.storeTimezone || "America/Sao_Paulo");
   const [storeBanner, setStoreBanner] = useState(user.storeBanner || "");
   const [storeLogo, setStoreLogo] = useState(user.storeLogo || "");
