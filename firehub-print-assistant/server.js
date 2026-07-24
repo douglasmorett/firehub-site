@@ -366,8 +366,37 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   return unitPrice;
 }
 
+  const isBeverageName = (name) => {
+    if (!name) return false;
+    const bevRegex = /\b(bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|agua|guarana|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice)\b/i;
+    return bevRegex.test(cleanAscii(name));
+  };
+
+  const isBeverageItem = (item) => {
+    if (!item) return false;
+    if (item.isBeverage === true || item.isBeverage === "true") return true;
+    const cat = String(item.category || item.menuProduct?.category || "");
+    const name = String(item.name || item.menuProduct?.name || "");
+    return isBeverageName(cat) || isBeverageName(name);
+  };
+
+  const hasBeverages = (order.items || []).some(item => {
+    if (isBeverageItem(item)) return true;
+    if (item.comboSelections) {
+      try {
+        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+        if (Array.isArray(parsed) && parsed.some(s => isBeverageName(s.name))) return true;
+      } catch {}
+    }
+    return false;
+  });
+
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
+  if (hasBeverages) {
+    res += boxBorder;
+    res += DOUBLE_HEIGHT + makeBoxText("---> BEBIDA ---> PEGAR BEBIDA GELADEIRA!") + DOUBLE_OFF;
+  }
 
   if (order.items && order.items.length) {
     res += boxBorder;
@@ -378,7 +407,13 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
       const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
-      res += makeBoxLine(`${qty}x ${name}`, priceStr);
+      const isItemBev = isBeverageItem(item);
+      if (isItemBev) {
+        res += DOUBLE_HEIGHT + makeBoxText(`---> BEBIDA ---> ${qty}x ${name}`) + DOUBLE_OFF;
+        res += rightAlign("   Valor item:", priceStr);
+      } else {
+        res += makeBoxLine(`${qty}x ${name}`, priceStr);
+      }
 
       const comboSels = (() => {
         if (!item.comboSelections) return [];
@@ -393,7 +428,12 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
         comboSels.forEach((sel) => {
           const totalQty = (sel.quantity || 1) * qty;
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
-          res += makeBoxText(`  - ${qPrefix}${sel.name}`);
+          const isSelBev = isBeverageName(sel.name);
+          if (isSelBev) {
+            res += DOUBLE_HEIGHT + makeBoxText(`---> BEBIDA ---> - ${qPrefix}${sel.name}`) + DOUBLE_OFF;
+          } else {
+            res += makeBoxText(`  - ${qPrefix}${sel.name}`);
+          }
         });
       }
 

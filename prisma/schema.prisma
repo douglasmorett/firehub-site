@@ -198,6 +198,7 @@ model MenuProduct {
   category        String              @default("Lanches")
   active          Boolean             @default(true)
   isCombo         Boolean             @default(false)
+  isBeverage      Boolean             @default(false)  // Marcar item como Bebida para destaque com seta ---> BEBIDA na comanda
   comboConfig     Json?
   // Canais de venda
   activePDV       Boolean             @default(true)   // Disponível no PDV (atendente)
