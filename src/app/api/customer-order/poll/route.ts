@@ -181,6 +181,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
             }
 
             // Extract items
+            const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
             const items = (orderData.items ?? []).map((i: any) => {
               const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
               const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
@@ -191,8 +192,10 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   })).filter((s: any) => s.name))
                 : null;
 
+              const itemUnitPrice = getIfoodItemUnitPrice(i);
+
               return {
-                price: i.unitPrice ?? i.price ?? 0,
+                price: itemUnitPrice,
                 quantity: i.quantity ?? 1,
                 comboSelections: comboSels,
                 menuProduct: {
@@ -203,7 +206,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                       franchiseeId: eventFranchisee.id,
                       name: i.name ?? "Item iFood",
                       description: "",
-                      price: i.unitPrice ?? i.price ?? 0,
+                      price: itemUnitPrice,
                       category: "iFood",
                       active: true,
                     } as any,
@@ -512,11 +515,11 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true }
+    select: { id: true }
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const targetFranchiseeId = user.ownerId || user.id;
+  const targetFranchiseeId = (user as any).ownerId || user.id;
 
   try {
     await Promise.allSettled([
@@ -536,6 +539,41 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: "desc" },
     take: 200
   });
+
+  // Auto-repair zero-price items in existing orders
+  for (const o of orders) {
+    const zeroItems = (o.items || []).filter((it: any) => !it.price || it.price === 0);
+    if (zeroItems.length > 0 && o.totalAmount > 0) {
+      const otherItemsSum = (o.items || []).reduce((sum: number, it: any) => sum + (it.price || 0) * (it.quantity || 1), 0);
+      const expectedSubtotal = o.totalAmount - (o.deliveryFee || 0) + (o.discountTotal || 0);
+      const diff = expectedSubtotal - otherItemsSum;
+
+      for (const zeroIt of zeroItems) {
+        let repairedPrice = 0;
+        if (zeroIt.comboSelections) {
+          try {
+            const parsed = typeof zeroIt.comboSelections === "string" ? JSON.parse(zeroIt.comboSelections) : zeroIt.comboSelections;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+              if (comboSum > 0) repairedPrice = comboSum;
+            }
+          } catch {}
+        }
+
+        if (repairedPrice === 0 && zeroItems.length === 1 && diff > 0 && (zeroIt.quantity || 1) > 0) {
+          repairedPrice = diff / (zeroIt.quantity || 1);
+        }
+
+        if (repairedPrice > 0) {
+          zeroIt.price = repairedPrice;
+          prisma.customerOrderItem.update({
+            where: { id: zeroIt.id },
+            data: { price: repairedPrice }
+          }).catch(err => console.error("[AutoRepair Item Price]", err));
+        }
+      }
+    }
+  }
 
   const now = new Date();
   const yearStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });

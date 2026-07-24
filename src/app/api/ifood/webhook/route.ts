@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 
 // Valida assinatura HMAC do iFood (segurança)
 function validateIfoodSignature(body: string, signature: string | null): boolean {
@@ -226,12 +227,14 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
         ? JSON.stringify(subItemsList.map((s: any) => ({
             name: s.name || s.label || s.productName || "",
             quantity: s.quantity || 1,
-            price: s.price || s.addition || 0,
+            price: s.price || s.unitPrice || s.addition || 0,
           })))
         : null;
 
+      const itemUnitPrice = getIfoodItemUnitPrice(i);
+
       return {
-        price: i.unitPrice ?? i.price ?? 0,
+        price: itemUnitPrice,
         quantity: i.quantity ?? 1,
         comboSelections: comboSels,
         menuProduct: {
@@ -242,7 +245,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
               franchiseeId: franchisee.id,
               name:         i.name ?? i.description ?? "Item iFood",
               description:  "",
-              price:        i.unitPrice ?? i.price ?? 0,
+              price:        itemUnitPrice,
               category:     "iFood",
               active:       true,
             } as any,
@@ -422,7 +425,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           items: (orderData.items || []).map((i: any) => ({
             name: i.name || i.description || "Item",
             qty: i.quantity || 1,
-            price: i.unitPrice || i.price || 0,
+            price: getIfoodItemUnitPrice(i),
             comboSelections: i.options ? JSON.stringify(i.options) : null,
           })),
           totalAmount: createdOrder.totalAmount,

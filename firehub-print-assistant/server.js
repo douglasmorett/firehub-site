@@ -332,6 +332,39 @@ function buildEscPos(order, storeName, columns = 48) {
     }
   }
 
+function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0, discountTotal = 0) {
+  let unitPrice = typeof item.price === "number" ? item.price : 0;
+  if (unitPrice > 0) return unitPrice;
+
+  if (item.comboSelections) {
+    try {
+      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const comboSum = parsed.reduce((acc, s) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+        if (comboSum > 0) return comboSum;
+      }
+    } catch {}
+  }
+
+  const otherItemsSum = (allItems || []).reduce((sum, it) => {
+    if (it === item || (it.id && item.id && it.id === item.id)) return sum;
+    const p = typeof it.price === "number" ? it.price : 0;
+    const q = it.qty || it.quantity || 1;
+    return sum + p * q;
+  }, 0);
+
+  const expectedSubtotal = (orderTotalAmount || 0) - (deliveryFee || 0) + (discountTotal || 0);
+  const diff = expectedSubtotal - otherItemsSum;
+  const zeroPriceItems = (allItems || []).filter(it => !it.price || it.price === 0);
+  const q = item.qty || item.quantity || 1;
+
+  if (zeroPriceItems.length === 1 && diff > 0 && q > 0) {
+    return diff / q;
+  }
+
+  return unitPrice;
+}
+
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
 
@@ -339,7 +372,8 @@ function buildEscPos(order, storeName, columns = 48) {
     res += boxBorder;
     order.items.forEach((item, idx) => {
       const qty = item.qty || item.quantity || 1;
-      const price = typeof item.price === "number" ? item.price * qty : 0;
+      const unitPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
+      const price = unitPrice * qty;
       const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
@@ -371,7 +405,7 @@ function buildEscPos(order, storeName, columns = 48) {
 
   // 5. TOTALS
   res += LF;
-  const subtotal = order.items?.reduce((sum, it) => sum + ((it.price || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
+  const subtotal = order.items?.reduce((sum, it) => sum + (getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
   res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
 
   if (order.discountIfood && Number(order.discountIfood) > 0) {

@@ -52,6 +52,35 @@ export const isIfoodMotoboy = (order: any): boolean => {
   return order.deliveryBy === "IFOOD";
 };
 
+const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount: number = 0, deliveryFee: number = 0, discountTotal: number = 0): number => {
+  if (item?.price && item.price > 0) return item.price;
+
+  if (item?.comboSelections) {
+    try {
+      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+        if (comboSum > 0) return comboSum;
+      }
+    } catch {}
+  }
+
+  const otherItemsSum = (allItems || []).reduce((sum: number, it: any) => {
+    if (it.id === item?.id) return sum;
+    return sum + (it.price || 0) * (it.quantity || 1);
+  }, 0);
+
+  const expectedSubtotal = (orderTotalAmount || 0) - (deliveryFee || 0) + (discountTotal || 0);
+  const diff = expectedSubtotal - otherItemsSum;
+  const zeroPriceItems = (allItems || []).filter(it => !it.price || it.price === 0);
+
+  if (zeroPriceItems.length === 1 && diff > 0 && (item?.quantity || 1) > 0) {
+    return diff / (item?.quantity || 1);
+  }
+
+  return item?.price || 0;
+};
+
 const getNeighborhoodOnly = (addr: string | null) => {
   if (!addr) return "";
   const cleaned = cleanAddress(addr);
@@ -1701,7 +1730,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F3F4F6" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span style={{ color: "#374151", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
-                      <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                      <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * item.quantity).toFixed(2)}</span>
                     </div>
                     {comboSels.length > 0 && (
                       <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
@@ -1955,7 +1984,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
         const isDelivery = order.deliveryType === "DELIVERY";
         const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
-        const subtotal = order.items?.reduce((sum: number, it: any) => sum + it.price * it.quantity, 0) || order.totalAmount;
+        const subtotal = order.items?.reduce((sum: number, it: any) => sum + getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * it.quantity, 0) || order.totalAmount;
 
         return (
           <div onClick={() => setViewReceiptOrderId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
@@ -2060,6 +2089,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     const mainName = nameParts[0];
                     const extras = nameParts.slice(1);
 
+                    const itemPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
+
                     return (
                       <div key={item.id} style={{
                         border: "1.5px solid #000",
@@ -2069,7 +2100,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", marginBottom: "4px" }}>
                           <span>Qtd: {item.quantity}x</span>
-                          <span>Valor: R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}</span>
+                          <span>Valor: R$ {(itemPrice * item.quantity).toFixed(2).replace('.', ',')}</span>
                         </div>
                         <div style={{ fontWeight: "bold" }}>{mainName}</div>
                         

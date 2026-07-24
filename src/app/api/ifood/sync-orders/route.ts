@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { getIfoodToken } from "@/lib/ifood-api";
+import { getIfoodToken, getIfoodItemUnitPrice } from "@/lib/ifood-api";
 import { parseIfoodPaymentInfo } from "@/app/api/ifood/webhook/route";
 
 /**
@@ -117,24 +117,38 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
   const orderData = await orderRes.json();
 
   // Extract items
-  const items = (orderData.items ?? []).map((i: any) => ({
-    price: i.unitPrice ?? i.price ?? 0,
-    quantity: i.quantity ?? 1,
-    menuProduct: {
-      connectOrCreate: {
-        where: { id: `ifood-${i.id}` } as any,
-        create: {
-          id: `ifood-${i.id}`,
-          franchiseeId: franchisee.id,
-          name: i.name ?? "Item iFood",
-          description: "",
-          price: i.unitPrice ?? i.price ?? 0,
-          category: "iFood",
-          active: true,
+  const items = (orderData.items ?? []).map((i: any) => {
+    const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
+    const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
+      ? JSON.stringify(subItemsList.map((s: any) => ({
+          name: s.name || s.label || s.productName || "",
+          quantity: s.quantity || 1,
+          price: s.price || s.unitPrice || s.addition || 0,
+        })))
+      : null;
+
+    const itemUnitPrice = getIfoodItemUnitPrice(i);
+
+    return {
+      price: itemUnitPrice,
+      quantity: i.quantity ?? 1,
+      comboSelections: comboSels,
+      menuProduct: {
+        connectOrCreate: {
+          where: { id: `ifood-${i.id}` } as any,
+          create: {
+            id: `ifood-${i.id}`,
+            franchiseeId: franchisee.id,
+            name: i.name ?? "Item iFood",
+            description: "",
+            price: itemUnitPrice,
+            category: "iFood",
+            active: true,
+          } as any,
         } as any,
-      } as any,
-    },
-  }));
+      },
+    };
+  });
 
   const total = typeof orderData.total === "object"
     ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)

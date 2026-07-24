@@ -155,3 +155,28 @@ export async function updateIfoodPreparationTime(merchantId: string, minutes: nu
     return { success: false, error: err?.message };
   }
 }
+
+/**
+ * Extrai e calcula o preço unitário real do item do iFood,
+ * levando em conta opções/sub-itens/complementos (ex: combo ou nugget com opção paga)
+ * e fallbacks como i.totalPrice / quantidade.
+ */
+export function getIfoodItemUnitPrice(i: any): number {
+  if (!i) return 0;
+  const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
+  const optionsSum = Array.isArray(subItemsList)
+    ? subItemsList.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0)
+    : 0;
+
+  const basePrice = typeof i.unitPrice === "number" ? i.unitPrice : (typeof i.price === "number" ? i.price : 0);
+  let totalUnitPrice = basePrice + optionsSum;
+
+  if (totalUnitPrice === 0 && typeof i.totalPrice === "number" && i.totalPrice > 0 && (i.quantity || 1) > 0) {
+    totalUnitPrice = i.totalPrice / (i.quantity || 1);
+  } else if (totalUnitPrice === 0 && typeof i.price === "number" && i.price > 0) {
+    totalUnitPrice = i.price;
+  }
+
+  return totalUnitPrice;
+}
+
