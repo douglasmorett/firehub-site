@@ -389,12 +389,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       };
 
       const result = await printOrder(formattedOrder as any, storeName, activeConfig);
-      if (result.success || result.attempted) {
+      if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
-        return; // Impresso diretamente via Assistente RAW — NÃO enviar para a fila na nuvem para não duplicar!
+        return; // Impresso diretamente via Assistente RAW
       }
 
-      // 2. Apenas se o assistente local estiver 100% offline (nenhum assistente local detectado), envia para a Fila de Impressão na nuvem
+      // 2. Se o assistente local não respondeu com sucesso, envia para a Fila de Impressão na nuvem
       const queueRes = await fetch("/api/store/print-queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -496,13 +496,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               if (printerConfig?.autoprint !== false) {
                 for (const order of newOrders) {
                   if (isAutoPrinted(order)) continue;
-
-                  // Pedidos do iFood são enfileirados e impressos pelo webhook do iFood no momento em que chegam (pushJobToPrintQueue).
-                  // Marcamos como impresso para não disparar uma 2ª via quando o iFood altera o status para ACEITO.
-                  if (order.source === "IFOOD") {
-                    markAutoPrinted(order);
-                    continue;
-                  }
 
                   const isNew = !knownOrderIdsRef.current.has(order.id);
                   const wasNovo = previousStatusRef.current.get(order.id) === "NOVO";
