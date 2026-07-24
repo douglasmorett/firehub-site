@@ -25,6 +25,17 @@ process.on("uncaughtException", (err) => {
 // Inicia o servidor HTTP local na porta 7891
 require("./server.js");
 
+// Iniciar automaticamente com o Windows ao ligar / reiniciar o PC
+try {
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    openAsHidden: false,
+    path: process.execPath,
+  });
+} catch (e) {
+  console.warn("[Main] Não foi possível registrar auto-inicialização com o Windows:", e);
+}
+
 let tray = null;
 let mainWindow = null;
 

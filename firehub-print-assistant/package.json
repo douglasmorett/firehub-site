@@ -31,7 +31,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "FireHub Assistente de Impressao",
       "artifactName": "FireHub-Assistente-Impressao-Setup.exe"
