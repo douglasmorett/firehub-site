@@ -163,6 +163,12 @@ export default function VendaPresencialPage() {
           display: none !important;
           pointer-events: none !important;
         }
+        button[data-btn="finalizar"], button[data-btn="finalizar"] * {
+          cursor: pointer !important;
+        }
+        button[data-btn="finalizar"] * {
+          pointer-events: none !important;
+        }
       `}</style>
 
       {/* ===== LEFT: CARDÁPIO ===== */}
@@ -355,9 +361,11 @@ export default function VendaPresencialPage() {
 
           {msg && <div style={{ padding: "6px 10px", borderRadius: 8, marginBottom: 6, background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✅") ? "#16a34a" : "#dc2626", fontSize: "0.8rem", fontWeight: 700 }}>{msg}</div>}
 
-          <button type="button" onClick={handleSubmit} disabled={loading || cart.length === 0}
-            style={{ width: "100%", padding: "13px", background: cart.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: cart.length === 0 ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: cart.length > 0 ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 9999 }}>
-            {loading ? "Registrando..." : <><Check size={20} /> Finalizar Pedido</>}
+          <button type="button" data-btn="finalizar" onClick={handleSubmit} disabled={loading || cart.length === 0}
+            style={{ width: "100%", padding: "14px", background: cart.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: cart.length === 0 ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: cart.length > 0 ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 9999 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
+              {loading ? "Registrando..." : <><Check size={20} style={{ pointerEvents: "none" }} /> Finalizar Pedido</>}
+            </span>
           </button>
         </div>
       </div>
