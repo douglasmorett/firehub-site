@@ -241,19 +241,24 @@ async function pollIfoodEvents(sessionUserId?: string) {
               ?? 0;
 
             // === Campos para homologação e sincronização de prazo iFood ===
-            const rawScheduled = orderData.delivery?.deliveryDateTime
+            const isExplicitlyScheduled = orderData.orderTiming === "SCHEDULED" || Boolean(orderData.schedule);
+
+            const rawScheduled = isExplicitlyScheduled
+              ? (orderData.schedule?.scheduledDatetimeEnd
+                ?? orderData.schedule?.scheduledDatetimeStart
+                ?? orderData.scheduledDatetime
+                ?? orderData.preparationStartDateTime)
+              : null;
+
+            const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
+
+            const rawDeadline = orderData.delivery?.deliveryDateTime
               ?? orderData.delivery?.estimatedDeliveryWindow?.end
               ?? orderData.delivery?.estimatedDeliveryWindow?.start
               ?? orderData.takeout?.takeoutDateTime
-              ?? orderData.takeout?.estimatedTakeoutWindow?.end
-              ?? orderData.schedule?.scheduledDatetimeEnd
-              ?? orderData.schedule?.scheduledDatetimeStart
-              ?? orderData.scheduledDatetime
-              ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
-                ? orderData.preparationStartDateTime : null);
+              ?? orderData.takeout?.estimatedTakeoutWindow?.end;
 
-            const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
-            const deliveryDeadline = scheduledDatetime;
+            const deliveryDeadline = scheduledDatetime ?? (rawDeadline ? new Date(rawDeadline) : null);
 
             const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 

@@ -218,9 +218,15 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
       ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)
       : (orderData.totalPrice ?? orderData.total ?? 0);
 
-    const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
-      ? new Date(orderData.scheduledDatetime)
+    const isExplicitlyScheduled = orderData.orderTiming === "SCHEDULED" || Boolean(orderData.schedule);
+    const rawScheduled = isExplicitlyScheduled
+      ? (orderData.schedule?.scheduledDatetimeEnd
+        ?? orderData.schedule?.scheduledDatetimeStart
+        ?? orderData.scheduledDatetime
+        ?? orderData.preparationStartDateTime)
       : null;
+
+    const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
 
     const { paymentMethod: parsedPaymentMethod, changeAmount } = parseIfoodPaymentInfo(orderData);
     const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber

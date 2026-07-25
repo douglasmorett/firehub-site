@@ -219,22 +219,27 @@ export async function GET(req: NextRequest) {
             ?? orderData.deliveryFee
             ?? 0;
 
-          const rawScheduled = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
-            ? orderData.scheduledDatetime
-            : orderData.schedule?.scheduledDatetimeEnd
+          const isExplicitlyScheduled = orderData.orderTiming === "SCHEDULED" || Boolean(orderData.schedule);
+          const rawScheduled = isExplicitlyScheduled
+            ? (orderData.schedule?.scheduledDatetimeEnd
               ?? orderData.schedule?.scheduledDatetimeStart
-              ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
-                ? orderData.preparationStartDateTime : null);
+              ?? orderData.scheduledDatetime
+              ?? orderData.preparationStartDateTime)
+            : null;
 
           const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
 
-          if (orderData.orderTiming === "SCHEDULED" || orderData.schedule) {
+          if (isExplicitlyScheduled) {
             log.push(`  📅 Scheduling: orderTiming=${orderData.orderTiming}, scheduledDatetime=${orderData.scheduledDatetime}, schedule=${JSON.stringify(orderData.schedule)}, resolved=${scheduledDatetime?.toISOString()}`);
           }
 
-          const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
-            ? new Date(orderData.delivery.deliveryDateTime)
-            : null;
+          const rawDeadline = orderData.delivery?.deliveryDateTime
+            ?? orderData.delivery?.estimatedDeliveryWindow?.end
+            ?? orderData.delivery?.estimatedDeliveryWindow?.start
+            ?? orderData.takeout?.takeoutDateTime
+            ?? orderData.takeout?.estimatedTakeoutWindow?.end;
+
+          const deliveryDeadline = scheduledDatetime ?? (rawDeadline ? new Date(rawDeadline) : null);
 
           const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 

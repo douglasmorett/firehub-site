@@ -263,10 +263,23 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
 
   const deliveryFeeValue = orderData.total?.deliveryFee ?? orderData.delivery?.deliveryFee ?? orderData.deliveryFee ?? 0;
 
-  const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
-    ? new Date(orderData.scheduledDatetime) : null;
-  const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
-    ? new Date(orderData.delivery.deliveryDateTime) : null;
+  const isExplicitlyScheduled = orderData.orderTiming === "SCHEDULED" || Boolean(orderData.schedule);
+  const rawScheduled = isExplicitlyScheduled
+    ? (orderData.schedule?.scheduledDatetimeEnd
+      ?? orderData.schedule?.scheduledDatetimeStart
+      ?? orderData.scheduledDatetime
+      ?? orderData.preparationStartDateTime)
+    : null;
+
+  const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
+
+  const rawDeadline = orderData.delivery?.deliveryDateTime
+    ?? orderData.delivery?.estimatedDeliveryWindow?.end
+    ?? orderData.delivery?.estimatedDeliveryWindow?.start
+    ?? orderData.takeout?.takeoutDateTime
+    ?? orderData.takeout?.estimatedTakeoutWindow?.end;
+
+  const deliveryDeadline = scheduledDatetime ?? (rawDeadline ? new Date(rawDeadline) : null);
 
   const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
   const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");

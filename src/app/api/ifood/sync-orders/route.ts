@@ -173,13 +173,23 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
     ?? orderData.deliveryFee
     ?? 0;
 
-  const scheduledDatetime = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
-    ? new Date(orderData.scheduledDatetime)
+  const isExplicitlyScheduled = orderData.orderTiming === "SCHEDULED" || Boolean(orderData.schedule);
+  const rawScheduled = isExplicitlyScheduled
+    ? (orderData.schedule?.scheduledDatetimeEnd
+      ?? orderData.schedule?.scheduledDatetimeStart
+      ?? orderData.scheduledDatetime
+      ?? orderData.preparationStartDateTime)
     : null;
 
-  const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
-    ? new Date(orderData.delivery.deliveryDateTime)
-    : null;
+  const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
+
+  const rawDeadline = orderData.delivery?.deliveryDateTime
+    ?? orderData.delivery?.estimatedDeliveryWindow?.end
+    ?? orderData.delivery?.estimatedDeliveryWindow?.start
+    ?? orderData.takeout?.takeoutDateTime
+    ?? orderData.takeout?.estimatedTakeoutWindow?.end;
+
+  const deliveryDeadline = scheduledDatetime ?? (rawDeadline ? new Date(rawDeadline) : null);
 
   const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 
