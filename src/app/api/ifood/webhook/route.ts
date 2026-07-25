@@ -13,54 +13,14 @@ function validateIfoodSignature(body: string, signature: string | null): boolean
   return `sha256=${expected}` === signature;
 }
 
+import { parseOrderPaymentInfo } from "@/lib/payment-parser";
+
 export function parseIfoodPaymentInfo(orderData: any): { paymentMethod: string; changeAmount: number | null } {
-  const paymentsObj = orderData.payments || {};
-  const methods = paymentsObj.methods || (Array.isArray(orderData.payments) ? orderData.payments : []);
-  const paymentList = Array.isArray(methods) ? methods : [];
-  const firstPayment = paymentList[0] || {};
-
-  const totalPrepaid = typeof paymentsObj.prepaid === "number" ? paymentsObj.prepaid : 0;
-  const totalPending = typeof paymentsObj.pending === "number" ? paymentsObj.pending : 0;
-
-  const cashPayment = paymentList.find((p: any) =>
-    p.method === "CASH" || (p.name && p.name.toLowerCase().includes("dinheir"))
-  );
-  const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-
-  const isOnline = totalPrepaid > 0 ||
-                   firstPayment.prepaid === true ||
-                   firstPayment.type === "ONLINE" ||
-                   (totalPending === 0 && paymentList.length > 0 && !cashPayment);
-
-  const rawMethod = (firstPayment.method || firstPayment.name || "").toString().toUpperCase();
-
-  let methodName = "Crédito";
-  if (cashPayment || rawMethod === "CASH" || rawMethod.includes("DINHEIR")) {
-    methodName = "Dinheiro";
-  } else if (rawMethod === "DEBIT" || rawMethod.includes("DEBITO")) {
-    methodName = "Débito";
-  } else if (rawMethod === "PIX") {
-    methodName = "Pix";
-  } else if (rawMethod.includes("MEAL_VOUCHER") || rawMethod.includes("VALE") || rawMethod.includes("VR") || rawMethod.includes("VA") || rawMethod.includes("VOUCHER")) {
-    methodName = "Vale Refeição";
-  } else if (rawMethod.includes("CREDIT") || rawMethod.includes("CREDITO")) {
-    methodName = "Crédito";
-  } else if (rawMethod === "OTHER" || rawMethod === "DIGITAL_WALLET" || rawMethod === "ONLINE" || rawMethod === "IFOOD_PAY" || rawMethod === "APP") {
-    methodName = "iFood App";
-  } else if (rawMethod) {
-    methodName = rawMethod;
-  }
-
-  let paymentMethod = "";
-  if (isOnline) {
-    paymentMethod = `${methodName} (Online)`;
-  } else if (methodName === "Dinheiro") {
-    paymentMethod = "Dinheiro";
-  } else {
-    paymentMethod = `${methodName} (Cobrar na Entrega)`;
-  }
-
-  return { paymentMethod, changeAmount };
+  const parsed = parseOrderPaymentInfo(orderData, "IFOOD");
+  return {
+    paymentMethod: parsed.paymentMethod,
+    changeAmount: parsed.changeAmount,
+  };
 }
 
 // Mapeia status do iFood (curto e longo) para status do FireHub

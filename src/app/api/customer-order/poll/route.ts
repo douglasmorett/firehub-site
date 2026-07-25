@@ -257,31 +257,10 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
             const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 
-            const cashPayment = paymentList.find((p: any) =>
-              p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
-            );
-            const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-
-            const firstPayment = paymentList[0] || {};
-            const isPrepaid = (orderData.payments?.prepaid ?? 0) > 0 || firstPayment.prepaid === true || firstPayment.type === "PREPAID" || firstPayment.method === "ONLINE" || firstPayment.method === "DIGITAL_WALLET";
-            const methodCode = (firstPayment.method || "").toUpperCase();
-
-            let resolvedPaymentMethod = "iFood App (Pago Online)";
-            if (cashPayment) {
-              resolvedPaymentMethod = "Dinheiro";
-            } else if (methodCode.includes("DEBIT") || methodCode.includes("DEBITO")) {
-              resolvedPaymentMethod = isPrepaid ? "Débito (iFood Online)" : "Débito (Cobrar na Entrega)";
-            } else if (methodCode.includes("CREDIT") || methodCode.includes("CREDITO")) {
-              resolvedPaymentMethod = isPrepaid ? "Crédito (iFood Online)" : "Crédito (Cobrar na Entrega)";
-            } else if (methodCode.includes("MEAL") || methodCode.includes("FOOD") || methodCode.includes("VOUCHER")) {
-              resolvedPaymentMethod = isPrepaid ? "Vale (iFood Online)" : "Vale (Cobrar na Entrega)";
-            } else if (methodCode.includes("PIX")) {
-              resolvedPaymentMethod = isPrepaid ? "Pix (iFood Online)" : "Pix (Cobrar na Entrega)";
-            } else if (isPrepaid) {
-              resolvedPaymentMethod = "iFood App (Pago Online)";
-            } else {
-              resolvedPaymentMethod = `${firstPayment.method || "Cartão"} (Cobrar na Entrega)`;
-            }
+            const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+            const parsedPay = parseOrderPaymentInfo(orderData, "IFOOD");
+            const resolvedPaymentMethod = parsedPay.paymentMethod;
+            const changeAmount = parsedPay.changeAmount;
             const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber
               ?? orderData.customer?.documentNumber
               ?? orderData.customer?.cpf

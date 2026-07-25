@@ -269,9 +269,10 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
     ? new Date(orderData.delivery.deliveryDateTime) : null;
 
   const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
-  const cashPayment = paymentList.find((p: any) => p.method === "CASH" || p.name?.toLowerCase().includes("dinheir"));
-  const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-  const payMethodName = paymentList[0]?.method ?? "iFood Online";
+  const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+  const parsedPay = parseOrderPaymentInfo(orderData, "IFOOD");
+  const payMethodName = parsedPay.paymentMethod;
+  const changeAmount = parsedPay.changeAmount;
   const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
 
   // Descontos
@@ -356,7 +357,7 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
         return parts.join(" - ");
       })(),
       deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-      paymentMethod: cashPayment ? "Dinheiro" : payMethodName,
+      paymentMethod: payMethodName,
       totalAmount: total,
       deliveryFee: deliveryFeeValue,
       status,

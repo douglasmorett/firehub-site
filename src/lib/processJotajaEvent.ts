@@ -257,29 +257,10 @@ export async function processJotajaEvent(
       const deliveryDeadline = scheduledDatetime;
 
       // Pagamento
-      const cashPayment = paymentList.find((p: any) =>
-        p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
-      );
-      const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-
-      const firstPayment = paymentList[0] || {};
-      const isPrepaid = (orderData.payments?.prepaid ?? 0) > 0 || firstPayment.type === "PREPAID" || firstPayment.method === "ONLINE" || firstPayment.method === "JOTAJA_ONLINE";
-      const methodCode = (firstPayment.method || "").toUpperCase();
-
-      let resolvedPaymentMethod = "Cartão de Crédito (Cobrar na Entrega)";
-      if (cashPayment) {
-        resolvedPaymentMethod = "Dinheiro";
-      } else if (methodCode.includes("DEBIT") || methodCode.includes("DEBITO")) {
-        resolvedPaymentMethod = isPrepaid ? "Débito (Pago Online)" : "Débito (Cobrar na Entrega)";
-      } else if (methodCode.includes("CREDIT") || methodCode.includes("CREDITO")) {
-        resolvedPaymentMethod = isPrepaid ? "Crédito (Pago Online)" : "Crédito (Cobrar na Entrega)";
-      } else if (methodCode.includes("PIX")) {
-        resolvedPaymentMethod = isPrepaid ? "Pix (Pago Online)" : "Pix (Cobrar na Entrega)";
-      } else if (isPrepaid) {
-        resolvedPaymentMethod = "JotaJá App (Pago Online)";
-      } else {
-        resolvedPaymentMethod = `${firstPayment.method || "Cartão"} (Cobrar na Entrega)`;
-      }
+      const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+      const parsedPay = parseOrderPaymentInfo(orderData, "JOTAJA");
+      const resolvedPaymentMethod = parsedPay.paymentMethod;
+      const changeAmount = parsedPay.changeAmount;
 
       const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
