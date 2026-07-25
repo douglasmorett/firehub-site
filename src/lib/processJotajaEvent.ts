@@ -359,6 +359,9 @@ export async function processJotajaEvent(
           deliveryFee: deliveryFeeValue,
           status: initialStatus,
           createdAt: new Date(), // Garante que novos pedidos puxados entram no FINAL da fila como o próximo número sequencial
+          items: {
+            create: items,
+          },
         },
       });
 
