@@ -89,32 +89,51 @@ const getNeighborhoodOnly = (addr: string | null) => {
   const isIgnoredPart = (str: string) => {
     const s = str.trim().toLowerCase();
     if (!s || s === "brasil" || s === "brazil") return true;
-    if (/^\d{5}-?\d{3}$/.test(s)) return true; // CEP
-    if (/^(rio das ostras|macaé|macae|cabo frio|buzios|búzios|casimiro|niteroi|niterói|rio de janeiro|sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i.test(s)) return true;
-    if (/^(comp|complemento|ref|referencia|ponto de referencia):/i.test(s)) return true;
+    if (/^\d{5}-?\d{3}$/.test(s) || /^\d{8}$/.test(s)) return true; // CEP
+    // Cities & States
+    if (/^(rio das ostras|macaé|macae|cabo frio|buzios|búzios|casimiro|casimiro de abreu|niteroi|niterói|rio de janeiro|sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i.test(s)) return true;
+    // Complement / Reference / Apartment / Lot / Block prefixes
+    if (/^(comp|complemento|ref|referencia|ponto de referencia|apto|apt|ap|bloco|bl|quadra|qd|lote|lt|casa):?/i.test(s)) return true;
+    // Standalone numbers or house number notations (e.g. "718", "437", "Nº 718", "No 437", "718A", "S/N", "SN")
+    if (/^(n[ºo]?\s*|nº?\s*|num\s*|numero\s*|número\s*)?\d+\s*[-/]?\s*[a-z]?$/i.test(s)) return true;
+    if (/^\d+\s*[-/]?\s*\d+$/.test(s)) return true;
+    if (/^s\/?n$/i.test(s)) return true;
     return false;
   };
 
   // Split by hyphens, dashes, or commas
   const parts = cleaned.split(/[-–—,]/).map(p => p.trim()).filter(Boolean);
 
-  // Filter out country, CEP, city, state, and street prefixes
-  const neighborhoodParts = parts.filter(p => {
+  // First check if any part explicitly starts with "Bairro" or "B."
+  for (const p of parts) {
+    if (/^bairro:?\s+/i.test(p)) {
+      return p.replace(/^bairro:?\s+/i, "").trim();
+    }
+  }
+
+  // Filter out country, CEP, city, state, complement, and house numbers
+  const candidates = parts.filter(p => {
     if (isIgnoredPart(p)) return false;
-    // Skip street name / house number prefixes if there are other parts
-    if (/^(rua|r\.|av\.|avenida|alameda|praça|praca|estrada|rodovia|travessa|servidao|servidão|lote|qd|quadra|bloco|apt|apto|casa)\b/i.test(p)) {
+    // Skip street name prefixes if starting with street type keywords
+    if (/^(rua|r\.|av\.|avenida|alameda|praça|praca|estrada|rodovia|travessa|servidao|servidão|tv\.|vila|v\.)\b/i.test(p)) {
       return false;
     }
     return true;
   });
 
-  if (neighborhoodParts.length > 0) {
-    return neighborhoodParts[neighborhoodParts.length - 1];
+  if (candidates.length > 0) {
+    const neighborhood = candidates[candidates.length - 1];
+    return neighborhood.replace(/^bairro:?\s+/i, "").trim();
   }
 
-  // Fallback if all parts were filtered
-  const validParts = parts.filter(p => !isIgnoredPart(p));
-  return validParts[validParts.length - 1] || cleaned;
+  // Fallback: If no neighborhood candidate was found (e.g. address is only street and number),
+  // filter out house numbers/CEP/city and return the street name
+  const nonIgnoredParts = parts.filter(p => !isIgnoredPart(p));
+  if (nonIgnoredParts.length > 0) {
+    return nonIgnoredParts[0];
+  }
+
+  return cleaned;
 };
 
 // Mapping columns to statuses for drag-and-drop
