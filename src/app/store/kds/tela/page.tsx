@@ -142,13 +142,58 @@ export default function KDSTelaPage() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasEnteredIds, setHasEnteredIds] = useState<Set<string>>(new Set());
 
-  // Mapeamento sequencial de números do sistema (#1, #2, #3...)
+  const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
+
+  // Sync with active cash session openedAt
+  useEffect(() => {
+    fetch("/api/cash-session")
+      .then(r => r.json())
+      .then(d => {
+        if (d?.session?.openedAt) {
+          setCashOpenedAt(new Date(d.session.openedAt));
+        } else {
+          setCashOpenedAt(null);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Mapeamento sequencial de números do sistema (#1, #2, #3...) idêntico ao Dashboard da Loja
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-    const sorted = [...orders].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    sorted.forEach((o, i) => map.set(o.id, i + 1));
+
+    orders.forEach((o: any) => {
+      if (o.dailyOrderNumber) {
+        map.set(o.id, o.dailyOrderNumber);
+      }
+    });
+
+    const sessionStartCutoff = cashOpenedAt
+      ? new Date(cashOpenedAt)
+      : new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    const sortedSessionOrders = [...orders]
+      .filter((o: any) => new Date(o.createdAt) >= sessionStartCutoff)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    sortedSessionOrders.forEach((o, i) => {
+      if (!map.has(o.id)) {
+        map.set(o.id, i + 1);
+      }
+    });
+
+    const sortedOlder = [...orders]
+      .filter((o: any) => new Date(o.createdAt) < sessionStartCutoff)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    sortedOlder.forEach((o, i) => {
+      if (!map.has(o.id)) {
+        map.set(o.id, i + 1);
+      }
+    });
+
     return map;
-  }, [orders]);
+  }, [orders, cashOpenedAt]);
 
   // Buscar todas as categorias no mount para o seletor de filtros
   useEffect(() => {
@@ -678,6 +723,7 @@ export default function KDSTelaPage() {
                 <OrderCard
                   key={order.id}
                   order={order}
+                  seqNum={orderNumberMap.get(order.id)}
                   position={index + 1}
                   stage={stage}
                   accent={accent}
@@ -827,6 +873,7 @@ export default function KDSTelaPage() {
 
 function OrderCard({
   order,
+  seqNum,
   position,
   stage,
   accent,
@@ -835,6 +882,7 @@ function OrderCard({
   onMarkPronto,
 }: {
   order: Order;
+  seqNum?: number;
   position: number;
   stage: "production" | "finishing";
   accent: string;
@@ -917,7 +965,7 @@ function OrderCard({
             letterSpacing: "-0.5px",
           }}
         >
-          {getOrderLabel(order)}
+          {`#${seqNum ?? order.dailyOrderNumber ?? getOrderLabel(order).replace("#", "")}`}
         </span>
 
         {/* Source badge */}
