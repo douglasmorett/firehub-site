@@ -33,12 +33,12 @@ export async function GET() {
     const batataImgUrl = "/uploads/batata_frita.png";
 
     // 2. Copy Nugget image
-    const srcNugget = "C:\\Users\\Micro\\.gemini\\antigravity\\brain\\277517b7-eeca-407e-8e8d-6e77ad9d79a3\\.user_uploaded\\media__1784939634938.png";
-    const destNugget = path.join(destDir, "nuggets_hk.png");
+    const srcNugget = "C:\\Users\\Micro\\.gemini\\antigravity\\brain\\277517b7-eeca-407e-8e8d-6e77ad9d79a3\\.user_uploaded\\media__1784943951174.jpg";
+    const destNugget = path.join(destDir, "nuggets_hk.jpg");
     if (fs.existsSync(srcNugget)) {
       fs.copyFileSync(srcNugget, destNugget);
     }
-    const nuggetImgUrl = "/uploads/nuggets_hk.png";
+    const nuggetImgUrl = "/uploads/nuggets_hk.jpg";
 
     // Upsert Batata Frita
     const existingBatata = await prisma.menuProduct.findFirst({
