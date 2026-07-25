@@ -19,8 +19,20 @@ export async function GET() {
       return NextResponse.json({ error: "Franqueado não encontrado" }, { status: 404 });
     }
 
-    // Remove qualquer registro anterior da Luana para forçar reinserção no FINAL da fila com o próximo número (#138)
-    await prisma.customerOrder.deleteMany({
+    // Remove itens e pedido anterior da Luana para forçar reinserção no FINAL da fila (#138)
+    await (prisma.customerOrderItem as any).deleteMany({
+      where: {
+        order: {
+          OR: [
+            { openDeliveryOrderId: "32516601" },
+            { openDeliveryReference: "2316" },
+            { customerPhone: "22992536804" }
+          ]
+        }
+      }
+    });
+
+    await (prisma.customerOrder as any).deleteMany({
       where: {
         OR: [
           { openDeliveryOrderId: "32516601" },
