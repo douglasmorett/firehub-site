@@ -65,24 +65,24 @@ export async function GET() {
       where: {
         id: (await prisma.menuProduct.findFirst({ where: { franchiseeId, name: "6 Nuggets" } }))?.id || "opt_6_nuggets"
       },
-      update: { name: "6 Nuggets", price: 9.90, category: "Acompanhamentos", description: "6 unidades de nuggets suculentos", active: true, activePDV: false, activeDelivery: false },
-      create: { franchiseeId, name: "6 Nuggets", price: 9.90, category: "Acompanhamentos", description: "6 unidades de nuggets suculentos", active: true, activePDV: false, activeDelivery: false }
+      update: { name: "6 Nuggets", price: 9.90, category: "Acompanhamentos", description: "6 unidades de nuggets suculentos", imageUrl: nuggetImgUrl, active: true, activePDV: false, activeDelivery: false },
+      create: { franchiseeId, name: "6 Nuggets", price: 9.90, category: "Acompanhamentos", description: "6 unidades de nuggets suculentos", imageUrl: nuggetImgUrl, active: true, activePDV: false, activeDelivery: false }
     });
 
     const opt15 = await prisma.menuProduct.upsert({
       where: {
         id: (await prisma.menuProduct.findFirst({ where: { franchiseeId, name: "15 Nuggets" } }))?.id || "opt_15_nuggets"
       },
-      update: { name: "15 Nuggets", price: 19.90, category: "Acompanhamentos", description: "15 unidades de nuggets suculentos", active: true, activePDV: false, activeDelivery: false },
-      create: { franchiseeId, name: "15 Nuggets", price: 19.90, category: "Acompanhamentos", description: "15 unidades de nuggets suculentos", active: true, activePDV: false, activeDelivery: false }
+      update: { name: "15 Nuggets", price: 19.90, category: "Acompanhamentos", description: "15 unidades de nuggets suculentos", imageUrl: nuggetImgUrl, active: true, activePDV: false, activeDelivery: false },
+      create: { franchiseeId, name: "15 Nuggets", price: 19.90, category: "Acompanhamentos", description: "15 unidades de nuggets suculentos", imageUrl: nuggetImgUrl, active: true, activePDV: false, activeDelivery: false }
     });
 
     const opt40 = await prisma.menuProduct.upsert({
       where: {
         id: (await prisma.menuProduct.findFirst({ where: { franchiseeId, name: "40 Nuggets" } }))?.id || "opt_40_nuggets"
       },
-      update: { name: "40 Nuggets", price: 39.80, category: "Acompanhamentos", description: "40 unidades de nuggets suculentos", active: true, activePDV: false, activeDelivery: false },
-      create: { franchiseeId, name: "40 Nuggets", price: 39.80, category: "Acompanhamentos", description: "40 unidades de nuggets suculentos", active: true, activePDV: false, activeDelivery: false }
+      update: { name: "40 Nuggets", price: 39.80, category: "Acompanhamentos", description: "40 unidades de nuggets suculentos", imageUrl: nuggetImgUrl, active: true, activePDV: false, activeDelivery: false },
+      create: { franchiseeId, name: "40 Nuggets", price: 39.80, category: "Acompanhamentos", description: "40 unidades de nuggets suculentos", imageUrl: nuggetImgUrl, active: true, activePDV: false, activeDelivery: false }
     });
 
     // Upsert Nugget main product with ComboGroup question: "Escolha sua quantidade de Nugget"
