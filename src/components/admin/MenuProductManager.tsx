@@ -183,7 +183,7 @@ export default function MenuProductManager({
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(false);
   const [activeGarcom, setActiveGarcom] = useState(false);
-  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; itemIds: string[] }[]>([]);
+  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; items: { id: string; additionalPrice: number }[] }[]>([]);
 
 
   const resetForm = () => {
@@ -223,7 +223,10 @@ export default function MenuProductManager({
     if (p.isCombo && p.comboGroups) {
       setComboGroups(p.comboGroups.map((g: any) => ({
         title: g.title, maxQty: g.maxQty,
-        itemIds: g.items.map((i: any) => i.menuProduct.id)
+        items: (g.items || []).map((i: any) => ({
+          id: i.menuProduct?.id || i.menuProductId || i.id,
+          additionalPrice: Number(i.additionalPrice) || 0
+        }))
       })));
     } else { setComboGroups([]); }
     setEditingId(p.id); setShowForm(true);
@@ -330,16 +333,32 @@ export default function MenuProductManager({
     router.refresh();
   };
 
-  const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, itemIds: [] }]);
+  const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, items: [] }]);
   const removeGroup = (idx: number) => setComboGroups(prev => prev.filter((_, i) => i !== idx));
   const updateGroup = (idx: number, key: string, val: any) => {
     setComboGroups(prev => prev.map((g, i) => i === idx ? { ...g, [key]: val } : g));
   };
-  const toggleGroupItem = (gIdx: number, itemId: string) => {
+  const addGroupItem = (gIdx: number, itemId: string) => {
+    if (!itemId) return;
     setComboGroups(prev => prev.map((g, i) => {
       if (i !== gIdx) return g;
-      const has = g.itemIds.includes(itemId);
-      return { ...g, itemIds: has ? g.itemIds.filter(id => id !== itemId) : [...g.itemIds, itemId] };
+      if (g.items.some((it: any) => it.id === itemId)) return g;
+      return { ...g, items: [...g.items, { id: itemId, additionalPrice: 0 }] };
+    }));
+  };
+  const removeGroupItem = (gIdx: number, itemId: string) => {
+    setComboGroups(prev => prev.map((g, i) => {
+      if (i !== gIdx) return g;
+      return { ...g, items: g.items.filter((it: any) => it.id !== itemId) };
+    }));
+  };
+  const updateGroupItemPrice = (gIdx: number, itemId: string, price: number) => {
+    setComboGroups(prev => prev.map((g, i) => {
+      if (i !== gIdx) return g;
+      return {
+        ...g,
+        items: g.items.map((it: any) => it.id === itemId ? { ...it, additionalPrice: price } : it)
+      };
     }));
   };
 
@@ -1090,26 +1109,74 @@ export default function MenuProductManager({
               <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#F8FAFC", borderRadius: "14px", border: "2px dashed #CBD5E1" }}>
                 <h4 style={{ fontWeight: 800, fontSize: "0.95rem", marginBottom: "0.75rem", color: "#0F172A" }}>📦 Construtor de Combo</h4>
                 {comboGroups.map((group, gIdx) => (
-                  <div key={gIdx} style={{ marginBottom: "1rem", padding: "0.75rem", backgroundColor: "#FFF", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "end" }}>
-                      <div style={{ flex: 1 }}><label style={{ fontSize: "0.75rem", fontWeight: 600 }}>Título do Grupo</label><input className="input-field" value={group.title} onChange={e => updateGroup(gIdx, "title", e.target.value)} placeholder="Ex: Escolha suas esfirras" /></div>
-                      <div style={{ width: "80px" }}><label style={{ fontSize: "0.75rem", fontWeight: 600 }}>Qtd</label><input className="input-field" type="number" min={1} value={group.maxQty} onChange={e => updateGroup(gIdx, "maxQty", parseInt(e.target.value) || 1)} /></div>
-                      <button type="button" onClick={() => removeGroup(gIdx)} style={{ cursor: "pointer", color: "#EF4444", padding: "0.5rem", background: "none", border: "none" }}><Trash2 size={16} /></button>
+                  <div key={gIdx} style={{ marginBottom: "1.25rem", padding: "1rem", backgroundColor: "#FFF", borderRadius: "12px", border: "1px solid #E2E8F0", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "end" }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Título do Grupo</label>
+                        <input className="input-field" value={group.title} onChange={e => updateGroup(gIdx, "title", e.target.value)} placeholder="Ex: Escolha suas esfirras" />
+                      </div>
+                      <div style={{ width: "90px" }}>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Qtd Máx</label>
+                        <input className="input-field" type="number" min={1} value={group.maxQty} onChange={e => updateGroup(gIdx, "maxQty", parseInt(e.target.value) || 1)} />
+                      </div>
+                      <button type="button" onClick={() => removeGroup(gIdx)} style={{ cursor: "pointer", color: "#EF4444", padding: "0.6rem", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "8px" }} title="Remover Grupo"><Trash2 size={16} /></button>
                     </div>
-                    <p style={{ fontSize: "0.75rem", color: "#64748B", marginBottom: "0.5rem" }}>Selecione os itens disponíveis ({group.itemIds.length} selecionados):</p>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                      {availableItems.map(item => (
-                        <button key={item.id} type="button" onClick={() => toggleGroupItem(gIdx, item.id)}
-                          style={{
-                            padding: "0.25rem 0.5rem", borderRadius: "6px", fontSize: "0.7rem", cursor: "pointer",
-                            border: group.itemIds.includes(item.id) ? "2px solid #E8360C" : "1px solid #E2E8F0",
-                            backgroundColor: group.itemIds.includes(item.id) ? "#FEF2F2" : "#FFF",
-                            color: group.itemIds.includes(item.id) ? "#E8360C" : "#475569",
-                            fontWeight: group.itemIds.includes(item.id) ? 700 : 400,
-                            opacity: item.active ? 1 : 0.4
-                          }}>{item.name} {!item.active && "⏸️"}</button>
-                      ))}
+
+                    {/* Lista de Sabores / Itens Escolhidos */}
+                    <div style={{ marginBottom: "0.75rem" }}>
+                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>
+                        Sabores / Itens deste Grupo ({group.items.length} inseridos):
+                      </label>
+
+                      {group.items.length === 0 ? (
+                        <div style={{ fontSize: "0.78rem", color: "#94A3B8", fontStyle: "italic", padding: "8px", background: "#F8FAFC", borderRadius: "8px", marginBottom: "8px" }}>
+                          Nenhum sabor ou item adicionado a este grupo ainda. Selecione abaixo para adicionar.
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
+                          {group.items.map((it) => {
+                            const targetProd = availableItems.find(p => p.id === it.id);
+                            return (
+                              <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                                <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#1E293B" }}>
+                                  {targetProd ? targetProd.name : "Item Excluído"} {!targetProd?.active && "⏸️"}
+                                </span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Acréscimo R$:</label>
+                                  <input
+                                    type="number"
+                                    step="0.50"
+                                    min="0"
+                                    placeholder="0.00"
+                                    value={it.additionalPrice || 0}
+                                    onChange={e => updateGroupItemPrice(gIdx, it.id, parseFloat(e.target.value) || 0)}
+                                    style={{ width: "80px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
+                                  />
+                                  <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444" }} title="Remover Sabor">
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
+
+                    {/* Seletor para adicionar novo item ao grupo */}
+                    <select
+                      onChange={e => { addGroupItem(gIdx, e.target.value); e.target.value = ""; }}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #3B82F6", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}
+                    >
+                      <option value="">➕ Adicionar Sabor / Item a este grupo...</option>
+                      {availableItems
+                        .filter(item => !group.items.some(it => it.id === item.id))
+                        .map(item => (
+                          <option key={item.id} value={item.id}>
+                            {item.name} {item.price ? `(R$ ${item.price.toFixed(2)})` : ""} {!item.active ? " [Pausado]" : ""}
+                          </option>
+                        ))}
+                    </select>
                   </div>
                 ))}
                 <button type="button" onClick={addGroup} className="btn btn-outline" style={{ width: "100%", fontSize: "0.85rem", borderRadius: "10px" }}>

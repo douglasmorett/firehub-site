@@ -62,6 +62,19 @@ export async function POST(req: Request) {
       tags: rest.tags ? JSON.stringify(rest.tags) : null,
       availableDays: rest.availableDays ? JSON.stringify(rest.availableDays) : null,
       franchiseeId,
+      comboGroups: comboGroups && Array.isArray(comboGroups) && comboGroups.length > 0 ? {
+        create: comboGroups.map((g: any, gIdx: number) => ({
+          title: g.title,
+          maxQty: g.maxQty || 1,
+          sortOrder: gIdx,
+          items: {
+            create: (g.items || []).map((it: any) => ({
+              menuProductId: typeof it === "string" ? it : (it.id || it.menuProductId),
+              additionalPrice: typeof it === "object" ? (Number(it.additionalPrice) || 0) : 0,
+            }))
+          }
+        }))
+      } : undefined
     }
   });
 
@@ -86,6 +99,29 @@ export async function PUT(req: Request) {
     where: { id },
     data: updateData
   });
+
+  if (comboGroups !== undefined) {
+    await prisma.comboGroup.deleteMany({ where: { menuProductId: id } });
+    if (Array.isArray(comboGroups) && comboGroups.length > 0) {
+      for (let gIdx = 0; gIdx < comboGroups.length; gIdx++) {
+        const g = comboGroups[gIdx];
+        await prisma.comboGroup.create({
+          data: {
+            menuProductId: id,
+            title: g.title,
+            maxQty: g.maxQty || 1,
+            sortOrder: gIdx,
+            items: {
+              create: (g.items || []).map((it: any) => ({
+                menuProductId: typeof it === "string" ? it : (it.id || it.menuProductId),
+                additionalPrice: typeof it === "object" ? (Number(it.additionalPrice) || 0) : 0,
+              }))
+            }
+          }
+        });
+      }
+    }
+  }
 
   return NextResponse.json(product);
 }

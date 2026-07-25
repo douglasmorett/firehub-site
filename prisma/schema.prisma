@@ -243,11 +243,12 @@ model ComboGroup {
 }
 
 model ComboGroupItem {
-  id             String      @id @default(cuid())
-  comboGroupId   String
-  menuProductId  String
-  comboGroup     ComboGroup  @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
-  menuProduct    MenuProduct @relation(fields: [menuProductId], references: [id])
+  id              String      @id @default(cuid())
+  comboGroupId    String
+  menuProductId   String
+  additionalPrice Float       @default(0) // Valor adicional cobrado se este item for escolhido no combo
+  comboGroup      ComboGroup  @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
+  menuProduct     MenuProduct @relation(fields: [menuProductId], references: [id])
 }
 
 model CustomerOrder {
