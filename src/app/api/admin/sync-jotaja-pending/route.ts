@@ -5,38 +5,39 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    let franchisee = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: "contatohakim@gmail.com" },
-          { email: { contains: "hakim" } },
-          { jotajaMerchantId: "22238" },
-          { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } }
-        ]
-      }
+    // 1. Find all users in DB
+    const allUsers = await prisma.user.findMany({
+      select: { id: true, email: true, name: true, role: true }
     });
 
-    if (!franchisee) {
-      franchisee = await prisma.user.findFirst();
-    }
+    // 2. Locate contatohakim user explicitly
+    let franchisee = allUsers.find(u => u.email?.toLowerCase().includes("contatohakim"))
+                  || allUsers.find(u => u.email?.toLowerCase().includes("hakim"))
+                  || allUsers[0];
 
     if (!franchisee) {
       return NextResponse.json({ ok: false, error: "Nenhum usuário encontrado" });
     }
 
-    // Link JotaJá merchant ID to this user
+    // 3. Update franchisee user to connect JotaJá
     await prisma.user.update({
       where: { id: franchisee.id },
       data: { jotajaMerchantId: "22238", jotajaConnected: true }
     });
 
-    // Update existing orders to ensure they belong to franchisee.id
+    // 4. Update ALL orders for openDeliveryOrderId 32511181 OR openDeliveryReference 2280 OR source JOTAJA to belong to this franchisee
     await prisma.customerOrder.updateMany({
-      where: { openDeliveryOrderId: "32511181" },
+      where: {
+        OR: [
+          { openDeliveryOrderId: "32511181" },
+          { openDeliveryReference: "2280" },
+          { source: "JOTAJA" }
+        ]
+      },
       data: { franchiseeId: franchisee.id }
     });
 
-    // Order 1: Hewller (#2280 / 32511181)
+    // 5. Upsert Hewller order
     const order1 = await prisma.customerOrder.upsert({
       where: { openDeliveryOrderId: "32511181" },
       update: {
@@ -89,10 +90,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `Pedido #2280 Hewller vinculado com sucesso ao usuário ${franchisee.email} (${franchisee.id})!`,
-      userEmail: franchisee.email,
-      userId: franchisee.id,
-      orders: [order1]
+      message: `SUCESSO! Pedido #2280 Hewller atribuído ao usuário ${franchisee.email} (${franchisee.id})`,
+      targetUser: franchisee,
+      allUsers,
+      order: order1
     });
   } catch (err: any) {
     console.error("[Sync JotaJa Pending] Erro:", err);
