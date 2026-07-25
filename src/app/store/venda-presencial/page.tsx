@@ -157,10 +157,11 @@ export default function VendaPresencialPage() {
   const cartQty = cart.reduce((s, i) => s + i.qty, 0);
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif", display: "grid", gridTemplateColumns: "1fr 380px", height: "calc(100vh - 75px)", overflow: "hidden", position: "relative" }}>
+    <div style={{ fontFamily: "'Inter', sans-serif", display: "grid", gridTemplateColumns: "1fr 380px", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
       <style>{`
-        #hubspot-messages-iframe-container, iframe[src*="chat"], .crisp-client, div[class*="chat"], #chat-widget-container, div[class*="widget"] {
+        #hubspot-messages-iframe-container, iframe[src*="chat"], .crisp-client, div[class*="chat"], #chat-widget-container, div[class*="widget"], div[id*="chat"] {
           display: none !important;
+          pointer-events: none !important;
         }
       `}</style>
 
@@ -299,17 +300,17 @@ export default function VendaPresencialPage() {
         </div>
 
         {/* Footer: pagamento + total */}
-        <div style={{ padding: "12px 16px 36px 16px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50 }}>
+        <div style={{ padding: "10px 14px 14px 14px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50, flexShrink: 0 }}>
           {/* Forma de pagamento */}
-          <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 4 }}>Pagamento</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          <div style={{ marginBottom: 6 }}>
+            <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 3 }}>Pagamento</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {PAYMENT_METHODS.map(m => (
-                <button key={m} onClick={() => setPaymentMethod(m)}
-                  style={{ padding: "5px 10px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C62828" : "#E2E8F0"}`,
+                <button key={m} type="button" onClick={() => setPaymentMethod(m)}
+                  style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C62828" : "#CBD5E1"}`,
                     background: paymentMethod === m ? "#C62828" : "#fff",
-                    color: paymentMethod === m ? "#fff" : "#475569",
-                    fontWeight: 600, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
+                    color: paymentMethod === m ? "#fff" : "#334155",
+                    fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
                   {m}
                 </button>
               ))}
@@ -318,44 +319,44 @@ export default function VendaPresencialPage() {
 
           {/* Acréscimo voucher */}
           {isVoucher && (
-            <div style={{ marginBottom: 8, fontSize: "0.75rem", color: "#D97706", background: "#FFFBEB", padding: "5px 8px", borderRadius: 6, border: "1px solid #FDE68A" }}>
-              Taxa de vale refeição/alimentação ({voucherRate}%): <strong>+{fmt(voucherFee)}</strong>
+            <div style={{ marginBottom: 6, fontSize: "0.72rem", color: "#D97706", background: "#FFFBEB", padding: "4px 8px", borderRadius: 6, border: "1px solid #FDE68A" }}>
+              Taxa de vale ({voucherRate}%): <strong>+{fmt(voucherFee)}</strong>
             </div>
           )}
 
           {/* Troco (só Dinheiro) */}
           {paymentMethod === "Dinheiro" && (
             <input type="number" placeholder="Troco para... (opcional)" value={change} onChange={e => setChange(e.target.value)}
-              style={{ width: "100%", marginBottom: 8, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
+              style={{ width: "100%", marginBottom: 6, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none", fontFamily: "inherit" }} />
           )}
           {paymentMethod === "Dinheiro" && change && Number(change) > 0 && (
-            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "6px 10px", marginBottom: 8, fontSize: "0.78rem", color: "#16A34A", fontWeight: 700 }}>
+            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "4px 8px", marginBottom: 6, fontSize: "0.75rem", color: "#16A34A", fontWeight: 700 }}>
               💵 Troco: {fmt(Math.max(0, Number(change) - total))}
             </div>
           )}
 
           {/* Obs */}
-          <textarea placeholder="Observações..." value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-            style={{ width: "100%", marginBottom: 8, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none", resize: "none", fontFamily: "inherit" }} />
+          <input placeholder="Observações do pedido (opcional)..." value={notes} onChange={e => setNotes(e.target.value)}
+            style={{ width: "100%", marginBottom: 6, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none", fontFamily: "inherit" }} />
 
           {/* Total */}
           {cart.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
+            <div style={{ marginBottom: 6 }}>
               {isVoucher && voucherRate > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#64748B", marginBottom: 3 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#64748B", marginBottom: 2 }}>
                   <span>Subtotal</span><span>{fmt(subtotal)}</span>
                 </div>
               )}
-              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "1.1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "1.05rem" }}>
                 <span>TOTAL</span><span style={{ color: "#C62828" }}>{fmt(total)}</span>
               </div>
             </div>
           )}
 
-          {msg && <div style={{ padding: "7px 10px", borderRadius: 8, marginBottom: 8, background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✅") ? "#16a34a" : "#dc2626", fontSize: "0.82rem", fontWeight: 600 }}>{msg}</div>}
+          {msg && <div style={{ padding: "6px 10px", borderRadius: 8, marginBottom: 6, background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✅") ? "#16a34a" : "#dc2626", fontSize: "0.8rem", fontWeight: 700 }}>{msg}</div>}
 
-          <button onClick={handleSubmit} disabled={loading || cart.length === 0}
-            style={{ width: "100%", padding: "14px", background: cart.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: cart.length === 0 ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: cart.length > 0 ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 100 }}>
+          <button type="button" onClick={handleSubmit} disabled={loading || cart.length === 0}
+            style={{ width: "100%", padding: "13px", background: cart.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: cart.length === 0 ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: cart.length > 0 ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 9999 }}>
             {loading ? "Registrando..." : <><Check size={20} /> Finalizar Pedido</>}
           </button>
         </div>
