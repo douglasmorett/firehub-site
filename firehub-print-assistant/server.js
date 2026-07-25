@@ -587,9 +587,18 @@ async function processPrintQueue() {
         continue;
       }
 
-      // Se NÃO for impressão manual forçada (force = false), respeita a trava de 5 min anti-duplicidade
-      if (!force && isOrderAlreadyPrinted(order)) {
-        console.log(`[PrintServer] ⚠️ Pedido #${order?.ifoodReference || order?.openDeliveryReference || order?.id} já impresso nos últimos 5 min. Ignorando duplicação automática.`);
+      // Se for clique manual (force = true), previne duplo-clique acidental nos últimos 5s
+      if (force) {
+        const manualKey = `manual_${order?.id || order?.openDeliveryReference || order?.dailyOrderNumber}`;
+        const lastManual = printedOrdersCache.get(manualKey);
+        if (lastManual && (Date.now() - lastManual) < 5000) {
+          console.log(`[PrintServer] ⚠️ Duplo clique manual ignorado no pedido #${order?.dailyOrderNumber || order?.id}.`);
+          resolve({ ok: true, duplicated: true, message: "Duplo clique manual ignorado." });
+          continue;
+        }
+        printedOrdersCache.set(manualKey, Date.now());
+      } else if (isOrderAlreadyPrinted(order)) {
+        console.log(`[PrintServer] ⚠️ Pedido #${order?.dailyOrderNumber || order?.ifoodReference || order?.openDeliveryReference || order?.id} já impresso nos últimos 120 min. Ignorando duplicação automática.`);
         resolve({ ok: true, duplicated: true, message: "Pedido já impresso recentemente." });
         continue;
       }
@@ -635,6 +644,16 @@ setInterval(async () => {
     const data = await res.json();
     const jobs = Array.isArray(data.jobs) ? data.jobs : [];
     if (jobs.length > 0) {
+      // Ordenação estrita FIFO por número de comanda (ex: #87 antes de #88) e horário
+      jobs.sort((a, b) => {
+        const seqA = Number(a.order?.dailyOrderNumber || a.order?.orderSeqNumber || 0);
+        const seqB = Number(b.order?.dailyOrderNumber || b.order?.orderSeqNumber || 0);
+        if (seqA && seqB && seqA !== seqB) return seqA - seqB;
+        const timeA = a.order?.createdAt ? new Date(a.order.createdAt).getTime() : 0;
+        const timeB = b.order?.createdAt ? new Date(b.order.createdAt).getTime() : 0;
+        return timeA - timeB;
+      });
+
       for (const job of jobs) {
         enqueuePrintJob({
           printer: currentConfig.printer,
