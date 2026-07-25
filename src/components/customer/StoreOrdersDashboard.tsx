@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { isBeverageItem } from "@/lib/beverage";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
@@ -1276,6 +1277,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   #{order.ifoodReference || order.openDeliveryReference}
                 </span>
               )}
+              {Boolean((order.items || []).some((item: any) => isBeverageItem(item))) && (
+                <span style={{ padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 900, background: "#E0F2FE", color: "#0284C7", border: "1px solid #7DD3FC" }}>
+                  🥤 POSSUI BEBIDA
+                </span>
+              )}
             </div>
           </div>
 
@@ -1860,8 +1866,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 const extras = nameParts.slice(1);
                 return (
                   <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F3F4F6" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: "#374151", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ color: "#374151", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        {item.quantity}× {mainName}
+                        {isBeverageItem(item) && (
+                          <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "0.68rem", fontWeight: 800, background: "#E0F2FE", color: "#0284C7", border: "1px solid #7DD3FC" }}>
+                            🥤 BEBIDA
+                          </span>
+                        )}
+                      </span>
                       <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * item.quantity).toFixed(2)}</span>
                     </div>
                     {comboSels.length > 0 && (
@@ -2200,6 +2213,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </>
                 )}
 
+                {Boolean((order.items || []).some((item: any) => isBeverageItem(item))) && (
+                  <div style={{ border: "2px solid #000", padding: "6px", textAlign: "center", fontWeight: "bold", margin: "10px 0", fontSize: "13px" }}>
+                    🥤 *** ATENÇÃO: POSSUI BEBIDA ***
+                  </div>
+                )}
+
                 <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
                   <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>RESUMO DO PEDIDO</span>
                   <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px solid #000", zIndex: 1 }}></div>
@@ -2232,7 +2251,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           <span>Qtd: {item.quantity}x</span>
                           <span>Valor: R$ {(itemPrice * item.quantity).toFixed(2).replace('.', ',')}</span>
                         </div>
-                        <div style={{ fontWeight: "bold" }}>{mainName}</div>
+                        <div style={{ fontWeight: "bold" }}>
+                          {mainName} {isBeverageItem(item) ? " 🥤 [BEBIDA]" : ""}
+                        </div>
                         
                         {comboSels.length > 0 && (
                           <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
