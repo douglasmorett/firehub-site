@@ -93,7 +93,9 @@ const getNeighborhoodOnly = (addr: string | null) => {
     // Cities & States
     if (/^(rio das ostras|macaé|macae|cabo frio|buzios|búzios|casimiro|casimiro de abreu|niteroi|niterói|rio de janeiro|sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i.test(s)) return true;
     // Complement / Reference / Apartment / Lot / Block prefixes
-    if (/^(comp|complemento|ref|referencia|ponto de referencia|apto|apt|ap|bloco|bl|quadra|qd|lote|lt|casa):?/i.test(s)) return true;
+    if (/^(comp|complemento|ref|referencia|ponto de referencia):/i.test(s)) return true;
+    if (/^(apto|apt|ap|bloco|bl|quadra|qd|lote|lt)\s*:?\s*\d+[a-z]?$/i.test(s)) return true;
+    if (/^casa\s*(:|\d+|fundo|fundos|frente|cima|baixo)/i.test(s)) return true;
     // Standalone numbers or house number notations (e.g. "718", "437", "Nº 718", "No 437", "718A", "S/N", "SN")
     if (/^(n[ºo]?\s*|nº?\s*|num\s*|numero\s*|número\s*)?\d+\s*[-/]?\s*[a-z]?$/i.test(s)) return true;
     if (/^\d+\s*[-/]?\s*\d+$/.test(s)) return true;
