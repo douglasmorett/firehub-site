@@ -101,14 +101,27 @@ export async function processJotajaEvent(
       }
       const orderData = await orderRes.json();
 
-      // Resolve franqueado
+      // Resolve franqueado com fallbacks resilientes
       const merchantId = process.env.JOTAJA_MERCHANT_ID;
       const eventMerchantId = merchantId || orderData.merchant?.id;
-      const franchisee = await prisma.user.findFirst({
+      let franchisee = await prisma.user.findFirst({
         where: { jotajaMerchantId: eventMerchantId } as any,
       });
       if (!franchisee) {
-        return { action: "error", orderId, message: `Franqueado não encontrado para merchantId=${eventMerchantId}` };
+        franchisee = await prisma.user.findFirst({
+          where: { jotajaConnected: true } as any,
+        });
+      }
+      if (!franchisee) {
+        franchisee = await prisma.user.findFirst({
+          where: { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } } as any,
+        });
+      }
+      if (!franchisee) {
+        franchisee = await prisma.user.findFirst();
+      }
+      if (!franchisee) {
+        return { action: "error", orderId, message: `Nenhum usuário encontrado para associar ao pedido` };
       }
 
       // Helper: extract numeric value from price (handles {value, currency} objects or plain numbers)

@@ -464,13 +464,16 @@ async function pollJotajaEvents(sessionUserId?: string) {
   try {
     const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
     const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
-    const merchantId = process.env.JOTAJA_MERCHANT_ID;
-    if (!merchantId) return;
 
-    const res = await jotajaFetch("/v1/events:polling", { method: "GET" });
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "");
-      console.error(`[Jotaja Poll] events:polling falhou: ${res.status} - ${errBody.slice(0, 200)}`);
+    const res = await jotajaFetch("/v1/events:polling", { method: "GET" }).catch(err => {
+      console.warn("[Jotaja Poll] Erro de rede no polling:", err.message);
+      return null;
+    });
+    if (!res || !res.ok) {
+      if (res) {
+        const errBody = await res.text().catch(() => "");
+        console.error(`[Jotaja Poll] events:polling falhou: ${res.status} - ${errBody.slice(0, 200)}`);
+      }
       return;
     }
 
