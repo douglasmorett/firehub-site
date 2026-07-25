@@ -483,7 +483,7 @@ async function pollJotajaEvents(sessionUserId?: string) {
 
     const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     for (const event of events) {
-      const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
+      const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate, sessionUserId);
       const eid = event.eventId || event.id;
       if (result.action !== "error" && eid) {
         processedEvents.push({
@@ -533,8 +533,19 @@ export async function GET(req: NextRequest) {
     console.error("[Poll] Erro no polling:", err);
   }
 
+  const validFranchiseeIds = Array.from(new Set([
+    targetFranchiseeId,
+    user.id,
+    user.ownerId
+  ].filter(Boolean))) as string[];
+
   const orders = await prisma.customerOrder.findMany({
-    where: { franchiseeId: targetFranchiseeId },
+    where: {
+      OR: [
+        { franchiseeId: { in: validFranchiseeIds } },
+        { franchisee: { ownerId: { in: validFranchiseeIds } } }
+      ]
+    },
     include: {
       items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
       motoboy: { select: { id: true, name: true, phone: true } },

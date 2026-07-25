@@ -31,6 +31,7 @@ export async function processJotajaEvent(
   event: JotajaEvent,
   jotajaFetch: (path: string, options?: RequestInit) => Promise<Response>,
   jotajaMutate: (path: string, options?: RequestInit) => Promise<Response>,
+  targetFranchiseeId?: string,
 ): Promise<ProcessResult> {
   const { code, orderId } = event;
   if (!orderId) return { action: "skipped", orderId: "", message: "sem orderId" };
@@ -91,7 +92,14 @@ export async function processJotajaEvent(
 
     // ── Verifica idempotência ──────────────────────────────────────────────
     const existing = await prisma.customerOrder.findFirst({
-      where: { openDeliveryOrderId: orderId } as any,
+      where: {
+        OR: [
+          { openDeliveryOrderId: orderId },
+          { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+          { openDeliveryReference: orderId },
+          { openDeliveryReference: (event as any).displayId || (event as any).orderSeqNumber }
+        ].filter(Boolean)
+      } as any,
     });
 
     if (!existing) {
@@ -103,33 +111,30 @@ export async function processJotajaEvent(
       const orderData = await orderRes.json();
 
       // Resolve franqueado com fallbacks resilientes
-      const merchantId = process.env.JOTAJA_MERCHANT_ID || "22238";
-      const eventMerchantId = merchantId || orderData.merchant?.id;
-      let franchisee = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: "contatohakim@gmail.com" },
-            { jotajaMerchantId: eventMerchantId },
-            { jotajaConnected: true }
-          ]
-        } as any,
-      });
+      let franchisee = targetFranchiseeId
+        ? await prisma.user.findUnique({ where: { id: targetFranchiseeId } })
+        : null;
+
       if (!franchisee) {
+        const merchantId = process.env.JOTAJA_MERCHANT_ID || "22238";
+        const eventMerchantId = merchantId || orderData.merchant?.id;
         franchisee = await prisma.user.findFirst({
-          where: { jotajaConnected: true } as any,
+          where: {
+            OR: [
+              { jotajaMerchantId: eventMerchantId },
+              { jotajaConnected: true },
+              { email: "contatohakim@gmail.com" },
+              { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } }
+            ]
+          } as any,
         });
       }
-      if (!franchisee) {
-        franchisee = await prisma.user.findFirst({
-          where: { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } } as any,
-        });
-      }
-      if (!franchisee) {
-        franchisee = await prisma.user.findFirst();
-      }
+      if (!franchisee) franchisee = await prisma.user.findFirst();
       if (!franchisee) {
         return { action: "error", orderId, message: `Nenhum usuário encontrado para associar ao pedido` };
       }
+
+      const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
 
       // Helper: extract numeric value from price (handles {value, currency} objects or plain numbers)
       const priceVal = (p: any): number => typeof p === "object" && p !== null ? (p.value ?? 0) : (p ?? 0);
@@ -274,7 +279,7 @@ export async function processJotajaEvent(
 
       await (prisma.customerOrder as any).create({
         data: {
-          franchiseeId: franchisee.id,
+          franchiseeId: franchiseeIdToUse,
           openDeliveryOrderId: orderId,
           openDeliveryReference: orderData.displayId ?? undefined,
           openDeliveryChannel: "JOTAJA",
