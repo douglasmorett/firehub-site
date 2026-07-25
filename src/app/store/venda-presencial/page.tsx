@@ -6,7 +6,7 @@ import ComboModal from "@/components/customer/ComboModal";
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
-type CartItem = { product: any; qty: number; notes?: string; comboSelections?: { name: string; quantity: number }[] };
+type CartItem = { product: any; qty: number; unitPrice?: number; notes?: string; comboSelections?: { name: string; quantity: number }[] };
 type OrderType = "BALCAO" | "MESA" | "DELIVERY";
 
 const getEffectiveComboGroups = (prod: any) => {
@@ -42,27 +42,40 @@ export default function VendaPresencialPage() {
   const [comboProduct, setComboProduct] = useState<any>(null);
 
   useEffect(() => {
-    fetch("/api/admin/menu-products").then(r => r.json()).then(setProducts);
+    fetch("/api/admin/menu-products").then(r => r.json()).then(d => Array.isArray(d) && setProducts(d));
     fetch("/api/store-settings/payment").then(r => r.ok ? r.json() : null).then(d => d && setPaymentConfig(d.paymentFees));
   }, []);
 
-  // Categorias únicas — apenas itens ativos no PDV
+  const getDisplayPrice = (p: any) => {
+    if (p.price && p.price > 0) return fmt(p.price);
+    const groups = getEffectiveComboGroups(p);
+    if (groups && groups.length > 0) {
+      let minPrice = Infinity;
+      groups.forEach((g: any) => {
+        (g.items || []).forEach((it: any) => {
+          const pr = (Number(it.additionalPrice) || 0) + (it.menuProduct?.price || 0);
+          if (pr > 0 && pr < minPrice) minPrice = pr;
+        });
+      });
+      if (minPrice !== Infinity) return `a partir de ${fmt(minPrice)}`;
+    }
+    return fmt(0);
+  };
+
   const categories = useMemo(() => {
     const cats = Array.from(new Set(products.filter(p => p.active && p.activePDV !== false).map(p => p.isCombo ? "Combos" : (p.category || "Outros"))));
     return ["Todos", ...cats.sort()];
   }, [products]);
 
-  // Filtro — somente itens ativos E habilitados no PDV
   const filtered = products.filter(p => {
     if (!p.active) return false;
-    if (p.activePDV === false) return false; // excluir se explicitamente desativado no PDV
+    if (p.activePDV === false) return false;
     const cat = p.isCombo ? "Combos" : (p.category || "Outros");
     if (selectedCategory !== "Todos" && cat !== selectedCategory) return false;
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  // Voucher surcharge
   const voucherRate = useMemo(() => {
     if (!paymentConfig?.VOUCHER?.active) return 0;
     const brands: any[] = paymentConfig.VOUCHER.brands || [];
@@ -73,7 +86,7 @@ export default function VendaPresencialPage() {
   }, [paymentConfig]);
 
   const isVoucher = paymentMethod === "Voucher/Vale";
-  const subtotal = cart.reduce((s, i) => s + i.product.price * i.qty, 0);
+  const subtotal = cart.reduce((s, i) => s + (i.unitPrice ?? i.product.price) * i.qty, 0);
   const voucherFee = isVoucher ? subtotal * (voucherRate / 100) : 0;
   const total = subtotal + voucherFee;
 
@@ -86,14 +99,15 @@ export default function VendaPresencialPage() {
     }
   };
 
-  const addToCart = (product: any, comboSelections?: { name: string; quantity: number }[]) => {
+  const addToCart = (product: any, comboSelections?: { name: string; quantity: number }[], extraSum: number = 0) => {
+    const unitPrice = product.price + extraSum;
     setCart(prev => {
       if (comboSelections && comboSelections.length > 0) {
-        return [...prev, { product, qty: 1, comboSelections }];
+        return [...prev, { product, qty: 1, comboSelections, unitPrice }];
       }
       const ex = prev.find(i => i.product.id === product.id && !i.comboSelections);
       if (ex) return prev.map(i => (i.product.id === product.id && !i.comboSelections) ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { product, qty: 1 }];
+      return [...prev, { product, qty: 1, unitPrice }];
     });
   };
 
@@ -195,7 +209,7 @@ export default function VendaPresencialPage() {
                   }
                   <div style={{ fontWeight: 700, fontSize: "0.8rem", marginBottom: 2, lineHeight: 1.2 }}>{p.name}</div>
                   <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginBottom: 4 }}>{p.isCombo ? "Combo" : p.category}</div>
-                  <div style={{ color: "#C62828", fontWeight: 800, fontSize: "0.88rem" }}>{fmt(p.price)}</div>
+                  <div style={{ color: "#C62828", fontWeight: 800, fontSize: "0.88rem" }}>{getDisplayPrice(p)}</div>
                 </div>
               );
             })}
@@ -262,7 +276,7 @@ export default function VendaPresencialPage() {
                     ))}
                   </div>
                 )}
-                <div style={{ fontSize: "0.78rem", color: "#C62828", fontWeight: 700, marginTop: 2 }}>{fmt(item.product.price * item.qty)}</div>
+                <div style={{ fontSize: "0.78rem", color: "#C62828", fontWeight: 700, marginTop: 2 }}>{fmt((item.unitPrice ?? item.product.price) * item.qty)}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <button onClick={() => updateQtyByIndex(index, item.qty - 1)}
@@ -353,14 +367,14 @@ export default function VendaPresencialPage() {
             comboGroups: comboProduct.comboGroups || []
           }}
           onClose={() => setComboProduct(null)}
-          onConfirm={(selections) => {
+          onConfirm={(selections, extraSum) => {
             const formatted: { name: string; quantity: number }[] = [];
             Object.values(selections).forEach(groupObj => {
               Object.entries(groupObj).forEach(([itemName, qty]) => {
                 if (qty > 0) formatted.push({ name: itemName, quantity: qty });
               });
             });
-            addToCart(comboProduct, formatted);
+            addToCart(comboProduct, formatted, extraSum);
             setComboProduct(null);
           }}
         />

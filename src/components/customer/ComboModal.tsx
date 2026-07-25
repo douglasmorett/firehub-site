@@ -49,6 +49,14 @@ export default function ComboModal({ product, onClose, onConfirm }: {
     }, 0);
   }, 0);
 
+  let minOptionPrice = Infinity;
+  groups.forEach(g => {
+    (g.items || []).forEach(i => {
+      const pr = (i.additionalPrice || 0) + ((i.menuProduct as any)?.price || 0);
+      if (pr > 0 && pr < minOptionPrice) minOptionPrice = pr;
+    });
+  });
+
   const finalPrice = product.price + extraSum;
 
   return (
@@ -61,7 +69,12 @@ export default function ComboModal({ product, onClose, onConfirm }: {
             <div>
               <h3 style={{ fontWeight: 700, fontSize: "1.05rem" }}>{product.name}</h3>
               <p style={{ color: "#C62828", fontWeight: 800, margin: 0 }}>
-                R$ {finalPrice.toFixed(2).replace(".", ",")}
+                {finalPrice > 0
+                  ? `R$ ${finalPrice.toFixed(2).replace(".", ",")}`
+                  : minOptionPrice !== Infinity
+                  ? `a partir de R$ ${minOptionPrice.toFixed(2).replace(".", ",")}`
+                  : `R$ 0,00`
+                }
                 {extraSum > 0 && <span style={{ fontSize: "0.75rem", color: "#D97706", fontWeight: 700, marginLeft: "6px" }}>(+ R$ {extraSum.toFixed(2).replace(".", ",")} acréscimo)</span>}
               </p>
             </div>
