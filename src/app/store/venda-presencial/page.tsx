@@ -300,7 +300,7 @@ export default function VendaPresencialPage() {
         </div>
 
         {/* Footer: pagamento + total */}
-        <div style={{ padding: "10px 14px 14px 14px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50, flexShrink: 0 }}>
+        <div style={{ padding: "10px 14px 75px 14px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50, flexShrink: 0 }}>
           {/* Forma de pagamento */}
           <div style={{ marginBottom: 6 }}>
             <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 3 }}>Pagamento</label>
