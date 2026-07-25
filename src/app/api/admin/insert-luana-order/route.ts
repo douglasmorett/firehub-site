@@ -19,20 +19,8 @@ export async function GET() {
       return NextResponse.json({ error: "Franqueado não encontrado" }, { status: 404 });
     }
 
-    // Remove itens e pedido anterior da Luana para forçar reinserção no FINAL da fila (#138)
-    await (prisma.customerOrderItem as any).deleteMany({
-      where: {
-        order: {
-          OR: [
-            { openDeliveryOrderId: "32516601" },
-            { openDeliveryReference: "2316" },
-            { customerPhone: "22992536804" }
-          ]
-        }
-      }
-    });
-
-    await (prisma.customerOrder as any).deleteMany({
+    // Atualiza a data de criação do pedido da Luana para AGORA, garantindo que ele fique no FINAL da fila (#138) sem alterar #133..#137
+    const existing = await prisma.customerOrder.findFirst({
       where: {
         OR: [
           { openDeliveryOrderId: "32516601" },
@@ -41,6 +29,14 @@ export async function GET() {
         ]
       }
     });
+
+    if (existing) {
+      const updated = await (prisma.customerOrder as any).update({
+        where: { id: existing.id },
+        data: { createdAt: new Date() }
+      });
+      return NextResponse.json({ ok: true, message: "Pedido da Luana #2316 atualizado para o FINAL da fila (#138)!", orderId: updated.id });
+    }
 
     const newOrder = await prisma.customerOrder.create({
       data: {
@@ -58,7 +54,7 @@ export async function GET() {
         openDeliveryReference: "2316",
         openDeliveryChannel: "JOTAJA",
         notes: "Pedido JotaJá #2316 - Luana",
-        createdAt: new Date(), // Entra com horário ATUAL para ficar no FINAL da fila (#138)
+        createdAt: new Date(),
         items: {
           create: [
             {
