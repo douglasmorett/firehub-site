@@ -21,6 +21,7 @@ export async function GET(req: Request) {
   const motoboyId = url.searchParams.get("motoboyId");
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
+  const calcMode = url.searchParams.get("calcMode") || "all"; // "all" | "fee_only"
 
   // Determinar período
   const fromDate = from ? new Date(from + "T00:00:00") : (() => {
@@ -43,6 +44,7 @@ export async function GET(req: Request) {
       motoboyId: { in: motoboyIds },
       createdAt: { gte: fromDate, lte: toDate },
       deliveryType: "DELIVERY",
+      status: { notIn: ["CANCELADO"] },
     },
     select: {
       id: true,
@@ -78,34 +80,34 @@ export async function GET(req: Request) {
     const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
 
     // Calcular dias únicos trabalhados (para diária)
-    const uniqueDays = new Set(
-      orders.map((o) => o.createdAt.toISOString().split("T")[0])
-    ).size;
+    const uniqueDays = orders.length > 0
+      ? new Set(orders.map((o) => o.createdAt.toISOString().split("T")[0])).size
+      : 0;
+
+    // Soma das taxas dos pedidos
+    const deliveryFeeSum = orders.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
+    const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
 
     // Calcular pagamento baseado no tipo
     let dailyTotal = 0;
     let perDeliveryTotal = 0;
     let perKmTotal = 0;
 
-    if (mb.paymentType === "DAILY_RATE" || mb.paymentType === "BOTH") {
+    if (mb.paymentType === "DAILY_RATE" || mb.paymentType === "BOTH" || mb.paymentType === "DAILY_PLUS_FEE") {
       dailyTotal = (mb.dailyRate || 0) * uniqueDays;
     }
     if (mb.paymentType === "PER_DELIVERY" || mb.paymentType === "BOTH") {
       perDeliveryTotal = (mb.perDeliveryRate || 0) * totalDeliveries;
+    } else if (mb.paymentType === "DAILY_PLUS_FEE") {
+      perDeliveryTotal = deliveryFeeSum;
     }
-    if (mb.paymentType === "PER_KM") {
+    if (mb.paymentType === "PER_KM" || (mb.paymentType === "BOTH" && mb.perKmRate)) {
       perKmTotal = (mb.perKmRate || 0) * totalDistance;
     }
 
-    // Se BOTH, também calcular por KM se tiver perKmRate
-    if (mb.paymentType === "BOTH" && mb.perKmRate) {
-      perKmTotal = mb.perKmRate * totalDistance;
-    }
-
-    // Alternativamente: usar o motoboyFee registrado por pedido se disponível
-    const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
-
-    const totalToPay = dailyTotal + perDeliveryTotal + perKmTotal;
+    const totalWithDaily = dailyTotal + perDeliveryTotal + perKmTotal;
+    const totalFeeOnly = perDeliveryTotal + perKmTotal;
+    const totalToPay = calcMode === "fee_only" ? totalFeeOnly : totalWithDaily;
 
     return {
       motoboy: {
@@ -125,7 +127,10 @@ export async function GET(req: Request) {
         dailyTotal,
         perDeliveryTotal,
         perKmTotal,
+        deliveryFeeSum,
         motoboyFeeSum,
+        totalWithDaily,
+        totalFeeOnly,
         totalToPay,
       },
       orders: orders.map((o) => ({
@@ -134,7 +139,7 @@ export async function GET(req: Request) {
         customerName: o.customerName,
         customerAddress: o.customerAddress,
         totalAmount: o.totalAmount,
-        deliveryFee: o.deliveryFee,
+        deliveryFee: o.deliveryFee || o.motoboyFee || 0,
         motoboyFee: o.motoboyFee,
         deliveryDistance: o.deliveryDistance,
         status: o.status,

@@ -4,7 +4,7 @@ import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loade
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
-const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+const fmt = (v: number) => `R$ ${(v || 0).toFixed(2).replace(".", ",")}`;
 const PERIODS = [
   { label: "Hoje", value: "today" },
   { label: "Esta semana", value: "week" },
@@ -32,6 +32,7 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [selectedMotoboy, setSelectedMotoboy] = useState("all");
+  const [calcMode, setCalcMode] = useState<"all" | "fee_only">("all");
   const [report, setReport] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -42,7 +43,7 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
     const range = period === "custom" ? { from: customFrom, to: customTo } : getRange(period);
     if (!range?.from || !range?.to) { setLoading(false); return; }
 
-    const params = new URLSearchParams({ from: range.from, to: range.to });
+    const params = new URLSearchParams({ from: range.from, to: range.to, calcMode });
     if (selectedMotoboy !== "all") params.set("motoboyId", selectedMotoboy);
 
     const res = await fetch(`/api/motoboy-report?${params}`);
@@ -53,15 +54,17 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
       setLoaded(true);
     }
     setLoading(false);
-  }, [period, customFrom, customTo, selectedMotoboy]);
+  }, [period, customFrom, customTo, selectedMotoboy, calcMode]);
 
-  const totalPay = report.reduce((s, r) => s + r.stats.totalToPay, 0);
+  const getMotoboyPay = (r: any) => calcMode === "fee_only" ? r.stats.totalFeeOnly : r.stats.totalWithDaily;
+  const totalPay = report.reduce((s, r) => s + getMotoboyPay(r), 0);
   const totalDeliveries = report.reduce((s, r) => s + r.stats.totalDeliveries, 0);
 
   const PAYMENT_TYPE_LABEL: Record<string, string> = {
     PER_DELIVERY: "Por entrega",
-    DAILY_RATE: "Diária",
+    DAILY_RATE: "Diária Fixa",
     BOTH: "Diária + Entrega",
+    DAILY_PLUS_FEE: "Diária + Taxa do Pedido",
     PER_KM: "Por KM",
   };
 
@@ -73,7 +76,7 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
           <Filter size={18} color="#C62828" /> Filtros do Relatório
         </h3>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
           {/* Período */}
           <div>
             <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6, textTransform: "uppercase" }}>Período</label>
@@ -107,6 +110,21 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
           </div>
         </div>
 
+        {/* Componentes do Pagamento a apurar */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6, textTransform: "uppercase" }}>Composição de Cálculo</label>
+          <div style={{ display: "flex", gap: 8, maxWidth: 400 }}>
+            <button onClick={() => setCalcMode("all")}
+              style={{ flex: 1, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${calcMode === "all" ? "#C62828" : "#E2E8F0"}`, background: calcMode === "all" ? "#FEF2F2" : "#fff", color: calcMode === "all" ? "#C62828" : "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              💵 Diária + Taxa
+            </button>
+            <button onClick={() => setCalcMode("fee_only")}
+              style={{ flex: 1, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${calcMode === "fee_only" ? "#C62828" : "#E2E8F0"}`, background: calcMode === "fee_only" ? "#FEF2F2" : "#fff", color: calcMode === "fee_only" ? "#C62828" : "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              🛵 Só Taxa
+            </button>
+          </div>
+        </div>
+
         <button onClick={load} disabled={loading}
           style={{ padding: "10px 24px", background: "#C62828", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
           {loading ? <Loader2 size={16} className="animate-spin" /> : <TrendingUp size={16} />}
@@ -122,7 +140,7 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
             {[
               { label: "Total de Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#3B82F6" },
               { label: "Motoboys no período", value: report.filter(r => r.stats.totalDeliveries > 0).length.toString(), icon: Filter, color: "#8B5CF6" },
-              { label: "Total a Pagar", value: fmt(totalPay), icon: DollarSign, color: "#C62828" },
+              { label: calcMode === "fee_only" ? "Total a Pagar (Só Taxa)" : "Total a Pagar (Diária+Taxa)", value: fmt(totalPay), icon: DollarSign, color: "#C62828" },
             ].map(card => (
               <div key={card.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -142,90 +160,98 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
               <Bike size={40} style={{ margin: "0 auto 10px" }} color="#CBD5E1" />
               <p>Nenhuma entrega encontrada no período.</p>
             </div>
-          ) : report.map(r => (
-            <div key={r.motoboy.id} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: 20, marginBottom: 14 }}>
-              {/* Header motoboy */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 44, height: 44, background: "#FEF3E2", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Bike size={22} color="#C62828" />
+          ) : report.map(r => {
+            const payAmount = getMotoboyPay(r);
+            return (
+              <div key={r.motoboy.id} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: 20, marginBottom: 14 }}>
+                {/* Header motoboy */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 44, height: 44, background: "#FEF3E2", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Bike size={22} color="#C62828" />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: "1rem" }}>{r.motoboy.name}</div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748B" }}>{PAYMENT_TYPE_LABEL[r.motoboy.paymentType] || r.motoboy.paymentType}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: "1rem" }}>{r.motoboy.name}</div>
-                    <div style={{ fontSize: "0.75rem", color: "#64748B" }}>{PAYMENT_TYPE_LABEL[r.motoboy.paymentType] || r.motoboy.paymentType}</div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "0.7rem", color: "#94A3B8", textTransform: "uppercase", fontWeight: 700 }}>
+                      Total a pagar {calcMode === "fee_only" ? "(Só Taxa)" : ""}
+                    </div>
+                    <div style={{ fontWeight: 900, fontSize: "1.4rem", color: "#C62828" }}>{fmt(payAmount)}</div>
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "0.7rem", color: "#94A3B8", textTransform: "uppercase", fontWeight: 700 }}>Total a pagar</div>
-                  <div style={{ fontWeight: 900, fontSize: "1.4rem", color: "#C62828" }}>{fmt(r.stats.totalToPay)}</div>
+
+                {/* Stats */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, background: "#F8FAFC", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                  {[
+                    { label: "Entregas", value: r.stats.totalDeliveries },
+                    { label: "Dias trab.", value: r.stats.uniqueDays },
+                    { label: "KM total", value: r.stats.totalDistance + " km" },
+                    { label: "Taxa/KM", value: r.motoboy.perKmRate ? fmt(r.motoboy.perKmRate) + "/km" : "-" },
+                  ].map(s => (
+                    <div key={s.label} style={{ textAlign: "center" }}>
+                      <div style={{ fontWeight: 800, fontSize: "1rem", color: "#1E293B" }}>{s.value}</div>
+                      <div style={{ fontSize: "0.7rem", color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>{s.label}</div>
+                    </div>
+                  ))}
                 </div>
-              </div>
 
-              {/* Stats */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, background: "#F8FAFC", borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                {[
-                  { label: "Entregas", value: r.stats.totalDeliveries },
-                  { label: "Dias trab.", value: r.stats.uniqueDays },
-                  { label: "KM total", value: r.stats.totalDistance + " km" },
-                  { label: "Taxa/KM", value: r.motoboy.perKmRate ? fmt(r.motoboy.perKmRate) + "/km" : "-" },
-                ].map(s => (
-                  <div key={s.label} style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 800, fontSize: "1rem", color: "#1E293B" }}>{s.value}</div>
-                    <div style={{ fontSize: "0.7rem", color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>{s.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Breakdown pagamento */}
-              <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10 }}>
-                <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", marginBottom: 6 }}>Composição do Pagamento</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  {r.stats.dailyTotal > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
-                      <span>Diária: {fmt(r.motoboy.dailyRate || 0)} × {r.stats.uniqueDays} dias</span>
-                      <span style={{ fontWeight: 700 }}>{fmt(r.stats.dailyTotal)}</span>
-                    </div>
-                  )}
-                  {r.stats.perDeliveryTotal > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
-                      <span>Por entrega: {fmt(r.motoboy.perDeliveryRate || 0)} × {r.stats.totalDeliveries}</span>
-                      <span style={{ fontWeight: 700 }}>{fmt(r.stats.perDeliveryTotal)}</span>
-                    </div>
-                  )}
-                  {r.stats.perKmTotal > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
-                      <span>Por KM: {fmt(r.motoboy.perKmRate || 0)} × {r.stats.totalDistance} km</span>
-                      <span style={{ fontWeight: 700 }}>{fmt(r.stats.perKmTotal)}</span>
-                    </div>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
-                    <span>TOTAL</span>
-                    <span style={{ color: "#C62828" }}>{fmt(r.stats.totalToPay)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Entregas detalhadas */}
-              {r.orders.length > 0 && (
-                <details style={{ marginTop: 12 }}>
-                  <summary style={{ fontSize: "0.8rem", fontWeight: 700, color: "#64748B", cursor: "pointer" }}>
-                    📦 Ver {r.orders.length} entrega(s) detalhada(s)
-                  </summary>
-                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
-                    {r.orders.map((o: any) => (
-                      <div key={o.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr auto", gap: 8, padding: "5px 8px", background: "#F8FAFC", borderRadius: 8, fontSize: "0.78rem" }}>
-                        <span style={{ color: "#64748B" }}>{new Date(o.date).toLocaleDateString("pt-BR")}</span>
-                        <span style={{ fontWeight: 600 }}>{o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 30)}...` : ""}</span>
-                        <span style={{ fontWeight: 700, color: o.deliveryDistance ? "#3B82F6" : "#94A3B8" }}>
-                          {o.deliveryDistance ? `${o.deliveryDistance} km` : "—"}
+                {/* Breakdown pagamento */}
+                <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10 }}>
+                  <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", marginBottom: 6 }}>Composição do Pagamento</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {r.stats.dailyTotal > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", opacity: calcMode === "fee_only" ? 0.45 : 1 }}>
+                        <span style={{ textDecoration: calcMode === "fee_only" ? "line-through" : "none" }}>
+                          Diária: {fmt(r.motoboy.dailyRate || 0)} × {r.stats.uniqueDays} dias {calcMode === "fee_only" ? "(Desconsiderada)" : ""}
                         </span>
+                        <span style={{ fontWeight: 700, textDecoration: calcMode === "fee_only" ? "line-through" : "none" }}>{fmt(r.stats.dailyTotal)}</span>
                       </div>
-                    ))}
+                    )}
+                    {r.stats.perDeliveryTotal > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                        <span>
+                          {r.motoboy.paymentType === "DAILY_PLUS_FEE" ? `Taxa dos Pedidos (${r.stats.totalDeliveries} entregas)` : `Por entrega: ${fmt(r.motoboy.perDeliveryRate || 0)} × ${r.stats.totalDeliveries}`}
+                        </span>
+                        <span style={{ fontWeight: 700 }}>{fmt(r.stats.perDeliveryTotal)}</span>
+                      </div>
+                    )}
+                    {r.stats.perKmTotal > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                        <span>Por KM: {fmt(r.motoboy.perKmRate || 0)} × {r.stats.totalDistance} km</span>
+                        <span style={{ fontWeight: 700 }}>{fmt(r.stats.perKmTotal)}</span>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
+                      <span>TOTAL {calcMode === "fee_only" ? "(SÓ TAXAS)" : "(DIÁRIA + TAXAS)"}</span>
+                      <span style={{ color: "#C62828" }}>{fmt(payAmount)}</span>
+                    </div>
                   </div>
-                </details>
-              )}
-            </div>
-          ))}
+                </div>
+
+                {/* Entregas detalhadas */}
+                {r.orders.length > 0 && (
+                  <details style={{ marginTop: 12 }}>
+                    <summary style={{ fontSize: "0.8rem", fontWeight: 700, color: "#64748B", cursor: "pointer" }}>
+                      📦 Ver {r.orders.length} entrega(s) detalhada(s)
+                    </summary>
+                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {r.orders.map((o: any) => (
+                        <div key={o.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr auto auto", gap: 8, padding: "6px 10px", background: "#F8FAFC", borderRadius: 8, fontSize: "0.78rem", alignItems: "center" }}>
+                          <span style={{ color: "#64748B" }}>{new Date(o.date).toLocaleDateString("pt-BR")}</span>
+                          <span style={{ fontWeight: 600 }}>{o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 30)}...` : ""}</span>
+                          {o.deliveryDistance ? <span style={{ color: "#3B82F6", fontWeight: 600 }}>{o.deliveryDistance} km</span> : <span />}
+                          <span style={{ fontWeight: 700, color: "#16A34A" }}>Taxa: {fmt(o.deliveryFee)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            );
+          })}
         </>
       )}
     </div>
