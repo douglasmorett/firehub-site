@@ -368,7 +368,7 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
 
   const isBeverageName = (name) => {
     if (!name) return false;
-    const bevRegex = /\b(bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|agua|guarana|guaravita|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice)\b/i;
+    const bevRegex = /\b(bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|guarana|guaravita|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|redbull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice|tonica|schweppes|del valle|tampico|kapo|suffresh|feel good|kombucha|vibe|tnt|bravus|skol beats|51|pitu|velho barreiro|corote|vodka|gin|whisky|whiskey|licor|vinho|espumante|champagne|chopp)\b/i;
     return bevRegex.test(cleanAscii(name));
   };
 

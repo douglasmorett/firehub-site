@@ -4,6 +4,7 @@
  * Usada por: webhook, cron-poll e dashboard-poll — elimina triplicação.
  */
 import { prisma } from "@/lib/prisma";
+import { isBeverageName } from "@/lib/beverage";
 
 export interface JotajaEvent {
   id?: string;
@@ -170,6 +171,7 @@ export async function processJotajaEvent(
                 description: i.specialInstructions || "",
                 price: itemPrice,
                 category: "Jotajá",
+                isBeverage: isBeverageName(fullName) || options.some((o: any) => isBeverageName(o.name)),
                 active: true,
               } as any,
             } as any,
