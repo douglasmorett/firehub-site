@@ -366,15 +366,31 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   return unitPrice;
 }
 
+  const customKeywords = order.customBeverageKeywords || order.printerConfig?.customBeverageKeywords || "";
+  const autoBeverageTag = order.printerConfig?.autoBeverageTag !== false; // Padrão: true
+
   const isBeverageName = (name) => {
-    if (!name) return false;
-    const bevRegex = /\b(bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|guarana|guaravita|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|redbull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice|tonica|schweppes|del valle|tampico|kapo|suffresh|feel good|kombucha|vibe|tnt|bravus|skol beats|51|pitu|velho barreiro|corote|vodka|gin|whisky|whiskey|licor|vinho|espumante|champagne|chopp)\b/i;
-    return bevRegex.test(cleanAscii(name));
+    if (!name || !autoBeverageTag) return false;
+    const cleanName = cleanAscii(name);
+    const defaultPattern = "bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|guarana|guaravita|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|redbull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice|tonica|schweppes|del valle|tampico|kapo|suffresh|feel good|kombucha|vibe|tnt|bravus|skol beats|51|pitu|velho barreiro|corote|vodka|gin|whisky|whiskey|licor|vinho|espumante|champagne|chopp";
+
+    let customPattern = "";
+    if (customKeywords) {
+      const list = typeof customKeywords === "string" ? customKeywords.split(",") : customKeywords;
+      const cleanList = (Array.isArray(list) ? list : []).map(k => cleanAscii(String(k).trim())).filter(Boolean);
+      if (cleanList.length > 0) {
+        customPattern = "|" + cleanList.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+      }
+    }
+
+    const bevRegex = new RegExp(`\\b(${defaultPattern}${customPattern})\\b`, "i");
+    return bevRegex.test(cleanName);
   };
 
   const isBeverageItem = (item) => {
     if (!item) return false;
     if (item.isBeverage === true || item.isBeverage === "true") return true;
+    if (!autoBeverageTag) return false;
     const cat = String(item.category || item.menuProduct?.category || "");
     const name = String(item.name || item.menuProduct?.name || "");
     return isBeverageName(cat) || isBeverageName(name);

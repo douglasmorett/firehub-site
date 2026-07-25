@@ -5,6 +5,8 @@ import { Printer, CheckCircle, Download, AlertCircle, Plus, Trash2, RefreshCw } 
 /* ─── Tipos ─────────────────────────────────────────────────── */
 type PrinterConfig = {
   autoprint: boolean;
+  autoBeverageTag?: boolean;
+  customBeverageKeywords?: string;
   printers: PrinterEntry[];
 };
 
@@ -372,6 +374,47 @@ export default function PrinterSetupClient({
           >
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.autoprint ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
           </button>
+        </div>
+
+        {/* Marcador Inteligente de Bebidas */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: (config.autoBeverageTag !== false) ? "#EFF6FF" : "#F8FAFC", border: `1.5px solid ${(config.autoBeverageTag !== false) ? "#93C5FD" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
+                🍹
+              </div>
+              <div>
+                <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Marcador Inteligente de Bebidas</p>
+                <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>
+                  {(config.autoBeverageTag !== false) ? "✅ Filtra e destaca bebidas automaticamente nos pedidos do JotaJá/iFood" : "Desativado — destaca apenas bebidas marcadas no cardápio"}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setConfig(c => ({ ...c, autoBeverageTag: c.autoBeverageTag === false ? true : false }))}
+              style={{ width: 52, height: 28, borderRadius: 14, background: (config.autoBeverageTag !== false) ? "#2563EB" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+            >
+              <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: (config.autoBeverageTag !== false) ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+            </button>
+          </div>
+
+          {(config.autoBeverageTag !== false) && (
+            <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 12, marginTop: 12 }}>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+                🥤 Bebidas personalizadas / regionais da sua cidade:
+              </label>
+              <input
+                type="text"
+                value={config.customBeverageKeywords || ""}
+                onChange={e => setConfig(c => ({ ...c, customBeverageKeywords: e.target.value }))}
+                placeholder="Ex: Guaraná Jesus, Mineirinho, Mate Couro, Catuaba, Suco da Terra"
+                style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", outline: "none", boxSizing: "border-box", fontFamily: "inherit" }}
+              />
+              <p style={{ fontSize: "0.74rem", color: "#64748B", margin: "6px 0 0", lineHeight: 1.4 }}>
+                💡 Separe por vírgula. O filtro é case-insensitive (letras maiúsculas e minúsculas não fazem diferença, ex: <code>guarana jesus</code> ou <code>GUARANA JESUS</code> são identificados da mesma forma).
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Impressoras cadastradas */}
