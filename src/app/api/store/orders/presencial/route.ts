@@ -35,6 +35,7 @@ export async function POST(req: Request) {
           menuProductId: item.menuProductId,
           quantity: item.quantity,
           price: item.price,
+          comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : null,
         })),
       },
     },

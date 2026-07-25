@@ -23,6 +23,17 @@ export async function GET() {
       id: true, name: true, price: true, category: true,
       imageUrl: true, active: true, isCombo: true, isBeverage: true,
       activePDV: true, cost: true, tags: true, availableDays: true, description: true,
+      comboConfig: true,
+      comboGroups: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          items: {
+            include: {
+              menuProduct: { select: { id: true, name: true, active: true, imageUrl: true } }
+            }
+          }
+        }
+      }
     },
   });
 

@@ -1,12 +1,27 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
+import ComboModal from "@/components/customer/ComboModal";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
-type CartItem = { product: any; qty: number; notes?: string };
+type CartItem = { product: any; qty: number; notes?: string; comboSelections?: { name: string; quantity: number }[] };
 type OrderType = "BALCAO" | "MESA" | "DELIVERY";
+
+const getEffectiveComboGroups = (prod: any) => {
+  if (prod?.comboGroups && Array.isArray(prod.comboGroups) && prod.comboGroups.length > 0) {
+    return prod.comboGroups;
+  }
+  if (!prod?.comboConfig) return [];
+  try {
+    const config = typeof prod.comboConfig === "string" ? JSON.parse(prod.comboConfig) : prod.comboConfig;
+    if (Array.isArray(config)) return config;
+    if (config.groups && Array.isArray(config.groups)) return config.groups;
+    if (config.comboGroups && Array.isArray(config.comboGroups)) return config.comboGroups;
+  } catch {}
+  return [];
+};
 
 export default function VendaPresencialPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -24,6 +39,7 @@ export default function VendaPresencialPage() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [change, setChange] = useState(""); // troco
+  const [comboProduct, setComboProduct] = useState<any>(null);
 
   useEffect(() => {
     fetch("/api/admin/menu-products").then(r => r.json()).then(setProducts);
@@ -61,17 +77,31 @@ export default function VendaPresencialPage() {
   const voucherFee = isVoucher ? subtotal * (voucherRate / 100) : 0;
   const total = subtotal + voucherFee;
 
-  const addToCart = (product: any) => {
+  const handleProductClick = (product: any) => {
+    const groups = getEffectiveComboGroups(product);
+    if ((product.isCombo || groups.length > 0) && groups.length > 0) {
+      setComboProduct({ ...product, comboGroups: groups });
+    } else {
+      addToCart(product);
+    }
+  };
+
+  const addToCart = (product: any, comboSelections?: { name: string; quantity: number }[]) => {
     setCart(prev => {
-      const ex = prev.find(i => i.product.id === product.id);
-      if (ex) return prev.map(i => i.product.id === product.id ? { ...i, qty: i.qty + 1 } : i);
+      if (comboSelections && comboSelections.length > 0) {
+        return [...prev, { product, qty: 1, comboSelections }];
+      }
+      const ex = prev.find(i => i.product.id === product.id && !i.comboSelections);
+      if (ex) return prev.map(i => (i.product.id === product.id && !i.comboSelections) ? { ...i, qty: i.qty + 1 } : i);
       return [...prev, { product, qty: 1 }];
     });
   };
 
-  const updateQty = (id: string, qty: number) => {
-    if (qty <= 0) setCart(prev => prev.filter(i => i.product.id !== id));
-    else setCart(prev => prev.map(i => i.product.id === id ? { ...i, qty } : i));
+  const updateQtyByIndex = (index: number, newQty: number) => {
+    setCart(prev => {
+      if (newQty <= 0) return prev.filter((_, idx) => idx !== index);
+      return prev.map((item, idx) => idx === index ? { ...item, qty: newQty } : item);
+    });
   };
 
   const handleSubmit = async () => {
@@ -89,7 +119,12 @@ export default function VendaPresencialPage() {
       notes,
       totalAmount: total,
       deliveryFee: 0,
-      items: cart.map(i => ({ menuProductId: i.product.id, quantity: i.qty, price: i.product.price })),
+      items: cart.map(i => ({
+        menuProductId: i.product.id,
+        quantity: i.qty,
+        price: i.product.price,
+        comboSelections: i.comboSelections ? JSON.stringify(i.comboSelections) : null
+      })),
     };
 
     const res = await fetch("/api/store/orders/presencial", {
@@ -143,7 +178,7 @@ export default function VendaPresencialPage() {
             {filtered.map(p => {
               const inCart = cart.find(i => i.product.id === p.id);
               return (
-                <div key={p.id} onClick={() => addToCart(p)}
+                <div key={p.id} onClick={() => handleProductClick(p)}
                   style={{ background: "#fff", border: `2px solid ${inCart ? "#C62828" : "#E2E8F0"}`, borderRadius: 14, padding: 10, cursor: "pointer", transition: "all 0.15s", position: "relative", userSelect: "none" }}
                   onMouseEnter={e => { if (!inCart) e.currentTarget.style.borderColor = "#FCA5A5"; }}
                   onMouseLeave={e => { if (!inCart) e.currentTarget.style.borderColor = "#E2E8F0"; }}>
@@ -216,19 +251,26 @@ export default function VendaPresencialPage() {
               <ShoppingCart size={40} style={{ margin: "0 auto 10px" }} />
               <p style={{ fontSize: "0.85rem" }}>Clique nos produtos para adicionar</p>
             </div>
-          ) : cart.map(item => (
-            <div key={item.product.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+          ) : cart.map((item, index) => (
+            <div key={index} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: "0.85rem" }}>{item.product.name}</div>
-                <div style={{ fontSize: "0.78rem", color: "#C62828", fontWeight: 700 }}>{fmt(item.product.price * item.qty)}</div>
+                {item.comboSelections && item.comboSelections.length > 0 && (
+                  <div style={{ fontSize: "0.74rem", color: "#475569", marginTop: 2, background: "#F8FAFC", padding: "4px 8px", borderRadius: 6, border: "1px solid #E2E8F0" }}>
+                    {item.comboSelections.map((s, sIdx) => (
+                      <div key={sIdx}>• {s.quantity}x {s.name}</div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: "0.78rem", color: "#C62828", fontWeight: 700, marginTop: 2 }}>{fmt(item.product.price * item.qty)}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <button onClick={() => updateQty(item.product.id, item.qty - 1)}
+                <button onClick={() => updateQtyByIndex(index, item.qty - 1)}
                   style={{ width: 26, height: 26, borderRadius: "50%", border: "1.5px solid #E2E8F0", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>
                   {item.qty === 1 ? <Trash2 size={12} color="#EF4444" /> : <Minus size={12} />}
                 </button>
                 <span style={{ width: 22, textAlign: "center", fontWeight: 800, fontSize: "0.9rem" }}>{item.qty}</span>
-                <button onClick={() => updateQty(item.product.id, item.qty + 1)}
+                <button onClick={() => updateQtyByIndex(index, item.qty + 1)}
                   style={{ width: 26, height: 26, borderRadius: "50%", border: "1.5px solid #C62828", background: "#C62828", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Plus size={12} />
                 </button>
@@ -299,6 +341,30 @@ export default function VendaPresencialPage() {
           </button>
         </div>
       </div>
+
+      {/* COMBO SELECTION MODAL */}
+      {comboProduct && (
+        <ComboModal
+          product={{
+            id: comboProduct.id,
+            name: comboProduct.name,
+            price: comboProduct.price,
+            imageUrl: comboProduct.imageUrl,
+            comboGroups: comboProduct.comboGroups || []
+          }}
+          onClose={() => setComboProduct(null)}
+          onConfirm={(selections) => {
+            const formatted: { name: string; quantity: number }[] = [];
+            Object.values(selections).forEach(groupObj => {
+              Object.entries(groupObj).forEach(([itemName, qty]) => {
+                if (qty > 0) formatted.push({ name: itemName, quantity: qty });
+              });
+            });
+            addToCart(comboProduct, formatted);
+            setComboProduct(null);
+          }}
+        />
+      )}
     </div>
   );
 }
