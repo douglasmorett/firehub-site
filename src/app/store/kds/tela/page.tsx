@@ -1091,7 +1091,7 @@ function OrderCard({
         {order.items.map((item: any) => {
           const comboItems = parseComboSelections(item.comboSelections, item.quantity);
           const rawName = item.name || item.menuProduct?.name || "Item";
-          const displayName = rawName.split(" | ")[0];
+          const displayName = comboItems.length > 0 ? rawName.split(" | ")[0] : rawName.replace(/ \| /g, " - ");
           return (
             <div key={item.id}>
               <div
@@ -1115,7 +1115,7 @@ function OrderCard({
                 >
                   {item.quantity}x
                 </span>
-                <span>{displayName}</span>
+                <span style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{displayName}</span>
               </div>
               {/* Combo sub-items: lista vertical (um embaixo do outro) em ordem sequencial com fonte adaptativa */}
               {comboItems.length > 0 && (
