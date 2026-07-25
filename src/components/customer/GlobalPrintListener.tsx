@@ -78,7 +78,7 @@ export default function GlobalPrintListener() {
                           if (Array.isArray(parsed)) {
                             const updated = parsed.map((s: any) => {
                               if (s.name && isBeverageName(s.name) && !s.name.includes("BEBIDA")) {
-                                return { ...s, name: `${s.name}   🥤 *** BEBIDA ***` };
+                                return { ...s, name: `${s.name}   [BEBIDA]` };
                               }
                               return s;
                             });
@@ -89,7 +89,7 @@ export default function GlobalPrintListener() {
                       })();
 
                       const isStandaloneBev = (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) && isBeverageItem(i);
-                      const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName}   🥤 *** BEBIDA ***` : rawName;
+                      const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName}   [BEBIDA]` : rawName;
 
                       return {
                         name: finalName,

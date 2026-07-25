@@ -421,7 +421,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               if (Array.isArray(parsed)) {
                 const updated = parsed.map((s: any) => {
                   if (s.name && isBeverageName(s.name) && !s.name.includes("BEBIDA")) {
-                    return { ...s, name: `${s.name} 🥤 [BEBIDA]` };
+                    return { ...s, name: `${s.name}   [BEBIDA]` };
                   }
                   return s;
                 });
@@ -432,7 +432,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           })();
 
           const isStandaloneBev = (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) && isBeverageItem(i);
-          const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName} 🥤 [BEBIDA]` : rawName;
+          const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName}   [BEBIDA]` : rawName;
 
           return {
             name: finalName,
@@ -2263,7 +2263,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           <span>Valor: R$ {(itemPrice * item.quantity).toFixed(2).replace('.', ',')}</span>
                         </div>
                         <div style={{ fontWeight: "bold" }}>
-                          {mainName} {isStandaloneBeverage ? <span style={{ fontSize: "14px", fontWeight: 900 }}> 🥤 *** BEBIDA ***</span> : ""}
+                          {mainName} {isStandaloneBeverage ? <span style={{ fontSize: "14px", fontWeight: 900 }}> [BEBIDA]</span> : ""}
                         </div>
                         
                         {comboSels.length > 0 && (
@@ -2272,8 +2272,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                               const totalQty = (sel.quantity || 1) * (item.quantity || 1);
                               const isSubBeverage = isBeverageName(sel.name);
                               return (
-                                <div key={i} style={{ fontWeight: isSubBeverage ? "bold" : "normal", margin: isSubBeverage ? "2px 0" : "0" }}>
-                                  - {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name} {isSubBeverage ? <span style={{ fontSize: "13px", fontWeight: 900, background: "#000", color: "#fff", padding: "0 4px", borderRadius: "2px" }}>🥤 *** BEBIDA ***</span> : ""}
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isSubBeverage ? "bold" : "normal", margin: isSubBeverage ? "2px 0" : "0" }}>
+                                  <span>- {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</span>
+                                  {isSubBeverage && (
+                                    <span style={{ fontSize: "13px", fontWeight: 900, fontFamily: "monospace", letterSpacing: "1px" }}>
+                                      [BEBIDA]
+                                    </span>
+                                  )}
                                 </div>
                               );
                             })}
@@ -2284,8 +2289,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             {extras.map((ext: string, i: number) => {
                               const isExtraBeverage = isBeverageName(ext);
                               return (
-                                <div key={i} style={{ fontWeight: isExtraBeverage ? "bold" : "normal", margin: isExtraBeverage ? "2px 0" : "0" }}>
-                                  - {ext.trim()} {isExtraBeverage ? <span style={{ fontSize: "13px", fontWeight: 900, background: "#000", color: "#fff", padding: "0 4px", borderRadius: "2px" }}>🥤 *** BEBIDA ***</span> : ""}
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isExtraBeverage ? "bold" : "normal", margin: isExtraBeverage ? "2px 0" : "0" }}>
+                                  <span>- {ext.trim()}</span>
+                                  {isExtraBeverage && (
+                                    <span style={{ fontSize: "13px", fontWeight: 900, fontFamily: "monospace", letterSpacing: "1px" }}>
+                                      [BEBIDA]
+                                    </span>
+                                  )}
                                 </div>
                               );
                             })}
