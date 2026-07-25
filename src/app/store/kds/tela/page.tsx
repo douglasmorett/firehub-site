@@ -905,12 +905,12 @@ function OrderCard({
     return acc + 1 + combo.length;
   }, 0);
 
-  const isVeryLargeOrder = totalSubItemsCount > 10;
-  const isHugeOrder = totalSubItemsCount > 18;
+  const isVeryLargeOrder = totalSubItemsCount > 8;
+  const isHugeOrder = totalSubItemsCount > 15;
 
-  const mainFontSize = isHugeOrder ? 16 : isVeryLargeOrder ? 18 : 22;
-  const subFontSize = isHugeOrder ? 13 : isVeryLargeOrder ? 15 : 18;
-  const cardPadding = isHugeOrder ? "10px 14px" : isVeryLargeOrder ? "12px 16px" : "18px 20px";
+  const mainFontSize = isHugeOrder ? 15 : isVeryLargeOrder ? 17 : 22;
+  const subFontSize = isHugeOrder ? 12.5 : isVeryLargeOrder ? 14 : 17;
+  const cardPadding = isHugeOrder ? "8px 12px" : isVeryLargeOrder ? "10px 14px" : "18px 20px";
 
   return (
     <div
@@ -1117,16 +1117,15 @@ function OrderCard({
                 </span>
                 <span>{displayName}</span>
               </div>
-              {/* Combo sub-items: exibe em colunas adaptáveis sem NUNCA cortar nomes */}
+              {/* Combo sub-items: lista vertical (um embaixo do outro) em ordem sequencial com fonte adaptativa */}
               {comboItems.length > 0 && (
                 <div
                   style={{
-                    paddingLeft: isHugeOrder ? 14 : isVeryLargeOrder ? 20 : 36,
-                    display: comboItems.length >= 6 ? "grid" : "flex",
-                    gridTemplateColumns: comboItems.length >= 6 ? "repeat(auto-fit, minmax(200px, 1fr))" : undefined,
-                    flexDirection: comboItems.length >= 6 ? undefined : "column",
-                    gap: comboItems.length >= 6 ? "2px 14px" : (isHugeOrder ? 2 : 3),
-                    marginTop: 3,
+                    paddingLeft: isHugeOrder ? 16 : isVeryLargeOrder ? 22 : 36,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: isHugeOrder ? 1 : isVeryLargeOrder ? 2 : 3,
+                    marginTop: 2,
                   }}
                 >
                   {comboItems.map((sub, i) => (
@@ -1136,7 +1135,7 @@ function OrderCard({
                         fontSize: subFontSize,
                         color: "#9ca3af",
                         fontWeight: 500,
-                        lineHeight: 1.25,
+                        lineHeight: 1.2,
                         whiteSpace: "normal",
                         wordBreak: "break-word",
                       }}
