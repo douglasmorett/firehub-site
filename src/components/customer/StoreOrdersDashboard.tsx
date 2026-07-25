@@ -1261,7 +1261,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <GripVertical size={14} />
               </div>
             )}
-            <div style={{ fontWeight: 800, fontSize: "0.96rem", color: "#0F172A", flex: 1, minWidth: 0, wordBreak: "break-word", lineHeight: "1.25", letterSpacing: "-0.2px" }}>
+            <div style={{ fontWeight: 800, fontSize: "0.96rem", color: "#0F172A", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: "1.25", letterSpacing: "-0.2px" }} title={`#${seqNum} — ${order.customerName}`}>
               #{seqNum} — {order.customerName}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
@@ -1275,11 +1275,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {(order.ifoodReference || order.openDeliveryReference) && (
                 <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#4F46E5" }}>
                   #{order.ifoodReference || order.openDeliveryReference}
-                </span>
-              )}
-              {Boolean((order.items || []).some((item: any) => isBeverageItem(item))) && (
-                <span style={{ padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 900, background: "#E0F2FE", color: "#0284C7", border: "1px solid #7DD3FC" }}>
-                  🥤 POSSUI BEBIDA
                 </span>
               )}
             </div>
