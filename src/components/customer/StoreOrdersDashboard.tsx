@@ -189,6 +189,32 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [dueDateExtraMinutes, setDueDateExtraMinutes] = useState<number>(10);
   const [dueDateReason, setDueDateReason] = useState<string>("OUT_FOR_DELIVERY");
   const prevOrderCount = useRef(initialOrders.filter(o => o.status === "NOVO").length);
+  const ordersRef = useRef(orders);
+  ordersRef.current = orders;
+
+  const areOrdersEqual = useCallback((prev: any[], next: any[]) => {
+    if (!prev || !next) return false;
+    if (prev.length !== next.length) return false;
+    for (let i = 0; i < prev.length; i++) {
+      const p = prev[i];
+      const n = next[i];
+      if (
+        p.id !== n.id ||
+        p.status !== n.status ||
+        p.motoboyId !== n.motoboyId ||
+        p.paymentMethod !== n.paymentMethod ||
+        p.totalAmount !== n.totalAmount ||
+        p.notes !== n.notes ||
+        p.scheduledDatetime !== n.scheduledDatetime ||
+        (p.items?.length || 0) !== (n.items?.length || 0) ||
+        p.ifoodDriverStatus !== n.ifoodDriverStatus ||
+        p.ifoodDriverName !== n.ifoodDriverName
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }, []);
 
   // === CONFIGURAÇÕES DE ALERTAS VISUAIS DE TEMPO (Amarelo / Vermelho) ===
   const [timeAlertConfig, setTimeAlertConfig] = useState<{
@@ -561,7 +587,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             if (text !== lastPollHash.current) {
               lastPollHash.current = text;
               const newOrders = JSON.parse(text);
-              setOrders(newOrders);
+              if (!areOrdersEqual(ordersRef.current, newOrders)) {
+                setOrders(newOrders);
+              }
 
               // 🖨️ AUTO-PRINT para qualquer fonte (iFood, JotaJá, Site, etc.)
               // Imprime automaticamente qualquer pedido ativo criado nos últimos 10 minutos que ainda não foi impresso
@@ -1260,8 +1288,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           marginBottom: "0.75rem",
           overflow: "hidden",
           boxShadow: cardBoxShadow,
-          transform: isDragging ? "scale(1.05) rotate(-1.5deg)" : "scale(1)",
-          transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease",
+          transform: isDragging ? "scale(1.05) rotate(-1.5deg)" : undefined,
+          transition: isDragging ? "transform 0.15s ease, box-shadow 0.15s ease" : "box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease",
           cursor: canDrag ? (isDragging ? "grabbing" : "grab") : "default",
           userSelect: "none",
           opacity: isDragging ? 0.92 : 1,
