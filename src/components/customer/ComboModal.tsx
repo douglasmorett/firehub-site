@@ -78,7 +78,10 @@ export default function ComboModal({ product, onClose, onConfirm }: {
             return (
               <div key={group.id} style={{ marginBottom: "1.25rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", position: "sticky", top: 0, backgroundColor: "white", zIndex: 5, padding: "4px 0" }}>
-                  <h4 style={{ fontWeight: 700, fontSize: "0.95rem" }}>{group.title}</h4>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <h4 style={{ fontWeight: 700, fontSize: "0.95rem", margin: 0 }}>{group.title}</h4>
+                    <span style={{ backgroundColor: "#0F172A", color: "#FFF", padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800 }}>Obrigatório</span>
+                  </div>
                   <span style={{ padding: "0.2rem 0.6rem", borderRadius: "12px", fontSize: "0.75rem", fontWeight: 700,
                     backgroundColor: complete ? "#DCFCE7" : "#FEF3C7", color: complete ? "#16A34A" : "#D97706"
                   }}>{complete ? <><Check size={12} style={{ display: "inline", verticalAlign: "middle" }} /> Completo</> : `${total}/${group.maxQty}`}</span>
