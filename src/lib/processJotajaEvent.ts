@@ -317,6 +317,23 @@ export async function processJotajaEvent(
           await jotajaMutate(`/v1/orders/${orderId}/confirm`, { method: "POST" });
         } catch { /* não crítico */ }
       }
+      // Auto-enfileira impressão térmica para novos pedidos do JotaJá
+      try {
+        const fullOrder = await prisma.customerOrder.findFirst({
+          where: { openDeliveryOrderId: orderId },
+          include: {
+            items: {
+              include: { menuProduct: { select: { id: true, name: true, isBeverage: true } } }
+            }
+          }
+        });
+        if (fullOrder) {
+          const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
+          pushJobToPrintQueue(franchisee.id, fullOrder, (franchisee as any).storeName || "HAKIM RIO DAS OSTRAS");
+        }
+      } catch (printErr) {
+        console.error("[Jotaja] Erro ao enfileirar auto-impressão:", printErr);
+      }
 
       return { action: "created", orderId, message: `status=${initialStatus}` };
 
