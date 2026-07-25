@@ -5,21 +5,19 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const users = await prisma.user.findMany({
+    const franchisee = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: { contains: "hakim", mode: "insensitive" } },
+          { email: "contatohakim@gmail.com" },
           { jotajaConnected: true },
-          { role: { in: ["FRANQUEADO", "ADMIN", "LOJA", "FRANCHISEE", "STAFF"] } }
+          { role: { in: ["FRANQUEADO", "ADMIN", "LOJA", "FRANCHISEE"] } }
         ]
-      },
-      select: { id: true, email: true, role: true, ownerId: true }
+      }
     });
 
-    const targetUser = users.find(u => u.email.toLowerCase() === "contatohakim@gmail.com") || users[0];
-    if (!targetUser) return NextResponse.json({ error: "No target user found" });
+    if (!franchisee) return NextResponse.json({ error: "Franqueado não encontrado" }, { status: 404 });
 
-    const primaryFranchiseeId = targetUser.ownerId || targetUser.id;
+    const targetFranchiseeId = franchisee.ownerId || franchisee.id;
 
     // Delete existing Luana items & orders
     await (prisma.customerOrderItem as any).deleteMany({
@@ -47,7 +45,7 @@ export async function GET() {
     // Create order with status ACEITO (Em Produção) at NOW timestamp
     const newOrder = await (prisma.customerOrder as any).create({
       data: {
-        franchiseeId: primaryFranchiseeId,
+        franchiseeId: targetFranchiseeId,
         customerName: "Luana",
         customerPhone: "22992536804",
         customerAddress: "Rua André Fillipe Ribeiro da Silva 693 Casa 2 - Costa Azul",
@@ -72,7 +70,7 @@ export async function GET() {
                   where: { id: "jotaja-2316-luana" },
                   create: {
                     id: "jotaja-2316-luana",
-                    franchiseeId: primaryFranchiseeId,
+                    franchiseeId: targetFranchiseeId,
                     name: "Pedido JotaJá #2316 - Luana (R$ 61,99)",
                     description: "Itens do pedido JotaJá #2316",
                     price: 61.99,
@@ -92,7 +90,7 @@ export async function GET() {
       message: "Pedido da Luana criado na 1ª coluna (Em Produção) no final da fila!",
       orderId: newOrder.id,
       status: newOrder.status,
-      franchiseeId: primaryFranchiseeId
+      franchiseeId: targetFranchiseeId
     });
   } catch (err: any) {
     console.error("[Move Luana Producao] Error:", err);
