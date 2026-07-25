@@ -608,3 +608,17 @@ model ProductRecipe {
   @@unique([menuProductId, stockItemId])
 }
 
+model PrintJob {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  jobKey       String   @unique
+  orderData    Json
+  storeName    String?
+  paperWidth   String?  @default("80mm")
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+
+  @@index([franchiseeId, status])
+}
+
+

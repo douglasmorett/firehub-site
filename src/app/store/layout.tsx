@@ -6,6 +6,7 @@ import StoreTopNav from "@/components/customer/StoreTopNav";
 import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import HideOnCompras from "@/components/HideOnCompras";
+import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
 
   return (
     <CartProvider>
+      <GlobalPrintListener />
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#F5F5F5" }}>
         <StoreTopNav
           userName={session.user?.name || user?.name || ""}
