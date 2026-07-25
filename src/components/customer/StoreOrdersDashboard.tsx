@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { isBeverageItem } from "@/lib/beverage";
+import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
@@ -1869,7 +1869,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ color: "#374151", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "6px" }}>
                         {item.quantity}× {mainName}
-                        {isBeverageItem(item) && (
+                        {comboSels.length === 0 && isBeverageItem(item) && (
                           <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "0.68rem", fontWeight: 800, background: "#E0F2FE", color: "#0284C7", border: "1px solid #7DD3FC" }}>
                             🥤 BEBIDA
                           </span>
@@ -1879,9 +1879,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     </div>
                     {comboSels.length > 0 && (
                       <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
-                        {comboSels.map((sel: any, i: number) => (
-                          <div key={i}>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
-                        ))}
+                        {comboSels.map((sel: any, i: number) => {
+                          const isSubBev = isBeverageName(sel.name);
+                          return (
+                            <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
+                              <span>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</span>
+                              {isSubBev && (
+                                <span style={{ padding: "1px 5px", borderRadius: "4px", fontSize: "0.64rem", fontWeight: 800, background: "#E0F2FE", color: "#0284C7", border: "1px solid #7DD3FC" }}>
+                                  🥤 BEBIDA
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     {comboSels.length === 0 && extras.length > 0 && (
@@ -2237,8 +2247,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     const nameParts = (item.menuProduct?.name || "Item").split(" | ");
                     const mainName = nameParts[0];
                     const extras = nameParts.slice(1);
-
                     const itemPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
+                    const isStandaloneBeverage = comboSels.length === 0 && isBeverageItem(item);
 
                     return (
                       <div key={item.id} style={{
@@ -2252,24 +2262,32 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           <span>Valor: R$ {(itemPrice * item.quantity).toFixed(2).replace('.', ',')}</span>
                         </div>
                         <div style={{ fontWeight: "bold" }}>
-                          {mainName} {isBeverageItem(item) ? " 🥤 [BEBIDA]" : ""}
+                          {mainName} {isStandaloneBeverage ? " 🥤 [BEBIDA]" : ""}
                         </div>
                         
                         {comboSels.length > 0 && (
                           <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
                             {comboSels.map((sel: any, i: number) => {
                               const totalQty = (sel.quantity || 1) * (item.quantity || 1);
+                              const isSubBeverage = isBeverageName(sel.name);
                               return (
-                                <div key={i}>- {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</div>
+                                <div key={i} style={{ fontWeight: isSubBeverage ? "bold" : "normal" }}>
+                                  - {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name} {isSubBeverage ? " 🥤 [BEBIDA]" : ""}
+                                </div>
                               );
                             })}
                           </div>
                         )}
                         {comboSels.length === 0 && extras.length > 0 && (
                           <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
-                            {extras.map((ext: string, i: number) => (
-                              <div key={i}>- {ext.trim()}</div>
-                            ))}
+                            {extras.map((ext: string, i: number) => {
+                              const isExtraBeverage = isBeverageName(ext);
+                              return (
+                                <div key={i} style={{ fontWeight: isExtraBeverage ? "bold" : "normal" }}>
+                                  - {ext.trim()} {isExtraBeverage ? " 🥤 [BEBIDA]" : ""}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
