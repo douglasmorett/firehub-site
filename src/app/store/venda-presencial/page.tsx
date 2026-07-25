@@ -136,7 +136,7 @@ export default function VendaPresencialPage() {
       items: cart.map(i => ({
         menuProductId: i.product.id,
         quantity: i.qty,
-        price: i.product.price,
+        price: i.unitPrice ?? i.product.price,
         comboSelections: i.comboSelections ? JSON.stringify(i.comboSelections) : null
       })),
     };
@@ -294,7 +294,7 @@ export default function VendaPresencialPage() {
         </div>
 
         {/* Footer: pagamento + total */}
-        <div style={{ padding: "12px 16px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA" }}>
+        <div style={{ padding: "12px 16px 36px 16px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50 }}>
           {/* Forma de pagamento */}
           <div style={{ marginBottom: 8 }}>
             <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 4 }}>Pagamento</label>
@@ -312,9 +312,9 @@ export default function VendaPresencialPage() {
           </div>
 
           {/* Acréscimo voucher */}
-          {isVoucher && voucherRate > 0 && (
-            <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 8, padding: "6px 10px", marginBottom: 8, fontSize: "0.78rem", color: "#C2410C" }}>
-              ⚠️ <strong>Acréscimo voucher: {voucherRate.toFixed(1)}%</strong> = +{fmt(voucherFee)} (taxa da maquineta)
+          {isVoucher && (
+            <div style={{ marginBottom: 8, fontSize: "0.75rem", color: "#D97706", background: "#FFFBEB", padding: "5px 8px", borderRadius: 6, border: "1px solid #FDE68A" }}>
+              Taxa de vale refeição/alimentação ({voucherRate}%): <strong>+{fmt(voucherFee)}</strong>
             </div>
           )}
 
@@ -350,8 +350,8 @@ export default function VendaPresencialPage() {
           {msg && <div style={{ padding: "7px 10px", borderRadius: 8, marginBottom: 8, background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✅") ? "#16a34a" : "#dc2626", fontSize: "0.82rem", fontWeight: 600 }}>{msg}</div>}
 
           <button onClick={handleSubmit} disabled={loading || cart.length === 0}
-            style={{ width: "100%", padding: "12px", background: cart.length === 0 ? "#E2E8F0" : "#C62828", color: cart.length === 0 ? "#94A3B8" : "#fff", border: "none", borderRadius: 12, fontWeight: 900, fontSize: "1rem", cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            {loading ? "Registrando..." : <><Check size={18} /> Finalizar Pedido</>}
+            style={{ width: "100%", padding: "14px", background: cart.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: cart.length === 0 ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: cart.length > 0 ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 100 }}>
+            {loading ? "Registrando..." : <><Check size={20} /> Finalizar Pedido</>}
           </button>
         </div>
       </div>

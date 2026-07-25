@@ -47,5 +47,26 @@ export async function POST(req: Request) {
     console.error("[Stock] Erro ao deduzir estoque de pedido presencial:", err)
   );
 
+  // Enfileira impressão automática da Via de Retirada/Comanda na impressora térmica
+  try {
+    const fullOrder = await prisma.customerOrder.findUnique({
+      where: { id: order.id },
+      include: {
+        items: {
+          include: {
+            menuProduct: { select: { id: true, name: true, isBeverage: true } }
+          }
+        }
+      }
+    });
+
+    if (fullOrder) {
+      const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
+      pushJobToPrintQueue(targetFranchiseeId, fullOrder, dbUser.ownerId ? "FIREHUB" : "HAKIM RIO DAS OSTRAS");
+    }
+  } catch (printErr) {
+    console.error("[Presencial] Erro ao enfileirar impressão automática:", printErr);
+  }
+
   return NextResponse.json({ success: true, orderId: order.id });
 }
