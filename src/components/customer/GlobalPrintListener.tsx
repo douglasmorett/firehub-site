@@ -68,13 +68,37 @@ export default function GlobalPrintListener() {
                     deliveryType: order.deliveryType || "DELIVERY",
                     deliveryBy: order.deliveryBy || "MERCHANT",
                     paymentMethod: order.paymentMethod || "",
-                    items: (order.items || []).map((i: any) => ({
-                      name: i.menuProduct?.name || i.name || "Item",
-                      qty: i.quantity || i.qty || 1,
-                      price: i.price || 0,
-                      notes: i.notes || "",
-                      comboSelections: i.comboSelections,
-                    })),
+                    items: (order.items || []).map((i: any) => {
+                      const { isBeverageItem, isBeverageName } = require("@/lib/beverage");
+                      const rawName = i.menuProduct?.name || i.name || "Item";
+                      const comboSels = (() => {
+                        if (!i.comboSelections) return i.comboSelections;
+                        try {
+                          const parsed = typeof i.comboSelections === "string" ? JSON.parse(i.comboSelections) : i.comboSelections;
+                          if (Array.isArray(parsed)) {
+                            const updated = parsed.map((s: any) => {
+                              if (s.name && isBeverageName(s.name) && !s.name.includes("BEBIDA")) {
+                                return { ...s, name: `${s.name}   🥤 *** BEBIDA ***` };
+                              }
+                              return s;
+                            });
+                            return typeof i.comboSelections === "string" ? JSON.stringify(updated) : updated;
+                          }
+                        } catch {}
+                        return i.comboSelections;
+                      })();
+
+                      const isStandaloneBev = (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) && isBeverageItem(i);
+                      const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName}   🥤 *** BEBIDA ***` : rawName;
+
+                      return {
+                        name: finalName,
+                        qty: i.quantity || i.qty || 1,
+                        price: i.price || 0,
+                        notes: i.notes || "",
+                        comboSelections: comboSels,
+                      };
+                    }),
                     totalAmount: order.totalAmount || 0,
                     deliveryFee: order.deliveryFee || 0,
                     discountTotal: order.discountTotal,

@@ -412,13 +412,36 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         deliveryType: order.deliveryType || "DELIVERY",
         deliveryBy: order.deliveryBy || "MERCHANT",
         paymentMethod: translatePayment(order.paymentMethod || ""),
-        items: (order.items || []).map((i: any) => ({
-          name: i.menuProduct?.name || i.name || "Item",
-          qty: i.quantity || i.qty || 1,
-          price: i.price || 0,
-          notes: i.notes || "",
-          comboSelections: i.comboSelections,
-        })),
+        items: (order.items || []).map((i: any) => {
+          const rawName = i.menuProduct?.name || i.name || "Item";
+          const comboSels = (() => {
+            if (!i.comboSelections) return i.comboSelections;
+            try {
+              const parsed = typeof i.comboSelections === "string" ? JSON.parse(i.comboSelections) : i.comboSelections;
+              if (Array.isArray(parsed)) {
+                const updated = parsed.map((s: any) => {
+                  if (s.name && isBeverageName(s.name) && !s.name.includes("BEBIDA")) {
+                    return { ...s, name: `${s.name} 🥤 [BEBIDA]` };
+                  }
+                  return s;
+                });
+                return typeof i.comboSelections === "string" ? JSON.stringify(updated) : updated;
+              }
+            } catch {}
+            return i.comboSelections;
+          })();
+
+          const isStandaloneBev = (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) && isBeverageItem(i);
+          const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName} 🥤 [BEBIDA]` : rawName;
+
+          return {
+            name: finalName,
+            qty: i.quantity || i.qty || 1,
+            price: i.price || 0,
+            notes: i.notes || "",
+            comboSelections: comboSels,
+          };
+        }),
         totalAmount: order.totalAmount || 0,
         deliveryFee: order.deliveryFee || 0,
         discountTotal: order.discountTotal,
@@ -2240,7 +2263,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           <span>Valor: R$ {(itemPrice * item.quantity).toFixed(2).replace('.', ',')}</span>
                         </div>
                         <div style={{ fontWeight: "bold" }}>
-                          {mainName} {isStandaloneBeverage ? " 🥤 [BEBIDA]" : ""}
+                          {mainName} {isStandaloneBeverage ? <span style={{ fontSize: "14px", fontWeight: 900 }}> 🥤 *** BEBIDA ***</span> : ""}
                         </div>
                         
                         {comboSels.length > 0 && (
@@ -2249,8 +2272,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                               const totalQty = (sel.quantity || 1) * (item.quantity || 1);
                               const isSubBeverage = isBeverageName(sel.name);
                               return (
-                                <div key={i} style={{ fontWeight: isSubBeverage ? "bold" : "normal" }}>
-                                  - {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name} {isSubBeverage ? " 🥤 [BEBIDA]" : ""}
+                                <div key={i} style={{ fontWeight: isSubBeverage ? "bold" : "normal", margin: isSubBeverage ? "2px 0" : "0" }}>
+                                  - {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name} {isSubBeverage ? <span style={{ fontSize: "13px", fontWeight: 900, background: "#000", color: "#fff", padding: "0 4px", borderRadius: "2px" }}>🥤 *** BEBIDA ***</span> : ""}
                                 </div>
                               );
                             })}
@@ -2261,8 +2284,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             {extras.map((ext: string, i: number) => {
                               const isExtraBeverage = isBeverageName(ext);
                               return (
-                                <div key={i} style={{ fontWeight: isExtraBeverage ? "bold" : "normal" }}>
-                                  - {ext.trim()} {isExtraBeverage ? " 🥤 [BEBIDA]" : ""}
+                                <div key={i} style={{ fontWeight: isExtraBeverage ? "bold" : "normal", margin: isExtraBeverage ? "2px 0" : "0" }}>
+                                  - {ext.trim()} {isExtraBeverage ? <span style={{ fontSize: "13px", fontWeight: 900, background: "#000", color: "#fff", padding: "0 4px", borderRadius: "2px" }}>🥤 *** BEBIDA ***</span> : ""}
                                 </div>
                               );
                             })}
