@@ -240,25 +240,20 @@ async function pollIfoodEvents(sessionUserId?: string) {
               ?? orderData.deliveryFee
               ?? 0;
 
-            // === Campos para homologação iFood ===
-            // iFood sends scheduling info in multiple possible fields
-            const rawScheduled = orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime
-              ? orderData.scheduledDatetime
-              : orderData.schedule?.scheduledDatetimeEnd
-                ?? orderData.schedule?.scheduledDatetimeStart
-                ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
-                  ? orderData.preparationStartDateTime : null);
+            // === Campos para homologação e sincronização de prazo iFood ===
+            const rawScheduled = orderData.delivery?.deliveryDateTime
+              ?? orderData.delivery?.estimatedDeliveryWindow?.end
+              ?? orderData.delivery?.estimatedDeliveryWindow?.start
+              ?? orderData.takeout?.takeoutDateTime
+              ?? orderData.takeout?.estimatedTakeoutWindow?.end
+              ?? orderData.schedule?.scheduledDatetimeEnd
+              ?? orderData.schedule?.scheduledDatetimeStart
+              ?? orderData.scheduledDatetime
+              ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
+                ? orderData.preparationStartDateTime : null);
 
             const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
-
-            // Log scheduling data for debugging
-            if (orderData.orderTiming === "SCHEDULED" || orderData.schedule) {
-              console.log(`[iFood Poll] Scheduling data: orderTiming=${orderData.orderTiming}, scheduledDatetime=${orderData.scheduledDatetime}, schedule=${JSON.stringify(orderData.schedule)}, preparationStart=${orderData.preparationStartDateTime}, resolved=${scheduledDatetime?.toISOString()}`);
-            }
-
-            const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
-              ? new Date(orderData.delivery.deliveryDateTime)
-              : null;
+            const deliveryDeadline = scheduledDatetime;
 
             const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
 

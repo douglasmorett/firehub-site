@@ -242,17 +242,19 @@ export async function processJotajaEvent(
         if (delFee) deliveryFeeValue = priceVal(delFee.price);
       }
 
-      // Agendamento
-      const rawScheduled =
-        (orderData.orderTiming === "SCHEDULED" && orderData.scheduledDatetime)
-          ? orderData.scheduledDatetime
-          : orderData.schedule?.scheduledDatetimeEnd
-            ?? orderData.schedule?.scheduledDatetimeStart
-            ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
-              ? orderData.preparationStartDateTime : null);
+      // Agendamento / Sincronização de prazo de entrega
+      const rawScheduled = orderData.delivery?.deliveryDateTime
+        ?? orderData.delivery?.deliveryDeadline
+        ?? orderData.delivery?.estimatedDeliveryWindow?.end
+        ?? orderData.delivery?.estimatedDeliveryWindow?.start
+        ?? orderData.takeout?.takeoutDateTime
+        ?? orderData.schedule?.scheduledDatetimeEnd
+        ?? orderData.schedule?.scheduledDatetimeStart
+        ?? orderData.scheduledDatetime
+        ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
+          ? orderData.preparationStartDateTime : null);
       const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
-      const deliveryDeadline = !scheduledDatetime && orderData.delivery?.deliveryDateTime
-        ? new Date(orderData.delivery.deliveryDateTime) : null;
+      const deliveryDeadline = scheduledDatetime;
 
       // Pagamento
       const cashPayment = paymentList.find((p: any) =>
