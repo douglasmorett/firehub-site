@@ -343,7 +343,10 @@ export default function KDSTelaPage() {
         .map(order => ({
           ...order,
           items: order.items.filter(
-            (item: any) => item.menuProduct?.category && activeCategories.includes(item.menuProduct.category)
+            (item: any) => {
+              const cat = item.menuProduct?.category || item.category || "";
+              return cat && activeCategories.includes(cat);
+            }
           ),
         }))
         .filter(order => order.items.length > 0); // ocultar pedidos sem nenhum item da categoria
@@ -1072,9 +1075,10 @@ function OrderCard({
           paddingTop: 10,
         }}
       >
-        {order.items.map((item) => {
+        {order.items.map((item: any) => {
           const comboItems = parseComboSelections(item.comboSelections, item.quantity);
-          const displayName = item.menuProduct.name.split(" | ")[0];
+          const rawName = item.name || item.menuProduct?.name || "Item";
+          const displayName = rawName.split(" | ")[0];
           return (
             <div key={item.id}>
               <div

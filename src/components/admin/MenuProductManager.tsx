@@ -378,6 +378,23 @@ export default function MenuProductManager({
 
   const itemProducts = products.filter(p => !p.isCombo);
   const comboProducts = products.filter(p => p.isCombo);
+  const noPhotoCount = products.filter(p => !p.imageUrl).length;
+
+  const handleCleanNoPhoto = async () => {
+    if (!confirm("Deseja excluir todos os produtos que não possuem foto? (Eles serão removidos do cardápio e desvinculados de todos os combos automaticamente)")) return;
+    try {
+      const res = await fetch("/api/admin/clean-no-photo-products");
+      const data = await res.json();
+      if (data.ok) {
+        showToast(`✅ ${data.count} produtos sem foto foram excluídos!`, "#10B981");
+        router.refresh();
+      } else {
+        alert("Erro ao excluir: " + (data.error || "tente novamente"));
+      }
+    } catch {
+      alert("Erro ao processar exclusão.");
+    }
+  };
 
   return (
     <div>
@@ -607,7 +624,6 @@ export default function MenuProductManager({
         </div>
       )}
 
-
       {/* TABS E BUSCA */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -615,9 +631,17 @@ export default function MenuProductManager({
           <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`}><Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})</button>
         </div>
 
-        <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? (dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || "") : (dynCategories[0]?.name || "")); setShowForm(true); }} className="btn btn-primary">
-          <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {noPhotoCount > 0 && (
+            <button onClick={handleCleanNoPhoto} className="btn btn-outline" style={{ border: "1.5px solid #FCA5A5", color: "#DC2626", background: "#FEF2F2", fontWeight: 700, fontSize: "0.82rem" }}>
+              <Trash2 size={15} style={{ marginRight: "4px" }} /> Excluir sem foto ({noPhotoCount})
+            </button>
+          )}
+
+          <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? (dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || "") : (dynCategories[0]?.name || "")); setShowForm(true); }} className="btn btn-primary">
+            <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
+          </button>
+        </div>
       </div>
 
       {/* BARRA DE BUSCA E FILTRO DE CATEGORIAS */}
