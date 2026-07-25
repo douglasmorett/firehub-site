@@ -394,6 +394,8 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   const INVERSE_ON = "\x1d\x42\x01";
   const INVERSE_OFF = "\x1d\x42\x00";
 
+  const BEV_STAMP = INVERSE_ON + " <=== BEBIDA " + INVERSE_OFF;
+
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
   if (hasBeverages) {
@@ -411,7 +413,7 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
       const isItemBev = isBeverageItem(item);
-      const itemLabel = isItemBev ? `${name}   <=== BEBIDA` : name;
+      const itemLabel = isItemBev ? `${name}  ${BEV_STAMP}` : name;
       res += makeBoxLine(`${qty}x ${itemLabel}`, priceStr);
 
       const comboSels = (() => {
@@ -428,7 +430,7 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
           const totalQty = (sel.quantity || 1) * qty;
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
           const isSelBev = isBeverageName(sel.name);
-          const selLabel = isSelBev ? `${sel.name}   <=== BEBIDA` : sel.name;
+          const selLabel = isSelBev ? `${sel.name}  ${BEV_STAMP}` : sel.name;
           res += makeBoxText(`  - ${qPrefix}${selLabel}`);
         });
       }
