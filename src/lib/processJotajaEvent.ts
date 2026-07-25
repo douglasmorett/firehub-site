@@ -261,7 +261,26 @@ export async function processJotajaEvent(
         p.method === "CASH" || p.name?.toLowerCase().includes("dinheir")
       );
       const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
-      const payMethodName = paymentList[0]?.method ?? "Jotajá Online";
+
+      const firstPayment = paymentList[0] || {};
+      const isPrepaid = (orderData.payments?.prepaid ?? 0) > 0 || firstPayment.type === "PREPAID" || firstPayment.method === "ONLINE" || firstPayment.method === "JOTAJA_ONLINE";
+      const methodCode = (firstPayment.method || "").toUpperCase();
+
+      let resolvedPaymentMethod = "Cartão de Crédito (Cobrar na Entrega)";
+      if (cashPayment) {
+        resolvedPaymentMethod = "Dinheiro";
+      } else if (methodCode.includes("DEBIT") || methodCode.includes("DEBITO")) {
+        resolvedPaymentMethod = isPrepaid ? "Débito (Pago Online)" : "Débito (Cobrar na Entrega)";
+      } else if (methodCode.includes("CREDIT") || methodCode.includes("CREDITO")) {
+        resolvedPaymentMethod = isPrepaid ? "Crédito (Pago Online)" : "Crédito (Cobrar na Entrega)";
+      } else if (methodCode.includes("PIX")) {
+        resolvedPaymentMethod = isPrepaid ? "Pix (Pago Online)" : "Pix (Cobrar na Entrega)";
+      } else if (isPrepaid) {
+        resolvedPaymentMethod = "JotaJá App (Pago Online)";
+      } else {
+        resolvedPaymentMethod = `${firstPayment.method || "Cartão"} (Cobrar na Entrega)`;
+      }
+
       const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
       // Descontos/benefits (completo)
@@ -354,7 +373,7 @@ export async function processJotajaEvent(
             return parts.join(" - ");
           })(),
           deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-          paymentMethod: cashPayment ? "Dinheiro" : payMethodName,
+          paymentMethod: resolvedPaymentMethod,
           totalAmount: total,
           deliveryFee: deliveryFeeValue,
           status: initialStatus,

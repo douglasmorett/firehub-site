@@ -14,28 +14,28 @@ const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: strin
 };
 
 const PAYMENT_LABELS: Record<string, string> = {
-  CREDIT: "Crédito (Online)",
-  CREDITO: "Crédito (Online)",
-  DEBIT: "Débito (Online)",
-  DEBITO: "Débito (Online)",
-  PIX: "Pix (Online)",
+  CREDIT: "Crédito (Cobrar na Entrega)",
+  CREDITO: "Crédito (Cobrar na Entrega)",
+  DEBIT: "Débito (Cobrar na Entrega)",
+  DEBITO: "Débito (Cobrar na Entrega)",
+  PIX: "Pix",
   CASH: "Dinheiro",
   DINHEIRO: "Dinheiro",
-  VOUCHER: "Voucher (Online)",
-  DIGITAL_WALLET: "iFood App (Online)",
-  ONLINE: "iFood App (Online)",
-  IFOOD_PAY: "iFood Pay (Online)",
-  OTHER: "iFood App (Online)",
-  "OTHER (Online)": "iFood App (Online)",
-  "other (online)": "iFood App (Online)",
-  MEAL_VOUCHER: "Vale Refeição (iFood Online)",
-  FOOD_VOUCHER: "Vale Alimentação (iFood Online)",
-  credit_card: "Crédito (Online)",
-  debit_card: "Débito (Online)",
-  pix: "Pix (Online)",
+  VOUCHER: "Voucher (Cobrar na Entrega)",
+  DIGITAL_WALLET: "iFood App (Pago Online)",
+  ONLINE: "Pago Online",
+  IFOOD_PAY: "iFood Pay (Pago Online)",
+  OTHER: "Pago Online",
+  "OTHER (Online)": "iFood App (Pago Online)",
+  "other (online)": "iFood App (Pago Online)",
+  MEAL_VOUCHER: "Vale Refeição (Cobrar na Entrega)",
+  FOOD_VOUCHER: "Vale Alimentação (Cobrar na Entrega)",
+  credit_card: "Crédito (Cobrar na Entrega)",
+  debit_card: "Débito (Cobrar na Entrega)",
+  pix: "Pix",
   cash: "Dinheiro",
-  digital_wallet: "iFood App (Online)",
-  other: "iFood App (Online)",
+  digital_wallet: "iFood App (Pago Online)",
+  other: "Pago Online",
 };
 const translatePayment = (method: string) => PAYMENT_LABELS[method] || PAYMENT_LABELS[method.toUpperCase()] || method;
 
@@ -2878,15 +2878,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           </span>
                           {order.paymentMethod && (() => {
                             const method = translatePayment(order.paymentMethod);
-                            const isDinheiro = method === "Dinheiro";
-                            const isPaidOnline = !isDinheiro && (order.paymentPaidAt || order.source === "IFOOD" || order.source === "JOTAJA" || order.gatewayProvider);
+                            const isCobrar = /cobrar|entrega|dinheiro|cash|maquininha/i.test(method) || !/pago online|online|app|pix \(pago/i.test(order.paymentMethod || "");
+                            const isPaidOnline = Boolean(order.paymentPaidAt || order.gatewayProvider || (/pago online|online|app|digital_wallet/i.test(order.paymentMethod || "") && !isCobrar));
                             return (
                               <>
                                 <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
                                   💳 Pagamento: {method}
                                 </span>
                                 <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, background: isPaidOnline ? "#F0FDF4" : "#FFF7ED", border: `1px solid ${isPaidOnline ? "#BBF7D0" : "#FED7AA"}`, color: isPaidOnline ? "#15803D" : "#C2410C" }}>
-                                  {isPaidOnline ? "✅ Pago Online" : "💰 Pagar na Entrega"}
+                                  {isPaidOnline ? "✅ Pago Online" : "💰 Pagar na Entrega (Cobrar)"}
                                 </span>
                               </>
                             );
