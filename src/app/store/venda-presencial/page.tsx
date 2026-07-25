@@ -157,7 +157,12 @@ export default function VendaPresencialPage() {
   const cartQty = cart.reduce((s, i) => s + i.qty, 0);
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif", display: "grid", gridTemplateColumns: "1fr 380px", height: "calc(100vh - 110px)", overflow: "hidden" }}>
+    <div style={{ fontFamily: "'Inter', sans-serif", display: "grid", gridTemplateColumns: "1fr 380px", height: "calc(100vh - 75px)", overflow: "hidden", position: "relative" }}>
+      <style>{`
+        #hubspot-messages-iframe-container, iframe[src*="chat"], .crisp-client, div[class*="chat"], #chat-widget-container, div[class*="widget"] {
+          display: none !important;
+        }
+      `}</style>
 
       {/* ===== LEFT: CARDÁPIO ===== */}
       <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid #E2E8F0" }}>
