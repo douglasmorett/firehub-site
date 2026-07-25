@@ -131,13 +131,20 @@ export async function DELETE(req: Request) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   const data = await req.json();
+  const productId = data.id;
   
   try {
-    await prisma.menuProduct.delete({ where: { id: data.id } });
+    // 1. Remover o item de todos os combos em que ele estiver vinculado
+    await prisma.comboGroupItem.deleteMany({
+      where: { menuProductId: productId }
+    });
+
+    // 2. Excluir o produto do cardápio
+    await prisma.menuProduct.delete({ where: { id: productId } });
     return NextResponse.json({ success: true });
   } catch (err) {
-    // Soft delete if deletion fails due to relation constraints
-    await prisma.menuProduct.update({ where: { id: data.id }, data: { active: false } });
+    // Soft delete se falhar por restrição em histórico de pedidos anteriores
+    await prisma.menuProduct.update({ where: { id: productId }, data: { active: false } });
     return NextResponse.json({ success: true, softDeleted: true });
   }
 }

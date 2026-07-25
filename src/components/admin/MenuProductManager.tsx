@@ -140,7 +140,7 @@ export default function MenuProductManager({
   };
 
   // Modal de confirmação customizado
-  const [confirmModal, setConfirmModal] = useState<{ id: string; name: string } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ id: string; name: string; affectedCombos?: any[] } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [softDeletedName, setSoftDeletedName] = useState<string | null>(null);
@@ -148,6 +148,21 @@ export default function MenuProductManager({
   // Smart Pause — pausar item que está em combos
   const [pauseModal, setPauseModal] = useState<{ id: string; name: string; affectedCombos: any[]; newActive: boolean } | null>(null);
   const [pausing, setPausing] = useState(false);
+
+  const handleDelete = (id: string, name: string) => {
+    setDeleteConfirmText("");
+    const product = products.find(p => p.id === id);
+    let affectedCombos: any[] = [];
+    if (product && !product.isCombo) {
+      affectedCombos = products.filter(comb =>
+        comb.isCombo &&
+        comb.comboGroups?.some((g: any) =>
+          g.items?.some((i: any) => i.menuProduct?.id === id || i.menuProductId === id)
+        )
+      );
+    }
+    setConfirmModal({ id, name, affectedCombos });
+  };
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
 
   const showToast = (text: string, color = "#10B981") => {
@@ -262,10 +277,7 @@ export default function MenuProductManager({
     finally { setLoading(false); }
   };
 
-  const handleDelete = (id: string, name: string) => {
-    setDeleteConfirmText("");
-    setConfirmModal({ id, name });
-  };
+
 
   const confirmDelete = async () => {
     if (!confirmModal) return;
@@ -399,6 +411,26 @@ export default function MenuProductManager({
               Você está prestes a excluir 
               <strong style={{ color: "#111827" }}>“{confirmModal.name}”</strong>.
             </p>
+
+            {/* Aviso de Vinculação a Combos */}
+            {confirmModal.affectedCombos && confirmModal.affectedCombos.length > 0 && (
+              <div style={{
+                background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: "12px",
+                padding: "0.85rem 1rem", marginBottom: "1.25rem",
+              }}>
+                <p style={{ color: "#C2410C", fontSize: "0.85rem", fontWeight: 700, margin: "0 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                  ⚠️ Atenção! Este item está vinculado em {confirmModal.affectedCombos.length} combo(s):
+                </p>
+                <ul style={{ margin: "0 0 8px 18px", padding: 0, color: "#9A3412", fontSize: "0.82rem", fontWeight: 600 }}>
+                  {confirmModal.affectedCombos.map((comb: any) => (
+                    <li key={comb.id} style={{ marginBottom: 2 }}>{comb.name}</li>
+                  ))}
+                </ul>
+                <p style={{ color: "#9A3412", fontSize: "0.78rem", fontWeight: 700, margin: 0, borderTop: "1px solid #FED7AA", paddingTop: 6 }}>
+                  💡 Se você excluir este item, ele <strong>sairá de todos esses combos automaticamente</strong>.
+                </p>
+              </div>
+            )}
 
             {/* Aviso de irreversibilidade */}
             <div style={{
