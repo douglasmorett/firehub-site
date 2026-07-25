@@ -368,7 +368,7 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
 
   const isBeverageName = (name) => {
     if (!name) return false;
-    const bevRegex = /\b(bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|agua|guarana|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice)\b/i;
+    const bevRegex = /\b(bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|agua|guarana|guaravita|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice)\b/i;
     return bevRegex.test(cleanAscii(name));
   };
 
@@ -395,7 +395,7 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
   if (hasBeverages) {
     res += boxBorder;
-    res += DOUBLE_HEIGHT + makeBoxText("---> BEBIDA ---> PEGAR BEBIDA GELADEIRA!") + DOUBLE_OFF;
+    res += makeBoxText("!! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!");
   }
 
   if (order.items && order.items.length) {
@@ -408,12 +408,8 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
       const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
 
       const isItemBev = isBeverageItem(item);
-      if (isItemBev) {
-        res += DOUBLE_HEIGHT + makeBoxText(`---> BEBIDA ---> ${qty}x ${name}`) + DOUBLE_OFF;
-        res += rightAlign("   Valor item:", priceStr);
-      } else {
-        res += makeBoxLine(`${qty}x ${name}`, priceStr);
-      }
+      const itemLabel = isItemBev ? `${name}   <=== BEBIDA` : name;
+      res += makeBoxLine(`${qty}x ${itemLabel}`, priceStr);
 
       const comboSels = (() => {
         if (!item.comboSelections) return [];
@@ -429,11 +425,8 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
           const totalQty = (sel.quantity || 1) * qty;
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
           const isSelBev = isBeverageName(sel.name);
-          if (isSelBev) {
-            res += DOUBLE_HEIGHT + makeBoxText(`---> BEBIDA ---> - ${qPrefix}${sel.name}`) + DOUBLE_OFF;
-          } else {
-            res += makeBoxText(`  - ${qPrefix}${sel.name}`);
-          }
+          const selLabel = isSelBev ? `${sel.name}   <=== BEBIDA` : sel.name;
+          res += makeBoxText(`  - ${qPrefix}${selLabel}`);
         });
       }
 
