@@ -523,14 +523,17 @@ const printedOrdersCache = new Map();
 
 function getOrderDeduplicationKeys(order) {
   if (!order) return [];
+  const cleanCustomer = String(order.customerName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const amount = Number(order.totalAmount || 0).toFixed(2);
+  const seq = order.dailyOrderNumber || order.orderSeqNumber || "";
+
   return [
     order.id ? `id_${order.id}` : null,
     order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
     order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null,
     order.openDeliveryOrderId ? `opd_${order.openDeliveryOrderId}` : null,
-    order.dailyOrderNumber ? `seq_${order.dailyOrderNumber}` : null,
-    order.orderSeqNumber ? `seq_${order.orderSeqNumber}` : null,
-    (order.customerName && order.totalAmount) ? `cust_${order.customerName.trim().toLowerCase()}_${order.totalAmount}` : null
+    seq ? `seq_${seq}` : null,
+    (cleanCustomer && amount && amount !== "0.00") ? `cust_${cleanCustomer}_${amount}` : null
   ].filter(Boolean);
 }
 
