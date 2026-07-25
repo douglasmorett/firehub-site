@@ -182,7 +182,17 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
             // Extract items
             const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
-            const items = (orderData.items ?? []).map((i: any) => {
+            const rawIfoodItems = (
+              (Array.isArray(orderData.items) && orderData.items.length > 0 ? orderData.items : null) ??
+              (Array.isArray(orderData.orderItems) && orderData.orderItems.length > 0 ? orderData.orderItems : null) ??
+              (Array.isArray(orderData.products) && orderData.products.length > 0 ? orderData.products : null) ??
+              []
+            );
+
+            const items = rawIfoodItems.map((i: any, idx: number) => {
+              const itemId = i.id || i.externalCode || i.code || `ifitem-${idx}-${Math.random().toString(36).slice(2)}`;
+              const itemName = (i.name || i.productName || i.displayName || i.title || i.label || "Item iFood").trim();
+
               const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
               const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
                 ? JSON.stringify(subItemsList.map((s: any) => ({
@@ -200,14 +210,14 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 comboSelections: comboSels,
                 menuProduct: {
                   connectOrCreate: {
-                    where: { id: `ifood-${i.id}` } as any,
+                    where: { id: `ifood-${itemId}` } as any,
                     create: {
-                      id: `ifood-${i.id}`,
+                      id: `ifood-${itemId}`,
                       franchiseeId: eventFranchisee.id,
-                      name: i.name ?? "Item iFood",
-                      description: "",
+                      name: itemName,
+                      description: i.observations || i.notes || "",
                       price: itemUnitPrice,
-                      category: "iFood",
+                      category: i.category || "iFood",
                       active: true,
                     } as any,
                   } as any,
