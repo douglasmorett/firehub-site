@@ -716,9 +716,9 @@ export default function KDSTelaPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))",
                 gap: 16,
-                maxWidth: 1400,
+                maxWidth: 1600,
                 margin: "0 auto",
               }}
             >
@@ -1117,15 +1117,15 @@ function OrderCard({
                 </span>
                 <span>{displayName}</span>
               </div>
-              {/* Combo sub-items: exibe em 2 colunas se houver 6+ subitens */}
+              {/* Combo sub-items: exibe em colunas adaptáveis sem NUNCA cortar nomes */}
               {comboItems.length > 0 && (
                 <div
                   style={{
-                    paddingLeft: isHugeOrder ? 16 : isVeryLargeOrder ? 24 : 42,
+                    paddingLeft: isHugeOrder ? 14 : isVeryLargeOrder ? 20 : 36,
                     display: comboItems.length >= 6 ? "grid" : "flex",
-                    gridTemplateColumns: comboItems.length >= 6 ? "repeat(2, 1fr)" : undefined,
+                    gridTemplateColumns: comboItems.length >= 6 ? "repeat(auto-fit, minmax(200px, 1fr))" : undefined,
                     flexDirection: comboItems.length >= 6 ? undefined : "column",
-                    gap: comboItems.length >= 6 ? "2px 12px" : (isHugeOrder ? 2 : 3),
+                    gap: comboItems.length >= 6 ? "2px 14px" : (isHugeOrder ? 2 : 3),
                     marginTop: 3,
                   }}
                 >
@@ -1137,9 +1137,8 @@ function OrderCard({
                         color: "#9ca3af",
                         fontWeight: 500,
                         lineHeight: 1.25,
-                        whiteSpace: comboItems.length >= 6 ? "nowrap" : "normal",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
+                        whiteSpace: "normal",
+                        wordBreak: "break-word",
                       }}
                     >
                       ↳ {sub.quantity}x {sub.name}
