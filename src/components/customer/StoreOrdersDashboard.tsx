@@ -1131,8 +1131,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO").sort(sortByOrderNumberAsc);
-  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || o.status === "PRONTO").sort(sortByOrderNumberAsc);
-  const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO").sort(sortByOrderNumberAsc);
+  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
+  const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberAsc);
 
   // Resumo de vendas
