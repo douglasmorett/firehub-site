@@ -178,6 +178,7 @@ export default function MenuProductManager({
   const [cost, setCost] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [isCombo, setIsCombo] = useState(false);
+  const [isBeverage, setIsBeverage] = useState(false);
   const [activePDV, setActivePDV] = useState(true);
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(false);
@@ -188,7 +189,7 @@ export default function MenuProductManager({
   const resetForm = () => {
     setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]);
     setCategory(dynCategories[0]?.name || "");
-    setImageUrl(""); setActive(true); setIsCombo(false); setComboGroups([]);
+    setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(false); setActiveGarcom(false);
     setAvailableDaysMode("all"); setSelectedDays([]);
     setShowForm(false); setEditingId(null);
@@ -214,7 +215,7 @@ export default function MenuProductManager({
     }
 
     setCategory(p.category); setImageUrl(p.imageUrl || ""); setActive(p.active);
-    setIsCombo(p.isCombo);
+    setIsCombo(p.isCombo); setIsBeverage(p.isBeverage ?? false);
     setActivePDV(p.activePDV ?? true);
     setActiveDelivery(p.activeDelivery ?? true);
     setActiveTotem(p.activeTotem ?? false);
@@ -246,7 +247,7 @@ export default function MenuProductManager({
           tags: tags.length > 0 ? tags : null,
           availableDays: availableDaysPayload,
           category,
-          imageUrl: imageUrl || null, active, isCombo,
+          imageUrl: imageUrl || null, active, isCombo, isBeverage,
           activePDV, activeDelivery, activeTotem, activeGarcom,
           comboGroups: isCombo ? comboGroups : undefined
         })
@@ -1062,6 +1063,26 @@ export default function MenuProductManager({
                   );
                 })}
               </div>
+            </div>
+
+            {/* SINALIZAÇÃO DE BEBIDA NA COMANDA */}
+            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: isBeverage ? "#EFF6FF" : "#F8FAFC", borderRadius: "14px", border: `1.5px solid ${isBeverage ? "#3B82F6" : "#E2E8F0"}`, transition: "all 0.2s" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={isBeverage}
+                  onChange={e => setIsBeverage(e.target.checked)}
+                  style={{ width: "20px", height: "20px", accentColor: "#2563EB", cursor: "pointer" }}
+                />
+                <div>
+                  <p style={{ fontWeight: 800, fontSize: "0.88rem", color: isBeverage ? "#1D4ED8" : "#0F172A", margin: 0 }}>
+                    🥤 Sinalizar como BEBIDA na comanda impressa
+                  </p>
+                  <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "2px 0 0" }}>
+                    Imprime o carimbo em destaque preto no papel térmico <strong style={{ color: "#1D4ED8" }}>[ ◄=== BEBIDA ]</strong> para garantir que o item não seja esquecido no pedido.
+                  </p>
+                </div>
+              </label>
             </div>
 
             {/* COMBO BUILDER */}

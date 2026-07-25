@@ -391,11 +391,14 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
     return false;
   });
 
+  const INVERSE_ON = "\x1d\x42\x01";
+  const INVERSE_OFF = "\x1d\x42\x00";
+
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
   if (hasBeverages) {
     res += boxBorder;
-    res += makeBoxText("!! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!");
+    res += CENTER + INVERSE_ON + "  !! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!  " + INVERSE_OFF + LEFT + LF;
   }
 
   if (order.items && order.items.length) {

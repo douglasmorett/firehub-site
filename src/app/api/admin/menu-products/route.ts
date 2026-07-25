@@ -21,7 +21,7 @@ export async function GET() {
     orderBy: [{ category: "asc" }, { name: "asc" }],
     select: {
       id: true, name: true, price: true, category: true,
-      imageUrl: true, active: true, isCombo: true,
+      imageUrl: true, active: true, isCombo: true, isBeverage: true,
       activePDV: true, cost: true, tags: true, availableDays: true, description: true,
     },
   });
