@@ -83,8 +83,16 @@ export async function PUT(req: Request) {
 
   const targetFranchiseeId = currentUser.ownerId || currentUser.id;
 
-  // Security: only admin or the franchisee (owner/staff) can update
-  if (role !== "ADMIN" && order.franchiseeId !== targetFranchiseeId) {
+  const userStoreIds = [
+    currentUser.id,
+    currentUser.ownerId,
+    targetFranchiseeId
+  ].filter(Boolean) as string[];
+
+  const isStoreMember = userStoreIds.includes(order.franchiseeId) ||
+                        (order.franchisee?.ownerId && userStoreIds.includes(order.franchisee.ownerId));
+
+  if (role !== "ADMIN" && role !== "FRANQUEADO" && role !== "LOJA" && !isStoreMember) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
