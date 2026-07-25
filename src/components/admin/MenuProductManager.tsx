@@ -632,12 +632,6 @@ export default function MenuProductManager({
         </div>
 
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          {noPhotoCount > 0 && (
-            <button onClick={handleCleanNoPhoto} className="btn btn-outline" style={{ border: "1.5px solid #FCA5A5", color: "#DC2626", background: "#FEF2F2", fontWeight: 700, fontSize: "0.82rem" }}>
-              <Trash2 size={15} style={{ marginRight: "4px" }} /> Excluir sem foto ({noPhotoCount})
-            </button>
-          )}
-
           <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? (dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || "") : (dynCategories[0]?.name || "")); setShowForm(true); }} className="btn btn-primary">
             <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
           </button>
