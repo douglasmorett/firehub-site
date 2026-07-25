@@ -139,43 +139,87 @@ export async function processJotajaEvent(
       // Helper: extract numeric value from price (handles {value, currency} objects or plain numbers)
       const priceVal = (p: any): number => typeof p === "object" && p !== null ? (p.value ?? 0) : (p ?? 0);
 
-      // Itens — include options (size, extras, combos) from Jotajá
-      const items = (orderData.items ?? []).map((i: any) => {
-        const options = Array.isArray(i.options) ? i.options : [];
+      // Helper: extrai recursivamente todas as opções / subitens / sabores / adições de um item do JotaJá
+      const extractJotajaOptions = (item: any): any[] => {
+        if (!item || typeof item !== "object") return [];
+        const rawList =
+          (Array.isArray(item.options) && item.options.length > 0 ? item.options : null) ??
+          (Array.isArray(item.subItems) && item.subItems.length > 0 ? item.subItems : null) ??
+          (Array.isArray(item.sub_items) && item.sub_items.length > 0 ? item.sub_items : null) ??
+          (Array.isArray(item.garnishItems) && item.garnishItems.length > 0 ? item.garnishItems : null) ??
+          (Array.isArray(item.choices) && item.choices.length > 0 ? item.choices : null) ??
+          (Array.isArray(item.items) && item.items.length > 0 ? item.items : null) ??
+          (Array.isArray(item.additions) && item.additions.length > 0 ? item.additions : null) ??
+          (Array.isArray(item.customizations) && item.customizations.length > 0 ? item.customizations : null) ??
+          (Array.isArray(item.toppings) && item.toppings.length > 0 ? item.toppings : null) ??
+          [];
+
+        const extracted: any[] = [];
+        for (const o of rawList) {
+          const nested = extractJotajaOptions(o);
+          if (nested.length > 0) {
+            extracted.push(...nested);
+          } else {
+            const name = o.name || o.productName || o.label || o.optionName || o.description || o.nameOption || "";
+            if (name) {
+              extracted.push({
+                id: o.id || `opt-${Math.random().toString(36).slice(2)}`,
+                name,
+                quantity: o.quantity ?? o.qty ?? 1,
+                price: priceVal(o.unitPrice) || priceVal(o.price) || priceVal(o.totalPrice) || priceVal(o.addition) || 0,
+              });
+            }
+          }
+        }
+        return extracted;
+      };
+
+      // Itens — inclui suporte a todos os formatos de payload do Open Delivery / JotaJá
+      const rawItemsList = (
+        (Array.isArray(orderData.items) && orderData.items.length > 0 ? orderData.items : null) ??
+        (Array.isArray(orderData.orderItems) && orderData.orderItems.length > 0 ? orderData.orderItems : null) ??
+        (Array.isArray(orderData.order?.items) && orderData.order?.items.length > 0 ? orderData.order?.items : null) ??
+        (Array.isArray(orderData.products) && orderData.products.length > 0 ? orderData.products : null) ??
+        (Array.isArray(orderData.cart?.items) && orderData.cart?.items.length > 0 ? orderData.cart?.items : null) ??
+        []
+      );
+
+      const items = rawItemsList.map((i: any) => {
+        const itemName = i.name || i.productName || i.title || i.label || "Item Jotajá";
+        const options = extractJotajaOptions(i);
         const optionNames = options.map((o: any) => `${o.quantity > 1 ? o.quantity + 'x ' : ''}${o.name}`);
         const fullName = optionNames.length > 0
-          ? `${i.name ?? "Item Jotajá"} | ${optionNames.join(" | ")}`
-          : (i.name ?? "Item Jotajá");
-        const qty = i.quantity ?? 1;
-        // Prioriza unitPrice (preço unitário correto) sobre totalPrice (que é qty × unitPrice)
+          ? `${itemName} | ${optionNames.join(" | ")}`
+          : itemName;
+        const qty = i.quantity ?? i.qty ?? 1;
         const rawUnit = priceVal(i.unitPrice) || priceVal(i.price) || 0;
         const rawTotal = priceVal(i.totalPrice) || 0;
-        // Se temos unitPrice, usar ele. Senão, derivar de totalPrice / quantidade.
         const itemPrice = rawUnit > 0 ? rawUnit : (rawTotal > 0 && qty > 0 ? rawTotal / qty : 0);
 
-
-        // Build comboSelections from options for detailed display
-        const comboSelections = options.length > 0 ? options.map((o: any) => ({
+        const comboSelsList = options.length > 0 ? options.map((o: any) => ({
           id: o.id,
           name: o.name,
           quantity: o.quantity ?? 1,
-          price: priceVal(o.unitPrice) || priceVal(o.totalPrice) || 0,
-        })) : undefined;
+          price: priceVal(o.price) || 0,
+        })) : null;
+
+        const comboSelectionsJson = comboSelsList ? JSON.stringify(comboSelsList) : null;
+        const itemId = i.id || i.externalId || `item-${Math.random().toString(36).slice(2)}`;
 
         return {
           price: itemPrice,
-          quantity: i.quantity ?? 1,
-          comboSelections,
+          quantity: qty,
+          comboSelections: comboSelectionsJson,
           menuProduct: {
             connectOrCreate: {
-              where: { id: `jotaja-${i.id}` } as any,
+              where: { id: `jotaja-${itemId}` } as any,
               create: {
-                id: `jotaja-${i.id}`,
+                id: `jotaja-${itemId}`,
                 franchiseeId: franchisee.id,
                 name: fullName,
-                description: i.specialInstructions || "",
+                description: i.specialInstructions || i.observations || i.notes || "",
                 price: itemPrice,
-                category: "Jotajá",
+                category: i.category || "Jotajá",
                 isBeverage: isBeverageName(fullName) || options.some((o: any) => isBeverageName(o.name)),
                 active: true,
               } as any,
