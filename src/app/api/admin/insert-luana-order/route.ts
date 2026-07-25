@@ -19,8 +19,8 @@ export async function GET() {
       return NextResponse.json({ error: "Franqueado não encontrado" }, { status: 404 });
     }
 
-    // Upsert Luana's order #2316 (JotaJá 32516601)
-    const existing = await prisma.customerOrder.findFirst({
+    // Remove qualquer registro anterior da Luana para forçar reinserção no FINAL da fila com o próximo número (#138)
+    await prisma.customerOrder.deleteMany({
       where: {
         OR: [
           { openDeliveryOrderId: "32516601" },
@@ -29,10 +29,6 @@ export async function GET() {
         ]
       }
     });
-
-    if (existing) {
-      return NextResponse.json({ ok: true, message: "Pedido da Luana #2316 já estava cadastrado!", orderId: existing.id });
-    }
 
     const newOrder = await prisma.customerOrder.create({
       data: {
@@ -49,7 +45,8 @@ export async function GET() {
         openDeliveryOrderId: "32516601",
         openDeliveryReference: "2316",
         openDeliveryChannel: "JOTAJA",
-        notes: "Pedido puxado manualmente de emergência JotaJá #2316",
+        notes: "Pedido JotaJá #2316 - Luana",
+        createdAt: new Date(), // Entra com horário ATUAL para ficar no FINAL da fila (#138)
         items: {
           create: [
             {
