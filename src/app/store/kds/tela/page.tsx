@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { isBeverageItem } from "@/lib/beverage";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1028,31 +1027,7 @@ function OrderCard({
           );
         })()}
 
-        {/* BEVERAGE BADGE DESTACADO */}
-        {(() => {
-          const hasBeverage = (order.items || []).some((item: any) => isBeverageItem(item));
-          if (!hasBeverage) return null;
-          return (
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                padding: "3px 10px",
-                borderRadius: 12,
-                background: "linear-gradient(135deg, #0284C7, #0369A1)",
-                color: "#FFFFFF",
-                fontSize: 13,
-                fontWeight: 900,
-                letterSpacing: "0.5px",
-                boxShadow: "0 0 14px rgba(2, 132, 199, 0.6)",
-                border: "1px solid #0284C7",
-              }}
-            >
-              🥤 POSSUI BEBIDA
-            </span>
-          );
-        })()}
+
 
         {/* Delivery type badge */}
         <span
@@ -1143,11 +1118,6 @@ function OrderCard({
                   {item.quantity}x
                 </span>
                 <span style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{displayName}</span>
-                {isBeverageItem(item) && (
-                  <span style={{ padding: "1px 6px", borderRadius: 6, fontSize: 10, fontWeight: 800, background: "#0EA5E9", color: "#FFFFFF", marginLeft: 4, textTransform: "uppercase" }}>
-                    🥤 BEBIDA
-                  </span>
-                )}
               </div>
               {/* Combo sub-items: lista vertical (um embaixo do outro) em ordem sequencial com fonte adaptativa */}
               {comboItems.length > 0 && (
