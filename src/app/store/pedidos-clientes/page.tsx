@@ -81,24 +81,22 @@ export default async function FranchiseeCustomerOrdersPage() {
         select: { id: true, name: true, phone: true },
       }),
     ]);
-    // Compute server-authoritative daily sequence numbers starting at 00:00 AM Brazil time (matching KDS)
-    const now = new Date();
-    const yearStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
-    const monthStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
-    const dayStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
-    const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
+    // Compute server-authoritative sequence numbers based on active cash session openedAt
+    const sessionStartCutoff = cashSessionRes?.openedAt
+      ? new Date(cashSessionRes.openedAt)
+      : new Date(Date.now() - 48 * 60 * 60 * 1000);
 
-    const storeOrdersToday = await prisma.customerOrder.findMany({
+    const sessionOrders = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: targetFranchiseeId,
-        createdAt: { gte: startOfTodayBrazil },
+        createdAt: { gte: sessionStartCutoff },
       },
       select: { id: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     });
 
     const dailyNumMap = new Map<string, number>();
-    storeOrdersToday.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
+    sessionOrders.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
 
     orders = ordersRes.map((o: any) => ({
       ...o,
