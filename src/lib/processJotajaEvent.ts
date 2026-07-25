@@ -305,9 +305,7 @@ export async function processJotajaEvent(
           totalAmount: total,
           deliveryFee: deliveryFeeValue,
           status: initialStatus,
-          notes: notesArr,
-          createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
-          items: { create: items },
+          createdAt: new Date(), // Garante que novos pedidos puxados entram no FINAL da fila como o próximo número sequencial
         },
       });
 
