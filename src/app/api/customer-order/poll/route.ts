@@ -375,7 +375,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 deliveryFee: deliveryFeeValue,
                 status: initialStatus,
                 notes: notesArr,
-                createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
+                createdAt: new Date(), // Entra no final da fila com o próximo número sequencial
                 items: { create: items },
               },
             });
