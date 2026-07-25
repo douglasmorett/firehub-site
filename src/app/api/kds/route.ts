@@ -93,25 +93,29 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  // Buscar início do dia no fuso do Brasil (America/Sao_Paulo = GMT-3 -> T00:00:00-03:00)
-  const now = new Date();
-  const yearStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
-  const monthStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
-  const dayStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
-  const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
+  // Buscar data de abertura do caixa ativo para calcular sequência contínua
+  const activeSession = await prisma.cashSession.findFirst({
+    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+    orderBy: { openedAt: "desc" },
+    select: { openedAt: true }
+  });
 
-  // Buscar pedidos criados hoje a partir da meia-noite (America/Sao_Paulo)
-  const storeOrdersToday = await prisma.customerOrder.findMany({
+  const sessionStartCutoff = activeSession?.openedAt
+    ? new Date(activeSession.openedAt)
+    : new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+  // Buscar todos os pedidos da sessão de caixa atual por ordem de criação
+  const sessionOrders = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      createdAt: { gte: startOfTodayBrazil },
+      createdAt: { gte: sessionStartCutoff },
     },
     select: { id: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
 
   const dailyNumMap = new Map<string, number>();
-  storeOrdersToday.forEach((o, i) => {
+  sessionOrders.forEach((o, i) => {
     dailyNumMap.set(o.id, i + 1);
   });
 

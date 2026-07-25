@@ -578,23 +578,28 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const now = new Date();
-  const yearStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
-  const monthStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
-  const dayStr = now.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
-  const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
+  // Buscar data de abertura do caixa ativo para calcular a sequência do dia/sessão
+  const activeSession = await prisma.cashSession.findFirst({
+    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+    orderBy: { openedAt: "desc" },
+    select: { openedAt: true }
+  });
 
-  const storeOrdersToday = await prisma.customerOrder.findMany({
+  const sessionStartCutoff = activeSession?.openedAt
+    ? new Date(activeSession.openedAt)
+    : new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+  const sessionOrders = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: targetFranchiseeId,
-      createdAt: { gte: startOfTodayBrazil },
+      createdAt: { gte: sessionStartCutoff },
     },
     select: { id: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
 
   const dailyNumMap = new Map<string, number>();
-  storeOrdersToday.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
+  sessionOrders.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
 
   const ordersWithDailyNum = orders.map((o) => ({
     ...o,
