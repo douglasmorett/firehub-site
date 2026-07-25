@@ -325,6 +325,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
   const [dateTo, setDateTo] = useState(todayStr + "T23:59");
 
+  const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
+
   // Auto-sync dateFrom with active cash session openedAt
   useEffect(() => {
     fetch("/api/cash-session")
@@ -332,9 +334,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       .then(d => {
         if (d?.session?.openedAt) {
           const opened = new Date(d.session.openedAt);
+          setCashOpenedAt(opened);
           const pad = (n: number) => String(n).padStart(2, "0");
           const localIso = `${opened.getFullYear()}-${pad(opened.getMonth() + 1)}-${pad(opened.getDate())}T${pad(opened.getHours())}:${pad(opened.getMinutes())}`;
           setDateFrom(localIso);
+        } else {
+          setCashOpenedAt(null);
         }
       })
       .catch(() => {});
@@ -1051,7 +1056,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // Sequential order numbering — includes ALL orders in period (even ENCERRADO)
   // so numbers stay stable. Resets when date range / cash session changes.
-  // Sequential order numbering — 100% stable across night shifts (24h window)
+  // Sequential order numbering — tied strictly to active cash session (resets ONLY when cash is closed & opened)
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
 
@@ -1062,22 +1067,24 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     });
 
-    // 2. Compute sequence from all active orders of the shift (last 24 hours) sorted by createdAt asc
-    const shiftCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // 2. Cutoff: data de abertura do caixa atual (se houver caixa aberto), ou janela de 48h (se não houver)
+    const sessionStartCutoff = cashOpenedAt
+      ? new Date(cashOpenedAt)
+      : new Date(Date.now() - 48 * 60 * 60 * 1000);
 
-    const sortedToday = [...orders]
-      .filter((o: any) => new Date(o.createdAt) >= shiftCutoff)
+    const sortedSessionOrders = [...orders]
+      .filter((o: any) => new Date(o.createdAt) >= sessionStartCutoff)
       .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    sortedToday.forEach((o: any, i: number) => {
+    sortedSessionOrders.forEach((o: any, i: number) => {
       if (!map.has(o.id)) {
         map.set(o.id, i + 1);
       }
     });
 
-    // 3. Fallback for older orders (isolated so they don't corrupt active numbers)
+    // 3. Fallback para pedidos anteriores à abertura do caixa atual (isolados)
     const sortedOlder = [...orders]
-      .filter((o: any) => new Date(o.createdAt) < shiftCutoff)
+      .filter((o: any) => new Date(o.createdAt) < sessionStartCutoff)
       .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     sortedOlder.forEach((o: any, i: number) => {
@@ -1087,7 +1094,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     });
 
     return map;
-  }, [orders]);
+  }, [orders, cashOpenedAt]);
 
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
