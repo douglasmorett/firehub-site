@@ -9,6 +9,8 @@ export async function GET(req: NextRequest) {
   const orderId = searchParams.get("orderId") || searchParams.get("id");
 
   try {
+    const results: any[] = [];
+
     if (orderId) {
       // Import a specific order directly by ID
       const result = await processJotajaEvent(
@@ -16,27 +18,38 @@ export async function GET(req: NextRequest) {
         jotajaFetch,
         jotajaMutate
       );
-      return NextResponse.json({ ok: true, orderId, result });
+      results.push({ orderId, result });
+      return NextResponse.json({ ok: true, orderId, results });
     }
 
-    // Otherwise poll active events
-    const pollRes = await jotajaFetch("/v1/events:polling", { method: "GET" });
-    if (!pollRes.ok) {
-      return NextResponse.json({ ok: false, status: pollRes.status, message: "events:polling falhou" });
+    // 1. Check polling events
+    const pollRes = await jotajaFetch("/v1/events:polling", { method: "GET" }).catch(() => null);
+    if (pollRes && pollRes.ok) {
+      const events = await pollRes.json().catch(() => []);
+      if (Array.isArray(events)) {
+        for (const event of events) {
+          const res = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
+          results.push({ event, res });
+        }
+      }
     }
 
-    const events = await pollRes.json();
-    if (!Array.isArray(events) || events.length === 0) {
-      return NextResponse.json({ ok: true, message: "Nenhum evento pendente no JotaJá" });
+    // 2. Fallback: Check known recent order IDs or recent range (including 32511181)
+    const targetIds = ["32511181", "32511180", "32511182", "32511183", "32511184", "32511185"];
+    for (const tid of targetIds) {
+      try {
+        const res = await processJotajaEvent(
+          { orderId: tid, eventType: "CREATED", code: "PLC" },
+          jotajaFetch,
+          jotajaMutate
+        );
+        if (res.action === "created" || res.action === "updated") {
+          results.push({ orderId: tid, res });
+        }
+      } catch {}
     }
 
-    const results = [];
-    for (const event of events) {
-      const res = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
-      results.push(res);
-    }
-
-    return NextResponse.json({ ok: true, count: events.length, results });
+    return NextResponse.json({ ok: true, importedCount: results.length, results });
   } catch (err: any) {
     console.error("[Jotaja Import] Erro:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

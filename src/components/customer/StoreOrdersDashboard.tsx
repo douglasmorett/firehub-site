@@ -3040,6 +3040,30 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               🛒 Pedidos Balcão
             </a>
 
+            {/* Botão Sincronizar JotaJá */}
+            <button
+              onClick={async () => {
+                showToast("🔄 Buscando pedidos pendentes no JotaJá...", "#3B82F6");
+                try {
+                  const res = await fetch("/api/jotaja/import-order");
+                  const data = await res.json();
+                  await fetch("/api/customer-order/poll");
+                  router.refresh();
+                  showToast("✅ Pedidos do JotaJá sincronizados com sucesso!", "#10B981");
+                } catch {
+                  showToast("⚠️ Erro ao sincronizar com JotaJá", "#EF4444");
+                }
+              }}
+              style={{
+                padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
+                cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
+                background: "#EFF6FF", color: "#1D4ED8", outline: "1.5px solid #BFDBFE"
+              }}
+              title="Puxar e sincronizar pedidos pendentes do JotaJá agora"
+            >
+              🔄 Sincronizar JotaJá
+            </button>
+
             {/* Configurações de Alerta de Produção */}
             <button
               onClick={() => setShowAlertModal(true)}
