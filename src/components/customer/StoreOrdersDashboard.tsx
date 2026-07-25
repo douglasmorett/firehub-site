@@ -2274,7 +2274,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           <span>Valor: R$ {(itemPrice * item.quantity).toFixed(2).replace('.', ',')}</span>
                         </div>
                         <div style={{ fontWeight: "bold" }}>
-                          {mainName} {isStandaloneBeverage ? <span style={{ fontSize: "14px", fontWeight: 900 }}> [BEBIDA]</span> : ""}
+                          {mainName} {isStandaloneBeverage ? <span style={{ fontSize: "24px", fontWeight: 900, fontFamily: "monospace, sans-serif", letterSpacing: "1.5px", lineHeight: "1" }}> [BEBIDA]</span> : ""}
                         </div>
                         
                         {comboSels.length > 0 && (
@@ -2283,10 +2283,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                               const totalQty = (sel.quantity || 1) * (item.quantity || 1);
                               const isSubBeverage = isBeverageName(sel.name);
                               return (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isSubBeverage ? "bold" : "normal", margin: isSubBeverage ? "2px 0" : "0" }}>
-                                  <span>- {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</span>
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isSubBeverage ? "bold" : "normal", margin: isSubBeverage ? "4px 0" : "0" }}>
+                                  <span style={{ fontSize: isSubBeverage ? "13px" : "11px", fontWeight: isSubBeverage ? "bold" : "normal" }}>- {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</span>
                                   {isSubBeverage && (
-                                    <span style={{ fontSize: "13px", fontWeight: 900, fontFamily: "monospace", letterSpacing: "1px" }}>
+                                    <span style={{ fontSize: "22px", fontWeight: 900, fontFamily: "monospace, sans-serif", letterSpacing: "1.5px", lineHeight: "1" }}>
                                       [BEBIDA]
                                     </span>
                                   )}
@@ -2300,10 +2300,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             {extras.map((ext: string, i: number) => {
                               const isExtraBeverage = isBeverageName(ext);
                               return (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isExtraBeverage ? "bold" : "normal", margin: isExtraBeverage ? "2px 0" : "0" }}>
-                                  <span>- {ext.trim()}</span>
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isExtraBeverage ? "bold" : "normal", margin: isExtraBeverage ? "4px 0" : "0" }}>
+                                  <span style={{ fontSize: isExtraBeverage ? "13px" : "11px", fontWeight: isExtraBeverage ? "bold" : "normal" }}>- {ext.trim()}</span>
                                   {isExtraBeverage && (
-                                    <span style={{ fontSize: "13px", fontWeight: 900, fontFamily: "monospace", letterSpacing: "1px" }}>
+                                    <span style={{ fontSize: "22px", fontWeight: 900, fontFamily: "monospace, sans-serif", letterSpacing: "1.5px", lineHeight: "1" }}>
                                       [BEBIDA]
                                     </span>
                                   )}
