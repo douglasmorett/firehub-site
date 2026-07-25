@@ -1063,7 +1063,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
     
     if (isInProgress && isIntegration) {
-      // Pedidos em andamento de integração: sempre visíveis (sem filtro de data)
+      // Pedidos em andamento de integração: visíveis se recentes, mas oculta se criados há mais de 12h e antes do período
+      const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      if (refDate < twelveHoursAgo && refDate < fromDate) return false;
     } else {
       // Pedidos finalizados (ENTREGUE), cancelados e pedidos manuais: filtro de data
       const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
