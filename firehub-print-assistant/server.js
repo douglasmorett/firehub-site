@@ -518,21 +518,30 @@ app.post("/config", (req, res) => {
   res.json({ ok: true, config: currentConfig });
 });
 
-/* ─── Deduplicação de Impressões (Trava de 5 minutos anti-duplicidade) ─ */
+/* ─── Deduplicação de Impressões (Trava de 2 HORAS anti-duplicidade) ─ */
 const printedOrdersCache = new Map();
+
+function getOrderDeduplicationKeys(order) {
+  if (!order) return [];
+  return [
+    order.id ? `id_${order.id}` : null,
+    order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
+    order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null,
+    order.openDeliveryOrderId ? `opd_${order.openDeliveryOrderId}` : null,
+    order.dailyOrderNumber ? `seq_${order.dailyOrderNumber}` : null,
+    order.orderSeqNumber ? `seq_${order.orderSeqNumber}` : null,
+    (order.customerName && order.totalAmount) ? `cust_${order.customerName.trim().toLowerCase()}_${order.totalAmount}` : null
+  ].filter(Boolean);
+}
 
 function isOrderAlreadyPrinted(order) {
   if (!order) return false;
-  const keys = [
-    order.id,
-    order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
-    order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null
-  ].filter(Boolean);
+  const keys = getOrderDeduplicationKeys(order);
 
   const now = Date.now();
   for (const k of keys) {
     const printedAt = printedOrdersCache.get(String(k));
-    if (printedAt && (now - printedAt) < 300000) { // 5 minutos de trava
+    if (printedAt && (now - printedAt) < 7200000) { // 2 horas de trava anti-duplicidade
       return true;
     }
   }
@@ -542,19 +551,15 @@ function isOrderAlreadyPrinted(order) {
 function markOrderAsPrinted(order) {
   if (!order) return;
   const now = Date.now();
-  const keys = [
-    order.id,
-    order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
-    order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null
-  ].filter(Boolean);
+  const keys = getOrderDeduplicationKeys(order);
 
   for (const k of keys) {
     printedOrdersCache.set(String(k), now);
   }
 
-  if (printedOrdersCache.size > 500) {
+  if (printedOrdersCache.size > 2000) {
     for (const [k, time] of printedOrdersCache.entries()) {
-      if (now - time > 3600000) printedOrdersCache.delete(k);
+      if (now - time > 7200000) printedOrdersCache.delete(k);
     }
   }
 }

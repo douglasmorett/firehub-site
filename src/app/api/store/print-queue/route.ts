@@ -10,14 +10,26 @@ const queuedOrderKeys = new Set<string>();
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   if (!targetId || !order) return;
 
-  const key = `${targetId}:${order.id || order.ifoodReference || order.openDeliveryReference || order.dailyOrderNumber}`;
-  if (queuedOrderKeys.has(key)) {
-    console.log(`[PrintQueue] ⚠️ Pedido ${key} já enfileirado. Ignorando duplicata.`);
+  const candidateKeys = [
+    order.id ? `${targetId}:id:${order.id}` : null,
+    order.ifoodReference ? `${targetId}:ifood:${order.ifoodReference}` : null,
+    order.openDeliveryReference ? `${targetId}:jotaja:${order.openDeliveryReference}` : null,
+    order.openDeliveryOrderId ? `${targetId}:opd:${order.openDeliveryOrderId}` : null,
+    order.dailyOrderNumber ? `${targetId}:seq:${order.dailyOrderNumber}` : null,
+    order.orderSeqNumber ? `${targetId}:seq:${order.orderSeqNumber}` : null,
+  ].filter(Boolean) as string[];
+
+  const isAlreadyQueued = candidateKeys.some(k => queuedOrderKeys.has(k));
+  if (isAlreadyQueued) {
+    console.log(`[PrintQueue] ⚠️ Pedido #${order.dailyOrderNumber || order.orderSeqNumber || order.openDeliveryReference || order.ifoodReference || order.id} já enfileirado anteriormente. Ignorando duplicata.`);
     return;
   }
-  queuedOrderKeys.add(key);
 
-  if (queuedOrderKeys.size > 2000) {
+  for (const k of candidateKeys) {
+    queuedOrderKeys.add(k);
+  }
+
+  if (queuedOrderKeys.size > 5000) {
     queuedOrderKeys.clear();
   }
 
