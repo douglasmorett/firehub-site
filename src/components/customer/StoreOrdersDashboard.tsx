@@ -1051,7 +1051,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // Sequential order numbering — includes ALL orders in period (even ENCERRADO)
   // so numbers stay stable. Resets when date range / cash session changes.
-  // Sequential order numbering — 100% IDENTICAL TO KDS (always counts from 00:00 AM Brazil time)
+  // Sequential order numbering — 100% stable across night shifts (24h window)
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
 
@@ -1062,15 +1062,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     });
 
-    // 2. Compute sequence from all orders of today sorted by createdAt asc
-    const _today = new Date();
-    const yearStr = _today.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", year: "numeric" });
-    const monthStr = _today.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", month: "2-digit" });
-    const dayStr = _today.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", day: "2-digit" });
-    const startOfTodayBrazil = new Date(`${yearStr}-${monthStr}-${dayStr}T00:00:00-03:00`);
+    // 2. Compute sequence from all active orders of the shift (last 24 hours) sorted by createdAt asc
+    const shiftCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const sortedToday = [...orders]
-      .filter((o: any) => new Date(o.createdAt) >= startOfTodayBrazil)
+      .filter((o: any) => new Date(o.createdAt) >= shiftCutoff)
       .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     sortedToday.forEach((o: any, i: number) => {
@@ -1079,9 +1075,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     });
 
-    // 3. Fallback for older orders (isolated so they don't corrupt today's numbers)
+    // 3. Fallback for older orders (isolated so they don't corrupt active numbers)
     const sortedOlder = [...orders]
-      .filter((o: any) => new Date(o.createdAt) < startOfTodayBrazil)
+      .filter((o: any) => new Date(o.createdAt) < shiftCutoff)
       .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     sortedOlder.forEach((o: any, i: number) => {
