@@ -1284,7 +1284,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <GripVertical size={14} />
               </div>
             )}
-            <div style={{ fontWeight: 800, fontSize: "0.96rem", color: "#0F172A", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: "1.25", letterSpacing: "-0.2px" }} title={`#${seqNum} — ${order.customerName}`}>
+            <div style={{
+              fontWeight: 800,
+              fontSize: (order.customerName || "").length > 25 ? "0.80rem" : (order.customerName || "").length > 15 ? "0.86rem" : "0.95rem",
+              color: "#0F172A",
+              flex: 1,
+              minWidth: 0,
+              whiteSpace: "normal",
+              wordBreak: "normal",
+              overflowWrap: "break-word",
+              lineHeight: "1.25",
+              letterSpacing: "-0.2px"
+            }}>
               #{seqNum} — {order.customerName}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
