@@ -178,6 +178,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     redMinutes: 5,
   });
   const [showAlertModal, setShowAlertModal] = useState(false);
+  const [showJotajaManualModal, setShowJotajaManualModal] = useState(false);
+  const [jjOrderNumber, setJjOrderNumber] = useState("");
+  const [jjCustomerName, setJjCustomerName] = useState("");
+  const [jjCustomerPhone, setJjCustomerPhone] = useState("");
+  const [jjCustomerAddress, setJjCustomerAddress] = useState("");
+  const [jjTotalAmount, setJjTotalAmount] = useState("");
+  const [jjPaymentMethod, setJjPaymentMethod] = useState("Dinheiro");
 
   useEffect(() => {
     fetch("/api/store/time-alert-config")
@@ -2897,6 +2904,134 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         </div>
       )}
 
+      {/* ===== MODAL LANÇAR PEDIDO JOTAJA MANUAL ===== */}
+      {showJotajaManualModal && (
+        <div onClick={() => setShowJotajaManualModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "450px", maxWidth: "95vw", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#1E293B", display: "flex", alignItems: "center", gap: "8px" }}>
+                <span>🛵 Lançar Pedido JotaJá</span>
+              </div>
+              <button onClick={() => setShowJotajaManualModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem", color: "#64748B" }}>×</button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Nº do Pedido (#)</label>
+                  <input
+                    type="text" placeholder="Ex: 2280"
+                    value={jjOrderNumber} onChange={e => setJjOrderNumber(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", outline: "none" }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Nome do Cliente</label>
+                  <input
+                    type="text" placeholder="Ex: Hewller"
+                    value={jjCustomerName} onChange={e => setJjCustomerName(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", outline: "none" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Telefone</label>
+                  <input
+                    type="text" placeholder="Ex: 22997016114"
+                    value={jjCustomerPhone} onChange={e => setJjCustomerPhone(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", outline: "none" }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Valor Total (R$)</label>
+                  <input
+                    type="text" placeholder="Ex: 56,79"
+                    value={jjTotalAmount} onChange={e => setJjTotalAmount(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", outline: "none" }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Endereço de Entrega</label>
+                <input
+                  type="text" placeholder="Rua, Número, Bairro..."
+                  value={jjCustomerAddress} onChange={e => setJjCustomerAddress(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", outline: "none" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px" }}>Forma de Pagamento</label>
+                <select
+                  value={jjPaymentMethod} onChange={e => setJjPaymentMethod(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", outline: "none", background: "#fff" }}
+                >
+                  <option value="Dinheiro">Dinheiro</option>
+                  <option value="Cartão de Crédito">Cartão de Crédito</option>
+                  <option value="Cartão de Débito">Cartão de Débito</option>
+                  <option value="Pix">Pix</option>
+                  <option value="Pago no App">Pago no App JotaJá</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowJotajaManualModal(false)}
+                  style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#64748B", fontWeight: 600, cursor: "pointer" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!jjOrderNumber || !jjCustomerName) {
+                      showToast("Preencha ao menos o Número e Nome do cliente.", "#EF4444");
+                      return;
+                    }
+                    try {
+                      const amount = parseFloat(jjTotalAmount.replace(",", ".")) || 0;
+                      const res = await fetch("/api/customer-order/create", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          source: "JOTAJA",
+                          openDeliveryReference: jjOrderNumber,
+                          customerName: jjCustomerName,
+                          customerPhone: jjCustomerPhone,
+                          customerAddress: jjCustomerAddress,
+                          totalAmount: amount,
+                          paymentMethod: jjPaymentMethod,
+                          deliveryType: "DELIVERY",
+                          items: [{ name: "Pedido JotaJá #" + jjOrderNumber, price: amount, qty: 1 }]
+                        })
+                      });
+                      if (res.ok) {
+                        const newOrd = await res.json();
+                        setOrders(prev => [newOrd, ...prev]);
+                        setShowJotajaManualModal(false);
+                        setJjOrderNumber(""); setJjCustomerName(""); setJjCustomerPhone(""); setJjCustomerAddress(""); setJjTotalAmount("");
+                        showToast("✅ Pedido JotaJá #" + jjOrderNumber + " lançado com sucesso!", "#10B981");
+                      } else {
+                        showToast("Erro ao criar pedido.", "#EF4444");
+                      }
+                    } catch {
+                      showToast("Erro de conexão ao lançar pedido.", "#EF4444");
+                    }
+                  }}
+                  style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+                >
+                  Lançar no Painel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== BANNER ALTA DEMANDA ATIVO ===== */}
       {altaDemanda.active && (
         <div style={{ background: "linear-gradient(135deg,#EF4444,#F97316)", padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
@@ -3062,6 +3197,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               title="Puxar e sincronizar pedidos pendentes do JotaJá agora"
             >
               🔄 Sincronizar JotaJá
+            </button>
+
+            {/* Botão Lançar Pedido JotaJá Manual */}
+            <button
+              onClick={() => setShowJotajaManualModal(true)}
+              style={{
+                padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
+                cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
+                background: "#FEF2F2", color: "#DC2626", outline: "1.5px solid #FECACA"
+              }}
+              title="Lançar pedido do JotaJá manualmente no painel"
+            >
+              ➕ Lançar Pedido JotaJá
             </button>
 
             {/* Configurações de Alerta de Produção */}
