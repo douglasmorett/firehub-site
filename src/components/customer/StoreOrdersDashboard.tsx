@@ -1079,9 +1079,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     });
 
-    // 3. Fallback for older orders
-    const sortedAll = [...orders].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    sortedAll.forEach((o: any, i: number) => {
+    // 3. Fallback for older orders (isolated so they don't corrupt today's numbers)
+    const sortedOlder = [...orders]
+      .filter((o: any) => new Date(o.createdAt) < startOfTodayBrazil)
+      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    sortedOlder.forEach((o: any, i: number) => {
       if (!map.has(o.id)) {
         map.set(o.id, i + 1);
       }
