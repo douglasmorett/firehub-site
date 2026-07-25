@@ -1862,31 +1862,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 return (
                   <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F3F4F6" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ color: "#374151", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                        {item.quantity}× {mainName}
-                        {comboSels.length === 0 && isBeverageItem(item) && (
-                          <span style={{ padding: "2px 6px", borderRadius: "4px", fontSize: "0.68rem", fontWeight: 800, background: "#E0F2FE", color: "#0284C7", border: "1px solid #7DD3FC" }}>
-                            🥤 BEBIDA
-                          </span>
-                        )}
-                      </span>
+                      <span style={{ color: "#374151", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
                       <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * item.quantity).toFixed(2)}</span>
                     </div>
                     {comboSels.length > 0 && (
                       <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
-                        {comboSels.map((sel: any, i: number) => {
-                          const isSubBev = isBeverageName(sel.name);
-                          return (
-                            <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: "4px", marginTop: "2px" }}>
-                              <span>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</span>
-                              {isSubBev && (
-                                <span style={{ padding: "1px 5px", borderRadius: "4px", fontSize: "0.64rem", fontWeight: 800, background: "#E0F2FE", color: "#0284C7", border: "1px solid #7DD3FC" }}>
-                                  🥤 BEBIDA
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                        {comboSels.map((sel: any, i: number) => (
+                          <div key={i}>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
+                        ))}
                       </div>
                     )}
                     {comboSels.length === 0 && extras.length > 0 && (
