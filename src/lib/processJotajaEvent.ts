@@ -343,7 +343,12 @@ export async function processJotajaEvent(
       return { action: "created", orderId, message: `status=${initialStatus}` };
 
     } else {
-      // ── ATUALIZAR pedido existente ─────────────────────────────────────
+      // ── ATUALIZAR pedido existente (Apenas avançar status, NUNCA retroceder) ─────────────────
+      const FINAL_STATUSES = ["ENTREGUE", "ENCERRADO", "CANCELADO"];
+      if (existing && FINAL_STATUSES.includes(existing.status)) {
+        return { action: "skipped", orderId, message: `pedido já finalizado (${existing.status}) - mantido` };
+      }
+
       let newStatus: string | null = null;
       if (isConfirmed)   newStatus = "ACEITO";
       else if (isPreparation) newStatus = "PREPARANDO";
@@ -352,11 +357,27 @@ export async function processJotajaEvent(
       else if (isConcluded)   newStatus = "ENTREGUE";
 
       if (newStatus) {
-        await (prisma.customerOrder as any).updateMany({
-          where: { openDeliveryOrderId: orderId } as any,
-          data: { status: newStatus },
-        });
-        return { action: "updated", orderId, message: `→ ${newStatus}` };
+        const STATUS_RANK: Record<string, number> = {
+          NOVO: 0, ACEITO: 1, PREPARANDO: 2, PRONTO: 3, SAIU_ENTREGA: 4, ENTREGUE: 5, ENCERRADO: 5, CANCELADO: 5
+        };
+        const currentRank = STATUS_RANK[existing?.status || "NOVO"] || 0;
+        const newRank = STATUS_RANK[newStatus] || 0;
+
+        if (newRank >= currentRank) {
+          await (prisma.customerOrder as any).updateMany({
+            where: {
+              OR: [
+                { openDeliveryOrderId: orderId },
+                { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+                { openDeliveryReference: orderId }
+              ]
+            } as any,
+            data: { status: newStatus },
+          });
+          return { action: "updated", orderId, message: `→ ${newStatus}` };
+        } else {
+          return { action: "skipped", orderId, message: `ignorado regresso de status ${existing?.status} → ${newStatus}` };
+        }
       }
       return { action: "skipped", orderId, message: "sem mudança de status" };
     }

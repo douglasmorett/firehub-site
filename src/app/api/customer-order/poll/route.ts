@@ -388,24 +388,34 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 { method: "POST", headers: { Authorization: `Bearer ${token}` } }
               );
             }
-          } else if (!isPlaced) {
-            // Pedido já existe — atualizar status automaticamente
-            let newStatus: string | null = null;
-            if (isConcluded) newStatus = "ENTREGUE";
-            else if (isDispatched) newStatus = "SAIU_ENTREGA";
-            else if (isPreparation || isReadyPickup) newStatus = "PREPARANDO";
-            else if (isConfirmed) newStatus = "ACEITO";
+          } else if (!isPlaced && exists) {
+            // Pedido já existe — atualizar status automaticamente (Apenas avançar status, NUNCA retroceder)
+            const FINAL_STATUSES = ["ENTREGUE", "ENCERRADO", "CANCELADO"];
+            if (FINAL_STATUSES.includes((exists as any).status)) {
+              // Mantém o status finalizado escolhido pelo lojista
+            } else {
+              const STATUS_RANK: Record<string, number> = {
+                NOVO: 0, ACEITO: 1, PREPARANDO: 2, PRONTO: 3, SAIU_ENTREGA: 4, ENTREGUE: 5, ENCERRADO: 5, CANCELADO: 5
+              };
+              const currentRank = STATUS_RANK[(exists as any).status || "NOVO"] || 0;
 
-            if (newStatus) {
-              const updateData: any = { status: newStatus };
-              if (isConcluded) {
-                updateData.ifoodDriverStatus = "CONCLUDED";
+              let newStatus: string | null = null;
+              if (isConcluded) newStatus = "ENTREGUE";
+              else if (isDispatched) newStatus = "SAIU_ENTREGA";
+              else if (isPreparation || isReadyPickup) newStatus = "PREPARANDO";
+              else if (isConfirmed) newStatus = "ACEITO";
+
+              if (newStatus && (STATUS_RANK[newStatus] || 0) >= currentRank) {
+                const updateData: any = { status: newStatus };
+                if (isConcluded) {
+                  updateData.ifoodDriverStatus = "CONCLUDED";
+                }
+                await (prisma.customerOrder as any).updateMany({
+                  where: { ifoodOrderId: orderId } as any,
+                  data: updateData,
+                });
+                console.log(`[iFood Poll] 🔄 Status atualizado automaticamente: ${orderId} -> ${newStatus}`);
               }
-              await (prisma.customerOrder as any).updateMany({
-                where: { ifoodOrderId: orderId } as any,
-                data: updateData,
-              });
-              console.log(`[iFood Poll] 🔄 Status atualizado automaticamente: ${orderId} -> ${newStatus}`);
             }
           }
         }
