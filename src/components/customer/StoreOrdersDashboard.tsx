@@ -86,32 +86,35 @@ const getNeighborhoodOnly = (addr: string | null) => {
   const cleaned = cleanAddress(addr).trim();
   if (!cleaned) return "";
 
-  const isCityOrState = (str: string) =>
-    /^(rio das ostras|macaé|macae|cabo frio|buzios|búzios|casimiro|niteroi|niterói|rio de janeiro|sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i.test(str.trim());
+  const isIgnoredPart = (str: string) => {
+    const s = str.trim().toLowerCase();
+    if (!s || s === "brasil" || s === "brazil") return true;
+    if (/^\d{5}-?\d{3}$/.test(s)) return true; // CEP
+    if (/^(rio das ostras|macaé|macae|cabo frio|buzios|búzios|casimiro|niteroi|niterói|rio de janeiro|sp|rj|mg|rs|pr|sc|ba|go|pe|ce|pa|ma|pb|es|am|rn|al|pi|mt|ms|df|ac|ap|ro|rr|se|to)$/i.test(s)) return true;
+    if (/^(comp|complemento|ref|referencia|ponto de referencia):/i.test(s)) return true;
+    return false;
+  };
 
-  const dashParts = cleaned.split("-").map(p => p.trim()).filter(Boolean);
-  if (dashParts.length >= 2) {
-    for (let i = dashParts.length - 1; i >= 0; i--) {
-      const part = dashParts[i];
-      if (isCityOrState(part)) continue;
-      if (/^(comp|complemento|ref|referencia|ponto de referencia):/i.test(part)) continue;
-      if (i === 0 && dashParts.length > 1) continue;
-      return part;
+  // Split by hyphens, dashes, or commas
+  const parts = cleaned.split(/[-–—,]/).map(p => p.trim()).filter(Boolean);
+
+  // Filter out country, CEP, city, state, and street prefixes
+  const neighborhoodParts = parts.filter(p => {
+    if (isIgnoredPart(p)) return false;
+    // Skip street name / house number prefixes if there are other parts
+    if (/^(rua|r\.|av\.|avenida|alameda|praça|praca|estrada|rodovia|travessa|servidao|servidão|lote|qd|quadra|bloco|apt|apto|casa)\b/i.test(p)) {
+      return false;
     }
+    return true;
+  });
+
+  if (neighborhoodParts.length > 0) {
+    return neighborhoodParts[neighborhoodParts.length - 1];
   }
 
-  const commaParts = cleaned.split(",").map(p => p.trim()).filter(Boolean);
-  if (commaParts.length >= 3) {
-    for (let i = commaParts.length - 1; i >= 1; i--) {
-      let candidate = commaParts[i];
-      if (candidate.includes("-")) candidate = candidate.split("-")[0].trim();
-      if (!isCityOrState(candidate) && candidate.length > 2 && !/^\d+$/.test(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  return dashParts[dashParts.length - 1] || cleaned;
+  // Fallback if all parts were filtered
+  const validParts = parts.filter(p => !isIgnoredPart(p));
+  return validParts[validParts.length - 1] || cleaned;
 };
 
 // Mapping columns to statuses for drag-and-drop
