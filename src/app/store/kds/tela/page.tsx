@@ -891,14 +891,26 @@ function OrderCard({
   accent: string;
   isExiting: boolean;
   tick: number;
-  onMarkPronto: () => void;
+  onMarkPronto?: () => void;
 }) {
   const elapsed = getElapsedSeconds(order, stage);
   const tColor = timerColor(elapsed);
   const glow = timerGlow(elapsed);
   const sourceInfo = getSourceInfo(order);
-
   const borderColor = elapsed >= 600 ? "#ef4444" : elapsed >= 300 ? "#eab308" : "#2a2a4a";
+
+  // ─── Order Density & TV Fit Scaling ──────────────────────────────
+  const totalSubItemsCount = order.items.reduce((acc: number, item: any) => {
+    const combo = parseComboSelections(item.comboSelections, item.quantity);
+    return acc + 1 + combo.length;
+  }, 0);
+
+  const isVeryLargeOrder = totalSubItemsCount > 10;
+  const isHugeOrder = totalSubItemsCount > 18;
+
+  const mainFontSize = isHugeOrder ? 16 : isVeryLargeOrder ? 18 : 22;
+  const subFontSize = isHugeOrder ? 13 : isVeryLargeOrder ? 15 : 18;
+  const cardPadding = isHugeOrder ? "10px 14px" : isVeryLargeOrder ? "12px 16px" : "18px 20px";
 
   return (
     <div
@@ -906,9 +918,10 @@ function OrderCard({
         background: "#1a1a2e",
         border: `2px solid ${borderColor}`,
         borderRadius: 16,
-        padding: "18px 20px",
+        padding: cardPadding,
         position: "relative",
         overflow: "hidden",
+        boxSizing: "border-box",
         animation: isExiting
           ? "kds-exit 0.5s ease-in forwards"
           : "kds-slide-in 0.4s ease-out",
@@ -917,7 +930,7 @@ function OrderCard({
         transition: "border-color 0.5s ease, box-shadow 0.5s ease",
         display: "flex",
         flexDirection: "column",
-        gap: 12,
+        gap: isHugeOrder ? 6 : isVeryLargeOrder ? 8 : 12,
       }}
       onClick={onMarkPronto}
     >
@@ -941,14 +954,14 @@ function OrderCard({
         {position <= 9 && (
           <div
             style={{
-              width: 44,
-              height: 44,
+              width: isHugeOrder ? 34 : 44,
+              height: isHugeOrder ? 34 : 44,
               borderRadius: "50%",
               background: accent,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 28,
+              fontSize: isHugeOrder ? 20 : 28,
               fontWeight: 800,
               color: "#fff",
               flexShrink: 0,
@@ -962,7 +975,7 @@ function OrderCard({
         {/* Order number */}
         <span
           style={{
-            fontSize: 24,
+            fontSize: isHugeOrder ? 20 : 24,
             fontWeight: 800,
             color: "#fff",
             letterSpacing: "-0.5px",
@@ -1034,7 +1047,7 @@ function OrderCard({
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
           <span
             style={{
-              fontSize: 22,
+              fontSize: isHugeOrder ? 18 : 22,
               fontWeight: 700,
               fontFamily: MONO_FONT,
               color: tColor,
@@ -1054,11 +1067,11 @@ function OrderCard({
       {order.customerName && (
         <div
           style={{
-            fontSize: 14,
+            fontSize: isHugeOrder ? 12 : 14,
             color: "#9ca3af",
             fontWeight: 500,
             marginTop: -4,
-            paddingLeft: 54,
+            paddingLeft: position <= 9 ? (isHugeOrder ? 44 : 54) : 0,
           }}
         >
           {order.customerName}
@@ -1070,9 +1083,9 @@ function OrderCard({
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: 6,
+          gap: isHugeOrder ? 4 : isVeryLargeOrder ? 6 : 8,
           borderTop: "1px solid #2a2a4a",
-          paddingTop: 10,
+          paddingTop: isHugeOrder ? 6 : 10,
         }}
       >
         {order.items.map((item: any) => {
@@ -1083,36 +1096,50 @@ function OrderCard({
             <div key={item.id}>
               <div
                 style={{
-                  fontSize: 22,
+                  fontSize: mainFontSize,
                   fontWeight: 700,
                   color: "#e5e7eb",
                   display: "flex",
                   alignItems: "baseline",
-                  gap: 8,
+                  gap: 6,
+                  lineHeight: 1.2,
                 }}
               >
                 <span
                   style={{
                     color: accent,
                     fontWeight: 800,
-                    fontSize: 22,
-                    minWidth: 30,
+                    fontSize: mainFontSize,
+                    minWidth: isHugeOrder ? 24 : 30,
                   }}
                 >
                   {item.quantity}x
                 </span>
                 <span>{displayName}</span>
               </div>
-              {/* Combo sub-items */}
+              {/* Combo sub-items: exibe em 2 colunas se houver 6+ subitens */}
               {comboItems.length > 0 && (
-                <div style={{ paddingLeft: 42, display: "flex", flexDirection: "column", gap: 3, marginTop: 3 }}>
+                <div
+                  style={{
+                    paddingLeft: isHugeOrder ? 16 : isVeryLargeOrder ? 24 : 42,
+                    display: comboItems.length >= 6 ? "grid" : "flex",
+                    gridTemplateColumns: comboItems.length >= 6 ? "repeat(2, 1fr)" : undefined,
+                    flexDirection: comboItems.length >= 6 ? undefined : "column",
+                    gap: comboItems.length >= 6 ? "2px 12px" : (isHugeOrder ? 2 : 3),
+                    marginTop: 3,
+                  }}
+                >
                   {comboItems.map((sub, i) => (
                     <span
                       key={i}
                       style={{
-                        fontSize: 18,
+                        fontSize: subFontSize,
                         color: "#9ca3af",
                         fontWeight: 500,
+                        lineHeight: 1.25,
+                        whiteSpace: comboItems.length >= 6 ? "nowrap" : "normal",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
                     >
                       ↳ {sub.quantity}x {sub.name}
