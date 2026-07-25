@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search } from "lucide-react";
 
 const CHANNELS = [
   { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#3B82F6", desc: "Atendimento no balcão/caixa" },
@@ -184,6 +184,8 @@ export default function MenuProductManager({
   const [activeTotem, setActiveTotem] = useState(false);
   const [activeGarcom, setActiveGarcom] = useState(false);
   const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; items: { id: string; additionalPrice: number }[] }[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("TODAS");
 
 
   const resetForm = () => {
@@ -574,16 +576,62 @@ export default function MenuProductManager({
       )}
 
 
-      {/* TABS */}
+      {/* TABS E BUSCA */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`}>Itens Avulsos ({itemProducts.length})</button>
+          <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`}><Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})</button>
+        </div>
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`}>Itens Avulsos ({itemProducts.length})</button>
-        <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`}><Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})</button>
+        <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? (dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || "") : (dynCategories[0]?.name || "")); setShowForm(true); }} className="btn btn-primary">
+          <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
+        </button>
       </div>
 
-      <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? (dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || "") : (dynCategories[0]?.name || "")); setShowForm(true); }} className="btn btn-primary mb-4">
-        <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
-      </button>
+      {/* BARRA DE BUSCA E FILTRO DE CATEGORIAS */}
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between",
+        marginBottom: "1.25rem", padding: "0.75rem 1rem", backgroundColor: "#FFFFFF", borderRadius: "14px",
+        border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)"
+      }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flex: 1, minWidth: "260px" }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <Search size={18} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
+            <input
+              type="text"
+              placeholder="🔍 Buscar produto por nome, descrição ou categoria..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              style={{
+                width: "100%", padding: "9px 12px 9px 38px", borderRadius: "10px",
+                border: "1.5px solid #CBD5E1", fontSize: "0.88rem", outline: "none",
+                backgroundColor: "#F8FAFC", fontFamily: "inherit", fontWeight: 600
+              }}
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm("")} style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94A3B8" }}>
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <select
+            value={selectedCategoryFilter}
+            onChange={e => setSelectedCategoryFilter(e.target.value)}
+            style={{
+              padding: "9px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1",
+              fontSize: "0.85rem", fontWeight: 700, backgroundColor: "#FFF", color: "#1E293B", cursor: "pointer"
+            }}
+          >
+            <option value="TODAS">📁 Todas Categorias</option>
+            {dynCategories.map(c => (
+              <option key={c.id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {/* FORM MODAL OVERLAY */}
       {showForm && (
@@ -1218,74 +1266,113 @@ export default function MenuProductManager({
       )}
 
       {/* PRODUCT LIST */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "0.75rem" }}>
-        {(tab === "items" ? itemProducts : comboProducts).map(p => (
-          <div key={p.id} className="card" style={{ padding: "0.75rem", opacity: p.active ? 1 : 0.55, border: !p.active ? "2px dashed #EF4444" : undefined }}>
-            <div style={{ display: "flex", gap: "0.75rem", alignItems: "start" }}>
-              {p.imageUrl ? (
-                <img src={p.imageUrl} alt={p.name} style={{ width: "70px", height: "70px", objectFit: "cover", borderRadius: "8px", flexShrink: 0 }} />
-              ) : (
-                <div style={{ width: "70px", height: "70px", backgroundColor: "var(--bg-color)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <ImageIcon size={20} color="var(--text-muted)" />
-                </div>
+      {(() => {
+        const rawProducts = tab === "items" ? itemProducts : comboProducts;
+        const displayedProducts = rawProducts.filter(p => {
+          if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase();
+            const matchesName = p.name.toLowerCase().includes(term);
+            const matchesDesc = p.description?.toLowerCase().includes(term);
+            const matchesCategory = p.category?.toLowerCase().includes(term);
+            if (!matchesName && !matchesDesc && !matchesCategory) return false;
+          }
+          if (selectedCategoryFilter !== "TODAS") {
+            if (p.category !== selectedCategoryFilter) return false;
+          }
+          return true;
+        });
+
+        if (displayedProducts.length === 0) {
+          return (
+            <div style={{ textAlign: "center", padding: "3rem 1rem", backgroundColor: "#FFF", borderRadius: "16px", border: "1px dashed #CBD5E1" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "8px" }}>🔍</div>
+              <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#334155" }}>Nenhum produto encontrado</h3>
+              <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "4px 0 12px" }}>
+                {searchTerm ? `Nenhum resultado para "${searchTerm}"` : "Nenhum produto nesta categoria"}
+              </p>
+              {(searchTerm || selectedCategoryFilter !== "TODAS") && (
+                <button
+                  onClick={() => { setSearchTerm(""); setSelectedCategoryFilter("TODAS"); }}
+                  style={{ padding: "6px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F8FAFC", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}
+                >
+                  Limpar Filtros
+                </button>
               )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div>
-                    <h3 className="font-bold" style={{ fontSize: "0.9rem" }}>{p.name}</h3>
-                    <p className="text-muted" style={{ fontSize: "0.7rem" }}>{p.category}{p.isCombo && " • COMBO"}</p>
-                    {/* Custo e margem */}
-                    {!p.isCombo && (
-                      <div style={{ display: "flex", gap: "5px", marginTop: "3px", flexWrap: "wrap" }}>
-                        {p.cost > 0 ? (
-                          <>
-                            <span style={{ fontSize: "0.63rem", background: "#F0FDF4", color: "#16A34A", border: "1px solid #BBF7D0", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
-                              Custo: R${p.cost.toFixed(2)}
-                            </span>
-                            <span style={{ fontSize: "0.63rem", background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
-                              Margem: {(((p.price - p.cost) / p.price) * 100).toFixed(0)}%
-                            </span>
-                          </>
-                        ) : (
-                          <button
-                            onClick={() => openEdit(p)}
-                            style={{ fontSize: "0.63rem", background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D", borderRadius: "4px", padding: "1px 8px", fontWeight: 700, cursor: "pointer" }}>
-                            ⚠️ Sem custo — clique para cadastrar
-                          </button>
+            </div>
+          );
+        }
+
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "0.75rem" }}>
+            {displayedProducts.map(p => (
+              <div key={p.id} className="card" style={{ padding: "0.75rem", opacity: p.active ? 1 : 0.55, border: !p.active ? "2px dashed #EF4444" : undefined }}>
+                <div style={{ display: "flex", gap: "0.75rem", alignItems: "start" }}>
+                  {p.imageUrl ? (
+                    <img src={p.imageUrl} alt={p.name} style={{ width: "70px", height: "70px", objectFit: "cover", borderRadius: "8px", flexShrink: 0 }} />
+                  ) : (
+                    <div style={{ width: "70px", height: "70px", backgroundColor: "var(--bg-color)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <ImageIcon size={20} color="var(--text-muted)" />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div>
+                        <h3 className="font-bold" style={{ fontSize: "0.9rem" }}>{p.name}</h3>
+                        <p className="text-muted" style={{ fontSize: "0.7rem" }}>{p.category}{p.isCombo && " • COMBO"}</p>
+                        {/* Custo e margem */}
+                        {!p.isCombo && (
+                          <div style={{ display: "flex", gap: "5px", marginTop: "3px", flexWrap: "wrap" }}>
+                            {p.cost > 0 ? (
+                              <>
+                                <span style={{ fontSize: "0.63rem", background: "#F0FDF4", color: "#16A34A", border: "1px solid #BBF7D0", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                                  Custo: R${p.cost.toFixed(2)}
+                                </span>
+                                <span style={{ fontSize: "0.63rem", background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
+                                  Margem: {(((p.price - p.cost) / p.price) * 100).toFixed(0)}%
+                                </span>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => openEdit(p)}
+                                style={{ fontSize: "0.63rem", background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D", borderRadius: "4px", padding: "1px 8px", fontWeight: 700, cursor: "pointer" }}>
+                                ⚠️ Sem custo — clique para cadastrar
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
+                      <span className="font-extrabold gradient-text">R$ {p.price.toFixed(2)}</span>
+                    </div>
+                    {!p.active && <span style={{ fontSize: "0.7rem", color: "#EF4444", fontWeight: 700 }}>⏸️ PAUSADO</span>}
+
+                    {/* Tags do produto */}
+                    {p.tags && (() => { try { const t = JSON.parse(p.tags); return t.length > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
+                        {t.map((tag: string) => (
+                          <span key={tag} style={{ fontSize: "0.62rem", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null; } catch { return null; } })()}
+
+                    {/* Badges de canais inline — clicáveis */}
+                    <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
+
+                    <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+                      <button onClick={() => openEdit(p)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}><Edit3 size={10} /> Editar</button>
+                      <button onClick={() => handleToggle(p.id, p.active)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>
+                        {p.active ? <><Pause size={10} /> Pausar</> : <><Play size={10} /> Ativar</>}
+                      </button>
+                      <button onClick={() => handleDelete(p.id, p.name)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", color: "var(--danger)" }}><Trash2 size={10} /></button>
+                    </div>
                   </div>
-                  <span className="font-extrabold gradient-text">R$ {p.price.toFixed(2)}</span>
-                </div>
-                {!p.active && <span style={{ fontSize: "0.7rem", color: "#EF4444", fontWeight: 700 }}>⏸️ PAUSADO</span>}
-
-                {/* Tags do produto */}
-                {p.tags && (() => { try { const t = JSON.parse(p.tags); return t.length > 0 ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
-                    {t.map((tag: string) => (
-                      <span key={tag} style={{ fontSize: "0.62rem", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                ) : null; } catch { return null; } })()}
-
-                {/* Badges de canais inline — clicáveis */}
-                <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
-
-                <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
-                  <button onClick={() => openEdit(p)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}><Edit3 size={10} /> Editar</button>
-                  <button onClick={() => handleToggle(p.id, p.active)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>
-                    {p.active ? <><Pause size={10} /> Pausar</> : <><Play size={10} /> Ativar</>}
-                  </button>
-                  <button onClick={() => handleDelete(p.id, p.name)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", color: "var(--danger)" }}><Trash2 size={10} /></button>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
     </div>
   );
 }
