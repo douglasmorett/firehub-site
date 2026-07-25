@@ -16,8 +16,8 @@ let _tokenExp = 0;
 export async function getJotajaToken(): Promise<string> {
   if (_token && Date.now() < _tokenExp) return _token;
 
-  const clientId     = process.env.JOTAJA_CLIENT_ID;
-  const clientSecret = process.env.JOTAJA_CLIENT_SECRET;
+  const clientId     = process.env.JOTAJA_CLIENT_ID || "92c66502-57ce-4563-a9e3-0df07dda5a38";
+  const clientSecret = process.env.JOTAJA_CLIENT_SECRET || "bf6798ba-5abe-43b8-a5d7-adca54643492";
 
   if (!clientId || !clientSecret) {
     throw new Error("JOTAJA_CLIENT_ID / JOTAJA_CLIENT_SECRET não configurados.");
@@ -83,8 +83,7 @@ export async function jotajaMutate(
 
 /** merchantId principal (UUID) do Jotajá */
 export function getJotajaMerchantId(): string {
-  const id = process.env.JOTAJA_MERCHANT_ID;
-  if (!id) throw new Error("JOTAJA_MERCHANT_ID não configurado.");
+  const id = process.env.JOTAJA_MERCHANT_ID || "22238";
   return id;
 }
 
