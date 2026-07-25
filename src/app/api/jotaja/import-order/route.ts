@@ -1,55 +1,119 @@
 import { NextRequest, NextResponse } from "next/server";
-import { processJotajaEvent } from "@/lib/processJotajaEvent";
-import { jotajaFetch, jotajaMutate } from "@/lib/jotaja-api";
+import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const orderId = searchParams.get("orderId") || searchParams.get("id");
-
+export async function POST(req: NextRequest) {
   try {
-    const results: any[] = [];
-    const testEndpoints = [
-      "/v1/events:polling",
-      "/v1/orders",
-      "/v1/merchants/22238/orders",
-      "/v1/orders?status=PLACED",
-      "/v1/orders?status=CONFIRMED"
-    ];
-    const responses: any = {};
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
 
-    for (const path of testEndpoints) {
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, ownerId: true, email: true }
+    });
+    if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+    const targetFranchiseeId = user.ownerId || user.id;
+    const body = await req.json();
+
+    const {
+      orderIdInput, // ex: 32522836 ou 2366
+      customerName,
+      customerPhone,
+      customerAddress,
+      totalAmount,
+      paymentMethod,
+      itemsSummary,
+    } = body;
+
+    if (!orderIdInput && !customerName) {
+      return NextResponse.json({ error: "Informe o número do pedido JotaJá ou dados do cliente" }, { status: 400 });
+    }
+
+    const cleanRef = String(orderIdInput || "").replace(/#/g, "").trim();
+    const orderKey = `manual_jotaja_${cleanRef || Date.now()}_${targetFranchiseeId}`;
+
+    // Tentar buscar na API oficial do JotaJá via Open Delivery se tiver id numérico/UUID
+    if (cleanRef) {
       try {
-        const r = await jotajaFetch(path);
-        const text = await r.text().catch(() => "");
-        responses[path] = { status: r.status, ok: r.ok, sample: text.slice(0, 500) };
+        const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+        const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
 
-        if (r.ok && text) {
-          const parsed = JSON.parse(text);
-          const items = Array.isArray(parsed) ? parsed : (parsed.orders || parsed.items || []);
-          if (Array.isArray(items)) {
-            for (const item of items) {
-              const oid = item.orderId || item.id || item.eventId;
-              if (oid) {
-                const res = await processJotajaEvent(
-                  { orderId: oid, eventType: item.eventType || "CREATED", code: item.code || "PLC" },
-                  jotajaFetch,
-                  jotajaMutate
-                );
-                results.push({ path, oid, res });
-              }
-            }
-          }
+        const eventFake = { orderId: cleanRef, eventType: "CREATED", code: "PLC" };
+        const result = await processJotajaEvent(eventFake, jotajaFetch, jotajaMutate);
+
+        if (result.action === "created" || result.action === "updated") {
+          return NextResponse.json({
+            ok: true,
+            message: `✅ Pedido #${cleanRef} importado com sucesso via API JotaJá!`,
+            orderId: result.orderId
+          });
         }
-      } catch (e: any) {
-        responses[path] = { error: e.message };
+      } catch (err: any) {
+        console.warn("[Import JotaJá] Tentativa via API Open Delivery falhou:", err?.message);
       }
     }
 
-    return NextResponse.json({ ok: true, importedCount: results.length, responses, results });
+    // Fallback: criação direta resiliente no banco com os dados informados
+    const refTag = cleanRef || "MANUAL";
+    const ord = await prisma.customerOrder.create({
+      data: {
+        franchiseeId: targetFranchiseeId,
+        source: "JOTAJA",
+        openDeliveryChannel: "JOTAJA",
+        openDeliveryOrderId: orderKey,
+        openDeliveryReference: refTag,
+        customerName: customerName || `Cliente JotaJá #${refTag}`,
+        customerPhone: customerPhone || "",
+        customerAddress: customerAddress || "",
+        totalAmount: Number(totalAmount) || 0,
+        deliveryFee: 0,
+        paymentMethod: paymentMethod || "JotaJá Online",
+        deliveryType: "DELIVERY",
+        status: "NOVO",
+        notes: `Pedido JotaJá #${refTag}${itemsSummary ? ` | ${itemsSummary}` : ""}`,
+        items: {
+          create: [
+            {
+              quantity: 1,
+              price: Number(totalAmount) || 0,
+              menuProduct: {
+                connectOrCreate: {
+                  where: { id: `jotaja-item-${refTag}_${targetFranchiseeId}` },
+                  create: {
+                    id: `jotaja-item-${refTag}_${targetFranchiseeId}`,
+                    franchiseeId: targetFranchiseeId,
+                    name: itemsSummary || `Pedido JotaJá #${refTag}`,
+                    description: `Pedido JotaJá #${refTag}`,
+                    price: Number(totalAmount) || 0,
+                    category: "JotaJá",
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    });
+
+    // Disparar impressão na nuvem
+    try {
+      const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
+      pushJobToPrintQueue(targetFranchiseeId, ord, "HAKIM RIO DAS OSTRAS");
+    } catch {}
+
+    return NextResponse.json({
+      ok: true,
+      message: `✅ Pedido JotaJá #${refTag} de ${ord.customerName} adicionado e enviado para impressão!`,
+      order: ord
+    });
   } catch (err: any) {
-    console.error("[Jotaja Import] Erro:", err);
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    console.error("[Import JotaJá] Erro:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

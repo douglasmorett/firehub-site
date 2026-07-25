@@ -178,6 +178,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // === Motoboy iFood state ===
   const [ifoodDriverModalId, setIfoodDriverModalId] = useState<string | null>(null);
   const [ifoodDriverQuote, setIfoodDriverQuote] = useState<any>(null);
+
+  // === JotaJá Manual Import state ===
+  const [showImportJotajaModal, setShowImportJotajaModal] = useState(false);
+  const [importJotajaInput, setImportJotajaInput] = useState("");
+  const [importJotajaCustomer, setImportJotajaCustomer] = useState("");
+  const [importJotajaPhone, setImportJotajaPhone] = useState("");
+  const [importJotajaAddress, setImportJotajaAddress] = useState("");
+  const [importJotajaTotal, setImportJotajaTotal] = useState("");
+  const [importJotajaLoading, setImportJotajaLoading] = useState(false);
   const [ifoodDriverLoading, setIfoodDriverLoading] = useState(false);
   const [ifoodDriverError, setIfoodDriverError] = useState("");
   const [autoAccept, setAutoAccept] = useState(() => {
@@ -2011,6 +2020,41 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     );
   };
 
+  const handleImportJotajaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setImportJotajaLoading(true);
+    try {
+      const res = await fetch("/api/jotaja/import-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderIdInput: importJotajaInput,
+          customerName: importJotajaCustomer,
+          customerPhone: importJotajaPhone,
+          customerAddress: importJotajaAddress,
+          totalAmount: importJotajaTotal,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast(data.message || "Pedido JotaJá importado!", "#10B981");
+        setShowImportJotajaModal(false);
+        setImportJotajaInput("");
+        setImportJotajaCustomer("");
+        setImportJotajaPhone("");
+        setImportJotajaAddress("");
+        setImportJotajaTotal("");
+        fetch("/api/customer-order/poll").then(r => r.json()).then(o => setOrders(o)).catch(() => {});
+      } else {
+        showToast("Erro ao importar: " + (data.error || "tente novamente"), "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao conectar com servidor", "#EF4444");
+    } finally {
+      setImportJotajaLoading(false);
+    }
+  };
+
   return (
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* MODAL CANCELAR PEDIDO */}
@@ -2979,6 +3023,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
             </div>
 
+            {/* Botão Resgatar / Puxar JotaJá */}
+            <button
+              onClick={() => setShowImportJotajaModal(true)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: "10px",
+                background: "linear-gradient(135deg, #DC2626, #B91C1C)",
+                color: "#fff", fontWeight: 800, fontSize: "0.78rem", border: "none", cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(220,38,38,0.25)"
+              }}
+            >
+              ⚡ Puxar Pedido JotaJá
+            </button>
+
             {/* Weather + Clock — right aligned */}
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
               {weather && (
@@ -3308,6 +3366,98 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 💾 Salvar Configurações
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL IMPORTAR/RESGATAR PEDIDO JOTAJA */}
+      {showImportJotajaModal && (
+        <div onClick={() => setShowImportJotajaModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "18px", padding: "24px", width: "100%", maxWidth: "440px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: "1.5px solid #E2E8F0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: "1.4rem" }}>⚡</span>
+                <h3 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0, color: "#1E293B" }}>Resgatar Pedido JotaJá</h3>
+              </div>
+              <button onClick={() => setShowImportJotajaModal(false)} style={{ background: "none", border: "none", fontSize: "1.3rem", cursor: "pointer", color: "#64748B" }}>×</button>
+            </div>
+
+            <form onSubmit={handleImportJotajaSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#475569", marginBottom: 4 }}>
+                  Número do Pedido (Ex: 32522836 ou #2366):
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 32522836 ou 2366"
+                  value={importJotajaInput}
+                  onChange={e => setImportJotajaInput(e.target.value)}
+                  autoFocus
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", outline: "none", boxSizing: "border-box", fontWeight: 700 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#475569", marginBottom: 4 }}>
+                  Nome do Cliente:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Thiago"
+                  value={importJotajaCustomer}
+                  onChange={e => setImportJotajaCustomer(e.target.value)}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#475569", marginBottom: 4 }}>
+                    Telefone:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 22998023663"
+                    value={importJotajaPhone}
+                    onChange={e => setImportJotajaPhone(e.target.value)}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+                <div style={{ width: "130px" }}>
+                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#475569", marginBottom: 4 }}>
+                    Valor Total:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="35.39"
+                    value={importJotajaTotal}
+                    onChange={e => setImportJotajaTotal(e.target.value)}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", outline: "none", boxSizing: "border-box", fontWeight: 700 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#475569", marginBottom: 4 }}>
+                  Endereço de Entrega:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Rua Toninho de Almeida 60 - Liberdade"
+                  value={importJotajaAddress}
+                  onChange={e => setImportJotajaAddress(e.target.value)}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={importJotajaLoading}
+                style={{ marginTop: 6, padding: "12px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #B91C1C)", color: "#fff", border: "none", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit" }}
+              >
+                {importJotajaLoading ? "Resgatando..." : "⚡ Puxar Pedido e Imprimir"}
+              </button>
+            </form>
           </div>
         </div>
       )}
