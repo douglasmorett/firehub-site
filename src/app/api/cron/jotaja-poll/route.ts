@@ -24,13 +24,9 @@ export async function GET(req: NextRequest) {
   const log: string[] = [];
 
   try {
-    const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
-    const merchantId = process.env.JOTAJA_MERCHANT_ID;
-
-    if (!merchantId) {
-      log.push("❌ JOTAJA_MERCHANT_ID não configurado");
-      return NextResponse.json({ ok: false, log });
-    }
+    const { jotajaFetch, jotajaMutate, getJotajaMerchantId } = await import("@/lib/jotaja-api");
+    const merchantId = getJotajaMerchantId();
+    log.push(`ℹ️ Polling para MerchantId: ${merchantId}`);
 
     // Poll events from Jotajá via Open Delivery
     let res: Response;
