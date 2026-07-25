@@ -10,46 +10,44 @@ export async function GET(req: NextRequest) {
 
   try {
     const results: any[] = [];
+    const testEndpoints = [
+      "/v1/events:polling",
+      "/v1/orders",
+      "/v1/merchants/22238/orders",
+      "/v1/orders?status=PLACED",
+      "/v1/orders?status=CONFIRMED"
+    ];
+    const responses: any = {};
 
-    if (orderId) {
-      // Import a specific order directly by ID
-      const result = await processJotajaEvent(
-        { orderId, eventType: "CREATED", code: "PLC" },
-        jotajaFetch,
-        jotajaMutate
-      );
-      results.push({ orderId, result });
-      return NextResponse.json({ ok: true, orderId, results });
-    }
+    for (const path of testEndpoints) {
+      try {
+        const r = await jotajaFetch(path);
+        const text = await r.text().catch(() => "");
+        responses[path] = { status: r.status, ok: r.ok, sample: text.slice(0, 500) };
 
-    // 1. Check polling events
-    const pollRes = await jotajaFetch("/v1/events:polling", { method: "GET" }).catch(() => null);
-    if (pollRes && pollRes.ok) {
-      const events = await pollRes.json().catch(() => []);
-      if (Array.isArray(events)) {
-        for (const event of events) {
-          const res = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
-          results.push({ event, res });
+        if (r.ok && text) {
+          const parsed = JSON.parse(text);
+          const items = Array.isArray(parsed) ? parsed : (parsed.orders || parsed.items || []);
+          if (Array.isArray(items)) {
+            for (const item of items) {
+              const oid = item.orderId || item.id || item.eventId;
+              if (oid) {
+                const res = await processJotajaEvent(
+                  { orderId: oid, eventType: item.eventType || "CREATED", code: item.code || "PLC" },
+                  jotajaFetch,
+                  jotajaMutate
+                );
+                results.push({ path, oid, res });
+              }
+            }
+          }
         }
+      } catch (e: any) {
+        responses[path] = { error: e.message };
       }
     }
 
-    // 2. Fallback: Check known recent order IDs or recent range (including 32511181)
-    const targetIds = ["32511181", "32511180", "32511182", "32511183", "32511184", "32511185"];
-    for (const tid of targetIds) {
-      try {
-        const res = await processJotajaEvent(
-          { orderId: tid, eventType: "CREATED", code: "PLC" },
-          jotajaFetch,
-          jotajaMutate
-        );
-        if (res.action === "created" || res.action === "updated") {
-          results.push({ orderId: tid, res });
-        }
-      } catch {}
-    }
-
-    return NextResponse.json({ ok: true, importedCount: results.length, results });
+    return NextResponse.json({ ok: true, importedCount: results.length, responses, results });
   } catch (err: any) {
     console.error("[Jotaja Import] Erro:", err);
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
