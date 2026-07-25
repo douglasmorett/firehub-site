@@ -75,6 +75,8 @@ model User {
   ifoodWidgetId         String?        // ID do widget iFood (chat integrado — do Portal do Parceiro)
   ifoodSyncDeliveryTime Boolean        @default(false) // Sincronizar tempo de entrega/preparo com iFood
   // === JOTAJA / OPEN DELIVERY ===
+  jotajaClientId    String?        // Client ID no Jotajá
+  jotajaClientSecret String?       // Client Secret no Jotajá
   jotajaMerchantId  String?        // UUID da loja no Jotajá
   jotajaConnected   Boolean        @default(false) // Módulo Jotajá ativo
   orders          Order[]

@@ -617,8 +617,8 @@ export default function StoreTopNav({
           <a href="/store/impressoras" title="Impressora" style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:32, height:32, borderRadius:9, background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.25)", color:"#fff", textDecoration:"none" }}>
             <Printer size={15} />
           </a>
-          <a href="/store/ifood" title="Integração iFood" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.65rem", borderRadius:8, background:"#E8360C", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap", border:"1px solid rgba(255,255,255,0.3)" }}>
-            Integração iFood
+          <a href="/store/integracoes" title="Central de Integrações" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.65rem", borderRadius:8, background:"#E8360C", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap", border:"1px solid rgba(255,255,255,0.3)" }}>
+            🔌 Integrações
           </a>
           {showCompras && (
             <a href="/store/compras" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.8rem", borderRadius:8, background: isCompras ? "rgba(255,255,255,0.2)" : "#FF8A00", color:"#fff", fontWeight:700, fontSize:"0.78rem", textDecoration:"none", whiteSpace:"nowrap" }}>
