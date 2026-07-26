@@ -139,7 +139,7 @@ export default function GlobalPrintListener() {
                               if (s.name && isBeverageName(s.name) && !s.name.includes("BEBIDA")) {
                                 return {
                                   ...s,
-                                  name: `${s.name}\n  ========================================\n  *** [ BEBIDA ] *** [ BEBIDA ] *** [ BEBIDA ] ***\n  ========================================`
+                                  name: `${s.name}   [◄ BEBIDA ►]`
                                 };
                               }
                               return s;
@@ -157,7 +157,7 @@ export default function GlobalPrintListener() {
                         isBeverageItem(i);
                       const finalName =
                         isStandaloneBev && !rawName.includes("BEBIDA")
-                          ? `${rawName}\n  ========================================\n  *** [ BEBIDA ] *** [ BEBIDA ] *** [ BEBIDA ] ***\n  ========================================`
+                          ? `${rawName}   [◄ BEBIDA ►]`
                           : rawName;
 
                       return {
