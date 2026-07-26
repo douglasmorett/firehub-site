@@ -323,29 +323,13 @@ export default function ChatbotHubClient() {
                   <RefreshCw size={12} className="spin" /> Checando leitura em tempo real...
                 </div>
 
-                <div style={{ background: "#fff", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0", textAlign: "left", marginBottom: "16px", fontSize: "0.8rem", color: "#334155", lineHeight: 1.6 }}>
+                <div style={{ background: "#fff", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0", textAlign: "left", marginBottom: "8px", fontSize: "0.8rem", color: "#334155", lineHeight: 1.6 }}>
                   <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: "4px" }}>Passo a passo para conectar:</div>
                   1. Abra o <strong>WhatsApp</strong> no seu celular. <br />
                   2. Toque em <strong>Menu</strong> ou <strong>Configurações</strong> e selecione <strong>Aparelhos conectados</strong>. <br />
                   3. Toque em <strong>Conectar um aparelho</strong> e aponte para a imagem acima. <br />
                   4. Aguarde a sincronização ser concluída nesta tela.
                 </div>
-
-                {/* PAIRING CODE ALTERNATIVO */}
-                {pairingCode && (
-                  <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "12px", display: "inline-flex", alignItems: "center", gap: "12px" }}>
-                    <div>
-                      <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "#1D4ED8", fontWeight: 800 }}>Código de Pareamento Numérico</div>
-                      <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#1E40AF", letterSpacing: "2px" }}>{pairingCode}</div>
-                    </div>
-                    <button
-                      onClick={copyPairingCode}
-                      style={{ background: "#3B82F6", color: "#fff", border: "none", borderRadius: "6px", padding: "6px 10px", cursor: "pointer", fontSize: "0.75rem", fontWeight: 700 }}
-                    >
-                      {copiedCode ? <Check size={14} /> : <Copy size={14} />}
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <div style={{ background: "#F0FDF4", borderRadius: "12px", padding: "1.25rem", border: "1px solid #BBF7D0", display: "flex", alignItems: "center", gap: "14px" }}>
