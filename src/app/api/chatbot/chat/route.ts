@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "AIzaSy_demo_key" });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "" });
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -59,6 +59,25 @@ export async function POST(req: NextRequest) {
     const personality = chatbotConfig.personality || "SIMPATICO";
     const customPrompt = chatbotConfig.customPrompt || "";
 
+    // Formatar horários de funcionamento
+    let hoursText = "Horário de funcionamento padrão: Todos os dias das 18:00 às 23:30.";
+    let nowStatusText = "";
+    if (Array.isArray(user.storeHours) && (user.storeHours as any[]).length > 0) {
+      const hoursArr = user.storeHours as any[];
+      hoursText = hoursArr
+        .map((h: any) => `${h.day || h.dayName || "Dia"}: ${h.active ? `${h.open || "18:00"} às ${h.close || "23:30"}` : "Fechado"}`)
+        .join("\n");
+
+      const now = new Date();
+      const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
+      const today = hoursArr[dayIdx];
+      if (today && today.active) {
+        nowStatusText = `Hoje funcionamos das ${today.open} às ${today.close}.`;
+      } else if (today && !today.active) {
+        nowStatusText = "Hoje a loja está fechada.";
+      }
+    }
+
     // Formatar cardápio estruturado para a IA
     const catalogSummary = products
       .map((p) => `- ${p.name} (${p.category}): R$ ${p.price.toFixed(2).replace(".", ",")}${p.isBeverage ? " [BEBIDA]" : ""}${p.description ? ` — ${p.description}` : ""}`)
@@ -78,13 +97,17 @@ export async function POST(req: NextRequest) {
     }
 
     const systemPrompt = `Você é a IA Atendente Virtual Oficial do restaurante "${user.storeName || "Nossa Loja"}".
-Seu objetivo é atender o cliente no WhatsApp de forma humana, sem erros, sanar dúvidas sobre o cardápio e ajudar a fazer o pedido.
+Seu objetivo é atender o cliente no WhatsApp de forma humana, fluida, sem erros, sanar dúvidas sobre o cardápio, horários de funcionamento, endereço e ajudar a fazer o pedido.
 
 📍 **DADOS DA LOJA**:
 - Nome: ${user.storeName || "Nossa Loja"}
 - Cidade/Endereço: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio Digital: ${storeLink}
+- Status de Funcionamento Hoje: ${nowStatusText || "Aberto normalmente"}
+
+⏰ **HORÁRIOS DE FUNCIONAMENTO**:
+${hoursText}
 
 📋 **CARDÁPIO COMPLETO E PREÇOS AO VIVO**:
 ${catalogSummary || "Cardápio em atualização."}
@@ -94,36 +117,39 @@ ${personalityInstruction}
 ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA**: ${customPrompt}` : ""}
 
 🎯 **REGRAS INVIOLÁVEIS DE ATENDIMENTO**:
-1. Responda em Português do Brasil de forma fluida e natural.
-2. NUNCA invente produtos ou preços que não estejam na lista acima.
-3. Se o cliente demonstrar intenção de pedir, informe os itens e envie o link direto para finalizar: ${storeLink}.
-4. NUNCA diga que é um robô genérico. Você é a atendente oficial do ${user.storeName}.
-5. Responda de forma completa, clara e sem erros.
+1. Responda DIRETAMENTE à pergunta feita pelo cliente. Se ele perguntou "que horas abre" ou sobre horários, informe o horário exato de abertura com clareza.
+2. NUNCA mande uma saudação genérica repetida se o cliente fez uma pergunta direta.
+3. Responda em Português do Brasil de forma fluida, natural e inteligente (estilo Gemini / Brendi).
+4. NUNCA invente produtos, horários ou preços que não estejam listados acima.
+5. Se o cliente demonstrar intenção de pedir, informe os itens e envie o link direto para finalizar: ${storeLink}.
+6. NUNCA diga que é um robô genérico. Você é a atendente oficial do ${user.storeName}.
 `;
 
-    // Chamada à API Gemini
+    // Chamada à API Gemini (Model gemini-2.0-flash)
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: [
           { role: "user", parts: [{ text: `${systemPrompt}\n\nHistorico da conversa:\n${(history || []).map((h: any) => `${h.sender}: ${h.text}`).join("\n")}\n\nCliente: ${message}` }] },
         ],
       });
 
-      const replyText = response.text || `Olá! Sou o atendente virtual do ${user.storeName}. Como posso te ajudar hoje? Confira nosso cardápio completo em ${storeLink}!`;
+      const replyText = response.text || `Olá! Sou o atendente virtual do ${user.storeName}. ${nowStatusText} Como posso te ajudar hoje? Confira nosso cardápio completo em ${storeLink}!`;
 
       return NextResponse.json({ reply: replyText });
     } catch (geminiErr: any) {
-      console.warn("[Chatbot AI Fallback] Gemini call failed, using intelligent fallback:", geminiErr);
+      console.warn("[Chatbot AI Fallback] Gemini API call failed, using intelligent fallback:", geminiErr);
 
-      // Smart Fallback Inteligente
-      let fallbackReply = `Olá! Sou o atendente virtual do ${user.storeName}! 😊\n\n`;
-      if (/cardapio|menu|opções|fome|preço|valor/i.test(message)) {
-        fallbackReply += `Confira todos os nossos produtos e combos ao vivo pelo nosso cardápio digital:\n👉 ${storeLink}\n\nSe precisar de ajuda para escolher, estou por aqui!`;
-      } else if (/entrega|frete|taxa|endereço|local/i.test(message)) {
-        fallbackReply += `Entregamos em toda a região! Nosso endereço é ${user.storeAddress || user.city}.\nFaça seu pedido diretamente pelo link:\n👉 ${storeLink}`;
+      // Smart Fallback Inteligente baseado na pergunta exata do cliente
+      let fallbackReply = "";
+      if (/horario|aberto|fecha|abre|fechado|horário|funcionamento|que horas/i.test(message)) {
+        fallbackReply = `Olá! O ${user.storeName} ${nowStatusText || "funciona das 18:00 às 23:30"}. 😊\n\nConfira nosso cardápio completo e faça seu pedido em:\n👉 ${storeLink}`;
+      } else if (/cardapio|menu|opções|fome|preço|valor|lanche|burger|comida/i.test(message)) {
+        fallbackReply = `Olá! Confira todos os nossos produtos e valores ao vivo pelo nosso cardápio digital:\n👉 ${storeLink}`;
+      } else if (/entrega|frete|taxa|endereço|local|onde fica/i.test(message)) {
+        fallbackReply = `Olá! Nosso endereço é ${user.storeAddress || user.city || "consulte pelo link"}.\nFaça seu pedido diretamente pelo link:\n👉 ${storeLink}`;
       } else {
-        fallbackReply += `Como posso te ajudar hoje? Você pode ver nosso cardápio completo e fazer seu pedido em 1 minuto por aqui:\n👉 ${storeLink}`;
+        fallbackReply = `Olá! Sou o atendente virtual do ${user.storeName}! 😊 Como posso te ajudar hoje? Você pode ver nosso cardápio completo e fazer seu pedido por aqui:\n👉 ${storeLink}`;
       }
 
       return NextResponse.json({ reply: fallbackReply });
