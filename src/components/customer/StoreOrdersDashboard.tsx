@@ -1872,7 +1872,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
 
                 {/* Google Maps / Embed Rota com linha azul */}
-                <div style={{ marginBottom: "16px", borderRadius: "12px", overflow: "hidden", border: "1px solid #CBD5E1", height: "270px", background: "#E2E8F0" }}>
+                <div style={{ marginBottom: "16px", borderRadius: "12px", overflow: "hidden", border: "1px solid #CBD5E1", height: "300px", background: "#E2E8F0" }}>
                   <iframe
                     title="Mapa de Rota de Entrega"
                     width="100%"
@@ -1882,50 +1882,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     src={mapEmbedUrl}
                     allowFullScreen
                   />
-                </div>
-
-                {/* Atalhos para Abrir no Google Maps / Waze */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }}>
-                  <a
-                    href={googleMapsDirUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px",
-                      padding: "9px",
-                      borderRadius: "8px",
-                      background: "#2563EB",
-                      color: "#fff",
-                      fontWeight: 700,
-                      fontSize: "0.82rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    📍 Google Maps
-                  </a>
-                  <a
-                    href={wazeNavUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px",
-                      padding: "9px",
-                      borderRadius: "8px",
-                      background: "#0284C7",
-                      color: "#fff",
-                      fontWeight: 700,
-                      fontSize: "0.82rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    🚙 Waze
-                  </a>
                 </div>
 
                 {/* Botões de Ação */}
