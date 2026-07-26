@@ -2004,8 +2004,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   const payMethodRaw = order.paymentMethod || "";
                   const payMethodClean = payMethodRaw.toLowerCase();
 
-                  // Explicit offline check: if it contains "cobrar", "entrega", "maquininha", "dinheiro", "troco", or "pendente" -> MUST BE OFFLINE (Cobrar na Entrega)
-                  const isExplicitOffline = /cobrar|entrega|maquininha|dinheiro|troco|pendente/i.test(payMethodClean);
+                  // Explicit offline check: if it contains "cobrar", "entrega", "maquin", "dinheiro", "troco", or "pendente" -> MUST BE OFFLINE (Cobrar na Entrega)
+                  const isExplicitOffline =
+                    /cobrar|entrega|maquin|dinheiro|troco|pendente|presencial|balc/i.test(payMethodClean) ||
+                    (order as any).isPrepaid === false ||
+                    (order as any).prepaid === false;
 
                   // Explicit online check: ONLY online if NOT explicit offline AND (contains "pago online", "online", "prepaid", "app" OR isPrepaid === true)
                   const isOnline = !isExplicitOffline && (
@@ -2619,7 +2622,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           </span>
                           {order.paymentMethod && (() => {
                             const method = translatePayment(order.paymentMethod);
-                            const isCobrar = /cobrar|entrega|dinheiro|cash|maquininha/i.test(method) || !/pago online|online|app|pix \(pago/i.test(order.paymentMethod || "");
+                            const isCobrar = /cobrar|entrega|dinheiro|cash|maquin|presencial/i.test(method) || !/pago online|online|app|pix \(pago/i.test(order.paymentMethod || "");
                             const isPaidOnline = Boolean(order.paymentPaidAt || order.gatewayProvider || (/pago online|online|app|digital_wallet/i.test(order.paymentMethod || "") && !isCobrar));
                             return (
                               <>
