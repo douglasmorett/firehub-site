@@ -909,6 +909,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         ? printerConfig
         : { autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
 
+      const payStr = (order.paymentMethod || "").toString();
+      const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
+
       const formattedOrder = {
         id: order.id,
         dailyOrderNumber: seqNum,
@@ -917,8 +920,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         customerAddress: order.customerAddress,
         deliveryType: order.deliveryType || "DELIVERY",
         deliveryBy: order.deliveryBy || "MERCHANT",
-        paymentMethod: translatePayment(order.paymentMethod || ""),
-        isPrepaid: order.isPrepaid,
+        paymentMethod: translatePayment(payStr),
+        isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
         items: (order.items || []).map((i: any) => {
           const rawName = i.menuProduct?.name || i.name || "Item";
           const comboSels = (() => {

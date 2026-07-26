@@ -130,6 +130,9 @@ export default function GlobalPrintListener() {
                 try {
                   const { printOrder } = await import("@/lib/print");
 
+                  const payStr = (order.paymentMethod || "").toString();
+                  const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
+
                   const formattedOrder = {
                     id: order.id,
                     dailyOrderNumber: order.dailyOrderNumber || order.orderSeqNumber || "—",
@@ -138,7 +141,8 @@ export default function GlobalPrintListener() {
                     customerAddress: order.customerAddress,
                     deliveryType: order.deliveryType || "DELIVERY",
                     deliveryBy: order.deliveryBy || "MERCHANT",
-                    paymentMethod: order.paymentMethod || "",
+                    paymentMethod: payStr,
+                    isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
                     items: (order.items || []).map((i: any) => {
                       const { isBeverageItem, isBeverageName } = require("@/lib/beverage");
                       const rawName = i.menuProduct?.name || i.name || "Item";
