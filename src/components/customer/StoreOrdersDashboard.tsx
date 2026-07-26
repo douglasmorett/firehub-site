@@ -1990,19 +1990,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const isOver = canDrop && dragOverColumn === columnId;
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Restore scroll position after render
-    useEffect(() => {
-      const el = scrollRef.current;
-      if (el && scrollRefs.current[columnId] != null) {
-        el.scrollTop = scrollRefs.current[columnId];
-      }
-    });
-
-    const handleScroll = () => {
-      if (scrollRef.current) {
-        scrollRefs.current[columnId] = scrollRef.current.scrollTop;
-      }
-    };
+    // Browser native scrolling preserves scroll position smoothly without fighting React re-renders
 
     const hasOrders = columnOrders && columnOrders.length > 0;
     const isAllSelected = hasOrders && columnOrders.every(o => selectedOrderIds.has(o.id));
@@ -2042,7 +2030,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
           </div>
         </div>
-        <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", padding: "0.75rem" }}>
+        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.75rem" }}>
           {count === 0 ? (
             <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
               <Package size={40} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
