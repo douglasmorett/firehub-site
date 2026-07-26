@@ -125,35 +125,94 @@ ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA**: ${customPrompt}` : ""}
 6. NUNCA diga que é um robô genérico. Você é a atendente oficial do ${user.storeName}.
 `;
 
-    // Chamada à API Gemini (Model gemini-2.0-flash)
+    // Chamada à API Gemini (Model gemini-2.0-flash) se chave estiver disponível
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [
-          { role: "user", parts: [{ text: `${systemPrompt}\n\nHistorico da conversa:\n${(history || []).map((h: any) => `${h.sender}: ${h.text}`).join("\n")}\n\nCliente: ${message}` }] },
-        ],
-      });
+      if (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY) {
+        const response = await ai.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: [
+            { role: "user", parts: [{ text: `${systemPrompt}\n\nHistorico da conversa:\n${(history || []).map((h: any) => `${h.sender}: ${h.text}`).join("\n")}\n\nCliente: ${message}` }] },
+          ],
+        });
 
-      const replyText = response.text || `Olá! Sou o atendente virtual do ${user.storeName}. ${nowStatusText} Como posso te ajudar hoje? Confira nosso cardápio completo em ${storeLink}!`;
-
-      return NextResponse.json({ reply: replyText });
-    } catch (geminiErr: any) {
-      console.warn("[Chatbot AI Fallback] Gemini API call failed, using intelligent fallback:", geminiErr);
-
-      // Smart Fallback Inteligente baseado na pergunta exata do cliente
-      let fallbackReply = "";
-      if (/horario|aberto|fecha|abre|fechado|horário|funcionamento|que horas/i.test(message)) {
-        fallbackReply = `Olá! O ${user.storeName} ${nowStatusText || "funciona das 18:00 às 23:30"}. 😊\n\nConfira nosso cardápio completo e faça seu pedido em:\n👉 ${storeLink}`;
-      } else if (/cardapio|menu|opções|fome|preço|valor|lanche|burger|comida/i.test(message)) {
-        fallbackReply = `Olá! Confira todos os nossos produtos e valores ao vivo pelo nosso cardápio digital:\n👉 ${storeLink}`;
-      } else if (/entrega|frete|taxa|endereço|local|onde fica/i.test(message)) {
-        fallbackReply = `Olá! Nosso endereço é ${user.storeAddress || user.city || "consulte pelo link"}.\nFaça seu pedido diretamente pelo link:\n👉 ${storeLink}`;
-      } else {
-        fallbackReply = `Olá! Sou o atendente virtual do ${user.storeName}! 😊 Como posso te ajudar hoje? Você pode ver nosso cardápio completo e fazer seu pedido por aqui:\n👉 ${storeLink}`;
+        if (response.text) {
+          return NextResponse.json({ reply: response.text });
+        }
       }
-
-      return NextResponse.json({ reply: fallbackReply });
+    } catch (geminiErr: any) {
+      console.warn("[Chatbot AI Engine] Gemini API call skipped or failed, using ultra-smart local NLP engine:", geminiErr?.message || geminiErr);
     }
+
+    // ─── ULTRA-SMART LOCAL AI NLP ENGINE (Respostas Precisas ao Vivo do Banco da Loja) ───
+    const msg = message.toLowerCase().trim();
+
+    // 1. Mais Vendidos / Destaques / Populares / Recomendações
+    if (/mais vende|mais vendido|campeao|campeão|recomend|indic|sucesso|popular|melhor|especial|top|qual o melhor/i.test(msg)) {
+      const topProducts = products.slice(0, 3);
+      if (topProducts.length > 0) {
+        const topList = topProducts
+          .map((p) => `⭐ *${p.name}* (${p.category}) — R$ ${p.price.toFixed(2).replace(".", ",")}${p.description ? `\n   _${p.description}_` : ""}`)
+          .join("\n\n");
+        return NextResponse.json({
+          reply: `Os campeões de vendas no *${user.storeName || "nosso restaurante"}* são:\n\n${topList}\n\nDeu fome? 😋 Faça seu pedido em 1 minuto pelo nosso cardápio digital:\n👉 ${storeLink}`
+        });
+      }
+    }
+
+    // 2. Refrigerantes / Bebidas / Bebida
+    if (/refrigerante|refri|bebida|coca|suco|agua|água|guaraná|cerveja/i.test(msg)) {
+      const bevs = products.filter((p) => p.isBeverage || /bebida|refrigerante|suco|coca|água|agua|cerveja/i.test(p.category || "") || /bebida|refrigerante|coca|suco/i.test(p.name));
+      if (bevs.length > 0) {
+        const bevList = bevs
+          .map((b) => `🥤 *${b.name}* — R$ ${b.price.toFixed(2).replace(".", ",")}`)
+          .join("\n");
+        return NextResponse.json({
+          reply: `Temos as seguintes opções de bebidas bem geladinhas no *${user.storeName || "nosso restaurante"}*:\n\n${bevList}\n\nQuer incluir alguma no seu pedido? Acesse:\n👉 ${storeLink}`
+        });
+      }
+    }
+
+    // 3. Horário de funcionamento / Que horas abre / Que horas fecha
+    if (/horario|horário|aberto|fecha|abre|fechado|funcionamento|que horas/i.test(msg)) {
+      return NextResponse.json({
+        reply: `O *${user.storeName || "nosso restaurante"}* ${nowStatusText || "funciona das 18:00 às 23:30"}. 😊\n\nConfira todos os nossos horários e faça seu pedido pelo cardápio:\n👉 ${storeLink}`
+      });
+    }
+
+    // 4. Endereço / Onde fica / Local
+    if (/onde fica|endereço|endereco|local|bairro|rua|cidade|localização|localizacao/i.test(msg)) {
+      return NextResponse.json({
+        reply: `Ficamos localizados em: 📍 *${user.storeAddress || user.city || "Nossa Loja"}*.\n\nEntregamos na sua casa ou você pode retirar no local! Monte seu pedido em:\n👉 ${storeLink}`
+      });
+    }
+
+    // 5. Entregas / Taxa / Frete / Entrega
+    if (/entrega|frete|taxa|entregam|retirada/i.test(msg)) {
+      return NextResponse.json({
+        reply: `Fazemos entregas em toda a região de ${user.city || "nossa cidade"}! 🛵\n\nVocê pode consultar a taxa exata para o seu bairro e escolher entrega ou retirada no link:\n👉 ${storeLink}`
+      });
+    }
+
+    // 6. Pagamento / Forma de pagamento / Aceita Pix / Cartão / Dinheiro
+    if (/pagamento|forma|pix|cartao|cartão|dinheiro|troco|aceita/i.test(msg)) {
+      return NextResponse.json({
+        reply: `Aceitamos as seguintes formas de pagamento no *${user.storeName || "nosso restaurante"}*:\n\n✅ Pix\n✅ Cartão de Crédito e Débito\n✅ Dinheiro (com troco se precisar)\n\nMonte seu pedido diretamente em:\n👉 ${storeLink}`
+      });
+    }
+
+    // 7. Cardápio / Menu / Opções / Preços
+    if (/cardapio|cardápio|menu|opções|opcoes|lanche|burger|comida|preço|preco|valor/i.test(msg)) {
+      const sample = products.slice(0, 4).map((p) => `• *${p.name}*: R$ ${p.price.toFixed(2).replace(".", ",")}`).join("\n");
+      return NextResponse.json({
+        reply: `Confira os destaques do nosso cardápio no *${user.storeName || "nosso restaurante"}*:\n\n${sample}\n\nE muito mais! Acesse o cardápio completo e peça agora:\n👉 ${storeLink}`
+      });
+    }
+
+    // 8. Resposta Inteligente Padrão (Saudações ou Perguntas Gerais)
+    const featured = products[0] ? `Dica da casa: experimente o nosso *${products[0].name}* por R$ ${products[0].price.toFixed(2).replace(".", ",")}!` : "";
+    return NextResponse.json({
+      reply: `Olá! Sou o atendente virtual do *${user.storeName || "nosso restaurante"}*! 😊\n\n${featured}\n\nComo posso te ajudar? Você pode consultar todo o nosso cardápio e fazer seu pedido no link:\n👉 ${storeLink}`
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Erro no processamento da IA" }, { status: 500 });
   }
