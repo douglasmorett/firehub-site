@@ -92,15 +92,16 @@ export default function GlobalPrintListener() {
             const orders = JSON.parse(text);
 
             const now = Date.now();
-            const fiveMinutesAgo = now - 5 * 60 * 1000;
+            const thirtyMinutesAgo = now - 30 * 60 * 1000;
+            const FINAL_STATUSES = ["CANCELADO", "CONCLUIDO", "ENTREGUE", "ENCERRADO", "FINALIZADO"];
 
-            // NA PRIMEIRA CARGA: Marca apenas pedidos antigos (>10min) ou concluídos como já impressos, permitindo que novos pedidos recentes imprimam!
+            // NA PRIMEIRA CARGA: Marca apenas pedidos antigos (>30min) ou já finalizados como impressos
             if (isFirstPollRef.current) {
               isFirstPollRef.current = false;
-              const tenMinutesAgo = now - 10 * 60 * 1000;
               for (const order of orders) {
                 const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
-                const isOld = orderTime < tenMinutesAgo || order.status !== "NOVO";
+                const isFinished = FINAL_STATUSES.includes((order.status || "").toUpperCase());
+                const isOld = orderTime < thirtyMinutesAgo || isFinished;
                 if (isOld) {
                   claimOrderPrint(order);
                 }
@@ -109,12 +110,12 @@ export default function GlobalPrintListener() {
             }
 
             for (const order of orders) {
-              // Regra estrita: Apenas pedidos no status NOVO criados nos últimos 5 minutos
-              const isNewOrder = order.status === "NOVO";
+              const statusUpper = (order.status || "").toUpperCase();
+              const isFinished = FINAL_STATUSES.includes(statusUpper);
               const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
-              const isRecent = orderTime > fiveMinutesAgo;
+              const isRecent = orderTime > thirtyMinutesAgo;
 
-              if (isNewOrder && isRecent) {
+              if (!isFinished && isRecent) {
                 // ATOMIC CHECK: Se já foi impresso ou reclamado, ignora!
                 if (isOrderPrinted(order)) continue;
 
