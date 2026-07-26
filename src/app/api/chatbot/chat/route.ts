@@ -182,6 +182,27 @@ ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA (RESPONDA E AVISE O CLIEN
     // ─── ULTRA-SMART CONVERSATIONAL AI ENGINE (Nível Brendi / Gemini Conversacional) ───
     const msg = message.toLowerCase().trim();
     const alreadyGreeted = Array.isArray(history) && history.some((h: any) => h.sender === "Atendente" || h.sender === "bot");
+    const allowWhatsappOrders = chatbotConfig.allowWhatsappOrders === true;
+
+    // 0.1 Perguntas sobre Fazer Pedido no WhatsApp / Por aqui ("faz pedido por aqui?", "pelo whatsapp faz pedido?", "posso pedir por aqui?")
+    if (/faz pedido|pedir por aqui|pedido por aqui|pelo whatsapp|posso pedir|fazer pedido|como peço|como fasso|como pedir/i.test(msg)) {
+      if (!allowWhatsappOrders) {
+        return NextResponse.json({
+          reply: `No momento não aceitamos pedidos diretamente pelo chat do WhatsApp! 😊\n\nMas é super simples e rápido: para fazer seu pedido pelo site, é só clicar no link do nosso cardápio digital:\n👉 ${storeLink}\n\nLá você escolhe seus itens favoritos e finaliza em 1 minuto!`,
+        });
+      } else {
+        return NextResponse.json({
+          reply: `Para fazer seu pedido com praticidade e ver todas as fotos e adicionais, você pode acessar nosso cardápio digital:\n👉 ${storeLink}\n\nOu se preferir fazer diretamente por aqui, deseja que eu chame um *atendente humano* para te ajudar agora? 🙋‍♂️`,
+        });
+      }
+    }
+
+    // 0.2 Solicitação de Atendente Humano ("sim, chama", "chama atendente", "falar com pessoa")
+    if (/chama|atendente|humano|falar com pessoa|atendimento/i.test(msg)) {
+      return NextResponse.json({
+        reply: `Perfeito! Já notifiquei nossa equipe! 🔔 Um de nossos atendentes humanos vai assumir essa conversa em instantes para te ajudar.\n\nEnquanto isso, você também pode ir dando uma olhada no nosso cardápio:\n👉 ${storeLink}`,
+      });
+    }
 
     // 1. Fome / Desejo de Comer ("to com fome", "tô com fome", "fome", "larica", "comida", "lanche")
     if (/fome|fominha|comer|comida|lanche|larica|bater uma larica/i.test(msg)) {

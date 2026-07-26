@@ -441,6 +441,20 @@ export default function ChatbotHubClient() {
                 style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#7C3AED" }}
               />
             </div>
+
+            {/* TOGGLE PERMITIR PEDIDO NO WHATSAPP */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F8FAFC", padding: "10px 12px", borderRadius: "10px", border: "1px solid #E2E8F0", marginTop: "8px" }}>
+              <div>
+                <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#0F172A" }}>Aceitar Fazer Pedido pelo WhatsApp</div>
+                <div style={{ fontSize: "0.72rem", color: "#64748B" }}>Se desligado, avisa que o pedido é no site. Se ligado, pergunta se deseja chamar um atendente.</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={config.allowWhatsappOrders === true}
+                onChange={(e) => handleSaveConfig({ allowWhatsappOrders: e.target.checked })}
+                style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#7C3AED" }}
+              />
+            </div>
           </div>
         </div>
 
