@@ -143,10 +143,55 @@ ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA**: ${customPrompt}` : ""}
       console.warn("[Chatbot AI Engine] Gemini API call skipped or failed, using ultra-smart local NLP engine:", geminiErr?.message || geminiErr);
     }
 
-    // ─── ULTRA-SMART LOCAL AI NLP ENGINE (Respostas Precisas ao Vivo do Banco da Loja) ───
+    // ─── ULTRA-SMART CONVERSATIONAL AI ENGINE (Nível Brendi / Gemini Conversacional) ───
     const msg = message.toLowerCase().trim();
+    const alreadyGreeted = Array.isArray(history) && history.some((h: any) => h.sender === "Atendente" || h.sender === "bot");
 
-    // 1. Mais Vendidos / Destaques / Populares / Recomendações
+    // 1. Fome / Desejo de Comer ("to com fome", "tô com fome", "fome", "larica", "comida", "lanche")
+    if (/fome|fominha|comer|comida|lanche|larica|bater uma larica/i.test(msg)) {
+      const foodProducts = products.filter((p) => !p.isBeverage);
+      const sample = (foodProducts.length > 0 ? foodProducts : products).slice(0, 3);
+      const foodList = sample
+        .map((p) => `🍔 *${p.name}* — R$ ${p.price.toFixed(2).replace(".", ",")}${p.description ? `\n   _${p.description}_` : ""}`)
+        .join("\n\n");
+
+      const reply = alreadyGreeted
+        ? `Hummm, bateu aquela fome por aí?! 😋 Dá uma olhada nessas delícias do *${user.storeName || "nosso restaurante"}*:\n\n${foodList}\n\nO que você tá mais a fim de pedir hoje? Confira o cardápio completo:\n👉 ${storeLink}`
+        : `Hummm, bateu a fome por aí?! 😋 No *${user.storeName || "nosso restaurante"}* a gente resolve isso rápido!\n\nNossas sugestões caprichadas de hoje:\n\n${foodList}\n\nEscolha seus favoritos e faça seu pedido em 1 minuto:\n👉 ${storeLink}`;
+
+      return NextResponse.json({ reply });
+    }
+
+    // 2. Cumprimentos e Olás ("oioi", "eai", "olá", "ola", "oii", "oiii", "boa noite", "bom dia", "boa tarde", "oi")
+    if (/^(oi|oii|oiii|oioi|eai|eaí|ola|olá|boa noite|bom dia|boa tarde|fala|opa)$/i.test(msg)) {
+      const reply = alreadyGreeted
+        ? `Oii! Como posso te ajudar agora? 😊 Quer ver o cardápio, saber os mais pedidos ou tirar alguma dúvida sobre o *${user.storeName || "nosso restaurante"}*?`
+        : `Olá! Seja muito bem-vindo(a) ao *${user.storeName || "nosso restaurante"}*! 😊\n\nComo posso te ajudar hoje? Posso te mandar o cardápio, indicar os campeões de vendas ou tirar qualquer dúvida!`;
+
+      return NextResponse.json({ reply });
+    }
+
+    // 3. Conversa Informal / Small Talk ("tudo bem", "tudo joia", "como vai", "tudo certo", "de boa")
+    if (/tudo bem|tudo joia|tudo certo|como vai|de boa|blz|beleza/i.test(msg)) {
+      return NextResponse.json({
+        reply: `Tudo ótimo por aqui, trabalhando a todo vapor pra preparar os melhores lanches! 🍔 E com você, tudo certo?\n\nTá com fome hoje? Se quiser dar uma olhada no cardápio completo, é só acessar:\n👉 ${storeLink}`,
+      });
+    }
+
+    // 4. Ingredientes e Desejos Específicos ("queijo", "bacon", "carne", "frango", "salada", "doce", "sobremesa", "batata")
+    if (/queijo|bacon|carne|frango|salada|doce|sobremesa|batata/i.test(msg)) {
+      const matched = products.filter(
+        (p) => p.name.toLowerCase().includes(msg) || (p.description && p.description.toLowerCase().includes(msg))
+      );
+      if (matched.length > 0) {
+        const list = matched.slice(0, 3).map((p) => `✨ *${p.name}* — R$ ${p.price.toFixed(2).replace(".", ",")}`).join("\n");
+        return NextResponse.json({
+          reply: `Se você curte *${msg}*, vai amar essas opções no *${user.storeName || "nosso restaurante"}*:\n\n${list}\n\nQuer incluir no seu pedido? Monte agora pelo link:\n👉 ${storeLink}`,
+        });
+      }
+    }
+
+    // 5. Mais Vendidos / Destaques / Populares / Recomendações
     if (/mais vende|mais vendido|campeao|campeão|recomend|indic|sucesso|popular|melhor|especial|top|qual o melhor/i.test(msg)) {
       const topProducts = products.slice(0, 3);
       if (topProducts.length > 0) {
@@ -154,65 +199,71 @@ ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA**: ${customPrompt}` : ""}
           .map((p) => `⭐ *${p.name}* (${p.category}) — R$ ${p.price.toFixed(2).replace(".", ",")}${p.description ? `\n   _${p.description}_` : ""}`)
           .join("\n\n");
         return NextResponse.json({
-          reply: `Os campeões de vendas no *${user.storeName || "nosso restaurante"}* são:\n\n${topList}\n\nDeu fome? 😋 Faça seu pedido em 1 minuto pelo nosso cardápio digital:\n👉 ${storeLink}`
+          reply: `Os campeões de vendas no *${user.storeName || "nosso restaurante"}* são:\n\n${topList}\n\nDeu fome? 😋 Faça seu pedido em 1 minuto pelo nosso cardápio digital:\n👉 ${storeLink}`,
         });
       }
     }
 
-    // 2. Refrigerantes / Bebidas / Bebida
+    // 6. Refrigerantes / Bebidas / Bebida
     if (/refrigerante|refri|bebida|coca|suco|agua|água|guaraná|cerveja/i.test(msg)) {
-      const bevs = products.filter((p) => p.isBeverage || /bebida|refrigerante|suco|coca|água|agua|cerveja/i.test(p.category || "") || /bebida|refrigerante|coca|suco/i.test(p.name));
+      const bevs = products.filter(
+        (p) => p.isBeverage || /bebida|refrigerante|suco|coca|água|agua|cerveja/i.test(p.category || "") || /bebida|refrigerante|coca|suco/i.test(p.name)
+      );
       if (bevs.length > 0) {
         const bevList = bevs
           .map((b) => `🥤 *${b.name}* — R$ ${b.price.toFixed(2).replace(".", ",")}`)
           .join("\n");
         return NextResponse.json({
-          reply: `Temos as seguintes opções de bebidas bem geladinhas no *${user.storeName || "nosso restaurante"}*:\n\n${bevList}\n\nQuer incluir alguma no seu pedido? Acesse:\n👉 ${storeLink}`
+          reply: `Temos as seguintes opções de bebidas bem geladinhas no *${user.storeName || "nosso restaurante"}*:\n\n${bevList}\n\nQuer incluir alguma no seu pedido? Acesse:\n👉 ${storeLink}`,
         });
       }
     }
 
-    // 3. Horário de funcionamento / Que horas abre / Que horas fecha
+    // 7. Horário de funcionamento / Que horas abre / Que horas fecha
     if (/horario|horário|aberto|fecha|abre|fechado|funcionamento|que horas/i.test(msg)) {
       return NextResponse.json({
-        reply: `O *${user.storeName || "nosso restaurante"}* ${nowStatusText || "funciona das 18:00 às 23:30"}. 😊\n\nConfira todos os nossos horários e faça seu pedido pelo cardápio:\n👉 ${storeLink}`
+        reply: `O *${user.storeName || "nosso restaurante"}* ${nowStatusText || "funciona das 18:00 às 23:30"}. 😊\n\nConfira todos os nossos horários e faça seu pedido pelo cardápio:\n👉 ${storeLink}`,
       });
     }
 
-    // 4. Endereço / Onde fica / Local
+    // 8. Endereço / Onde fica / Local
     if (/onde fica|endereço|endereco|local|bairro|rua|cidade|localização|localizacao/i.test(msg)) {
       return NextResponse.json({
-        reply: `Ficamos localizados em: 📍 *${user.storeAddress || user.city || "Nossa Loja"}*.\n\nEntregamos na sua casa ou você pode retirar no local! Monte seu pedido em:\n👉 ${storeLink}`
+        reply: `Ficamos localizados em: 📍 *${user.storeAddress || user.city || "Nossa Loja"}*.\n\nEntregamos na sua casa ou você pode retirar no local! Monte seu pedido em:\n👉 ${storeLink}`,
       });
     }
 
-    // 5. Entregas / Taxa / Frete / Entrega
+    // 9. Entregas / Taxa / Frete / Entrega
     if (/entrega|frete|taxa|entregam|retirada/i.test(msg)) {
       return NextResponse.json({
-        reply: `Fazemos entregas em toda a região de ${user.city || "nossa cidade"}! 🛵\n\nVocê pode consultar a taxa exata para o seu bairro e escolher entrega ou retirada no link:\n👉 ${storeLink}`
+        reply: `Fazemos entregas em toda a região de ${user.city || "nossa cidade"}! 🛵\n\nVocê pode consultar a taxa exata para o seu bairro e escolher entrega ou retirada no link:\n👉 ${storeLink}`,
       });
     }
 
-    // 6. Pagamento / Forma de pagamento / Aceita Pix / Cartão / Dinheiro
+    // 10. Pagamento / Forma de pagamento / Aceita Pix / Cartão / Dinheiro
     if (/pagamento|forma|pix|cartao|cartão|dinheiro|troco|aceita/i.test(msg)) {
       return NextResponse.json({
-        reply: `Aceitamos as seguintes formas de pagamento no *${user.storeName || "nosso restaurante"}*:\n\n✅ Pix\n✅ Cartão de Crédito e Débito\n✅ Dinheiro (com troco se precisar)\n\nMonte seu pedido diretamente em:\n👉 ${storeLink}`
+        reply: `Aceitamos as seguintes formas de pagamento no *${user.storeName || "nosso restaurante"}*:\n\n✅ Pix\n✅ Cartão de Crédito e Débito\n✅ Dinheiro (com troco se precisar)\n\nMonte seu pedido diretamente em:\n👉 ${storeLink}`,
       });
     }
 
-    // 7. Cardápio / Menu / Opções / Preços
+    // 11. Cardápio / Menu / Opções / Preços
     if (/cardapio|cardápio|menu|opções|opcoes|lanche|burger|comida|preço|preco|valor/i.test(msg)) {
       const sample = products.slice(0, 4).map((p) => `• *${p.name}*: R$ ${p.price.toFixed(2).replace(".", ",")}`).join("\n");
       return NextResponse.json({
-        reply: `Confira os destaques do nosso cardápio no *${user.storeName || "nosso restaurante"}*:\n\n${sample}\n\nE muito mais! Acesse o cardápio completo e peça agora:\n👉 ${storeLink}`
+        reply: `Confira os destaques do nosso cardápio no *${user.storeName || "nosso restaurante"}*:\n\n${sample}\n\nE muito mais! Acesse o cardápio completo e peça agora:\n👉 ${storeLink}`,
       });
     }
 
-    // 8. Resposta Inteligente Padrão (Saudações ou Perguntas Gerais)
-    const featured = products[0] ? `Dica da casa: experimente o nosso *${products[0].name}* por R$ ${products[0].price.toFixed(2).replace(".", ",")}!` : "";
-    return NextResponse.json({
-      reply: `Olá! Sou o atendente virtual do *${user.storeName || "nosso restaurante"}*! 😊\n\n${featured}\n\nComo posso te ajudar? Você pode consultar todo o nosso cardápio e fazer seu pedido no link:\n👉 ${storeLink}`
-    });
+    // 12. Resposta Inteligente Padrão (Sem Repetir Saudações se já conversou)
+    const randomFood = products.length > 0 ? products[Math.floor(Math.random() * products.length)] : null;
+    const recommendationText = randomFood ? `Dica da casa: que tal provar o nosso *${randomFood.name}* por R$ ${randomFood.price.toFixed(2).replace(".", ",")}? 😋` : "";
+
+    const fallbackMsg = alreadyGreeted
+      ? `Estou à disposição! Você pode consultar todo o nosso cardápio e fazer seu pedido em 1 minuto pelo link:\n👉 ${storeLink}`
+      : `Olá! Sou o atendente virtual do *${user.storeName || "nosso restaurante"}*! 😊\n\n${recommendationText}\n\nComo posso te ajudar? Veja o cardápio completo e peça agora:\n👉 ${storeLink}`;
+
+    return NextResponse.json({ reply: fallbackMsg });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Erro no processamento da IA" }, { status: 500 });
   }
