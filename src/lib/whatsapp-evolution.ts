@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 
-const EVOLUTION_API_URL = (process.env.EVOLUTION_API_URL || "https://wa.firehubfood.com").replace(/\/$/, "");
+const EVOLUTION_API_URL = (process.env.EVOLUTION_API_URL || "http://localhost:8080").replace(/\/$/, "");
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
 export async function getEvolutionQRCode(userId: string, storePhone?: string) {
