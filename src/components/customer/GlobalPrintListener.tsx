@@ -94,14 +94,18 @@ export default function GlobalPrintListener() {
             const now = Date.now();
             const fiveMinutesAgo = now - 5 * 60 * 1000;
 
-            // NO PRIMEIRA CARGA: Marca TODOS os pedidos existentes como JÁ IMPRESSOS para evitar reimprimir pedidos antigos
+            // NA PRIMEIRA CARGA: Marca apenas pedidos antigos (>10min) ou concluídos como já impressos, permitindo que novos pedidos recentes imprimam!
             if (isFirstPollRef.current) {
               isFirstPollRef.current = false;
+              const tenMinutesAgo = now - 10 * 60 * 1000;
               for (const order of orders) {
-                claimOrderPrint(order);
+                const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
+                const isOld = orderTime < tenMinutesAgo || order.status !== "NOVO";
+                if (isOld) {
+                  claimOrderPrint(order);
+                }
               }
-              console.log(`[GlobalPrint Master] 🛑 Todos os ${orders.length} pedidos existentes foram marcados como JÁ IMPRESSOS. Apenas NOVOS pedidos a partir de agora serão impressos!`);
-              return;
+              console.log(`[GlobalPrint Master] 🛑 Pedidos antigos/concluídos foram marcados como já impressos. Pedidos recentes serão processados.`);
             }
 
             for (const order of orders) {

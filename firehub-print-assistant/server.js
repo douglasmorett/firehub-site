@@ -668,9 +668,10 @@ function enqueuePrintJob(jobParams) {
 setInterval(async () => {
   try {
     const fetch = (await import("node-fetch")).default || globalThis.fetch;
+    const domain = currentConfig.domain || "firehubfood.com";
     const url = currentConfig.franchiseeId
-      ? `https://firehubfood.com.br/api/store/print-queue?franchiseeId=${currentConfig.franchiseeId}`
-      : `https://firehubfood.com.br/api/store/print-queue?all=true`;
+      ? `https://${domain}/api/store/print-queue?franchiseeId=${currentConfig.franchiseeId}`
+      : `https://${domain}/api/store/print-queue?all=true`;
     const res = await fetch(url);
     if (!res.ok) return;
     const data = await res.json();
