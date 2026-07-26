@@ -13,7 +13,11 @@ export default function IntegracoesHubClient({
   ifoodWidgetId?: string;
   userEmail: string;
 }) {
-  const [activeTab, setActiveTab] = useState<"all" | "jotaja" | "ifood">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "whatsapp" | "jotaja" | "ifood">("all");
+
+  // WhatsApp state
+  const [waConnected, setWaConnected] = useState(false);
+  const [waPhone, setWaPhone] = useState("");
 
   // JotaJá credentials state
   const [jjClientId, setJjClientId] = useState("");
@@ -47,6 +51,16 @@ export default function IntegracoesHubClient({
       })
       .catch(() => {})
       .finally(() => setJjLoading(false));
+
+    fetch("/api/chatbot/config")
+      .then(r => r.json())
+      .then(d => {
+        if (d.config) {
+          setWaConnected(d.config.connected || false);
+          setWaPhone(d.config.phone || "");
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleSaveJotaja = async () => {
@@ -133,12 +147,18 @@ export default function IntegracoesHubClient({
         </div>
 
         {/* Tab Filters */}
-        <div style={{ display: "flex", gap: "8px", marginTop: "24px" }}>
+        <div style={{ display: "flex", gap: "8px", marginTop: "24px", flexWrap: "wrap" }}>
           <button
             onClick={() => setActiveTab("all")}
             style={{ padding: "8px 16px", borderRadius: "10px", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "all" ? "#38BDF8" : "rgba(255,255,255,0.1)", color: activeTab === "all" ? "#0F172A" : "#fff" }}
           >
             Todas as Integrações
+          </button>
+          <button
+            onClick={() => setActiveTab("whatsapp")}
+            style={{ padding: "8px 16px", borderRadius: "10px", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "whatsapp" ? "#10B981" : "rgba(255,255,255,0.1)", color: "#fff" }}
+          >
+            💬 WhatsApp IA & Notificações
           </button>
           <button
             onClick={() => setActiveTab("jotaja")}
@@ -157,6 +177,65 @@ export default function IntegracoesHubClient({
 
       {/* Grid of Integration Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))", gap: "24px" }}>
+
+        {/* ================= CARD 0: WHATSAPP IA ================= */}
+        {(activeTab === "all" || activeTab === "whatsapp") && (
+          <div style={{ background: "#fff", borderRadius: "20px", border: "1.5px solid #E2E8F0", padding: "24px", boxShadow: "0 4px 16px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div>
+              {/* Card Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #10B981, #059669)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.4rem", fontWeight: 900 }}>
+                    💬
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.15rem", color: "#0F172A" }}>WhatsApp IA & Notificações</h3>
+                    <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Conexão 1-Clique por QR Code e Robô Atendente 24/7</span>
+                  </div>
+                </div>
+
+                {waConnected ? (
+                  <span style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D", padding: "4px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
+                    <CheckCircle2 size={14} /> {waPhone || "Conectado & Ativo"}
+                  </span>
+                ) : (
+                  <span style={{ background: "#FEF3C7", border: "1px solid #FDE68A", color: "#B45309", padding: "4px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800 }}>
+                    ⚡ Aguardando Leitura
+                  </span>
+                )}
+              </div>
+
+              <p style={{ fontSize: "0.83rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+                Conecte o celular da sua loja lendo o QR Code pelo WhatsApp sem nenhuma configuração técnica. Envie status automáticos dos pedidos e deixe a Inteligência Artificial atender seus clientes com o cardápio atualizado.
+              </p>
+
+              <div style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.8rem", color: "#334155" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <CheckCircle2 size={14} color="#10B981" /> <strong>Conexão Simples:</strong> Apenas escaneie o QR Code no celular da loja.
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <CheckCircle2 size={14} color="#10B981" /> <strong>Notificações Automáticas:</strong> Envia avisos de "Pedido Aceito" e "Saiu para Entrega".
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <CheckCircle2 size={14} color="#10B981" /> <strong>Robô Inteligente:</strong> Gemini 2.5 responde dúvidas de produtos e links do cardápio.
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.75rem", color: "#64748B" }}>
+                Status: <strong style={{ color: waConnected ? "#16A34A" : "#D97706" }}>{waConnected ? "Conectado" : "Pendente QR Code"}</strong>
+              </span>
+              <a
+                href="/store/chatbot"
+                style={{ padding: "10px 18px", borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", display: "flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 12px rgba(16,185,129,0.25)" }}
+              >
+                ⚙️ Configurar e Conectar WhatsApp
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* ================= CARD 1: JOTAJA ================= */}
         {(activeTab === "all" || activeTab === "jotaja") && (
