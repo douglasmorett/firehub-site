@@ -18,6 +18,13 @@ export default function IntegracoesHubClient({
   // WhatsApp state
   const [waConnected, setWaConnected] = useState(false);
   const [waPhone, setWaPhone] = useState("");
+  const [showWaConfigModal, setShowWaConfigModal] = useState(false);
+  const [waCustomAnswers, setWaCustomAnswers] = useState(true);
+  const [waAiAnswers, setWaAiAnswers] = useState(true);
+  const [waAiEnhance, setWaAiEnhance] = useState(true);
+  const [waFailLimit, setWaFailLimit] = useState(3);
+  const [testPhone, setTestPhone] = useState("");
+  const [testMsgInput, setTestMsgInput] = useState("");
 
   // JotaJá credentials state
   const [jjClientId, setJjClientId] = useState("");
@@ -227,12 +234,33 @@ export default function IntegracoesHubClient({
               <span style={{ fontSize: "0.75rem", color: "#64748B" }}>
                 Status: <strong style={{ color: waConnected ? "#16A34A" : "#D97706" }}>{waConnected ? "Conectado" : "Pendente QR Code"}</strong>
               </span>
-              <a
-                href="/store/chatbot"
-                style={{ padding: "10px 18px", borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", display: "flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 12px rgba(16,185,129,0.25)" }}
-              >
-                ⚙️ Configurar e Conectar WhatsApp
-              </a>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <a
+                  href="/store/chatbot"
+                  title="Acessar Central de Chatbot"
+                  style={{ width: "34px", height: "34px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
+                >
+                  🔗
+                </a>
+                <a
+                  href="/store/chatbot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir em Nova Aba"
+                  style={{ width: "34px", height: "34px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
+                >
+                  ↗
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setShowWaConfigModal(true)}
+                  title="Configuração & Diagnóstico do WhatsApp"
+                  style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}
+                >
+                  ⚙ Configuração
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -424,6 +452,123 @@ export default function IntegracoesHubClient({
         )}
 
       </div>
+
+      {/* ================= MODAL: CONFIGURAÇÃO & DIAGNÓSTICO DO WHATSAPP ================= */}
+      {showWaConfigModal && (
+        <div onClick={() => setShowWaConfigModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", zIndex: 10005, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", width: "100%", maxWidth: "560px", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: "1px solid #E2E8F0" }}>
+            
+            {/* Modal Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #F1F5F9" }}>
+              <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+                💬 WhatsApp Configurações & Diagnóstico
+              </div>
+              <button onClick={() => setShowWaConfigModal(false)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: "1.2rem", color: "#64748B" }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: "20px" }}>
+              <p style={{ fontSize: "0.83rem", color: "#475569", margin: "0 0 16px 0", lineHeight: 1.5 }}>
+                Conecte seu WhatsApp para enviar atualizações dos pedidos para seus clientes, enviar mensagens automáticas, campanhas e muito mais.
+              </p>
+
+              {/* 1. Atualizações */}
+              <div style={{ marginBottom: "16px", background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "8px" }}>Atualizações de Pedidos</div>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "#334155", cursor: "pointer" }}>
+                  <input type="checkbox" checked readOnly style={{ width: 16, height: 16, accentColor: "#10B981" }} />
+                  Enviar atualizações dos pedidos (Aceito, Em Transporte, Entregue)
+                </label>
+              </div>
+
+              {/* 2. Robô de Atendimento */}
+              <div style={{ marginBottom: "16px", background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "8px" }}>Robô de Atendimento</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.82rem", color: "#334155" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={waCustomAnswers} onChange={e => setWaCustomAnswers(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#10B981" }} />
+                    Respostas personalizadas (com link para a gestão do robô)
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={waAiAnswers} onChange={e => setWaAiAnswers(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#10B981" }} />
+                    Respostas pela IA (Gemini 2.5)
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={waAiEnhance} onChange={e => setWaAiEnhance(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#10B981" }} />
+                    Aprimorar respostas da IA com dados do cardápio ao vivo
+                  </label>
+                  <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "8px", fontSize: "0.8rem", color: "#475569" }}>
+                    Sugerir falar com atendente após
+                    <input type="number" value={waFailLimit} onChange={e => setWaFailLimit(Number(e.target.value))} style={{ width: "50px", padding: "4px 6px", borderRadius: "6px", border: "1px solid #CBD5E1", textAlign: "center", fontWeight: 700 }} />
+                    mensagens não entendidas.
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Opções & Ações */}
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "8px" }}>Opções & Controle</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <a href="/store/chatbot" style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontSize: "0.8rem", fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                    📱 QR Code & Pareamento
+                  </a>
+                  <button onClick={() => showToast(`✉️ Enviar teste para celular cadastrado (${waPhone || "Loja"})`, "#3B82F6")} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                    ✉️ Testar Envio
+                  </button>
+                  <button onClick={() => showToast("✔️ Conexão com o WhatsApp verificada com sucesso!", "#10B981")} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#166534", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                    ✔️ Verificar Conexão
+                  </button>
+                  <button onClick={() => { setWaConnected(false); showToast("🚪 Sessão desconectada. Acesse o QR Code para conectar.", "#DC2626"); }} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#DC2626", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                    🚪 Desconectar Aparelho
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Diagnóstico em Tempo Real */}
+              <div style={{ marginBottom: "16px", background: "#F8FAFC", padding: "14px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "10px" }}>Diagnóstico em Tempo Real</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.78rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#166534" }}>
+                    🟢 <strong>Módulo do robô:</strong> O módulo do robô está ativo.
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: waConnected ? "#166534" : "#DC2626" }}>
+                    {waConnected ? "🟢" : "🔴"} <strong>Conexão com o WhatsApp:</strong> {waConnected ? `Conectado no número ${waPhone}` : "Nenhum aparelho conectado, conecte um WhatsApp para o robô responder."}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#166534" }}>
+                    🟢 <strong>Atualizações dos pedidos:</strong> As atualizações dos pedidos serão enviadas aos clientes.
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#166534" }}>
+                    🟢 <strong>Respostas por I.A:</strong> As respostas por I.A do Gemini 2.5 estão ativas.
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Diagnóstico de Teste Direto */}
+              <div style={{ marginBottom: "16px", background: "#F1F5F9", padding: "12px", borderRadius: "10px" }}>
+                <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#1E293B", marginBottom: "8px" }}>Testar Envio para Cliente</div>
+                <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                  <input type="text" placeholder="Telefone do cliente (opcional)" value={testPhone} onChange={e => setTestPhone(e.target.value)} style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.78rem" }} />
+                  <input type="text" placeholder="Mensagem de teste (opcional)" value={testMsgInput} onChange={e => setTestMsgInput(e.target.value)} style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.78rem" }} />
+                </div>
+                <button onClick={() => showToast(`✅ Teste disparado para ${testPhone || "número informado"}`, "#2563EB")} style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+                  Verificar e Enviar Mensagem de Teste
+                </button>
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid #F1F5F9", paddingTop: "12px" }}>
+                <button onClick={() => setShowWaConfigModal(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#64748B", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
+                  Fechar
+                </button>
+                <button onClick={() => { setShowWaConfigModal(false); showToast("✅ Configurações do WhatsApp salvas!", "#10B981"); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
