@@ -69,9 +69,7 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
   }
 
   let paymentMethod = '';
-  if (baseName === 'Dinheiro') {
-    paymentMethod = 'Dinheiro';
-  } else if (isPrepaid) {
+  if (isPrepaid) {
     paymentMethod = `${baseName} (${source === 'JOTAJA' ? 'JotaJá' : 'iFood'} Pago Online)`;
   } else {
     paymentMethod = `${baseName} (Cobrar na Entrega)`;

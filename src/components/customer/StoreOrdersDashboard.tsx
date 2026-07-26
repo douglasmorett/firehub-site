@@ -2663,31 +2663,53 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
 
                 {(() => {
-                  const payMethodClean = (order.paymentMethod || "").toLowerCase();
-                  const isExplicitOffline = /dinheiro|cobrar|maquininha|entrega/i.test(payMethodClean);
-                  const isOnline = /online|pix|pago|app/i.test(payMethodClean) || (order.source === "IFOOD" && !isExplicitOffline);
+                  const payMethodRaw = order.paymentMethod || "";
+                  const payMethodClean = payMethodRaw.toLowerCase();
+
+                  // Explicit offline check: if it contains "cobrar", "entrega", "maquininha", "dinheiro", "troco", or "pendente" -> MUST BE OFFLINE (Cobrar na Entrega)
+                  const isExplicitOffline = /cobrar|entrega|maquininha|dinheiro|troco|pendente/i.test(payMethodClean);
+
+                  // Explicit online check: ONLY online if NOT explicit offline AND (contains "pago online", "online", "prepaid", "app" OR isPrepaid === true)
+                  const isOnline = !isExplicitOffline && (
+                    /pago online|online|prepaid|ifood pago|jotajá pago|jotaja pago|app/i.test(payMethodClean) ||
+                    (order as any).isPrepaid === true
+                  );
+
                   const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online";
 
-                  let baseMethod = translatePayment(order.paymentMethod || "").replace(/\s*\([^)]*\)/gi, "").trim();
-                  if (!baseMethod) baseMethod = "Crédito";
+                  let baseMethod = translatePayment(payMethodRaw).replace(/\s*\([^)]*\)/gi, "").trim();
+                  if (!baseMethod) baseMethod = "Cartão";
 
                   if (isOnline) {
                     return (
                       <div style={{ fontWeight: "bold", marginTop: "10px", fontSize: "12px" }}>
-                        Forma de Pagamento: {baseMethod} (Online) - Pago via {onlineSource} não cobrar
+                        Forma de Pagamento: {baseMethod} (Online) - Pago via {onlineSource} (NÃO COBRAR)
                       </div>
                     );
                   } else {
                     return (
                       <div style={{ marginTop: "10px" }}>
-                        <div style={{ fontWeight: "bold", fontSize: "12px" }}>
-                          Forma de Pagamento: {baseMethod}
+                        <div style={{ fontWeight: "bold", fontSize: "13px", color: "#000" }}>
+                          Forma de Pagamento: {baseMethod} (Cobrar na Entrega)
                         </div>
-                        {order.changeAmount != null && order.changeAmount > 0 && (
-                          <div style={{ marginTop: "4px", fontSize: "12px" }}>Troco para: R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}</div>
+                        {order.changeAmount != null && Number(order.changeAmount) > 0 && (
+                          <div style={{ marginTop: "4px", fontSize: "12px", fontWeight: "bold" }}>
+                            💵 Troco para: R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
+                          </div>
                         )}
-                        <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed #000", fontWeight: "bold", fontSize: "12px" }}>
-                          ⚠️ COBRAR DO CLIENTE NA ENTREGA: R$ {order.totalAmount.toFixed(2).replace('.', ',')}
+                        <div style={{
+                          marginTop: "10px",
+                          padding: "8px 10px",
+                          background: "#000",
+                          color: "#FFF",
+                          borderRadius: "4px",
+                          fontWeight: 900,
+                          fontSize: "14px",
+                          textAlign: "center",
+                          border: "2px solid #000",
+                          letterSpacing: "0.5px"
+                        }}>
+                          🚨 COBRAR DO CLIENTE NA ENTREGA: R$ {order.totalAmount.toFixed(2).replace('.', ',')}
                         </div>
                       </div>
                     );
