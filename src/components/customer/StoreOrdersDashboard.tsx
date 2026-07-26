@@ -189,7 +189,7 @@ const DashboardColumn = memo(function DashboardColumn({
       onDragLeave={canDrop ? onDragLeave : undefined}
       onDrop={canDrop ? onDrop : undefined}
       style={{
-        flex: "1 1 260px", minWidth: "260px",
+        flex: "1 1 290px", minWidth: "290px",
         background: isOver ? "#EFF6FF" : "#F8FAFC",
         borderRadius: "14px",
         border: isOver ? "2.5px dashed #3B82F6" : "1px solid #E2E8F0",
@@ -433,26 +433,24 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           )}
 
           {/* Total + Forma de Pagamento */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-              <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", flexShrink: 0 }}>
-                R$ {order.totalAmount?.toFixed(2).replace('.', ',')}
-              </span>
-              <span style={{ color: "#CBD5E1", flexShrink: 0 }}>—</span>
-              <span
-                style={{
-                  fontWeight: 600,
-                  fontSize: "0.82rem",
-                  color: "#475569",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-              >
-                {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-              </span>
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "5px", flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", flexShrink: 0 }}>
+              R$ {order.totalAmount?.toFixed(2).replace('.', ',')}
+            </span>
+            <span style={{ color: "#CBD5E1", flexShrink: 0 }}>—</span>
+            <span
+              style={{
+                fontWeight: 700,
+                fontSize: "0.82rem",
+                color: "#334155",
+                whiteSpace: "normal",
+                wordBreak: "break-word",
+                lineHeight: "1.25",
+              }}
+              title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+            >
+              {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+            </span>
             {order.changeAmount != null && order.changeAmount > 0 && (
               <span style={{
                 fontSize: "0.72rem",
@@ -475,12 +473,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
         {/* Action Bar (Botões + Motoboy Dropdown Inline + WhatsApp + Print + Receipt) */}
         <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
+          display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap",
           marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #E2E8F0",
-          gap: "8px"
+          gap: "6px"
         }}>
           {/* Left: Status action button + motoboy select */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0, flexWrap: "wrap" }}>
             {order.status === "NOVO" && (
               <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
             )}
