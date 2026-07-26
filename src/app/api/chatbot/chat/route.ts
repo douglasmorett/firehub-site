@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
     const personality = chatbotConfig.personality || "SIMPATICO";
     const customPrompt = (chatbotConfig.customPrompt || "").trim();
     const sendLinkConfig = chatbotConfig.sendLink !== false;
+    const agentName = (chatbotConfig.agentName || "").trim();
+
+    const botSelfIntro = agentName ? `Sou a *${agentName}*, atendente virtual do` : `Sou o atendente virtual do`;
 
     // Buscar os MAIS VENDIDOS REAIS direto do histórico de pedidos da loja no Banco de Dados
     let realTopProducts: any[] = [];
@@ -132,11 +135,13 @@ export async function POST(req: NextRequest) {
       personalityInstruction = "Seja divertido, bem-humorado, entusiasmado e descontraído!";
     }
 
-    const systemPrompt = `Você é a IA Atendente Virtual Oficial do restaurante "${user.storeName || "Nossa Loja"}".
+    const systemPrompt = `Você é ${agentName ? `a ${agentName}, ` : ""}Atendente Virtual Oficial do restaurante "${user.storeName || "Nossa Loja"}".
+Seu nome é "${agentName || "Atendente Virtual"}". Sempre que o cliente perguntar o seu nome ou quem está falando, diga que você é ${agentName ? `a ${agentName}` : "o atendente virtual"} do ${user.storeName}.
 Seu objetivo é atender o cliente no WhatsApp de forma humana, fluida, sem erros, sanar dúvidas sobre o cardápio, horários de funcionamento, endereço e ajudar a fazer o pedido.
 
 📍 **DADOS DA LOJA**:
 - Nome: ${user.storeName || "Nossa Loja"}
+- Atendente: ${agentName || "Atendente Virtual"}
 - Cidade/Endereço: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio Digital: ${storeLink}
@@ -155,10 +160,10 @@ ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA (RESPONDA E AVISE O CLIEN
 🎯 **REGRAS INVIOLÁVEIS DE ATENDIMENTO**:
 1. Responda DIRETAMENTE à pergunta feita pelo cliente. Se ele perguntou "que horas abre" ou sobre horários, informe o horário exato de abertura com clareza.
 2. NUNCA mande uma saudação genérica repetida se o cliente fez uma pergunta direta.
-3. Responda em Português do Brasil de forma fluida, natural e inteligente (estilo Gemini / Brendi).
+3. Responda em Português do Brasil de forma fluida, natural e inteligente. Se chamarem pelo nome, responda amigavelmente.
 4. NUNCA invente produtos, horários ou preços que não estejam listados acima.
 5. Se o cliente demonstrar intenção de pedir, informe os itens e envie o link direto para finalizar: ${storeLink}.
-6. NUNCA diga que é um robô genérico. Você é a atendente oficial do ${user.storeName}.
+6. NUNCA diga que é um robô genérico. Você é ${agentName ? `a ${agentName}` : "a atendente oficial"} do ${user.storeName}.
 `;
 
     // Chamada à API Gemini (Model gemini-2.0-flash) se chave estiver disponível
@@ -183,6 +188,15 @@ ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA (RESPONDA E AVISE O CLIEN
     const msg = message.toLowerCase().trim();
     const alreadyGreeted = Array.isArray(history) && history.some((h: any) => h.sender === "Atendente" || h.sender === "bot");
     const allowWhatsappOrders = chatbotConfig.allowWhatsappOrders === true;
+
+    // 0.0 Pergunta sobre o Nome do Atendente ("qual o seu nome", "quem é você", "como você se chama")
+    if (/qual (é|e) (o )?seu nome|como (você|voce) se chama|quem (é|e) você|quem (é|e) voce|quem (tá|ta) falando|seu nome/i.test(msg)) {
+      return NextResponse.json({
+        reply: agentName
+          ? `Eu me chamo *${agentName}*! 😊 Sou a atendente virtual oficial do *${user.storeName || "nosso restaurante"}*. Como posso te ajudar hoje?`
+          : `Sou o atendente virtual oficial do *${user.storeName || "nosso restaurante"}*! 😊 Como posso te ajudar hoje?`,
+      });
+    }
 
     // 0.1 Perguntas sobre Fazer Pedido no WhatsApp / Por aqui ("faz pedido por aqui?", "pelo whatsapp faz pedido?", "posso pedir por aqui?")
     if (/faz pedido|pedir por aqui|pedido por aqui|pelo whatsapp|posso pedir|fazer pedido|como peço|como fasso|como pedir/i.test(msg)) {

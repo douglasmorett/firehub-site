@@ -374,6 +374,33 @@ export default function ChatbotHubClient() {
               </div>
             </div>
 
+            {/* NOME DO ATENDENTE */}
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
+                Nome do Atendente Virtual (Opcional):
+              </label>
+              <input
+                type="text"
+                value={config.agentName || ""}
+                onChange={(e) => setConfig((prev: any) => ({ ...prev, agentName: e.target.value }))}
+                onBlur={() => handleSaveConfig({ agentName: config.agentName })}
+                placeholder="Ex: Brendi, Sophia, Lucas, Maria..."
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "0.88rem",
+                  fontFamily: "inherit",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "4px" }}>
+                A IA vai se identificar com este nome nas saudações e conversas (Ex: &quot;Olá! Sou a Brendi...&quot;)
+              </div>
+            </div>
+
             {/* SELETOR DE PERSONALIDADE */}
             <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>
               Tom de Voz do Atendente:
@@ -467,7 +494,7 @@ export default function ChatbotHubClient() {
               🤖
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: "1rem" }}>{stats.storeName} — Atendente IA</div>
+              <div style={{ fontWeight: 800, fontSize: "1rem" }}>{stats.storeName} — {config.agentName ? config.agentName : "Atendente IA"}</div>
               <div style={{ fontSize: "0.75rem", color: "#25D366", display: "flex", alignItems: "center", gap: "4px" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#25D366" }}></span>
                 online • Gemini High Precision
