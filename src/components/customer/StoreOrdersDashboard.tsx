@@ -250,6 +250,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   onOpenCancelModal,
   onOpenPrintModal,
   onOpenReceiptModal,
+  onOpenDeliveryModal,
   onDragStart,
   onDragEnd,
   setOrders,
@@ -581,6 +582,20 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             >
               <FileText size={15} />
             </button>
+
+            {/* Delivery Info & Route Map Modal Button */}
+            {order.deliveryType === "DELIVERY" && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onOpenDeliveryModal && onOpenDeliveryModal(order);
+                }}
+                title="Informações da Entrega e Rota no Mapa"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#8B5CF6", color: "#fff", border: "none", cursor: "pointer", fontSize: "0.9rem" }}
+              >
+                🛵
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -803,6 +818,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
   const [viewReceiptOrderId, setViewReceiptOrderId] = useState<string | null>(null);
+  const [deliveryInfoModalOrder, setDeliveryInfoModalOrder] = useState<any | null>(null);
   const showToast = (text: string, color = "#10B981") => {
     setToastMsg({ text, color });
     setTimeout(() => setToastMsg(null), 4000);
@@ -1731,6 +1747,203 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <button onClick={() => setPrintSelectOrderId(null)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem" }}>
                 Cancelar
               </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* DELIVERY INFO & ROUTE MAP MODAL */}
+      {deliveryInfoModalOrder && (() => {
+        const order = deliveryInfoModalOrder;
+        const storeOriginAddress = user?.storeAddress || user?.address || (user?.city ? `São Francisco, ${user.city}` : "Sua Loja");
+        const customerDestAddress = cleanAddress(order.customerAddress) || "Endereço do Cliente";
+
+        const originFull = storeOriginAddress.includes(",") ? storeOriginAddress : `${storeOriginAddress}, ${user?.city || ""}`.trim();
+        const destFull = customerDestAddress.includes(",") ? customerDestAddress : `${customerDestAddress}, ${user?.city || ""}`.trim();
+
+        // Google Maps Directions Iframe URL (saddr = start/origem, daddr = destination/destino) -> gera a linha azul da rota e tempo estimado
+        const mapEmbedUrl = `https://maps.google.com/maps?saddr=${encodeURIComponent(originFull)}&daddr=${encodeURIComponent(destFull)}&output=embed`;
+        const googleMapsDirUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originFull)}&destination=${encodeURIComponent(destFull)}`;
+        const wazeNavUrl = `https://waze.com/ul?q=${encodeURIComponent(destFull)}&navigate=yes`;
+
+        return (
+          <div
+            onClick={() => setDeliveryInfoModalOrder(null)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.65)",
+              backdropFilter: "blur(4px)",
+              zIndex: 10005,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "1rem",
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: "#fff",
+                borderRadius: "16px",
+                width: "100%",
+                maxWidth: "520px",
+                maxHeight: "92vh",
+                overflowY: "auto",
+                boxShadow: "0 25px 60px rgba(0,0,0,0.35)",
+                border: "1px solid #E2E8F0",
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #F1F5F9" }}>
+                <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+                  Informações da Entrega
+                </div>
+                <button
+                  onClick={() => setDeliveryInfoModalOrder(null)}
+                  style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: "1.2rem", color: "#64748B", padding: "4px" }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ padding: "20px" }}>
+                {/* Entregador */}
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569" }}>
+                      Entregador
+                    </label>
+                  </div>
+                  {isIfoodMotoboy(order) ? (
+                    <div
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "2px solid #EF4444",
+                        background: "#FEF2F2",
+                        color: "#DC2626",
+                        fontWeight: 800,
+                        fontSize: "0.88rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      🛵 Motoboy iFood (Entrega Parceira Bloqueada)
+                    </div>
+                  ) : (
+                    <select
+                      value={order.motoboyId || ""}
+                      onChange={e => {
+                        assignMotoboy(order.id, e.target.value);
+                        setDeliveryInfoModalOrder((prev: any) => prev ? { ...prev, motoboyId: e.target.value } : null);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1.5px solid #CBD5E1",
+                        fontSize: "0.9rem",
+                        fontWeight: 600,
+                        color: "#0F172A",
+                        background: "#F8FAFC",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="">Nenhum</option>
+                      {motoboys?.map((m: any) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} {m.phone ? `(${m.phone})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Rota de Entrega */}
+                <div style={{ marginBottom: "14px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#2563EB", marginBottom: "6px" }}>
+                    Rota de entrega
+                  </div>
+                  <div style={{ fontSize: "0.82rem", color: "#475569", lineHeight: "1.5" }}>
+                    <span style={{ color: "#2563EB", fontWeight: 700 }}>↗ De</span> {originFull} <span style={{ color: "#0F172A", fontWeight: 700 }}>para</span> {destFull}.
+                  </div>
+                </div>
+
+                {/* Google Maps / Embed Rota com linha azul */}
+                <div style={{ marginBottom: "16px", borderRadius: "12px", overflow: "hidden", border: "1px solid #CBD5E1", height: "270px", background: "#E2E8F0" }}>
+                  <iframe
+                    title="Mapa de Rota de Entrega"
+                    width="100%"
+                    height="100%"
+                    frameBorder="0"
+                    style={{ border: 0 }}
+                    src={mapEmbedUrl}
+                    allowFullScreen
+                  />
+                </div>
+
+                {/* Atalhos para Abrir no Google Maps / Waze */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }}>
+                  <a
+                    href={googleMapsDirUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      padding: "9px",
+                      borderRadius: "8px",
+                      background: "#2563EB",
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: "0.82rem",
+                      textDecoration: "none",
+                    }}
+                  >
+                    📍 Google Maps
+                  </a>
+                  <a
+                    href={wazeNavUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      padding: "9px",
+                      borderRadius: "8px",
+                      background: "#0284C7",
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: "0.82rem",
+                      textDecoration: "none",
+                    }}
+                  >
+                    🚙 Waze
+                  </a>
+                </div>
+
+                {/* Botões de Ação */}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid #F1F5F9", paddingTop: "12px" }}>
+                  <button
+                    onClick={() => setDeliveryInfoModalOrder(null)}
+                    style={{ padding: "8px 18px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#64748B", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => setDeliveryInfoModalOrder(null)}
+                    style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -2922,6 +3135,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
