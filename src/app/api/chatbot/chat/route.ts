@@ -57,7 +57,41 @@ export async function POST(req: NextRequest) {
 
     const chatbotConfig = (user.chatbotConfig as any) || {};
     const personality = chatbotConfig.personality || "SIMPATICO";
-    const customPrompt = chatbotConfig.customPrompt || "";
+    const customPrompt = (chatbotConfig.customPrompt || "").trim();
+    const sendLinkConfig = chatbotConfig.sendLink !== false;
+
+    // Buscar os MAIS VENDIDOS REAIS direto do histórico de pedidos da loja no Banco de Dados
+    let realTopProducts: any[] = [];
+    try {
+      const topSales = await (prisma as any).customerOrderItem.groupBy({
+        by: ["menuProductId"],
+        where: { order: { franchiseeId: targetFranchiseeId, status: { notIn: ["CANCELADO"] } }, menuProductId: { not: null } },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: "desc" } },
+        take: 15,
+      });
+
+      const isCondiment = (name: string) => /maionese|sach[eê]|molho|embalagem|adicional|taxa|troco|cobertura/i.test(name);
+      const salesMap = new Map((topSales as any[]).map((s: any) => [s.menuProductId, s._sum?.quantity || 0]));
+
+      const scoredProducts = products
+        .filter((p) => !isCondiment(p.name))
+        .map((p) => ({
+          ...p,
+          salesCount: salesMap.get(p.id) || 0,
+        }))
+        .sort((a, b) => b.salesCount - a.salesCount);
+
+      realTopProducts = scoredProducts.slice(0, 3);
+    } catch {
+      realTopProducts = products
+        .filter((p) => !/maionese|sach[eê]|molho|embalagem|adicional/i.test(p.name))
+        .slice(0, 3);
+    }
+
+    if (realTopProducts.length === 0) {
+      realTopProducts = products.slice(0, 3);
+    }
 
     // Formatar horários de funcionamento
     let hoursText = "Horário de funcionamento padrão: Todos os dias das 18:00 às 23:30.";
@@ -84,6 +118,8 @@ export async function POST(req: NextRequest) {
       .join("\n");
 
     const storeLink = user.slug ? `https://firehubfood.com/loja/${user.slug}` : "nosso cardápio digital";
+    const linkSuffix = sendLinkConfig ? `\n\n👉 ${storeLink}` : "";
+    const extraNotice = customPrompt ? `\n\n📌 *Aviso importante da loja*: ${customPrompt}` : "";
 
     let personalityInstruction = "";
     if (personality === "SIMPATICO") {
@@ -93,7 +129,7 @@ export async function POST(req: NextRequest) {
     } else if (personality === "FORMAL") {
       personalityInstruction = "Use tom altamente profissional, cortês, elegante e impecável.";
     } else {
-      personalityInstruction = "Seja divertido, bem-humorado e entusiasmado!";
+      personalityInstruction = "Seja divertido, bem-humorado, entusiasmado e descontraído!";
     }
 
     const systemPrompt = `Você é a IA Atendente Virtual Oficial do restaurante "${user.storeName || "Nossa Loja"}".
@@ -114,7 +150,7 @@ ${catalogSummary || "Cardápio em atualização."}
 
 ⚙️ **PERSONALIDADE E ESTILO**:
 ${personalityInstruction}
-${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA**: ${customPrompt}` : ""}
+${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA (RESPONDA E AVISE O CLIENTE CONFORME SOLICITADO AQUI)**: ${customPrompt}` : ""}
 
 🎯 **REGRAS INVIOLÁVEIS DE ATENDIMENTO**:
 1. Responda DIRETAMENTE à pergunta feita pelo cliente. Se ele perguntou "que horas abre" ou sobre horários, informe o horário exato de abertura com clareza.
@@ -193,13 +229,12 @@ ${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA**: ${customPrompt}` : ""}
 
     // 5. Mais Vendidos / Destaques / Populares / Recomendações
     if (/mais vende|mais vendido|campeao|campeão|recomend|indic|sucesso|popular|melhor|especial|top|qual o melhor/i.test(msg)) {
-      const topProducts = products.slice(0, 3);
-      if (topProducts.length > 0) {
-        const topList = topProducts
+      if (realTopProducts.length > 0) {
+        const topList = realTopProducts
           .map((p) => `⭐ *${p.name}* (${p.category}) — R$ ${p.price.toFixed(2).replace(".", ",")}${p.description ? `\n   _${p.description}_` : ""}`)
           .join("\n\n");
         return NextResponse.json({
-          reply: `Os campeões de vendas no *${user.storeName || "nosso restaurante"}* são:\n\n${topList}\n\nDeu fome? 😋 Faça seu pedido em 1 minuto pelo nosso cardápio digital:\n👉 ${storeLink}`,
+          reply: `Os campeões de vendas e mais pedidos no *${user.storeName || "nosso restaurante"}* são:\n\n${topList}${extraNotice}\n\nDeu fome? 😋 Faça seu pedido em 1 minuto pelo nosso cardápio digital:${linkSuffix}`,
         });
       }
     }
