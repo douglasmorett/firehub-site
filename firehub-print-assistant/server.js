@@ -486,9 +486,13 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   // 6. PAYMENT METHOD & SAFETY NOTE
   const payMethodRaw = cleanAscii(order.paymentMethod || "");
   const payMethodClean = payMethodRaw.toLowerCase();
-  const isExplicitOffline = /dinheiro|cobrar|maquininha|entrega|pendente|troco/i.test(payMethodClean);
+  const isExplicitOffline =
+    /dinheiro|cobrar|maquin|entrega|pendente|troco|presencial|balc/i.test(payMethodClean) ||
+    order.isPrepaid === false ||
+    order.prepaid === false;
+
   const isOnlinePayment = !isExplicitOffline && (
-    /pago online|online|prepaid|ifood pago|jotajá pago|jotaja pago|app/i.test(payMethodClean) ||
+    /pago online|online|prepaid|ifood pago|jotaja pago|jotaj\u00e1 pago|app/i.test(payMethodClean) ||
     order.isPrepaid === true
   );
 
@@ -497,12 +501,14 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
     .trim();
   if (!baseMethodName || baseMethodName.toUpperCase() === "OTHER") baseMethodName = "Cartao";
 
-  const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online";
+  const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJa" : "Online";
 
   if (isOnlinePayment) {
-    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " (Online) - Pago via " + onlineSource + " (NAO COBRAR)" + DOUBLE_OFF + LF;
+    res += BOLD_ON + "Forma de Pagamento: " + baseMethodName + BOLD_OFF + LF;
+    res += DOUBLE_HEIGHT + "(Pago via " + onlineSource + " - NAO COBRAR)" + DOUBLE_OFF + LF;
   } else {
-    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " (Cobrar na Entrega)" + DOUBLE_OFF + LF;
+    res += BOLD_ON + "Forma de Pagamento: " + baseMethodName + BOLD_OFF + LF;
+    res += DOUBLE_HEIGHT + "(COBRAR NA ENTREGA)" + DOUBLE_OFF + LF;
 
     if (order.changeAmount != null && Number(order.changeAmount) > 0) {
       const changeFor = Number(order.changeAmount);

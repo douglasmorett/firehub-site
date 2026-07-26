@@ -918,6 +918,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         deliveryType: order.deliveryType || "DELIVERY",
         deliveryBy: order.deliveryBy || "MERCHANT",
         paymentMethod: translatePayment(order.paymentMethod || ""),
+        isPrepaid: order.isPrepaid,
         items: (order.items || []).map((i: any) => {
           const rawName = i.menuProduct?.name || i.name || "Item";
           const comboSels = (() => {
