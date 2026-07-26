@@ -353,7 +353,20 @@ export async function processJotajaEvent(
             if (city) parts.push(city);
             return parts.join(" - ");
           })(),
-          deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
+          deliveryType: (() => {
+            const ot = (orderData.orderType || "").toUpperCase();
+            const dm = (orderData.deliveryMode || orderData.takeoutMode || "").toUpperCase();
+            const isTakeout =
+              ot === "TAKEOUT" ||
+              ot === "TOGO" ||
+              ot === "PICKUP" ||
+              ot === "RETIRADA" ||
+              ot === "IN_STORE" ||
+              Boolean(orderData.takeout) ||
+              (dm !== "" && dm !== "DELIVERY") ||
+              (!orderData.delivery?.deliveryAddress?.streetName && !orderData.delivery?.deliveryAddress?.formattedAddress && deliveryFeeValue === 0);
+            return isTakeout ? "RETIRADA" : "DELIVERY";
+          })(),
           paymentMethod: resolvedPaymentMethod,
           totalAmount: total,
           deliveryFee: deliveryFeeValue,

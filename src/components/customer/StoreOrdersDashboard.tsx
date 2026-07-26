@@ -2763,9 +2763,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         )}
 
                         <div style={{ display: "flex", gap: "6px" }}>
-                          <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
-                            {order.deliveryType === "DELIVERY" ? "🛵 Entrega" : "🏪 Retirada"}
-                          </span>
+                          {order.deliveryType === "DELIVERY" ? (
+                            <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
+                              🛵 Entrega
+                            </span>
+                          ) : (
+                            <span style={{ padding: "4px 12px", borderRadius: "20px", background: "#FFEDD5", border: "1.5px solid #FDBA74", fontSize: "0.78rem", fontWeight: 900, color: "#C2410C", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              🛍️ RETIRADA NO ESTABELECIMENTO
+                            </span>
+                          )}
                           {order.paymentMethod && (() => {
                             const method = translatePayment(order.paymentMethod);
                             const isCobrar = /cobrar|entrega|dinheiro|cash|maquin|presencial/i.test(method) || !/pago online|online|app|pix \(pago/i.test(order.paymentMethod || "");
