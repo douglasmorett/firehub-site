@@ -410,7 +410,7 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   const INVERSE_ON = "\x1d\x42\x01";
   const INVERSE_OFF = "\x1d\x42\x00";
 
-  const BEV_STAMP = INVERSE_ON + " <=== BEBIDA " + INVERSE_OFF;
+  const BEV_STAMP = BOLD_ON + " <=== BEBIDA" + BOLD_OFF;
 
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
@@ -422,10 +422,11 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
       const unitPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
       const price = unitPrice * qty;
       const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
-      const name = cleanAscii(item.name || item.menuProduct?.name || "Item");
+      let name = cleanAscii(item.name || item.menuProduct?.name || "Item");
+      name = name.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
 
       const isItemBev = isBeverageItem(item);
-      const itemLabel = isItemBev ? `${name}  ${BEV_STAMP}` : name;
+      const itemLabel = isItemBev ? BOLD_ON + `${name}  <=== BEBIDA` + BOLD_OFF : name;
       res += makeBoxLine(`${qty}x ${itemLabel}`, priceStr);
 
       const comboSels = (() => {
@@ -441,8 +442,10 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
         comboSels.forEach((sel) => {
           const totalQty = (sel.quantity || 1) * qty;
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
-          const isSelBev = isBeverageName(sel.name);
-          const selLabel = isSelBev ? `${sel.name}  ${BEV_STAMP}` : sel.name;
+          let selName = cleanAscii(sel.name || "");
+          selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
+          const isSelBev = isBeverageName(selName);
+          const selLabel = isSelBev ? BOLD_ON + `${selName}  <=== BEBIDA` + BOLD_OFF : selName;
           res += makeBoxText(`  - ${qPrefix}${selLabel}`);
         });
       }
