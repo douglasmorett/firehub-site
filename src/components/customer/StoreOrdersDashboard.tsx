@@ -591,29 +591,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 setOrders(newOrders);
               }
 
-              // 🖨️ AUTO-PRINT para qualquer fonte (iFood, JotaJá, Site, etc.)
-              // Imprime automaticamente qualquer pedido ativo criado nos últimos 10 minutos que ainda não foi impresso
-              if (printerConfig?.autoprint !== false) {
-                const now = Date.now();
-                for (const order of newOrders) {
-                  if (isAutoPrinted(order)) continue;
-
-                  const isPrintable = order.status !== "CANCELADO" && order.status !== "ENCERRADO";
-                  const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
-                  const isRecent = (now - orderTime) < 10 * 60 * 1000; // Criado nos últimos 10 minutos
-
-                  if (isPrintable && isRecent) {
-                    markAutoPrinted(order);
-                    console.log(`[AutoPrint] 🖨️ Pedido recente: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id.slice(-4)}) [${order.source}] — imprimindo!`);
-                    try {
-                      handlePrint(order, "cozinha");
-                    } catch (printErr) {
-                      console.warn("[AutoPrint] Erro ao imprimir:", printErr);
-                    }
-                  }
-                }
-              }
-
               // Atualizar IDs e status conhecidos
               knownOrderIdsRef.current = new Set(newOrders.map((o: any) => o.id));
               previousStatusRef.current = new Map(newOrders.map((o: any) => [o.id, o.status]));

@@ -1,40 +1,88 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+
+const LOCK_PREFIX = "firehub_autoprinted_v4_";
+
+function isOrderPrinted(order: any): boolean {
+  if (!order) return true;
+  if (typeof window === "undefined") return false;
+
+  const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string> | undefined;
+  const keys = [order.id, order.ifoodReference, order.openDeliveryReference].filter(Boolean);
+
+  for (const key of keys) {
+    if (memorySet && memorySet.has(key)) return true;
+    try {
+      if (localStorage.getItem(LOCK_PREFIX + key)) return true;
+    } catch {}
+  }
+  return false;
+}
+
+function claimOrderPrint(order: any) {
+  if (!order) return;
+  if (typeof window === "undefined") return;
+
+  if (!(window as any).__FIREHUB_PRINTED_IDS__) {
+    (window as any).__FIREHUB_PRINTED_IDS__ = new Set<string>();
+  }
+  const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string>;
+
+  const keys = [order.id, order.ifoodReference, order.openDeliveryReference].filter(Boolean);
+  for (const key of keys) {
+    memorySet.add(key);
+    try {
+      localStorage.setItem(LOCK_PREFIX + key, Date.now().toString());
+    } catch {}
+  }
+}
 
 export default function GlobalPrintListener() {
   const { data: session } = useSession();
-  const autoPrintedIdsRef = useRef<Set<string>>(new Set());
-  const knownOrderIdsRef = useRef<Set<string>>(new Set());
   const lastPollHash = useRef("");
   const isPollingRef = useRef(false);
+  const [printerConfig, setPrinterConfig] = useState<any>(null);
+
+  // Carregar configurações de impressora da loja
+  useEffect(() => {
+    if (!session?.user) return;
+    fetch("/api/store/printer-config")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && !data.error) setPrinterConfig(data);
+      })
+      .catch(() => {});
+  }, [session]);
 
   useEffect(() => {
     if (!session?.user) return;
-
     let active = true;
 
-    const markAutoPrinted = (o: any) => {
-      if (!o) return;
-      if (o.id) autoPrintedIdsRef.current.add(o.id);
-      if (o.ifoodReference) autoPrintedIdsRef.current.add(o.ifoodReference);
-      if (o.openDeliveryReference) autoPrintedIdsRef.current.add(o.openDeliveryReference);
-    };
-
-    const isAutoPrinted = (o: any) => {
-      if (!o) return false;
-      return (
-        (o.id && autoPrintedIdsRef.current.has(o.id)) ||
-        (o.ifoodReference && autoPrintedIdsRef.current.has(o.ifoodReference)) ||
-        (o.openDeliveryReference && autoPrintedIdsRef.current.has(o.openDeliveryReference))
-      );
-    };
+    // Limpeza de locks antigos no localStorage (> 48 horas)
+    try {
+      const now = Date.now();
+      const cutoff = 48 * 60 * 60 * 1000;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(LOCK_PREFIX)) {
+          const val = Number(localStorage.getItem(k) || 0);
+          if (val > 0 && now - val > cutoff) {
+            localStorage.removeItem(k);
+          }
+        }
+      }
+    } catch {}
 
     const pollAndPrint = async () => {
       if (!active || isPollingRef.current) return;
       isPollingRef.current = true;
 
       try {
+        if (printerConfig?.autoprint === false) {
+          return;
+        }
+
         const res = await fetch("/api/customer-order/poll");
         if (res.ok && active) {
           const text = await res.text();
@@ -43,18 +91,26 @@ export default function GlobalPrintListener() {
             const orders = JSON.parse(text);
 
             const now = Date.now();
-            const tenMinutesAgo = now - 10 * 60 * 1000;
+            // Aceita pedidos criados nas últimas 24 horas que ainda não foram impressos
+            const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
 
             for (const order of orders) {
-              if (isAutoPrinted(order)) continue;
-
               const isPrintable = order.status !== "CANCELADO" && order.status !== "ENCERRADO";
               const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
-              const isRecent = orderTime > tenMinutesAgo;
+              const isRecent = orderTime > twentyFourHoursAgo;
 
               if (isPrintable && isRecent) {
-                markAutoPrinted(order);
-                console.log(`[GlobalPrint] 🖨️ Novo pedido em segundo plano: ${order.customerName} (#${order.ifoodReference || order.openDeliveryReference || order.id?.slice(-4)}) [${order.source}]`);
+                // ATOMIC CHECK: Se já foi impresso ou reclamado por outra aba/instância, ignora!
+                if (isOrderPrinted(order)) continue;
+
+                // Reivindica atomicamente ANTES de disparar a impressão
+                claimOrderPrint(order);
+
+                console.log(
+                  `[GlobalPrint Master] 🖨️ Imprimindo pedido único: ${order.customerName} (#${
+                    order.ifoodReference || order.openDeliveryReference || order.id?.slice(-4)
+                  }) [${order.source}]`
+                );
 
                 try {
                   const { printOrder } = await import("@/lib/print");
@@ -74,7 +130,10 @@ export default function GlobalPrintListener() {
                       const comboSels = (() => {
                         if (!i.comboSelections) return i.comboSelections;
                         try {
-                          const parsed = typeof i.comboSelections === "string" ? JSON.parse(i.comboSelections) : i.comboSelections;
+                          const parsed =
+                            typeof i.comboSelections === "string"
+                              ? JSON.parse(i.comboSelections)
+                              : i.comboSelections;
                           if (Array.isArray(parsed)) {
                             const updated = parsed.map((s: any) => {
                               if (s.name && isBeverageName(s.name) && !s.name.includes("BEBIDA")) {
@@ -82,14 +141,21 @@ export default function GlobalPrintListener() {
                               }
                               return s;
                             });
-                            return typeof i.comboSelections === "string" ? JSON.stringify(updated) : updated;
+                            return typeof i.comboSelections === "string"
+                              ? JSON.stringify(updated)
+                              : updated;
                           }
                         } catch {}
                         return i.comboSelections;
                       })();
 
-                      const isStandaloneBev = (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) && isBeverageItem(i);
-                      const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName}   [BEBIDA]` : rawName;
+                      const isStandaloneBev =
+                        (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) &&
+                        isBeverageItem(i);
+                      const finalName =
+                        isStandaloneBev && !rawName.includes("BEBIDA")
+                          ? `${rawName}   [BEBIDA]`
+                          : rawName;
 
                       return {
                         name: finalName,
@@ -112,13 +178,21 @@ export default function GlobalPrintListener() {
                     createdAt: order.createdAt,
                   };
 
-                  const defaultPrinterConfig = {
+                  const activePrinterConfig = printerConfig || {
                     autoprint: true,
-                    printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" as const }]
+                    printers: [
+                      { id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" as const },
+                    ],
                   };
 
                   const storeName = (session.user as any)?.storeName || "FIREHUB";
-                  const result = await printOrder(formattedOrder as any, storeName, defaultPrinterConfig, {}, false);
+                  const result = await printOrder(
+                    formattedOrder as any,
+                    storeName,
+                    activePrinterConfig,
+                    {},
+                    false
+                  );
 
                   if (!result.success) {
                     // Fallback para Fila de Impressão na nuvem
@@ -126,7 +200,8 @@ export default function GlobalPrintListener() {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
-                        franchiseeId: (session.user as any)?.ownerId || (session.user as any)?.id,
+                        franchiseeId:
+                          (session.user as any)?.ownerId || (session.user as any)?.id,
                         order: formattedOrder,
                         storeName,
                         paperWidth: "80mm",
@@ -134,16 +209,14 @@ export default function GlobalPrintListener() {
                     });
                   }
                 } catch (err) {
-                  console.warn("[GlobalPrint] Erro na auto-impressão:", err);
+                  console.warn("[GlobalPrint Master] Erro ao imprimir:", err);
                 }
               }
             }
-
-            knownOrderIdsRef.current = new Set(orders.map((o: any) => o.id));
           }
         }
       } catch (err) {
-        console.warn("[GlobalPrint] Polling error:", err);
+        console.warn("[GlobalPrint Master] Erro no polling:", err);
       } finally {
         isPollingRef.current = false;
         if (active) setTimeout(pollAndPrint, 3500);
@@ -155,7 +228,7 @@ export default function GlobalPrintListener() {
       active = false;
       clearTimeout(timer);
     };
-  }, [session]);
+  }, [session, printerConfig]);
 
   return null;
 }
