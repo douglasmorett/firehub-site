@@ -56,6 +56,7 @@ export default function ChatbotHubClient() {
   const [inputMessage, setInputMessage] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
 
   // Carregar dados iniciais
   const loadData = async () => {
@@ -87,7 +88,9 @@ export default function ChatbotHubClient() {
   }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatBoxRef.current) {
+      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
+    }
   }, [messages, chatLoading]);
 
   // Salvar configurações
@@ -466,7 +469,7 @@ export default function ChatbotHubClient() {
           </div>
 
           {/* ÁREA DE MENSAGENS */}
-          <div style={{ flex: 1, padding: "1.25rem", background: "#E5DDD5", overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div ref={chatBoxRef} style={{ flex: 1, padding: "1.25rem", background: "#E5DDD5", overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
             {messages.map((m, index) => (
               <div
                 key={index}
@@ -534,7 +537,12 @@ export default function ChatbotHubClient() {
               type="text"
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
               placeholder="Digite uma mensagem para testar a IA..."
               style={{
                 flex: 1,
