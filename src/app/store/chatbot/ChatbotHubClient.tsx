@@ -302,30 +302,40 @@ export default function ChatbotHubClient() {
 
             {!config.connected ? (
               <div style={{ background: "#F8FAFC", borderRadius: "12px", padding: "1.5rem", textAlign: "center", border: "1px dashed #CBD5E1" }}>
+                <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 16px 0", lineHeight: 1.4 }}>
+                  🔒 <em>Para começar, conecte seu número de telefone. O FireHub respeita sua privacidade e não acessa suas mensagens pessoais.</em>
+                </p>
+
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: "1rem" }}>
                   {qrCodeUrl ? (
                     <div style={{ padding: "12px", background: "#fff", borderRadius: "12px", border: "1px solid #E2E8F0", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)" }}>
-                      <img src={qrCodeUrl} alt="QR Code WhatsApp" style={{ width: "200px", height: "200px", display: "block" }} />
+                      <img src={qrCodeUrl} alt="QR Code WhatsApp" style={{ width: "210px", height: "210px", display: "block" }} />
                     </div>
                   ) : (
-                    <div style={{ width: 200, height: 200, background: "#E2E8F0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
+                    <div style={{ width: 210, height: 210, background: "#E2E8F0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
                       Gerando QR Code...
                     </div>
                   )}
                 </div>
 
-                <div style={{ fontSize: "0.85rem", color: "#334155", fontWeight: 700, marginBottom: "8px" }}>
-                  1. Abra o WhatsApp no celular 📱
+                {/* Status de Polling Ativo */}
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#FEF3C7", border: "1px solid #FDE68A", color: "#B45309", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, marginBottom: "16px" }}>
+                  <RefreshCw size={12} className="spin" /> Checando leitura em tempo real...
                 </div>
-                <div style={{ fontSize: "0.8rem", color: "#64748B", marginBottom: "16px" }}>
-                  Vá em <strong>Configurações &gt; Aparelhos conectados &gt; Conectar um aparelho</strong> e aponte para a imagem acima.
+
+                <div style={{ background: "#fff", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0", textAlign: "left", marginBottom: "16px", fontSize: "0.8rem", color: "#334155", lineHeight: 1.6 }}>
+                  <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: "4px" }}>Passo a passo para conectar:</div>
+                  1. Abra o <strong>WhatsApp</strong> no seu celular. <br />
+                  2. Toque em <strong>Menu</strong> ou <strong>Configurações</strong> e selecione <strong>Aparelhos conectados</strong>. <br />
+                  3. Toque em <strong>Conectar um aparelho</strong> e aponte para a imagem acima. <br />
+                  4. Aguarde a sincronização ser concluída nesta tela.
                 </div>
 
                 {/* PAIRING CODE ALTERNATIVO */}
                 {pairingCode && (
                   <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "12px", display: "inline-flex", alignItems: "center", gap: "12px" }}>
                     <div>
-                      <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "#1D4ED8", fontWeight: 800 }}>Código de Pareamento</div>
+                      <div style={{ fontSize: "0.7rem", textTransform: "uppercase", color: "#1D4ED8", fontWeight: 800 }}>Código de Pareamento Numérico</div>
                       <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#1E40AF", letterSpacing: "2px" }}>{pairingCode}</div>
                     </div>
                     <button
