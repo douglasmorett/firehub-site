@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
 
 const NAV_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
   { href: "/store/pedidos-clientes", label: "Pedidos", icon: ClipboardList, highlight: true },
   { href: "/store/kds", label: "KDS", icon: Monitor },
+  { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "NOVO" },
   { href: "/store/cardapio", label: "Cardápio", icon: UtensilsCrossed },
   { href: "/store/estoque", label: "Estoque", icon: Package },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },

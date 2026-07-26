@@ -48,6 +48,7 @@ model User {
   printerConfig   Json?           // Config de impressoras: { autoprint, printers: [{name, label, categories, copies}] }
   timeAlertConfig Json?           // Config de alertas visuais de tempo: { yellowEnabled, yellowMinutes, redEnabled, redMinutes }
   kdsScreens      Json?           // Telas KDS configuradas da loja: [{id, name, stage, filter, categoryFilter}]
+  chatbotConfig   Json?           // Config do Chatbot IA WhatsApp: { active, connected, phone, pairingCode, qrCode, personality, customPrompt, autoOrderLink }
   fixedCosts      Json?           // Custos fixos mensais: [{id, label, value}] ex: aluguel, funcionários
   financialGoals  Json?           // Metas financeiras mensais: { faturamento, margemLiquida, cmvPct, pedidos, ticketMedio }
   resetToken      String?         // Token de recuperação de senha
