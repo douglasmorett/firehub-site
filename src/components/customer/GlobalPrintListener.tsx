@@ -42,6 +42,7 @@ export default function GlobalPrintListener() {
   const { data: session } = useSession();
   const lastPollHash = useRef("");
   const isPollingRef = useRef(false);
+  const isFirstPollRef = useRef(true);
   const [printerConfig, setPrinterConfig] = useState<any>(null);
 
   // Carregar configurações de impressora da loja
@@ -91,23 +92,33 @@ export default function GlobalPrintListener() {
             const orders = JSON.parse(text);
 
             const now = Date.now();
-            // Aceita pedidos criados nas últimas 24 horas que ainda não foram impressos
-            const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+            const fiveMinutesAgo = now - 5 * 60 * 1000;
+
+            // NO PRIMEIRA CARGA: Marca TODOS os pedidos existentes como JÁ IMPRESSOS para evitar reimprimir pedidos antigos
+            if (isFirstPollRef.current) {
+              isFirstPollRef.current = false;
+              for (const order of orders) {
+                claimOrderPrint(order);
+              }
+              console.log(`[GlobalPrint Master] 🛑 Todos os ${orders.length} pedidos existentes foram marcados como JÁ IMPRESSOS. Apenas NOVOS pedidos a partir de agora serão impressos!`);
+              return;
+            }
 
             for (const order of orders) {
-              const isPrintable = order.status !== "CANCELADO" && order.status !== "ENCERRADO";
+              // Regra estrita: Apenas pedidos no status NOVO criados nos últimos 5 minutos
+              const isNewOrder = order.status === "NOVO";
               const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
-              const isRecent = orderTime > twentyFourHoursAgo;
+              const isRecent = orderTime > fiveMinutesAgo;
 
-              if (isPrintable && isRecent) {
-                // ATOMIC CHECK: Se já foi impresso ou reclamado por outra aba/instância, ignora!
+              if (isNewOrder && isRecent) {
+                // ATOMIC CHECK: Se já foi impresso ou reclamado, ignora!
                 if (isOrderPrinted(order)) continue;
 
                 // Reivindica atomicamente ANTES de disparar a impressão
                 claimOrderPrint(order);
 
                 console.log(
-                  `[GlobalPrint Master] 🖨️ Imprimindo pedido único: ${order.customerName} (#${
+                  `[GlobalPrint Master] 🖨️ Imprimindo NOVO pedido: ${order.customerName} (#${
                     order.ifoodReference || order.openDeliveryReference || order.id?.slice(-4)
                   }) [${order.source}]`
                 );
