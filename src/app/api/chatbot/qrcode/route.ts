@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getWhatsAppSession, disconnectWhatsAppSession } from "@/lib/whatsapp-service";
+import { getEvolutionQRCode, disconnectEvolutionInstance } from "@/lib/whatsapp-evolution";
 
 export const dynamic = "force-dynamic";
 
@@ -33,14 +33,13 @@ export async function GET() {
     });
   }
 
-  // Gera a sessão WebSocket do Baileys para o celular real escanear
+  // Obter QR Code real via Evolution API Gateway
   try {
-    const waData = await getWhatsAppSession(user.id, user.storePhone || undefined);
+    const waData = await getEvolutionQRCode(user.id, user.storePhone || undefined);
     return NextResponse.json(waData);
   } catch (err: any) {
-    console.error("[WhatsApp Gateway API] Erro ao obter QR Code real:", err);
+    console.error("[WhatsApp Gateway API] Erro ao obter QR Code da Evolution API:", err);
 
-    // Fallback limpo caso o ambiente não possua sockets abertos
     const cleanPhone = (user.storePhone || "21988887777").replace(/\D/g, "");
     const pairingCode = `${cleanPhone.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
     const qrData = `FIREHUB_WA_AUTH_${user.id}_${Date.now()}`;
@@ -90,7 +89,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ success: true, connected: true, config: updatedConfig });
     } else if (action === "disconnect") {
-      await disconnectWhatsAppSession(user.id);
+      await disconnectEvolutionInstance(user.id);
 
       const updatedConfig = {
         ...currentConfig,
