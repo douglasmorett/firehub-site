@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
@@ -161,6 +161,78 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
   return { open: false, text: "Fechado" };
 }
 
+const DashboardColumn = memo(function DashboardColumn({
+  columnId,
+  title,
+  emoji,
+  color,
+  count,
+  children,
+  headerExtra,
+  columnOrders,
+  dragOverColumn,
+  selectedOrderIds,
+  onToggleSelectColumn,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: any) {
+  const canDrop = columnId !== "col-novos";
+  const isOver = canDrop && dragOverColumn === columnId;
+  const hasOrders = columnOrders && columnOrders.length > 0;
+  const isAllSelected = hasOrders && columnOrders.every((o: any) => selectedOrderIds?.has(o.id));
+
+  return (
+    <div
+      data-droppable={columnId}
+      onDragOver={canDrop ? onDragOver : undefined}
+      onDragLeave={canDrop ? onDragLeave : undefined}
+      onDrop={canDrop ? onDrop : undefined}
+      style={{
+        flex: "1 1 260px", minWidth: "260px",
+        background: isOver ? "#EFF6FF" : "#F8FAFC",
+        borderRadius: "14px",
+        border: isOver ? "2.5px dashed #3B82F6" : "1px solid #E2E8F0",
+        display: "flex", flexDirection: "column",
+        minHeight: "calc(100vh - 175px)", maxHeight: "calc(100vh - 175px)",
+        boxShadow: isOver ? "0 0 24px rgba(59, 130, 246, 0.25)" : "0 1px 3px 0 rgba(0,0,0,0.05)",
+        transition: "border-color 0.15s ease, background 0.15s ease",
+      }}
+    >
+      <div style={{ padding: "0.85rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: "14px 14px 0 0", gap: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          {hasOrders && (
+            <input
+              type="checkbox"
+              checked={isAllSelected}
+              onChange={() => onToggleSelectColumn && onToggleSelectColumn(columnOrders)}
+              style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#3B82F6" }}
+              title="Selecionar / Desmarcar todos desta coluna"
+            />
+          )}
+          <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0 }}>{emoji} {title}</h3>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {headerExtra}
+          <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.75rem" }}>
+        {count === 0 ? (
+          <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
+            <Package size={40} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
+            <p>{isOver ? "Solte aqui!" : "Nenhum pedido"}</p>
+          </div>
+        ) : children}
+        {count > 0 && isOver && (
+          <div style={{ textAlign: "center", padding: "1rem", color: "#3B82F6", fontWeight: 700, fontSize: "0.85rem", border: "2px dashed #93C5FD", borderRadius: "10px", margin: "0.5rem 0" }}>
+            ↓ Solte aqui para mover ↓
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[] }) {
   const router = useRouter();
@@ -1981,71 +2053,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     );
   };
 
-  // Scroll position refs — persists scroll across re-renders
-  const scrollRefs = useRef<Record<string, number>>({});
 
-  const Column = ({ columnId, title, emoji, color, count, children, headerExtra, columnOrders }: { columnId: string; title: string; emoji: string; color: string; count: number; children: React.ReactNode; headerExtra?: React.ReactNode; columnOrders?: any[] }) => {
-
-    const canDrop = columnId !== "col-novos";
-    const isOver = canDrop && dragOverColumn === columnId;
-    const scrollRef = useRef<HTMLDivElement>(null);
-
-    // Browser native scrolling preserves scroll position smoothly without fighting React re-renders
-
-    const hasOrders = columnOrders && columnOrders.length > 0;
-    const isAllSelected = hasOrders && columnOrders.every(o => selectedOrderIds.has(o.id));
-
-    return (
-      <div
-        data-droppable={columnId}
-        onDragOver={canDrop ? (e => handleDragOver(e, columnId)) : undefined}
-        onDragLeave={canDrop ? handleDragLeave : undefined}
-        onDrop={canDrop ? (e => handleDrop(e, columnId)) : undefined}
-        style={{
-          flex: "1 1 260px", minWidth: "260px",
-          background: isOver ? "#EFF6FF" : "#F8FAFC",
-          borderRadius: "14px",
-          border: isOver ? "2.5px dashed #3B82F6" : "1px solid #E2E8F0",
-          display: "flex", flexDirection: "column",
-          minHeight: "calc(100vh - 175px)", maxHeight: "calc(100vh - 175px)",
-          boxShadow: isOver ? "0 0 24px rgba(59, 130, 246, 0.25)" : "0 1px 3px 0 rgba(0,0,0,0.05)",
-          transition: "all 0.15s ease",
-        }}
-      >
-        <div style={{ padding: "0.85rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: "14px 14px 0 0", gap: "0.5rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            {hasOrders && (
-              <input
-                type="checkbox"
-                checked={isAllSelected}
-                onChange={() => toggleSelectColumn(columnOrders)}
-                style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#3B82F6" }}
-                title="Selecionar / Desmarcar todos desta coluna"
-              />
-            )}
-            <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0 }}>{emoji} {title}</h3>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            {headerExtra}
-            <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
-          </div>
-        </div>
-        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.75rem" }}>
-          {count === 0 ? (
-            <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
-              <Package size={40} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
-              <p>{isOver ? "Solte aqui!" : "Nenhum pedido"}</p>
-            </div>
-          ) : children}
-          {count > 0 && isOver && (
-            <div style={{ textAlign: "center", padding: "1rem", color: "#3B82F6", fontWeight: 700, fontSize: "0.85rem", border: "2px dashed #93C5FD", borderRadius: "10px", margin: "0.5rem 0" }}>
-              ↓ Solte aqui para mover ↓
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -3257,9 +3265,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         )}
 
         <div style={{ display: "flex", gap: "0.75rem", overflowX: "auto", paddingBottom: "0.5rem", maxWidth: "100%" }}>
-          <Column
+          <DashboardColumn
             columnId="col-novos"
             title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length} columnOrders={novos}
+            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            onDragOver={(e: any) => handleDragOver(e, "col-novos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-novos")}
             headerExtra={
               <button
                 onClick={toggleAutoAccept}
@@ -3278,19 +3288,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             }
           >
             {novos.map(o => <OrderCard key={o.id} order={o} />)}
-          </Column>
-          <Column columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#F59E0B" count={preparo.length} columnOrders={preparo}>
+          </DashboardColumn>
+          <DashboardColumn columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#F59E0B" count={preparo.length} columnOrders={preparo}
+            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            onDragOver={(e: any) => handleDragOver(e, "col-preparo")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-preparo")}>
             {preparo.map(o => <OrderCard key={o.id} order={o} />)}
-          </Column>
-          <Column columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#7C3AED" count={transporte.length} columnOrders={transporte}>
+          </DashboardColumn>
+          <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#7C3AED" count={transporte.length} columnOrders={transporte}
+            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            onDragOver={(e: any) => handleDragOver(e, "col-transporte")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-transporte")}>
             {transporte.map(o => <OrderCard key={o.id} order={o} />)}
-          </Column>
-          <Column columnId="col-finalizado" title="Finalizado" emoji="✅" color="#10B981" count={finalizados.length} columnOrders={finalizados}>
+          </DashboardColumn>
+          <DashboardColumn columnId="col-finalizado" title="Finalizado" emoji="✅" color="#10B981" count={finalizados.length} columnOrders={finalizados}
+            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
             {finalizados.map(o => <OrderCard key={o.id} order={o} />)}
-          </Column>
-          <Column columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}>
+          </DashboardColumn>
+          <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}
+            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
             {cancelados.map(o => <OrderCard key={o.id} order={o} />)}
-          </Column>
+          </DashboardColumn>
         </div>
       </div>
 
