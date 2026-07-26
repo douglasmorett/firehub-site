@@ -447,7 +447,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               if (Array.isArray(parsed)) {
                 const updated = parsed.map((s: any) => {
                   if (s.name && isBeverageName(s.name) && !s.name.includes("BEBIDA")) {
-                    return { ...s, name: `${s.name}   [BEBIDA]` };
+                    return {
+                      ...s,
+                      name: `${s.name}\n  ========================================\n  *** [ BEBIDA ] *** [ BEBIDA ] *** [ BEBIDA ] ***\n  ========================================`
+                    };
                   }
                   return s;
                 });
@@ -458,7 +461,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           })();
 
           const isStandaloneBev = (!comboSels || (Array.isArray(comboSels) && comboSels.length === 0)) && isBeverageItem(i);
-          const finalName = isStandaloneBev && !rawName.includes("BEBIDA") ? `${rawName}   [BEBIDA]` : rawName;
+          const finalName = isStandaloneBev && !rawName.includes("BEBIDA")
+            ? `${rawName}\n  ========================================\n  *** [ BEBIDA ] *** [ BEBIDA ] *** [ BEBIDA ] ***\n  ========================================`
+            : rawName;
 
           return {
             name: finalName,
@@ -2288,12 +2293,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                               const totalQty = (sel.quantity || 1) * (item.quantity || 1);
                               const isSubBeverage = isBeverageName(sel.name);
                               return (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isSubBeverage ? "bold" : "normal", margin: isSubBeverage ? "4px 0" : "0" }}>
-                                  <span style={{ fontSize: isSubBeverage ? "13px" : "11px", fontWeight: isSubBeverage ? "bold" : "normal" }}>- {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}</span>
+                                <div key={i} style={{ margin: isSubBeverage ? "6px 0" : "2px 0" }}>
+                                  <div style={{ fontSize: isSubBeverage ? "13px" : "11px", fontWeight: isSubBeverage ? "bold" : "normal" }}>
+                                    - {totalQty > 1 ? `${totalQty}x ` : ""}{sel.name}
+                                  </div>
                                   {isSubBeverage && (
-                                    <span style={{ fontSize: "22px", fontWeight: 900, fontFamily: "monospace, sans-serif", letterSpacing: "1.5px", lineHeight: "1" }}>
-                                      [BEBIDA]
-                                    </span>
+                                    <div style={{
+                                      background: "#000",
+                                      color: "#fff",
+                                      fontSize: "16px",
+                                      fontWeight: 900,
+                                      fontFamily: "monospace, sans-serif",
+                                      letterSpacing: "2px",
+                                      textAlign: "center",
+                                      padding: "4px",
+                                      margin: "4px 0",
+                                      borderRadius: "2px",
+                                      width: "100%",
+                                      boxSizing: "border-box"
+                                    }}>
+                                      *** [ BEBIDA ] ***
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -2305,12 +2325,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             {extras.map((ext: string, i: number) => {
                               const isExtraBeverage = isBeverageName(ext);
                               return (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: isExtraBeverage ? "bold" : "normal", margin: isExtraBeverage ? "4px 0" : "0" }}>
-                                  <span style={{ fontSize: isExtraBeverage ? "13px" : "11px", fontWeight: isExtraBeverage ? "bold" : "normal" }}>- {ext.trim()}</span>
+                                <div key={i} style={{ margin: isExtraBeverage ? "6px 0" : "2px 0" }}>
+                                  <div style={{ fontSize: isExtraBeverage ? "13px" : "11px", fontWeight: isExtraBeverage ? "bold" : "normal" }}>
+                                    - {ext.trim()}
+                                  </div>
                                   {isExtraBeverage && (
-                                    <span style={{ fontSize: "22px", fontWeight: 900, fontFamily: "monospace, sans-serif", letterSpacing: "1.5px", lineHeight: "1" }}>
-                                      [BEBIDA]
-                                    </span>
+                                    <div style={{
+                                      background: "#000",
+                                      color: "#fff",
+                                      fontSize: "16px",
+                                      fontWeight: 900,
+                                      fontFamily: "monospace, sans-serif",
+                                      letterSpacing: "2px",
+                                      textAlign: "center",
+                                      padding: "4px",
+                                      margin: "4px 0",
+                                      borderRadius: "2px",
+                                      width: "100%",
+                                      boxSizing: "border-box"
+                                    }}>
+                                      *** [ BEBIDA ] ***
+                                    </div>
                                   )}
                                 </div>
                               );
