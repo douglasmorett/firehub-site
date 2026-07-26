@@ -584,7 +584,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             </button>
 
             {/* Delivery Info & Route Map Modal Button */}
-            {order.deliveryType === "DELIVERY" && (
+            {order.deliveryType !== "TAKEOUT" && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
               <button
                 onClick={e => {
                   e.stopPropagation();
@@ -3165,6 +3165,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -3194,6 +3195,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -3223,6 +3225,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -3252,6 +3255,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
