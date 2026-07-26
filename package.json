@@ -14,6 +14,7 @@
     "@prisma/client": "^6.19.3",
     "@types/leaflet": "^1.9.21",
     "@vercel/blob": "^2.3.3",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "bcryptjs": "^3.0.3",
     "html5-qrcode": "^2.3.8",
     "leaflet": "^1.9.4",
@@ -21,6 +22,7 @@
     "mercadopago": "^2.12.0",
     "next": "16.2.6",
     "next-auth": "^4.24.14",
+    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.12.3"
@@ -29,6 +31,7 @@
     "@neondatabase/serverless": "^1.1.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
