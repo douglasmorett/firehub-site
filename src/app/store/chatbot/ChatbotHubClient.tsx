@@ -87,6 +87,29 @@ export default function ChatbotHubClient() {
     loadData();
   }, []);
 
+  // Polling automático de status de conexão a cada 3s enquanto aguarda leitura do QR Code
+  useEffect(() => {
+    if (config.connected) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const qrRes = await fetch("/api/chatbot/qrcode").then((r) => r.json());
+        if (qrRes.connected) {
+          setConfig((prev: any) => ({
+            ...prev,
+            connected: true,
+            phone: qrRes.phone || prev.phone,
+          }));
+        } else {
+          if (qrRes.qrCodeUrl) setQrCodeUrl(qrRes.qrCodeUrl);
+          if (qrRes.pairingCode) setPairingCode(qrRes.pairingCode);
+        }
+      } catch {}
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [config.connected]);
+
   useEffect(() => {
     if (chatBoxRef.current) {
       chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;

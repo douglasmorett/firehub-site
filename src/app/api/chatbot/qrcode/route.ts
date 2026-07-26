@@ -33,9 +33,21 @@ export async function GET() {
     });
   }
 
-  // Obter QR Code real via Evolution API Gateway
+  // Obter QR Code real via Evolution API Gateway / Baileys Gateway
   try {
     const waData = await getEvolutionQRCode(user.id, user.storePhone || undefined);
+    if (waData.connected && !chatbotConfig.connected) {
+      const updatedConfig = {
+        ...chatbotConfig,
+        connected: true,
+        phone: waData.phone || chatbotConfig.phone || user.storePhone || "+55 (21) 99999-9999",
+        connectedAt: new Date().toISOString(),
+      };
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { chatbotConfig: updatedConfig },
+      });
+    }
     return NextResponse.json(waData);
   } catch (err: any) {
     console.error("[WhatsApp Gateway API] Erro ao obter QR Code da Evolution API:", err);

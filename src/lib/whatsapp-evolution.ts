@@ -71,6 +71,16 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
 
     if (connectRes.ok) {
       const connectData = await connectRes.json();
+
+      if (connectData?.connected || connectData?.instance?.state === "open") {
+        return {
+          connected: true,
+          phone: connectData.phone || storePhone || "+55 (21) 99999-9999",
+          battery: 99,
+          status: "ONLINE",
+        };
+      }
+
       const base64Qr = connectData?.code || connectData?.base64 || connectData?.qrcode?.base64;
       const pairingCode = connectData?.pairingCode || connectData?.code || `${userId.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
 

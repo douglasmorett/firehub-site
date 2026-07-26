@@ -159,7 +159,7 @@ app.get("/instance/connect/:instanceName", async (req, res) => {
   const session = await getOrCreateSocket(instanceName);
 
   if (session.state === "open") {
-    return res.json({ instance: { state: "open" } });
+    return res.json({ instance: { state: "open" }, connected: true, phone: session.phone });
   }
 
   // Aguarda até 3 segundos se o QR Code ainda estiver sendo gerado
