@@ -1,17 +1,28 @@
 import { prisma } from "@/lib/prisma";
 
-const EVOLUTION_API_URL = (process.env.EVOLUTION_API_URL || "http://localhost:8080").replace(/\/$/, "");
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
-
 export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
 
+  // Buscar configurações da loja para verificar se há URL/API Key customizadas da Evolution API
+  let baseUrl = (process.env.EVOLUTION_API_URL || "http://localhost:8080").replace(/\/$/, "");
+  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { chatbotConfig: true },
+    });
+    const config = (user?.chatbotConfig as any) || {};
+    if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
+    if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
+  } catch {}
+
   try {
     // 1. Verificar estado da instância na Evolution API
-    const stateRes = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
+    const stateRes = await fetch(`${baseUrl}/instance/connectionState/${instanceName}`, {
       method: "GET",
       headers: {
-        "apikey": EVOLUTION_API_KEY,
+        "apikey": apiKey,
         "Content-Type": "application/json",
       },
     });
@@ -31,10 +42,10 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
 
     // 2. Se a instância não existe, cria a instância na Evolution API
     if (stateRes.status === 404) {
-      await fetch(`${EVOLUTION_API_URL}/instance/create`, {
+      await fetch(`${baseUrl}/instance/create`, {
         method: "POST",
         headers: {
-          "apikey": EVOLUTION_API_KEY,
+          "apikey": apiKey,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -50,10 +61,10 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
     }
 
     // 3. Obter QR Code real da Evolution API
-    const connectRes = await fetch(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
+    const connectRes = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
       method: "GET",
       headers: {
-        "apikey": EVOLUTION_API_KEY,
+        "apikey": apiKey,
         "Content-Type": "application/json",
       },
     });
@@ -98,11 +109,24 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
   const cleanNumber = toPhone.replace(/\D/g, "");
   const number = cleanNumber.startsWith("55") ? cleanNumber : `55${cleanNumber}`;
 
+  let baseUrl = (process.env.EVOLUTION_API_URL || "http://localhost:8080").replace(/\/$/, "");
+  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+
   try {
-    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { chatbotConfig: true },
+    });
+    const config = (user?.chatbotConfig as any) || {};
+    if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
+    if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
+  } catch {}
+
+  try {
+    const res = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
       method: "POST",
       headers: {
-        "apikey": EVOLUTION_API_KEY,
+        "apikey": apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -123,11 +147,24 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
 
 export async function disconnectEvolutionInstance(userId: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
+  let baseUrl = (process.env.EVOLUTION_API_URL || "http://localhost:8080").replace(/\/$/, "");
+  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+
   try {
-    await fetch(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { chatbotConfig: true },
+    });
+    const config = (user?.chatbotConfig as any) || {};
+    if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
+    if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
+  } catch {}
+
+  try {
+    await fetch(`${baseUrl}/instance/logout/${instanceName}`, {
       method: "DELETE",
       headers: {
-        "apikey": EVOLUTION_API_KEY,
+        "apikey": apiKey,
       },
     });
   } catch (err) {

@@ -325,6 +325,39 @@ export default function ChatbotHubClient() {
                 </div>
               </div>
             )}
+
+            {/* CONFIGURAÇÃO DE SERVIDOR EVOLUTION API */}
+            <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0" }}>
+              <details>
+                <summary style={{ cursor: "pointer", fontSize: "0.82rem", fontWeight: 700, color: "#475569" }}>
+                  🌐 Servidor Evolution API Customizado (Opcional)
+                </summary>
+                <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>URL da sua Evolution API:</label>
+                    <input
+                      type="text"
+                      value={config.evolutionUrl || ""}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, evolutionUrl: e.target.value }))}
+                      onBlur={() => handleSaveConfig({ evolutionUrl: config.evolutionUrl })}
+                      placeholder="Ex: https://wa.suadominio.com ou http://IP:8080"
+                      style={{ width: "100%", padding: "6px 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", marginTop: "2px", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>Chave API Secreta (API Key):</label>
+                    <input
+                      type="password"
+                      value={config.evolutionApiKey || ""}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, evolutionApiKey: e.target.value }))}
+                      onBlur={() => handleSaveConfig({ evolutionApiKey: config.evolutionApiKey })}
+                      placeholder="Chave secreta da Evolution API"
+                      style={{ width: "100%", padding: "6px 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", marginTop: "2px", boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
+              </details>
+            </div>
           </div>
 
           {/* CARD 2: CONTEXTO E CARDÁPIO SINCRONIZADO */}
