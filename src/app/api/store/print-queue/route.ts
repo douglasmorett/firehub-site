@@ -10,6 +10,13 @@ const queuedOrderKeys = new Set<string>();
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   if (!targetId || !order) return;
 
+  // Ignorar enfileiramento de pedidos antigos (criados há mais de 6 horas) para evitar a impressão retroativa de notas de ontem
+  const orderCreatedTime = order.createdAt ? new Date(order.createdAt).getTime() : Date.now();
+  if (Date.now() - orderCreatedTime > 6 * 60 * 60 * 1000) {
+    console.log(`[PrintQueue] 🛑 Pedido #${order.dailyOrderNumber || order.id} criado há mais de 6h (ontem). Ignorando enfileiramento.`);
+    return;
+  }
+
   const candidateKeys = [
     order.id ? `${targetId}:id:${order.id}` : null,
     order.ifoodReference ? `${targetId}:ifood:${order.ifoodReference}` : null,
@@ -82,11 +89,20 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const franchiseeId = searchParams.get("franchiseeId");
     const all = searchParams.get("all") === "true";
+    const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+
+    const filterFreshJobs = (jobsList: any[]) => {
+      return jobsList.filter(job => {
+        const jobCreated = job.createdAt ? new Date(job.createdAt).getTime() : Date.now();
+        const orderCreated = job.order?.createdAt ? new Date(job.order.createdAt).getTime() : jobCreated;
+        return jobCreated >= sixHoursAgo && orderCreated >= sixHoursAgo;
+      });
+    };
 
     if (all || !franchiseeId) {
       const allJobs: any[] = [];
       for (const [_, jobs] of queueMap.entries()) {
-        allJobs.push(...jobs);
+        allJobs.push(...filterFreshJobs(jobs));
       }
       queueMap.clear();
       return NextResponse.json({ jobs: allJobs });
@@ -94,7 +110,7 @@ export async function GET(req: NextRequest) {
 
     const q = queueMap.get(franchiseeId) || [];
     queueMap.set(franchiseeId, []);
-    return NextResponse.json({ jobs: q });
+    return NextResponse.json({ jobs: filterFreshJobs(q) });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

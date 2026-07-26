@@ -677,8 +677,12 @@ setInterval(async () => {
       : `https://${domain}/api/store/print-queue?all=true`;
     const res = await fetch(url);
     if (!res.ok) return;
-    const data = await res.json();
-    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
+    const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+    const jobs = rawJobs.filter(j => {
+      const orderTime = j.order?.createdAt ? new Date(j.order.createdAt).getTime() : Date.now();
+      return orderTime >= sixHoursAgo;
+    });
     if (jobs.length > 0) {
       // Ordenação estrita FIFO por número de comanda (ex: #87 antes de #88) e horário
       jobs.sort((a, b) => {

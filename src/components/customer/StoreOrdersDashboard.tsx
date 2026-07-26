@@ -889,8 +889,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false) => {
     if (!order) return;
     const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
-    if (!isManual && orderKey && printingInProgressRef.current.has(orderKey)) {
-      console.log(`[Print] ⚠️ Impressão já em andamento para o pedido ${orderKey}. Ignorando chamada duplicada.`);
+    if (!isManual && orderKey && (printingInProgressRef.current.has(orderKey) || isAutoPrinted(order))) {
+      console.log(`[Print] ⚠️ Impressão já em andamento ou pedido já impresso para ${orderKey}. Ignorando chamada duplicada.`);
       return;
     }
     if (orderKey) printingInProgressRef.current.add(orderKey);
@@ -1030,7 +1030,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     initialOrders.forEach((o: any) => {
       const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : 0;
       if (orderTime > 0 && orderTime < tenMinutesAgo) {
-        if (o.status !== "NOVO" && o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
+        if (o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
           markAutoPrinted(o);
         }
       }
@@ -1093,10 +1093,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       });
   }, [cancelConfirmId]);
 
-  // Auto-accept logic
+  // Auto-accept logic (apenas para pedidos recentes do dia/turno atual criados há menos de 6 horas)
   useEffect(() => {
     if (!autoAccept) return;
-    const novos = orders.filter(o => o.status === "NOVO");
+    const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+    const novos = orders.filter(o => {
+      if (o.status !== "NOVO") return false;
+      const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : Date.now();
+      return orderTime >= sixHoursAgo;
+    });
     novos.forEach(o => {
       updateStatus(o.id, "ACEITO");
     });
