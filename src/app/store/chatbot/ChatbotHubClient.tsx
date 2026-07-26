@@ -254,33 +254,27 @@ export default function ChatbotHubClient() {
                   <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Escaneie o QR Code no seu celular ou use o código</p>
                 </div>
               </div>
-              <button
-                onClick={handleToggleConnect}
-                disabled={isRefreshingQr}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: config.connected ? "#FEE2E2" : "#25D366",
-                  color: config.connected ? "#DC2626" : "#fff",
-                  fontWeight: 700,
-                  fontSize: "0.82rem",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                {config.connected ? (
-                  <>
-                    <Unlink size={14} /> Desconectar
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={14} /> Simular Conexão
-                  </>
-                )}
-              </button>
+              {config.connected && (
+                <button
+                  onClick={handleToggleConnect}
+                  disabled={isRefreshingQr}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#FEE2E2",
+                    color: "#DC2626",
+                    fontWeight: 700,
+                    fontSize: "0.82rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <Unlink size={14} /> Desconectar
+                </button>
+              )}
             </div>
 
             {!config.connected ? (
