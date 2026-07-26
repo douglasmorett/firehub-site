@@ -234,6 +234,298 @@ const DashboardColumn = memo(function DashboardColumn({
   );
 });
 
+const DashboardOrderCard = memo(function DashboardOrderCard({
+  order,
+  expanded,
+  isLoading,
+  isDragging,
+  now,
+  seqNum,
+  timeAlertConfig,
+  selectedOrderIds,
+  motoboys,
+  assigningId,
+  onToggleSelectOrder,
+  onToggleExpand,
+  onUpdateStatus,
+  onAssignMotoboy,
+  onOpenCancelModal,
+  onOpenPrintModal,
+  onOpenReceiptModal,
+  onDragStart,
+  onDragEnd,
+  setOrders,
+}: any) {
+  const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
+  const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
+  const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
+
+  const isFinished = order.status === "ENTREGUE" || order.status === "CANCELADO" || order.status === "ENCERRADO";
+  const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : new Date(new Date(order.createdAt).getTime() + 45 * 60000);
+  const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
+  const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
+
+  const isInProduction = order.status === "ACEITO" || order.status === "PREPARANDO";
+  const redActive = timeAlertConfig?.redEnabled && Number(timeAlertConfig.redMinutes) > 0;
+  const yellowActive = timeAlertConfig?.yellowEnabled && Number(timeAlertConfig.yellowMinutes) > 0;
+  const redThreshold = redActive ? Number(timeAlertConfig.redMinutes) : null;
+  const yellowThreshold = yellowActive ? Number(timeAlertConfig.yellowMinutes) : null;
+
+  let isRedAlert = false;
+  let isYellowAlert = false;
+
+  if (isInProduction && remainingMins !== null) {
+    if (redThreshold !== null && remainingMins <= redThreshold) {
+      isRedAlert = true;
+    } else if (yellowThreshold !== null && remainingMins <= yellowThreshold) {
+      isYellowAlert = true;
+    }
+  }
+
+  const isLate = !isFinished && remainingMins !== null && remainingMins < 0;
+  const isUrgent = !isFinished && remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
+
+  const timerLabel = isFinished
+    ? (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`)
+    : remainingMins !== null
+      ? (isLate ? `⚠️ -${Math.abs(remainingMins)}min atrasado` : `⏱️ ${remainingMins}min restante${remainingMins !== 1 ? "s" : ""}`)
+      : (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`);
+  const timerColor = isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#64748B";
+
+  const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
+
+  const cardBackground = isDragging
+    ? "#DBEAFE"
+    : isRedAlert
+      ? "#FEF2F2"
+      : isYellowAlert
+        ? "#FFFBEB"
+        : "#fff";
+
+  const cardBorder = isDragging
+    ? "2.5px solid #2563EB"
+    : isRedAlert
+      ? "2.5px solid #EF4444"
+      : isYellowAlert
+        ? "2.5px solid #F59E0B"
+        : isLate
+          ? "1.5px solid #EF4444"
+          : isUrgent
+            ? "1.5px solid #F59E0B"
+            : "1px solid #E2E8F0";
+
+  return (
+    <div
+      draggable={canDrag}
+      onDragStart={canDrag ? (e => onDragStart && onDragStart(e, order.id)) : undefined}
+      onDragEnd={canDrag ? onDragEnd : undefined}
+      onClick={() => onToggleExpand && onToggleExpand(order.id)}
+      style={{
+        background: cardBackground,
+        borderRadius: "12px",
+        border: cardBorder,
+        boxShadow: isDragging ? "0 10px 25px rgba(37, 99, 235, 0.2)" : "0 1px 3px rgba(0,0,0,0.06)",
+        marginBottom: "0.6rem",
+        cursor: canDrag ? "grab" : "pointer",
+        transition: "all 0.15s ease",
+        opacity: isDragging ? 0.6 : 1,
+        overflow: "hidden",
+      }}
+    >
+      {/* CARD HEADER */}
+      <div style={{ padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+            <input
+              type="checkbox"
+              checked={selectedOrderIds?.has(order.id) || false}
+              onChange={() => onToggleSelectOrder && onToggleSelectOrder(order.id)}
+              onClick={e => e.stopPropagation()}
+              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3B82F6" }}
+            />
+            <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1E293B" }}>
+              #{seqNum} — {order.customerName || "Cliente sem nome"}
+            </span>
+
+            {order.source && (
+              <span style={{
+                fontSize: "0.65rem", fontWeight: 700, padding: "2px 6px", borderRadius: "4px", textTransform: "uppercase",
+                background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#FEF3C7" : order.source === "TAKEOUT" ? "#E0E7FF" : "#F3F4F6",
+                color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#D97706" : order.source === "TAKEOUT" ? "#4338CA" : "#4B5563"
+              }}>
+                {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "TAKEOUT" ? "Retirada" : order.source}
+              </span>
+            )}
+
+            {(order.ifoodReference || order.openDeliveryReference) && (
+              <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#3B82F6" }}>
+                #{order.ifoodReference || order.openDeliveryReference}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            {expanded ? <ChevronUp size={16} color="#64748B" /> : <ChevronDown size={16} color="#64748B" />}
+          </div>
+        </div>
+
+        {/* METADATA ROW */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.78rem", color: "#64748B" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            {order.customerPhone && (
+              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <Phone size={12} /> {order.customerPhone}
+              </span>
+            )}
+            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <Clock size={12} /> {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span style={{ fontWeight: 600, color: timerColor }}>
+              {timerLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* STATUS BADGE & ENDEREÇO */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "2px" }}>
+          <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "2px 8px", borderRadius: "12px", background: st.bg, color: st.color }}>
+            {st.emoji} {st.label}
+          </span>
+          <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>
+            R$ {order.totalAmount?.toFixed(2).replace(".", ",")}
+          </span>
+        </div>
+
+        {order.customerAddress && (
+          <div style={{ fontSize: "0.78rem", color: "#475569", display: "flex", alignItems: "center", gap: "4px", background: "#F1F5F9", padding: "4px 8px", borderRadius: "6px" }}>
+            <MapPin size={12} color="#64748B" />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{order.customerAddress}</span>
+          </div>
+        )}
+
+        {/* FORMA DE PAGAMENTO */}
+        {order.paymentMethod && (
+          <div style={{ fontSize: "0.75rem", fontWeight: 600, color: order.paymentMethod.includes("Cobrar na Entrega") ? "#D97706" : "#16A34A" }}>
+            💳 {order.paymentMethod}
+          </div>
+        )}
+
+        {/* ACTION BUTTONS (INLINE) */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", gap: "6px" }}>
+          {order.status === "NOVO" && (
+            <button
+              onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ACEITO"); }}
+              style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+            >
+              Aceitar
+            </button>
+          )}
+          {order.status === "ACEITO" && (
+            <button
+              onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "PREPARANDO"); }}
+              style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "none", background: "#D97706", color: "#fff", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+            >
+              Iniciar Preparo
+            </button>
+          )}
+          {order.status === "PREPARANDO" && (
+            <button
+              onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "SAIU_ENTREGA"); }}
+              style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+            >
+              Saiu Entrega
+            </button>
+          )}
+          {order.status === "SAIU_ENTREGA" && (
+            <button
+              onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ENTREGUE"); }}
+              style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+            >
+              Concluído
+            </button>
+          )}
+
+          <div style={{ display: "flex", gap: "4px" }}>
+            {/* Print Button */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                onOpenPrintModal && onOpenPrintModal(order.id);
+              }}
+              title="Imprimir"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#3B82F6", color: "#fff", border: "none", cursor: "pointer" }}
+            >
+              <Printer size={15} />
+            </button>
+
+            {/* Receipt Modal Button */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                onOpenReceiptModal && onOpenReceiptModal(order.id);
+              }}
+              title="Ver pedido"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#6366F1", color: "#fff", border: "none", cursor: "pointer" }}
+            >
+              <FileText size={15} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* EXPANDED DETAILS */}
+      {expanded && (
+        <div style={{ padding: "0 0.75rem 0.75rem", borderTop: "1px solid #E2E8F0" }}>
+          {order.notes && (
+            <div style={{ padding: "8px 12px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: "0.8rem", color: "#374151", margin: "0.4rem 0" }}>
+              {order.notes}
+            </div>
+          )}
+
+          <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
+            {order.items?.map((item: any) => {
+              const comboSels = (() => {
+                if (!item.comboSelections) return [];
+                try {
+                  const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+                  if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
+                  return [];
+                } catch { return []; }
+              })();
+              const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+              const mainName = nameParts[0];
+              const extras = nameParts.slice(1);
+              return (
+                <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F3F4F6" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: "#374151", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
+                    <span style={{ fontWeight: 600, color: "#1F2937" }}>
+                      R$ {(getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * item.quantity).toFixed(2)}
+                    </span>
+                  </div>
+                  {comboSels.length > 0 && (
+                    <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
+                      {comboSels.map((sel: any, i: number) => (
+                        <div key={i}>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
+                      ))}
+                    </div>
+                  )}
+                  {comboSels.length === 0 && extras.length > 0 && (
+                    <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
+                      {extras.map((ext: string, i: number) => (
+                        <div key={i}>↳ {ext.trim()}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[] }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
@@ -2003,45 +2295,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {/* ── Botões de ação (expanded - full width) ── */}
             {order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
-                {/* Primary action row */}
-                {order.status === "NOVO" && (
-                  <div style={{ display: "flex", gap: "0.4rem" }}>
-                    <button disabled={isLoading} onClick={() => updateStatus(order.id, "ACEITO")} style={{ flex: 1, padding: "0.6rem 1rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit", letterSpacing: "0.02em" }}>Aceitar pedido</button>
-                    <button disabled={isLoading} onClick={async () => {
-                      if (!confirm("Recusar este pedido?")) return;
-                      if ((order as any).openDeliveryOrderId && (order as any).source === "JOTAJA") {
-                        await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (order as any).openDeliveryOrderId, action: "deny" }) });
-                        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
-                      } else {
-                        updateStatus(order.id, "CANCELADO");
-                      }
-                    }} style={{ padding: "0.6rem 0.75rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Recusar</button>
-                  </div>
-                )}
-                {order.status === "ACEITO" && (
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "PREPARANDO")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#D97706", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Iniciar preparo</button>
-                )}
-                {order.status === "PREPARANDO" && order.deliveryType === "DELIVERY" && (
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "SAIU_ENTREGA")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Saiu para entrega</button>
-                )}
-                {order.status === "PREPARANDO" && order.deliveryType !== "DELIVERY" && (
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "PRONTO")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#0891B2", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>✅ Pronto para retirada</button>
-                )}
-                {(order.status as string) === "PRONTO" && (
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>🤝 Cliente retirou</button>
-                )}
-
-                {order.status === "SAIU_ENTREGA" && (
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENTREGUE")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Marcar entregue</button>
-                )}
-                {/* Encerrar — above cancel */}
-                {order.status === "ENTREGUE" && (
-                  <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENCERRADO")} style={{ width: "100%", padding: "0.5rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.82rem", fontFamily: "inherit" }}>Encerrar pedido</button>
-                )}
-                {/* Cancel — big red button at bottom, opens popup */}
-                {order.status !== "NOVO" && (
-                  <button disabled={isLoading} onClick={() => { setCancelConfirmId(order.id); setCancelReason(""); }} style={{ width: "100%", padding: "0.6rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit", letterSpacing: "0.02em", marginTop: "0.2rem" }}>Cancelar pedido</button>
-                )}
+                <DashboardOrderCard
+                  order={order}
+                  expanded={expandedId === order.id}
+                  isLoading={loadingId === order.id}
+                  isDragging={draggedOrderId === order.id}
+                  now={now}
+                  seqNum={order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—"}
+                  timeAlertConfig={timeAlertConfig}
+                  selectedOrderIds={selectedOrderIds}
+                  motoboys={motoboys}
+                  assigningId={assigningId}
+                  onToggleSelectOrder={toggleSelectOrder}
+                  onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                  onUpdateStatus={updateStatus}
+                  onAssignMotoboy={assignMotoboy}
+                  onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                  onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                  onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  setOrders={setOrders}
+                />
               </div>
             )}
             {order.status === "CANCELADO" && (
