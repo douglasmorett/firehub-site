@@ -51,34 +51,39 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
     firstPayment.method === 'IFOOD_PAY'
   );
 
-  const rawMethod = (firstPayment.method || firstPayment.name || '').toString().toUpperCase();
+  const rawName = (firstPayment.name || firstPayment.description || '').toString().trim();
+  const rawMethod = (firstPayment.method || '').toString().toUpperCase();
 
   let baseName = 'Cartão';
-  if (cashPayment || rawMethod === 'CASH' || rawMethod.includes('DINHEIR')) {
+  if (cashPayment || rawMethod === 'CASH' || rawMethod.includes('DINHEIR') || rawName.toLowerCase().includes('dinheir')) {
     baseName = 'Dinheiro';
-  } else if (rawMethod === 'DEBIT' || rawMethod.includes('DEBITO')) {
+  } else if (rawMethod === 'DEBIT' || rawMethod.includes('DEBITO') || rawName.toLowerCase().includes('débit') || rawName.toLowerCase().includes('debit')) {
     baseName = 'Débito';
-  } else if (rawMethod.includes('MEAL_VOUCHER') || rawMethod.includes('FOOD_VOUCHER') || rawMethod.includes('VALE') || rawMethod.includes('VR') || rawMethod.includes('VA') || rawMethod.includes('VOUCHER')) {
+  } else if (rawMethod.includes('MEAL_VOUCHER') || rawMethod.includes('FOOD_VOUCHER') || rawMethod.includes('VALE') || rawMethod.includes('VR') || rawMethod.includes('VA') || rawMethod.includes('VOUCHER') || rawName.toLowerCase().includes('vale')) {
     baseName = 'Vale Refeição';
-  } else if (rawMethod.includes('CREDIT') || rawMethod.includes('CREDITO')) {
+  } else if (rawMethod.includes('CREDIT') || rawMethod.includes('CREDITO') || rawName.toLowerCase().includes('crédit') || rawName.toLowerCase().includes('credit')) {
     baseName = 'Crédito';
-  } else if (rawMethod === 'PIX') {
+  } else if (rawMethod.includes('PIX') || rawName.toLowerCase().includes('pix')) {
     baseName = 'Pix';
   } else if (rawMethod === 'DIGITAL_WALLET' || rawMethod === 'ONLINE' || rawMethod === 'IFOOD_PAY' || rawMethod === 'APP') {
     baseName = source === 'JOTAJA' ? 'JotaJá App' : 'iFood App';
   }
 
+  // Use the exact descriptive name if available (e.g. "Pix qrcode (feito na maquina de cartão)"), otherwise baseName
+  let displayMethod = rawName || baseName;
+  displayMethod = displayMethod.replace(/\s*\((cobrar na entrega|pago online|online)\)/gi, '').trim();
+
   let paymentMethod = '';
   if (isPrepaid) {
-    paymentMethod = `${baseName} (${source === 'JOTAJA' ? 'JotaJá' : 'iFood'} Pago Online)`;
+    paymentMethod = `${displayMethod} (${source === 'JOTAJA' ? 'JotaJá' : 'iFood'} Pago Online)`;
   } else {
-    paymentMethod = `${baseName} (Cobrar na Entrega)`;
+    paymentMethod = `${displayMethod} (Cobrar na Entrega)`;
   }
 
   return {
     paymentMethod,
     isPrepaid,
     changeAmount,
-    payMethodClean: baseName,
+    payMethodClean: displayMethod,
   };
 }

@@ -484,21 +484,25 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   res += boxBorder;
 
   // 6. PAYMENT METHOD & SAFETY NOTE
-  const payMethodClean = cleanAscii(order.paymentMethod || "").toLowerCase();
-  const isExplicitOffline = /dinheiro|cobrar|maquininha|entrega/i.test(payMethodClean);
-  const isOnlinePayment = /online|pix|pago|app/i.test(payMethodClean) || (order.source === "IFOOD" && !isExplicitOffline);
+  const payMethodRaw = cleanAscii(order.paymentMethod || "");
+  const payMethodClean = payMethodRaw.toLowerCase();
+  const isExplicitOffline = /dinheiro|cobrar|maquininha|entrega|pendente|troco/i.test(payMethodClean);
+  const isOnlinePayment = !isExplicitOffline && (
+    /pago online|online|prepaid|ifood pago|jotajá pago|jotaja pago|app/i.test(payMethodClean) ||
+    order.isPrepaid === true
+  );
 
-  let baseMethodName = cleanAscii(order.paymentMethod || "Credito")
+  let baseMethodName = payMethodRaw
     .replace(/\s*\([^)]*\)/gi, "")
     .trim();
-  if (!baseMethodName || baseMethodName.toUpperCase() === "OTHER") baseMethodName = "iFood App";
+  if (!baseMethodName || baseMethodName.toUpperCase() === "OTHER") baseMethodName = "Cartao";
 
   const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online";
 
   if (isOnlinePayment) {
-    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " (Online) - Pago via " + onlineSource + " nao cobrar" + DOUBLE_OFF + LF;
+    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " (Online) - Pago via " + onlineSource + " (NAO COBRAR)" + DOUBLE_OFF + LF;
   } else {
-    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + DOUBLE_OFF + LF;
+    res += DOUBLE_HEIGHT + "Forma de Pagamento: " + baseMethodName + " (Cobrar na Entrega)" + DOUBLE_OFF + LF;
 
     if (order.changeAmount != null && Number(order.changeAmount) > 0) {
       const changeFor = Number(order.changeAmount);

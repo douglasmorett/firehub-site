@@ -1546,788 +1546,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const sumVal = (arr: any[]) => arr.reduce((s, o) => s + o.totalAmount + (o.discountIfood ?? 0), 0);
   const fmtR = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
 
-  const OrderCard = ({ order }: { order: any }) => {
-    const expanded = expandedId === order.id;
-    const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
-    const isLoading = loadingId === order.id;
-    const isDragging = draggedOrderId === order.id;
-    const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
-    const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
-    const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
-
-    // Delivery deadline countdown (scheduledDatetime stores the delivery deadline for iFood orders)
-    const isFinished = order.status === "ENTREGUE" || order.status === "CANCELADO" || order.status === "ENCERRADO";
-    const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : new Date(new Date(order.createdAt).getTime() + 45 * 60000);
-    const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
-    const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
-
-    // 🟡🔴 ALERTAS VISUAIS DE TEMPO (EXCLUSIVO DA ABA "EM PRODUÇÃO")
-    const isInProduction = order.status === "ACEITO" || order.status === "PREPARANDO";
-    const redActive = timeAlertConfig.redEnabled && Number(timeAlertConfig.redMinutes) > 0;
-    const yellowActive = timeAlertConfig.yellowEnabled && Number(timeAlertConfig.yellowMinutes) > 0;
-    const redThreshold = redActive ? Number(timeAlertConfig.redMinutes) : null;
-    const yellowThreshold = yellowActive ? Number(timeAlertConfig.yellowMinutes) : null;
-
-    let isRedAlert = false;
-    let isYellowAlert = false;
-
-    if (isInProduction && remainingMins !== null) {
-      if (redThreshold !== null && remainingMins <= redThreshold) {
-        isRedAlert = true;
-      } else if (yellowThreshold !== null && remainingMins <= yellowThreshold) {
-        isYellowAlert = true;
-      }
-    }
-
-    // Don't flag as late/urgent once the order is finished
-    const isLate = !isFinished && remainingMins !== null && remainingMins < 0;
-    const isUrgent = !isFinished && remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
-
-    // Timer display: hide countdown for finished orders, show countdown if we have a deadline, otherwise show elapsed time
-    const timerLabel = isFinished
-      ? (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`)
-      : remainingMins !== null
-        ? (isLate ? `⚠️ -${Math.abs(remainingMins)}min atrasado` : `⏱️ ${remainingMins}min restante${remainingMins !== 1 ? "s" : ""}`)
-        : (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`);
-    const timerColor = isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#64748B";
-
-    const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
-
-    const cardBackground = isDragging
-      ? "#DBEAFE"
-      : isRedAlert
-        ? "#FEF2F2"
-        : isYellowAlert
-          ? "#FFFBEB"
-          : "#fff";
-
-    const cardBorder = isDragging
-      ? "2.5px solid #2563EB"
-      : isRedAlert
-        ? "2.5px solid #EF4444"
-        : isYellowAlert
-          ? "2.5px solid #F59E0B"
-          : isLate
-            ? "1.5px solid #EF4444"
-            : isUrgent
-              ? "1.5px solid #F59E0B"
-              : "1px solid #E2E8F0";
-
-    const cardBoxShadow = isDragging
-      ? "0 20px 40px -4px rgba(37, 99, 235, 0.45), 0 0 0 5px rgba(59, 130, 246, 0.2)"
-      : isRedAlert
-        ? "0 0 16px rgba(239, 68, 68, 0.45), 0 2px 8px rgba(239, 68, 68, 0.2)"
-        : isYellowAlert
-          ? "0 0 16px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(245, 158, 11, 0.2)"
-          : "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)";
-
-    return (
-      <div
-        draggable={canDrag}
-        onDragStart={canDrag ? (e => handleDragStart(e, order.id)) : undefined}
-        onDragEnd={canDrag ? handleDragEnd : undefined}
-        onTouchStart={canDrag ? (e => handleTouchStart(e, order.id)) : undefined}
-        style={{
-          background: cardBackground,
-          borderRadius: "14px",
-          border: cardBorder,
-          marginBottom: "0.75rem",
-          overflow: "hidden",
-          boxShadow: cardBoxShadow,
-          transform: isDragging ? "scale(1.05) rotate(-1.5deg)" : undefined,
-          transition: isDragging ? "transform 0.15s ease, box-shadow 0.15s ease" : "box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease",
-          cursor: canDrag ? (isDragging ? "grabbing" : "grab") : "default",
-          userSelect: "none",
-          opacity: isDragging ? 0.92 : 1,
-          zIndex: isDragging ? 50 : "auto" as any,
-        }}
-      >
-        {/* ─── COLLAPSED VIEW: All essential info always visible ─── */}
-        <div style={{ padding: "0.6rem 0.75rem" }}>
-          {/* Header Row com Checkbox, Drag Handle, Nome e Badge do Canal */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", marginBottom: "4px" }}>
-            <input
-              type="checkbox"
-              checked={selectedOrderIds.has(order.id)}
-              onChange={(e) => { e.stopPropagation(); toggleSelectOrder(order.id); }}
-              style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#3B82F6", flexShrink: 0, marginTop: "2px" }}
-              title="Selecionar pedido"
-            />
-            {canDrag && (
-              <div style={{ color: "#CBD5E1", cursor: "grab", display: "flex", flexShrink: 0, marginTop: "3px" }} onClick={e => e.stopPropagation()}>
-                <GripVertical size={14} />
-              </div>
-            )}
-            <div style={{
-              fontWeight: 800,
-              fontSize: (order.customerName || "").length > 25 ? "0.80rem" : (order.customerName || "").length > 15 ? "0.86rem" : "0.95rem",
-              color: "#0F172A",
-              flex: 1,
-              minWidth: 0,
-              whiteSpace: "normal",
-              wordBreak: "normal",
-              overflowWrap: "break-word",
-              lineHeight: "1.25",
-              letterSpacing: "-0.2px"
-            }}>
-              #{seqNum} — {order.customerName}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
-              <span style={{
-                padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
-                background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
-                color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
-              }}>
-                {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
-              </span>
-              {(order.ifoodReference || order.openDeliveryReference) && (
-                <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#4F46E5" }}>
-                  #{order.ifoodReference || order.openDeliveryReference}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Conteúdo Principal — Ocupa 100% da largura total do card sem recuo */}
-          <div style={{ fontSize: "0.82rem", lineHeight: "1.4" }}>
-            {/* Telefone / ID  |  Data + Horário */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", color: "#64748B", fontSize: "0.75rem", marginBottom: "4px" }}>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1, fontWeight: 500 }}>
-                📞 {order.customerPhone || "—"}
-              </span>
-              <span style={{ flexShrink: 0, fontSize: "0.74rem", fontWeight: 600, color: "#475569" }}>
-                🕒 {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                <span style={{ margin: "0 4px", color: "#CBD5E1" }}>|</span>
-                <span style={{ fontWeight: isLate || isUrgent ? 800 : 700, color: timerColor }}>
-                  {timerLabel}
-                </span>
-              </span>
-            </div>
-
-            {/* Destaque MOTOBOY IFOOD (Entrega Parceira iFood) */}
-            {isIfoodMotoboy(order) && (
-              <div style={{ margin: "4px 0 6px", display: "flex", alignItems: "center" }}>
-                <span style={{
-                  background: "linear-gradient(135deg, #EF4444, #DC2626)",
-                  color: "#FFFFFF",
-                  padding: "4px 10px",
-                  borderRadius: "8px",
-                  fontWeight: 900,
-                  fontSize: "0.78rem",
-                  letterSpacing: "0.02em",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  boxShadow: "0 2px 6px rgba(239, 68, 68, 0.4)",
-                  border: "1px solid #B91C1C"
-                }}>
-                  🛵 MOTOBOY IFOOD (ENTREGADOR IFOOD)
-                </span>
-              </div>
-            )}
-
-            {/* Extra Badges (Pronto Cozinha) */}
-            {order.kdsStage === "FINISHED" && (
-              <div style={{ marginBottom: "4px" }}>
-                <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block" }}>
-                  ✅ Pronto Cozinha
-                </span>
-              </div>
-            )}
-
-            {/* Endereço Resumido (Apenas Bairro) em caixa destacada com 100% de largura */}
-            {order.customerAddress && (
-              <div style={{
-                color: "#065F46", fontWeight: 700, fontSize: "0.82rem",
-                background: "#ECFDF5", border: "1px solid #A7F3D0",
-                padding: "4px 10px", borderRadius: "8px", margin: "4px 0",
-                lineHeight: "1.3", wordBreak: "break-word"
-              }}>
-                📍 {getNeighborhoodOnly(order.customerAddress) || cleanAddress(order.customerAddress)}
-              </div>
-            )}
-            {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
-              <div style={{
-                color: "#92400E", fontWeight: 700, fontSize: "0.8rem",
-                background: "#FEF3C7", border: "1px solid #FCD34D",
-                padding: "5px 10px", borderRadius: "8px", margin: "5px 0"
-              }}>
-                🏪 Retirada no local
-              </div>
-            )}
-
-            {/* Total + Forma de Pagamento + Troco */}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", flexShrink: 0 }}>
-                  R$ {order.totalAmount.toFixed(2).replace('.', ',')}
-                </span>
-                <span style={{ color: "#CBD5E1", flexShrink: 0 }}>—</span>
-                <span
-                  style={{
-                    fontWeight: 600,
-                    fontSize: "0.82rem",
-                    color: "#475569",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-                >
-                  {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
-                </span>
-              </div>
-              {order.changeAmount != null && order.changeAmount > 0 && (
-                <span style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  color: "#92400E",
-                  background: "#FEF3C7",
-                  border: "1px solid #FCD34D",
-                  padding: "2px 8px",
-                  borderRadius: "6px",
-                  whiteSpace: "nowrap",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px"
-                }}>
-                  💵 Troco p/ R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* ─── ACTION BAR: Always visible at bottom ─── */}
-          <div style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #E2E8F0",
-            gap: "8px"
-          }}>
-            {/* Left: Status action button + motoboy select */}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
-              {/* Status buttons */}
-              {order.status === "NOVO" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
-              )}
-              {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType === "DELIVERY" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🛵 Saiu</button>
-              )}
-              {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType !== "DELIVERY" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
-              )}
-              {order.status === "SAIU_ENTREGA" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
-              )}
-              {order.status === "PRONTO" && (
-                <button disabled={isLoading} onClick={e => { e.stopPropagation(); updateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🤝 Entregue</button>
-              )}
-              {order.status === "ENTREGUE" && (
-                <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#059669", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>
-                  {(order.ifoodOrderId || order.source === "IFOOD")
-                    ? (order.ifoodDriverStatus === "CONCLUDED" ? "Concluído" : "Entregue")
-                    : "Entregue"}
-                </span>
-              )}
-              {order.status === "CANCELADO" && (
-                <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#DC2626", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Cancelado</span>
-              )}
-              {order.status === "ENCERRADO" && (
-                <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
-              )}
-
-              {/* Motoboy select: desabilitado para Entrega Parceira iFood */}
-              {order.deliveryType === "DELIVERY" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
-                isIfoodMotoboy(order) ? (
-                  <select
-                    disabled
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                      padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1",
-                      fontSize: "0.75rem", fontWeight: 700, color: "#64748B",
-                      background: "#F1F5F9", fontFamily: "inherit",
-                      cursor: "not-allowed", flex: 1, minWidth: "90px", maxWidth: "135px",
-                      marginRight: "4px"
-                    }}
-                    title="Entrega parceira do iFood — motoboy próprio do iFood"
-                  >
-                    <option value="">🛵 Motoboy iFood</option>
-                  </select>
-                ) : (
-                  <select
-                    value={order.motoboyId || ""}
-                    onChange={e => { e.stopPropagation(); assignMotoboy(order.id, e.target.value); }}
-                    disabled={assigningId === order.id}
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                      padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
-                      fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
-                      background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
-                      cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
-                      marginRight: "4px"
-                    }}
-                  >
-                    <option value="">Motoboy</option>
-                    {motoboys.map((m: any) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
-                )
-              )}
-            </div>
-
-            {/* Right: Icon buttons */}
-            <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
-              {/* WhatsApp — hide for iFood orders (0800 numbers don't work on WhatsApp) */}
-              {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (
-                <a
-                  href={`https://wa.me/55${(order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "")}`}
-                  target="_blank" rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  title="WhatsApp"
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
-                >
-                  <MessageCircle size={15} />
-                </a>
-              )}
-
-              {/* Print */}
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  setPrintSelectOrderId(order.id);
-                }}
-                title="Imprimir"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#3B82F6", color: "#fff", border: "none", cursor: "pointer" }}
-              >
-                <Printer size={15} />
-              </button>
-
-              {/* View Receipt Modal */}
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  setViewReceiptOrderId(order.id);
-                }}
-                title="Ver pedido"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#6366F1", color: "#fff", border: "none", cursor: "pointer" }}
-              >
-                <FileText size={15} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ─── EXPANDED: Secondary details panel ─── */}
-        {expanded && (
-          <div style={{ padding: "0 0.75rem 0.75rem", borderTop: "1px solid #E2E8F0" }}>
-
-            {/* ── Agendamento / Prazo de entrega ── */}
-            {deadline && (() => {
-              const isScheduled = deadline.getTime() - new Date(order.createdAt).getTime() > 3 * 60 * 60 * 1000;
-              const dateStr = deadline.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
-              const timeStr = deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-
-              if (isScheduled) {
-                return (
-                  <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#F8FAFC", borderRadius: "8px", borderLeft: "4px solid #16A34A", display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#15803D", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                        Pedido Agendado
-                      </div>
-                      <div style={{ fontSize: "0.8rem", color: "#374151", marginTop: "2px" }}>
-                        {dateStr} — {timeStr}
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: isLate ? "#FEF2F2" : isUrgent ? "#FFFBEB" : "#F8FAFC", borderRadius: "8px", borderLeft: `4px solid ${isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#3B82F6"}`, display: "flex", alignItems: "center", gap: "10px" }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: "0.82rem", color: isLate ? "#DC2626" : isUrgent ? "#D97706" : "#1D4ED8", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                      {isLate ? `Atrasado ${Math.abs(remainingMins!)}min` : `Prazo: ${remainingMins}min restantes`}
-                    </div>
-                    <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "1px" }}>
-                      Entregar até {timeStr} · Na cozinha há {elapsedMins}min
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* ── Retirada no local ── */}
-            {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
-              <div style={{ margin: "0.6rem 0", padding: "10px 14px", background: "#F8FAFC", borderRadius: "8px", borderLeft: "4px solid #D97706" }}>
-                <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#92400E", textTransform: "uppercase", letterSpacing: "0.03em" }}>Retirada no local</div>
-                <div style={{ fontSize: "0.78rem", color: "#6B7280", marginTop: "1px" }}>Cliente vem buscar</div>
-              </div>
-            )}
-
-            {/* ── Motivo do cancelamento ── */}
-            {order.status === "CANCELADO" && (
-              <div style={{ margin: "0.6rem 0", padding: "10px 14px", borderRadius: "8px", borderLeft: "4px solid",
-                background: order.cancelledBy === "LOJA" ? "#EFF6FF" : "#FEF2F2",
-                borderLeftColor: order.cancelledBy === "LOJA" ? "#3B82F6" : "#EF4444"
-              }}>
-                <div style={{ fontWeight: 700, fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.03em",
-                  color: order.cancelledBy === "LOJA" ? "#1D4ED8" : "#DC2626"
-                }}>
-                  {order.cancelledBy === "LOJA" ? "Cancelado pela loja"
-                    : order.cancelledBy === "CUSTOMER" ? "Cancelado pelo cliente"
-                    : order.cancelledBy === "IFOOD" ? "Cancelado pela plataforma"
-                    : order.cancelledBy === "JOTAJA" ? "Cancelado pela plataforma"
-                    : "Cancelado"}
-                </div>
-                <div style={{ fontSize: "0.78rem", marginTop: "1px",
-                  color: order.cancelledBy === "LOJA" ? "#1E40AF" : "#B91C1C"
-                }}>
-                  {order.cancelledBy === "LOJA" ? "Você cancelou este pedido manualmente"
-                    : order.cancelledBy === "CUSTOMER" ? "O cliente solicitou o cancelamento"
-                    : order.cancelledBy === "IFOOD" ? "O iFood cancelou este pedido automaticamente"
-                    : order.cancelledBy === "JOTAJA" ? "O Jotajá cancelou este pedido automaticamente"
-                    : "Pedido foi cancelado"}
-                </div>
-              </div>
-            )}
-
-            {/* ── Dados do cliente (detailed) ── */}
-            <div style={{ margin: "0.6rem 0", display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: "0.82rem", lineHeight: "1.6" }}>
-              <span style={{ color: "#9CA3AF", fontWeight: 500 }}>Telefone</span>
-              <span>
-                {(() => {
-                  const phone = order.customerPhone || "";
-                  const idMatch = phone.match(/ID:\s*(\d+)/i);
-                  const phoneNumber = phone.replace(/\s*ID:\s*\d+/i, "").trim();
-                  return (
-                    <>
-                      <a href={`https://wa.me/55${phoneNumber.replace(/\D/g,'')}`} target="_blank" style={{ color: "#059669", fontWeight: 600, textDecoration: "none" }}>{phoneNumber}</a>
-                      {idMatch && (
-                        <span style={{ marginLeft: "8px", fontSize: "0.75rem", fontWeight: 600, color: "#6B7280" }}>
-                          ID {idMatch[1]}
-                        </span>
-                      )}
-                    </>
-                  );
-                })()}
-              </span>
-              {order.customerAddress && (
-                <>
-                  <span style={{ color: "#9CA3AF", fontWeight: 500 }}>Endereço</span>
-                  <span style={{ fontWeight: 500, color: "#1F2937" }}>{cleanAddress(order.customerAddress)}</span>
-                </>
-              )}
-            </div>
-
-            {/* ── Pagamento e detalhes ── */}
-            <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px", fontSize: "0.8rem" }}>
-                {order.paymentMethod && (() => {
-                  const method = translatePayment(order.paymentMethod);
-                  const isDinheiro = method === "Dinheiro";
-                  const isPaidOnline = !isDinheiro && (
-                    order.paymentPaidAt ||
-                    order.source === "IFOOD" ||
-                    order.source === "JOTAJA" ||
-                    order.gatewayProvider
-                  );
-                  return (
-                    <>
-                      <div>
-                        <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Pagamento</span>
-                        <div style={{ fontWeight: 600, color: "#1F2937", marginTop: "1px" }}>{method}</div>
-                      </div>
-                      <div>
-                        <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Status</span>
-                        <div style={{ fontWeight: 600, color: isPaidOnline ? "#059669" : "#D97706", marginTop: "1px" }}>
-                          {isPaidOnline ? "Pago online" : "Pagar na entrega"}
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-                {order.changeAmount != null && order.changeAmount > 0 && (() => {
-                  const changeFor = Number(order.changeAmount);
-                  const orderTotal = Number(order.totalAmount) + Number(order.deliveryFee || 0);
-                  const toSeparate = changeFor - orderTotal;
-                  return (
-                    <div>
-                      <span style={{ color: "#92400E", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>💵 Troco para</span>
-                      <div style={{ fontWeight: 600, color: "#78350F", marginTop: "1px" }}>R$ {changeFor.toFixed(2)}</div>
-                      {toSeparate > 0 && (
-                        <div style={{ fontWeight: 700, color: "#92400E", fontSize: "0.82rem", marginTop: "2px" }}>Separe R$ {toSeparate.toFixed(2)}</div>
-                      )}
-                    </div>
-                  );
-                })()}
-                {order.customerCpfCnpj && (
-                  <div style={{ overflow: "hidden" }}>
-                    <span style={{ color: "#1E40AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>📋 CPF/CNPJ na nota</span>
-                    <div style={{ fontWeight: 600, color: "#1E3A5F", marginTop: "1px", fontSize: "0.8rem", wordBreak: "break-all" }}>{order.customerCpfCnpj}</div>
-                  </div>
-                )}
-                {order.deliveryType === "DELIVERY" && (
-                  <div>
-                    <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Taxa de entrega</span>
-                    <div style={{ fontWeight: 600, color: order.deliveryFee > 0 ? "#1F2937" : "#059669", marginTop: "1px" }}>
-                      {order.deliveryFee > 0 ? `R$ ${Number(order.deliveryFee).toFixed(2)}` : "Grátis"}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ── Descontos ── */}
-            {order.discountTotal > 0 && (
-              <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                  <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>Desconto total</span>
-                  <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#1F2937" }}>
-                    − R$ {Number(order.discountTotal).toFixed(2)}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: "16px", fontSize: "0.78rem" }}>
-                  {(order.discountIfood ?? 0) > 0 && (
-                    <span style={{ color: "#6B7280" }}>
-                      iFood: <strong style={{ color: "#059669" }}>R$ {Number(order.discountIfood).toFixed(2)}</strong>
-                    </span>
-                  )}
-                  {(order.discountMerchant ?? 0) > 0 && (
-                    <span style={{ color: "#6B7280" }}>
-                      Loja: <strong style={{ color: "#DC2626" }}>R$ {Number(order.discountMerchant).toFixed(2)}</strong>
-                    </span>
-                  )}
-                  {(order.discountIfood ?? 0) === 0 && (order.discountMerchant ?? 0) === 0 && (
-                    <span style={{ color: "#059669", fontWeight: 500 }}>Subsidiado pelo iFood</span>
-                  )}
-                </div>
-                {Array.isArray(order.discountDetails) && order.discountDetails.length > 0 && (
-                  <div style={{ marginTop: "4px", fontSize: "0.72rem", color: "#9CA3AF" }}>
-                    {order.discountDetails.map((d: any, i: number) => (
-                      <div key={i}>
-                        {d.target === "DELIVERY_FEE" ? "Taxa de entrega" : "Carrinho"}: R$ {Number(d.value).toFixed(2)}
-                        {d.description ? ` — ${d.description}` : ""}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Motoboy ── */}
-            {order.deliveryType === "DELIVERY" && (
-              <div style={{ margin: "0.4rem 0", padding: "10px 14px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB" }}>
-                <span style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em", display: "block", marginBottom: "4px" }}>Entrega</span>
-
-                {/* === MOTOBOY IFOOD TRACKING === */}
-                {order.ifoodDriverStatus && order.ifoodDriverStatus !== "FAILED" ? (
-                  <div style={{ background: "#EFF6FF", borderRadius: "8px", padding: "10px 12px", border: "1px solid #BFDBFE" }}>
-                    {/* Driver info */}
-                    {order.ifoodDriverName && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#3B82F6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.8rem", flexShrink: 0 }}>
-                          {order.ifoodDriverName?.charAt(0)?.toUpperCase() || "?"}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#1E3A5F" }}>{order.ifoodDriverName}</div>
-                          <div style={{ fontSize: "0.72rem", color: "#6B7280" }}>
-                            {order.ifoodDriverPhone && <span>{order.ifoodDriverPhone} · </span>}
-                            {order.ifoodDriverVehicle === "MOTORCYCLE" ? "🏍️ Moto" : order.ifoodDriverVehicle === "BICYCLE" ? "🚲 Bicicleta" : order.ifoodDriverVehicle === "CAR" ? "🚗 Carro" : "🛵 iFood"}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {/* Timeline */}
-                    {(() => {
-                      const steps = [
-                        { key: "REQUESTED", label: "Solicitado", emoji: "📤" },
-                        { key: "ASSIGNED", label: "Motoboy atribuído", emoji: "👤" },
-                        { key: "GOING_TO_ORIGIN", label: "A caminho da loja", emoji: "🏃" },
-                        { key: "ARRIVED_AT_ORIGIN", label: "Chegou na loja", emoji: "📍" },
-                        { key: "COLLECTED", label: "Coletou pedido", emoji: "📦" },
-                        { key: "DISPATCHED", label: "Saiu para entrega", emoji: "🛵" },
-                        { key: "ARRIVED_AT_DESTINATION", label: "Chegou no destino", emoji: "🏠" },
-                        { key: "DELIVERED", label: "Entregue", emoji: "✅" },
-                      ];
-                      const currentIdx = steps.findIndex(s => s.key === order.ifoodDriverStatus);
-                      return (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "4px" }}>
-                          {steps.map((step, i) => {
-                            const isDone = i < currentIdx;
-                            const isCurrent = i === currentIdx;
-                            const isFuture = i > currentIdx;
-                            return (
-                              <div key={step.key} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "2px 0" }}>
-                                <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${isDone ? "#059669" : isCurrent ? "#3B82F6" : "#D1D5DB"}`, background: isDone ? "#059669" : isCurrent ? "#3B82F6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                  {isDone && <span style={{ color: "#fff", fontSize: "0.55rem", fontWeight: 900 }}>✓</span>}
-                                  {isCurrent && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />}
-                                </div>
-                                <span style={{ fontSize: "0.78rem", fontWeight: isCurrent ? 700 : 400, color: isFuture ? "#9CA3AF" : isCurrent ? "#1D4ED8" : "#374151" }}>
-                                  {step.emoji} {step.label} {isCurrent && "← agora"}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                    {/* ETA + Cancel */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", paddingTop: "6px", borderTop: "1px solid #BFDBFE" }}>
-                      {order.ifoodDeliveryEta && (
-                        <span style={{ fontSize: "0.75rem", color: "#1D4ED8", fontWeight: 600 }}>
-                          ⏱️ Previsão: {new Date(order.ifoodDeliveryEta).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      )}
-                      {order.ifoodDriverStatus === "REQUESTED" && (
-                        <button onClick={e => { e.stopPropagation(); cancelIfoodDriver(order.id); }} style={{ padding: "4px 10px", background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>❌ Cancelar</button>
-                      )}
-                    </div>
-                  </div>
-                ) : order.ifoodDriverStatus === "FAILED" ? (
-                  <div style={{ background: "#FEF2F2", borderRadius: "8px", padding: "10px 12px", border: "1px solid #FECACA", marginBottom: "6px" }}>
-                    <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#DC2626" }}>❌ Nenhum motoboy iFood disponível</div>
-                    <div style={{ fontSize: "0.75rem", color: "#6B7280", marginTop: "2px" }}>Tente novamente ou selecione um motoboy próprio abaixo.</div>
-                  </div>
-                ) : null}
-
-                {/* Botão Chamar Motoboy iFood (se pedido iFood, sem driver solicitado) */}
-                {order.source === "IFOOD" && order.ifoodOrderId && !order.ifoodDriverStatus && order.status !== "ENCERRADO" && order.status !== "CANCELADO" && order.status !== "ENTREGUE" && (
-                  <button
-                    onClick={e => { e.stopPropagation(); fetchIfoodDriverQuote(order.id); }}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", width: "100%", padding: "8px", background: "linear-gradient(135deg, #3B82F6, #1D4ED8)", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", marginBottom: "6px" }}
-                  >
-                    🛵 Chamar Motoboy iFood
-                  </button>
-                )}
-
-                {/* Motoboy próprio (select) */}
-                {(order.status === "ENCERRADO" || order.status === "CANCELADO") ? (
-                  <div style={{ fontSize: "0.82rem", fontWeight: 500, color: "#1F2937" }}>
-                    {order.motoboy ? (
-                      <span>{order.motoboy.name} {order.motoboy.phone ? `· ${order.motoboy.phone}` : ""}</span>
-                    ) : !order.ifoodDriverName ? (
-                      <span style={{ color: "#9CA3AF" }}>Não atribuído</span>
-                    ) : null}
-                  </div>
-                ) : !order.ifoodDriverStatus || order.ifoodDriverStatus === "FAILED" ? (
-                  <>
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      {isIfoodMotoboy(order) ? (
-                        <select
-                          disabled
-                          style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.82rem", outline: "none", background: "#F1F5F9", fontFamily: "inherit", color: "#64748B", cursor: "not-allowed", fontWeight: 600 }}
-                          title="Entrega parceira do iFood — motoboy alocado pelo iFood"
-                        >
-                          <option value="">🛵 Motoboy iFood (Entrega Parceira)</option>
-                        </select>
-                      ) : (
-                        <select
-                          value={order.motoboyId || ""}
-                          onChange={e => assignMotoboy(order.id, e.target.value)}
-                          disabled={assigningId === order.id}
-                          style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #D1D5DB", fontSize: "0.82rem", outline: "none", background: "white", fontFamily: "inherit", color: "#374151" }}
-                        >
-                          <option value="">— Motoboy próprio —</option>
-                          {motoboys.map((m: any) => (
-                            <option key={m.id} value={m.id}>{m.name}{m.phone ? ` · ${m.phone}` : ""}</option>
-                          ))}
-                        </select>
-                      )}
-                      {order.motoboy && (
-                        <a
-                          href={`https://wa.me/55${(order.motoboy.phone || "").replace(/\D/g, "")}`}
-                          target="_blank" rel="noopener noreferrer"
-                          title={`WhatsApp ${order.motoboy.name}`}
-                          style={{ padding: "6px 10px", background: "#059669", color: "white", borderRadius: "6px", textDecoration: "none", fontSize: "0.78rem", fontWeight: 600 }}
-                        >WhatsApp</a>
-                      )}
-                    </div>
-                    {order.motoboy && (
-                      <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: "3px" }}>{order.motoboy.name} atribuído</div>
-                    )}
-                  </>
-                ) : null}
-              </div>
-            )}
-
-            {/* ── Observações ── */}
-            {order.notes && <div style={{ padding: "8px 12px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: "0.8rem", color: "#374151", margin: "0.4rem 0", lineHeight: "1.5" }}>{order.notes}</div>}
-
-            {/* ── Itens do pedido (detailed with sub-options) ── */}
-            <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
-              {order.items?.map((item: any) => {
-                const comboSels = (() => {
-                  if (!item.comboSelections) return [];
-                  try {
-                    const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-                    if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-                    return [];
-                  } catch { return []; }
-                })();
-                const nameParts = (item.menuProduct?.name || "Item").split(" | ");
-                const mainName = nameParts[0];
-                const extras = nameParts.slice(1);
-                return (
-                  <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F3F4F6" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ color: "#374151", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
-                      <span style={{ fontWeight: 600, color: "#1F2937" }}>R$ {(getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * item.quantity).toFixed(2)}</span>
-                    </div>
-                    {comboSels.length > 0 && (
-                      <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
-                        {comboSels.map((sel: any, i: number) => (
-                          <div key={i}>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
-                        ))}
-                      </div>
-                    )}
-                    {comboSels.length === 0 && extras.length > 0 && (
-                      <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
-                        {extras.map((ext: string, i: number) => (
-                          <div key={i}>↳ {ext.trim()}</div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* ── Botões de ação (expanded - full width) ── */}
-            {order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
-                <DashboardOrderCard
-                  order={order}
-                  expanded={expandedId === order.id}
-                  isLoading={loadingId === order.id}
-                  isDragging={draggedOrderId === order.id}
-                  now={now}
-                  seqNum={order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—"}
-                  timeAlertConfig={timeAlertConfig}
-                  selectedOrderIds={selectedOrderIds}
-                  motoboys={motoboys}
-                  assigningId={assigningId}
-                  onToggleSelectOrder={toggleSelectOrder}
-                  onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
-                  onUpdateStatus={updateStatus}
-                  onAssignMotoboy={assignMotoboy}
-                  onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
-                  onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                  onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  setOrders={setOrders}
-                />
-              </div>
-            )}
-            {order.status === "CANCELADO" && (
-              <button disabled={isLoading} onClick={() => updateStatus(order.id, "ENCERRADO")} style={{ width: "100%", marginTop: "4px", padding: "0.4rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#F9FAFB", color: "#6B7280", fontWeight: 500, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>Encerrar pedido</button>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
 
 
   return (
@@ -3584,27 +2802,147 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </button>
             }
           >
-            {novos.map(o => <OrderCard key={o.id} order={o} />)}
+            {novos.map(o => (
+              <DashboardOrderCard
+                key={o.id}
+                order={o}
+                expanded={expandedId === o.id}
+                isLoading={loadingId === o.id}
+                isDragging={draggedOrderId === o.id}
+                now={now}
+                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                timeAlertConfig={timeAlertConfig}
+                selectedOrderIds={selectedOrderIds}
+                motoboys={motoboys}
+                assigningId={assigningId}
+                onToggleSelectOrder={toggleSelectOrder}
+                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                onUpdateStatus={updateStatus}
+                onAssignMotoboy={assignMotoboy}
+                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                setOrders={setOrders}
+              />
+            ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#F59E0B" count={preparo.length} columnOrders={preparo}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-preparo")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-preparo")}>
-            {preparo.map(o => <OrderCard key={o.id} order={o} />)}
+            {preparo.map(o => (
+              <DashboardOrderCard
+                key={o.id}
+                order={o}
+                expanded={expandedId === o.id}
+                isLoading={loadingId === o.id}
+                isDragging={draggedOrderId === o.id}
+                now={now}
+                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                timeAlertConfig={timeAlertConfig}
+                selectedOrderIds={selectedOrderIds}
+                motoboys={motoboys}
+                assigningId={assigningId}
+                onToggleSelectOrder={toggleSelectOrder}
+                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                onUpdateStatus={updateStatus}
+                onAssignMotoboy={assignMotoboy}
+                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                setOrders={setOrders}
+              />
+            ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#7C3AED" count={transporte.length} columnOrders={transporte}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-transporte")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-transporte")}>
-            {transporte.map(o => <OrderCard key={o.id} order={o} />)}
+            {transporte.map(o => (
+              <DashboardOrderCard
+                key={o.id}
+                order={o}
+                expanded={expandedId === o.id}
+                isLoading={loadingId === o.id}
+                isDragging={draggedOrderId === o.id}
+                now={now}
+                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                timeAlertConfig={timeAlertConfig}
+                selectedOrderIds={selectedOrderIds}
+                motoboys={motoboys}
+                assigningId={assigningId}
+                onToggleSelectOrder={toggleSelectOrder}
+                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                onUpdateStatus={updateStatus}
+                onAssignMotoboy={assignMotoboy}
+                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                setOrders={setOrders}
+              />
+            ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-finalizado" title="Finalizado" emoji="✅" color="#10B981" count={finalizados.length} columnOrders={finalizados}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
-            {finalizados.map(o => <OrderCard key={o.id} order={o} />)}
+            {finalizados.map(o => (
+              <DashboardOrderCard
+                key={o.id}
+                order={o}
+                expanded={expandedId === o.id}
+                isLoading={loadingId === o.id}
+                isDragging={draggedOrderId === o.id}
+                now={now}
+                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                timeAlertConfig={timeAlertConfig}
+                selectedOrderIds={selectedOrderIds}
+                motoboys={motoboys}
+                assigningId={assigningId}
+                onToggleSelectOrder={toggleSelectOrder}
+                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                onUpdateStatus={updateStatus}
+                onAssignMotoboy={assignMotoboy}
+                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                setOrders={setOrders}
+              />
+            ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
-            {cancelados.map(o => <OrderCard key={o.id} order={o} />)}
+            {cancelados.map(o => (
+              <DashboardOrderCard
+                key={o.id}
+                order={o}
+                expanded={expandedId === o.id}
+                isLoading={loadingId === o.id}
+                isDragging={draggedOrderId === o.id}
+                now={now}
+                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                timeAlertConfig={timeAlertConfig}
+                selectedOrderIds={selectedOrderIds}
+                motoboys={motoboys}
+                assigningId={assigningId}
+                onToggleSelectOrder={toggleSelectOrder}
+                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                onUpdateStatus={updateStatus}
+                onAssignMotoboy={assignMotoboy}
+                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                setOrders={setOrders}
+              />
+            ))}
           </DashboardColumn>
         </div>
       </div>
