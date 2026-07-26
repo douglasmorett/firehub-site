@@ -48,9 +48,7 @@ const cleanAddress = (addr: string | null) => {
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
   // ÚNICA verificação confiável: campo deliveryBy salvo diretamente da API do iFood no momento da criação do pedido.
-  // NÃO usar ifoodDriverName/ifoodDriverPhone (são setados pelo botão "Solicitar Motoboy iFood" para qualquer pedido).
-  // NÃO usar telefone 0800 (todos os pedidos iFood usam 0800).
-  return order.deliveryBy === "IFOOD";
+  return order.deliveryBy === "IFOOD" || (order as any).deliveredBy === "IFOOD";
 };
 
 const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount: number = 0, deliveryFee: number = 0, discountTotal: number = 0): number => {
@@ -513,12 +511,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   disabled
                   onClick={e => e.stopPropagation()}
                   style={{
-                    padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1",
-                    fontSize: "0.75rem", fontWeight: 700, color: "#64748B",
-                    background: "#F1F5F9", fontFamily: "inherit",
-                    cursor: "not-allowed", flex: 1, minWidth: "90px", maxWidth: "135px"
+                    padding: "4px 8px", borderRadius: "6px", border: "2px solid #EF4444",
+                    fontSize: "0.75rem", fontWeight: 800, color: "#DC2626",
+                    background: "#FEF2F2", fontFamily: "inherit",
+                    cursor: "not-allowed", flex: 1, minWidth: "90px", maxWidth: "135px",
+                    boxShadow: "0 0 0 1px #FCA5A5"
                   }}
-                  title="Entrega parceira do iFood — motoboy próprio do iFood"
+                  title="Entrega parceira do iFood — motoboy próprio do iFood (bloqueado para motoboy da loja)"
                 >
                   <option value="">🛵 Motoboy iFood</option>
                 </select>
