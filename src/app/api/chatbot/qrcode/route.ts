@@ -52,17 +52,11 @@ export async function GET() {
   } catch (err: any) {
     console.error("[WhatsApp Gateway API] Erro ao obter QR Code da Evolution API:", err);
 
-    const cleanPhone = (user.storePhone || "21988887777").replace(/\D/g, "");
-    const pairingCode = `${cleanPhone.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const qrData = `FIREHUB_WA_AUTH_${user.id}_${Date.now()}`;
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrData)}`;
-
     return NextResponse.json({
       connected: false,
-      qrCodeUrl,
-      pairingCode,
-      expiresInSeconds: 45,
-      status: "AWAITING_SCAN",
+      qrCodeUrl: null,
+      error: "Servidor de WhatsApp indisponível no momento. Certifique-se de que a Evolution API / WhatsApp Gateway está rodando.",
+      status: "DISCONNECTED",
     });
   }
 }

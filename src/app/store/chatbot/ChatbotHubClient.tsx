@@ -75,6 +75,51 @@ export default function ChatbotHubClient() {
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string>("");
   const [isRefreshingQr, setIsRefreshingQr] = useState(false);
+  const [qrTimer, setQrTimer] = useState<number>(60);
+  const [isQrExpired, setIsQrExpired] = useState<boolean>(false);
+
+  // Timer de expiração do QR Code (60s)
+  useEffect(() => {
+    if (!qrCodeUrl || isQrExpired || config.connected) return;
+
+    const timer = setInterval(() => {
+      setQrTimer((prev) => {
+        if (prev <= 1) {
+          setIsQrExpired(true);
+          setQrCodeUrl(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [qrCodeUrl, isQrExpired, config.connected]);
+
+  // Gerar QR Code novo na hora
+  const handleFetchFreshQr = async () => {
+    try {
+      setIsRefreshingQr(true);
+      setIsQrExpired(false);
+      const res = await fetch("/api/chatbot/qrcode?force=true").then((r) => r.json());
+
+      if (res.connected) {
+        setConfig((prev: any) => ({ ...prev, connected: true, phone: res.phone || prev.phone }));
+        showToast("🎉 WhatsApp Conectado com Sucesso!", "#10B981");
+      } else if (res.qrCodeUrl && res.qrCodeUrl.startsWith("data:image")) {
+        setQrCodeUrl(res.qrCodeUrl);
+        setQrTimer(60);
+        setIsQrExpired(false);
+        showToast("⚡ QR Code gerado em tempo real! Expira em 60 segundos.", "#2563EB");
+      } else {
+        showToast("⚠️ O servidor de WhatsApp precisa estar online para gerar o QR Code.", "#EF4444");
+      }
+    } catch (e) {
+      showToast("⚠️ Falha ao conectar ao servidor de QR Code", "#EF4444");
+    } finally {
+      setIsRefreshingQr(false);
+    }
+  };
 
   // Test Message State
   const [testPhone, setTestPhone] = useState("");
@@ -423,14 +468,51 @@ export default function ChatbotHubClient() {
                     🔒 <em>Conecte o WhatsApp do restaurante. O FireHub respeita sua privacidade e não lê conversas pessoais.</em>
                   </p>
 
-                  <div style={{ display: "flex", justifyContent: "center", marginBottom: "1rem" }}>
-                    {qrCodeUrl ? (
-                      <div style={{ padding: "12px", background: "#fff", borderRadius: "12px", border: "1px solid #E2E8F0", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)" }}>
-                        <img src={qrCodeUrl} alt="QR Code WhatsApp" style={{ width: "210px", height: "210px", display: "block" }} />
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "1rem" }}>
+                    {!qrCodeUrl || isQrExpired ? (
+                      <div style={{ background: "#FFF", padding: "24px", borderRadius: "16px", border: "1px solid #E2E8F0", textAlign: "center", maxWidth: "300px" }}>
+                        {isQrExpired && (
+                          <div style={{ color: "#DC2626", fontWeight: 700, fontSize: "0.82rem", marginBottom: "12px" }}>
+                            ⏱️ O QR Code anterior expirou após 60s.
+                          </div>
+                        )}
+                        <button
+                          onClick={handleFetchFreshQr}
+                          disabled={isRefreshingQr}
+                          style={{
+                            padding: "12px 20px",
+                            borderRadius: "12px",
+                            border: "none",
+                            background: "linear-gradient(135deg, #16A34A, #15803D)",
+                            color: "#fff",
+                            fontWeight: 800,
+                            fontSize: "0.9rem",
+                            cursor: isRefreshingQr ? "not-allowed" : "pointer",
+                            boxShadow: "0 4px 14px rgba(22,163,74,0.35)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px"
+                          }}
+                        >
+                          <RefreshCw size={16} className={isRefreshingQr ? "spin" : ""} />
+                          {isRefreshingQr ? "Gerando QR Code..." : (isQrExpired ? "🔄 Gerar Novo QR Code" : "🔄 Gerar QR Code na Hora")}
+                        </button>
                       </div>
                     ) : (
-                      <div style={{ width: 210, height: 210, background: "#E2E8F0", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
-                        Gerando QR Code...
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <div style={{ padding: "12px", background: "#fff", borderRadius: "12px", border: "1px solid #E2E8F0", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)" }}>
+                          <img src={qrCodeUrl} alt="QR Code WhatsApp" style={{ width: "210px", height: "210px", display: "block" }} />
+                        </div>
+                        <div style={{ marginTop: "12px", fontSize: "0.82rem", fontWeight: 800, color: "#D97706", display: "flex", alignItems: "center", gap: "6px" }}>
+                          ⏱️ QR Code ativo · Expira em {qrTimer}s
+                        </div>
+                        <button
+                          onClick={handleFetchFreshQr}
+                          disabled={isRefreshingQr}
+                          style={{ marginTop: "10px", padding: "6px 14px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer", color: "#334155" }}
+                        >
+                          🔄 Atualizar QR Code
+                        </button>
                       </div>
                     )}
                   </div>
@@ -441,9 +523,10 @@ export default function ChatbotHubClient() {
 
                   <div style={{ background: "#fff", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0", textAlign: "left", marginBottom: "8px", fontSize: "0.8rem", color: "#334155", lineHeight: 1.6 }}>
                     <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: "4px" }}>Passos no Celular:</div>
-                    1. Abra o <strong>WhatsApp</strong>. <br />
-                    2. Vá em <strong>Menu / Configurações</strong> ➔ <strong>Aparelhos conectados</strong>. <br />
-                    3. Toque em <strong>Conectar um aparelho</strong> e aponte para a imagem acima.
+                    1. Clique em <strong>&quot;Gerar QR Code na Hora&quot;</strong> acima. <br />
+                    2. Abra o <strong>WhatsApp</strong> no seu celular. <br />
+                    3. Vá em <strong>Menu / Configurações ➔ Aparelhos conectados</strong>. <br />
+                    4. Toque em <strong>Conectar um aparelho</strong> e aponte para a imagem antes do tempo zerar.
                   </div>
                 </div>
               ) : (
