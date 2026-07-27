@@ -193,16 +193,27 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
   const { instanceName } = req.params;
   const { number, text } = req.body;
 
-  const session = sessions.get(instanceName);
+  let session = sessions.get(instanceName);
+  if (!session || session.state !== "open") {
+    for (const s of sessions.values()) {
+      if (s.state === "open" && s.sock) {
+        session = s;
+        break;
+      }
+    }
+  }
+
   if (!session || session.state !== "open" || !session.sock) {
-    return res.status(400).json({ error: "Instância não conectada" });
+    return res.status(400).json({ error: "Instância não conectada no celular" });
   }
 
   const jid = `${number.replace(/\D/g, "")}@s.whatsapp.net`;
   try {
     await session.sock.sendMessage(jid, { text });
+    console.log(`[WhatsApp Gateway] 🚀 Mensagem enviada para ${jid}: "${text.slice(0, 50)}..."`);
     return res.json({ status: "SENT", to: jid });
   } catch (err) {
+    console.error(`[WhatsApp Gateway] ❌ Erro ao enviar mensagem para ${jid}:`, err);
     return res.status(500).json({ error: err.message });
   }
 });
