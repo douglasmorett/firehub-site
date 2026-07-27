@@ -244,19 +244,12 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
   const deliveredByRaw = (
     orderData.deliveredBy || orderData.deliveryBy ||
     orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
-    orderData.delivery?.mode || orderData.orderType ||
+    orderData.delivery?.mode ||
     orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
     ""
   ).toString().toUpperCase();
-  const deliveryBy = (
-    deliveredByRaw.includes("IFOOD") ||
-    deliveredByRaw.includes("LOGISTICS") ||
-    deliveredByRaw.includes("TAKEOUT") ||
-    orderData.orderType === "TAKEOUT" ||
-    Boolean(orderData.logistics) ||
-    Boolean(orderData.customer?.phone?.number?.includes("0800")) ||
-    Boolean(typeof orderData.customer?.phone === "string" && orderData.customer.phone.includes("0800"))
-  ) ? "IFOOD" : "MERCHANT";
+
+  const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS")) ? "IFOOD" : "MERCHANT";
 
   await (prisma.customerOrder as any).create({
     data: {

@@ -49,11 +49,10 @@ export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
   const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
   const dMode = (order.deliveryMode || order.deliveryType || "").toString().toUpperCase();
-  const phone = (order.customerPhone || "").toString();
 
-  if (dBy === "IFOOD" || dBy === "LOGISTICS" || dBy === "TAKEOUT" || dMode === "LOGISTICS" || dMode === "TAKEOUT" || Boolean(order.logistics)) return true;
+  // SOMENTE quando a entrega for declaradamente por conta da Logística/Parceiro do iFood (IFOOD ou LOGISTICS)
+  if (dBy === "IFOOD" || dMode === "LOGISTICS") return true;
   if (order.ifoodDriverName || order.ifoodDriverStatus) return true;
-  if (phone.includes("0800") || phone.includes("0800705") || phone.includes("0800 705")) return true;
 
   return false;
 };
