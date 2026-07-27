@@ -4,7 +4,7 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
 
   // Buscar configurações da loja para verificar se há URL/API Key customizadas da Evolution API
-  let baseUrl = (process.env.EVOLUTION_API_URL || "https://five-houses-sit.loca.lt").replace(/\/$/, "");
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://cute-shirts-joke.loca.lt").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
@@ -117,7 +117,7 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
   const cleanNumber = toPhone.replace(/\D/g, "");
   const number = cleanNumber.startsWith("55") ? cleanNumber : `55${cleanNumber}`;
 
-  let baseUrl = (process.env.EVOLUTION_API_URL || "https://five-houses-sit.loca.lt").replace(/\/$/, "");
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://cute-shirts-joke.loca.lt").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
@@ -157,7 +157,7 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
 
 export async function disconnectEvolutionInstance(userId: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
-  let baseUrl = (process.env.EVOLUTION_API_URL || "https://five-houses-sit.loca.lt").replace(/\/$/, "");
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://cute-shirts-joke.loca.lt").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
