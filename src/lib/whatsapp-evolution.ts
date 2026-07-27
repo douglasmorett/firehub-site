@@ -17,99 +17,98 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
     if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
   } catch {}
 
-  try {
-    const defaultHeaders = {
-      "apikey": apiKey,
-      "Content-Type": "application/json",
-      "Bypass-Tunnel-Remainder": "true",
-      "User-Agent": "FireHub"
-    };
+  // URLs para tentar obter a conexão real com a Evolution API / Gateway Baileys
+  const urlsToTry = Array.from(new Set([
+    baseUrl,
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "https://giant-heads-cover.loca.lt"
+  ].filter(Boolean)));
 
-    // 1. Verificar estado da instância na Evolution API
-    const stateRes = await fetch(`${baseUrl}/instance/connectionState/${instanceName}`, {
-      method: "GET",
-      headers: defaultHeaders,
-    });
+  for (const url of urlsToTry) {
+    try {
+      const defaultHeaders = {
+        "apikey": apiKey,
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Remainder": "true",
+        "User-Agent": "FireHub"
+      };
 
-    if (stateRes.ok) {
-      const stateData = await stateRes.json();
-      if (stateData?.instance?.state === "open" || stateData?.state === "open") {
-        const phone = stateData?.instance?.ownerJid?.split("@")[0] || storePhone || "+55 21 99999-9999";
-        return {
-          connected: true,
-          phone: phone.startsWith("+") ? phone : `+55 ${phone.replace(/^55/, "")}`,
-          battery: 99,
-          status: "ONLINE",
-        };
-      }
-    }
-
-    // 2. Se a instância não existe, cria a instância na Evolution API
-    if (stateRes.status === 404) {
-      await fetch(`${baseUrl}/instance/create`, {
-        method: "POST",
+      // 1. Verificar estado da instância
+      const stateRes = await fetch(`${url}/instance/connectionState/${instanceName}`, {
+        method: "GET",
         headers: defaultHeaders,
-        body: JSON.stringify({
-          instanceName,
-          token: userId,
-          qrcode: true,
-          integration: "WHATSAPP-BAILEYS",
-          webhook: `${process.env.NEXTAUTH_URL || "https://firehubfood.com.br"}/api/webhook/whatsapp`,
-          webhookByEvents: true,
-          events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
-        }),
       });
-    }
 
-    // 3. Obter QR Code real da Evolution API
-    const connectRes = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
-      method: "GET",
-      headers: defaultHeaders,
-    });
-
-    if (connectRes.ok) {
-      const connectData = await connectRes.json();
-
-      if (connectData?.connected || connectData?.instance?.state === "open") {
-        return {
-          connected: true,
-          phone: connectData.phone || storePhone || "+55 (21) 99999-9999",
-          battery: 99,
-          status: "ONLINE",
-        };
+      if (stateRes.ok) {
+        const stateData = await stateRes.json();
+        if (stateData?.instance?.state === "open" || stateData?.state === "open") {
+          const phone = stateData?.instance?.ownerJid?.split("@")[0] || storePhone || "+55 21 99999-9999";
+          return {
+            connected: true,
+            phone: phone.startsWith("+") ? phone : `+55 ${phone.replace(/^55/, "")}`,
+            battery: 99,
+            status: "ONLINE",
+          };
+        }
       }
 
-      const base64Qr = connectData?.code || connectData?.base64 || connectData?.qrcode?.base64;
-      const pairingCode = connectData?.pairingCode || connectData?.code || `${userId.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      if (base64Qr) {
-        const qrCodeUrl = base64Qr.startsWith("data:image") ? base64Qr : `data:image/png;base64,${base64Qr}`;
-        return {
-          connected: false,
-          qrCodeUrl,
-          pairingCode,
-          expiresInSeconds: 45,
-          status: "AWAITING_SCAN",
-        };
+      // 2. Se não existir, tenta criar
+      if (stateRes.status === 404) {
+        await fetch(`${url}/instance/create`, {
+          method: "POST",
+          headers: defaultHeaders,
+          body: JSON.stringify({
+            instanceName,
+            token: userId,
+            qrcode: true,
+            integration: "WHATSAPP-BAILEYS",
+            webhook: `${process.env.NEXTAUTH_URL || "https://firehubfood.com.br"}/api/webhook/whatsapp`,
+            webhookByEvents: true,
+            events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+          }),
+        });
       }
+
+      // 3. Obter QR Code real
+      const connectRes = await fetch(`${url}/instance/connect/${instanceName}`, {
+        method: "GET",
+        headers: defaultHeaders,
+      });
+
+      if (connectRes.ok) {
+        const connectData = await connectRes.json();
+
+        if (connectData?.connected || connectData?.instance?.state === "open") {
+          return {
+            connected: true,
+            phone: connectData.phone || storePhone || "+55 (21) 99999-9999",
+            battery: 99,
+            status: "ONLINE",
+          };
+        }
+
+        const base64Qr = connectData?.code || connectData?.base64 || connectData?.qrcode?.base64;
+        const pairingCode = connectData?.pairingCode || connectData?.code || `${userId.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        if (base64Qr) {
+          const qrCodeUrl = base64Qr.startsWith("data:image") ? base64Qr : `data:image/png;base64,${base64Qr}`;
+          return {
+            connected: false,
+            qrCodeUrl,
+            pairingCode,
+            expiresInSeconds: 45,
+            status: "AWAITING_SCAN",
+          };
+        }
+      }
+    } catch (urlErr) {
+      console.warn(`[WhatsApp Evolution] Tentativa de conexão em ${url} falhou:`, (urlErr as any).message);
     }
-  } catch (err) {
-    console.warn("[Evolution API Gateway] Evolution API não respondeu no servidor remoto, usando gerador dinâmico de backup:", err);
   }
 
-  // Backup seguro de QR Code formatado para exibição do painel
-  const cleanPhone = (storePhone || "21988887777").replace(/\D/g, "");
-  const pairingCode = `${cleanPhone.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
-  const qrData = `FIREHUB_WA_AUTH_${userId}_${Date.now()}`;
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrData)}`;
-
-  return {
-    connected: false,
-    qrCodeUrl,
-    pairingCode,
-    expiresInSeconds: 45,
-    status: "AWAITING_SCAN",
-  };
+  // Se nenhuma instância online responder, lança erro para a interface informar o usuário
+  throw new Error("Servidor de WhatsApp indisponível no momento. Certifique-se de que o Gateway está ativo.");
 }
 
 export async function sendEvolutionMessage(userId: string, toPhone: string, text: string) {
