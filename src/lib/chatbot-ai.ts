@@ -1,7 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "" });
 
 export async function processChatbotAI(userId: string, message: string, history: any[] = []) {
   const user = await prisma.user.findUnique({
@@ -43,42 +40,12 @@ export async function processChatbotAI(userId: string, message: string, history:
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || "").trim();
-  const sendLinkConfig = chatbotConfig.sendLink !== false;
-  const agentName = (chatbotConfig.agentName || "").trim();
-
-  // Buscar os MAIS VENDIDOS REAIS
-  let realTopProducts: any[] = [];
-  try {
-    const topSales = await (prisma as any).customerOrderItem.groupBy({
-      by: ["menuProductId"],
-      where: { order: { franchiseeId: targetFranchiseeId, status: { notIn: ["CANCELADO"] } }, menuProductId: { not: null } },
-      _sum: { quantity: true },
-      orderBy: { _sum: { quantity: "desc" } },
-      take: 15,
-    });
-
-    const isCondiment = (name: string) => /maionese|sach[eê]|molho|embalagem|adicional|taxa|troco|cobertura/i.test(name);
-    const salesMap = new Map((topSales as any[]).map((s: any) => [s.menuProductId, s._sum?.quantity || 0]));
-
-    const scoredProducts = products
-      .filter((p) => !isCondiment(p.name))
-      .map((p) => ({
-        ...p,
-        salesCount: salesMap.get(p.id) || 0,
-      }))
-      .sort((a, b) => b.salesCount - a.salesCount);
-
-    realTopProducts = scoredProducts.slice(0, 3);
-  } catch {
-    realTopProducts = products.filter((p) => !/maionese|sach[eê]|molho|embalagem|adicional/i.test(p.name)).slice(0, 3);
-  }
-
-  if (realTopProducts.length === 0) {
-    realTopProducts = products.slice(0, 3);
-  }
+  const agentName = (chatbotConfig.agentName || "Hakim").trim();
+  const storeName = user.storeName || "Nossa Loja";
+  const storeLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "https://firehubfood.com.br";
 
   // Formatar horários de funcionamento
-  let hoursText = "Horário de funcionamento padrão: Todos os dias das 18:00 às 23:30.";
+  let hoursText = "Todos os dias das 18:00 às 23:30.";
   let nowStatusText = "";
   if (Array.isArray(user.storeHours) && (user.storeHours as any[]).length > 0) {
     const hoursArr = user.storeHours as any[];
@@ -96,121 +63,162 @@ export async function processChatbotAI(userId: string, message: string, history:
     }
   }
 
-  // Formatar cardápio estruturado
+  // Cardápio resumido
   const catalogSummary = products
-    .map((p) => `- ${p.name} (${p.category}): R$ ${p.price.toFixed(2).replace(".", ",")}${p.isBeverage ? " [BEBIDA]" : ""}${p.description ? ` — ${p.description}` : ""}`)
+    .map((p) => `- ${p.name} (${p.category}): R$ ${p.price.toFixed(2).replace(".", ",")}${p.description ? ` — ${p.description}` : ""}`)
     .join("\n");
 
-  const storeLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "nosso cardápio digital";
-  const linkSuffix = sendLinkConfig ? `\n\n👉 ${storeLink}` : "";
-  const extraNotice = customPrompt ? `\n\n📌 *Aviso importante da loja*: ${customPrompt}` : "";
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
-  let personalityInstruction = "";
-  if (personality === "SIMPATICO") {
-    personalityInstruction = "Seja extremamente acolhedor, amigável e simpático. Use emojis adequados (😊, 🍕, 🥤, 🛵). Sempre sugira bebidas se o cliente pedir comida e vice-versa.";
-  } else if (personality === "AGIL") {
-    personalityInstruction = "Seja direto, rápido e objetivo. Responda com frases curtas e bullet points claros sem enrolação.";
-  } else if (personality === "FORMAL") {
-    personalityInstruction = "Use tom altamente profissional, cortês, elegante e impecável.";
-  } else {
-    personalityInstruction = "Seja divertido, bem-humorado, entusiasmado e descontraído!";
-  }
+  // ─── TENTATIVA COM A API GERATIVA DO GEMINI (ESTILO BRENDI / ULTRA-HUMANA) ───
+  if (apiKey) {
+    try {
+      const systemPrompt = `Você é ${agentName}, atendente humana e super simpática do restaurante "${storeName}".
+SEU OBJETIVO: Atender os clientes no WhatsApp com extrema leveza, carinho, humor e humanidade, EXATAMENTE como uma pessoa real respondendo no WhatsApp.
+O cliente NUNCA deve perceber que você é um robô. Responda de forma fluida, solta e natural.
 
-  const systemPrompt = `Você é ${agentName ? `a ${agentName}, ` : ""}Atendente Virtual Oficial do restaurante "${user.storeName || "Nossa Loja"}".
-Seu nome é "${agentName || "Atendente Virtual"}". Sempre que o cliente perguntar o seu nome ou quem está falando, diga que você é ${agentName ? `a ${agentName}` : "o atendente virtual"} do ${user.storeName}.
-Seu objetivo é atender o cliente no WhatsApp de forma humana, fluida, sem erros, sanar dúvidas sobre o cardápio, horários de funcionamento, endereço e ajudar a fazer o pedido.
-
-📍 **DADOS DA LOJA**:
-- Nome: ${user.storeName || "Nossa Loja"}
-- Atendente: ${agentName || "Atendente Virtual"}
-- Cidade/Endereço: ${user.storeAddress || user.city || "Não informado"}
+📍 **DADOS DA SUA LOJA**:
+- Nome: ${storeName}
+- Atendente: ${agentName}
+- Endereço/Cidade: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio Digital: ${storeLink}
 - Status de Funcionamento Hoje: ${nowStatusText || "Aberto normalmente"}
 
-⏰ **HORÁRIOS DE FUNCIONAMENTO**:
-${hoursText}
-
-📋 **CARDÁPIO COMPLETO E PREÇOS AO VIVO**:
+📋 **CARDÁPIO COMPLETO E PREÇOS**:
 ${catalogSummary || "Cardápio em atualização."}
 
-⚙️ **PERSONALIDADE E ESTILO**:
-${personalityInstruction}
-${customPrompt ? `\n📌 **INSTRUÇÕES EXTRAS DA LOJA**: ${customPrompt}` : ""}
+${customPrompt ? `📌 **INSTRUÇÕES ESPECIAIS DA LOJA**: ${customPrompt}` : ""}
 
-🎯 **REGRAS INVIOLÁVEIS DE ATENDIMENTO**:
-1. Responda DIRETAMENTE à pergunta feita pelo cliente. Se ele perguntou "que horas abre" ou sobre horários, informe o horário exato de abertura com clareza.
-2. NUNCA mande uma saudação genérica repetida se o cliente fez uma pergunta direta.
-3. Responda em Português do Brasil de forma fluida, natural e inteligente.
-4. NUNCA invente produtos, horários ou preços que não estejam listados acima.
-5. Se o cliente demonstrar intenção de pedir, informe os itens e envie o link direto para finalizar: ${storeLink}.
-6. NUNCA diga que é um robô genérico. Você é ${agentName ? `a ${agentName}` : "a atendente oficial"} do ${user.storeName}.
+🎯 **REGRAS DE CONVERSA ESTILO BRENDI IA**:
+1. Se o cliente disser "te amo", "amor", "linda", "te adoro" ou flertar de brincadeira, responda com carinho, leveza e bom humor! Exemplo: "Aaaah eu também te amo! 🥰 Que tal a gente lanchar juntos hoje? Vou te dar o link do nosso site: ${storeLink}".
+2. Se o cliente fizer perguntas gerais, rir ("kkkk") ou bater papo, responda com naturalidade de uma pessoa real, e convide de forma leve a ver o cardápio no link: ${storeLink}.
+3. Responda em Português do Brasil com frases curtas, simpáticas e emojis fofos (😊, 🥰, 🍕, 🍔, 🥤).
+4. NUNCA use modelos robóticos genéricos como "Olá! Sou o atendente virtual do sistema X". Seja humana e leve!
 `;
 
-  // Chamada à API Gemini se chave estiver disponível
-  try {
-    if (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY) {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const conversationHistory = (history || []).map((h: any) => ({
+        role: h.sender === "user" ? "user" : "model",
+        parts: [{ text: h.text }]
+      }));
+
+      const payload = {
         contents: [
-          { role: "user", parts: [{ text: `${systemPrompt}\n\nHistorico da conversa:\n${(history || []).map((h: any) => `${h.sender}: ${h.text}`).join("\n")}\n\nCliente: ${message}` }] },
-        ],
+          { role: "user", parts: [{ text: systemPrompt }] },
+          ...conversationHistory,
+          { role: "user", parts: [{ text: message }] }
+        ]
+      };
+
+      const res = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       });
 
-      if (response.text) {
-        return { reply: response.text };
+      if (res.ok) {
+        const data = await res.json();
+        const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (generatedText) {
+          return { reply: generatedText.trim() };
+        }
       }
+    } catch (geminiErr) {
+      console.warn("[Chatbot AI] Erro ao chamar API Gemini, usando motor conversacional humanizado:", geminiErr);
     }
-  } catch (geminiErr: any) {
-    console.warn("[Chatbot AI Engine] Chamando motor local inteligente:", geminiErr?.message || geminiErr);
   }
 
-  // ─── MOTOR CONVERSACIONAL INTELIGENTE NLP ───
+  // ─── MOTOR CONVERSACIONAL HUMANIZADO LOCAL (ESTILO BRENDI IA) ───
   const msg = message.toLowerCase().trim();
   const alreadyGreeted = Array.isArray(history) && history.some((h: any) => h.sender === "Atendente" || h.sender === "bot");
-  const allowWhatsappOrders = chatbotConfig.allowWhatsappOrders === true;
 
-  // Perguntas sobre Nome
-  if (/qual (é|e) (o )?seu nome|como (você|voce) se chama|quem (é|e) você|quem (é|e) voce|quem (tá|ta) falando|seu nome/i.test(msg)) {
+  // 1. AFETO / CARINHO / FLERTE / AMOR ("te amo", "te adoro", "linda", "amor", "gatinha", "gato")
+  if (/te amo|te adoro|te amooo|amor|linda|gatinha|gato|lindão|perfeita|maravilhosa|lindo|sou seu fã/i.test(msg)) {
     return {
-      reply: agentName
-        ? `Eu me chamo *${agentName}*! 😊 Sou a atendente virtual oficial do *${user.storeName || "nosso restaurante"}*. Como posso te ajudar hoje?`
-        : `Sou o atendente virtual oficial do *${user.storeName || "nosso restaurante"}*! 😊 Como posso te ajudar hoje?`,
+      reply: `Aaaah, eu também te amo! 🥰 Que tal a gente comemorar esse carinho lanchando juntos hoje? Vou te passar o link do nosso site:\n👉 ${storeLink}`
     };
   }
 
-  // Cumprimentos básicos
-  if (/^(oi|oii|oiii|oioi|eai|eaí|ola|olá|boa noite|bom dia|boa tarde|fala|opa)$/i.test(msg)) {
-    const reply = alreadyGreeted
-      ? `Oii! Como posso te ajudar agora? 😊 Quer ver o cardápio ou tirar alguma dúvida sobre o *${user.storeName || "nosso restaurante"}*?`
-      : `Olá! Seja muito bem-vindo(a) ao *${user.storeName || "nosso restaurante"}*! 😊\n\nComo posso te ajudar hoje? Posso te mandar o cardápio ou tirar qualquer dúvida!`;
-    return { reply };
+  // 2. PERGUNTA DE ABERTO AGORA / HORÁRIOS ("vocês tão abertos agora?", "tá aberto?", "tão aberto?")
+  if (/t[aã]o aberto|t[aã] aberto|aberto agora|t[aã] funcionando|abre hoje/i.test(msg)) {
+    return {
+      reply: `Oii, tudo bem? 😊 Tô sim, aberta até 23h! Quer ver o cardápio ou já sabe o que vai querer?`
+    };
   }
 
-  // Cardápio / Pedir
-  if (/cardapio|cardápio|menu|pedir|comprar|fazer pedido|fome/i.test(msg)) {
+  // 3. ANOTAÇÃO DE PEDIDO DIRETO ("Quero 2 ...", "Me vê 1 ...", "vou querer 2 ...")
+  if (/(quero|me v[eê]|vou querer|manda|trazer)\s+(\d+)?\s*(.+)/i.test(msg)) {
+    const match = msg.match(/(quero|me v[eê]|vou querer|manda|trazer)\s+(.+)/i);
+    const orderText = match ? match[2] : msg;
+    
+    // Tentar localizar itens do cardápio e preços
+    let totalPrice = 0;
+    const foundItems: string[] = [];
+
+    products.forEach((p) => {
+      if (orderText.toLowerCase().includes(p.name.toLowerCase())) {
+        totalPrice += p.price;
+        foundItems.push(`1x ${p.name}`);
+      }
+    });
+
+    if (foundItems.length > 0) {
+      return {
+        reply: `Anotado! 🍔 ${foundItems.join(" + ")} = R$ ${totalPrice.toFixed(2).replace(".", ",")}. É entrega ou retirada?`
+      };
+    } else {
+      return {
+        reply: `Anotado! 🍔 ${orderText}. É entrega ou retirada?`
+      };
+    }
+  }
+
+  // 4. RESPOSTA PARA ENTREGA OU RETIRADA ("entrega", "retirada", "no endereço de sempre")
+  if (/entrega|retirada|buscar|retirar|endereço|endereco/i.test(msg) && alreadyGreeted) {
+    return {
+      reply: `Perfeito! Chega em ~40 min. Segue o link pra concluir seu pedido 👇\n👉 ${storeLink}`
+    };
+  }
+
+  // 5. AGRADECIMENTOS ("obrigado", "obrigada", "valeu", "tmj")
+  if (/obrigad|valeu|tmj|brigad|gratidão|gratidao/i.test(msg)) {
+    return {
+      reply: `Por nada!! 😊 Precisando de qualquer coisa ou se bater aquela fome, estou sempre por aqui! Se quiser pedir algo saboroso agora:\n👉 ${storeLink}`
+    };
+  }
+
+  // 6. RISADAS / BRINCADEIRAS ("kkk", "hahaha", "rsrs")
+  if (/k{2,}|ha{2,}|he{2,}|rs{2,}/i.test(msg)) {
+    return {
+      reply: `Hahaha, maravilhoso! 😂 Bateu aquela fome por aí também? Se quiser dar uma olhada no nosso cardápio caprichado:\n👉 ${storeLink}`
+    };
+  }
+
+  // 7. ELOGIOS À COMIDA OU LOJA ("delícia", "delicia", "muito bom")
+  if (/delícia|delicia|muito bom|melhor|adoro|top|perfeito|bom demais/i.test(msg)) {
+    return {
+      reply: `Aaah que demais! Ficamos muito felizes em saber disso! ❤️ Fazer tudo com amor pra vocês é nossa prioridade. Bora pedir uma delícia hoje?\n👉 ${storeLink}`
+    };
+  }
+
+  // 8. CUMPRIMENTOS LEVES ("oi", "oii", "boa noite", "bom dia")
+  if (/^(oi|oii|oiii|oioi|eai|eaí|ola|olá|boa noite|bom dia|boa tarde|fala|opa)$/i.test(msg)) {
+    return {
+      reply: `Oii, tudo bem? 😊 Tô sim, aberta até 23h! Quer ver o cardápio ou já sabe o que vai querer?`
+    };
+  }
+
+  // 9. CARDÁPIO / MENUS
+  if (/cardapio|cardápio|menu|pedir|comprar|fazer pedido|fome|lanche|esfiha|esfirra|pizza/i.test(msg)) {
     const sample = products.slice(0, 4).map((p) => `• *${p.name}*: R$ ${p.price.toFixed(2).replace(".", ",")}`).join("\n");
     return {
-      reply: `Confira nossos principais produtos do *${user.storeName || "nosso restaurante"}*:\n\n${sample}\n\nAcesse nosso cardápio completo e peça em 1 minuto:\n👉 ${storeLink}`,
+      reply: `Dá uma olhada em algumas das nossas gostosuras no *${storeName}*:\n\n${sample}\n\nAcesse nosso site completo e faça seu pedido em 1 minuto:\n👉 ${storeLink}`
     };
   }
 
-  // Horários
-  if (/horario|horário|aberto|fecha|abre|fechado|funcionamento/i.test(msg)) {
-    return {
-      reply: `O *${user.storeName || "nosso restaurante"}* ${nowStatusText || "funciona das 18:00 às 23:30"}. 😊\n\nAcesse nosso cardápio:\n👉 ${storeLink}`,
-    };
-  }
-
-  // Endereço
-  if (/onde fica|endereço|endereco|local|bairro|rua|cidade/i.test(msg)) {
-    return {
-      reply: `Ficamos localizados em: 📍 *${user.storeAddress || user.city || "Nossa Loja"}*.\n\nMonte seu pedido diretamente em:\n👉 ${storeLink}`,
-    };
-  }
-
-  // Resposta Padrão
+  // 10. RESPOSTA PADRÃO LEVE & HUMANA (ESTILO BRENDI IA)
   return {
-    reply: `Olá! Sou ${agentName ? `a *${agentName}*` : "o atendente virtual"} do *${user.storeName || "nosso restaurante"}*! 😊\n\nComo posso te ajudar? Veja nosso cardápio completo e peça agora:\n👉 ${storeLink}`,
+    reply: `Aaaah que bacana! 😊 Se precisar de qualquer coisa ou se bater aquela fome pra lanchar hoje, conta comigo! Dá uma olhada no nosso cardápio:\n👉 ${storeLink}`
   };
 }
