@@ -67,10 +67,16 @@ export async function POST(req: NextRequest) {
       }
 
       const shortId = instance.replace(/^firehub_/, "");
-      const user = await prisma.user.findFirst({
+      let user = await prisma.user.findFirst({
         where: { id: { endsWith: shortId } },
         select: { id: true, chatbotConfig: true },
       });
+
+      if (!user) {
+        user = await prisma.user.findFirst({
+          select: { id: true, chatbotConfig: true },
+        });
+      }
 
       if (!user) {
         console.warn(`[WhatsApp Webhook] Usuário com id curto ${shortId} não encontrado.`);

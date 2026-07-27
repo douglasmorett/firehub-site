@@ -64,7 +64,7 @@ async function getOrCreateSocket(instanceName) {
 
       // Notifica o FireHub via Webhook
       try {
-        const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "http://localhost:3001/api/webhook/whatsapp";
+        const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
         await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -115,7 +115,7 @@ async function getOrCreateSocket(instanceName) {
       console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}"`);
 
       try {
-        const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "http://localhost:3001/api/webhook/whatsapp";
+        const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
         const res = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

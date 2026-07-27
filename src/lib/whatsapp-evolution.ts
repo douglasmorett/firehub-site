@@ -54,7 +54,7 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
           token: userId,
           qrcode: true,
           integration: "WHATSAPP-BAILEYS",
-          webhook: `${process.env.NEXTAUTH_URL || "https://firehubfood.com"}/api/webhook/whatsapp`,
+          webhook: `${process.env.NEXTAUTH_URL || "https://firehubfood.com.br"}/api/webhook/whatsapp`,
           webhookByEvents: true,
           events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
         }),
