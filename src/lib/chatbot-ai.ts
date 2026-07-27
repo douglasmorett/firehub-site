@@ -133,17 +133,17 @@ ${customPrompt ? `📌 **INSTRUÇÕES ESPECIAIS DA LOJA**: ${customPrompt}` : ""
   const msg = message.toLowerCase().trim();
   const alreadyGreeted = Array.isArray(history) && history.some((h: any) => h.sender === "Atendente" || h.sender === "bot");
 
-  // 1. AFETO / CARINHO / FLERTE / AMOR ("te amo", "te adoro", "linda", "amor", "gatinha", "gato")
-  if (/te amo|te adoro|te amooo|amor|linda|gatinha|gato|lindão|perfeita|maravilhosa|lindo|sou seu fã/i.test(msg)) {
+  // 1. AFETO / CARINHO / FLERTE / SAUDADE ("saudade", "te amo", "linda", "amor", "fã")
+  if (/saudade|te amo|te adoro|te amooo|amor|linda|gatinha|gato|lindão|perfeita|maravilhosa|lindo|sou seu fã/i.test(msg)) {
     return {
-      reply: `Aaaah, eu também te amo! 🥰 Que tal a gente comemorar esse carinho lanchando juntos hoje? Vou te passar o link do nosso site:\n👉 ${storeLink}`
+      reply: `Aaaah, eu também estava com saudade! 🥰 Que fofura te ver por aqui de novo! Que tal a gente comemorar lanchando juntos hoje?\n👉 ${storeLink}`
     };
   }
 
-  // 2. PERGUNTA DE ABERTO AGORA / HORÁRIOS ("vocês tão abertos agora?", "tá aberto?", "tão aberto?")
-  if (/t[aã]o aberto|t[aã] aberto|aberto agora|t[aã] funcionando|abre hoje/i.test(msg)) {
+  // 2. PERGUNTA DE ABERTO AGORA / HORÁRIOS / FUNCIONAMENTO ("horario", "que horas funciona", "tá aberto?")
+  if (/horario|horário|funciona|que horas|t[aã]o aberto|t[aã] aberto|aberto agora|t[aã] funcionando|abre hoje/i.test(msg)) {
     return {
-      reply: `Oii, tudo bem? 😊 Tô sim, aberta até 23h! Quer ver o cardápio ou já sabe o que vai querer?`
+      reply: `Oii! ${nowStatusText || "Funcionamos normalmente das 18:00 às 23:30."} 😊 Quer dar uma olhada no nosso cardápio ou já sabe o que vai querer hoje?\n👉 ${storeLink}`
     };
   }
 
@@ -217,8 +217,15 @@ ${customPrompt ? `📌 **INSTRUÇÕES ESPECIAIS DA LOJA**: ${customPrompt}` : ""
     };
   }
 
-  // 10. RESPOSTA PADRÃO LEVE & HUMANA (ESTILO BRENDI IA)
+  // 10. RESPOSTAS DIVERSISFICADAS PARA O FALLBACK (NUNCA REPETIR A MESMA FRASE 3X)
+  const fallbacks = [
+    `Oii! Estou por aqui para te atender com o maior carinho! 😊 Quer dar uma olhada no nosso cardápio caprichado hoje?\n👉 ${storeLink}`,
+    `Com certeza! 🍔 Qualquer dúvida sobre nossos lanches e porções é só me falar! Dá uma olhadinha no nosso site pra fazer seu pedido:\n👉 ${storeLink}`,
+    `Maravilha! 😊 Fazer tudo bem gostoso pra você é a nossa prioridade! Se quiser escolher seu lanche agora:\n👉 ${storeLink}`,
+  ];
+  const choiceIndex = Math.abs(msg.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % fallbacks.length;
+
   return {
-    reply: `Aaaah que bacana! 😊 Se precisar de qualquer coisa ou se bater aquela fome pra lanchar hoje, conta comigo! Dá uma olhada no nosso cardápio:\n👉 ${storeLink}`
+    reply: fallbacks[choiceIndex]
   };
 }
