@@ -630,6 +630,23 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                           })}
                         </div>
                       ) : null; } catch { return null; } })()}
+
+                      {/* Dias Disponíveis */}
+                      {(p as any).availableDays && (() => {
+                        try {
+                          const days = typeof (p as any).availableDays === "string" ? JSON.parse((p as any).availableDays) : (p as any).availableDays;
+                          if (Array.isArray(days) && days.length > 0) {
+                            const labels: Record<string, string> = { SEG: "Seg", TER: "Ter", QUA: "Qua", QUI: "Qui", SEX: "Sex", SAB: "Sáb", DOM: "Dom" };
+                            const dayStr = days.map((d: string) => labels[d] || d).join(", ");
+                            return (
+                              <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "2px 8px", borderRadius: "12px", background: "#FEF3C7", color: "#92400E", display: "inline-flex", alignItems: "center", gap: "3px", marginTop: "2px" }}>
+                                📅 Válido: {dayStr}
+                              </span>
+                            );
+                          }
+                        } catch {}
+                        return null;
+                      })()}
                       <p className="product-price">
                         {p.isCombo && <span className="product-price-from">A partir de </span>}
                         R$ {p.price.toFixed(2)}
