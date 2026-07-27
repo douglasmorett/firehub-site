@@ -246,7 +246,7 @@ app.listen(PORT, () => {
     for (const instanceName of folders) {
       if (fs.statSync(path.join(sessionsDir, instanceName)).isDirectory()) {
         console.log(`[WhatsApp Gateway] 🔄 Auto-iniciando conexão salva para: ${instanceName}`);
-        createWhatsAppInstance(instanceName).catch(() => {});
+        getOrCreateSocket(instanceName).catch(() => {});
       }
     }
   }
