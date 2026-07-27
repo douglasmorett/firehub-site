@@ -117,3 +117,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message || "Erro na sessão WhatsApp" }, { status: 500 });
   }
 }
+
+export async function DELETE() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    select: { id: true, chatbotConfig: true },
+  });
+
+  if (!user) {
+    return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  }
+
+  try {
+    await disconnectEvolutionInstance(user.id);
+    const currentConfig = (user.chatbotConfig as any) || {};
+    const updatedConfig = {
+      ...currentConfig,
+      connected: false,
+      phone: "",
+      connectedAt: null,
+    };
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { chatbotConfig: updatedConfig },
+    });
+
+    return NextResponse.json({ success: true, connected: false, config: updatedConfig });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Erro ao desconectar WhatsApp" }, { status: 500 });
+  }
+}

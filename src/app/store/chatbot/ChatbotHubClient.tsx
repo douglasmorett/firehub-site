@@ -283,17 +283,22 @@ export default function ChatbotHubClient() {
     }
   };
 
-  // Desconectar Aparelho
+  // Desconectar Aparelho e Abrir Gerador de QR Code
   const handleToggleConnect = async () => {
     try {
       setIsRefreshingQr(true);
-      const res = await fetch("/api/chatbot/qrcode", { method: "DELETE" });
-      if (res.ok) {
-        setConfig((prev: any) => ({ ...prev, connected: false, phone: "" }));
-        setQrCodeUrl(null);
-        showToast("📱 Aparelho desconectado do WhatsApp", "#F59E0B");
-        loadData();
-      }
+      await fetch("/api/chatbot/qrcode", { method: "DELETE" }).catch(() => {});
+      await fetch("/api/chatbot/qrcode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disconnect" })
+      }).catch(() => {});
+
+      setConfig((prev: any) => ({ ...prev, connected: false, phone: "" }));
+      setQrCodeUrl(null);
+      setIsQrExpired(false);
+      showToast("📱 Aparelho desconectado! Gerando novo QR Code...", "#F59E0B");
+      handleFetchFreshQr();
     } catch (err) {
       console.error("[ChatbotHub] Erro ao desconectar:", err);
     } finally {
@@ -530,14 +535,37 @@ export default function ChatbotHubClient() {
                   </div>
                 </div>
               ) : (
-                <div style={{ background: "#F0FDF4", borderRadius: "12px", padding: "1.25rem", border: "1px solid #BBF7D0", display: "flex", alignItems: "center", gap: "14px" }}>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#25D366", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
-                    WA
+                <div style={{ background: "#F0FDF4", borderRadius: "12px", padding: "1.25rem", border: "1px solid #BBF7D0", display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#25D366", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
+                      WA
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#166534" }}>WhatsApp Vinculado com Sucesso!</div>
+                      <div style={{ fontSize: "0.8rem", color: "#15803D" }}>A IA está pronta para responder mensagens no número {config.phone}.</div>
+                    </div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#166534" }}>WhatsApp Vinculado com Sucesso!</div>
-                    <div style={{ fontSize: "0.8rem", color: "#15803D" }}>A IA está pronta para responder mensagens no número {config.phone}.</div>
-                  </div>
+                  <button
+                    onClick={handleToggleConnect}
+                    disabled={isRefreshingQr}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid #BBF7D0",
+                      background: "#DCFCE7",
+                      color: "#15803D",
+                      fontWeight: 800,
+                      fontSize: "0.85rem",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px"
+                    }}
+                  >
+                    <RefreshCw size={14} className={isRefreshingQr ? "spin" : ""} />
+                    {isRefreshingQr ? "Desconectando..." : "🔄 Reconectar / Escanear Novo QR Code"}
+                  </button>
                 </div>
               )}
             </div>
