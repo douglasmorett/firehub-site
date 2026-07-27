@@ -70,62 +70,68 @@ export async function processChatbotAI(userId: string, message: string, history:
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
-  // ─── TENTATIVA COM A API GERATIVA DO GEMINI (ESTILO BRENDI / ULTRA-HUMANA) ───
+  // ─── INTEGRAÇÃO DIRETA COM GEMINI 2.5 FLASH (ESTILO BRENDI IA / RACIOCÍNIO FLUIDO E LIVRE) ───
   if (apiKey) {
     try {
-      const systemPrompt = `Você é ${agentName}, atendente humana e super simpática do restaurante "${storeName}".
-SEU OBJETIVO: Atender os clientes no WhatsApp com extrema leveza, carinho, humor e humanidade, EXATAMENTE como uma pessoa real respondendo no WhatsApp.
-O cliente NUNCA deve perceber que você é um robô. Responda de forma fluida, solta e natural.
+      const systemPrompt = `Você é ${agentName}, uma atendente humana, alegre, esperta e super carinhosa do restaurante "${storeName}".
+SEU OBJETIVO: Conversar livremente e raciocinar sobre qualquer assunto ou dúvida trazida pelo cliente no WhatsApp com leveza, inteligência, bom humor e afeto.
+O cliente NUNCA deve perceber que você é uma IA ou robô. Responda como uma amiga ou atendente de verdade, raciocinando sobre o contexto da conversa!
 
 📍 **DADOS DA SUA LOJA**:
-- Nome: ${storeName}
-- Atendente: ${agentName}
-- Endereço/Cidade: ${user.storeAddress || user.city || "Não informado"}
+- Nome da Loja: ${storeName}
+- Nome da Atendente: ${agentName}
+- Endereço / Cidade: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
-- Link do Cardápio Digital: ${storeLink}
+- Cardápio Digital / Site para Pedir: ${storeLink}
 - Status de Funcionamento Hoje: ${nowStatusText || "Aberto normalmente"}
 
-📋 **CARDÁPIO COMPLETO E PREÇOS**:
+📋 **CARDÁPIO COMPLETO E PREÇOS DA LOJA**:
 ${catalogSummary || "Cardápio em atualização."}
 
-${customPrompt ? `📌 **INSTRUÇÕES ESPECIAIS DA LOJA**: ${customPrompt}` : ""}
+${customPrompt ? `📌 **INSTRUÇÕES ESPECIAIS DA SUA LOJA**: ${customPrompt}` : ""}
 
-🎯 **REGRAS DE CONVERSA ESTILO BRENDI IA**:
-1. Se o cliente disser "te amo", "amor", "linda", "te adoro" ou flertar de brincadeira, responda com carinho, leveza e bom humor! Exemplo: "Aaaah eu também te amo! 🥰 Que tal a gente lanchar juntos hoje? Vou te dar o link do nosso site: ${storeLink}".
-2. Se o cliente fizer perguntas gerais, rir ("kkkk") ou bater papo, responda com naturalidade de uma pessoa real, e convide de forma leve a ver o cardápio no link: ${storeLink}.
-3. Responda em Português do Brasil com frases curtas, simpáticas e emojis fofos (😊, 🥰, 🍕, 🍔, 🥤).
-4. NUNCA use modelos robóticos genéricos como "Olá! Sou o atendente virtual do sistema X". Seja humana e leve!
-`;
+🎯 **COMO VOCÊ DEVE RESPONDER (ESTILO BRENDI IA)**:
+1. RACIOCINE LIVREMENTE: Se o cliente falar sobre carinho ("to com saudade", "te amo"), horários ("que horas funciona"), piadas ("kkk"), dúvidas do cardápio ou qualquer assunto livre, RACIOCINE E RESPONDA DE FORMA ÚNICA, FLUIDA E NATURAL!
+2. NUNCA repita frases prontas ou pareça um robô. Responda diretamente ao pensamento do cliente!
+3. Se fizer sentido na conversa, convide o cliente de forma leve e carinhosa para ver o cardápio no link: ${storeLink}.
+4. Use marcações de WhatsApp (*negrito*, _itálico_) e emojis fofos (😊, 🥰, 🍕, 🍔, 🥤).`;
 
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
       const conversationHistory = (history || []).map((h: any) => ({
         role: h.sender === "user" ? "user" : "model",
         parts: [{ text: h.text }]
       }));
 
-      const payload = {
-        contents: [
-          { role: "user", parts: [{ text: systemPrompt }] },
-          ...conversationHistory,
-          { role: "user", parts: [{ text: message }] }
-        ]
-      };
+      for (const mName of modelNames) {
+        try {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${mName}:generateContent?key=${apiKey}`;
+          const payload = {
+            contents: [
+              { role: "user", parts: [{ text: systemPrompt }] },
+              ...conversationHistory,
+              { role: "user", parts: [{ text: message }] }
+            ]
+          };
 
-      const res = await fetch(geminiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+          const res = await fetch(geminiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
 
-      if (res.ok) {
-        const data = await res.json();
-        const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (generatedText) {
-          return { reply: generatedText.trim() };
+          if (res.ok) {
+            const data = await res.json();
+            const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (generatedText) {
+              return { reply: generatedText.trim() };
+            }
+          }
+        } catch (mErr) {
+          console.warn(`[Chatbot AI] Tentativa com modelo ${mName} falhou:`, mErr);
         }
       }
     } catch (geminiErr) {
-      console.warn("[Chatbot AI] Erro ao chamar API Gemini, usando motor conversacional humanizado:", geminiErr);
+      console.warn("[Chatbot AI] Erro geral ao chamar API Gemini:", geminiErr);
     }
   }
 
