@@ -106,7 +106,7 @@ export default function ChatbotHubClient() {
       if (res.connected) {
         setConfig((prev: any) => ({ ...prev, connected: true, phone: res.phone || prev.phone }));
         showToast("🎉 WhatsApp Conectado com Sucesso!", "#10B981");
-      } else if (res.qrCodeUrl && res.qrCodeUrl.startsWith("data:image")) {
+      } else if (res.qrCodeUrl && typeof res.qrCodeUrl === "string" && res.qrCodeUrl.length > 20) {
         setQrCodeUrl(res.qrCodeUrl);
         setQrTimer(60);
         setIsQrExpired(false);
