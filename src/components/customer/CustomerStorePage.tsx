@@ -85,9 +85,33 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const pauseInfo = franchisee.storePause as any;
 
   const isStoreEffectivelyClosed = isPaused || franchisee.storeOpen === false || !storeStatus.open;
-  const categories = ["Todos", ...Array.from(new Set(menuProducts.map(p => p.category)))];
+  const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
+  const currentDayCode = DAYS_MAP[new Date().getDay()];
 
-  const filtered = menuProducts.filter(p => {
+  const parseAvailableDays = (val: any): string[] => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map(String);
+    if (typeof val === "string") {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch {
+        return val.split(",").map(s => s.trim());
+      }
+    }
+    return [];
+  };
+
+  const isAvailableToday = (p: any, dayCode: string): boolean => {
+    const days = parseAvailableDays(p.availableDays);
+    if (days.length === 0) return true;
+    return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
+  };
+
+  const activeTodayProducts = menuProducts.filter(p => isAvailableToday(p, currentDayCode));
+  const categories = ["Todos", ...Array.from(new Set(activeTodayProducts.map(p => p.category)))];
+
+  const filtered = activeTodayProducts.filter(p => {
     const mc = selectedCategory === "Todos" || p.category === selectedCategory;
     const ms = !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description?.toLowerCase().includes(searchTerm.toLowerCase());
     return mc && ms;

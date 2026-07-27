@@ -65,12 +65,30 @@ export default function VendaPresencialPage() {
   const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
   const currentDayCode = DAYS_MAP[new Date().getDay()];
 
+  const parseAvailableDays = (val: any): string[] => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map(String);
+    if (typeof val === "string") {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch {
+        return val.split(",").map(s => s.trim());
+      }
+    }
+    return [];
+  };
+
+  const isAvailableToday = (p: any, dayCode: string): boolean => {
+    const days = parseAvailableDays(p.availableDays);
+    if (days.length === 0) return true;
+    return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
+  };
+
   const categories = useMemo(() => {
     const activeTodayProducts = products.filter(p => {
       if (!p.active || p.activePDV === false) return false;
-      if (Array.isArray(p.availableDays) && p.availableDays.length > 0) {
-        if (!p.availableDays.includes(currentDayCode)) return false;
-      }
+      if (!isAvailableToday(p, currentDayCode)) return false;
       return true;
     });
     const cats = Array.from(new Set(activeTodayProducts.map(p => p.isCombo ? "Combos" : (p.category || "Outros"))));
@@ -80,9 +98,7 @@ export default function VendaPresencialPage() {
   const filtered = products.filter(p => {
     if (!p.active) return false;
     if (p.activePDV === false) return false;
-    if (Array.isArray(p.availableDays) && p.availableDays.length > 0) {
-      if (!p.availableDays.includes(currentDayCode)) return false;
-    }
+    if (!isAvailableToday(p, currentDayCode)) return false;
     const cat = p.isCombo ? "Combos" : (p.category || "Outros");
     if (selectedCategory !== "Todos" && cat !== selectedCategory) return false;
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
