@@ -207,10 +207,15 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
     return res.status(400).json({ error: "Instância não conectada no celular" });
   }
 
-  const jid = `${number.replace(/\D/g, "")}@s.whatsapp.net`;
+  // Se o número já for um JID completo (@s.whatsapp.net ou @lid), envia diretamente para ele
+  const cleanNum = String(number).trim();
+  const jid = (cleanNum.includes("@s.whatsapp.net") || cleanNum.includes("@lid"))
+    ? cleanNum
+    : `${cleanNum.replace(/\D/g, "")}@s.whatsapp.net`;
+
   try {
     await session.sock.sendMessage(jid, { text });
-    console.log(`[WhatsApp Gateway] 🚀 Mensagem enviada para ${jid}: "${text.slice(0, 50)}..."`);
+    console.log(`[WhatsApp Gateway] 🚀 Mensagem enviada com sucesso para ${jid}: "${text.slice(0, 50)}..."`);
     return res.json({ status: "SENT", to: jid });
   } catch (err) {
     console.error(`[WhatsApp Gateway] ❌ Erro ao enviar mensagem para ${jid}:`, err);
@@ -226,6 +231,8 @@ app.delete("/instance/logout/:instanceName", async (req, res) => {
     try { await session.sock.logout(); } catch {}
   }
   sessions.delete(instanceName);
+  const authFolder = path.join(__dirname, "data", "sessions", instanceName);
+  try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
   return res.json({ status: "logged_out" });
 });
 

@@ -91,9 +91,9 @@ export async function POST(req: NextRequest) {
       // Processar resposta da IA Gemini 2.5 diretamente em memória
       const aiResponse = await processChatbotAI(user.id, textMessage, []);
       if (aiResponse?.reply) {
-        const customerPhone = remoteJid.split("@")[0].replace(/\D/g, "");
-        await sendEvolutionMessage(user.id, customerPhone, aiResponse.reply);
-        console.log(`[WhatsApp Webhook] 🤖 Resposta enviada para ${customerPhone}: "${aiResponse.reply}"`);
+        const recipientTarget = remoteJid || data.from || "";
+        await sendEvolutionMessage(user.id, recipientTarget, aiResponse.reply);
+        console.log(`[WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${aiResponse.reply}"`);
       }
     }
 

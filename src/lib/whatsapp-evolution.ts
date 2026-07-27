@@ -114,8 +114,9 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
 
 export async function sendEvolutionMessage(userId: string, toPhone: string, text: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
-  const cleanNumber = toPhone.replace(/\D/g, "");
-  const number = cleanNumber.startsWith("55") ? cleanNumber : `55${cleanNumber}`;
+  const number = (toPhone.includes("@s.whatsapp.net") || toPhone.includes("@lid"))
+    ? toPhone
+    : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
 
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://cute-shirts-joke.loca.lt").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
