@@ -47,8 +47,15 @@ const cleanAddress = (addr: string | null) => {
 
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
-  // ÚNICA verificação confiável: campo deliveryBy salvo diretamente da API do iFood no momento da criação do pedido.
-  return order.deliveryBy === "IFOOD" || (order as any).deliveredBy === "IFOOD";
+  const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
+  const dMode = (order.deliveryMode || order.deliveryType || "").toString().toUpperCase();
+  const phone = (order.customerPhone || "").toString();
+
+  if (dBy === "IFOOD" || dBy === "LOGISTICS" || dBy === "TAKEOUT" || dMode === "LOGISTICS" || dMode === "TAKEOUT" || Boolean(order.logistics)) return true;
+  if (order.ifoodDriverName || order.ifoodDriverStatus) return true;
+  if (phone.includes("0800") || phone.includes("0800705") || phone.includes("0800 705")) return true;
+
+  return false;
 };
 
 const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount: number = 0, deliveryFee: number = 0, discountTotal: number = 0): number => {
@@ -505,8 +512,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
             )}
 
-            {/* Motoboy select */}
-            {order.deliveryType === "DELIVERY" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
+            {/* Motoboy select / iFood Motoboy Badge */}
+            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
               isIfoodMotoboy(order) ? (
                 <select
                   disabled
