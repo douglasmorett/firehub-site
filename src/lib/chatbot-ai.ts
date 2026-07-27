@@ -205,7 +205,7 @@ ${customPrompt ? `📌 **INSTRUÇÕES ESPECIAIS DA LOJA**: ${customPrompt}` : ""
   // 8. CUMPRIMENTOS LEVES ("oi", "oii", "boa noite", "bom dia")
   if (/^(oi|oii|oiii|oioi|eai|eaí|ola|olá|boa noite|bom dia|boa tarde|fala|opa)$/i.test(msg)) {
     return {
-      reply: `Oii, tudo bem? 😊 Tô sim, aberta até 23h! Quer ver o cardápio ou já sabe o que vai querer?`
+      reply: `Oii, tudo bem? 😊 Como posso te ajudar hoje? Quer dar uma olhada no nosso cardápio?\n👉 ${storeLink}`
     };
   }
 
