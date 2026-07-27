@@ -358,27 +358,7 @@ export default function ChatbotHubClient() {
               display: "flex", alignItems: "center", gap: "8px"
             }}
           >
-            <QrCode size={16} /> Vincular por QR Code
-          </button>
-          <button
-            onClick={() => setActiveTab("phone")}
-            style={{
-              padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
-              background: activeTab === "phone" ? "#3B82F6" : "rgba(255,255,255,0.1)", color: "#fff",
-              display: "flex", alignItems: "center", gap: "8px"
-            }}
-          >
-            <Phone size={16} /> Digitar Número Direto
-          </button>
-          <button
-            onClick={() => setActiveTab("notifications")}
-            style={{
-              padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
-              background: activeTab === "notifications" ? "#8B5CF6" : "rgba(255,255,255,0.1)", color: "#fff",
-              display: "flex", alignItems: "center", gap: "8px"
-            }}
-          >
-            <Bell size={16} /> Atualizações de Pedidos
+            <QrCode size={16} /> Vincular Aparelho por QR Code
           </button>
           <button
             onClick={() => setActiveTab("test")}

@@ -4,7 +4,7 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
 
   // Buscar configurações da loja para verificar se há URL/API Key customizadas da Evolution API
-  let baseUrl = (process.env.EVOLUTION_API_URL || "http://localhost:8080").replace(/\/$/, "");
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://five-houses-sit.loca.lt").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
@@ -18,13 +18,17 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   } catch {}
 
   try {
+    const defaultHeaders = {
+      "apikey": apiKey,
+      "Content-Type": "application/json",
+      "Bypass-Tunnel-Remainder": "true",
+      "User-Agent": "FireHub"
+    };
+
     // 1. Verificar estado da instância na Evolution API
     const stateRes = await fetch(`${baseUrl}/instance/connectionState/${instanceName}`, {
       method: "GET",
-      headers: {
-        "apikey": apiKey,
-        "Content-Type": "application/json",
-      },
+      headers: defaultHeaders,
     });
 
     if (stateRes.ok) {
@@ -44,10 +48,7 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
     if (stateRes.status === 404) {
       await fetch(`${baseUrl}/instance/create`, {
         method: "POST",
-        headers: {
-          "apikey": apiKey,
-          "Content-Type": "application/json",
-        },
+        headers: defaultHeaders,
         body: JSON.stringify({
           instanceName,
           token: userId,
@@ -63,10 +64,7 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
     // 3. Obter QR Code real da Evolution API
     const connectRes = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
       method: "GET",
-      headers: {
-        "apikey": apiKey,
-        "Content-Type": "application/json",
-      },
+      headers: defaultHeaders,
     });
 
     if (connectRes.ok) {
