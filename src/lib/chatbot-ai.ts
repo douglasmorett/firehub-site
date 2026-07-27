@@ -44,6 +44,15 @@ export async function processChatbotAI(userId: string, message: string, history:
   const storeName = user.storeName || "Nossa Loja";
   const storeLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "https://firehubfood.com.br";
 
+  const personalityMap: Record<string, string> = {
+    SIMPATICO: "Seja extremamente simpático, acolhedor, amigável e fofo! Use bastante carinho, emojis acolhedores (😊, 🥰, 🍕) e demonstre felicidade em atender o cliente.",
+    AGIL: "Seja extremamente ágil, focado, rápido e objetivo! Dê respostas curtas, diretas e sem enrolação, tirando as dúvidas em 1 ou 2 frases objetivas.",
+    FORMAL: "Seja formal, polido, elegante e refinado! Use linguagem exemplar, mantendo o tom muito bem educado, profissional e cortês.",
+    DIVERTIDO: "Seja extremamente divertido, descontraído, engraçado, entusiasmado e alegre! Use humor leve, alto astral, energia lá no alto e muita descontração (hahaha, maravilha)!",
+  };
+
+  const personalityInstruction = personalityMap[personality] || personalityMap.SIMPATICO;
+
   // Formatar horários de funcionamento
   let hoursText = "Todos os dias das 18:00 às 23:30.";
   let nowStatusText = "";
@@ -73,13 +82,13 @@ export async function processChatbotAI(userId: string, message: string, history:
   // ─── INTEGRAÇÃO DIRETA COM GEMINI 2.5 FLASH (ESTILO BRENDI IA / RACIOCÍNIO FLUIDO E LIVRE) ───
   if (apiKey) {
     try {
-      const systemPrompt = `Você é ${agentName}, uma atendente humana, alegre, esperta e super carinhosa do restaurante "${storeName}".
-SEU OBJETIVO: Conversar livremente e raciocinar sobre qualquer assunto ou dúvida trazida pelo cliente no WhatsApp com leveza, inteligência, bom humor e afeto.
-O cliente NUNCA deve perceber que você é uma IA ou robô. Responda como uma amiga ou atendente de verdade, raciocinando sobre o contexto da conversa!
+      const systemPrompt = `Você é ${agentName}, atendente oficial do restaurante "${storeName}".
+SEU NOME: ${agentName} (sempre que se apresentar ou for perguntado seu nome, diga que seu nome é ${agentName}!).
+SEU ESTILO DE VOZ E HUMOR: ${personalityInstruction}
 
 📍 **DADOS DA SUA LOJA**:
 - Nome da Loja: ${storeName}
-- Nome da Atendente: ${agentName}
+- Nome do Atendente: ${agentName}
 - Endereço / Cidade: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
 - Cardápio Digital / Site para Pedir: ${storeLink}
@@ -90,11 +99,11 @@ ${catalogSummary || "Cardápio em atualização."}
 
 ${customPrompt ? `📌 **INSTRUÇÕES ESPECIAIS DA SUA LOJA**: ${customPrompt}` : ""}
 
-🎯 **COMO VOCÊ DEVE RESPONDER (ESTILO BRENDI IA)**:
-1. RACIOCINE LIVREMENTE: Se o cliente falar sobre carinho ("to com saudade", "te amo"), horários ("que horas funciona"), piadas ("kkk"), dúvidas do cardápio ou qualquer assunto livre, RACIOCINE E RESPONDA DE FORMA ÚNICA, FLUIDA E NATURAL!
-2. NUNCA repita frases prontas ou pareça um robô. Responda diretamente ao pensamento do cliente!
-3. Se fizer sentido na conversa, convide o cliente de forma leve e carinhosa para ver o cardápio no link: ${storeLink}.
-4. Use marcações de WhatsApp (*negrito*, _itálico_) e emojis fofos (😊, 🥰, 🍕, 🍔, 🥤).`;
+🎯 **REGRAS DE CONVERSA COM O CLIENTE**:
+1. Apresente-se ou responda como ${agentName}. Siga ESTRITAMENTE o estilo de humor e tom de voz configurado: "${personalityInstruction}".
+2. RACIOCÍNIO LIVRE: Responda diretamente e com inteligência a qualquer pergunta, carinho, piada ou dúvida trazida pelo cliente no WhatsApp!
+3. NUNCA fale que é um robô. Responda como uma pessoa real no estilo ${personality}!
+4. Se fizer sentido na conversa, convide o cliente a ver o cardápio no link: ${storeLink}.`;
 
       const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
       const conversationHistory = (history || []).map((h: any) => ({
