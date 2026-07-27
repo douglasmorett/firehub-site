@@ -17,6 +17,13 @@ app.use(express.json());
 const PORT = process.env.PORT || 8080;
 const sessions = new Map();
 
+process.on("uncaughtException", (err) => {
+  console.warn("[WhatsApp Gateway] Aviso uncaughtException ignorado:", err.message || err);
+});
+process.on("unhandledRejection", (err) => {
+  console.warn("[WhatsApp Gateway] Aviso unhandledRejection ignorado:", err.message || err);
+});
+
 async function getOrCreateSocket(instanceName) {
   let session = sessions.get(instanceName);
   if (session && session.sock && session.state === "open") {
@@ -33,6 +40,7 @@ async function getOrCreateSocket(instanceName) {
     version,
     auth: state,
     printQRInTerminal: false,
+    generateHighQualityLinkPreview: false,
     browser: ["FireHub Food", "Chrome", "1.0.0"],
   });
 
