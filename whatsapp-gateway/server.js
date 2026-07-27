@@ -99,7 +99,7 @@ async function getOrCreateSocket(instanceName) {
     if (m.type !== "notify") return;
 
     for (const msg of m.messages) {
-      if (!msg.message || msg.key.fromMe) continue;
+      if (!msg.message) continue;
 
       const remoteJid = msg.key.remoteJid || "";
       if (remoteJid.endsWith("@g.us")) continue;

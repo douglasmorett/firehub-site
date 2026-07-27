@@ -49,11 +49,6 @@ export async function POST(req: NextRequest) {
       const fromMe = key.fromMe;
       const remoteJid = key.remoteJid || data.from || "";
 
-      // Ignorar grupos ou mensagens próprias
-      if (fromMe || remoteJid.endsWith("@g.us") || remoteJid.includes("@g.us")) {
-        return NextResponse.json({ status: "ignored_group_or_self" });
-      }
-
       const textMessage =
         data.message?.conversation ||
         data.message?.extendedTextMessage?.text ||
@@ -61,6 +56,15 @@ export async function POST(req: NextRequest) {
         data.body ||
         data.text ||
         "";
+
+      // Ignorar grupos ou se a mensagem for a própria resposta da IA
+      if (remoteJid.endsWith("@g.us") || remoteJid.includes("@g.us")) {
+        return NextResponse.json({ status: "ignored_group" });
+      }
+
+      if (fromMe && (textMessage.includes("Oii") || textMessage.includes("FireHub") || textMessage.includes("🍔") || textMessage.includes("🛵"))) {
+        return NextResponse.json({ status: "ignored_bot_self_reply" });
+      }
 
       if (!textMessage.trim()) {
         return NextResponse.json({ status: "empty_message" });
