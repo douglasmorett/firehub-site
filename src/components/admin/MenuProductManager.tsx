@@ -676,9 +676,11 @@ export default function MenuProductManager({
             }}
           >
             <option value="TODAS">📁 Todas Categorias</option>
-            {dynCategories.map(c => (
-              <option key={c.id} value={c.name}>{c.name}</option>
-            ))}
+            {dynCategories
+              .filter(c => !["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"].includes(c.name.toUpperCase()))
+              .map(c => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
           </select>
         </div>
       </div>
@@ -1319,6 +1321,10 @@ export default function MenuProductManager({
       {(() => {
         const rawProducts = tab === "items" ? itemProducts : comboProducts;
         const displayedProducts = rawProducts.filter(p => {
+          // Ocultar produtos temporários de integração (iFood, Jotajá, ONLINE) do painel visual de cardápio
+          const catUpper = (p.category || "").toUpperCase();
+          if (["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"].includes(catUpper)) return false;
+
           if (searchTerm.trim()) {
             const term = searchTerm.toLowerCase();
             const matchesName = p.name.toLowerCase().includes(term);
