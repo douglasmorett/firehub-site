@@ -47,12 +47,11 @@ const cleanAddress = (addr: string | null) => {
 
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
+  // Apenas considera Motoboy iFood se houver motorista/status do iFood atribuído OU se for estritamente de logística parceira contratada
+  if (order.ifoodDriverName || order.ifoodDriverStatus) return true;
   const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
   const dMode = (order.deliveryMode || order.deliveryType || "").toString().toUpperCase();
-
-  // SOMENTE quando a entrega for declaradamente por conta da Logística/Parceiro do iFood (IFOOD ou LOGISTICS)
-  if (dBy === "IFOOD" || dMode === "LOGISTICS") return true;
-  if (order.ifoodDriverName || order.ifoodDriverStatus) return true;
+  if (dBy === "IFOOD_LOGISTICS" || dMode === "IFOOD_LOGISTICS") return true;
 
   return false;
 };
