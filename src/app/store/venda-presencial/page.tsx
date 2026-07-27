@@ -62,14 +62,27 @@ export default function VendaPresencialPage() {
     return fmt(0);
   };
 
+  const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
+  const currentDayCode = DAYS_MAP[new Date().getDay()];
+
   const categories = useMemo(() => {
-    const cats = Array.from(new Set(products.filter(p => p.active && p.activePDV !== false).map(p => p.isCombo ? "Combos" : (p.category || "Outros"))));
+    const activeTodayProducts = products.filter(p => {
+      if (!p.active || p.activePDV === false) return false;
+      if (Array.isArray(p.availableDays) && p.availableDays.length > 0) {
+        if (!p.availableDays.includes(currentDayCode)) return false;
+      }
+      return true;
+    });
+    const cats = Array.from(new Set(activeTodayProducts.map(p => p.isCombo ? "Combos" : (p.category || "Outros"))));
     return ["Todos", ...cats.sort()];
-  }, [products]);
+  }, [products, currentDayCode]);
 
   const filtered = products.filter(p => {
     if (!p.active) return false;
     if (p.activePDV === false) return false;
+    if (Array.isArray(p.availableDays) && p.availableDays.length > 0) {
+      if (!p.availableDays.includes(currentDayCode)) return false;
+    }
     const cat = p.isCombo ? "Combos" : (p.category || "Outros");
     if (selectedCategory !== "Todos" && cat !== selectedCategory) return false;
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
