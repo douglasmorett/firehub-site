@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/jotaja-poll",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/gateway-keepalive",
+      "schedule": "*/14 * * * *"
     }
   ]
 }
