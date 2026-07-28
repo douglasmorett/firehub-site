@@ -4,7 +4,7 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
 
   // Buscar configurações da loja para verificar se há URL/API Key customizadas da Evolution API
-  let baseUrl = (process.env.EVOLUTION_API_URL || "https://giant-heads-cover.loca.lt").replace(/\/$/, "");
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway.onrender.com").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
@@ -17,94 +17,89 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
     if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
   } catch {}
 
-  // URLs para tentar obter a conexão real com a Evolution API / Gateway Baileys
-  const urlsToTry = Array.from(new Set([
-    baseUrl,
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-    "https://giant-heads-cover.loca.lt"
-  ].filter(Boolean)));
+  const url = baseUrl;
 
-  for (const url of urlsToTry) {
-    try {
-      const defaultHeaders = {
-        "apikey": apiKey,
-        "Content-Type": "application/json",
-        "Bypass-Tunnel-Remainder": "true",
-        "User-Agent": "FireHub"
-      };
+  try {
+    const defaultHeaders = {
+      "apikey": apiKey,
+      "Content-Type": "application/json",
+      "Bypass-Tunnel-Remainder": "true",
+      "User-Agent": "FireHub"
+    };
 
-      // 1. Verificar estado da instância
-      const stateRes = await fetch(`${url}/instance/connectionState/${instanceName}`, {
-        method: "GET",
-        headers: defaultHeaders,
-      });
+    // 1. Verificar estado da instância
+    const stateRes = await fetch(`${url}/instance/connectionState/${instanceName}`, {
+      method: "GET",
+      headers: defaultHeaders,
+      signal: AbortSignal.timeout(10000),
+    });
 
-      if (stateRes.ok) {
-        const stateData = await stateRes.json();
-        if (stateData?.instance?.state === "open" || stateData?.state === "open") {
-          const phone = stateData?.instance?.ownerJid?.split("@")[0] || storePhone || "+55 21 99999-9999";
-          return {
-            connected: true,
-            phone: phone.startsWith("+") ? phone : `+55 ${phone.replace(/^55/, "")}`,
-            battery: 99,
-            status: "ONLINE",
-          };
-        }
+    if (stateRes.ok) {
+      const stateData = await stateRes.json();
+      if (stateData?.instance?.state === "open" || stateData?.state === "open") {
+        const phone = stateData?.instance?.ownerJid?.split("@")[0] || storePhone || "+55 21 99999-9999";
+        return {
+          connected: true,
+          phone: phone.startsWith("+") ? phone : `+55 ${phone.replace(/^55/, "")}`,
+          battery: 99,
+          status: "ONLINE",
+        };
       }
-
-      // 2. Se não existir, tenta criar
-      if (stateRes.status === 404) {
-        await fetch(`${url}/instance/create`, {
-          method: "POST",
-          headers: defaultHeaders,
-          body: JSON.stringify({
-            instanceName,
-            token: userId,
-            qrcode: true,
-            integration: "WHATSAPP-BAILEYS",
-            webhook: `${process.env.NEXTAUTH_URL || "https://firehubfood.com.br"}/api/webhook/whatsapp`,
-            webhookByEvents: true,
-            events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
-          }),
-        });
-      }
-
-      // 3. Obter QR Code real
-      const connectRes = await fetch(`${url}/instance/connect/${instanceName}`, {
-        method: "GET",
-        headers: defaultHeaders,
-      });
-
-      if (connectRes.ok) {
-        const connectData = await connectRes.json();
-
-        if (connectData?.connected || connectData?.instance?.state === "open") {
-          return {
-            connected: true,
-            phone: connectData.phone || storePhone || "+55 (21) 99999-9999",
-            battery: 99,
-            status: "ONLINE",
-          };
-        }
-
-        const base64Qr = connectData?.code || connectData?.base64 || connectData?.qrcode?.base64;
-        const pairingCode = connectData?.pairingCode || connectData?.code || `${userId.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-        if (base64Qr) {
-          const qrCodeUrl = base64Qr.startsWith("data:image") ? base64Qr : `data:image/png;base64,${base64Qr}`;
-          return {
-            connected: false,
-            qrCodeUrl,
-            pairingCode,
-            expiresInSeconds: 45,
-            status: "AWAITING_SCAN",
-          };
-        }
-      }
-    } catch (urlErr) {
-      console.warn(`[WhatsApp Evolution] Tentativa de conexão em ${url} falhou:`, (urlErr as any).message);
     }
+
+    // 2. Se não existir, tenta criar
+    if (stateRes.status === 404) {
+      await fetch(`${url}/instance/create`, {
+        method: "POST",
+        headers: defaultHeaders,
+        body: JSON.stringify({
+          instanceName,
+          token: userId,
+          qrcode: true,
+          integration: "WHATSAPP-BAILEYS",
+          webhook: `${process.env.NEXTAUTH_URL || "https://firehubfood.com.br"}/api/webhook/whatsapp`,
+          webhookByEvents: true,
+          events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+    }
+
+    // 3. Obter QR Code real
+    const connectRes = await fetch(`${url}/instance/connect/${instanceName}`, {
+      method: "GET",
+      headers: defaultHeaders,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (connectRes.ok) {
+      const connectData = await connectRes.json();
+
+      if (connectData?.connected || connectData?.instance?.state === "open") {
+        return {
+          connected: true,
+          phone: connectData.phone || storePhone || "+55 (21) 99999-9999",
+          battery: 99,
+          status: "ONLINE",
+        };
+      }
+
+      const base64Qr = connectData?.code || connectData?.base64 || connectData?.qrcode?.base64;
+      const pairingCode = connectData?.pairingCode || connectData?.code || `${userId.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      if (base64Qr) {
+        const qrCodeUrl = base64Qr.startsWith("data:image") ? base64Qr : `data:image/png;base64,${base64Qr}`;
+        return {
+          connected: false,
+          qrCodeUrl,
+          pairingCode,
+          expiresInSeconds: 45,
+          status: "AWAITING_SCAN",
+        };
+      }
+    }
+  } catch (urlErr) {
+    console.warn(`[WhatsApp Evolution] Tentativa de conexão em ${url} falhou:`, (urlErr as any).message);
   }
 
   // Se nenhuma instância online responder, lança erro para a interface informar o usuário
@@ -117,7 +112,7 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
     ? toPhone
     : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
 
-  let baseUrl = (process.env.EVOLUTION_API_URL || "https://giant-heads-cover.loca.lt").replace(/\/$/, "");
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway.onrender.com").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
@@ -147,6 +142,7 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
           presence: "composing",
         },
       }),
+      signal: AbortSignal.timeout(10000),
     });
     return res.ok;
   } catch (err) {
@@ -157,7 +153,7 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
 
 export async function disconnectEvolutionInstance(userId: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
-  let baseUrl = (process.env.EVOLUTION_API_URL || "https://giant-heads-cover.loca.lt").replace(/\/$/, "");
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway.onrender.com").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
@@ -178,6 +174,7 @@ export async function disconnectEvolutionInstance(userId: string) {
         "Bypass-Tunnel-Remainder": "true",
         "User-Agent": "FireHub"
       },
+      signal: AbortSignal.timeout(10000),
     });
   } catch (err) {
     console.error("[Evolution API Gateway] Erro ao desconectar instância:", err);

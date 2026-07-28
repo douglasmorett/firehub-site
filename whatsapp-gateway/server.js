@@ -16,6 +16,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 const sessions = new Map();
+const replyCooldowns = new Map();
 
 process.on("uncaughtException", (err) => {
   console.warn("[WhatsApp Gateway] Aviso uncaughtException ignorado:", err.message || err);
@@ -120,6 +121,14 @@ async function getOrCreateSocket(instanceName) {
 
       if (!textMessage.trim()) continue;
 
+      const now = Date.now();
+      const lastReply = replyCooldowns.get(remoteJid) || 0;
+      if (now - lastReply < 3000) {
+        console.log(`[WhatsApp Gateway] ⏳ Ignorando mensagem de ${remoteJid} (cooldown)`);
+        continue;
+      }
+      replyCooldowns.set(remoteJid, now);
+
       console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}"`);
 
       try {
@@ -144,6 +153,18 @@ async function getOrCreateSocket(instanceName) {
 
   return session;
 }
+
+app.get("/", (req, res) => {
+  return res.json({ status: "ok", sessions: sessions.size, uptime: process.uptime() });
+});
+
+app.use((req, res, next) => {
+  const expectedApiKey = process.env.API_KEY || "firehub_secret_key_2026";
+  if (req.headers["apikey"] !== expectedApiKey) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+});
 
 // 1. Estado da Conexão
 app.get("/instance/connectionState/:instanceName", async (req, res) => {
@@ -170,9 +191,9 @@ app.get("/instance/connect/:instanceName", async (req, res) => {
     return res.json({ instance: { state: "open" }, connected: true, phone: session.phone });
   }
 
-  // Aguarda até 3 segundos se o QR Code ainda estiver sendo gerado
+  // Aguarda até 5 segundos se o QR Code ainda estiver sendo gerado
   let attempts = 0;
-  while (!session.qrBase64 && attempts < 15) {
+  while (!session.qrBase64 && attempts < 25) {
     await new Promise((r) => setTimeout(r, 200));
     attempts++;
   }

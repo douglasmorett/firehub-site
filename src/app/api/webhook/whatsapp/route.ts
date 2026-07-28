@@ -1,17 +1,42 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
-import { processChatbotAI } from "@/lib/chatbot-ai";
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
+import { processChatbotAI } from '@/lib/chatbot-ai';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
+
+// In-memory caches
+interface CacheMsg {
+  sender: string;
+  text: string;
+  timestamp: number;
+}
+const conversationCache = new Map<string, CacheMsg[]>();
+const cooldownCache = new Map<string, number>();
+
+function cleanCache() {
+  const now = Date.now();
+  for (const [jid, msgs] of conversationCache.entries()) {
+    // Evict messages older than 30 minutes
+    const validMsgs = msgs.filter(m => now - m.timestamp < 30 * 60 * 1000);
+    if (validMsgs.length === 0) {
+      conversationCache.delete(jid);
+    } else {
+      conversationCache.set(jid, validMsgs);
+    }
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
+    cleanCache();
+
     const body = await req.json();
     const event = (body.event || body.type || "").toUpperCase();
     const instance = body.instance || body.instanceName;
+    const time = new Date().toISOString();
 
-    console.log(`[WhatsApp Webhook] Evento recebido: "${event}" para instância "${instance}"`);
+    console.log(`[${time}] [WhatsApp Webhook] Evento recebido: "${event}" para instância "${instance}"`);
 
     // 1. Atualização de conexão (QR Code escaneado / conectado no celular)
     if ((event.includes("CONNECTION") || event.includes("STATE")) && instance) {
@@ -37,7 +62,7 @@ export async function POST(req: NextRequest) {
             },
           },
         });
-        console.log(`[WhatsApp Webhook] ✅ Instância ${instance} conectada no celular!`);
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] ✅ Instância ${instance} conectada no celular!`);
       }
       return NextResponse.json({ status: "connected" });
     }
@@ -49,6 +74,21 @@ export async function POST(req: NextRequest) {
       const fromMe = key.fromMe;
       const remoteJid = key.remoteJid || data.from || "";
 
+      // Anti-loop: ALWAYS ignore fromMe (mensagens do próprio bot)
+      if (fromMe === true) {
+        return NextResponse.json({ status: "ignored_from_me" });
+      }
+
+      // Ignore status broadcasts
+      if (remoteJid.includes("@broadcast") || remoteJid.includes("status@broadcast")) {
+        return NextResponse.json({ status: "ignored_broadcast" });
+      }
+
+      // Ignore groups
+      if (remoteJid.endsWith("@g.us") || remoteJid.includes("@g.us")) {
+        return NextResponse.json({ status: "ignored_group" });
+      }
+
       const textMessage =
         data.message?.conversation ||
         data.message?.extendedTextMessage?.text ||
@@ -57,17 +97,16 @@ export async function POST(req: NextRequest) {
         data.text ||
         "";
 
-      // Ignorar grupos ou se a mensagem for a própria resposta da IA
-      if (remoteJid.endsWith("@g.us") || remoteJid.includes("@g.us")) {
-        return NextResponse.json({ status: "ignored_group" });
-      }
-
-      if (fromMe && (textMessage.includes("Oii") || textMessage.includes("FireHub") || textMessage.includes("🍔") || textMessage.includes("🛵"))) {
-        return NextResponse.json({ status: "ignored_bot_self_reply" });
-      }
-
       if (!textMessage.trim()) {
         return NextResponse.json({ status: "empty_message" });
+      }
+
+      // Cooldown check (não responder se a última resposta foi há menos de 3 segundos)
+      const now = Date.now();
+      const lastResponse = cooldownCache.get(remoteJid) || 0;
+      if (now - lastResponse < 3000) {
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Cooldown ativo para ${remoteJid}`);
+        return NextResponse.json({ status: "ignored_cooldown" });
       }
 
       const shortId = instance.replace(/^firehub_/, "");
@@ -83,7 +122,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (!user) {
-        console.warn(`[WhatsApp Webhook] Usuário com id curto ${shortId} não encontrado.`);
+        console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Usuário com id curto ${shortId} não encontrado.`);
         return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
 
@@ -92,18 +131,39 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "chatbot_disabled" });
       }
 
-      // Processar resposta da IA Gemini 2.5 diretamente em memória
-      const aiResponse = await processChatbotAI(user.id, textMessage, []);
+      // Prepare and format history to pass to AI
+      const history = conversationCache.get(remoteJid) || [];
+      const aiHistory = history.map(msg => ({ sender: msg.sender, text: msg.text }));
+
+      console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Processando IA para ${remoteJid} com ${aiHistory.length} mensagens no histórico...`);
+      
+      const aiResponse = await processChatbotAI(user.id, textMessage, aiHistory);
+      
       if (aiResponse?.reply) {
+        // Human typing delay (1000ms a 2500ms)
+        const delay = Math.floor(Math.random() * (2500 - 1000 + 1)) + 1000;
+        await new Promise(r => setTimeout(r, delay));
+
         const recipientTarget = remoteJid || data.from || "";
         await sendEvolutionMessage(user.id, recipientTarget, aiResponse.reply);
-        console.log(`[WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${aiResponse.reply}"`);
+        
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${aiResponse.reply}"`);
+        
+        // Update cache after response
+        history.push({ sender: 'user', text: textMessage, timestamp: now });
+        history.push({ sender: 'bot', text: aiResponse.reply, timestamp: Date.now() });
+        
+        // Keep only the last 15 messages
+        const updatedHistory = history.slice(-15);
+        
+        conversationCache.set(remoteJid, updatedHistory);
+        cooldownCache.set(remoteJid, Date.now());
       }
     }
 
     return NextResponse.json({ status: "success" });
   } catch (err: any) {
-    console.error("[WhatsApp Webhook Error]", err);
+    console.error(`[${new Date().toISOString()}] [WhatsApp Webhook Error]`, err);
     return NextResponse.json({ error: err.message || "Webhook error" }, { status: 500 });
   }
 }
