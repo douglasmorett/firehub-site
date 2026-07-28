@@ -17,6 +17,8 @@ app.use(express.json());
 const PORT = process.env.PORT || 8080;
 const sessions = new Map();
 const replyCooldowns = new Map();
+const sessionLocks = new Map();
+const reconnectCounters = new Map();
 
 process.on("uncaughtException", (err) => {
   console.warn("[WhatsApp Gateway] Aviso uncaughtException ignorado:", err.message || err);
@@ -29,6 +31,22 @@ async function getOrCreateSocket(instanceName) {
   let session = sessions.get(instanceName);
   if (session && session.sock && session.state === "open") {
     return session;
+  }
+
+  // Prevent duplicate socket creation
+  if (session && session.state === "connecting") {
+    return session;
+  }
+
+  // Lock to prevent concurrent creation
+  if (sessionLocks.get(instanceName)) {
+    return sessions.get(instanceName) || { state: "connecting", qrBase64: null, phone: null };
+  }
+  sessionLocks.set(instanceName, true);
+
+  // Clean up previous socket if exists
+  if (session && session.sock) {
+    try { session.sock.end(); } catch(e) {}
   }
 
   const authFolder = path.join(__dirname, "data", "sessions", instanceName);
@@ -47,6 +65,7 @@ async function getOrCreateSocket(instanceName) {
 
   session = { sock, state: "connecting", qrBase64: null, phone: null };
   sessions.set(instanceName, session);
+  sessionLocks.delete(instanceName);
 
   sock.ev.on("creds.update", saveCreds);
 
@@ -92,11 +111,20 @@ async function getOrCreateSocket(instanceName) {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       session.state = "close";
+      sessionLocks.delete(instanceName);
 
-      console.log(`[WhatsApp Gateway] Conexão encerrada para ${instanceName}. Reconectar: ${shouldReconnect}`);
+      const count = (reconnectCounters.get(instanceName) || 0) + 1;
+      reconnectCounters.set(instanceName, count);
 
-      if (shouldReconnect) {
-        setTimeout(() => getOrCreateSocket(instanceName), 3000);
+      console.log(`[WhatsApp Gateway] Conexão encerrada para ${instanceName}. Reconectar: ${shouldReconnect} (tentativa ${count}/5)`);
+
+      if (shouldReconnect && count < 5) {
+        const delay = Math.min(3000 * count, 15000);
+        setTimeout(() => getOrCreateSocket(instanceName), delay);
+      } else if (count >= 5) {
+        console.log(`[WhatsApp Gateway] ⛔ Max reconexões atingido para ${instanceName}. Aguardando nova requisição.`);
+        reconnectCounters.delete(instanceName);
+        sessions.delete(instanceName);
       } else {
         sessions.delete(instanceName);
         try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
@@ -191,9 +219,9 @@ app.get("/instance/connect/:instanceName", async (req, res) => {
     return res.json({ instance: { state: "open" }, connected: true, phone: session.phone });
   }
 
-  // Aguarda até 5 segundos se o QR Code ainda estiver sendo gerado
+  // Aguarda até 15 segundos se o QR Code ainda estiver sendo gerado
   let attempts = 0;
-  while (!session.qrBase64 && attempts < 25) {
+  while (!session.qrBase64 && session.state !== "open" && attempts < 75) {
     await new Promise((r) => setTimeout(r, 200));
     attempts++;
   }
