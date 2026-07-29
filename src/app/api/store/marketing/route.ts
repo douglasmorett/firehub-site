@@ -94,6 +94,82 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    // 3. Processa conversas salvas no atendimento humano e na memória da aplicação
+    if (global.__humanSupportChats) {
+      for (const chat of (global.__humanSupportChats as Map<string, any>).values()) {
+        const cleanDigits = (chat.phone || chat.jid || "").replace(/\D/g, "");
+        if (cleanDigits && cleanDigits.length >= 10 && !cleanDigits.startsWith("0800") && !cleanDigits.startsWith("550800")) {
+          const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
+          if (!customerMap.has(cleanDigits)) {
+            customerMap.set(cleanDigits, {
+              id: cleanDigits,
+              name: chat.clientName || "Cliente WhatsApp",
+              phone: formattedPhone,
+              totalOrders: 0,
+              updatedAt: new Date(chat.updatedAt || Date.now()),
+            });
+          }
+        }
+      }
+    }
+
+    if ((global as any).__whatsappActiveContacts) {
+      for (const contact of (global as any).__whatsappActiveContacts.values()) {
+        const cleanDigits = (contact.phone || "").replace(/\D/g, "");
+        if (cleanDigits && cleanDigits.length >= 10 && !cleanDigits.startsWith("0800") && !cleanDigits.startsWith("550800")) {
+          const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
+          if (!customerMap.has(cleanDigits)) {
+            customerMap.set(cleanDigits, {
+              id: cleanDigits,
+              name: contact.name || "Cliente WhatsApp",
+              phone: formattedPhone,
+              totalOrders: 0,
+              updatedAt: new Date(contact.updatedAt || Date.now()),
+            });
+          }
+        }
+      }
+    }
+
+    // 4. Buscar chats recentes ao vivo na instância conectada da Evolution API
+    try {
+      const instanceName = `firehub_${targetFranchiseeId.slice(-10)}`;
+      let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway.onrender.com").replace(/\/$/, "");
+      let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+      
+      const chatbotConfigObj = (user?.chatbotConfig as any) || {};
+      if (chatbotConfigObj.evolutionUrl) baseUrl = chatbotConfigObj.evolutionUrl.replace(/\/$/, "");
+      if (chatbotConfigObj.evolutionApiKey) apiKey = chatbotConfigObj.evolutionApiKey;
+
+      const chatRes = await fetch(`${baseUrl}/chat/findChats/${instanceName}`, {
+        method: "GET",
+        headers: { "apikey": apiKey, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(5000),
+      }).then(r => r.json()).catch(() => null);
+
+      const evolutionChats = Array.isArray(chatRes) ? chatRes : (chatRes?.chats || []);
+      evolutionChats.forEach((c: any) => {
+        const jid = c.id || c.remoteJid || c.jid || "";
+        const cleanDigits = jid.replace(/\D/g, "");
+        if (!cleanDigits || cleanDigits.startsWith("0800") || cleanDigits.startsWith("550800") || cleanDigits.length < 10) return;
+
+        const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
+        const name = c.name || c.pushName || `Cliente WhatsApp (${cleanDigits.slice(-4)})`;
+
+        if (!customerMap.has(cleanDigits)) {
+          customerMap.set(cleanDigits, {
+            id: cleanDigits,
+            name: name,
+            phone: formattedPhone,
+            totalOrders: 0,
+            updatedAt: new Date(c.updatedAt || Date.now()),
+          });
+        }
+      });
+    } catch (e) {
+      console.error("[Marketing API] Erro ao buscar chats ao vivo da Evolution API:", e);
+    }
+
     const customers = Array.from(customerMap.values());
 
     const chatbotConfig = (user.chatbotConfig as any) || {};
