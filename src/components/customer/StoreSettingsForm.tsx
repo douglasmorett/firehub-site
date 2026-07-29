@@ -8,7 +8,7 @@ const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domi
 // Padrão 18h-23h — foco em delivery de jantar, igual Brendi
 const defaultHours = () => DAYS.map(d => ({ day: d, open: "18:00", close: "23:00", active: true, shifts: [{ open: "18:00", close: "23:00" }] }));
 
-type Coupon = { id?: string; code: string; discount: number; active: boolean };
+type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "free_shipping"; active: boolean };
 
 // Botão de salvar inline por seção
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
@@ -247,7 +247,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     } catch { alert("Erro no upload."); } finally { setUploading(false); }
   };
 
-  const addCoupon = () => { setCoupons(prev => [...prev, { code: "", discount: 5, active: true }]); setDirtyCoupons(true); };
+  const addCoupon = () => { setCoupons(prev => [...prev, { code: "", discount: 10, type: "percent", active: true }]); setDirtyCoupons(true); };
   const updateCoupon = (idx: number, key: string, val: any) => { setCoupons(prev => prev.map((c, i) => i === idx ? { ...c, [key]: val } : c)); setDirtyCoupons(true); };
   const removeCoupon = (idx: number) => { setCoupons(prev => prev.filter((_, i) => i !== idx)); setDirtyCoupons(true); };
 
@@ -518,13 +518,25 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {coupons.map((c, idx) => (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", backgroundColor: c.active ? "#F0FDF4" : "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", backgroundColor: c.active ? "#F0FDF4" : "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0", flexWrap: "wrap" }}>
                 <Tag size={16} color={c.active ? "#16A34A" : "#94A3B8"} />
-                <input placeholder="CÓDIGO" value={c.code} onChange={e => updateCoupon(idx, "code", e.target.value.toUpperCase())} style={{ flex: 1, padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase" }} />
-                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <span style={{ fontSize: "0.8rem", color: "#64748B" }}>R$</span>
-                  <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "70px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
-                </div>
+                <input placeholder="CÓDIGO" value={c.code} onChange={e => updateCoupon(idx, "code", e.target.value.toUpperCase())} style={{ flex: 1, minWidth: "120px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase" }} />
+                <select
+                  value={c.type || "percent"}
+                  onChange={e => updateCoupon(idx, "type", e.target.value)}
+                  style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#16A34A" : "#2563EB", background: "#fff" }}
+                >
+                  <option value="percent">% Desconto</option>
+                  <option value="free_shipping">🚚 Frete Grátis</option>
+                </select>
+                {c.type === "free_shipping" ? (
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#16A34A", padding: "0.3rem 0.6rem", background: "#DCFCE7", borderRadius: "6px" }}>Frete Grátis</span>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                    <span style={{ fontSize: "0.8rem", color: "#64748B" }}>%</span>
+                  </div>
+                )}
                 <label style={{ display: "flex", alignItems: "center", gap: "3px", cursor: "pointer" }}>
                   <input type="checkbox" checked={c.active} onChange={e => updateCoupon(idx, "active", e.target.checked)} />
                   <span style={{ fontSize: "0.75rem" }}>Ativo</span>

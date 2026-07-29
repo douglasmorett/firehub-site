@@ -42,7 +42,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const [paymentMethod, setPaymentMethod] = useState("PIX");
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
-  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number } | null>(null);
+  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // Customer login
   const [customer, setCustomer] = useState<any>(null);
@@ -120,7 +120,11 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   filtered.forEach(p => { if (!grouped[p.category]) grouped[p.category] = []; grouped[p.category].push(p); });
 
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const discount = couponApplied ? couponApplied.discount : 0;
+  const discount = couponApplied
+    ? (couponApplied.isFreeShipping
+        ? (deliveryType === "DELIVERY" ? deliveryFee : 0)
+        : couponApplied.discount)
+    : 0;
   const finalTotal = Math.max(0, cartTotal - discount + (deliveryType === "DELIVERY" ? deliveryFee : 0));
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
@@ -146,11 +150,33 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
 
   const applyCoupon = async () => {
     if (!couponCode.trim()) return;
-    try {
-      const res = await fetch(`/api/validate-coupon?code=${couponCode}&franchiseeId=${franchisee.id}`);
-      if (res.ok) { const d = await res.json(); setCouponApplied({ code: couponCode, discount: d.discount || 0 }); }
-      else { alert("Cupom inválido."); setCouponApplied(null); }
-    } catch { setCouponApplied({ code: couponCode, discount: 5 }); }
+    const cleanCode = couponCode.trim().toUpperCase();
+    const storeCoupons = (franchisee as any).storeCoupons || [];
+    const found = storeCoupons.find((c: any) => c.code?.toUpperCase() === cleanCode && c.active !== false);
+
+    if (found) {
+      if (found.type === "free_shipping") {
+        setCouponApplied({ code: found.code, discount: deliveryFee, isFreeShipping: true });
+      } else {
+        const pct = typeof found.discount === "number" ? found.discount : 10;
+        setCouponApplied({ code: found.code, discount: cartTotal * (pct / 100), isFreeShipping: false });
+      }
+    } else {
+      try {
+        const res = await fetch(`/api/validate-coupon?code=${cleanCode}&franchiseeId=${franchisee.id}`);
+        if (res.ok) {
+          const d = await res.json();
+          const isFree = d.type === "free_shipping";
+          setCouponApplied({ code: cleanCode, discount: isFree ? deliveryFee : (d.discount || 0), isFreeShipping: isFree });
+        } else {
+          alert("Cupom inválido ou expirado.");
+          setCouponApplied(null);
+        }
+      } catch {
+        alert("Cupom inválido ou expirado.");
+        setCouponApplied(null);
+      }
+    }
   };
 
   // Customer auth
@@ -434,7 +460,13 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                   <input className="coupon-input" placeholder="Cupom de desconto" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
                   <button className="coupon-btn" onClick={applyCoupon}>Aplicar</button>
                 </div>
-                {couponApplied && <p style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 600 }}>✅ Cupom "{couponApplied.code}" aplicado! -R$ {couponApplied.discount.toFixed(2)}</p>}
+                {couponApplied && (
+                  <p style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 600 }}>
+                    {couponApplied.isFreeShipping
+                      ? `✅ Cupom "${couponApplied.code}" aplicado! Frete Grátis 🚚`
+                      : `✅ Cupom "${couponApplied.code}" aplicado! -R$ ${discount.toFixed(2)}`}
+                  </p>
+                )}
               </div>
             </div>
           )
@@ -482,7 +514,12 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
             <div><label className="checkout-label">Observações</label><textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} /></div>
             <div className="checkout-summary">
               {cart.map(i => <div key={i.id} className="checkout-summary-item"><span>{i.quantity}x {i.name}</span><span>R$ {(i.price * i.quantity).toFixed(2)}</span></div>)}
-              {couponApplied && <div className="checkout-summary-item" style={{ color: "#16A34A" }}><span>Cupom ({couponApplied.code})</span><span>-R$ {couponApplied.discount.toFixed(2)}</span></div>}
+              {couponApplied && (
+                <div className="checkout-summary-item" style={{ color: "#16A34A" }}>
+                  <span>Cupom ({couponApplied.code})</span>
+                  <span>{couponApplied.isFreeShipping ? `Frete Grátis (-R$ ${discount.toFixed(2)})` : `-R$ ${discount.toFixed(2)}`}</span>
+                </div>
+              )}
               {deliveryType === "DELIVERY" && deliveryFee > 0 && <div className="checkout-summary-item" style={{ color: "#E67E22" }}><span>🛵 Taxa de Entrega</span><span>R$ {deliveryFee.toFixed(2)}</span></div>}
             </div>
           </div>

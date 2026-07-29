@@ -60,22 +60,30 @@ export async function POST(req: Request) {
       return { menuProductId: product.id, quantity: item.quantity, price: product.price, comboSelections: item.comboSelections || null };
     });
 
+    // Taxa de entrega
+    const fee = deliveryType === "DELIVERY" ? (deliveryFee || 0) : 0;
+
     // Aplicar cupom de desconto
     let discount = 0;
     if (couponCode) {
       const coupons = (franchisee.storeCoupons as any[]) || [];
       const coupon = coupons.find((c: any) =>
-        c.code?.toLowerCase() === couponCode.toLowerCase() && c.active
+        c.code?.toLowerCase() === couponCode.toLowerCase() && c.active !== false
       );
       if (coupon) {
-        if (coupon.type === "percent") discount = totalAmount * (coupon.value / 100);
-        else discount = coupon.value;
-        discount = Math.min(discount, totalAmount);
+        if (coupon.type === "free_shipping") {
+          discount = fee;
+        } else if (coupon.type === "percent") {
+          const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
+          discount = totalAmount * (pct / 100);
+        } else {
+          const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
+          discount = totalAmount * (pct / 100);
+        }
+        discount = Math.min(discount, totalAmount + fee);
       }
     }
 
-    // Taxa de entrega
-    const fee = deliveryType === "DELIVERY" ? (deliveryFee || 0) : 0;
     const finalTotal = Math.max(0, totalAmount - discount + fee);
 
     // Status inicial: auto-aceitar ou aguardar

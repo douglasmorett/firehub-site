@@ -41,7 +41,7 @@ export async function processChatbotAI(
   const [products, categories, recentOrders] = await Promise.all([
     prisma.menuProduct.findMany({
       where: { franchiseeId: targetFranchiseeId, active: true },
-      select: { id: true, name: true, description: true, price: true, category: true, isCombo: true, isBeverage: true },
+      select: { id: true, name: true, description: true, price: true, category: true, isCombo: true, isBeverage: true, availableDays: true, tags: true },
       orderBy: { category: "asc" },
     }),
     prisma.menuCategory.findMany({
@@ -89,6 +89,41 @@ export async function processChatbotAI(
 
   const personalityInstruction = personalityMap[personality] || personalityMap.SIMPATICO;
 
+  const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
+  const DAY_NAMES: Record<string, string> = {
+    DOM: "Domingo",
+    SEG: "Segunda-feira",
+    TER: "Terça-feira",
+    QUA: "Quarta-feira",
+    QUI: "Quinta-feira",
+    SEX: "Sexta-feira",
+    SAB: "Sábado",
+  };
+
+  const now = new Date();
+  const currentDayCode = DAYS_MAP[now.getDay()];
+  const currentDayName = DAY_NAMES[currentDayCode] || "Hoje";
+
+  const parseAvailableDays = (val: any): string[] => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map(String);
+    if (typeof val === "string") {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch {
+        return val.split(",").map((s) => s.trim());
+      }
+    }
+    return [];
+  };
+
+  const isAvailableToday = (p: any): boolean => {
+    const days = parseAvailableDays(p.availableDays);
+    if (days.length === 0) return true;
+    return days.map((d) => d.toUpperCase()).includes(currentDayCode);
+  };
+
   // Formatar horários de funcionamento
   let hoursText = "Todos os dias das 18:00 às 23:30.";
   let nowStatusText = "";
@@ -98,18 +133,43 @@ export async function processChatbotAI(
       .map((h: any) => `${h.day || h.dayName || "Dia"}: ${h.active ? `${h.open || "18:00"} às ${h.close || "23:30"}` : "Fechado"}`)
       .join("\n");
 
-    const now = new Date();
     const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
     const today = hoursArr[dayIdx];
     if (today && today.active) {
-      nowStatusText = `Hoje funcionamos exatamente das ${today.open || "18:00"} às ${today.close || "23:30"}.`;
+      nowStatusText = `Hoje (${currentDayName}) funcionamos exatamente das ${today.open || "18:00"} às ${today.close || "23:30"}.`;
     } else if (today && !today.active) {
-      nowStatusText = "Hoje a loja está fechada.";
+      nowStatusText = `Hoje (${currentDayName}) a loja está fechada.`;
     }
   }
 
   const catalogSummary = products
-    .map((p) => `- ${p.name} (${p.category}): ${p.price} reais${p.description ? ` — ${p.description}` : ""}`)
+    .map((p: any) => {
+      const days = parseAvailableDays(p.availableDays);
+      let dayNotice = "";
+      if (days.length > 0) {
+        const isToday = days.map((d) => d.toUpperCase()).includes(currentDayCode);
+        const dayNamesList = days.map((d) => DAY_NAMES[d.toUpperCase()] || d).join(", ");
+        if (isToday) {
+          dayNotice = ` [DISPONÍVEL HOJE (${currentDayName})]`;
+        } else {
+          dayNotice = ` [⚠️ NÃO DISPONÍVEL HOJE (${currentDayName})! Disponível APENAS nos dias: ${dayNamesList}]`;
+        }
+      } else {
+        dayNotice = ` [DISPONÍVEL TODOS OS DIAS]`;
+      }
+
+      let tagsNotice = "";
+      if (p.tags) {
+        try {
+          const parsedTags = typeof p.tags === "string" ? JSON.parse(p.tags) : p.tags;
+          if (Array.isArray(parsedTags) && parsedTags.length > 0) {
+            tagsNotice = ` (Tags: ${parsedTags.join(", ")})`;
+          }
+        } catch {}
+      }
+
+      return `- ${p.name} (${p.category}): ${p.price} reais${tagsNotice}${p.description ? ` — ${p.description}` : ""}${dayNotice}`;
+    })
     .join("\n");
 
   // Formatar pedidos recentes deste cliente
@@ -143,7 +203,7 @@ export async function processChatbotAI(
   if (Array.isArray(user.storeCoupons) && (user.storeCoupons as any[]).length > 0) {
     const activeCoupons = (user.storeCoupons as any[]).filter((c: any) => c.active !== false && c.code);
     if (activeCoupons.length > 0) {
-      availableCouponsText += activeCoupons.map((c: any) => `- Cupom Válido do Cardápio: Código "${c.code}" (${c.discount}% de desconto)`).join("\n");
+      availableCouponsText += activeCoupons.map((c: any) => `- Cupom Válido do Cardápio: Código "${c.code}" (${c.type === "free_shipping" ? "Frete Grátis / Isenção da taxa de entrega" : `${c.discount}% de desconto`})`).join("\n");
     }
   }
 
@@ -175,6 +235,12 @@ REGRAS ABSOLUTAS:
 11. Quando informar preços, fale de forma natural (ex: "24,90 reais").
 12. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
 13. Seu estilo: ${personalityInstruction}
+14. REGRAS DE PROMOÇÕES DO DIA E DIAS DE DISPONIBILIDADE NO CARDÁPIO:
+    - Hoje é ${currentDayName} (${currentDayCode}).
+    - ATENÇÃO CRÍTICA: Observe o aviso de cada produto no cardápio abaixo. Se um produto ou promoção estiver marcado como "[⚠️ NÃO DISPONÍVEL HOJE (${currentDayName})! Disponível APENAS nos dias: X]", isso significa que ele NÃO ESTÁ DISPONÍVEL HOJE!
+    - Se o cliente perguntar sobre a promoção desse produto (ex: "quando tem promoção da esfirra de queijo?" ou "tem promoção de queijo hoje?"):
+      - Você NUNCA deve dizer que o produto está disponível ou em promoção hoje se ele for de outro dia!
+      - Responda de forma ultra clara e simpática explicando em qual dia aquela promoção fica ativa (ex: "A promoção da esfirra de queijo não mudou a data, é exclusiva aos domingos! Hoje, ${currentDayName}, a nossa promoção do dia é a esfirra de carne! Dá uma olhadinha no site: ${storeLink}").
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
@@ -339,15 +405,17 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
     };
   }
 
+  const availableProducts = products.filter(isAvailableToday);
+
   if (/cardapio|cardápio|menu|pedir|comprar|fazer pedido|fome|lanche|esfiha|esfirra|pizza|op[cç][õo]es|promo[cç][ãa]o|mais vendido/i.test(msg)) {
-    const sampleProducts = products.slice(0, 3).map(p => `${p.name} por ${p.price} reais`).join(", ");
+    const sampleProducts = (availableProducts.length > 0 ? availableProducts : products).slice(0, 3).map(p => `${p.name} por ${p.price} reais`).join(", ");
     const introText = sampleProducts ? `temos opções maravilhosas como ${sampleProducts}!` : "temos várias opções incríveis no nosso cardápio!";
     return {
       reply: `oie! ${introText} 😊 você pode ver o cardápio completo com todas as fotos e fazer seu pedido por aqui ó:\n👉 ${storeLink}`
     };
   }
 
-  const sampleProductsFallback = products.slice(0, 2).map(p => `${p.name} (${p.price} reais)`).join(" e ");
+  const sampleProductsFallback = (availableProducts.length > 0 ? availableProducts : products).slice(0, 2).map(p => `${p.name} (${p.price} reais)`).join(" e ");
   const productMention = sampleProductsFallback ? ` como ${sampleProductsFallback}` : "";
 
   const fallbacks = [
