@@ -73,6 +73,25 @@ async function getOrCreateSocket(instanceName) {
   sessions.set(instanceName, session);
   sessionLocks.delete(instanceName);
 
+  // Ignorar eventos pesados que consomem memória
+  sock.ev.on("messaging-history.set", () => {
+    // Ignora sync de histórico completamente
+  });
+  sock.ev.on("chats.upsert", () => {});
+  sock.ev.on("chats.update", () => {});
+  sock.ev.on("chats.delete", () => {});
+  sock.ev.on("contacts.upsert", () => {});
+  sock.ev.on("contacts.update", () => {});
+  sock.ev.on("groups.upsert", () => {});
+  sock.ev.on("groups.update", () => {});
+  sock.ev.on("presence.update", () => {});
+  sock.ev.on("blocklist.set", () => {});
+  sock.ev.on("blocklist.update", () => {});
+
+  // Forçar garbage collection periódico
+  if (global.gc) {
+    setInterval(() => { try { global.gc(); } catch(e) {} }, 30000);
+  }
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async (update) => {
