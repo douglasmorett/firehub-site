@@ -355,7 +355,7 @@ export default function MarketingHubClient() {
         <div style={{ background: "#fff", padding: "1.5rem", borderRadius: "16px", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
           <div style={{ marginBottom: "1.5rem" }}>
             <h3 style={{ margin: "0 0 4px 0", fontWeight: 800, fontSize: "1.1rem", color: "#0F172A" }}>
-              🤖 Automação Inteligente de Reciclagem de Clientes (Estilo Brendi)
+              🤖 Automação Inteligente de Reciclagem de Clientes
             </h3>
             <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>
               Configure mensagens com gatilhos automáticos baseados nos dias sem comprar. O robô enviará cupons de incentivo sem você precisar mover um dedo!

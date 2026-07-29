@@ -936,7 +936,7 @@ export default function ChatbotHubClient() {
               }}
             />
 
-            {/* AUTOMAÇÃO RECORRENTE ESTILO BRENDI (7, 15 e 30 DIAS SEM PEDIR) */}
+            {/* AUTOMAÇÃO RECORRENTE DE CLIENTES (7, 15 e 30 DIAS SEM PEDIR) */}
             <div style={{ marginTop: "1.5rem", marginBottom: "1.25rem", padding: "16px", background: "#EFF6FF", borderRadius: "14px", border: "1px solid #BFDBFE" }}>
               <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#1E40AF", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
                 🎁 Mensagens Automáticas &amp; Criação de Cupons pela IA (7, 15 e 30 dias sem comprar)
