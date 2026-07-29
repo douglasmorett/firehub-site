@@ -115,15 +115,12 @@ Lembre-se: Você é humano. Escreva como se estivesse digitando rápido no celul
         parts: [{ text: h.text }]
       }));
 
-      // Inserir system prompt como mensagens iniciais simuladas (truque para versões antigas)
       const fullContents = [
-        { role: "user", parts: [{ text: systemPrompt }] },
-        { role: "model", parts: [{ text: `Entendido! Eu sou ${agentName}, um humano real trabalhando no ${storeName}. Vou responder curtiho no WhatsApp, sem usar markdown e com muita naturalidade! Pode mandar.` }] },
         ...chatHistory,
         { role: "user", parts: [{ text: message }] }
       ];
 
-      const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+      const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
       
       let generatedText = "";
       
@@ -133,7 +130,8 @@ Lembre-se: Você é humano. Escreva como se estivesse digitando rápido no celul
             model: mName,
             contents: fullContents,
             config: {
-              temperature: 1.2,
+              systemInstruction: systemPrompt,
+              temperature: 1.0,
               topP: 0.95,
               maxOutputTokens: 300,
             }
