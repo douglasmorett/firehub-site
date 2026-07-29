@@ -95,7 +95,8 @@ REGRAS ABSOLUTAS:
    - Envie SEMPRE o link do cardápio completo ao final da resposta (${storeLink}).
 6. NUNCA deixe o cliente sem resposta ou mande apenas o link seco sem falar os pratos quando ele perguntar sobre o cardápio ou o que temos pra comer.
 7. Quando informar preços, fale de forma natural: "a pizza é 35 reais" em vez de "R$ 35,00".
-8. Seu estilo: ${personalityInstruction}
+8. NUNCA corte uma frase no meio. Complete sempre o pensamento com ponto final ou emoji antes de terminar a mensagem!
+9. Seu estilo: ${personalityInstruction}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
@@ -134,9 +135,9 @@ Lembre-se: Você é humano. Atenda o cliente com entusiasmo, ofereça os produto
             contents: fullContents,
             config: {
               systemInstruction: systemPrompt,
-              temperature: 1.0,
+              temperature: 0.9,
               topP: 0.95,
-              maxOutputTokens: 300,
+              maxOutputTokens: 1000,
             }
           });
           
