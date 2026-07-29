@@ -89,6 +89,7 @@ export default function ChatbotHubClient() {
   // Cupons reais do banco de dados
   const [storeCoupons, setStoreCoupons] = useState<any[]>([]);
   const [showNewCouponModal, setShowNewCouponModal] = useState(false);
+  const [targetCouponField, setTargetCouponField] = useState<string | null>(null);
   const [newCouponCode, setNewCouponCode] = useState("");
   const [newCouponDiscount, setNewCouponDiscount] = useState("10");
   const [creatingCoupon, setCreatingCoupon] = useState(false);
@@ -213,12 +214,15 @@ export default function ChatbotHubClient() {
         setStoreCoupons(updated);
         showToast(`🎉 Cupom "${cleanCode}" de ${discountVal}% criado e salvo!`, "#10B981");
         
-        // Se foi acionado por um card específico, auto-seleciona
-        if (targetRecuperationKey) {
-          handleSaveConfig({ [targetRecuperationKey]: cleanCode });
+        // Se foi acionado por um card específico ou pelo botão abaixo do seletor, auto-seleciona
+        const keyToUpdate = targetRecuperationKey || targetCouponField;
+        if (keyToUpdate) {
+          setConfig((prev: any) => ({ ...prev, [keyToUpdate]: cleanCode }));
+          handleSaveConfig({ [keyToUpdate]: cleanCode });
         }
         
         setNewCouponCode("");
+        setTargetCouponField(null);
         setShowNewCouponModal(false);
       } else {
         showToast("⚠️ Falha ao salvar novo cupom.", "#EF4444");
@@ -236,11 +240,8 @@ export default function ChatbotHubClient() {
       if (res.success) {
         const custs = res.customers || [];
         setMarketingCustomers(custs);
-        
-        // Simulação de cálculo de pedidos recuperados com base nos cupons aplicados no período
-        const totalRev = custs.reduce((acc: number, c: any) => acc + ((c.totalOrders || 1) * 35), 0);
-        setRecoveredOrdersCount(custs.length > 0 ? Math.floor(custs.length * 0.4) : 0);
-        setRecoveredRevenue(custs.length > 0 ? Math.floor(totalRev * 0.35) : 0);
+        setRecoveredOrdersCount(res.recoveredOrdersCount || 0);
+        setRecoveredRevenue(res.recoveredRevenue || 0);
       }
     } catch (e) {}
   };
@@ -812,6 +813,16 @@ export default function ChatbotHubClient() {
                           </option>
                         ))}
                       </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTargetCouponField("instantCouponCode");
+                          setShowNewCouponModal(true);
+                        }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        ➕ Criar Novo Cupom
+                      </button>
                     </div>
 
                     <div>
@@ -842,13 +853,6 @@ export default function ChatbotHubClient() {
                       Selecione abaixo o cupom cadastrado na sua loja para enviar em cada disparo.
                     </div>
                   </div>
-
-                  <button
-                    onClick={() => setShowNewCouponModal(true)}
-                    style={{ padding: "8px 16px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 10px rgba(37,99,235,0.2)" }}
-                  >
-                    ➕ Criar Novo Cupom Rapidinho
-                  </button>
                 </div>
 
                 {/* CARD 7 DIAS */}
@@ -880,19 +884,28 @@ export default function ChatbotHubClient() {
                           </option>
                         ))}
                       </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTargetCouponField("coupon7d");
+                          setShowNewCouponModal(true);
+                        }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        ➕ Criar Novo Cupom
+                      </button>
                     </div>
 
                     <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Tipo de Benefício:</label>
-                      <select
-                        value={config.benefitType7d || "PERCENT"}
-                        onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType7d: e.target.value })); handleSaveConfig({ benefitType7d: e.target.value }); }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
-                      >
-                        <option value="PERCENT">🏷️ Porcentagem (%)</option>
-                        <option value="FIXED">💰 Valor Fixo (R$)</option>
-                        <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
-                      </select>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Benefício Cadastrado no Cupom (Leitura):</label>
+                      {(() => {
+                        const sel = storeCoupons.find((c: any) => c.code === config.coupon7d);
+                        return (
+                          <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
+                            {sel ? `🏷️ Porcentagem: ${sel.discount}% de Desconto` : "Nenhum cupom selecionado"}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -926,19 +939,28 @@ export default function ChatbotHubClient() {
                           </option>
                         ))}
                       </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTargetCouponField("coupon15d");
+                          setShowNewCouponModal(true);
+                        }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        ➕ Criar Novo Cupom
+                      </button>
                     </div>
 
                     <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Tipo de Benefício:</label>
-                      <select
-                        value={config.benefitType15d || "PERCENT"}
-                        onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType15d: e.target.value })); handleSaveConfig({ benefitType15d: e.target.value }); }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
-                      >
-                        <option value="PERCENT">🏷️ Porcentagem (%)</option>
-                        <option value="FIXED">💰 Valor Fixo (R$)</option>
-                        <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
-                      </select>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Benefício Cadastrado no Cupom (Leitura):</label>
+                      {(() => {
+                        const sel = storeCoupons.find((c: any) => c.code === config.coupon15d);
+                        return (
+                          <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
+                            {sel ? `🏷️ Porcentagem: ${sel.discount}% de Desconto` : "Nenhum cupom selecionado"}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -972,19 +994,28 @@ export default function ChatbotHubClient() {
                           </option>
                         ))}
                       </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTargetCouponField("coupon30d");
+                          setShowNewCouponModal(true);
+                        }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                      >
+                        ➕ Criar Novo Cupom
+                      </button>
                     </div>
 
                     <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Tipo de Benefício:</label>
-                      <select
-                        value={config.benefitType30d || "FREE_DELIVERY"}
-                        onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType30d: e.target.value })); handleSaveConfig({ benefitType30d: e.target.value }); }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
-                      >
-                        <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
-                        <option value="PERCENT">🏷️ Porcentagem (%)</option>
-                        <option value="FIXED">💰 Valor Fixo (R$)</option>
-                      </select>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Benefício Cadastrado no Cupom (Leitura):</label>
+                      {(() => {
+                        const sel = storeCoupons.find((c: any) => c.code === config.coupon30d);
+                        return (
+                          <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
+                            {sel ? `🏷️ Porcentagem: ${sel.discount}% de Desconto` : "Nenhum cupom selecionado"}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

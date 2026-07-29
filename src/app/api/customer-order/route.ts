@@ -81,6 +81,13 @@ export async function POST(req: Request) {
     // Status inicial: auto-aceitar ou aguardar
     const initialStatus = franchisee.autoAcceptOrders ? "ACEITO" : "NOVO";
 
+    // Se cupom válido foi aplicado, registra na observação para rastreio de marketing
+    let finalNotes = notes || null;
+    if (couponCode && discount > 0) {
+      const couponTag = `[Cupom: ${couponCode.trim().toUpperCase()}]`;
+      finalNotes = finalNotes ? `${couponTag} ${finalNotes}` : couponTag;
+    }
+
     // Criar pedido
     const order = await prisma.customerOrder.create({
       data: {
@@ -89,7 +96,7 @@ export async function POST(req: Request) {
         customerAddress: customerAddress || null,
         deliveryType: deliveryType || "DELIVERY",
         paymentMethod: paymentMethod || null,
-        notes: notes || null,
+        notes: finalNotes,
         totalAmount: finalTotal,
         deliveryFee: fee,
         status: initialStatus,

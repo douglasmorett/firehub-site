@@ -64,15 +64,54 @@ export async function GET(req: NextRequest) {
 
     const chatbotConfig = (user.chatbotConfig as any) || {};
 
+    // Coletar os códigos de cupons vinculados às campanhas de marketing e cupom instantâneo
+    const activeCampaignCoupons = new Set<string>();
+    if (chatbotConfig.coupon7d) activeCampaignCoupons.add(chatbotConfig.coupon7d.trim().toLowerCase());
+    if (chatbotConfig.coupon15d) activeCampaignCoupons.add(chatbotConfig.coupon15d.trim().toLowerCase());
+    if (chatbotConfig.coupon30d) activeCampaignCoupons.add(chatbotConfig.coupon30d.trim().toLowerCase());
+    if (chatbotConfig.instantCouponCode) activeCampaignCoupons.add(chatbotConfig.instantCouponCode.trim().toLowerCase());
+
+    // Buscar pedidos reais da loja que utilizaram os cupons das campanhas de marketing
+    let recoveredOrdersCount = 0;
+    let recoveredRevenue = 0;
+
+    if (activeCampaignCoupons.size > 0) {
+      const campaignOrders = await prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: targetFranchiseeId,
+          notes: {
+            contains: "Cupom:", // Observação onde os cupons aplicados ficam registrados no pedido
+          },
+        },
+        select: {
+          totalAmount: true,
+          notes: true,
+        },
+      });
+
+      campaignOrders.forEach((o) => {
+        const notesLower = (o.notes || "").toLowerCase();
+        for (const coupon of activeCampaignCoupons) {
+          if (notesLower.includes(`cupom: ${coupon}`) || notesLower.includes(`[cupom: ${coupon}]`)) {
+            recoveredOrdersCount += 1;
+            recoveredRevenue += o.totalAmount;
+            break;
+          }
+        }
+      });
+    }
+
     return NextResponse.json({
       success: true,
       totalCustomers: customers.length,
       customers,
+      recoveredOrdersCount,
+      recoveredRevenue,
       marketingConfig: {
         autoRecuperation7d: chatbotConfig.autoRecuperation7d ?? true,
         autoRecuperation15d: chatbotConfig.autoRecuperation15d ?? true,
         autoRecuperation30d: chatbotConfig.autoRecuperation30d ?? true,
-        msg7d: chatbotConfig.msg7d || "Oie, sentimos sua falta! 🍕 Que tal matar a fome hoje com R$ 10 de desconto? Use o cupom VOLTEI10!",
+        msg7d: chatbotConfig.msg7d || "Oie, sentimos sua falta! 🍕 Que tal matar a fome hoje com R$ 10 de desconto?",
         msg15d: chatbotConfig.msg15d || "Faz 15 dias que você não pede seu lanche favorito! 🚀 Ganhe 15% OFF hoje no nosso cardápio!",
         msg30d: chatbotConfig.msg30d || "Saudade do nosso tempero especial? ❤️ Liberamos Frete Grátis exclusivo para você pedir hoje!",
       }
