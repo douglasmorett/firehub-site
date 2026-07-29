@@ -38,17 +38,24 @@ export async function GET(req: NextRequest) {
 
     const customerMap = new Map<string, any>();
     orders.forEach((o) => {
-      const phone = o.customerPhone;
-      if (phone && !customerMap.has(phone)) {
-        customerMap.set(phone, {
-          id: phone,
+      const rawPhone = o.customerPhone || "";
+      const cleanDigits = rawPhone.replace(/\D/g, "");
+
+      // Ignora números mascarados do iFood (começados em 0800) e números com menos de 10 dígitos reais
+      if (!cleanDigits || cleanDigits.startsWith("0800") || cleanDigits.startsWith("550800") || cleanDigits.length < 10) {
+        return;
+      }
+
+      if (!customerMap.has(rawPhone)) {
+        customerMap.set(rawPhone, {
+          id: rawPhone,
           name: o.customerName || "Cliente WhatsApp",
-          phone: phone,
+          phone: rawPhone,
           totalOrders: 1,
           updatedAt: o.createdAt,
         });
-      } else if (phone && customerMap.has(phone)) {
-        const existing = customerMap.get(phone);
+      } else {
+        const existing = customerMap.get(rawPhone);
         existing.totalOrders += 1;
       }
     });

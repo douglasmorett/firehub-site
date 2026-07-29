@@ -936,82 +936,166 @@ export default function ChatbotHubClient() {
               }}
             />
 
-            {/* AUTOMAÇÃO RECORRENTE DE CLIENTES (7, 15 e 30 DIAS SEM PEDIR) */}
-            <div style={{ marginTop: "1.5rem", marginBottom: "1.25rem", padding: "16px", background: "#EFF6FF", borderRadius: "14px", border: "1px solid #BFDBFE" }}>
-              <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#1E40AF", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-                🎁 Mensagens Automáticas &amp; Criação de Cupons pela IA (7, 15 e 30 dias sem comprar)
+            {/* AUTOMAÇÃO RECORRENTE DE CLIENTES COM CUPOM CUSTOMIZÁVEL */}
+            <div style={{ marginTop: "1.5rem", marginBottom: "1.25rem", padding: "18px", background: "#F8FAFC", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
+              <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", marginBottom: "4px" }}>
+                🎁 Automação de Reciclagem de Clientes Ausentes
               </div>
-              <div style={{ fontSize: "0.75rem", color: "#1D4ED8", marginBottom: "8px" }}>
-                O robô possui total autonomia para criar e validar os cupons de desconto automaticamente de acordo com as regras ativadas abaixo para cada restaurante:
-              </div>
-
-              {/* 7 DIAS */}
-              <div style={{ marginBottom: "12px", background: "#fff", padding: "10px", borderRadius: "10px", border: "1px solid #DBEAFE" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 800, color: "#1E293B" }}>🔥 Cliente 7 Dias sem pedir:</label>
-                  <div style={{ display: "flex", gap: "4px" }}>
-                    <button
-                      onClick={() => handleSaveConfig({ autoRecuperation7d: true })}
-                      style={{ padding: "3px 8px", borderRadius: "4px", border: "none", background: config.autoRecuperation7d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation7d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer" }}
-                    >SIM</button>
-                    <button
-                      onClick={() => handleSaveConfig({ autoRecuperation7d: false })}
-                      style={{ padding: "3px 8px", borderRadius: "4px", border: "none", background: config.autoRecuperation7d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation7d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer" }}
-                    >NÃO</button>
-                  </div>
-                </div>
-                <textarea
-                  value={config.msg7d ?? "Oie! 🍕 Sentimos sua falta! Que tal pedir hoje com R$ 10 OFF? Use o cupom VOLTEI10 no nosso cardápio!"}
-                  onChange={(e) => setConfig((prev: any) => ({ ...prev, msg7d: e.target.value }))}
-                  onBlur={() => handleSaveConfig({ msg7d: config.msg7d })}
-                  style={{ width: "100%", height: "55px", borderRadius: "8px", border: "1px solid #CBD5E1", padding: "8px", fontSize: "0.78rem", resize: "none" }}
-                />
+              <div style={{ fontSize: "0.76rem", color: "#64748B", marginBottom: "14px", lineHeight: 1.4 }}>
+                O robô escolhe a mensagem perfeita chamando o cliente sempre pelo <strong>NOME DELE</strong> (ex: <i>"Oi Rosangela, estamos com saudades!..."</i>), informa o benefício configurado, o cupom e o link do seu site de pedidos!
               </div>
 
-              {/* 15 DIAS */}
-              <div style={{ marginBottom: "12px", background: "#fff", padding: "10px", borderRadius: "10px", border: "1px solid #DBEAFE" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 800, color: "#1E293B" }}>🎁 Cliente 15 Dias sem pedir:</label>
+              {/* CARD 7 DIAS */}
+              <div style={{ marginBottom: "14px", background: "#fff", padding: "14px", borderRadius: "12px", border: "1px solid #CBD5E1", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#EA580C" }}>🔥 1º Incentivo — Cliente 7 Dias sem pedir</div>
                   <div style={{ display: "flex", gap: "4px" }}>
-                    <button
-                      onClick={() => handleSaveConfig({ autoRecuperation15d: true })}
-                      style={{ padding: "3px 8px", borderRadius: "4px", border: "none", background: config.autoRecuperation15d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation15d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer" }}
-                    >SIM</button>
-                    <button
-                      onClick={() => handleSaveConfig({ autoRecuperation15d: false })}
-                      style={{ padding: "3px 8px", borderRadius: "4px", border: "none", background: config.autoRecuperation15d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation15d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer" }}
-                    >NÃO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation7d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation7d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation7d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation7d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation7d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
                   </div>
                 </div>
-                <textarea
-                  value={config.msg15d ?? "Faz 15 dias que você não mata a fome com a gente! 🚀 Ganhe 15% OFF hoje no nosso delivery!"}
-                  onChange={(e) => setConfig((prev: any) => ({ ...prev, msg15d: e.target.value }))}
-                  onBlur={() => handleSaveConfig({ msg15d: config.msg15d })}
-                  style={{ width: "100%", height: "55px", borderRadius: "8px", border: "1px solid #CBD5E1", padding: "8px", fontSize: "0.78rem", resize: "none" }}
-                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Tipo de Benefício:</label>
+                    <select
+                      value={config.benefitType7d || "FIXED"}
+                      onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType7d: e.target.value })); handleSaveConfig({ benefitType7d: e.target.value }); }}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem" }}
+                    >
+                      <option value="FIXED">💰 Valor Fixo (R$)</option>
+                      <option value="PERCENT">🏷️ Porcentagem (%)</option>
+                      <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Valor do Desconto:</label>
+                    <input
+                      type="number"
+                      placeholder="Ex: 10"
+                      disabled={config.benefitType7d === "FREE_DELIVERY"}
+                      value={config.benefitValue7d ?? "10"}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, benefitValue7d: e.target.value }))}
+                      onBlur={() => handleSaveConfig({ benefitValue7d: config.benefitValue7d })}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem", boxSizing: "border-box" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Código do Cupom:</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: VOLTEI10"
+                      value={config.coupon7d ?? "VOLTEI10"}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, coupon7d: e.target.value.toUpperCase() }))}
+                      onBlur={() => handleSaveConfig({ coupon7d: config.coupon7d })}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* 30 DIAS */}
-              <div style={{ background: "#fff", padding: "10px", borderRadius: "10px", border: "1px solid #DBEAFE" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 800, color: "#1E293B" }}>✨ Cliente 30 Dias sem pedir (Super Cupom/Frete Grátis):</label>
+              {/* CARD 15 DIAS */}
+              <div style={{ marginBottom: "14px", background: "#fff", padding: "14px", borderRadius: "12px", border: "1px solid #CBD5E1", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#2563EB" }}>🎁 2º Incentivo — Cliente 15 Dias sem pedir</div>
                   <div style={{ display: "flex", gap: "4px" }}>
-                    <button
-                      onClick={() => handleSaveConfig({ autoRecuperation30d: true })}
-                      style={{ padding: "3px 8px", borderRadius: "4px", border: "none", background: config.autoRecuperation30d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation30d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer" }}
-                    >SIM</button>
-                    <button
-                      onClick={() => handleSaveConfig({ autoRecuperation30d: false })}
-                      style={{ padding: "3px 8px", borderRadius: "4px", border: "none", background: config.autoRecuperation30d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation30d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer" }}
-                    >NÃO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation15d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation15d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation15d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation15d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation15d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation15d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
                   </div>
                 </div>
-                <textarea
-                  value={config.msg30d ?? "Saudade do nosso tempero especial? ❤️ Liberamos Frete Grátis exclusivo para você pedir hoje no nosso site!"}
-                  onChange={(e) => setConfig((prev: any) => ({ ...prev, msg30d: e.target.value }))}
-                  onBlur={() => handleSaveConfig({ msg30d: config.msg30d })}
-                  style={{ width: "100%", height: "55px", borderRadius: "8px", border: "1px solid #CBD5E1", padding: "8px", fontSize: "0.78rem", resize: "none" }}
-                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Tipo de Benefício:</label>
+                    <select
+                      value={config.benefitType15d || "PERCENT"}
+                      onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType15d: e.target.value })); handleSaveConfig({ benefitType15d: e.target.value }); }}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem" }}
+                    >
+                      <option value="FIXED">💰 Valor Fixo (R$)</option>
+                      <option value="PERCENT">🏷️ Porcentagem (%)</option>
+                      <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Valor do Desconto:</label>
+                    <input
+                      type="number"
+                      placeholder="Ex: 15"
+                      disabled={config.benefitType15d === "FREE_DELIVERY"}
+                      value={config.benefitValue15d ?? "15"}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, benefitValue15d: e.target.value }))}
+                      onBlur={() => handleSaveConfig({ benefitValue15d: config.benefitValue15d })}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem", boxSizing: "border-box" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Código do Cupom:</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: SAUDADES15"
+                      value={config.coupon15d ?? "SAUDADES15"}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, coupon15d: e.target.value.toUpperCase() }))}
+                      onBlur={() => handleSaveConfig({ coupon15d: config.coupon15d })}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 30 DIAS */}
+              <div style={{ background: "#fff", padding: "14px", borderRadius: "12px", border: "1px solid #CBD5E1", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#7C3AED" }}>✨ 3º Incentivo — Cliente 30 Dias sem pedir</div>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation30d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation30d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation30d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation30d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation30d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation30d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Tipo de Benefício:</label>
+                    <select
+                      value={config.benefitType30d || "FREE_DELIVERY"}
+                      onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType30d: e.target.value })); handleSaveConfig({ benefitType30d: e.target.value }); }}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem" }}
+                    >
+                      <option value="FIXED">💰 Valor Fixo (R$)</option>
+                      <option value="PERCENT">🏷️ Porcentagem (%)</option>
+                      <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Valor do Desconto:</label>
+                    <input
+                      type="number"
+                      placeholder="Ex: 20"
+                      disabled={config.benefitType30d === "FREE_DELIVERY"}
+                      value={config.benefitValue30d ?? "0"}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, benefitValue30d: e.target.value }))}
+                      onBlur={() => handleSaveConfig({ benefitValue30d: config.benefitValue30d })}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem", boxSizing: "border-box" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>Código do Cupom:</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: FRETEGRATIS"
+                      value={config.coupon30d ?? "FRETEGRATIS"}
+                      onChange={(e) => setConfig((prev: any) => ({ ...prev, coupon30d: e.target.value.toUpperCase() }))}
+                      onBlur={() => handleSaveConfig({ coupon30d: config.coupon30d })}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.76rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
