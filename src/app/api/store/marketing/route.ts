@@ -24,7 +24,19 @@ export async function GET(req: NextRequest) {
 
     const targetFranchiseeId = user.ownerId || user.id;
 
-    // Buscar todos os clientes da loja a partir dos pedidos e interações
+    // 1. Buscar todos os contatos cadastrados e oriundos do WhatsApp (StoreCustomer)
+    const storeCustomers = await prisma.storeCustomer.findMany({
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 3000,
+    });
+
+    // 2. Buscar histórico de pedidos reais (CustomerOrder)
     const orders = await prisma.customerOrder.findMany({
       where: { franchiseeId: targetFranchiseeId },
       select: {
@@ -33,30 +45,52 @@ export async function GET(req: NextRequest) {
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
-      take: 2000,
+      take: 3000,
     });
 
     const customerMap = new Map<string, any>();
-    orders.forEach((o) => {
-      const rawPhone = o.customerPhone || "";
-      const cleanDigits = rawPhone.replace(/\D/g, "");
 
-      // Ignora números mascarados do iFood (começados em 0800) e números com menos de 10 dígitos reais
+    // Processa contatos do WhatsApp / cadastros
+    storeCustomers.forEach((sc) => {
+      const rawPhone = sc.phone || "";
+      const cleanDigits = rawPhone.replace(/\D/g, "");
       if (!cleanDigits || cleanDigits.startsWith("0800") || cleanDigits.startsWith("550800") || cleanDigits.length < 10) {
         return;
       }
+      const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
+      if (!customerMap.has(cleanDigits)) {
+        customerMap.set(cleanDigits, {
+          id: sc.id || cleanDigits,
+          name: sc.name || "Cliente WhatsApp",
+          phone: formattedPhone,
+          totalOrders: 0,
+          updatedAt: sc.updatedAt,
+        });
+      }
+    });
 
-      if (!customerMap.has(rawPhone)) {
-        customerMap.set(rawPhone, {
-          id: rawPhone,
+    // Processa contatos dos pedidos
+    orders.forEach((o) => {
+      const rawPhone = o.customerPhone || "";
+      const cleanDigits = rawPhone.replace(/\D/g, "");
+      if (!cleanDigits || cleanDigits.startsWith("0800") || cleanDigits.startsWith("550800") || cleanDigits.length < 10) {
+        return;
+      }
+      const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
+      if (!customerMap.has(cleanDigits)) {
+        customerMap.set(cleanDigits, {
+          id: cleanDigits,
           name: o.customerName || "Cliente WhatsApp",
-          phone: rawPhone,
+          phone: formattedPhone,
           totalOrders: 1,
           updatedAt: o.createdAt,
         });
       } else {
-        const existing = customerMap.get(rawPhone);
+        const existing = customerMap.get(cleanDigits);
         existing.totalOrders += 1;
+        if (o.customerName && o.customerName !== "Cliente WhatsApp" && existing.name === "Cliente WhatsApp") {
+          existing.name = o.customerName;
+        }
       }
     });
 

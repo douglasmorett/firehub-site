@@ -824,7 +824,7 @@ export default function ChatbotHubClient() {
                 <div style={{ background: "#F3E8FF", border: "1px solid #DDD6FE", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
                   <div style={{ color: "#6D28D9", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>👥 Clientes na Base Ativa</div>
                   <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#4C1D95", marginTop: "4px" }}>{marketingCustomers.length}</div>
-                  <div style={{ fontSize: "0.7rem", color: "#6D28D9", marginTop: "2px" }}>100% contatos reais (sem 0800)</div>
+                  <div style={{ fontSize: "0.7rem", color: "#6D28D9", marginTop: "2px" }}>Contatos reais registrados</div>
                 </div>
 
                 <div style={{ background: "#DCFCE7", border: "1px solid #BBF7D0", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>

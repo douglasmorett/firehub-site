@@ -138,6 +138,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
 
+      // Registrar / atualizar o contato do cliente automaticamente na base de dados
+      const cleanPhone = (remoteJid || data.from || "").split("@")[0].replace(/\D/g, "");
+      if (cleanPhone && cleanPhone.length >= 10 && !cleanPhone.startsWith("0800") && !cleanPhone.startsWith("550800")) {
+        const pushName = data.pushName || data.name;
+        const contactName = pushName && pushName.trim() ? pushName.trim() : `Cliente WhatsApp (${cleanPhone.slice(-4)})`;
+        
+        prisma.storeCustomer.upsert({
+          where: { phone: cleanPhone },
+          update: {
+            updatedAt: new Date(),
+            ...(pushName ? { name: pushName } : {}),
+          },
+          create: {
+            phone: cleanPhone,
+            name: contactName,
+            password: "",
+          },
+        }).catch((err) => console.error("[WhatsApp Webhook] Erro ao registrar StoreCustomer:", err));
+      }
+
       const chatbotConfig = (user.chatbotConfig as any) || {};
       if (chatbotConfig.active === false) {
         return NextResponse.json({ status: "chatbot_disabled" });
