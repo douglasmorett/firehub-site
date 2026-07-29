@@ -41,6 +41,9 @@ export default function ChatbotHubClient() {
     phone: "",
     pairingCode: "",
     sendOrderConfirmation: true,
+    autoRecuperation7d: false,
+    autoRecuperation15d: false,
+    autoRecuperation30d: false,
     personality: "SIMPATICO",
     customPrompt: "",
     externalMenuUrl: "",
@@ -950,8 +953,8 @@ export default function ChatbotHubClient() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                   <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#EA580C" }}>🔥 1º Incentivo — Cliente 7 Dias sem pedir</div>
                   <div style={{ display: "flex", gap: "4px" }}>
-                    <button onClick={() => handleSaveConfig({ autoRecuperation7d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation7d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
-                    <button onClick={() => handleSaveConfig({ autoRecuperation7d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation7d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation7d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation7d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation7d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation7d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation7d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation7d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
                   </div>
                 </div>
 
@@ -1001,8 +1004,8 @@ export default function ChatbotHubClient() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                   <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#2563EB" }}>🎁 2º Incentivo — Cliente 15 Dias sem pedir</div>
                   <div style={{ display: "flex", gap: "4px" }}>
-                    <button onClick={() => handleSaveConfig({ autoRecuperation15d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation15d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation15d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
-                    <button onClick={() => handleSaveConfig({ autoRecuperation15d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation15d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation15d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation15d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation15d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation15d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation15d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation15d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation15d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
                   </div>
                 </div>
 
@@ -1052,8 +1055,8 @@ export default function ChatbotHubClient() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                   <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#7C3AED" }}>✨ 3º Incentivo — Cliente 30 Dias sem pedir</div>
                   <div style={{ display: "flex", gap: "4px" }}>
-                    <button onClick={() => handleSaveConfig({ autoRecuperation30d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation30d !== false ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation30d !== false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
-                    <button onClick={() => handleSaveConfig({ autoRecuperation30d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation30d === false ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation30d === false ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation30d: true })} style={{ padding: "4px 10px", borderRadius: "6px", border: "none", background: config.autoRecuperation30d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation30d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>ATIVADO</button>
+                    <button onClick={() => handleSaveConfig({ autoRecuperation30d: false })} style={{ padding: "4px 10px", borderRadius: "4px", border: "none", background: config.autoRecuperation30d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation30d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.72rem", cursor: "pointer" }}>DESATIVADO</button>
                   </div>
                 </div>
 
