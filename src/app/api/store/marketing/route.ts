@@ -24,11 +24,36 @@ export async function GET(req: NextRequest) {
 
     const targetFranchiseeId = user.ownerId || user.id;
 
-    // Buscar todos os clientes da loja que já interagiram ou pediram
-    const customers = await prisma.storeCustomer.findMany({
+    // Buscar todos os clientes da loja a partir dos pedidos e interações
+    const orders = await prisma.customerOrder.findMany({
       where: { franchiseeId: targetFranchiseeId },
-      orderBy: { updatedAt: "desc" },
+      select: {
+        customerName: true,
+        customerPhone: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 2000,
     });
+
+    const customerMap = new Map<string, any>();
+    orders.forEach((o) => {
+      const phone = o.customerPhone;
+      if (phone && !customerMap.has(phone)) {
+        customerMap.set(phone, {
+          id: phone,
+          name: o.customerName || "Cliente WhatsApp",
+          phone: phone,
+          totalOrders: 1,
+          updatedAt: o.createdAt,
+        });
+      } else if (phone && customerMap.has(phone)) {
+        const existing = customerMap.get(phone);
+        existing.totalOrders += 1;
+      }
+    });
+
+    const customers = Array.from(customerMap.values());
 
     const chatbotConfig = (user.chatbotConfig as any) || {};
 

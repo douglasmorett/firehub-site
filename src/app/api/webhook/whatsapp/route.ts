@@ -126,33 +126,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "User not found" }, { status: 404 });
       }
 
-      // Salvar/Atualizar automaticamente o cliente na base de Marketing (StoreCustomer)
-      const cleanPhoneDigits = remoteJid.split("@")[0].replace(/\D/g, "");
-      if (cleanPhoneDigits && cleanPhoneDigits.length >= 8) {
-        const formattedPhone = cleanPhoneDigits.startsWith("55") ? `+55 ${cleanPhoneDigits.slice(2)}` : `+55 ${cleanPhoneDigits}`;
-        const pushName = data.pushName || data.name || "Cliente WhatsApp";
-        
-        prisma.storeCustomer.upsert({
-          where: {
-            franchiseeId_phone: {
-              franchiseeId: user.id,
-              phone: formattedPhone
-            }
-          },
-          create: {
-            franchiseeId: user.id,
-            name: pushName,
-            phone: formattedPhone,
-            totalOrders: 0,
-            updatedAt: new Date(),
-          },
-          update: {
-            name: pushName !== "Cliente WhatsApp" ? pushName : undefined,
-            updatedAt: new Date(),
-          }
-        }).catch(errCust => console.warn("[Webhook] Aviso ao salvar StoreCustomer:", errCust));
-      }
-
       const chatbotConfig = (user.chatbotConfig as any) || {};
       if (chatbotConfig.active === false) {
         return NextResponse.json({ status: "chatbot_disabled" });
