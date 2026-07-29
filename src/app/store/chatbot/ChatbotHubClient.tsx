@@ -1327,6 +1327,7 @@ export default function ChatbotHubClient() {
               <Send size={18} />
             </button>
           </div>
+        </div>
         )}
       </div>
     </div>
