@@ -149,7 +149,47 @@ export async function POST(req: NextRequest) {
         
         // Marca a conversa como pausada por 12 horas para o robô não responder mais automaticamente
         cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
+
+        // Registra na fila do balãozinho flutuante de atendimento humano
+        if (!global.__humanSupportChats) {
+          global.__humanSupportChats = new Map();
+        }
+        const key = `${user.id}_${remoteJid}`;
+        const existing = global.__humanSupportChats.get(key);
+        const cleanPhone = remoteJid.split("@")[0].replace(/\D/g, "");
+        const formattedPhone = cleanPhone ? `+55 ${cleanPhone.replace(/^55/, "")}` : remoteJid;
+
+        const newMsgList = existing ? existing.messages : [];
+        newMsgList.push({ sender: "user", text: textMessage, timestamp: Date.now() });
+        newMsgList.push({ sender: "bot", text: humanReply, timestamp: Date.now() });
+
+        global.__humanSupportChats.set(key, {
+          id: key,
+          userId: user.id,
+          jid: remoteJid,
+          phone: formattedPhone,
+          clientName: data.pushName || formattedPhone,
+          status: "PENDING",
+          unreadCount: (existing?.unreadCount || 0) + 1,
+          lastMessage: textMessage,
+          updatedAt: Date.now(),
+          messages: newMsgList,
+        });
+
         return NextResponse.json({ status: "paused_for_human" });
+      }
+
+      // Se a conversa já estiver pausada para atendimento humano e o cliente enviar novas mensagens
+      const pausedKey = `${user.id}_${remoteJid}`;
+      if (global.__humanSupportChats?.has(pausedKey)) {
+        const chat = global.__humanSupportChats.get(pausedKey)!;
+        if (chat.status !== "CLOSED") {
+          chat.messages.push({ sender: "user", text: textMessage, timestamp: Date.now() });
+          chat.lastMessage = textMessage;
+          chat.updatedAt = Date.now();
+          chat.unreadCount = (chat.unreadCount || 0) + 1;
+          return NextResponse.json({ status: "appended_to_human_queue" });
+        }
       }
 
       // Prepare and format history to pass to AI
@@ -158,7 +198,7 @@ export async function POST(req: NextRequest) {
 
       console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Processando IA para ${remoteJid} com ${aiHistory.length} mensagens no histórico...`);
       
-      const aiResponse = await processChatbotAI(user.id, textMessage, aiHistory);
+      const aiResponse = await processChatbotAI(user.id, textMessage, aiHistory, remoteJid);
       
       if (aiResponse?.reply) {
         // Human typing delay (1000ms a 2500ms)

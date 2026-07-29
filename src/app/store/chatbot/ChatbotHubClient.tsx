@@ -40,6 +40,7 @@ export default function ChatbotHubClient() {
     connected: false,
     phone: "",
     pairingCode: "",
+    sendOrderConfirmation: true,
     personality: "SIMPATICO",
     customPrompt: "",
     externalMenuUrl: "",
@@ -839,6 +840,45 @@ export default function ChatbotHubClient() {
                   background: "#F8FAFC"
                 }}
               />
+            </div>
+
+            {/* CONFIRMAÇÃO AUTOMÁTICA DE PEDIDOS POR WHATSAPP */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F0FDF4", borderRadius: "12px", border: "1px solid #BBF7D0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#166534" }}>
+                    📲 Enviar Confirmação de Pedidos Automática pelo WhatsApp? (Marcado por padrão)
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: "#15803D", marginTop: "2px" }}>
+                    Sempre que o cliente realizar um pedido na plataforma, ele receberá uma mensagem no WhatsApp com o resumo e os itens. O robô só NÃO enviará se esta opção for desmarcada.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ sendOrderConfirmation: true })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.sendOrderConfirmation !== false ? "#16A34A" : "#E2E8F0",
+                      color: config.sendOrderConfirmation !== false ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ sendOrderConfirmation: false })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.sendOrderConfirmation === false ? "#DC2626" : "#E2E8F0",
+                      color: config.sendOrderConfirmation === false ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    NÃO
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* PAUSAR ROBÔ QUANDO PEDIR ATENDENTE HUMANO */}

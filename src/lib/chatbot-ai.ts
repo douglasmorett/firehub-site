@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
 
-export async function processChatbotAI(userId: string, message: string, history: any[] = []) {
+export async function processChatbotAI(userId: string, message: string, history: any[] = [], remoteJid?: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -24,8 +24,14 @@ export async function processChatbotAI(userId: string, message: string, history:
 
   const targetFranchiseeId = user.ownerId || user.id;
 
-  // Buscar cardápio ao vivo da loja
-  const [products, categories] = await Promise.all([
+  // Extrai telefone limpo se fornecido remoteJid
+  let clientPhoneDigits = "";
+  if (remoteJid) {
+    clientPhoneDigits = remoteJid.split("@")[0].replace(/\D/g, "");
+  }
+
+  // Buscar cardápio ao vivo da loja e pedidos recentes do cliente
+  const [products, categories, recentOrders] = await Promise.all([
     prisma.menuProduct.findMany({
       where: { franchiseeId: targetFranchiseeId, active: true },
       select: { id: true, name: true, description: true, price: true, category: true, isCombo: true, isBeverage: true },
@@ -36,6 +42,27 @@ export async function processChatbotAI(userId: string, message: string, history:
       select: { name: true, emoji: true },
       orderBy: { sortOrder: "asc" },
     }),
+    clientPhoneDigits ? prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: targetFranchiseeId,
+        customerPhone: { contains: clientPhoneDigits.slice(-8) },
+      },
+      select: {
+        id: true,
+        status: true,
+        totalAmount: true,
+        createdAt: true,
+        deliveryType: true,
+        items: {
+          select: {
+            quantity: true,
+            menuProduct: { select: { name: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 2,
+    }) : Promise.resolve([]),
   ]);
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
@@ -78,6 +105,24 @@ export async function processChatbotAI(userId: string, message: string, history:
     .map((p) => `- ${p.name} (${p.category}): ${p.price} reais${p.description ? ` — ${p.description}` : ""}`)
     .join("\n");
 
+  // Formatar pedidos recentes deste cliente
+  let recentOrdersSummary = "Nenhum pedido recente encontrado para este número.";
+  if (Array.isArray(recentOrders) && recentOrders.length > 0) {
+    recentOrdersSummary = recentOrders.map(o => {
+      const statusMap: Record<string, string> = {
+        NOVO: "Recebido (Aguardando confirmação da loja)",
+        ACEITO: "Em Preparação / Cozinha 🔥",
+        EM_PREPARO: "Em Preparação / Cozinha 🔥",
+        SAIU_PARA_ENTREGA: "Saiu para Entrega com Motoboy 🛵",
+        ENTREGUE: "Entregue ao cliente ✅",
+        CANCELADO: "Cancelado ❌"
+      };
+      const statusReadable = statusMap[o.status] || o.status;
+      const itemsList = o.items.map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
+      return `- Pedido #${o.id.slice(-5).toUpperCase()}: Status = "${statusReadable}" | Itens = ${itemsList} | Total = ${o.totalAmount} reais`;
+    }).join("\n");
+  }
+
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
   if (apiKey) {
@@ -89,17 +134,19 @@ REGRAS ABSOLUTAS:
 2. Responda de forma RESUMIDA, DIRETA e ULTRA NATURAL (no máximo 2 frases curtas + o link). NUNCA mande textões!
 3. NUNCA use markdown, asteriscos, bullet points ou formatação de código. Apenas texto puro com emojis naturais.
 4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí', 'bora').
-5. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
-   - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NUNCA dê respostas genéricas como "aberto normalmente" sem falar as horas exatas de abertura e fechamento.
-6. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
-   - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!"). NUNCA mande o cliente olhar no cardápio sem informar o tempo estimado na mensagem!
-7. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU RECOMENDAÇÃO:
+5. QUANDO O CLIENTE PERGUNTAR SOBRE O STATUS / COMO ESTÁ O PEDIDO DELE:
+   - Verifique o campo "PEDIDOS RECENTES DO CLIENTE" abaixo. Se houver pedido recente, informe exatamente o status dele (ex: "Seu pedido #A1B2C já está na cozinha em preparação com carinho!" ou "Seu pedido já saiu para entrega com o motoboy!").
+6. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
+   - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!").
+7. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
+   - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
+8. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU RECOMENDAÇÃO:
    - Responda DIRETO ao ponto citando apenas 1 opção campeã com o preço real. Ex: "O campeão aqui é o Combo Imperial por 24,90 reais! O pessoal ama!"
-8. QUANDO PEDIREM O CARDÁPIO GERAL:
+9. QUANDO PEDIREM O CARDÁPIO GERAL:
    - Fale 2 destaques rápidos e mande o link (${storeLink}).
-9. Quando informar preços, fale de forma natural (ex: "24,90 reais").
-10. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
-11. Seu estilo: ${personalityInstruction}
+10. Quando informar preços, fale de forma natural (ex: "24,90 reais").
+11. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
+12. Seu estilo: ${personalityInstruction}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
@@ -110,6 +157,9 @@ DADOS DA LOJA:
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
 - Quadro Geral de Horários:
 ${hoursText}
+
+PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
+${recentOrdersSummary}
 
 NOSSO CARDÁPIO COMPLETO DA LOJA:
 ${catalogSummary || "Cardápio disponível no nosso link."}

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import HideOnCompras from "@/components/HideOnCompras";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
+import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 
 export const dynamic = "force-dynamic";
 
@@ -172,6 +173,8 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         <main style={{ flex: 1, opacity: isBlocked ? 0.4 : 1, pointerEvents: isBlocked ? "none" : "auto" }}>
           {children}
         </main>
+
+        <HumanSupportFloatingWidget />
       </div>
     </CartProvider>
   );
