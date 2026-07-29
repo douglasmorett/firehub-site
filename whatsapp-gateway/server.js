@@ -363,11 +363,30 @@ app.delete("/instance/logout/:instanceName", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[FireHub WhatsApp Gateway] 🚀 Servidor rodando na porta ${PORT}`);
 
-  // Auto-reconectar desabilitado para economizar memória
-  // Sessões serão reconectadas sob demanda via /instance/connect/:name
+  // Auto-reconectar sessões salvas com delay (evita OOM no boot)
   const sessionsDir = path.join(__dirname, "data", "sessions");
   if (fs.existsSync(sessionsDir)) {
-    const folders = fs.readdirSync(sessionsDir);
-    console.log(`[WhatsApp Gateway] 📋 ${folders.length} sessão(ões) salva(s). Serão reconectadas sob demanda.`);
+    const folders = fs.readdirSync(sessionsDir).filter(f => {
+      try { return fs.statSync(path.join(sessionsDir, f)).isDirectory(); } catch { return false; }
+    });
+    
+    if (folders.length > 0) {
+      console.log(`[WhatsApp Gateway] 📋 ${folders.length} sessão(ões) salva(s). Reconectando em 10s...`);
+      
+      // Reconecta uma por vez com intervalo de 5s entre cada
+      let i = 0;
+      const reconnectNext = () => {
+        if (i >= folders.length) return;
+        const instanceName = folders[i++];
+        console.log(`[WhatsApp Gateway] 🔄 Reconectando: ${instanceName} (${i}/${folders.length})`);
+        getOrCreateSocket(instanceName).catch((err) => {
+          console.warn(`[WhatsApp Gateway] ⚠️ Falha ao reconectar ${instanceName}:`, err.message);
+        });
+        if (i < folders.length) {
+          setTimeout(reconnectNext, 5000);
+        }
+      };
+      setTimeout(reconnectNext, 10000);
+    }
   }
 });
