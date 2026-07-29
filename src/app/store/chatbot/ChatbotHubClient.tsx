@@ -92,7 +92,8 @@ export default function ChatbotHubClient() {
   const [targetCouponField, setTargetCouponField] = useState<string | null>(null);
   const [newCouponCode, setNewCouponCode] = useState("");
   const [newCouponDiscount, setNewCouponDiscount] = useState("10");
-  const [creatingCoupon, setCreatingCoupon] = useState(false);
+  // Modal de Confirmação de Teste de Envio
+  const [showConfirmTestModal, setShowConfirmTestModal] = useState(false);
 
   // QR Code State
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
@@ -857,28 +858,9 @@ export default function ChatbotHubClient() {
 
                 {/* CARD 7 DIAS */}
                 <div style={{ background: "#fff", padding: "1rem", borderRadius: "14px", border: "1px solid #CBD5E1", marginBottom: "1rem", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", flexWrap: "wrap", gap: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                     <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#EA580C" }}>🔥 1º Incentivo — Cliente 7 Dias Sem Pedir</div>
                     <div style={{ display: "flex", gap: "6px" }}>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const testPhone = prompt("Digite o número do WhatsApp para teste (ex: 22998851680):", "22998851680");
-                          if (!testPhone) return;
-                          try {
-                            const res = await fetch("/api/store/marketing", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ action: "send_test_7d", phone: testPhone })
-                            }).then(r => r.json());
-                            if (res.success) showToast(res.message, "#10B981");
-                            else showToast(res.error || "Erro ao disparar teste", "#EF4444");
-                          } catch { showToast("Erro de conexão", "#EF4444"); }
-                        }}
-                        style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid #EA580C", background: "#FFF7ED", color: "#EA580C", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}
-                      >
-                        📲 Testar Envio (WhatsApp)
-                      </button>
                       <button onClick={() => handleSaveConfig({ autoRecuperation7d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation7d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
                       <button onClick={() => handleSaveConfig({ autoRecuperation7d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation7d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
                     </div>
@@ -1173,12 +1155,18 @@ export default function ChatbotHubClient() {
               </div>
 
               <button
-                onClick={handleSendTestMessage}
+                onClick={() => {
+                  if (!testPhone.trim()) {
+                    showToast("⚠️ Digite o número de telefone de destino com DDD", "#EF4444");
+                    return;
+                  }
+                  setShowConfirmTestModal(true);
+                }}
                 disabled={sendingTest}
                 style={{
                   width: "100%", padding: "12px", borderRadius: "10px", border: "none",
                   background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff",
-                  fontWeight: 800, fontSize: "0.9rem", cursor: "pointer"
+                  fontWeight: 800, fontSize: "0.9rem", cursor: "pointer", boxShadow: "0 4px 12px rgba(234, 88, 12, 0.25)"
                 }}
               >
                 {sendingTest ? "Enviando Mensagem..." : "🚀 Disparar Mensagem de Teste Agora"}
@@ -1542,6 +1530,64 @@ export default function ChatbotHubClient() {
                 style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #16A34A, #15803D)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
               >
                 {creatingCoupon ? "Salvando..." : "✓ Salvar & Selecionar Cupom"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL POPUP DE CONFIRMAÇÃO DE TESTE DE ENVIO */}
+      {showConfirmTestModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.65)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: "1rem" }}>
+          <div style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "460px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", border: "1px solid #E2E8F0", animation: "fadeIn 0.2s ease-out" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ width: 42, height: 42, borderRadius: "12px", background: "#FFF7ED", color: "#EA580C", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Send size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>Confirmar Teste no WhatsApp</h3>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Validação de mensagem via robô da loja</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowConfirmTestModal(false)}
+                style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", padding: "4px" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ background: "#F8FAFC", borderRadius: "12px", padding: "12px 14px", border: "1px solid #E2E8F0", marginBottom: "1.2rem" }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>Número de Destino:</div>
+              <div style={{ fontSize: "1rem", fontWeight: 900, color: "#2563EB", display: "flex", alignItems: "center", gap: "6px" }}>
+                📱 {testPhone}
+              </div>
+            </div>
+
+            <div style={{ background: "#F1F5F9", borderRadius: "12px", padding: "12px 14px", border: "1px solid #CBD5E1", marginBottom: "1.5rem" }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Prévia da Mensagem:</div>
+              <div style={{ fontSize: "0.82rem", color: "#334155", fontStyle: "italic", whiteSpace: "pre-wrap", maxHeight: "120px", overflowY: "auto" }}>
+                "{testMessage}"
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowConfirmTestModal(false)}
+                style={{ flex: 1, padding: "11px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setShowConfirmTestModal(false);
+                  await handleSendTestMessage();
+                }}
+                disabled={sendingTest}
+                style={{ flex: 1.5, padding: "11px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff", fontWeight: 900, fontSize: "0.88rem", cursor: "pointer", boxShadow: "0 4px 12px rgba(234, 88, 12, 0.25)" }}
+              >
+                {sendingTest ? "Enviando..." : "🚀 Sim, Disparar Agora"}
               </button>
             </div>
           </div>
