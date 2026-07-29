@@ -92,6 +92,7 @@ export default function ChatbotHubClient() {
   const [targetCouponField, setTargetCouponField] = useState<string | null>(null);
   const [newCouponCode, setNewCouponCode] = useState("");
   const [newCouponDiscount, setNewCouponDiscount] = useState("10");
+  const [creatingCoupon, setCreatingCoupon] = useState(false);
   // Modal de Confirmação de Teste de Envio
   const [showConfirmTestModal, setShowConfirmTestModal] = useState(false);
 
