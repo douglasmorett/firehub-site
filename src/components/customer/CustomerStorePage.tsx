@@ -557,26 +557,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
               {franchisee.storeDeliveryOnly && (
                 <span className="store-delivery-tag">• Somente Delivery</span>
               )}
-              {franchisee.ifoodConnected && franchisee.ifoodMerchantId && (
-                <a
-                  href={`https://www.ifood.com.br/delivery/${(franchisee.city || "cidade").toLowerCase().replace(/\s+/g, "-")}/${(storeName || "loja").toLowerCase().replace(/\s+/g, "-")}/${franchisee.ifoodMerchantId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: "4px",
-                    padding: "3px 10px", borderRadius: "20px",
-                    background: "linear-gradient(135deg, #EA1D2C, #B71C1C)",
-                    color: "#fff", fontSize: "0.72rem", fontWeight: 700,
-                    textDecoration: "none", letterSpacing: "0.02em",
-                    boxShadow: "0 2px 8px rgba(234,29,44,0.3)",
-                    transition: "transform 0.2s, box-shadow 0.2s",
-                  }}
-                  onMouseEnter={e => { (e.target as HTMLElement).style.transform = "scale(1.05)"; }}
-                  onMouseLeave={e => { (e.target as HTMLElement).style.transform = "scale(1)"; }}
-                >
-                  🍽️ Peça pelo iFood
-                </a>
-              )}
             </div>
           </div>
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
