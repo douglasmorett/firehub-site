@@ -21,6 +21,7 @@ export async function processChatbotAI(
       storeHours: true,
       deliveryConfig: true,
       chatbotConfig: true,
+      storeCoupons: true,
     },
   });
 
@@ -124,9 +125,25 @@ export async function processChatbotAI(
         CANCELADO: "Cancelado ❌"
       };
       const statusReadable = statusMap[o.status] || o.status;
-      const itemsList = o.items.map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
       return `- Pedido #${o.id.slice(-5).toUpperCase()}: Status = "${statusReadable}" | Itens = ${itemsList} | Total = ${o.totalAmount} reais`;
     }).join("\n");
+  }
+
+  // Tratar cupons válidos cadastrados no banco de dados e configuração instantânea do WhatsApp
+  const instantCouponEnabled = chatbotConfig.instantCouponEnabled === true;
+  const instantCouponCode = (chatbotConfig.instantCouponCode || "").trim();
+  const instantCouponDiscount = chatbotConfig.instantCouponDiscount || "10%";
+
+  let availableCouponsText = "";
+  if (instantCouponEnabled && instantCouponCode) {
+    availableCouponsText += `- Cupom Instantâneo de WhatsApp Ativo: Código "${instantCouponCode}" (${instantCouponDiscount} OFF)\n`;
+  }
+
+  if (Array.isArray(user.storeCoupons) && (user.storeCoupons as any[]).length > 0) {
+    const activeCoupons = (user.storeCoupons as any[]).filter((c: any) => c.active !== false && c.code);
+    if (activeCoupons.length > 0) {
+      availableCouponsText += activeCoupons.map((c: any) => `- Cupom Válido do Cardápio: Código "${c.code}" (${c.discount}% de desconto)`).join("\n");
+    }
   }
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -142,19 +159,21 @@ REGRAS ABSOLUTAS:
 4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí', 'bora').
 5. QUANDO O CLIENTE PERGUNTAR SOBRE O STATUS / COMO ESTÁ O PEDIDO DELE:
    - Verifique o campo "PEDIDOS RECENTES DO CLIENTE" abaixo. Se houver pedido recente, informe exatamente o status dele (ex: "Seu pedido #A1B2C já está na cozinha em preparação com carinho!" ou "Seu pedido já saiu para entrega com o motoboy!").
-6. QUANDO O CLIENTE PERGUNTAR SOBRE CUPOM DE DESCONTO / PROMOÇÕES / VOLTAR A COMPRAR:
-   - Você tem AUTONOMIA para criar e conceder cupons de desconto aos clientes! (Ex: "Use o cupom VOLTEI10 para R$10 OFF" ou "Use o cupom PRIMEIRACOMPRA para 15% OFF!").
+6. QUANDO O CLIENTE PERGUNTAR SOBRE CUPOM DE DESCONTO / PROMOÇÕES:
+   - REGRA CRÍTICA DE CUPOM: NUNCA INVENTE CÓDIGOS DE CUPOM! Você PROIBIDA de inventar cupons que não estejam listados no campo "CUPONS VÁLIDOS CADASTRADOS" abaixo.
+   - SE HOUVER CUPOM LISTADO ABAIXO: Informe o código exatamente como cadastrado e o desconto (ex: "Tenho sim! Usa o cupom ${instantCouponCode || "CUPOM"} e ganhe desconto no seu pedido!").
+   - SE NÃO HOUVER NENHUM CUPOM VALIDO LISTADO ABAIXO: Você DEVE responder exatamente neste tom natural (sem inventar nada): "Poxa, infelizmente não temos cupons de desconto disponíveis no momento, mas você pode fazer seu pedido com os melhores preços no nosso site: ${storeLink}".
 7. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
    - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!").
-7. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
+8. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
    - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
-8. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU RECOMENDAÇÃO:
+9. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU RECOMENDAÇÃO:
    - Responda DIRETO ao ponto citando apenas 1 opção campeã com o preço real. Ex: "O campeão aqui é o Combo Imperial por 24,90 reais! O pessoal ama!"
-9. QUANDO PEDIREM O CARDÁPIO GERAL:
+10. QUANDO PEDIREM O CARDÁPIO GERAL:
    - Fale 2 destaques rápidos e mande o link (${storeLink}).
-10. Quando informar preços, fale de forma natural (ex: "24,90 reais").
-11. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
-12. Seu estilo: ${personalityInstruction}
+11. Quando informar preços, fale de forma natural (ex: "24,90 reais").
+12. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
+13. Seu estilo: ${personalityInstruction}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
@@ -165,6 +184,9 @@ DADOS DA LOJA:
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
 - Quadro Geral de Horários:
 ${hoursText}
+
+CUPONS VÁLIDOS CADASTRADOS NA LOJA (SOMENTE USE ESTES SE EXISTIREM, NUNCA INVENTE OUTROS):
+${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
 
 PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
 ${recentOrdersSummary}

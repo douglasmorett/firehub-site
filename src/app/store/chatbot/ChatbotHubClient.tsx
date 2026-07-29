@@ -86,6 +86,13 @@ export default function ChatbotHubClient() {
   const [recoveredOrdersCount, setRecoveredOrdersCount] = useState<number>(0);
   const [recoveredRevenue, setRecoveredRevenue] = useState<number>(0);
 
+  // Cupons reais do banco de dados
+  const [storeCoupons, setStoreCoupons] = useState<any[]>([]);
+  const [showNewCouponModal, setShowNewCouponModal] = useState(false);
+  const [newCouponCode, setNewCouponCode] = useState("");
+  const [newCouponDiscount, setNewCouponDiscount] = useState("10");
+  const [creatingCoupon, setCreatingCoupon] = useState(false);
+
   // QR Code State
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string>("");
@@ -170,6 +177,9 @@ export default function ChatbotHubClient() {
         setConfig(configRes.config);
         if (configRes.config.phone) setStorePhoneInput(configRes.config.phone);
       }
+      if (configRes.coupons) {
+        setStoreCoupons(configRes.coupons);
+      }
       if (configRes.stats) {
         setStats(configRes.stats);
       }
@@ -180,6 +190,43 @@ export default function ChatbotHubClient() {
       console.error("[ChatbotHub] Erro ao carregar dados:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateNewCoupon = async (targetRecuperationKey?: string) => {
+    if (!newCouponCode.trim()) {
+      showToast("⚠️ Digite um código de cupom (ex: BEMVINDO10)", "#EF4444");
+      return;
+    }
+    const cleanCode = newCouponCode.trim().toUpperCase();
+    const discountVal = parseFloat(newCouponDiscount) || 10;
+    
+    setCreatingCoupon(true);
+    try {
+      const updated = [...storeCoupons, { code: cleanCode, discount: discountVal, active: true }];
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeCoupons: updated }),
+      });
+      if (res.ok) {
+        setStoreCoupons(updated);
+        showToast(`🎉 Cupom "${cleanCode}" de ${discountVal}% criado e salvo!`, "#10B981");
+        
+        // Se foi acionado por um card específico, auto-seleciona
+        if (targetRecuperationKey) {
+          handleSaveConfig({ [targetRecuperationKey]: cleanCode });
+        }
+        
+        setNewCouponCode("");
+        setShowNewCouponModal(false);
+      } else {
+        showToast("⚠️ Falha ao salvar novo cupom.", "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro ao criar cupom.", "#EF4444");
+    } finally {
+      setCreatingCoupon(false);
     }
   };
 
@@ -715,13 +762,93 @@ export default function ChatbotHubClient() {
                 </div>
               </div>
 
+              {/* SEÇÃO 1: CONFIGURAÇÃO DE CUPOM INSTANTÂNEO PARA QUEM PERGUNTAR NO WHATSAPP */}
+              <div style={{ background: "linear-gradient(135deg, #EFF6FF, #DBEAFE)", padding: "1.5rem", borderRadius: "16px", border: "1px solid #BFDBFE", marginBottom: "1.5rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", marginBottom: "10px" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "1rem", color: "#1E40AF", display: "flex", alignItems: "center", gap: "6px" }}>
+                      💬 Se o cliente perguntar se tem cupom de desconto no WhatsApp, quer liberar um cupom automático?
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#1E3A8A", marginTop: "2px" }}>
+                      Sugestão recomendada: <strong>10% de Desconto</strong> (ex: cupom <code>PRIMEIRACOMPRA10</code> ou <code>QUEROCUPOM10</code>)
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      onClick={() => handleSaveConfig({ instantCouponEnabled: true })}
+                      style={{ padding: "6px 16px", borderRadius: "8px", border: "none", background: config.instantCouponEnabled === true ? "#16A34A" : "#E2E8F0", color: config.instantCouponEnabled === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                    >
+                      SIM, LIBERAR
+                    </button>
+                    <button
+                      onClick={() => handleSaveConfig({ instantCouponEnabled: false })}
+                      style={{ padding: "6px 16px", borderRadius: "8px", border: "none", background: config.instantCouponEnabled !== true ? "#DC2626" : "#E2E8F0", color: config.instantCouponEnabled !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                    >
+                      NÃO, RESPONDER QUE NÃO TEM
+                    </button>
+                  </div>
+                </div>
+
+                {config.instantCouponEnabled === true && (
+                  <div style={{ background: "#fff", padding: "1rem", borderRadius: "12px", border: "1px solid #93C5FD", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1E40AF", marginBottom: "4px" }}>
+                        Selecione o Cupom do Banco de Dados para Liberar no WhatsApp:
+                      </label>
+                      <select
+                        value={config.instantCouponCode || ""}
+                        onChange={(e) => {
+                          const code = e.target.value;
+                          setConfig((prev: any) => ({ ...prev, instantCouponCode: code }));
+                          handleSaveConfig({ instantCouponCode: code });
+                        }}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", fontWeight: 700, color: "#1D4ED8" }}
+                      >
+                        <option value="">-- Selecione um cupom cadastrado --</option>
+                        {storeCoupons.map((c: any, i: number) => (
+                          <option key={i} value={c.code}>
+                            {c.code} ({c.discount}% OFF)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1E40AF", marginBottom: "4px" }}>
+                        Descrição do Benefício (Ex: 10% de desconto):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: 10% de desconto"
+                        value={config.instantCouponDiscount || "10% de desconto"}
+                        onChange={(e) => setConfig((prev: any) => ({ ...prev, instantCouponDiscount: e.target.value }))}
+                        onBlur={() => handleSaveConfig({ instantCouponDiscount: config.instantCouponDiscount })}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", boxSizing: "border-box" }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* AUTOMAÇÕES DE CLIENTES AUSENTES (DESIGNER PREMIUM NÃO PREENCHIDO) */}
               <div style={{ background: "#F8FAFC", padding: "1.5rem", borderRadius: "16px", border: "1px solid #E2E8F0", marginBottom: "1.5rem" }}>
-                <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#0F172A", marginBottom: "4px" }}>
-                  🎁 Configuração de Automação por Tempo de Sumiço (7, 15 e 30 dias)
-                </div>
-                <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "1rem", lineHeight: 1.5 }}>
-                  <strong>Atenção:</strong> Crie os cupons no seu painel/cardápio antes de preencher os campos abaixo. Os códigos não vêm preenchidos por padrão para garantir que o cliente só receba cupons realmente válidos!
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", marginBottom: "1rem" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#0F172A", marginBottom: "2px" }}>
+                      🎁 Automação por Tempo de Sumiço (7, 15 e 30 dias)
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748B", lineHeight: 1.4 }}>
+                      Selecione abaixo o cupom cadastrado na sua loja para enviar em cada disparo.
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setShowNewCouponModal(true)}
+                    style={{ padding: "8px 16px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 10px rgba(37,99,235,0.2)" }}
+                  >
+                    ➕ Criar Novo Cupom Rapidinho
+                  </button>
                 </div>
 
                 {/* CARD 7 DIAS */}
@@ -734,43 +861,38 @@ export default function ChatbotHubClient() {
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Tipo de Benefício:</label>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
                       <select
-                        value={config.benefitType7d || "FIXED"}
-                        onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType7d: e.target.value })); handleSaveConfig({ benefitType7d: e.target.value }); }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
+                        value={config.coupon7d || ""}
+                        onChange={(e) => {
+                          const code = e.target.value;
+                          setConfig((prev: any) => ({ ...prev, coupon7d: code }));
+                          handleSaveConfig({ coupon7d: code });
+                        }}
+                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
                       >
-                        <option value="FIXED">💰 Valor Fixo (R$)</option>
-                        <option value="PERCENT">🏷️ Porcentagem (%)</option>
-                        <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
+                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                        {storeCoupons.map((c: any, idx: number) => (
+                          <option key={idx} value={c.code}>
+                            {c.code} ({c.discount}% OFF)
+                          </option>
+                        ))}
                       </select>
                     </div>
 
                     <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Valor do Desconto:</label>
-                      <input
-                        type="number"
-                        placeholder="Ex: 10"
-                        disabled={config.benefitType7d === "FREE_DELIVERY"}
-                        value={config.benefitValue7d ?? ""}
-                        onChange={(e) => setConfig((prev: any) => ({ ...prev, benefitValue7d: e.target.value }))}
-                        onBlur={() => handleSaveConfig({ benefitValue7d: config.benefitValue7d })}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
-                      />
-                    </div>
-
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Crie e Digite o Cupom Válido:</label>
-                      <input
-                        type="text"
-                        placeholder="Ex: DIGITE_SEU_CUPOM"
-                        value={config.coupon7d ?? ""}
-                        onChange={(e) => setConfig((prev: any) => ({ ...prev, coupon7d: e.target.value.toUpperCase() }))}
-                        onBlur={() => handleSaveConfig({ coupon7d: config.coupon7d })}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
-                      />
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Tipo de Benefício:</label>
+                      <select
+                        value={config.benefitType7d || "PERCENT"}
+                        onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType7d: e.target.value })); handleSaveConfig({ benefitType7d: e.target.value }); }}
+                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
+                      >
+                        <option value="PERCENT">🏷️ Porcentagem (%)</option>
+                        <option value="FIXED">💰 Valor Fixo (R$)</option>
+                        <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -785,7 +907,27 @@ export default function ChatbotHubClient() {
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
+                      <select
+                        value={config.coupon15d || ""}
+                        onChange={(e) => {
+                          const code = e.target.value;
+                          setConfig((prev: any) => ({ ...prev, coupon15d: code }));
+                          handleSaveConfig({ coupon15d: code });
+                        }}
+                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                      >
+                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                        {storeCoupons.map((c: any, idx: number) => (
+                          <option key={idx} value={c.code}>
+                            {c.code} ({c.discount}% OFF)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Tipo de Benefício:</label>
                       <select
@@ -793,35 +935,10 @@ export default function ChatbotHubClient() {
                         onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType15d: e.target.value })); handleSaveConfig({ benefitType15d: e.target.value }); }}
                         style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
                       >
-                        <option value="FIXED">💰 Valor Fixo (R$)</option>
                         <option value="PERCENT">🏷️ Porcentagem (%)</option>
+                        <option value="FIXED">💰 Valor Fixo (R$)</option>
                         <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
                       </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Valor do Desconto:</label>
-                      <input
-                        type="number"
-                        placeholder="Ex: 15"
-                        disabled={config.benefitType15d === "FREE_DELIVERY"}
-                        value={config.benefitValue15d ?? ""}
-                        onChange={(e) => setConfig((prev: any) => ({ ...prev, benefitValue15d: e.target.value }))}
-                        onBlur={() => handleSaveConfig({ benefitValue15d: config.benefitValue15d })}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
-                      />
-                    </div>
-
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Crie e Digite o Cupom Válido:</label>
-                      <input
-                        type="text"
-                        placeholder="Ex: DIGITE_SEU_CUPOM"
-                        value={config.coupon15d ?? ""}
-                        onChange={(e) => setConfig((prev: any) => ({ ...prev, coupon15d: e.target.value.toUpperCase() }))}
-                        onBlur={() => handleSaveConfig({ coupon15d: config.coupon15d })}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
-                      />
                     </div>
                   </div>
                 </div>
@@ -836,7 +953,27 @@ export default function ChatbotHubClient() {
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
+                      <select
+                        value={config.coupon30d || ""}
+                        onChange={(e) => {
+                          const code = e.target.value;
+                          setConfig((prev: any) => ({ ...prev, coupon30d: code }));
+                          handleSaveConfig({ coupon30d: code });
+                        }}
+                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                      >
+                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                        {storeCoupons.map((c: any, idx: number) => (
+                          <option key={idx} value={c.code}>
+                            {c.code} ({c.discount}% OFF)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Tipo de Benefício:</label>
                       <select
@@ -844,40 +981,13 @@ export default function ChatbotHubClient() {
                         onChange={(e) => { setConfig((prev: any) => ({ ...prev, benefitType30d: e.target.value })); handleSaveConfig({ benefitType30d: e.target.value }); }}
                         style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
                       >
-                        <option value="FIXED">💰 Valor Fixo (R$)</option>
-                        <option value="PERCENT">🏷️ Porcentagem (%)</option>
                         <option value="FREE_DELIVERY">🛵 Frete Grátis</option>
+                        <option value="PERCENT">🏷️ Porcentagem (%)</option>
+                        <option value="FIXED">💰 Valor Fixo (R$)</option>
                       </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Valor do Desconto:</label>
-                      <input
-                        type="number"
-                        placeholder="Ex: 20"
-                        disabled={config.benefitType30d === "FREE_DELIVERY"}
-                        value={config.benefitValue30d ?? ""}
-                        onChange={(e) => setConfig((prev: any) => ({ ...prev, benefitValue30d: e.target.value }))}
-                        onBlur={() => handleSaveConfig({ benefitValue30d: config.benefitValue30d })}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
-                      />
-                    </div>
-
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Crie e Digite o Cupom Válido:</label>
-                      <input
-                        type="text"
-                        placeholder="Ex: DIGITE_SEU_CUPOM"
-                        value={config.coupon30d ?? ""}
-                        onChange={(e) => setConfig((prev: any) => ({ ...prev, coupon30d: e.target.value.toUpperCase() }))}
-                        onBlur={() => handleSaveConfig({ coupon30d: config.coupon30d })}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
-                      />
                     </div>
                   </div>
                 </div>
-              </div>
-
               {/* LISTA DE BASE DE CLIENTES VÁLIDOS */}
               <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1.2rem" }}>
                 <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", marginBottom: "10px" }}>
@@ -1330,6 +1440,63 @@ export default function ChatbotHubClient() {
         </div>
         )}
       </div>
+      {/* MODAL DE CRIAÇÃO RÁPIDA DE CUPOM */}
+      {showNewCouponModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15,23,42,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "420px", padding: "1.5rem", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+                ➕ Criar Novo Cupom de Desconto
+              </div>
+              <button onClick={() => setShowNewCouponModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                Código do Cupom (Letras e Números):
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: PRIMEIRACOMPRA10 ou VOLTEI10"
+                value={newCouponCode}
+                onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                Desconto (% Porcentagem):
+              </label>
+              <input
+                type="number"
+                placeholder="Ex: 10"
+                value={newCouponDiscount}
+                onChange={(e) => setNewCouponDiscount(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowNewCouponModal(false)}
+                style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleCreateNewCoupon()}
+                disabled={creatingCoupon}
+                style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #16A34A, #15803D)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+              >
+                {creatingCoupon ? "Salvando..." : "✓ Salvar & Selecionar Cupom"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

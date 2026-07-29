@@ -22,6 +22,7 @@ export async function GET() {
       deliveryConfig: true,
       paymentFees: true,
       chatbotConfig: true,
+      storeCoupons: true,
     },
   });
 
@@ -46,12 +47,16 @@ export async function GET() {
     customPrompt: "",
     autoOrderLink: true,
     maxWaitTimeMinutes: 45,
+    instantCouponEnabled: false,
+    instantCouponCode: "",
+    instantCouponDiscount: "10%",
   };
 
   const storedConfig = (user.chatbotConfig as any) || {};
 
   return NextResponse.json({
     config: { ...defaultConfig, ...storedConfig },
+    coupons: Array.isArray(user.storeCoupons) ? user.storeCoupons : [],
     stats: {
       productCount,
       categoryCount,
