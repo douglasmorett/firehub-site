@@ -131,6 +131,27 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "chatbot_disabled" });
       }
 
+      // Se o cliente já pediu atendente humano nesta conversa e a opção de pausar está ligada
+      const pausedCacheKey = `paused_${user.id}_${remoteJid}`;
+      if (cooldownCache.get(pausedCacheKey)) {
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Robô pausado para ${remoteJid} (atendente humano assumiu)`);
+        return NextResponse.json({ status: "ignored_human_paused" });
+      }
+
+      const stopOnHuman = chatbotConfig.stopOnHumanRequest !== false;
+      const lowerMsg = textMessage.toLowerCase();
+      const isAskingHuman = /atendente|humano|falar com pessoa|falar com gente|suporte|atendimento humano|falar com atendente/i.test(lowerMsg);
+
+      if (stopOnHuman && isAskingHuman) {
+        const humanReply = "Entendido! Já avisei nossa equipe e um atendente humano vai te responder por aqui em instantes. Por favor, aguarde só um momento! 😊";
+        const recipientTarget = remoteJid || data.from || "";
+        await sendEvolutionMessage(user.id, recipientTarget, humanReply);
+        
+        // Marca a conversa como pausada por 12 horas para o robô não responder mais automaticamente
+        cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
+        return NextResponse.json({ status: "paused_for_human" });
+      }
+
       // Prepare and format history to pass to AI
       const history = conversationCache.get(remoteJid) || [];
       const aiHistory = history.map(msg => ({ sender: msg.sender, text: msg.text }));

@@ -43,6 +43,7 @@ export default function ChatbotHubClient() {
     personality: "SIMPATICO",
     customPrompt: "",
     externalMenuUrl: "",
+    stopOnHumanRequest: true,
     autoOrderLink: true,
     agentName: "",
     failThreshold: 3,
@@ -838,6 +839,45 @@ export default function ChatbotHubClient() {
                   background: "#F8FAFC"
                 }}
               />
+            </div>
+
+            {/* PAUSAR ROBÔ QUANDO PEDIR ATENDENTE HUMANO */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>
+                    👤 Pausar Atendimento do Robô quando o cliente pedir Atendente Humano?
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px" }}>
+                    Se marcado como &quot;SIM&quot;, quando o cliente digitar palavras como &quot;atendente&quot;, &quot;humano&quot; ou &quot;falar com suporte&quot;, o robô responderá que chamou a equipe e parará de responder essa conversa automaticamente.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ stopOnHumanRequest: true })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.stopOnHumanRequest !== false ? "#16A34A" : "#E2E8F0",
+                      color: config.stopOnHumanRequest !== false ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ stopOnHumanRequest: false })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.stopOnHumanRequest === false ? "#DC2626" : "#E2E8F0",
+                      color: config.stopOnHumanRequest === false ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    NÃO
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* INSTRUÇÕES CUSTOMIZADAS */}
