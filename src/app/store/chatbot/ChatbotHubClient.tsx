@@ -93,6 +93,7 @@ export default function ChatbotHubClient() {
   const [newCouponCode, setNewCouponCode] = useState("");
   const [newCouponType, setNewCouponType] = useState<"percent" | "fixed" | "free_shipping">("percent");
   const [newCouponDiscount, setNewCouponDiscount] = useState("10");
+  const [newCouponMinOrder, setNewCouponMinOrder] = useState("");
   const [creatingCoupon, setCreatingCoupon] = useState(false);
   // Modal de Confirmação de Teste de Envio
   const [showConfirmTestModal, setShowConfirmTestModal] = useState(false);
@@ -205,11 +206,15 @@ export default function ChatbotHubClient() {
     const cleanCode = newCouponCode.trim().toUpperCase();
     const type = newCouponType;
     const discountVal = type === "free_shipping" ? 0 : (parseFloat(newCouponDiscount) || 0);
+    const minOrderVal = parseFloat(newCouponMinOrder) || 0;
     
     setCreatingCoupon(true);
     try {
       const currentList = Array.isArray(storeCoupons) ? storeCoupons : [];
-      const updated = [...currentList.filter((c: any) => c && c.code !== cleanCode), { code: cleanCode, discount: discountVal, type, active: true }];
+      const updated = [
+        ...currentList.filter((c: any) => c && c.code !== cleanCode),
+        { code: cleanCode, discount: discountVal, type, minOrderValue: minOrderVal, active: true }
+      ];
       
       const res = await fetch("/api/store-settings", {
         method: "PUT",
@@ -219,11 +224,12 @@ export default function ChatbotHubClient() {
 
       if (res.ok) {
         setStoreCoupons(updated);
+        const minOrderLabel = minOrderVal > 0 ? ` (Pedido min: R$ ${minOrderVal.toFixed(2)})` : "";
         const toastLabel = type === "free_shipping"
-          ? `🎉 Cupom "${cleanCode}" de Frete Grátis criado e salvo!`
+          ? `🎉 Cupom "${cleanCode}" de Frete Grátis criado e salvo!${minOrderLabel}`
           : type === "fixed"
-          ? `🎉 Cupom "${cleanCode}" de R$ ${discountVal.toFixed(2)} OFF criado e salvo!`
-          : `🎉 Cupom "${cleanCode}" de ${discountVal}% OFF criado e salvo!`;
+          ? `🎉 Cupom "${cleanCode}" de R$ ${discountVal.toFixed(2)} OFF criado e salvo!${minOrderLabel}`
+          : `🎉 Cupom "${cleanCode}" de ${discountVal}% OFF criado e salvo!${minOrderLabel}`;
         
         showToast(toastLabel, "#10B981");
         
@@ -237,6 +243,7 @@ export default function ChatbotHubClient() {
         setNewCouponCode("");
         setNewCouponType("percent");
         setNewCouponDiscount("10");
+        setNewCouponMinOrder("");
         setTargetCouponField(null);
         setShowNewCouponModal(false);
       } else {
@@ -824,7 +831,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- Selecione um cupom cadastrado --</option>
                         {storeCoupons.map((c: any, i: number) => (
                           <option key={i} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
                           </option>
                         ))}
                       </select>
@@ -895,7 +902,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                         {storeCoupons.map((c: any, idx: number) => (
                           <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
                           </option>
                         ))}
                       </select>
@@ -917,7 +924,7 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon7d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} de Desconto` : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? `🚚 Frete Grátis${sel.minOrderValue > 0 ? ` (Pedido Mínimo: R$ ${sel.minOrderValue})` : " (Sem taxa de entrega)"}` : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}` : `🏷️ Porcentagem: ${sel.discount}% OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
@@ -950,7 +957,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                         {storeCoupons.map((c: any, idx: number) => (
                           <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
                           </option>
                         ))}
                       </select>
@@ -972,7 +979,7 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon15d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} de Desconto` : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? `🚚 Frete Grátis${sel.minOrderValue > 0 ? ` (Pedido Mínimo: R$ ${sel.minOrderValue})` : " (Sem taxa de entrega)"}` : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}` : `🏷️ Porcentagem: ${sel.discount}% OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
@@ -1005,7 +1012,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                         {storeCoupons.map((c: any, idx: number) => (
                           <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
                           </option>
                         ))}
                       </select>
@@ -1027,7 +1034,7 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon30d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} de Desconto` : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? `🚚 Frete Grátis${sel.minOrderValue > 0 ? ` (Pedido Mínimo: R$ ${sel.minOrderValue})` : " (Sem taxa de entrega)"}` : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}` : `🏷️ Porcentagem: ${sel.discount}% OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
@@ -1599,10 +1606,25 @@ export default function ChatbotHubClient() {
                   <span style={{ fontSize: "1.3rem" }}>🚚</span>
                   <div>
                     <div style={{ fontWeight: 800, color: "#166534", fontSize: "0.85rem" }}>Benefício de Frete Grátis</div>
-                    <div style={{ fontSize: "0.78rem", color: "#16A34A", marginTop: "2px", fontWeight: 600 }}>A taxa de entrega do cliente será zerada no momento do pedido.</div>
                   </div>
                 </div>
               )}
+            </div>
+
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                Valor Mínimo do Pedido (R$ Reais - Opcional):
+              </label>
+              <input
+                type="number"
+                placeholder="Ex: 40.00 (deixe em branco ou 0 para sem mínimo)"
+                value={newCouponMinOrder}
+                onChange={(e) => setNewCouponMinOrder(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
+              />
+              <span style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "4px", display: "block", lineHeight: 1.3 }}>
+                💡 Se preenchido, o cliente só poderá usar o cupom em compras a partir deste valor.
+              </span>
             </div>
 
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>

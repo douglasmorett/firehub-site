@@ -71,18 +71,22 @@ export async function POST(req: Request) {
         c.code?.toLowerCase() === couponCode.toLowerCase() && c.active !== false
       );
       if (coupon) {
-        if (coupon.type === "free_shipping") {
-          discount = fee;
-        } else if (coupon.type === "fixed") {
-          discount = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 0);
-        } else if (coupon.type === "percent") {
-          const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
-          discount = totalAmount * (pct / 100);
+        if (coupon.minOrderValue && totalAmount < coupon.minOrderValue) {
+          discount = 0;
         } else {
-          const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
-          discount = totalAmount * (pct / 100);
+          if (coupon.type === "free_shipping") {
+            discount = fee;
+          } else if (coupon.type === "fixed") {
+            discount = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 0);
+          } else if (coupon.type === "percent") {
+            const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
+            discount = totalAmount * (pct / 100);
+          } else {
+            const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
+            discount = totalAmount * (pct / 100);
+          }
+          discount = Math.min(discount, totalAmount + fee);
         }
-        discount = Math.min(discount, totalAmount + fee);
       }
     }
 

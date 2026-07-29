@@ -155,6 +155,11 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     const found = storeCoupons.find((c: any) => c.code?.toUpperCase() === cleanCode && c.active !== false);
 
     if (found) {
+      if (found.minOrderValue && cartTotal < found.minOrderValue) {
+        alert(`⚠️ Este cupom é válido apenas para pedidos a partir de R$ ${Number(found.minOrderValue).toFixed(2)}.`);
+        setCouponApplied(null);
+        return;
+      }
       if (found.type === "free_shipping") {
         setCouponApplied({ code: found.code, discount: deliveryFee, isFreeShipping: true });
       } else if (found.type === "fixed") {
@@ -169,6 +174,11 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         const res = await fetch(`/api/validate-coupon?code=${cleanCode}&franchiseeId=${franchisee.id}`);
         if (res.ok) {
           const d = await res.json();
+          if (d.minOrderValue && cartTotal < d.minOrderValue) {
+            alert(`⚠️ Este cupom é válido apenas para pedidos a partir de R$ ${Number(d.minOrderValue).toFixed(2)}.`);
+            setCouponApplied(null);
+            return;
+          }
           const isFree = d.type === "free_shipping";
           const isFixed = d.type === "fixed";
           const calcDiscount = isFree ? deliveryFee : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);

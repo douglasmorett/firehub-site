@@ -202,9 +202,15 @@ export async function processChatbotAI(
 
   if (Array.isArray(user.storeCoupons) && (user.storeCoupons as any[]).length > 0) {
     const activeCoupons = (user.storeCoupons as any[]).filter((c: any) => c.active !== false && c.code);
-    if (activeCoupons.length > 0) {
-      availableCouponsText += activeCoupons.map((c: any) => `- Cupom Válido do Cardápio: Código "${c.code}" (${c.type === "free_shipping" ? "Frete Grátis / Isenção da taxa de entrega" : `${c.discount}% de desconto`})`).join("\n");
-    }
+      availableCouponsText += activeCoupons.map((c: any) => {
+        const benefitStr = c.type === "free_shipping"
+          ? "Frete Grátis / Isenção da taxa de entrega"
+          : c.type === "fixed"
+          ? `R$ ${c.discount} de desconto no pedido`
+          : `${c.discount}% de desconto`;
+        const minOrderStr = c.minOrderValue > 0 ? ` — Válido apenas para pedidos a partir de R$ ${c.minOrderValue}` : "";
+        return `- Cupom Válido do Cardápio: Código "${c.code}" (${benefitStr}${minOrderStr})`;
+      }).join("\n");
   }
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;

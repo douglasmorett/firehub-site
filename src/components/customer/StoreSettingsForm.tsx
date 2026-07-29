@@ -8,7 +8,7 @@ const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domi
 // Padrão 18h-23h — foco em delivery de jantar, igual Brendi
 const defaultHours = () => DAYS.map(d => ({ day: d, open: "18:00", close: "23:00", active: true, shifts: [{ open: "18:00", close: "23:00" }] }));
 
-type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "fixed" | "free_shipping"; active: boolean };
+type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "fixed" | "free_shipping"; minOrderValue?: number; active: boolean };
 
 // Botão de salvar inline por seção
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
@@ -543,6 +543,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                     <span style={{ fontSize: "0.8rem", color: "#64748B" }}>%</span>
                   </div>
                 )}
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Mín: R$</span>
+                  <input type="number" placeholder="0" value={c.minOrderValue || 0} onChange={e => updateCoupon(idx, "minOrderValue", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                </div>
                 <label style={{ display: "flex", alignItems: "center", gap: "3px", cursor: "pointer" }}>
                   <input type="checkbox" checked={c.active} onChange={e => updateCoupon(idx, "active", e.target.checked)} />
                   <span style={{ fontSize: "0.75rem" }}>Ativo</span>
