@@ -122,9 +122,11 @@ async function getOrCreateSocket(instanceName) {
         const delay = Math.min(3000 * count, 15000);
         setTimeout(() => getOrCreateSocket(instanceName), delay);
       } else if (count >= 5) {
-        console.log(`[WhatsApp Gateway] ⛔ Max reconexões atingido para ${instanceName}. Aguardando nova requisição.`);
+        console.log(`[WhatsApp Gateway] ⛔ Max reconexões atingido para ${instanceName}. Limpando sessão corrompida...`);
         reconnectCounters.delete(instanceName);
         sessions.delete(instanceName);
+        try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
+        console.log(`[WhatsApp Gateway] 🗑️ Sessão ${instanceName} limpa. Pronta para nova conexão.`);
       } else {
         sessions.delete(instanceName);
         try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
@@ -243,6 +245,46 @@ app.post("/instance/create", async (req, res) => {
   const { instanceName } = req.body;
   await getOrCreateSocket(instanceName || "default");
   return res.json({ instance: { instanceName, status: "created" } });
+});
+
+// 3.5 Reset Instância (limpa sessão corrompida e força novo QR Code)
+app.delete("/instance/reset/:instanceName", async (req, res) => {
+  const { instanceName } = req.params;
+  const session = sessions.get(instanceName);
+  
+  if (session && session.sock) {
+    try { session.sock.end(); } catch(e) {}
+  }
+  
+  sessions.delete(instanceName);
+  sessionLocks.delete(instanceName);
+  reconnectCounters.delete(instanceName);
+  
+  const authFolder = path.join(__dirname, "data", "sessions", instanceName);
+  try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
+  
+  console.log(`[WhatsApp Gateway] 🗑️ Reset completo da instância ${instanceName}`);
+  return res.json({ success: true, message: `Instância ${instanceName} resetada` });
+});
+
+// 3.6 Limpar TODAS as sessões
+app.delete("/instance/clean-all", async (req, res) => {
+  for (const [name, session] of sessions) {
+    if (session.sock) {
+      try { session.sock.end(); } catch(e) {}
+    }
+  }
+  
+  sessions.clear();
+  sessionLocks.clear();
+  reconnectCounters.clear();
+  
+  const sessionsFolder = path.join(__dirname, "data", "sessions");
+  try { fs.rmSync(sessionsFolder, { recursive: true, force: true }); } catch {}
+  fs.mkdirSync(sessionsFolder, { recursive: true });
+  
+  console.log("[WhatsApp Gateway] 🗑️ TODAS as sessões foram limpas");
+  return res.json({ success: true, message: "Todas as sessões limpas" });
 });
 
 // 4. Enviar Mensagem de Texto
