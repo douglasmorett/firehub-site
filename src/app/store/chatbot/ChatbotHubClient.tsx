@@ -988,6 +988,8 @@ export default function ChatbotHubClient() {
                     </div>
                   </div>
                 </div>
+              </div>
+
               {/* LISTA DE BASE DE CLIENTES VÁLIDOS */}
               <div style={{ background: "#fff", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1.2rem" }}>
                 <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", marginBottom: "10px" }}>
