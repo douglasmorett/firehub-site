@@ -8,7 +8,7 @@ const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domi
 // Padrão 18h-23h — foco em delivery de jantar, igual Brendi
 const defaultHours = () => DAYS.map(d => ({ day: d, open: "18:00", close: "23:00", active: true, shifts: [{ open: "18:00", close: "23:00" }] }));
 
-type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "free_shipping"; active: boolean };
+type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "fixed" | "free_shipping"; active: boolean };
 
 // Botão de salvar inline por seção
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
@@ -524,13 +524,19 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 <select
                   value={c.type || "percent"}
                   onChange={e => updateCoupon(idx, "type", e.target.value)}
-                  style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#16A34A" : "#2563EB", background: "#fff" }}
+                  style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#16A34A" : c.type === "fixed" ? "#7C3AED" : "#2563EB", background: "#fff" }}
                 >
-                  <option value="percent">% Desconto</option>
+                  <option value="percent">% Porcentagem</option>
+                  <option value="fixed">R$ Valor Fixo</option>
                   <option value="free_shipping">🚚 Frete Grátis</option>
                 </select>
                 {c.type === "free_shipping" ? (
                   <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#16A34A", padding: "0.3rem 0.6rem", background: "#DCFCE7", borderRadius: "6px" }}>Frete Grátis</span>
+                ) : c.type === "fixed" ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "0.8rem", color: "#64748B" }}>R$</span>
+                    <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                  </div>
                 ) : (
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                     <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />

@@ -91,7 +91,7 @@ export default function ChatbotHubClient() {
   const [showNewCouponModal, setShowNewCouponModal] = useState(false);
   const [targetCouponField, setTargetCouponField] = useState<string | null>(null);
   const [newCouponCode, setNewCouponCode] = useState("");
-  const [newCouponType, setNewCouponType] = useState<"percent" | "free_shipping">("percent");
+  const [newCouponType, setNewCouponType] = useState<"percent" | "fixed" | "free_shipping">("percent");
   const [newCouponDiscount, setNewCouponDiscount] = useState("10");
   const [creatingCoupon, setCreatingCoupon] = useState(false);
   // Modal de Confirmação de Teste de Envio
@@ -203,20 +203,29 @@ export default function ChatbotHubClient() {
       return;
     }
     const cleanCode = newCouponCode.trim().toUpperCase();
-    const isFree = newCouponType === "free_shipping";
-    const discountVal = isFree ? 0 : (parseFloat(newCouponDiscount) || 10);
+    const type = newCouponType;
+    const discountVal = type === "free_shipping" ? 0 : (parseFloat(newCouponDiscount) || 0);
     
     setCreatingCoupon(true);
     try {
-      const updated = [...storeCoupons, { code: cleanCode, discount: discountVal, type: isFree ? "free_shipping" : "percent", active: true }];
+      const currentList = Array.isArray(storeCoupons) ? storeCoupons : [];
+      const updated = [...currentList.filter((c: any) => c && c.code !== cleanCode), { code: cleanCode, discount: discountVal, type, active: true }];
+      
       const res = await fetch("/api/store-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storeCoupons: updated }),
       });
+
       if (res.ok) {
         setStoreCoupons(updated);
-        showToast(isFree ? `🎉 Cupom "${cleanCode}" de Frete Grátis criado e salvo!` : `🎉 Cupom "${cleanCode}" de ${discountVal}% criado e salvo!`, "#10B981");
+        const toastLabel = type === "free_shipping"
+          ? `🎉 Cupom "${cleanCode}" de Frete Grátis criado e salvo!`
+          : type === "fixed"
+          ? `🎉 Cupom "${cleanCode}" de R$ ${discountVal.toFixed(2)} OFF criado e salvo!`
+          : `🎉 Cupom "${cleanCode}" de ${discountVal}% OFF criado e salvo!`;
+        
+        showToast(toastLabel, "#10B981");
         
         // Se foi acionado por um card específico ou pelo botão abaixo do seletor, auto-seleciona
         const keyToUpdate = targetRecuperationKey || targetCouponField;
@@ -227,6 +236,7 @@ export default function ChatbotHubClient() {
         
         setNewCouponCode("");
         setNewCouponType("percent");
+        setNewCouponDiscount("10");
         setTargetCouponField(null);
         setShowNewCouponModal(false);
       } else {
@@ -814,7 +824,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- Selecione um cupom cadastrado --</option>
                         {storeCoupons.map((c: any, i: number) => (
                           <option key={i} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
                           </option>
                         ))}
                       </select>
@@ -885,7 +895,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                         {storeCoupons.map((c: any, idx: number) => (
                           <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
                           </option>
                         ))}
                       </select>
@@ -907,7 +917,7 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon7d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} de Desconto` : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
@@ -940,7 +950,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                         {storeCoupons.map((c: any, idx: number) => (
                           <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
                           </option>
                         ))}
                       </select>
@@ -962,7 +972,7 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon15d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} de Desconto` : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
@@ -995,7 +1005,7 @@ export default function ChatbotHubClient() {
                         <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                         {storeCoupons.map((c: any, idx: number) => (
                           <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : `${c.discount}% OFF`})
+                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`})
                           </option>
                         ))}
                       </select>
@@ -1017,7 +1027,7 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon30d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? "🚚 Frete Grátis (Sem taxa de entrega)" : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} de Desconto` : `🏷️ Porcentagem: ${sel.discount}% de Desconto`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
@@ -1495,33 +1505,46 @@ export default function ChatbotHubClient() {
               </button>
             </div>
 
-            <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
                 Tipo do Benefício:
               </label>
-              <div style={{ display: "flex", gap: "8px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
                 <button
                   type="button"
                   onClick={() => setNewCouponType("percent")}
                   style={{
-                    flex: 1, padding: "8px 12px", borderRadius: "10px",
+                    padding: "8px 4px", borderRadius: "10px", textAlign: "center",
                     border: newCouponType === "percent" ? "2px solid #2563EB" : "1px solid #CBD5E1",
                     background: newCouponType === "percent" ? "#EFF6FF" : "#fff",
                     color: newCouponType === "percent" ? "#1D4ED8" : "#64748B",
-                    fontWeight: 700, fontSize: "0.82rem", cursor: "pointer"
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
                   }}
                 >
-                  🏷️ Desconto (%)
+                  🏷️ Porcentagem (%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewCouponType("fixed")}
+                  style={{
+                    padding: "8px 4px", borderRadius: "10px", textAlign: "center",
+                    border: newCouponType === "fixed" ? "2px solid #7C3AED" : "1px solid #CBD5E1",
+                    background: newCouponType === "fixed" ? "#F5F3FF" : "#fff",
+                    color: newCouponType === "fixed" ? "#6D28D9" : "#64748B",
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
+                  }}
+                >
+                  💵 Valor Fixo (R$)
                 </button>
                 <button
                   type="button"
                   onClick={() => setNewCouponType("free_shipping")}
                   style={{
-                    flex: 1, padding: "8px 12px", borderRadius: "10px",
+                    padding: "8px 4px", borderRadius: "10px", textAlign: "center",
                     border: newCouponType === "free_shipping" ? "2px solid #16A34A" : "1px solid #CBD5E1",
                     background: newCouponType === "free_shipping" ? "#F0FDF4" : "#fff",
                     color: newCouponType === "free_shipping" ? "#15803D" : "#64748B",
-                    fontWeight: 700, fontSize: "0.82rem", cursor: "pointer"
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
                   }}
                 >
                   🚚 Frete Grátis
@@ -1535,7 +1558,7 @@ export default function ChatbotHubClient() {
               </label>
               <input
                 type="text"
-                placeholder={newCouponType === "free_shipping" ? "Ex: FRETEGRATIS ou VEMDEFRETE" : "Ex: PRIMEIRACOMPRA10 ou VOLTEI10"}
+                placeholder={newCouponType === "free_shipping" ? "Ex: FRETEGRATIS ou VEMDEFRETE" : newCouponType === "fixed" ? "Ex: DEZREAIS ou OFF10" : "Ex: PRIMEIRACOMPRA10 ou VOLTEI10"}
                 value={newCouponCode}
                 onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
                 style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
@@ -1543,7 +1566,7 @@ export default function ChatbotHubClient() {
             </div>
 
             <div style={{ marginBottom: "1.25rem" }}>
-              {newCouponType === "percent" ? (
+              {newCouponType === "percent" && (
                 <>
                   <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
                     Desconto (% Porcentagem):
@@ -1556,9 +1579,28 @@ export default function ChatbotHubClient() {
                     style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
                   />
                 </>
-              ) : (
-                <div style={{ background: "#F0FDF4", border: "1px dashed #16A34A", padding: "10px 14px", borderRadius: "10px", color: "#166534", fontSize: "0.82rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
-                  🚚 Este cupom isentará a taxa de entrega (`deliveryFee`) do cliente no momento do pedido.
+              )}
+              {newCouponType === "fixed" && (
+                <>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    Valor de Desconto em Dinheiro (R$ Reais):
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="Ex: 10.00"
+                    value={newCouponDiscount}
+                    onChange={(e) => setNewCouponDiscount(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
+                  />
+                </>
+              )}
+              {newCouponType === "free_shipping" && (
+                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "12px 14px", borderRadius: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "1.3rem" }}>🚚</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#166534", fontSize: "0.85rem" }}>Benefício de Frete Grátis</div>
+                    <div style={{ fontSize: "0.78rem", color: "#16A34A", marginTop: "2px", fontWeight: 600 }}>A taxa de entrega do cliente será zerada no momento do pedido.</div>
+                  </div>
                 </div>
               )}
             </div>

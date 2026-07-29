@@ -73,6 +73,8 @@ export async function POST(req: Request) {
       if (coupon) {
         if (coupon.type === "free_shipping") {
           discount = fee;
+        } else if (coupon.type === "fixed") {
+          discount = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 0);
         } else if (coupon.type === "percent") {
           const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
           discount = totalAmount * (pct / 100);

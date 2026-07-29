@@ -157,6 +157,9 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     if (found) {
       if (found.type === "free_shipping") {
         setCouponApplied({ code: found.code, discount: deliveryFee, isFreeShipping: true });
+      } else if (found.type === "fixed") {
+        const fixedVal = typeof found.discount === "number" ? found.discount : 10;
+        setCouponApplied({ code: found.code, discount: fixedVal, isFreeShipping: false });
       } else {
         const pct = typeof found.discount === "number" ? found.discount : 10;
         setCouponApplied({ code: found.code, discount: cartTotal * (pct / 100), isFreeShipping: false });
@@ -167,7 +170,9 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         if (res.ok) {
           const d = await res.json();
           const isFree = d.type === "free_shipping";
-          setCouponApplied({ code: cleanCode, discount: isFree ? deliveryFee : (d.discount || 0), isFreeShipping: isFree });
+          const isFixed = d.type === "fixed";
+          const calcDiscount = isFree ? deliveryFee : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);
+          setCouponApplied({ code: cleanCode, discount: calcDiscount, isFreeShipping: isFree });
         } else {
           alert("Cupom inválido ou expirado.");
           setCouponApplied(null);
