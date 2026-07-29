@@ -68,13 +68,12 @@ export async function processChatbotAI(userId: string, message: string, history:
     const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
     const today = hoursArr[dayIdx];
     if (today && today.active) {
-      nowStatusText = `Hoje funcionamos das ${today.open} às ${today.close}.`;
+      nowStatusText = `Hoje funcionamos exatamente das ${today.open || "18:00"} às ${today.close || "23:30"}.`;
     } else if (today && !today.active) {
       nowStatusText = "Hoje a loja está fechada.";
     }
   }
 
-  // Cardápio resumido
   const catalogSummary = products
     .map((p) => `- ${p.name} (${p.category}): ${p.price} reais${p.description ? ` — ${p.description}` : ""}`)
     .join("\n");
@@ -90,21 +89,24 @@ REGRAS ABSOLUTAS:
 2. Responda de forma RESUMIDA, DIRETA e ULTRA NATURAL (no máximo 2 frases curtas + o link). NUNCA mande textões!
 3. NUNCA use markdown, asteriscos, bullet points ou formatação de código. Apenas texto puro com emojis naturais.
 4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí', 'bora').
-5. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU PEDIR UMA RECOMENDAÇÃO ESPECÍFICA:
-   - Responda DIRETO ao ponto citando apenas 1 ou no máximo 2 opções campeãs com seus preços reais. Não fique listando o cardápio inteiro! Ex: "O campeão de vendas aqui é o Combo Imperial por 24,90 reais! O pessoal ama!"
-   - Envie SEMPRE o link do cardápio ao final (${storeLink}).
-6. QUANDO PEDIREM O CARDÁPIO GERAL:
-   - Fale 2 ou 3 destaques rápidos e mande o link (${storeLink}).
-7. Quando informar preços, fale de forma natural (ex: "24,90 reais" ou "25 reais").
-8. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
-9. Seu estilo: ${personalityInstruction}
+5. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
+   - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NUNCA dê respostas genéricas como "aberto normalmente" sem falar as horas exatas de abertura e fechamento.
+6. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU RECOMENDAÇÃO:
+   - Responda DIRETO ao ponto citando apenas 1 opção campeã com o preço real. Ex: "O campeão aqui é o Combo Imperial por 24,90 reais! O pessoal ama!"
+7. QUANDO PEDIREM O CARDÁPIO GERAL:
+   - Fale 2 destaques rápidos e mande o link (${storeLink}).
+8. Quando informar preços, fale de forma natural (ex: "24,90 reais").
+9. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
+10. Seu estilo: ${personalityInstruction}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
 - Endereço / Cidade: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio: ${storeLink}
-- Status de Funcionamento Hoje: ${nowStatusText || "Aberto normalmente"}
+- Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
+- Quadro Geral de Horários:
+${hoursText}
 
 NOSSO CARDÁPIO COMPLETO DA LOJA:
 ${catalogSummary || "Cardápio disponível no nosso link."}
