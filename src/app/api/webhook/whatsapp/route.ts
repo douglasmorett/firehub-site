@@ -89,15 +89,27 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "ignored_group" });
       }
 
+      // Suporte a Mensagens de Áudio (audioMessage / ptt)
+      const audioObj = data.message?.audioMessage || data.message?.pttMessage || data.audio;
+      let audioData: { base64: string; mimeType: string } | undefined = undefined;
+
+      if (audioObj) {
+        const base64Data = audioObj.base64 || audioObj.data || data.base64;
+        const mimeType = audioObj.mimetype || audioObj.mimeType || "audio/ogg; codecs=opus";
+        if (base64Data) {
+          audioData = { base64: base64Data, mimeType };
+        }
+      }
+
       const textMessage =
         data.message?.conversation ||
         data.message?.extendedTextMessage?.text ||
         data.message?.imageMessage?.caption ||
         data.body ||
         data.text ||
-        "";
+        (audioData ? "[Mensagem de Áudio enviada pelo cliente]" : "");
 
-      if (!textMessage.trim()) {
+      if (!textMessage.trim() && !audioData) {
         return NextResponse.json({ status: "empty_message" });
       }
 
@@ -198,7 +210,7 @@ export async function POST(req: NextRequest) {
 
       console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Processando IA para ${remoteJid} com ${aiHistory.length} mensagens no histórico...`);
       
-      const aiResponse = await processChatbotAI(user.id, textMessage, aiHistory, remoteJid);
+      const aiResponse = await processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData);
       
       if (aiResponse?.reply) {
         // Human typing delay (1000ms a 2500ms)

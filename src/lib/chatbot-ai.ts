@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
 
-export async function processChatbotAI(userId: string, message: string, history: any[] = [], remoteJid?: string) {
+export async function processChatbotAI(
+  userId: string,
+  message: string,
+  history: any[] = [],
+  remoteJid?: string,
+  audioData?: { base64: string; mimeType: string }
+) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -177,9 +183,25 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         parts: [{ text: h.text }]
       }));
 
+      const userParts: any[] = [];
+      if (audioData?.base64) {
+        userParts.push({
+          inlineData: {
+            data: audioData.base64,
+            mimeType: audioData.mimeType || "audio/ogg; codecs=opus",
+          },
+        });
+      }
+      if (message) {
+        userParts.push({ text: message });
+      }
+      if (userParts.length === 0) {
+        userParts.push({ text: "O cliente enviou uma mensagem de áudio." });
+      }
+
       const fullContents = [
         ...chatHistory,
-        { role: "user", parts: [{ text: message }] }
+        { role: "user", parts: userParts }
       ];
 
       const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
