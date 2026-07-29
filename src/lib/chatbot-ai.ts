@@ -86,11 +86,14 @@ export async function processChatbotAI(userId: string, message: string, history:
 
 REGRAS ABSOLUTAS:
 1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem.
-2. Responda de forma CURTA e NATURAL como uma pessoa real no WhatsApp (1-3 frases máximo).
-3. NUNCA use markdown, asteriscos, bullet points ou qualquer formatação. Apenas texto puro com emojis naturais.
-4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí').
-5. Varie MUITO suas respostas — nunca repita a mesma estrutura de frase que acabou de usar.
-6. Se o cliente mandar algo fora do contexto (piada, flerte, pergunta aleatória), responda naturalmente como uma pessoa faria, com humor e leveza, e depois direcione para o cardápio.
+2. Responda de forma CURTA e NATURAL como uma pessoa real no WhatsApp (2-4 frases).
+3. NUNCA use markdown, asteriscos, bullet points (*, -, #) ou formatação de código. Apenas texto puro com emojis naturais.
+4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí', 'bora').
+5. QUANDO O CLIENTE PEDIR CARDÁPIO, PROMOÇÃO OU MAIS VENDIDOS:
+   - Mencione pelo menos 3 a 5 dos nossos principais pratos/lanches do nosso cardápio com os valores reais (ex: "temos X por 25 reais, Y por 30 reais...").
+   - Destaque os mais vendidos ou promoções caso tenham.
+   - Envie SEMPRE o link do cardápio completo ao final da resposta (${storeLink}).
+6. NUNCA deixe o cliente sem resposta ou mande apenas o link seco sem falar os pratos quando ele perguntar sobre o cardápio ou o que temos pra comer.
 7. Quando informar preços, fale de forma natural: "a pizza é 35 reais" em vez de "R$ 35,00".
 8. Seu estilo: ${personalityInstruction}
 
@@ -98,15 +101,15 @@ DADOS DA LOJA:
 - Nome da Loja: ${storeName}
 - Endereço / Cidade: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
-- Link do Cardápio: ${storeLink}
+- Link do Cardápio Completo: ${storeLink}
 - Status de Funcionamento Hoje: ${nowStatusText || "Aberto normalmente"}
 
-CARDÁPIO COMPLETO:
-${catalogSummary || "Cardápio em atualização."}
+NOSSO CARDÁPIO COMPLETO DA LOJA:
+${catalogSummary || "Cardápio disponível no nosso link."}
 
-${customPrompt ? `INSTRUÇÕES EXTRAS DA LOJA: ${customPrompt}` : ""}
+${customPrompt ? `INSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}` : ""}
 
-Lembre-se: Você é humano. Escreva como se estivesse digitando rápido no celular.`;
+Lembre-se: Você é humano. Atenda o cliente com entusiasmo, ofereça os produtos do cardápio e facilite a escolha dele!`;
 
       const ai = new GoogleGenAI({ apiKey });
 
@@ -232,16 +235,21 @@ Lembre-se: Você é humano. Escreva como se estivesse digitando rápido no celul
     };
   }
 
-  if (/cardapio|cardápio|menu|pedir|comprar|fazer pedido|fome|lanche|esfiha|esfirra|pizza/i.test(msg)) {
+  if (/cardapio|cardápio|menu|pedir|comprar|fazer pedido|fome|lanche|esfiha|esfirra|pizza|op[cç][õo]es|promo[cç][ãa]o|mais vendido/i.test(msg)) {
+    const sampleProducts = products.slice(0, 3).map(p => `${p.name} por ${p.price} reais`).join(", ");
+    const introText = sampleProducts ? `temos opções maravilhosas como ${sampleProducts}!` : "temos várias opções incríveis no nosso cardápio!";
     return {
-      reply: `claro! dá uma olhada lá no nosso site que tem tudo certinho, é bem rápido pra pedir:\n👉 ${storeLink}`
+      reply: `oie! ${introText} 😊 você pode ver o cardápio completo com todas as fotos e fazer seu pedido por aqui ó:\n👉 ${storeLink}`
     };
   }
 
+  const sampleProductsFallback = products.slice(0, 2).map(p => `${p.name} (${p.price} reais)`).join(" e ");
+  const productMention = sampleProductsFallback ? ` como ${sampleProductsFallback}` : "";
+
   const fallbacks = [
-    `oii! tô por aqui pra ajudar. 😊 quer dar uma olhada no nosso cardápio hoje?\n👉 ${storeLink}`,
-    `po, com certeza! 🍔 se tiver dúvida sobre algum lanche me avisa. pra fazer o pedido é só acessar:\n👉 ${storeLink}`,
-    `beleza! 😊 a gente tá no pique aqui hoje. escolhe seu lanche nesse link:\n👉 ${storeLink}`,
+    `oie! tô por aqui pra te atender. 😊 hoje temos destaques incríveis${productMention}! dá uma olhadinha no nosso cardápio completo:\n👉 ${storeLink}`,
+    `com certeza! 🍔 se quiser sugestão ou tiver dúvida sobre algum lanche me avisa. os mais pedidos estão no nosso cardápio:\n👉 ${storeLink}`,
+    `beleza! 😊 a gente tá a todo vapor aqui. escolhe seu lanche favorito por aqui:\n👉 ${storeLink}`,
   ];
   const choiceIndex = Math.abs(msg.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % fallbacks.length;
 
