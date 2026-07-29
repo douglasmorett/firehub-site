@@ -29,15 +29,17 @@ export async function PUT(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   try {
-    const body        = await req.json();
-    const email       = session.user?.email || "";
-    const merchantId  = await getMerchantIdForUser(email);
+    const body = await req.json();
+    const email = session.user?.email || "";
+    const merchantId = await getMerchantIdForUser(email);
 
-    console.log("[iFood Opening Hours PUT] Enviando:", JSON.stringify(body, null, 2));
+    // iFood opening-hours PUT aceita array de shifts ou objeto com shifts
+    const payload = Array.isArray(body) ? body : (body.shifts || body);
+    console.log("[iFood Opening Hours PUT] Enviando:", JSON.stringify(payload, null, 2));
 
     const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`, {
       method: "PUT",
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json().catch(() => ({}));

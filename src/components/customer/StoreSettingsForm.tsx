@@ -169,15 +169,20 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             body: JSON.stringify({ shifts: ifoodShifts }),
           });
           if (syncRes.ok) {
-            setHoursSyncMsg("✅ Horários sincronizados com o iFood!");
+            setHoursSyncMsg("✅ Horários salvos no site e sincronizados com o iFood!");
           } else {
             const errData = await syncRes.json().catch(() => ({}));
-            setHoursSyncMsg(`❌ iFood rejeitou: ${errData?.error || syncRes.status} ${JSON.stringify(errData?.details || '')}`);
+            const errDetailsStr = JSON.stringify(errData);
+            if (syncRes.status === 403 || errDetailsStr.includes("Forbidden") || errDetailsStr.includes("forbidden")) {
+              setHoursSyncMsg("⚠️ Horários salvos no site! (Obs: O iFood retornou Erro 403 Forbidden porque sua loja/chave iFood não possui permissão para alterar horários via API. Ajuste diretamente no Portal do Parceiro iFood se necessário).");
+            } else {
+              setHoursSyncMsg(`⚠️ Horários salvos no site! (iFood não sincronizou: ${errData?.error || syncRes.status})`);
+            }
           }
-          setTimeout(() => setHoursSyncMsg(null), 8000);
+          setTimeout(() => setHoursSyncMsg(null), 10000);
         } catch(e: any) {
-          setHoursSyncMsg(`❌ Erro ao sincronizar: ${e.message}`);
-          setTimeout(() => setHoursSyncMsg(null), 8000);
+          setHoursSyncMsg(`⚠️ Horários salvos no site! (Falha na conexão iFood: ${e.message})`);
+          setTimeout(() => setHoursSyncMsg(null), 10000);
         }
       }
     } finally { setSavingHours(false); }
