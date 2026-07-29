@@ -125,6 +125,7 @@ export async function processChatbotAI(
         CANCELADO: "Cancelado ❌"
       };
       const statusReadable = statusMap[o.status] || o.status;
+      const itemsList = o.items.map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
       return `- Pedido #${o.id.slice(-5).toUpperCase()}: Status = "${statusReadable}" | Itens = ${itemsList} | Total = ${o.totalAmount} reais`;
     }).join("\n");
   }
