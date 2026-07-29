@@ -857,9 +857,28 @@ export default function ChatbotHubClient() {
 
                 {/* CARD 7 DIAS */}
                 <div style={{ background: "#fff", padding: "1rem", borderRadius: "14px", border: "1px solid #CBD5E1", marginBottom: "1rem", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", flexWrap: "wrap", gap: "6px" }}>
                     <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#EA580C" }}>🔥 1º Incentivo — Cliente 7 Dias Sem Pedir</div>
                     <div style={{ display: "flex", gap: "6px" }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const testPhone = prompt("Digite o número do WhatsApp para teste (ex: 22998851680):", "22998851680");
+                          if (!testPhone) return;
+                          try {
+                            const res = await fetch("/api/store/marketing", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "send_test_7d", phone: testPhone })
+                            }).then(r => r.json());
+                            if (res.success) showToast(res.message, "#10B981");
+                            else showToast(res.error || "Erro ao disparar teste", "#EF4444");
+                          } catch { showToast("Erro de conexão", "#EF4444"); }
+                        }}
+                        style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid #EA580C", background: "#FFF7ED", color: "#EA580C", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}
+                      >
+                        📲 Testar Envio (WhatsApp)
+                      </button>
                       <button onClick={() => handleSaveConfig({ autoRecuperation7d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation7d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
                       <button onClick={() => handleSaveConfig({ autoRecuperation7d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation7d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
                     </div>

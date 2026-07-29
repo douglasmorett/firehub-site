@@ -140,7 +140,35 @@ export async function POST(req: NextRequest) {
     const targetFranchiseeId = user.ownerId || user.id;
     const body = await req.json();
 
-    // 1. Salvar configurações automáticas de marketing (7d, 15d, 30d)
+    // 1. Disparar teste individual de 7 dias
+    if (body.action === "send_test_7d") {
+      const { phone } = body;
+      if (!phone) {
+        return NextResponse.json({ error: "Telefone é obrigatório." }, { status: 400 });
+      }
+
+      const cleanPhone = phone.replace(/\D/g, "");
+      const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
+
+      const chatbotConfig = (user.chatbotConfig as any) || {};
+      const coupon = chatbotConfig.coupon7d || "VOLTEI10";
+      const storeSlug = (user as any).slug || "loja";
+      const storeUrl = `https://firehubfood.com.br/loja/${storeSlug}`;
+
+      const messageText = `Oi Rosangela, tudo bem? Sentimos sua falta! Tá sumida! 🍕\n\n` +
+                          `Trouxemos 10% de desconto para você lanchar com a gente hoje!\n` +
+                          `Use o cupom: *${coupon}* no nosso site:\n${storeUrl}`;
+
+      const success = await sendEvolutionMessage(targetFranchiseeId, fullPhone, messageText);
+
+      if (success) {
+        return NextResponse.json({ success: true, message: `🚀 Mensagem de teste de 7 dias enviada com sucesso para ${fullPhone}!` });
+      } else {
+        return NextResponse.json({ error: "Falha ao enviar via WhatsApp. Certifique-se de que o WhatsApp da loja está conectado por QR Code." }, { status: 500 });
+      }
+    }
+
+    // 2. Salvar configurações automáticas de marketing (7d, 15d, 30d)
     if (body.action === "save_config") {
       const currentConfig = (user.chatbotConfig as any) || {};
       const updatedConfig = {
