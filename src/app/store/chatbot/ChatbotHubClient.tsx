@@ -42,6 +42,7 @@ export default function ChatbotHubClient() {
     pairingCode: "",
     personality: "SIMPATICO",
     customPrompt: "",
+    externalMenuUrl: "",
     autoOrderLink: true,
     agentName: "",
     failThreshold: 3,
@@ -815,6 +816,28 @@ export default function ChatbotHubClient() {
                   <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "2px" }}>{p.desc}</div>
                 </div>
               ))}
+            </div>
+
+            {/* LINK EXTERNO DO CARDÁPIO (JOTAJA, SITE PRÓPRIO, ETC) */}
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                🌐 Link Personalizado do Cardápio / Plataforma Externa (Ex: JotaJá):
+              </label>
+              <p style={{ margin: "0 0 6px 0", fontSize: "0.74rem", color: "#64748B" }}>
+                Se preenchido, o robô enviará este link exato para os clientes fazerem pedidos em vez do link padrão do FireHub.
+              </p>
+              <input
+                type="text"
+                value={config.externalMenuUrl || ""}
+                onChange={(e) => setConfig((prev: any) => ({ ...prev, externalMenuUrl: e.target.value }))}
+                onBlur={() => handleSaveConfig({ externalMenuUrl: config.externalMenuUrl })}
+                placeholder="Ex: https://pedir.to/sualoja ou https://jotaja.com/sualoja"
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: "10px",
+                  border: "1px solid #CBD5E1", fontSize: "0.88rem", outline: "none", boxSizing: "border-box",
+                  background: "#F8FAFC"
+                }}
+              />
             </div>
 
             {/* INSTRUÇÕES CUSTOMIZADAS */}

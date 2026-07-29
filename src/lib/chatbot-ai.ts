@@ -43,7 +43,8 @@ export async function processChatbotAI(userId: string, message: string, history:
   const customPrompt = (chatbotConfig.customPrompt || "").trim();
   const agentName = (chatbotConfig.agentName || "Hakim").trim();
   const storeName = user.storeName || "Nossa Loja";
-  const storeLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "https://firehubfood.com.br";
+  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "https://firehubfood.com.br";
+  const storeLink = (chatbotConfig.externalMenuUrl || "").trim() || defaultStoreLink;
 
   const personalityMap: Record<string, string> = {
     SIMPATICO: "muito simpático, acolhedor e fofo. Use carinho, emojis (😊, 🥰, 🍕) e demonstre felicidade.",
