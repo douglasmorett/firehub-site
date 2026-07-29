@@ -26,13 +26,15 @@ import {
   Bell,
   X,
   Phone,
-  HelpCircle
+  HelpCircle,
+  Gift,
+  Calendar
 } from "lucide-react";
 
 export default function ChatbotHubClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "test" | "diagnostic">("qr");
+  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "phone" | "notifications" | "test" | "diagnostic">("qr");
 
   // Configuração principal
   const [config, setConfig] = useState<any>({
