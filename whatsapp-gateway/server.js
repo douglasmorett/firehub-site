@@ -363,15 +363,11 @@ app.delete("/instance/logout/:instanceName", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[FireHub WhatsApp Gateway] 🚀 Servidor rodando na porta ${PORT}`);
 
-  // Auto-reconectar instâncias com sessão salva
+  // Auto-reconectar desabilitado para economizar memória
+  // Sessões serão reconectadas sob demanda via /instance/connect/:name
   const sessionsDir = path.join(__dirname, "data", "sessions");
   if (fs.existsSync(sessionsDir)) {
     const folders = fs.readdirSync(sessionsDir);
-    for (const instanceName of folders) {
-      if (fs.statSync(path.join(sessionsDir, instanceName)).isDirectory()) {
-        console.log(`[WhatsApp Gateway] 🔄 Auto-iniciando conexão salva para: ${instanceName}`);
-        getOrCreateSocket(instanceName).catch(() => {});
-      }
-    }
+    console.log(`[WhatsApp Gateway] 📋 ${folders.length} sessão(ões) salva(s). Serão reconectadas sob demanda.`);
   }
 });
