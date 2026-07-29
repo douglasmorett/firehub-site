@@ -270,7 +270,11 @@ export default function KDSTelaPage() {
   const fetchOrders = useCallback(async () => {
     if (!stage) return;
     try {
-      const res = await fetch(`/api/kds?stage=${stage}`, { credentials: "include" });
+      const res = await fetch(`/api/kds?stage=${stage}&t=${Date.now()}`, { 
+        credentials: "include",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
+      });
       if (!res.ok) {
         setIsReconnecting(true);
         return;
@@ -305,7 +309,7 @@ export default function KDSTelaPage() {
     const poll = async () => {
       await fetchOrders();
       if (!cancelled) {
-        pollTimerRef.current = setTimeout(poll, 3000);
+        pollTimerRef.current = setTimeout(poll, 2000);
       }
     };
 
