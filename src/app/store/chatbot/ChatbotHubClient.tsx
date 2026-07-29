@@ -28,7 +28,8 @@ import {
   Phone,
   HelpCircle,
   Gift,
-  Calendar
+  Calendar,
+  Trash2
 } from "lucide-react";
 
 export default function ChatbotHubClient() {
@@ -95,8 +96,62 @@ export default function ChatbotHubClient() {
   const [newCouponDiscount, setNewCouponDiscount] = useState("10");
   const [newCouponMinOrder, setNewCouponMinOrder] = useState("");
   const [creatingCoupon, setCreatingCoupon] = useState(false);
-  // Modal de Confirmação de Teste de Envio
+
+  // Modal de Exclusão de Cupom (com validação de digitação 'EXCLUIR')
+  const [showDeleteCouponModal, setShowDeleteCouponModal] = useState(false);
+  const [couponToDelete, setCouponToDelete] = useState<any | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
+  const [deletingCoupon, setDeletingCoupon] = useState(false);
   const [showConfirmTestModal, setShowConfirmTestModal] = useState(false);
+
+  const handleRequestDeleteCoupon = (code: string) => {
+    const found = storeCoupons.find((c: any) => c.code === code);
+    if (!found) return;
+    setCouponToDelete(found);
+    setDeleteConfirmInput("");
+    setShowDeleteCouponModal(true);
+  };
+
+  const handleConfirmDeleteCoupon = async () => {
+    if (!couponToDelete) return;
+    const codeToDelete = couponToDelete.code;
+    setDeletingCoupon(true);
+    try {
+      const updated = storeCoupons.filter((c: any) => c.code !== codeToDelete);
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeCoupons: updated }),
+      });
+
+      if (res.ok) {
+        setStoreCoupons(updated);
+
+        // Limpa campos das automações caso o cupom estivesse selecionado
+        const newFieldsToSave: any = {};
+        if (config.instantCouponCode === codeToDelete) newFieldsToSave.instantCouponCode = "";
+        if (config.coupon7d === codeToDelete) newFieldsToSave.coupon7d = "";
+        if (config.coupon15d === codeToDelete) newFieldsToSave.coupon15d = "";
+        if (config.coupon30d === codeToDelete) newFieldsToSave.coupon30d = "";
+
+        if (Object.keys(newFieldsToSave).length > 0) {
+          setConfig((prev: any) => ({ ...prev, ...newFieldsToSave }));
+          handleSaveConfig(newFieldsToSave);
+        }
+
+        showToast(`🗑️ Cupom "${codeToDelete}" excluído permanentemente!`, "#10B981");
+        setShowDeleteCouponModal(false);
+        setCouponToDelete(null);
+        setDeleteConfirmInput("");
+      } else {
+        showToast("⚠️ Falha ao excluir cupom do banco de dados.", "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro ao comunicar com o servidor.", "#EF4444");
+    } finally {
+      setDeletingCoupon(false);
+    }
+  };
 
   // QR Code State
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
@@ -819,22 +874,34 @@ export default function ChatbotHubClient() {
                       <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1E40AF", marginBottom: "4px" }}>
                         Selecione o Cupom do Banco de Dados para Liberar no WhatsApp:
                       </label>
-                      <select
-                        value={config.instantCouponCode || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, instantCouponCode: code }));
-                          handleSaveConfig({ instantCouponCode: code });
-                        }}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", fontWeight: 700, color: "#1D4ED8" }}
-                      >
-                        <option value="">-- Selecione um cupom cadastrado --</option>
-                        {storeCoupons.map((c: any, i: number) => (
-                          <option key={i} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.instantCouponCode || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, instantCouponCode: code }));
+                            handleSaveConfig({ instantCouponCode: code });
+                          }}
+                          style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", fontWeight: 700, color: "#1D4ED8" }}
+                        >
+                          <option value="">-- Selecione um cupom cadastrado --</option>
+                          {storeCoupons.map((c: any, i: number) => (
+                            <option key={i} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.instantCouponCode && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.instantCouponCode}`}
+                            onClick={() => handleRequestDeleteCoupon(config.instantCouponCode)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -890,22 +957,34 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
-                      <select
-                        value={config.coupon7d || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, coupon7d: code }));
-                          handleSaveConfig({ coupon7d: code });
-                        }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
-                      >
-                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
-                        {storeCoupons.map((c: any, idx: number) => (
-                          <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.coupon7d || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, coupon7d: code }));
+                            handleSaveConfig({ coupon7d: code });
+                          }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                        >
+                          <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                          {storeCoupons.map((c: any, idx: number) => (
+                            <option key={idx} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.coupon7d && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.coupon7d}`}
+                            onClick={() => handleRequestDeleteCoupon(config.coupon7d)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -945,22 +1024,34 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
-                      <select
-                        value={config.coupon15d || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, coupon15d: code }));
-                          handleSaveConfig({ coupon15d: code });
-                        }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
-                      >
-                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
-                        {storeCoupons.map((c: any, idx: number) => (
-                          <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.coupon15d || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, coupon15d: code }));
+                            handleSaveConfig({ coupon15d: code });
+                          }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                        >
+                          <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                          {storeCoupons.map((c: any, idx: number) => (
+                            <option key={idx} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.coupon15d && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.coupon15d}`}
+                            onClick={() => handleRequestDeleteCoupon(config.coupon15d)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -1000,22 +1091,34 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
-                      <select
-                        value={config.coupon30d || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, coupon30d: code }));
-                          handleSaveConfig({ coupon30d: code });
-                        }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
-                      >
-                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
-                        {storeCoupons.map((c: any, idx: number) => (
-                          <option key={idx} value={c.code}>
-                            {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.coupon30d || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, coupon30d: code }));
+                            handleSaveConfig({ coupon30d: code });
+                          }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                        >
+                          <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                          {storeCoupons.map((c: any, idx: number) => (
+                            <option key={idx} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.coupon30d && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.coupon30d}`}
+                            onClick={() => handleRequestDeleteCoupon(config.coupon30d)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -1040,6 +1143,48 @@ export default function ChatbotHubClient() {
                       })()}
                     </div>
                   </div>
+                </div>
+
+                {/* CARD GERENCIAR TODOS OS CUPONS DA LOJA */}
+                <div style={{ background: "#fff", padding: "1.25rem", borderRadius: "14px", border: "1px solid #CBD5E1", marginTop: "1rem" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>🏷️ Todos os Cupons Cadastrados na Loja ({storeCoupons.length})</span>
+                    <button
+                      type="button"
+                      onClick={() => { setTargetCouponField(null); setShowNewCouponModal(true); }}
+                      style={{ background: "#EFF6FF", border: "1px solid #93C5FD", color: "#1D4ED8", padding: "4px 10px", borderRadius: "8px", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer" }}
+                    >
+                      ➕ Criar Cupom
+                    </button>
+                  </div>
+
+                  {storeCoupons.length === 0 ? (
+                    <div style={{ fontSize: "0.8rem", color: "#94A3B8", fontStyle: "italic" }}>
+                      Nenhum cupom cadastrado ainda. Clique acima para criar um cupom.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "8px" }}>
+                      {storeCoupons.map((c: any, idx: number) => (
+                        <div key={idx} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#1E293B" }}>{c.code}</div>
+                            <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "1px" }}>
+                              {c.type === "free_shipping" ? "🚚 Frete Grátis" : c.type === "fixed" ? `💵 R$ ${c.discount} OFF` : `🏷️ ${c.discount}% OFF`}
+                              {c.minOrderValue > 0 ? ` (Mín: R$ ${c.minOrderValue})` : ""}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${c.code}`}
+                            onClick={() => handleRequestDeleteCoupon(c.code)}
+                            style={{ padding: "6px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1640,6 +1785,70 @@ export default function ChatbotHubClient() {
                 style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #16A34A, #15803D)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
               >
                 {creatingCoupon ? "Salvando..." : "✓ Salvar & Selecionar Cupom"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DEFINITIVA DE CUPOM */}
+      {showDeleteCouponModal && couponToDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.65)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: "1rem" }}>
+          <div style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "440px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)", border: "2px solid #EF4444" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#DC2626" }}>
+                <Trash2 size={24} />
+                <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800 }}>Excluir Cupom Permanentemente</h3>
+              </div>
+              <button onClick={() => setShowDeleteCouponModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", padding: "12px 14px", borderRadius: "12px", marginBottom: "1.25rem", color: "#991B1B", fontSize: "0.85rem", lineHeight: 1.4 }}>
+              ⚠️ <strong>Atenção! Esta ação é definitiva e irreversível.</strong><br />
+              O cupom <strong style={{ textDecoration: "underline" }}>"{couponToDelete.code}"</strong> será excluído do banco de dados e removido de todas as automações da loja.
+            </div>
+
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: "6px" }}>
+                Para confirmar a exclusão, digite <span style={{ color: "#DC2626", fontWeight: 900 }}>EXCLUIR</span> abaixo:
+              </label>
+              <input
+                type="text"
+                placeholder="Digite EXCLUIR para confirmar"
+                value={deleteConfirmInput}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                style={{
+                  width: "100%", padding: "10px 12px", borderRadius: "10px",
+                  border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800,
+                  color: "#DC2626", boxSizing: "border-box"
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => {
+                  setShowDeleteCouponModal(false);
+                  setCouponToDelete(null);
+                  setDeleteConfirmInput("");
+                }}
+                style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={deleteConfirmInput.trim().toUpperCase() !== "EXCLUIR" || deletingCoupon}
+                onClick={() => handleConfirmDeleteCoupon()}
+                style={{
+                  padding: "10px 18px", borderRadius: "10px", border: "none",
+                  background: deleteConfirmInput.trim().toUpperCase() === "EXCLUIR" && !deletingCoupon ? "#DC2626" : "#CBD5E1",
+                  color: "#fff", fontWeight: 800, fontSize: "0.85rem",
+                  cursor: deleteConfirmInput.trim().toUpperCase() === "EXCLUIR" && !deletingCoupon ? "pointer" : "not-allowed"
+                }}
+              >
+                {deletingCoupon ? "Excluindo..." : "🗑️ Confirmar Exclusão"}
               </button>
             </div>
           </div>
