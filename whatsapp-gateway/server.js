@@ -20,6 +20,26 @@ const replyCooldowns = new Map();
 const sessionLocks = new Map();
 const reconnectCounters = new Map();
 
+// Limpar sessões corrompidas ao iniciar
+const CLEAN_ON_BOOT = process.env.CLEAN_SESSIONS === "true";
+if (CLEAN_ON_BOOT) {
+  const sessionsDir = path.join(__dirname, "data", "sessions");
+  try { fs.rmSync(sessionsDir, { recursive: true, force: true }); } catch {}
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  console.log("[WhatsApp Gateway] 🗑️ Sessões limpas no boot (CLEAN_SESSIONS=true)");
+}
+
+// Monitoramento de memória - previne OOM
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const rssMB = Math.round(mem.rss / 1024 / 1024);
+  if (heapMB > 350) {
+    console.warn(`[WhatsApp Gateway] ⚠️ Memória alta: heap=${heapMB}MB rss=${rssMB}MB - forçando GC`);
+    if (global.gc) { try { global.gc(); } catch(e) {} }
+  }
+}, 15000);
+
 process.on("uncaughtException", (err) => {
   console.warn("[WhatsApp Gateway] Aviso uncaughtException ignorado:", err.message || err);
 });
