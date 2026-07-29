@@ -1340,8 +1340,6 @@ export default function ChatbotHubClient() {
                 resize: "none", boxSizing: "border-box",
               }}
             />
-
-
           </div>
         </div>
 
