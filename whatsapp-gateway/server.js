@@ -61,6 +61,12 @@ async function getOrCreateSocket(instanceName) {
     printQRInTerminal: false,
     generateHighQualityLinkPreview: false,
     browser: ["FireHub Food", "Chrome", "1.0.0"],
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
+    markOnlineOnConnect: false,
+    getMessage: async () => undefined,
+    cachedGroupMetadata: async () => undefined,
+    fireInitQueries: false,
   });
 
   session = { sock, state: "connecting", qrBase64: null, phone: null };
