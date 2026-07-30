@@ -1,6 +1,19 @@
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
 
+function getFirstName(fullName?: string | null): string {
+  if (!fullName) return "";
+  const cleaned = fullName.trim().replace(/^[^a-zA-ZÀ-ÖØ-öø-ÿ]+/, "");
+  if (!cleaned || /^(cliente|whatsapp|user|usuário|usuario)/i.test(cleaned)) return "";
+  const parts = cleaned.split(/\s+/);
+  if (parts.length === 0) return "";
+  const compoundFirsts = ["joao", "joão", "ana", "maria", "pedro", "vitor", "vítor", "luiz", "luís", "paulo"];
+  if (parts.length >= 2 && compoundFirsts.includes(parts[0].toLowerCase())) {
+    return `${parts[0]} ${parts[1]}`;
+  }
+  return parts[0];
+}
+
 export async function processChatbotAI(
   userId: string,
   message: string,
@@ -31,13 +44,6 @@ export async function processChatbotAI(
     return { reply: "Desculpe, loja não encontrada." };
   }
 
-  // ── DETECÇÃO DE CONFIRMAÇÃO DE PEDIDO (JOTAJA / IFOOD / SITE) ──
-  if (/SEU PEDIDO:|RESUMO DO PEDIDO|Pedido n[oº]:|Acompanhe abaixo o pedido|app\.jotaja\.com\/.*\/pedido\//i.test(message)) {
-    return {
-      reply: `Obaa! 🎉 Recebemos a confirmação do seu pedido por aqui! Muito obrigado pela preferência! Já vamos preparar tudo com muito carinho. ❤️🍕`
-    };
-  }
-
   const targetFranchiseeId = user.ownerId || user.id;
 
   // Extrai telefone limpo se fornecido remoteJid
@@ -46,8 +52,8 @@ export async function processChatbotAI(
     clientPhoneDigits = remoteJid.split("@")[0].replace(/\D/g, "");
   }
 
-  // Buscar cardápio ao vivo da loja e pedidos recentes do cliente
-  const [products, categories, recentOrders] = await Promise.all([
+  // Buscar cardápio ao vivo da loja, pedidos recentes e nome do cliente cadastrado
+  const [products, categories, recentOrders, customerRecord] = await Promise.all([
     prisma.menuProduct.findMany({
       where: { franchiseeId: targetFranchiseeId, active: true },
       select: { id: true, name: true, description: true, price: true, category: true, isCombo: true, isBeverage: true, availableDays: true, tags: true },
@@ -67,6 +73,7 @@ export async function processChatbotAI(
         id: true,
         status: true,
         totalAmount: true,
+        customerName: true,
         createdAt: true,
         deliveryType: true,
         items: {
@@ -79,7 +86,35 @@ export async function processChatbotAI(
       orderBy: { createdAt: "desc" },
       take: 2,
     }) : Promise.resolve([]),
+    clientPhoneDigits ? prisma.storeCustomer.findFirst({
+      where: {
+        phone: { contains: clientPhoneDigits.slice(-8) },
+      },
+      select: { name: true }
+    }) : Promise.resolve(null),
   ]);
+
+  let rawCustomerName = "";
+  if (customerRecord?.name && !customerRecord.name.includes("Cliente WhatsApp")) {
+    rawCustomerName = customerRecord.name;
+  } else if (Array.isArray(recentOrders) && recentOrders.length > 0 && (recentOrders[0] as any).customerName && !(recentOrders[0] as any).customerName.includes("Cliente iFood")) {
+    rawCustomerName = (recentOrders[0] as any).customerName;
+  }
+
+  const customerFirstName = getFirstName(rawCustomerName);
+
+  // ── DETECÇÃO DE CONFIRMAÇÃO DE PEDIDO (JOTAJA / IFOOD / SITE) ──
+  if (/SEU PEDIDO:|RESUMO DO PEDIDO|Pedido n[oº]:|Acompanhe abaixo o pedido|app\.jotaja\.com\/.*\/pedido\//i.test(message)) {
+    const extractedFromMsg = message.match(/(?:🤠|Nome:?|Cliente:?)\s*([A-Za-zÀ-ÖØ-öø-ÿ\s]+)/);
+    let nameToUse = customerFirstName;
+    if (!nameToUse && extractedFromMsg && extractedFromMsg[1]) {
+      nameToUse = getFirstName(extractedFromMsg[1]);
+    }
+    const greeting = nameToUse ? `Obaa, ${nameToUse}! 🎉` : `Obaa! 🎉`;
+    return {
+      reply: `${greeting} Recebemos a confirmação do seu pedido por aqui! Muito obrigado pela preferência! Já vamos preparar tudo com muito carinho. ❤️🍕`
+    };
+  }
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const personality = chatbotConfig.personality || "SIMPATICO";
@@ -314,7 +349,15 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
     - É ABSOLUTAMENTE PROIBIDO oferecer mais produtos, falar de promoções ou enviar o link do cardápio!
     - Apenas agradeça pela compra com muita alegria, simpatia e carinho.
     - Exemplo: "Obaa! 🎉 Recebemos a confirmação do seu pedido por aqui! Muito obrigado pela preferência! Já vamos preparar tudo com muito carinho. ❤️🍕"
+23. TRATAMENTO E USO DO NOME DO CLIENTE (MUITO IMPORTANTÍSSIMO):
+${customerFirstName ? `    - O primeiro nome do cliente é "${customerFirstName}".
+    - Você DEVE OBRIGATORIAMENTE chamar o cliente pelo nome "${customerFirstName}" em suas respostas e saudações! (ex: "Olá, ${customerFirstName}!", "Tudo bem, ${customerFirstName}?", "Pode deixar, ${customerFirstName}!").
+    - Isso torna o atendimento extremamente pessoal, humano e acolhedor.` : `    - Se o cliente se apresentar ou disser o nome no meio da conversa, passe a chamá-lo pelo primeiro nome.`}
 
+
+DADOS DO CLIENTE CONVERSANDO AGORA:
+- Primeiro Nome: ${customerFirstName || "Não identificado"}
+- Telefone: ${clientPhoneDigits || "Não informado"}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
@@ -487,7 +530,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 
   if (/obrigad|valeu|tmj|brigad|gratidão|gratidao|de nada/i.test(msg)) {
     return {
-      reply: `imagina, eu que agradeço!! 😊 qualquer coisa é só me chamar por aqui, tá bom?`
+      reply: `imagina${customerFirstName ? `, ${customerFirstName}` : ""}, eu que agradeço!! 😊 qualquer coisa é só me chamar por aqui, tá bom?`
     };
   }
 
@@ -499,13 +542,13 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 
   if (/delícia|delicia|muito bom|melhor|adoro|top|perfeito|bom demais/i.test(msg)) {
     return {
-      reply: `aaah que massa ouvir isso! ❤️ a gente capricha muito por aqui!`
+      reply: `aaah que massa ouvir isso${customerFirstName ? `, ${customerFirstName}` : ""}! ❤️ a gente capricha muito por aqui!`
     };
   }
 
   if (/^(oi|oii|oiii|oioi|eai|eaí|ola|olá|boa noite|bom dia|boa tarde|fala|opa)$/i.test(msg)) {
     return {
-      reply: `oii, tudo bem? 😊 como posso te ajudar hoje?`
+      reply: `oii${customerFirstName ? `, ${customerFirstName}` : ""}, tudo bem? 😊 como posso te ajudar hoje?`
     };
   }
 
@@ -515,7 +558,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
     const sampleProducts = (availableProducts.length > 0 ? availableProducts : products).slice(0, 3).map(p => `${p.name} por ${p.price} reais`).join(", ");
     const introText = sampleProducts ? `temos opções maravilhosas como ${sampleProducts}!` : "temos várias opções incríveis no nosso cardápio!";
     return {
-      reply: `oie! ${introText} 😊 você pode ver o cardápio completo com todas as fotos e fazer seu pedido por aqui ó:\n👉 ${storeLink}`
+      reply: `oie${customerFirstName ? `, ${customerFirstName}` : ""}! ${introText} 😊 você pode ver o cardápio completo com todas as fotos e fazer seu pedido por aqui ó:\n👉 ${storeLink}`
     };
   }
 
@@ -523,9 +566,9 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
   const productMention = sampleProductsFallback ? ` como ${sampleProductsFallback}` : "";
 
   const fallbacks = [
-    `oie! tô por aqui pra te atender. 😊 hoje temos destaques incríveis${productMention}! dá uma olhadinha no nosso cardápio completo:\n👉 ${storeLink}`,
-    `com certeza! 🍔 se quiser sugestão ou tiver dúvida sobre algum lanche me avisa. os mais pedidos estão no nosso cardápio:\n👉 ${storeLink}`,
-    `beleza! 😊 a gente tá a todo vapor aqui. escolhe seu lanche favorito por aqui:\n👉 ${storeLink}`,
+    `oie${customerFirstName ? `, ${customerFirstName}` : ""}! tô por aqui pra te atender. 😊 hoje temos destaques incríveis${productMention}! dá uma olhadinha no nosso cardápio completo:\n👉 ${storeLink}`,
+    `com certeza${customerFirstName ? `, ${customerFirstName}` : ""}! 🍔 se quiser sugestão ou tiver dúvida sobre algum lanche me avisa. os mais pedidos estão no nosso cardápio:\n👉 ${storeLink}`,
+    `beleza${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 a gente tá a todo vapor aqui. escolhe seu lanche favorito por aqui:\n👉 ${storeLink}`,
   ];
   const choiceIndex = Math.abs(msg.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % fallbacks.length;
 
