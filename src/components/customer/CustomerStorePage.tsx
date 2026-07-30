@@ -9,7 +9,7 @@ import "./store.css";
 
 type MenuProduct = { id: string; name: string; description: string; price: number; imageUrl: string | null; category: string; isCombo?: boolean; comboConfig?: any; comboGroups?: any[] };
 type CartItem = MenuProduct & { quantity: number; comboSelections?: any };
-type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean; ifoodWidgetId?: string | null };
+type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean; ifoodWidgetId?: string | null; mpSellerId?: string | null; mpAccessToken?: string | null; hasOnlinePayment?: boolean };
 type StoreRating = { average: number; count: number; reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[] };
 
 function isStoreOpen(hours: any[]): { open: boolean; text: string } {
@@ -39,9 +39,9 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
     const [oh, om] = today.open.split(":").map(Number);
     const [ch, cm] = today.close.split(":").map(Number);
     if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${today.close}` };
-    if (nowMin < oh * 60 + om) return { open: false, text: `Abre às ${today.open}` };
+    return { open: false, text: `Abre às ${today.open}` };
   }
-  return { open: false, text: "Fechado · Abre amanhã" };
+  return { open: true, text: "Aberto" };
 }
 
 export default function CustomerStorePage({ franchisee, menuProducts, storeRating }: { franchisee: Franchisee; menuProducts: MenuProduct[]; storeRating?: StoreRating }) {
@@ -57,11 +57,15 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [deliveryType, setDeliveryType] = useState("DELIVERY");
-  const [paymentMethod, setPaymentMethod] = useState("PIX_ONLINE");
+
+  const hasOnlinePayment = franchisee.hasOnlinePayment ?? !!(franchisee.mpAccessToken || franchisee.mpSellerId);
+  const [paymentMethod, setPaymentMethod] = useState(() => (hasOnlinePayment ? "PIX" : "DINHEIRO"));
+  
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  
   // Customer login
   const [customer, setCustomer] = useState<any>(null);
   const [showAuth, setShowAuth] = useState(false);
@@ -296,13 +300,23 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
 
   // Build dynamic payment options (Online via Mercado Pago vs Na Entrega)
   const paymentOptions = (() => {
-    const base = [
-      { k: "PIX", l: "💰 Pix" },
-      { k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" },
+    const base: { k: string; l: string }[] = [];
+
+    // Pagamento Online: apenas se o lojista tiver credenciais conectadas do Mercado Pago
+    if (hasOnlinePayment) {
+      base.push(
+        { k: "PIX", l: "💰 Pix (Online)" },
+        { k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" }
+      );
+    }
+
+    // Pagamento na Entrega (sempre disponível)
+    base.push(
       { k: "DINHEIRO", l: "💵 Dinheiro" },
       { k: "DEBITO", l: "💳 Débito (Entrega)" },
-      { k: "CREDITO", l: "💳 Crédito (Entrega)" },
-    ];
+      { k: "CREDITO", l: "💳 Crédito (Entrega)" }
+    );
+
     const fees = franchisee.paymentFees as any;
     if (fees?.VOUCHER?.active && fees.VOUCHER.brands) {
       const activeBrands = fees.VOUCHER.brands.filter((b: any) => b.active);
@@ -981,7 +995,13 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
               amount={pendingAmount}
               initialMethod={paymentMethod === "CREDITO_ONLINE" ? "credit_card" : "pix"}
               onPaid={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
-              onError={(msg) => { alert(`❌ ${msg}`); }}
+              onError={(msg) => {
+                const isMerchantConfigError = msg.includes("Credenciais") || msg.includes("Mercado Pago") || msg.includes("não configuradas");
+                const cleanMsg = isMerchantConfigError
+                  ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, selecione outra forma de pagamento na entrega (como Dinheiro ou Cartão)."
+                  : msg;
+                alert(`❌ ${cleanMsg}`);
+              }}
               onCancel={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
             />
           </div>

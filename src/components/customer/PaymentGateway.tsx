@@ -71,7 +71,15 @@ export default function PaymentGateway({
         body: JSON.stringify({ orderId }),
       });
       const data = await res.json();
-      if (!res.ok) { onError(data.error || "Erro ao gerar PIX"); return; }
+      if (!res.ok) {
+        const rawErr = data.error || "Erro ao gerar PIX";
+        const isMerchantConfigError = rawErr.includes("Credenciais") || rawErr.includes("Mercado Pago") || rawErr.includes("não configuradas");
+        const cleanMsg = isMerchantConfigError
+          ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, escolha pagamento na entrega."
+          : rawErr;
+        onError(cleanMsg);
+        return;
+      }
 
       setPixData(data);
       startPixPolling(data.paymentId);
