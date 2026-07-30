@@ -317,11 +317,19 @@ export async function GET(req: NextRequest) {
                 const formatted = addr.formattedAddress || "";
                 const neighborhood = addr.neighborhood || "";
                 const city = addr.city || "";
+                const complement = addr.complement || addr.streetNameComplement || "";
+                const reference = addr.reference || addr.streetNameReference || orderData.delivery?.observations || orderData.customer?.customerNote || "";
                 const parts: string[] = [];
                 if (formatted) {
                   parts.push(formatted);
                 } else if (addr.streetName) {
                   parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
+                }
+                if (complement && !parts.some(p => p.toLowerCase().includes(complement.toLowerCase()))) {
+                  parts.push(`Comp: ${complement}`);
+                }
+                if (reference && !parts.some(p => p.toLowerCase().includes(reference.toLowerCase()))) {
+                  parts.push(`Ref: ${reference}`);
                 }
                 if (neighborhood && (!parts[0] || !parts[0].toLowerCase().includes(neighborhood.toLowerCase()))) {
                   parts.push(neighborhood);
