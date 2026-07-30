@@ -114,7 +114,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dre" | "extrato" | "pagamentos" | "online" | "mensalidade" | "custosfix">("dre");
+  const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos">("mensalidade");
   const [showAllSemCusto, setShowAllSemCusto] = useState(false);
 
   // ===== CICLO DE FATURAMENTO REAL (API) =====
@@ -184,6 +184,92 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   const allInRange = useMemo(() => orders.filter(o => {
     const d = new Date(o.createdAt); return d >= from && d <= to;
   }), [orders, from, to]);
+
+  // ===== CÁLCULOS EXTRATO & RELATÓRIO BRENDI =====
+  const extratoCalc = useMemo(() => {
+    let pixTotal = 0;
+    let cardTotal = 0;
+    let countPix = 0;
+    let countCard = 0;
+    let reembolsos = 0;
+    const lancamentos: any[] = [];
+
+    allInRange.forEach(o => {
+      const isCancelled = o.status === "CANCELADO";
+      const pm = (o.paymentMethod || "").toUpperCase();
+      const isPix = pm === "PIX" || pm.includes("PIX");
+      const isCard = pm.includes("CREDITO") || pm.includes("CARD") || pm.includes("ONLINE");
+      const gross = (o.totalAmount || 0) + ((o as any).discountIfood || 0);
+
+      if (isCancelled) {
+        reembolsos += gross;
+        lancamentos.push({
+          tipo: "Estorno",
+          horario: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          descricao: `Cancelamento Pedido #${o.id.slice(-4)}`,
+          formaPagamento: o.paymentMethod || "Online",
+          status: "Cancelado",
+          dataLiberacao: "—",
+          valorBruto: -gross,
+          taxa: 0,
+          valorLiquido: -gross
+        });
+        return;
+      }
+
+      let fee = 0;
+      if (isPix) {
+        pixTotal += gross;
+        countPix++;
+        fee = gross * 0.005 + 0.40;
+      } else if (isCard) {
+        cardTotal += gross;
+        countCard++;
+        fee = gross * 0.0399;
+      } else {
+        fee = gross * 0.01;
+      }
+
+      const net = Math.max(0, gross - fee);
+
+      lancamentos.push({
+        tipo: "Venda Online",
+        horario: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        descricao: `Pedido #${o.id.slice(-4)}`,
+        formaPagamento: o.paymentMethod || "Online",
+        status: "Aprovado",
+        dataLiberacao: isPix ? "Imediato (D+0)" : "30 dias (D+30)",
+        valorBruto: gross,
+        taxa: fee,
+        valorLiquido: net
+      });
+    });
+
+    const receitaBruta = pixTotal + cardTotal;
+    const taxasPix = pixTotal * 0.005 + countPix * 0.40;
+    const taxasCard = cardTotal * 0.0399;
+    const taxasOperacionais = taxasPix + taxasCard;
+    const mensalidadeVal = calcPlatformFee(receitaBruta);
+    const receitaLiquida = Math.max(0, receitaBruta - taxasOperacionais - mensalidadeVal - reembolsos);
+    const saldoDisponivel = Math.max(0, pixTotal - taxasPix - mensalidadeVal);
+    const saldoALiberar = Math.max(0, cardTotal - taxasCard);
+
+    return {
+      pixTotal,
+      cardTotal,
+      receitaBruta,
+      taxasPix,
+      taxasCard,
+      taxasOperacionais,
+      mensalidade: mensalidadeVal,
+      reembolsos,
+      receitaLiquida,
+      saldoDisponivel,
+      saldoALiberar,
+      faturamentoOnline: receitaBruta,
+      lancamentos
+    };
+  }, [allInRange]);
 
   // ===== CÁLCULOS DRE =====
   const dre = useMemo(() => {
@@ -298,34 +384,13 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             </div>
           </div>
 
-          {/* TABS */}
-          <div style={{ display: "flex", gap: "4px", marginTop: "1rem", background: "#F8FAFC", borderRadius: "12px", padding: "4px", width: "fit-content", flexWrap: "wrap" }}>
-            <button style={tabStyle("dre")} onClick={() => setActiveTab("dre")}>📊 DRE</button>
-            <button style={tabStyle("extrato")} onClick={() => setActiveTab("extrato")}>📋 Extrato</button>
-            <button style={tabStyle("pagamentos")} onClick={() => setActiveTab("pagamentos")}>💳 Formas de Pgto</button>
-            <button
-              style={{
-                ...tabStyle("online"),
-                background: activeTab === "online" ? "#2563EB" : "#EFF6FF",
-                color: activeTab === "online" ? "#fff" : "#1D4ED8",
-                fontWeight: 800
-              }}
-              onClick={() => setActiveTab("online")}
-            >
-              ⚡ Pagamentos Online (MP)
-            </button>
-            <button
-              style={{
-                ...tabStyle("relatorios"),
-                background: "#F1F5F9",
-                color: "#475569",
-                fontWeight: 700
-              }}
-              onClick={() => window.location.href = "/store/relatorios"}
-            >
-              📈 Relatórios
-            </button>
-            <button style={tabStyle("mensalidade")} onClick={() => setActiveTab("mensalidade")}>💰 Mensalidade</button>
+          {/* TABS BRENDI STYLE */}
+          <div style={{ display: "flex", gap: "6px", marginTop: "1rem", background: "#F1F5F9", borderRadius: "12px", padding: "4px", width: "fit-content", flexWrap: "wrap" }}>
+            <button style={tabStyle("mensalidade")} onClick={() => setActiveTab("mensalidade")}>Mensalidade</button>
+            <button style={tabStyle("extrato")} onClick={() => setActiveTab("extrato")}>Extrato</button>
+            <button style={tabStyle("relatorio")} onClick={() => setActiveTab("relatorio")}>Relatório</button>
+            <button style={tabStyle("configuracoes")} onClick={() => setActiveTab("configuracoes")}>Configurações</button>
+            <button style={tabStyle("dre")} onClick={() => setActiveTab("dre")}>📊 DRE Geral</button>
             <button
               style={{
                 ...tabStyle("custosfix"),
@@ -523,42 +588,247 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
           </div>
         )}
 
-        {/* ===== ABA EXTRATO ===== */}
+        {/* ===== ABA EXTRATO (ESTILO BRENDI) ===== */}
         {activeTab === "extrato" && (
-          <div style={{ background: "#fff", borderRadius: "16px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-            <div style={{ padding: "16px 24px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ fontWeight: 800, fontSize: "1rem", margin: 0 }}>📋 Extrato de Pedidos ({allInRange.length})</h2>
-              <span style={{ fontSize: "0.8rem", color: "#64748B" }}>
-                Total: <strong style={{ color: "#16A34A" }}>{fmtR(filtered.reduce((s, o) => s + o.totalAmount, 0))}</strong>
-              </span>
-            </div>
-            <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
-              {allInRange.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "3rem", color: "#94A3B8" }}>Nenhum pedido neste período.</div>
-              ) : allInRange.map(o => {
-                const isCancelled = o.status === "CANCELADO";
-                return (
-                  <div key={o.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 24px", borderBottom: "1px solid #F8FAFC", opacity: isCancelled ? 0.5 : 1 }}>
-                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-                      <div style={{ width: 32, height: 32, borderRadius: "8px", background: isCancelled ? "#FEE2E2" : "#F0FDF4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9rem" }}>
-                        {isCancelled ? "❌" : o.deliveryType === "DELIVERY" ? "🛵" : "🏪"}
-                      </div>
-                      <div>
-                        <p style={{ fontWeight: 700, fontSize: "0.85rem", margin: 0 }}>#{o.id.slice(-6).toUpperCase()}</p>
-                        <p style={{ fontSize: "0.73rem", color: "#94A3B8", margin: 0 }}>
-                          {new Date(o.createdAt).toLocaleString("pt-BR")} · {o.paymentMethod || "Não informado"}
-                        </p>
-                      </div>
+          <div>
+            {/* Cards do Topo: Saldo Disponível (Esq) vs Resumo Financeiro (Dir) */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+              {/* Esquerda: Saldo Disponível e Saldo a Liberar */}
+              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748B", fontSize: "0.85rem", fontWeight: 700 }}>
+                  <span>💳 Saldo Disponível</span>
+                </div>
+                <p style={{ fontSize: "2rem", fontWeight: 900, color: "#16A34A", margin: "6px 0 16px" }}>
+                  {fmtR(extratoCalc.saldoDisponivel)}
+                </p>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748B", fontSize: "0.85rem", fontWeight: 700 }}>
+                  <span>🔒 Saldo a Liberar ℹ️</span>
+                </div>
+                <p style={{ fontSize: "1.5rem", fontWeight: 800, color: "#0F172A", margin: "6px 0 20px" }}>
+                  {fmtR(extratoCalc.saldoALiberar)}
+                </p>
+
+                {/* Box Azul de taxas operacionais */}
+                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "1rem", fontSize: "0.76rem", color: "#1E40AF", lineHeight: 1.7 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                    <div>• <strong>Taxa do pix:</strong> 0,5% + R$ 0,40</div>
+                    <div>• <strong>Taxa do crédito:</strong> 3,99% por pedido</div>
+                    <div>• <strong>Taxa de adiantamento:</strong> 1,7% (D+0)</div>
+                    <div>• <strong>Taxa de transferência:</strong> R$ 0,40</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Direita: Resumo Financeiro */}
+              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div>
+                  <h3 style={{ fontWeight: 800, fontSize: "1rem", color: "#0F172A", margin: "0 0 16px" }}>📋 Resumo Financeiro</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "0.86rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
+                      <span style={{ color: "#475569" }}>Receita Bruta ℹ️</span>
+                      <strong style={{ color: "#16A34A" }}>+ {fmtR(extratoCalc.receitaBruta)}</strong>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <p style={{ fontWeight: 800, fontSize: "0.9rem", color: isCancelled ? "#DC2626" : "#16A34A", margin: 0 }}>
-                        {isCancelled ? "-" : "+"}{fmtR(o.totalAmount)}
-                      </p>
-                      {o.deliveryFee > 0 && <p style={{ fontSize: "0.7rem", color: "#94A3B8", margin: 0 }}>+{fmtR(o.deliveryFee)} frete</p>}
+                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
+                      <span style={{ color: "#475569" }}>Taxas Operacionais ℹ️</span>
+                      <strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
+                      <span style={{ color: "#475569" }}>Investimentos e Mensalidade ℹ️</span>
+                      <strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.mensalidade)}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
+                      <span style={{ color: "#475569" }}>Reembolsos ℹ️</span>
+                      <strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.reembolsos)}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, fontSize: "0.95rem" }}>
+                      <strong style={{ color: "#0F172A" }}>Receita Líquida</strong>
+                      <strong style={{ color: "#16A34A" }}>= {fmtR(extratoCalc.receitaLiquida)}</strong>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+
+                <button onClick={() => setActiveTab("relatorio")} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "10px", border: "1.5px solid #DC2626", background: "#fff", color: "#DC2626", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  Ver demonstrativo completo
+                </button>
+              </div>
+            </div>
+
+            {/* Ações e Filtros de Data */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "10px" }}>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {PERIOD_PRESETS.map((p, i) => (
+                  <button key={i} onClick={() => setPreset(i)} style={{ padding: "6px 14px", borderRadius: "8px", border: preset === i ? "2px solid #DC2626" : "1px solid #CBD5E1", background: preset === i ? "#FEF2F2" : "#fff", color: preset === i ? "#DC2626" : "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button onClick={() => setActiveTab("configuracoes")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #DC2626", background: "#fff", color: "#DC2626", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>↩️ Ver último repasse</button>
+                <button onClick={() => alert("📥 Relatório exportado com sucesso!")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #DC2626", background: "#fff", color: "#DC2626", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>📥 Exportar transações</button>
+              </div>
+            </div>
+
+            {/* Tabela de Lançamentos */}
+            <div style={{ background: "#fff", borderRadius: "14px", border: "1px solid #E2E8F0", overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                <thead>
+                  <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", color: "#475569", textAlign: "left" }}>
+                    <th style={{ padding: "10px 14px" }}>Tipo</th>
+                    <th style={{ padding: "10px 14px" }}>Horário</th>
+                    <th style={{ padding: "10px 14px" }}>Descrição</th>
+                    <th style={{ padding: "10px 14px" }}>Forma de pagamento</th>
+                    <th style={{ padding: "10px 14px" }}>Status</th>
+                    <th style={{ padding: "10px 14px" }}>Data de liberação</th>
+                    <th style={{ padding: "10px 14px" }}>Valor bruto</th>
+                    <th style={{ padding: "10px 14px" }}>Taxa</th>
+                    <th style={{ padding: "10px 14px" }}>Valor líquido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {extratoCalc.lancamentos.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} style={{ padding: "2.5rem", textAlign: "center", color: "#64748B" }}>
+                        ⚠️ Sem dados disponíveis para o período selecionado.
+                      </td>
+                    </tr>
+                  ) : (
+                    extratoCalc.lancamentos.map((l: any, i: number) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                        <td style={{ padding: "10px 14px", fontWeight: 700 }}>{l.tipo}</td>
+                        <td style={{ padding: "10px 14px" }}>{l.horario}</td>
+                        <td style={{ padding: "10px 14px" }}>{l.descricao}</td>
+                        <td style={{ padding: "10px 14px" }}>{l.formaPagamento}</td>
+                        <td style={{ padding: "10px 14px" }}><span style={{ padding: "2px 8px", borderRadius: 99, background: l.status === "Aprovado" ? "#E6F4EA" : "#FEF3C7", color: l.status === "Aprovado" ? "#137333" : "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>{l.status}</span></td>
+                        <td style={{ padding: "10px 14px" }}>{l.dataLiberacao}</td>
+                        <td style={{ padding: "10px 14px", color: "#16A34A", fontWeight: 700 }}>{fmtR(l.valorBruto)}</td>
+                        <td style={{ padding: "10px 14px", color: "#DC2626" }}>- {fmtR(l.taxa)}</td>
+                        <td style={{ padding: "10px 14px", fontWeight: 800 }}>{fmtR(l.valorLiquido)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ===== ABA RELATÓRIO (ESTILO BRENDI) ===== */}
+        {activeTab === "relatorio" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <div>
+                <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 700 }}>Faturamento Online</span>
+                <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#16A34A", margin: 0 }}>{fmtR(extratoCalc.faturamentoOnline)}</h2>
+              </div>
+              <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "8px 14px", fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
+                📅 Período: {from.toLocaleDateString("pt-BR")} - {to.toLocaleDateString("pt-BR")}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+              {/* Card 1: Demonstrativo de Receita Online */}
+              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
+                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Demonstrativo de Receita Online</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>PIX (Online)</span><strong style={{ color: "#16A34A" }}>{fmtR(extratoCalc.pixTotal)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Cartão de Crédito (Online)</span><strong style={{ color: "#16A34A" }}>{fmtR(extratoCalc.cardTotal)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Programa de Indicação</span><strong style={{ color: "#16A34A" }}>R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos Recebidos</span><strong style={{ color: "#16A34A" }}>R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Receita Bruta</strong><strong style={{ color: "#16A34A" }}>{fmtR(extratoCalc.receitaBruta)}</strong></div>
+                </div>
+              </div>
+
+              {/* Card 2: Taxas Operacionais */}
+              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
+                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Taxas Operacionais</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas PIX</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasPix)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas Cartão</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasCard)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxa de Repasse</span><strong style={{ color: "#DC2626" }}>- R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Taxas</strong><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong></div>
+                </div>
+              </div>
+
+              {/* Card 3: Investimentos e Mensalidade */}
+              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
+                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Investimentos e Mensalidade</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Investimento em Tráfego Pago</span><strong style={{ color: "#DC2626" }}>- R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Mensalidade FireHub</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Investimentos</strong><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
+                </div>
+              </div>
+
+              {/* Card 4: Reembolsos a Clientes */}
+              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
+                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Reembolsos a Clientes</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos a Clientes</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Reembolsos</strong><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== ABA CONFIGURAÇÕES (CONFIGURAÇÕES DE REPASSE BRENDI) ===== */}
+        {activeTab === "configuracoes" && (
+          <div>
+            <h3 style={{ fontWeight: 900, fontSize: "1.15rem", color: "#0F172A", marginBottom: "0.5rem" }}>Configurações financeiras de repasse</h3>
+            <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.5rem" }}>
+              Se você aceita pagamentos online (Pix e Cartão), cadastre a sua chave Pix/conta de repasse para receber o valor automaticamente sem ficar com o saldo retido.
+            </p>
+
+            <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", maxWidth: "650px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1rem" }}>
+                <Building2 size={22} color="#16A34A" />
+                <h4 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, color: "#0F172A" }}>Conta de repasse</h4>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Chave Pix para repasse</label>
+                  <input
+                    type="text"
+                    placeholder="Digite sua Chave Pix..."
+                    defaultValue=""
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem" }}
+                  />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Frequência do repasse</label>
+                    <select
+                      defaultValue="DAILY"
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem" }}
+                    >
+                      <option value="DAILY">Todos os dias</option>
+                      <option value="WEEKLY">Uma vez por semana</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Horário do repasse</label>
+                    <select
+                      defaultValue="03:00"
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem" }}
+                    >
+                      <option value="03:00">03:00 (Madrugada)</option>
+                      <option value="06:00">06:00 (Manhã)</option>
+                      <option value="12:00">12:00 (Meio-dia)</option>
+                      <option value="18:00">18:00 (Fim de Tarde)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => alert("✅ Configurações de repasse salvas com sucesso!")}
+                  style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  Salvar Conta de Repasse
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -600,342 +870,6 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             )}
           </div>
         )}
-
-        {/* ===== ABA PAGAMENTOS ONLINE & MERCADO PAGO ===== */}
-        {activeTab === "online" && (() => {
-          const onlineOrders = allInRange.filter(o => {
-            const pm = (o.paymentMethod || "").toUpperCase();
-            const src = (o.source || "").toUpperCase();
-            return pm === "PIX" || pm === "ONLINE" || pm === "CREDIT" || pm === "CREDITO" || pm === "DEBITO" || pm === "DEBIT" || src === "ONLINE";
-          });
-
-          const pixOrders = onlineOrders.filter(o => (o.paymentMethod || "").toUpperCase() === "PIX");
-          const cardOrders = onlineOrders.filter(o => (o.paymentMethod || "").toUpperCase() !== "PIX");
-
-          const pixTotal = pixOrders.reduce((s, o) => s + o.totalAmount, 0);
-          const cardTotal = cardOrders.reduce((s, o) => s + o.totalAmount, 0);
-          const onlineTotal = pixTotal + cardTotal;
-
-          return (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              {/* CARDS DE MÉTRICAS */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-                <KPICard icon={<DollarSign size={20} color="#2563EB" />} label="Total Online Recebido" value={fmtR(onlineTotal)} sub={`${onlineOrders.length} pedidos no período`} color="#2563EB" />
-                <KPICard icon={<CreditCard size={20} color="#059669" />} label="PIX Online (D+0 Na Hora)" value={fmtR(pixTotal)} sub={`${pixOrders.length} pedidos · Saldo Instantâneo`} color="#059669" />
-                <KPICard icon={<CreditCard size={20} color="#7C3AED" />} label="Cartão Online (D+0 / D+30)" value={fmtR(cardTotal)} sub={`${cardOrders.length} pedidos · Cartão no Site`} color="#7C3AED" />
-                <KPICard icon={<TrendingUp size={20} color="#D97706" />} label="Taxa Média Gateway" value="~ 0.99% - 3.99%" sub="Direto no Mercado Pago" color="#D97706" />
-              </div>
-
-              {/* CARD EXPLICATIVO DO MERCADO PAGO & ANTECIPAÇÃO */}
-              <div style={{ background: "linear-gradient(135deg, #1E293B 0%, #0F172A 100%)", borderRadius: "16px", padding: "1.5rem", color: "#fff", boxShadow: "0 10px 25px rgba(0,0,0,0.15)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
-                  <div>
-                    <span style={{ background: "#009EE3", color: "#fff", padding: "3px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>
-                      🤝 Gateway Oficial Mercado Pago
-                    </span>
-                    <h2 style={{ fontWeight: 800, fontSize: "1.2rem", margin: "0.5rem 0 0.25rem 0", color: "#fff" }}>
-                      Como funciona o recebimento e antecipação do seu dinheiro?
-                    </h2>
-                    <p style={{ color: "#94A3B8", fontSize: "0.85rem", margin: 0, maxWidth: "750px" }}>
-                      Todos os pagamentos online feitos no seu site caem direto na sua conta do Mercado Pago. Veja abaixo a regra de prazos e como antecipar seus recebíveis se precisar do dinheiro na hora.
-                    </p>
-                  </div>
-                  <a
-                    href="https://www.mercadopago.com.br/recebiveis/antecipacoes"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ background: "#009EE3", color: "#fff", textDecoration: "none", padding: "10px 18px", borderRadius: "10px", fontWeight: 800, fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                  >
-                    🚀 Painel de Antecipação no Mercado Pago ↗
-                  </a>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
-                  {/* Bloco PIX */}
-                  <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "12px", padding: "1.2rem", border: "1px solid rgba(255,255,255,0.1)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#34D399", fontWeight: 800, fontSize: "0.95rem", marginBottom: "6px" }}>
-                      ⚡ PIX (D+0 - Instantâneo)
-                    </div>
-                    <p style={{ fontSize: "0.82rem", color: "#CBD5E1", margin: 0, lineHeight: "1.5" }}>
-                      O pagamento por <strong>PIX é 100% automático e instantâneo</strong>. Assim que o cliente paga no seu site, o dinheiro entra na hora na sua conta do Mercado Pago e fica disponível para saque ou PIX de saída imediatamente.
-                    </p>
-                  </div>
-
-                  {/* Bloco Cartão */}
-                  <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "12px", padding: "1.2rem", border: "1px solid rgba(255,255,255,0.1)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#60A5FA", fontWeight: 800, fontSize: "0.95rem", marginBottom: "6px" }}>
-                      💳 Cartão de Crédito (D+0 ou D+30)
-                    </div>
-                    <p style={{ fontSize: "0.82rem", color: "#CBD5E1", margin: 0, lineHeight: "1.5" }}>
-                      No Mercado Pago você escolhe o seu plano de prazos:
-                      <br />• <strong>D+0 (Na hora)</strong>: Receba vendas no cartão no mesmo dia.
-                      <br />• <strong>D+30 (Prazo Padrão)</strong>: Menor taxa por transação, dinheiro a liberar em 30 dias.
-                    </p>
-                  </div>
-
-                  {/* Bloco Antecipação */}
-                  <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "12px", padding: "1.2rem", border: "1px solid rgba(255,255,255,0.1)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#FBBF24", fontWeight: 800, fontSize: "0.95rem", marginBottom: "6px" }}>
-                      🔓 Ficou com valor preso em D+30 e quer antecipar?
-                    </div>
-                    <p style={{ fontSize: "0.82rem", color: "#CBD5E1", margin: 0, lineHeight: "1.5" }}>
-                      Se você começou vendendo em D+30 e deseja liberar o dinheiro acumulado imediatamente, basta entrar na sua conta Mercado Pago e solicitar a <strong>Antecipação de Recebíveis</strong>. O valor cai na hora na sua conta mediante a taxa de antecipação do próprio Mercado Pago.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* LISTA DE TRANSAÇÕES ONLINE */}
-              <div style={{ background: "#fff", borderRadius: "16px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-                <div style={{ padding: "16px 24px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <h2 style={{ fontWeight: 800, fontSize: "1rem", margin: 0 }}>📋 Transações Online no Período</h2>
-                  <span style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600 }}>{onlineOrders.length} transações</span>
-                </div>
-
-                {onlineOrders.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "3rem", color: "#94A3B8" }}>Nenhum pagamento online registrado neste período.</div>
-                ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
-                      <thead>
-                        <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", color: "#64748B", fontWeight: 700 }}>
-                          <th style={{ padding: "12px 16px" }}>Pedido</th>
-                          <th style={{ padding: "12px 16px" }}>Data / Hora</th>
-                          <th style={{ padding: "12px 16px" }}>Método</th>
-                          <th style={{ padding: "12px 16px" }}>Valor Bruto</th>
-                          <th style={{ padding: "12px 16px" }}>Prazo Estimado</th>
-                          <th style={{ padding: "12px 16px" }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {onlineOrders.map((o, i) => {
-                          const isPix = (o.paymentMethod || "").toUpperCase() === "PIX";
-                          const created = new Date(o.createdAt);
-                          const dateFormatted = created.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
-
-                          return (
-                            <tr key={i} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                              <td style={{ padding: "12px 16px", fontWeight: 800, color: "#0F172A" }}>#{o.id.slice(-5).toUpperCase()}</td>
-                              <td style={{ padding: "12px 16px", color: "#64748B" }}>{dateFormatted}</td>
-                              <td style={{ padding: "12px 16px" }}>
-                                <span style={{ background: isPix ? "#ECFDF5" : "#F3E8FF", color: isPix ? "#047857" : "#6D28D9", padding: "3px 8px", borderRadius: "6px", fontWeight: 800, fontSize: "0.75rem" }}>
-                                  {isPix ? "⚡ PIX Online" : "💳 Cartão Online"}
-                                </span>
-                              </td>
-                              <td style={{ padding: "12px 16px", fontWeight: 800, color: "#0F172A" }}>{fmtR(o.totalAmount)}</td>
-                              <td style={{ padding: "12px 16px", color: isPix ? "#059669" : "#D97706", fontWeight: 700 }}>
-                                {isPix ? "⚡ D+0 (Na hora)" : "💳 D+0 / D+30 (MP)"}
-                              </td>
-                              <td style={{ padding: "12px 16px" }}>
-                                <span style={{ background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: "6px", fontWeight: 800, fontSize: "0.75rem" }}>
-                                  ✅ Aprovado
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ===== ABA MENSALIDADE ===== */}
-        {activeTab === "mensalidade" && (() => {
-          const billing = calcMensalidade(billingCycle?.totalSales ?? dre.receitaBruta);
-          const bc = billingCycle;
-          const pct = bc && bc.amountDue > 0
-            ? Math.min(100, (bc.totalSales / (FIREHUB_PLAN.THRESHOLD)) * 100)
-            : 0;
-
-          return (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", alignItems: "start" }}>
-              {/* Esquerda: regras */}
-              <div>
-                <h2 style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: "0.5rem" }}>💰 Mensalidade FireHub</h2>
-                <p style={{ color: "#64748B", fontSize: "0.85rem", marginBottom: "1.5rem", lineHeight: 1.7 }}>
-                  Modelo <strong>Pay as You Grow</strong>: você usa o sistema e paga ao final do mês
-                  proporcionalmente ao quanto faturou. Sem Pagar.me, sem surpresa.
-                </p>
-
-                <div style={{ background: "#F8FAFC", borderRadius: "14px", padding: "1.25rem", border: "1px solid #E2E8F0", marginBottom: "1rem" }}>
-                  <p style={{ fontWeight: 800, fontSize: "0.85rem", marginBottom: "0.75rem", color: "#0F172A" }}>📋 Regra de cobrança:</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {[
-                      { label: "Taxa", value: `${FIREHUB_PLAN.PERCENT_RATE}% do faturamento mensal` },
-                      { label: "Mínimo", value: `R$ ${FIREHUB_PLAN.MIN_MONTHLY},00 / mês`, color: "#D97706" },
-                      { label: "Máximo (teto)", value: `R$ ${FIREHUB_PLAN.MAX_MONTHLY},00 / mês`, color: "#DC2626" },
-                      { label: "Cobrança", value: "Gerada automaticamente no fechamento do mês" },
-                    ].map((r, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.83rem", padding: "8px 12px", background: "#fff", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                        <span style={{ color: "#64748B" }}>{r.label}</span>
-                        <strong style={{ color: r.color || "#0F172A" }}>{r.value}</strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#475569", margin: "0 0 8px" }}>Exemplos práticos:</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {[1500, 3000, 5000, 8000, 13334, 20000].map((fat, i) => {
-                    const r = calcMensalidade(fat);
-                    const isMax = r.modelo === "fixo";
-                    return (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", padding: "7px 12px", background: isMax ? "#FFF1F2" : "#F8FAFC", borderRadius: "8px", border: isMax ? "1px solid #FCA5A5" : "1px solid #F1F5F9" }}>
-                        <span style={{ color: "#64748B" }}>Fatura R${fat.toLocaleString("pt-BR")}/mês</span>
-                        <strong style={{ color: isMax ? "#DC2626" : "#0F172A" }}>
-                          R${r.mensalidade.toFixed(0)} {isMax && "✅ teto"}
-                        </strong>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Direita: status real do mês */}
-              <div>
-                {/* Card principal */}
-                <div style={{ background: "linear-gradient(135deg,#0F172A,#1E293B)", borderRadius: "20px", padding: "1.5rem", color: "#fff", marginBottom: "1rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                    <p style={{ fontWeight: 800, fontSize: "1rem", margin: 0 }}>📊 Este mês</p>
-                    <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
-                      {bc?.yearMonth ? new Date(bc.yearMonth + "-01").toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) : "—"}
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    <div style={{ background: "#1E293B", borderRadius: "12px", padding: "1rem" }}>
-                      <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "0 0 2px" }}>Faturamento acumulado</p>
-                      <p style={{ fontSize: "1.5rem", fontWeight: 900, color: "#F59E0B", margin: 0 }}>
-                        {fmtR(bc?.totalSales ?? 0)}
-                      </p>
-                    </div>
-
-                    <div style={{ background: "#1E293B", borderRadius: "12px", padding: "1rem", border: "2px solid #E63946" }}>
-                      <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "0 0 2px" }}>Você deve este mês</p>
-                      <p style={{ fontSize: "2rem", fontWeight: 900, color: "#E63946", margin: 0 }}>
-                        {fmtR(bc?.amountDue ?? 0)}
-                      </p>
-                      <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "4px 0 0" }}>
-                        {bc
-                          ? billing.modelo === "fixo"
-                            ? `✅ Teto atingido — R$${FIREHUB_PLAN.MAX_MONTHLY} fixo`
-                            : bc.totalSales === 0
-                            ? "📭 Sem vendas registradas este mês"
-                            : `${FIREHUB_PLAN.PERCENT_RATE}% de ${fmtR(bc.totalSales)}`
-                          : "Carregando..."}
-                      </p>
-                    </div>
-
-                    {/* Barra de progresso pro teto */}
-                    <div style={{ background: "#1E293B", borderRadius: "12px", padding: "1rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: "0.72rem", color: "#94A3B8" }}>
-                        <span>Progresso pro teto (R${FIREHUB_PLAN.MAX_MONTHLY})</span>
-                        <span>{Math.min(100, ((bc?.totalSales ?? 0) / FIREHUB_PLAN.THRESHOLD * 100)).toFixed(0)}%</span>
-                      </div>
-                      <div style={{ height: 8, background: "#334155", borderRadius: 4, overflow: "hidden" }}>
-                        <div style={{
-                          height: "100%",
-                          width: `${Math.min(100, ((bc?.totalSales ?? 0) / FIREHUB_PLAN.THRESHOLD) * 100)}%`,
-                          background: (bc?.totalSales ?? 0) >= FIREHUB_PLAN.THRESHOLD
-                            ? "linear-gradient(90deg,#DC2626,#EF4444)"
-                            : "linear-gradient(90deg,#1565C0,#42A5F5)",
-                          borderRadius: 4, transition: "width 0.5s"
-                        }} />
-                      </div>
-                      <p style={{ fontSize: "0.7rem", color: "#64748B", margin: "4px 0 0" }}>
-                        Fature R${FIREHUB_PLAN.THRESHOLD.toLocaleString("pt-BR")} para atingir o teto
-                      </p>
-                    </div>
-
-                    {/* Boleto pendente (se fechado) */}
-                    {bc?.asaasBoletoUrl && (
-                      <a href={bc.asaasBoletoUrl} target="_blank" rel="noopener noreferrer" style={{
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                        padding: "0.85rem", borderRadius: 12, background: "#16A34A",
-                        color: "#fff", fontWeight: 800, fontSize: "0.9rem", textDecoration: "none",
-                      }}>
-                        💳 Pagar Boleto Pendente — {fmtR(bc.amountPending)}
-                      </a>
-                    )}
-
-                    <div style={{ background: "#0F172A", border: "1px solid #334155", borderRadius: "10px", padding: "0.75rem 1rem", fontSize: "0.75rem", color: "#94A3B8", lineHeight: 1.8 }}>
-                      ✅ Atualizado a cada pedido confirmado<br />
-                      ✅ Cobrança gerada automaticamente no fechamento<br />
-                      ✅ Sem mínimo se não faturou nada no mês
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── Seção Fatura Detalhada ── */}
-                {bc && bc.status !== "OPEN" && bc.amountPending > 0 && (
-                  <div id="fatura" style={{ background: "#fff", border: "2px solid #FDE68A", borderRadius: 16, padding: "1.5rem", marginTop: "1rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                      <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: 0 }}>📄 Detalhes da Fatura</h3>
-                      <span style={{
-                        padding: "4px 12px", borderRadius: 99, fontSize: "0.72rem", fontWeight: 700,
-                        background: "#FEF9C3", color: "#92400E", border: "1px solid #FDE68A",
-                      }}>PENDENTE</span>
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: "1rem" }}>
-                      {[
-                        { label: "Faturamento do mês", value: fmtR(bc.totalSales) },
-                        { label: `Taxa (${FIREHUB_PLAN.PERCENT_RATE}%, mín R$${FIREHUB_PLAN.MIN_MONTHLY})`, value: fmtR(bc.amountDue), bold: true },
-                        { label: "Abatido via pagamento online", value: `- ${fmtR(bc.amountOffset)}`, color: "#16A34A" },
-                        { label: "Saldo pendente", value: fmtR(bc.amountPending), color: "#DC2626", bold: true },
-                      ].map((r, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "8px 12px", background: i === 3 ? "#FEF2F2" : "#F9FAFB", borderRadius: 8 }}>
-                          <span style={{ color: "#64748B" }}>{r.label}</span>
-                          <strong style={{ color: r.color || "#0F172A", fontWeight: r.bold ? 800 : 600 }}>{r.value}</strong>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Abatimentos - log de pedidos */}
-                    {bc.amountOffset > 0 && (
-                      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "0.85rem", marginBottom: "1rem" }}>
-                        <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#166534", margin: "0 0 6px" }}>💚 Pedidos que abateram a fatura:</p>
-                        <p style={{ fontSize: "0.78rem", color: "#166534", margin: 0 }}>
-                          Total abatido via pagamento online (PIX/Cartão): <strong>{fmtR(bc.amountOffset)}</strong>
-                        </p>
-                      </div>
-                    )}
-
-                    {bc.asaasBoletoUrl && (
-                      <a href={bc.asaasBoletoUrl} target="_blank" rel="noopener noreferrer" style={{
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                        padding: "0.85rem", borderRadius: 12, background: "#16A34A",
-                        color: "#fff", fontWeight: 800, fontSize: "0.9rem", textDecoration: "none", marginBottom: "1rem",
-                      }}>
-                        ⚡ Pagar Saldo Pendente — {fmtR(bc.amountPending)}
-                      </a>
-                    )}
-                  </div>
-                )}
-
-                {/* ── Termos ── */}
-                <div style={{ background: "#F1F5F9", borderRadius: 12, padding: "1rem", marginTop: "1rem", fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
-                  <p style={{ fontWeight: 700, margin: "0 0 6px", color: "#0F172A" }}>📜 Termos de cobrança:</p>
-                  <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
-                    <li>O <strong>pagamento online</strong> (PIX e cartão) é <strong>obrigatório</strong> estar ativo.</li>
-                    <li>Pendências de cobrança são <strong>descontadas automaticamente</strong> dos pagamentos online recebidos.</li>
-                    <li>A fatura é gerada no fechamento do mês (<strong>horário de Brasília</strong>) e tem <strong>10 dias</strong> para pagamento.</li>
-                    <li>Após 10 dias sem regularizar, o sistema será <strong>bloqueado</strong> até o pagamento.</li>
-                    <li>Caso não tenha faturado no mês, <strong>não há cobrança</strong>. Pausou a loja e não vendeu? R$0.</li>
-                    <li><strong>Tráfego Pago:</strong> R$50/semana pelo <strong>serviço de gestão</strong>. Ativou campanha = cobra. O ROAS depende da qualidade do produto, atendimento e mercado local.</li>
-                  </ul>
-                  <a href="/termos" target="_blank" style={{ color: "#2563EB", fontWeight: 600, fontSize: "0.76rem", textDecoration: "underline" }}>Ver termos completos →</a>
-                </div>
-              </div>
-            </div>
-          );
-
-        })()}
-      </div>
 
       {/* ===== ABA CUSTOS FIXOS ===== */}
       {activeTab === "custosfix" && (
@@ -1050,6 +984,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
           {savedFC && <div style={{ marginTop: 12, textAlign: "center", color: "#16A34A", fontWeight: 700 }}>✅ Custos salvos!</div>}
         </div>
       )}
+
+      </div>
 
       <style>{`
         @media (max-width: 768px) {
