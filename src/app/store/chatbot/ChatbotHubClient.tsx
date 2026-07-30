@@ -2034,6 +2034,45 @@ export default function ChatbotHubClient() {
               )}
             </div>
 
+            {/* SÓ DELIVERY OU ATENDE NO LOCAL */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>
+                    🏢 Tipo de Atendimento (Possui Loja Física?)
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px" }}>
+                    Escolha se sua loja recebe clientes no local ou se é 100% focada em delivery.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ storeType: "PHYSICAL" })}
+                    style={{
+                      padding: "6px 12px", borderRadius: "8px", border: "none",
+                      background: config.storeType === "PHYSICAL" ? "#2563EB" : "#E2E8F0",
+                      color: config.storeType === "PHYSICAL" ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    ATENDE NO LOCAL
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ storeType: "DELIVERY_ONLY" })}
+                    style={{
+                      padding: "6px 12px", borderRadius: "8px", border: "none",
+                      background: config.storeType === "DELIVERY_ONLY" || !config.storeType ? "#7C3AED" : "#E2E8F0",
+                      color: config.storeType === "DELIVERY_ONLY" || !config.storeType ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SÓ DELIVERY
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* INSTRUÇÕES CUSTOMIZADAS */}
             <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
               Instruções Especiais da Sua Loja (Opcional):
