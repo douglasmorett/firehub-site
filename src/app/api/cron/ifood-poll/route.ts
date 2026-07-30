@@ -342,6 +342,8 @@ export async function GET(req: NextRequest) {
               totalAmount: total,
               deliveryFee: deliveryFeeValue,
               status: initialStatus,
+              kdsStage: "PRODUCTION",
+              kdsProductionAt: new Date(),
               notes: notesArr,
               createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
               items: { create: items },

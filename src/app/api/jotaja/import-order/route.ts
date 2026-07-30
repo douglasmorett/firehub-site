@@ -76,6 +76,8 @@ export async function POST(req: NextRequest) {
         paymentMethod: paymentMethod || "JotaJá Online",
         deliveryType: (customerAddress && customerAddress.trim().length > 3) ? "DELIVERY" : "RETIRADA",
         status: "NOVO",
+        kdsStage: "PRODUCTION",
+        kdsProductionAt: new Date(),
         notes: `Pedido JotaJá #${refTag}${itemsSummary ? ` | ${itemsSummary}` : ""}`,
         items: {
           create: [

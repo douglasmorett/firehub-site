@@ -309,7 +309,7 @@ export default function KDSTelaPage() {
     const poll = async () => {
       await fetchOrders();
       if (!cancelled) {
-        pollTimerRef.current = setTimeout(poll, 2000);
+        pollTimerRef.current = setTimeout(poll, 1000);
       }
     };
 
@@ -389,15 +389,15 @@ export default function KDSTelaPage() {
         // will be picked up on next poll
       }
 
-      // Remove card after exit animation
+      // Remove card after exit animation & re-fetch
       setTimeout(() => {
         setOrders((prev) => prev.filter((o) => o.id !== order.id));
         setExitingOrderId(null);
-        // Update lastJsonRef so next poll diff works correctly
         lastJsonRef.current = "";
+        fetchOrders();
       }, 500);
     },
-    [stage, exitingOrderId]
+    [stage, exitingOrderId, fetchOrders]
   );
 
   // ─── Keyboard support ──────────────────────────────────────────────────────

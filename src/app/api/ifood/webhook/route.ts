@@ -367,6 +367,8 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           paymentMethod:    parsedPaymentMethod,
           totalAmount:      total,
           status:           "NOVO",
+          kdsStage:         "PRODUCTION",
+          kdsProductionAt:  new Date(),
           notes:            notesArr,
           items:            { create: items },
         },

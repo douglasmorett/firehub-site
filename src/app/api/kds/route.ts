@@ -11,6 +11,7 @@ import { authOptions } from "@/lib/auth";
  * Updates KDS stage for an order (production → finishing → done).
  */
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -27,21 +28,24 @@ export async function GET(req: NextRequest) {
 
   let where: any;
 
+  // Filtro de status ativo amplo para capturar qualquer pedido em andamento (iFood, Jotajá, WhatsApp ou Site)
+  const activeStatusFilter = { in: ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "RECEBIDO", "CONFIRMADO", "PENDENTE"] };
+
   if (stage === "production") {
-    // Tela de Preparo: mostra pedidos em produção (NOVO, ACEITO, PREPARANDO) que ainda não foram concluídos pela produção
+    // Tela de Preparo: mostra todos os pedidos ativos na cozinha que ainda não foram concluídos na produção
     where = {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: { in: ["NOVO", "ACEITO", "PREPARANDO"] },
+      status: activeStatusFilter,
       OR: [
         { kdsStage: "PRODUCTION" },
         { kdsStage: null },
       ],
     };
   } else if (stage === "finishing") {
-    // Tela de Finalização: mostra TODOS os pedidos ativos (NOVO, ACEITO, PREPARANDO), tanto os que estão em produção quanto os prontos na cozinha
+    // Tela de Finalização: mostra TODOS os pedidos ativos na cozinha (em produção ou prontos para finalizar)
     where = {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: { in: ["NOVO", "ACEITO", "PREPARANDO"] },
+      status: activeStatusFilter,
       OR: [
         { kdsStage: "PRODUCTION" },
         { kdsStage: "FINISHING" },
@@ -124,7 +128,13 @@ export async function GET(req: NextRequest) {
     dailyOrderNumber: dailyNumMap.get(o.id) || null,
   }));
 
-  return NextResponse.json(ordersWithDailyNum);
+  return NextResponse.json(ordersWithDailyNum, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    },
+  });
 }
 
 export async function PUT(req: NextRequest) {

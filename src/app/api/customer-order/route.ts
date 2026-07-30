@@ -114,6 +114,8 @@ export async function POST(req: Request) {
         totalAmount: finalTotal,
         deliveryFee: fee,
         status: initialStatus,
+        kdsStage: "PRODUCTION",
+        kdsProductionAt: new Date(),
         items: { create: orderItems }
       }
     });
