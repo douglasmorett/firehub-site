@@ -146,8 +146,19 @@ async function handleIncomingMessage(body: any, instance: string) {
   let audioData: { base64: string; mimeType: string } | undefined = undefined;
 
   if (audioObj) {
-    const base64Data = audioObj.base64 || audioObj.data || data.base64;
+    let base64Data = audioObj.base64 || audioObj.data || data.base64;
     const mimeType = audioObj.mimetype || audioObj.mimeType || "audio/ogg; codecs=opus";
+    if (!base64Data && audioObj.url) {
+      try {
+        const audioRes = await fetch(audioObj.url);
+        if (audioRes.ok) {
+          const buffer = await audioRes.arrayBuffer();
+          base64Data = Buffer.from(buffer).toString("base64");
+        }
+      } catch (err) {
+        console.error("[WhatsApp Webhook] Erro ao baixar áudio da URL:", err);
+      }
+    }
     if (base64Data) {
       audioData = { base64: base64Data, mimeType };
     }
@@ -159,7 +170,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     data.message?.imageMessage?.caption ||
     data.body ||
     data.text ||
-    (audioData ? "[Mensagem de Áudio enviada pelo cliente]" : "");
+    (audioObj ? "[Mensagem de Áudio enviada pelo cliente]" : "");
 
   if (!textMessage.trim() && !audioData) return;
 

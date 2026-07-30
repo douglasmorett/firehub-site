@@ -284,7 +284,7 @@ REGRAS ABSOLUTAS:
 4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí', 'bora').
 5. REGRA DE CONDUTA DO LINK DO CARDÁPIO (MUITO IMPORTANTE!):
    - NUNCA empurre o link do cardápio em respostas de cortesia ou encerramento (como "de nada", "obrigado", "ok", "boa noite", "valeu"). Nesses casos, responda com gentileza natural (ex: "Imagina, eu que agradeço! 😊 Qualquer coisa me chama!") SEM NENHUM LINK.
-   - NUNCA mande APENAS o link como resposta quando o cliente faz uma PERGUNTA ESPECÍFICA (sobre endereço, taxa, entrega, etc). RESPONDA A PERGUNTA PRIMEIRO e só mande o link SE for relevante.
+   - NUNCA mande o link como resposta quando o cliente faz uma PERGUNTA ESPECÍFICA (sobre endereço, taxa, entrega, cidade, áudio, etc). RESPONDA A PERGUNTA PRIMEIRO de forma direta e fluida.
    - Envie o link do cardápio (${storeLink}) APENAS E SOMENTE SE:
      a) O cliente solicitar o cardápio, fotos ou o link de pedido.
      b) O cliente perguntar valores, sabores, opções de lanches ou demonstrar intenção real de pedir/comprar.
@@ -294,13 +294,13 @@ REGRAS ABSOLUTAS:
 7. QUANDO O CLIENTE PERGUNTAR SOBRE CUPOM DE DESCONTO / PROMOÇÕES:
    - REGRA CRÍTICA DE CUPOM: NUNCA INVENTE CÓDIGOS DE CUPOM! Você é PROIBIDA de inventar cupons que não estejam listados no campo "CUPONS VÁLIDOS CADASTRADOS" abaixo.
    - SE HOUVER CUPOM LISTADO ABAIXO: Informe o código exatamente como cadastrado e o desconto (ex: "Tenho sim! Usa o cupom ${instantCouponCode || "CUPOM"} e ganhe desconto no seu pedido! ${storeLink}").
-   - SE NÃO HOUVER NENHUM CUPOM VALIDO LISTADO ABAIXO: Você DEVE responder neste tom natural: "Poxa, infelizmente não temos cupons de desconto disponíveis no momento, mas você pode conferir nossos preços no site se quiser: ${storeLink}".
+   - SE NÃO HOUVER NENHUM CUPOM VALIDO LISTADO ABAIXO: Você DEVE responder neste tom natural: "Poxa, infelizmente não temos cupons de desconto disponíveis no momento, mas se quiser te passo as opções do cardápio! 😊".
 8. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
-   - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO precisa enviar o link aqui, a não ser que peçam.
+   - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
    - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
 10. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU RECOMENDAÇÃO:
-    - Responda DIRETO ao ponto citando apenas 1 opção campeã com o preço real e o link se ele quiser pedir. Ex: "O campeão aqui é a Esfirra de Carne por 3,50 reais! O pessoal ama! Quer dar uma olhada no site? ${storeLink}"
+    - Responda DIRETO ao ponto citando apenas 1 opção campeã com o preço real. Ex: "O campeão aqui é a Esfirra de Carne por 3,50 reais! O pessoal ama! Quer dar uma olhada no nosso cardápio?"
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
     - Fale 2 destaques rápidos e mande o link (${storeLink}).
 12. Quando informar preços, fale de forma natural (ex: "24,90 reais").
@@ -309,50 +309,43 @@ REGRAS ABSOLUTAS:
 15. REGRAS DE PROMOÇÕES DO DIA E DIAS DE DISPONIBILIDADE NO CARDÁPIO:
     - Hoje é ${currentDayName} (${currentDayCode}).
     - ATENÇÃO CRÍTICA: Observe o aviso de cada produto no cardápio abaixo. Se um produto ou promoção estiver marcado como "[⚠️ NÃO DISPONÍVEL HOJE (${currentDayName})! Disponível APENAS nos dias: X]", isso significa que ele NÃO ESTÁ DISPONÍVEL HOJE!
-    - Se o cliente perguntar sobre a promoção desse produto (ex: "quando tem promoção da esfirra de queijo?" ou "tem promoção de queijo hoje?"):
-      - Você NUNCA deve dizer que o produto está disponível ou em promoção hoje se ele for de outro dia!
-      - Responda de forma ultra clara e simpática explicando em qual dia aquela promoção fica ativa (ex: "A promoção da esfirra de queijo não mudou a data, é exclusiva aos domingos! Hoje, ${currentDayName}, a nossa promoção do dia é a esfirra de carne!"). Se o cliente quiser pedir a promoção de hoje, mande o link.
+    - Se o cliente perguntar sobre a promoção desse produto:
+      - Responda de forma ultra clara e simpática explicando em qual dia aquela promoção fica ativa.
 16. REGRA ABSOLUTA DE ATENDIMENTO 24/7 (MESMO COM CAIXA / LOJA FECHADO):
     - O ROBÔ DEVE FICAR ATIVO E RESPONDER PRA SEMPRE 24 HORAS POR DIA!
     - NUNCA DEIXE DE RESPONDER NENHUMA MENSAGEM SÓ PORQUE A LOJA OU O CAIXA ESTÁ FECHADO.
-    - Se o cliente mandar mensagem com a loja fechada (ex: "Olá", "Posso ter mais informações?", etc.), responda normalmente com toda a atenção e simpatia, tire as dúvidas sobre o cardápio e preços, e envie o link do cardápio (${storeLink}) informando a que horas a loja abre novamente caso ele queira consultar ou agendar o pedido.
+    - Se o cliente mandar mensagem com a loja fechada, responda normalmente com toda a atenção e simpatia, tire as dúvidas e informe a que horas a loja abre novamente.
 17. QUANDO O CLIENTE PERGUNTAR O ENDEREÇO / LOCALIZAÇÃO OU SE PODE COMER NO LOCAL:
 ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESENCIAL / FÍSICA!
-    - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || "Centro"}" (se o cliente perguntar o endereço ou se pode comer no local).` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
-    - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Para fazer seu pedido acesse: ${storeLink}"`}
+    - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || "Centro"}" (SEM NENHUM LINK!).` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
+    - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
 18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA / PREÇO DA ENTREGA / FRETE:
     - Consulte a seção "TAXAS DE ENTREGA POR BAIRRO/REGIÃO" abaixo. Se houver taxa por bairro, informe a taxa do bairro dele (se souber). Se o cliente disse onde mora, procure o bairro na lista e informe o valor exato.
-    - Se a taxa variar ou se não souber o bairro, diga: "A taxa de entrega depende do bairro! No seu endereço posso verificar: coloca no nosso site que ele calcula certinho: ${storeLink} 😊"
-    - Se houver frete grátis acima de um valor, SEMPRE informe isso!
-    - Após informar a taxa, SEMPRE ofereça: "Quer fazer seu pedido? 😋 ${storeLink}"
+    - Se a taxa variar ou não souber o bairro, pergunte o bairro dele: "A taxa de entrega depende do bairro! Qual a sua rua ou bairro para eu verificar o valor certinho pra você? 😊"
+    - NÃO mande o link do cardápio aqui a não ser que o cliente peça.
 19. QUANDO O CLIENTE DISSER ONDE MORA OU MENCIONAR UM BAIRRO/LOCALIZAÇÃO:
     - NUNCA ignore isso! Procure o bairro/região na seção "TAXAS DE ENTREGA" abaixo.
-    - Se encontrar o bairro, informe a taxa: "A gente entrega aí sim! A taxa pro seu bairro é R$ X,XX 🚀 Vamos montar seu pedido? ${storeLink}"
-    - Se não encontrar na lista, diga: "Deixa eu verificar... Coloca teu endereço completo aqui no nosso site que ele calcula certinho a taxa: ${storeLink}"
+    - Se encontrar o bairro, informe a taxa: "A gente entrega aí sim! A taxa pro seu bairro (${customerFirstName ? `${customerFirstName}, ` : ""})é R$ X,XX 🚀 Quer que eu te passe o cardápio pra pedir?"
+    - Se não encontrar na lista, peça o endereço completo ou rua para conferir.
 20. QUANDO O CLIENTE PEDIR UM PRODUTO ESPECÍFICO (ex: "quero essa esfera de 1,90", "quero um X-Burger"):
     - NUNCA faça o pedido diretamente pelo chat! O pedido DEVE ser feito pelo site/cardápio.
     - Responda reconhecendo o produto e DIRECIONE para finalizar pelo site: "Boa escolha! 😋 Pra finalizar seu pedido certinho com endereço e pagamento, é só clicar aqui: ${storeLink}"
-    - Se o cliente insistir em pedir pelo WhatsApp, explique educadamente que o pedido precisa ser feito pelo site pra garantir que tudo saia certinho.
 21. REGRA ANTI-RESPOSTA GENÉRICA (IMPORTANTÍSSIMO):
     - NUNCA responda com uma frase genérica + link quando o cliente fez uma PERGUNTA ESPECÍFICA.
-    - Se o cliente perguntou algo concreto (endereço, taxa, horário, tempo de entrega, se aceita retirada), RESPONDA EXATAMENTE AQUILO que ele perguntou.
-    - Exemplos do que NÃO fazer:
-      ❌ Cliente: "Qual seu endereço?" → "Escolhe seu lanche favorito aqui: link"
-      ❌ Cliente: "Qual o preço da entrega?" → "A gente tá a todo vapor! link"  
-      ❌ Cliente: "Vocês aceitam cartão?" → "Confira nosso cardápio: link"
-    - Exemplos do que FAZER:
-      ✅ Cliente: "Qual seu endereço?" → ${(chatbotConfig.storeType === "PHYSICAL") ? `"Temos loja física sim! Nosso endereço é: ${user.storeAddress || "Rua X, 123"}"` : `"Desculpe, somos só delivery no momento! Para fazer seu pedido acesse: ${storeLink}"`}
-      ✅ Cliente: "Qual o preço da entrega?" → "A taxa varia por região! Coloca teu endereço no site que calcula: link"
-      ✅ Cliente: "Vocês aceitam cartão?" → "Aceitamos sim! Cartão de crédito e débito 💳"
-22. QUANDO A MENSAGEM RECEBIDA FOR UMA CONFIRMAÇÃO / RESUMO DE PEDIDO (ex: mensagens do Jotajá ou iFood com 'SEU PEDIDO:', 'RESUMO DO PEDIDO', 'Pedido nº:', 'Acompanhe abaixo o pedido'):
-    - O CLIENTE JÁ REALIZOU O PEDIDO COM SUCESSO!
-    - É ABSOLUTAMENTE PROIBIDO oferecer mais produtos, falar de promoções ou enviar o link do cardápio!
-    - Apenas agradeça pela compra com muita alegria, simpatia e carinho.
-    - Exemplo: "Obaa! 🎉 Recebemos a confirmação do seu pedido por aqui! Muito obrigado pela preferência! Já vamos preparar tudo com muito carinho. ❤️🍕"
-23. TRATAMENTO E USO DO NOME DO CLIENTE (MUITO IMPORTANTÍSSIMO):
+    - Se o cliente perguntou algo concreto (endereço, taxa, horário, tempo de entrega, se aceita áudio, se é de Rio das Ostras), RESPONDA EXATAMENTE AQUILO que ele perguntou.
+22. QUANDO A MENSAGEM RECEBIDA FOR UMA CONFIRMAÇÃO / RESUMO DE PEDIDO:
+    - É ABSOLUTAMENTE PROIBIDO oferecer mais produtos ou enviar o link do cardápio! Apenas agradeça pela compra com muita alegria.
+23. TRATAMENTO E USO DO NOME DO CLIENTE:
 ${customerFirstName ? `    - O primeiro nome do cliente é "${customerFirstName}".
-    - Você DEVE OBRIGATORIAMENTE chamar o cliente pelo nome "${customerFirstName}" em suas respostas e saudações! (ex: "Olá, ${customerFirstName}!", "Tudo bem, ${customerFirstName}?", "Pode deixar, ${customerFirstName}!").
-    - Isso torna o atendimento extremamente pessoal, humano e acolhedor.` : `    - Se o cliente se apresentar ou disser o nome no meio da conversa, passe a chamá-lo pelo primeiro nome.`}
+    - Você DEVE OBRIGATORIAMENTE chamar o cliente pelo nome "${customerFirstName}" em suas respostas!` : `    - Se o cliente se apresentar ou disser o nome no meio da conversa, passe a chamá-lo pelo primeiro nome.`}
+24. QUANDO O CLIENTE PERGUNTAR SE PODE MANDAR ÁUDIO ("posso mandar áudio?", "posso falar em áudio?", etc):
+    - Responda de forma ultra simpática e receptiva: "Pode sim! Pode mandar áudio por aqui que eu escuto e te respondo! 🎙️😊" (SEM MANDAR NENHUM LINK!).
+25. QUANDO O CLIENTE PERGUNTAR SE A LOJA É DE RIO DAS OSTRAS OU ONDE FICA:
+    - Responda diretamente: "Somos de ${user.city || "Rio das Ostras"} sim! 😊" (SEM MANDAR NENHUM LINK!).
+26. QUANDO O CLIENTE DISSER QUE A INTERNET ESTÁ LENTA OU QUE NÃO CONSEGUE ABRIR O SITE:
+    - Responda com empatia: "Poxa, sem problemas! Pode ir me mandando por texto mesmo por aqui o que você quer que eu te ajudo a montar! 😊" (SEM MANDAR NENHUM LINK!).
+27. QUANDO O CLIENTE PEDIR MAIS INFORMAÇÕES ("posso ter mais informações sobre isso?", "como funciona?", etc):
+    - Responda de forma simpática: "Oii! 😊 Te ajudo sim! O que você gostaria de saber? Posso te falar sobre nossos lanches, entregas, valores ou horários!"
 
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
@@ -367,8 +360,6 @@ DADOS DA LOJA:
 - Link do Cardápio: ${storeLink}
 - Tempo Médio de Entrega da Loja: 45 a 60 minutos
 - Aceita Retirada no Balcão: ${chatbotConfig.acceptsPickup ? "SIM" : "NÃO"}
-${chatbotConfig.acceptsPickup ? `- Endereço para Retirada: ${chatbotConfig.pickupAddress || user.storeAddress || user.city || "Mesmo endereço da loja"}
-- IMPORTANTE: Quando o cliente perguntar sobre retirada, buscar no balcão, ou pegar na loja, informe que SIM, aceita retirada e forneça o endereço completo de retirada acima.` : `- IMPORTANTE: A loja NÃO aceita retirada no balcão. Se o cliente perguntar sobre retirada/buscar na loja, informe educadamente que só fazem entrega (delivery) e envie o link do cardápio.`}
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
 - Quadro Geral de Horários:
 ${hoursText}
@@ -391,7 +382,7 @@ ${(() => {
   return taxaText;
 })()}
 
-CUPONS VÁLIDOS CADASTRADOS NA LOJA (SOMENTE USE ESTES SE EXISTIREM, NUNCA INVENTE OUTROS):
+CUPONS VÁLIDOS CADASTRADOS NA LOJA:
 ${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
 
 PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
@@ -438,7 +429,6 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       
       for (const mName of modelNames) {
         try {
-          // Timeout de 12 segundos por modelo para não travar o webhook
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 12000);
 
@@ -467,10 +457,9 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       }
 
       if (generatedText) {
-        // Pós-processamento para remover artefatos de markdown que a IA possa ter deixado escapar
         let cleanText = generatedText
-          .replace(/(\*\*|\*|_|#|`)/g, "") // Remove bold, italic, headers, backticks
-          .replace(/R\$\s?(\d+)[.,](\d{2})/gi, "$1 reais") // Troca R$ 35,00 por 35 reais (caso ainda erre)
+          .replace(/(\*\*|\*|_|#|`)/g, "")
+          .replace(/R\$\s?(\d+)[.,](\d{2})/gi, "$1 reais")
           .trim();
           
         return { reply: cleanText };
@@ -485,18 +474,86 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
   const msg = message.toLowerCase().trim();
   const alreadyGreeted = Array.isArray(history) && history.some((h: any) => h.sender === "Atendente" || h.sender === "bot");
 
+  // 1. PERGUNTA SOBRE MANDAR ÁUDIO
+  if (/(posso|consigo|d[aá]\s+pra|pode)\s+.*(falar|mandar|enviar|grav[aa]r|mencion|fazer)?.*(áudio|audio)|(aceita|ouve|escuta|entende).*(áudio|audio)|falar.*(por|em|ei|via|de|com)?.*(áudio|audio)/i.test(msg)) {
+    return {
+      reply: `Pode sim! Pode mandar áudio por aqui que eu escuto e te respondo! 🎙️😊`
+    };
+  }
+
+  // 2. MENSAGEM DE ÁUDIO RECEBIDA
+  if (audioData || /\[Mensagem de Áudio enviada pelo cliente\]/i.test(msg)) {
+    return {
+      reply: `Recebi seu áudio! 🎙️ Deixa eu ouvir aqui rapidinho... Se quiser ir me mandando por escrito também, fico à disposição! 😊`
+    };
+  }
+
+  // 3. PERGUNTA SE É DE RIO DAS OSTRAS OU ONDE FICA A LOJA
+  if (/rio das ostras|s[ãa]o de onde|vcs s[ãa]o de|onde fica|onde vcs est[ãa]o|qual a cidade|qual o endereço|qual seu endereço/i.test(msg)) {
+    const city = user.city || "Rio das Ostras";
+    if (chatbotConfig.storeType === "PHYSICAL") {
+      return {
+        reply: `Temos loja física em ${city} sim! Nosso endereço é ${user.storeAddress || city}. 😊`
+      };
+    }
+    return {
+      reply: `Somos de ${city} sim! 😊 Atendemos por delivery em toda a região!`
+    };
+  }
+
+  // 4. INTERNET LENTA OU PROBLEMAS DE CONEXÃO
+  if (/internet.*(lenta|ruim|fraca)|net.*(lenta|ruim)|site.*(n[ãa]o.*abre|travando|lento)|n[ãa]o.*consigo.*abrir/i.test(msg)) {
+    return {
+      reply: `Poxa, sem problemas! Se o site tiver travando aí pela internet, pode ir me mandando seu pedido por texto por aqui mesmo que eu te ajudo a montar! 😊`
+    };
+  }
+
+  // 5. TAXA DE ENTREGA / FRETE / BAIRRO (EX: RECANTO, COSTAZUL, CENTRO...)
+  if (/taxa|entrega|frete|valor da entrega|quanto fica a entrega|quanto [eé] a entrega|entrega para|entrega no|entrega em/i.test(msg)) {
+    const zones = Array.isArray((user as any).deliveryZones) ? (user as any).deliveryZones : [];
+    
+    // Procura se o cliente citou algum bairro cadastrado
+    const matchedZone = zones.find((z: any) => z.name && msg.includes(z.name.toLowerCase()));
+    
+    if (matchedZone) {
+      return {
+        reply: `A taxa de entrega para o bairro ${matchedZone.name} é de R$ ${Number(matchedZone.fee || 0).toFixed(2)}! 🛵 Se quiser fazer seu pedido, é só me avisar!`
+      };
+    }
+
+    if (zones.length > 0) {
+      return {
+        reply: `A taxa de entrega varia conforme o seu bairro! Qual a sua rua ou bairro para eu verificar o valor certinho pra você? 😊`
+      };
+    }
+
+    return {
+      reply: `A taxa de entrega é calculada conforme o seu endereço! Me passa o seu bairro que eu verifico pra você! 😊`
+    };
+  }
+
+  // 6. MAIS INFORMAÇÕES / AJUDA GERAL
+  if (/mais informa[cç][õo]es|como funciona|me ajuda|informa[cç][ãa]o sobre isso/i.test(msg)) {
+    return {
+      reply: `Oii! 😊 Te ajudo sim! O que você gostaria de saber? Posso te informar sobre nosso cardápio, entregas, valores ou horários!`
+    };
+  }
+
+  // 7. AMOR / SAUDADES
   if (/saudade|te amo|te adoro|te amooo|amor|linda|gatinha|gato|lindão|perfeita|maravilhosa|lindo|sou seu fã/i.test(msg)) {
     return {
-      reply: `hahaha também tava com saudade! 🥰 muito bom te ver por aqui de novo! bora pedir um lanche hoje pra comemorar?\n👉 ${storeLink}`
+      reply: `hahaha também tava com saudade! 🥰 muito bom te ver por aqui de novo! bora pedir um lanche hoje pra comemorar?`
     };
   }
 
+  // 8. HORÁRIOS DE FUNCIONAMENTO
   if (/horario|horário|funciona|que horas|t[aã]o aberto|t[aã] aberto|aberto agora|t[aã] funcionando|abre hoje/i.test(msg)) {
     return {
-      reply: `oie! ${nowStatusText || "a gente funciona todo dia das 18h às 23:30."} 😊 já sabe o que vai pedir hoje ou quer olhar o cardápio?\n👉 ${storeLink}`
+      reply: `oie! ${nowStatusText || "a gente funciona todo dia das 18h às 23:30."} 😊 como posso te ajudar hoje?`
     };
   }
 
+  // 9. INTENÇÃO DE PEDIDO DIRETA / ITEM ESPECÍFICO
   if (/(quero|me v[eê]|vou querer|manda|trazer)\s+(\d+)?\s*(.+)/i.test(msg)) {
     const match = msg.match(/(quero|me v[eê]|vou querer|manda|trazer)\s+(.+)/i);
     const orderText = match ? match[2] : msg;
@@ -522,39 +579,37 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
     }
   }
 
-  if (/entrega|retirada|buscar|retirar|endereço|endereco/i.test(msg) && alreadyGreeted) {
-    return {
-      reply: `fechou! leva uns 40 minutinhos mais ou menos. termina o pedido nesse link aqui ó 👇\n👉 ${storeLink}`
-    };
-  }
-
+  // 10. AGRADECIMENTO / CORTESIA
   if (/obrigad|valeu|tmj|brigad|gratidão|gratidao|de nada/i.test(msg)) {
     return {
       reply: `imagina${customerFirstName ? `, ${customerFirstName}` : ""}, eu que agradeço!! 😊 qualquer coisa é só me chamar por aqui, tá bom?`
     };
   }
 
+  // 11. RISADAS
   if (/k{2,}|ha{2,}|he{2,}|rs{2,}/i.test(msg)) {
     return {
       reply: `hahaha muito bom! 😂 qualquer dúvida me avisa!`
     };
   }
 
+  // 12. ELOGIOS
   if (/delícia|delicia|muito bom|melhor|adoro|top|perfeito|bom demais/i.test(msg)) {
     return {
       reply: `aaah que massa ouvir isso${customerFirstName ? `, ${customerFirstName}` : ""}! ❤️ a gente capricha muito por aqui!`
     };
   }
 
+  // 13. SAUDAÇÕES SIMPLES
   if (/^(oi|oii|oiii|oioi|eai|eaí|ola|olá|boa noite|bom dia|boa tarde|fala|opa)$/i.test(msg)) {
     return {
-      reply: `oii${customerFirstName ? `, ${customerFirstName}` : ""}, tudo bem? 😊 como posso te ajudar hoje?`
+      reply: `oii${customerFirstName ? `, ${customerFirstName}` : ""}! tudo bem? 😊 como posso te ajudar hoje?`
     };
   }
 
-  const availableProducts = products.filter(isAvailableToday);
-
-  if (/cardapio|cardápio|menu|pedir|comprar|fazer pedido|fome|lanche|esfiha|esfirra|pizza|op[cç][õo]es|promo[cç][ãa]o|mais vendido/i.test(msg)) {
+  // 14. SOLICITAÇÃO EXPLÍCITA DE CARDÁPIO / LINK / FOTOS / PROMOÇÕES
+  if (/cardapio|cardápio|menu|link|fotos|ver o cardapio|op[cç][õo]es|promo[cç][ãa]o|mais vendido|fazer pedido|comprar|pedir/i.test(msg)) {
+    const availableProducts = products.filter(isAvailableToday);
     const sampleProducts = (availableProducts.length > 0 ? availableProducts : products).slice(0, 3).map(p => `${p.name} por ${p.price} reais`).join(", ");
     const introText = sampleProducts ? `temos opções maravilhosas como ${sampleProducts}!` : "temos várias opções incríveis no nosso cardápio!";
     return {
@@ -562,13 +617,11 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
     };
   }
 
-  const sampleProductsFallback = (availableProducts.length > 0 ? availableProducts : products).slice(0, 2).map(p => `${p.name} (${p.price} reais)`).join(" e ");
-  const productMention = sampleProductsFallback ? ` como ${sampleProductsFallback}` : "";
-
+  // 15. FALLBACK FLUIDO E SEM EMPURRAR O LINK
   const fallbacks = [
-    `oie${customerFirstName ? `, ${customerFirstName}` : ""}! tô por aqui pra te atender. 😊 hoje temos destaques incríveis${productMention}! dá uma olhadinha no nosso cardápio completo:\n👉 ${storeLink}`,
-    `com certeza${customerFirstName ? `, ${customerFirstName}` : ""}! 🍔 se quiser sugestão ou tiver dúvida sobre algum lanche me avisa. os mais pedidos estão no nosso cardápio:\n👉 ${storeLink}`,
-    `beleza${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 a gente tá a todo vapor aqui. escolhe seu lanche favorito por aqui:\n👉 ${storeLink}`,
+    `Certo${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Como posso te ajudar com o seu pedido ou tirar sua dúvida por aqui?`,
+    `Entendi! Me fala mais sobre o que você precisa que eu te ajudo por aqui! 👍`,
+    `Tranquilo${customerFirstName ? `, ${customerFirstName}` : ""}! Se tiver qualquer dúvida sobre nossos lanches, taxas ou entregas, é só me falar! 😊`,
   ];
   const choiceIndex = Math.abs(msg.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0)) % fallbacks.length;
 
