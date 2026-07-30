@@ -104,6 +104,14 @@ export default function ChatbotHubClient() {
   const [deletingCoupon, setDeletingCoupon] = useState(false);
   const [showConfirmTestModal, setShowConfirmTestModal] = useState(false);
 
+  // Estados da aba de Disparos
+  const [campaignMsg, setCampaignMsg] = useState("");
+  const [campaignImg, setCampaignImg] = useState("");
+  const [campaignImgUploading, setCampaignImgUploading] = useState(false);
+  const [selectedCriteria, setSelectedCriteria] = useState("all");
+  const [sendingCampaign, setSendingCampaign] = useState(false);
+  const [showCampaignConfirm, setShowCampaignConfirm] = useState(false);
+
   const handleRequestDeleteCoupon = (code: string) => {
     const found = storeCoupons.find((c: any) => c.code === code);
     if (!found) return;
@@ -1370,14 +1378,6 @@ export default function ChatbotHubClient() {
 
           {/* ABA DISPAROS: CAMPANHA DE MARKETING PERSONALIZADA */}
           {activeTab === "disparos" && (() => {
-            // ── State local para a aba de disparos ──
-            const [campaignMsg, setCampaignMsg] = useState("");
-            const [campaignImg, setCampaignImg] = useState("");
-            const [campaignImgUploading, setCampaignImgUploading] = useState(false);
-            const [selectedCriteria, setSelectedCriteria] = useState("all");
-            const [sendingCampaign, setSendingCampaign] = useState(false);
-            const [showCampaignConfirm, setShowCampaignConfirm] = useState(false);
-
             const criteriaOptions = [
               { id: "all", label: "📋 Todos os Clientes", description: "Enviar para toda a base de contatos", color: "#6366F1", icon: "📋" },
               { id: "7d", label: "🔥 Sumidos há 7 Dias", description: "Clientes que não pedem há 7 dias ou mais", color: "#EA580C", icon: "🔥" },
