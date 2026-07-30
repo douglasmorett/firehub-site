@@ -54,10 +54,13 @@ export async function GET(req: Request) {
       motoboyFee: true,
       deliveryDistance: true,
       customerName: true,
+      customerPhone: true,
       customerAddress: true,
       status: true,
       motoboyId: true,
       paymentMethod: true,
+      items: true,
+      notes: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -189,6 +192,7 @@ export async function GET(req: Request) {
         id: o.id,
         date: o.createdAt.toISOString(),
         customerName: o.customerName,
+        customerPhone: o.customerPhone,
         customerAddress: o.customerAddress,
         totalAmount: o.totalAmount,
         deliveryFee: o.deliveryFee || o.motoboyFee || 0,
@@ -196,6 +200,8 @@ export async function GET(req: Request) {
         deliveryDistance: o.deliveryDistance,
         status: o.status,
         paymentMethod: o.paymentMethod || "Não informado",
+        items: o.items,
+        notes: o.notes,
       })),
     };
   });

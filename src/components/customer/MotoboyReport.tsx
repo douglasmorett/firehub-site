@@ -1,6 +1,6 @@
 "use client";
 import { useState, useCallback } from "react";
-import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loader2 } from "lucide-react";
+import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loader2, X } from "lucide-react";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
@@ -37,6 +37,7 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [periodInfo, setPeriodInfo] = useState<any>(null);
+  const [selectedOrderModal, setSelectedOrderModal] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -300,9 +301,9 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
                       {r.orders.map((o: any) => {
                         const isCash = (o.paymentMethod || "").toUpperCase() === "CASH" || (o.paymentMethod || "").toUpperCase() === "DINHEIRO";
                         return (
-                          <div key={o.id} style={{ display: "grid", gridTemplateColumns: "85px 1fr 120px auto auto", gap: 8, padding: "8px 10px", background: "#F8FAFC", borderRadius: 8, fontSize: "0.78rem", alignItems: "center" }}>
+                          <div key={o.id} style={{ display: "grid", gridTemplateColumns: "85px 1fr 130px auto auto auto", gap: 8, padding: "8px 10px", background: "#F8FAFC", borderRadius: 8, fontSize: "0.78rem", alignItems: "center" }}>
                             <span style={{ color: "#64748B" }}>{new Date(o.date).toLocaleDateString("pt-BR")}</span>
-                            <span style={{ fontWeight: 600 }}>{o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 22)}...` : ""}</span>
+                            <span style={{ fontWeight: 600 }}>{o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 20)}...` : ""}</span>
                             <span>
                               <span style={{ background: isCash ? "#FEF3C7" : "#E2E8F0", color: isCash ? "#B45309" : "#475569", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
                                 {isCash ? `💵 Dinheiro (${fmt(o.totalAmount)})` : `💳 ${o.paymentMethod}`}
@@ -310,6 +311,12 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
                             </span>
                             {o.deliveryDistance ? <span style={{ color: "#3B82F6", fontWeight: 600 }}>{o.deliveryDistance} km</span> : <span />}
                             <span style={{ fontWeight: 700, color: "#16A34A" }}>Taxa: {fmt(o.deliveryFee)}</span>
+                            <button
+                              onClick={() => setSelectedOrderModal(o)}
+                              style={{ padding: "4px 8px", background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", borderRadius: 6, fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+                            >
+                              👁️ Ver Pedido
+                            </button>
                           </div>
                         );
                       })}
@@ -320,6 +327,89 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
             );
           })}
         </>
+      )}
+
+      {/* ── MODAL DETALHES DO PEDIDO ── */}
+      {selectedOrderModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setSelectedOrderModal(null)}>
+          <div style={{ background: "#fff", borderRadius: 20, padding: "1.5rem", width: "100%", maxWidth: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", position: "relative" }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setSelectedOrderModal(null)} style={{ position: "absolute", top: 14, right: 14, background: "#F1F5F9", border: "none", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={16} color="#64748B" /></button>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div style={{ background: "#FEF2F2", color: "#C62828", width: 44, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "1.2rem" }}>
+                📦
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>Pedido #{selectedOrderModal.id.slice(-6).toUpperCase()}</h3>
+                <span style={{ fontSize: "0.78rem", color: "#64748B" }}>
+                  {new Date(selectedOrderModal.date).toLocaleDateString("pt-BR")} às {new Date(selectedOrderModal.date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+            </div>
+
+            {/* Informações do Cliente */}
+            <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "12px 14px", marginBottom: 12, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: 4 }}>👤 Cliente & Entrega</div>
+              <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>{selectedOrderModal.customerName}</div>
+              {selectedOrderModal.customerPhone && (
+                <div style={{ fontSize: "0.82rem", color: "#2563EB", fontWeight: 600, marginTop: 2 }}>📞 {selectedOrderModal.customerPhone}</div>
+              )}
+              {selectedOrderModal.customerAddress && (
+                <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>
+                  📍 {selectedOrderModal.customerAddress}
+                </div>
+              )}
+            </div>
+
+            {/* Resumo do Pagamento */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div style={{ background: "#F1F5F9", borderRadius: 10, padding: "10px 12px" }}>
+                <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 700 }}>FORMA DE PGTO</span>
+                <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A", marginTop: 2 }}>{selectedOrderModal.paymentMethod}</div>
+              </div>
+              <div style={{ background: "#F1F5F9", borderRadius: 10, padding: "10px 12px" }}>
+                <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 700 }}>VALOR TOTAL</span>
+                <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#16A34A", marginTop: 2 }}>{fmt(selectedOrderModal.totalAmount)}</div>
+              </div>
+            </div>
+
+            {/* Itens do Pedido */}
+            {selectedOrderModal.items && Array.isArray(selectedOrderModal.items) && selectedOrderModal.items.length > 0 && (
+              <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "12px 14px", marginBottom: 12, border: "1px solid #E2E8F0" }}>
+                <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>🍔 Itens do Pedido</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {selectedOrderModal.items.map((it: any, idx: number) => (
+                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "#334155" }}>
+                      <span>{it.quantity}x {it.name || it.productName}</span>
+                      <strong>{fmt((it.price || it.unitPrice || 0) * (it.quantity || 1))}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedOrderModal.notes && (
+              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem", color: "#92400E" }}>
+                📝 <strong>Obs:</strong> {selectedOrderModal.notes}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <a
+                href="/store/pedidos-clientes"
+                style={{ flex: 1, padding: "10px", background: "#2563EB", color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", textAlign: "center" }}
+              >
+                📋 Abrir no Gerenciador ↗
+              </a>
+              <button
+                onClick={() => setSelectedOrderModal(null)}
+                style={{ padding: "10px 18px", background: "#F1F5F9", color: "#475569", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
