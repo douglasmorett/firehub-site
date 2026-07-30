@@ -270,9 +270,9 @@ app.get("/instance/connect/:instanceName", async (req, res) => {
     return res.json({ instance: { state: "open" }, connected: true, phone: session.phone });
   }
 
-  // Aguarda até 15 segundos se o QR Code ainda estiver sendo gerado
+  // Aguarda até 4 segundos se o QR Code ainda estiver sendo gerado
   let attempts = 0;
-  while (!session.qrBase64 && session.state !== "open" && attempts < 75) {
+  while (!session.qrBase64 && session.state !== "open" && attempts < 20) {
     await new Promise((r) => setTimeout(r, 200));
     attempts++;
   }
