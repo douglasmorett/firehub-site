@@ -57,7 +57,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [deliveryType, setDeliveryType] = useState("DELIVERY");
-  const [paymentMethod, setPaymentMethod] = useState("PIX");
+  const [paymentMethod, setPaymentMethod] = useState("PIX_ONLINE");
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
@@ -294,10 +294,11 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     }
   }, [mobileCartOpen]);
 
-  // Build dynamic payment options
+  // Build dynamic payment options (Online via Mercado Pago vs Na Entrega)
   const paymentOptions = (() => {
     const base = [
-      { k: "PIX", l: "💰 Pix" },
+      { k: "PIX_ONLINE", l: "⚡ Pix Online" },
+      { k: "CREDITO_ONLINE", l: "⚡ Cartão Crédito (Online)" },
       { k: "DINHEIRO", l: "💵 Dinheiro" },
       { k: "DEBITO", l: "💳 Débito" },
       { k: "CREDITO", l: "💳 Crédito" },
@@ -307,13 +308,13 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
       const activeBrands = fees.VOUCHER.brands.filter((b: any) => b.active);
       if (activeBrands.length > 0) {
         activeBrands.forEach((b: any) => {
-          base.push({ k: `VOUCHER_${b.name}`, l: `🎫 ${b.name}` });
+          base.push({ k: `VOUCHER_${b.name}`, l: `🎟️ ${b.name}` });
         });
       } else {
-        base.push({ k: "VOUCHER", l: "🎫 Voucher" });
+        base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
       }
     } else {
-      base.push({ k: "VOUCHER", l: "🎫 Voucher" });
+      base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
     }
     return base;
   })();
@@ -343,8 +344,8 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     } catch { alert("Erro de conexão"); }
   };
 
-  // Métodos que exigem pagamento online via Pagar.me
-  const ONLINE_METHODS = ["PIX", "CREDITO", "DEBITO", "VOUCHER", "ALELO", "TICKET", "BEN", "SODEXO", "VR"];
+  // Métodos que exigem pagamento online via Mercado Pago
+  const ONLINE_METHODS = ["PIX_ONLINE", "CREDITO_ONLINE", "DEBITO_ONLINE", "ONLINE"];
 
   const handleCheckout = async () => {
     if (!customerName || !customerPhone) { alert("Preencha nome e telefone."); return; }
@@ -364,9 +365,10 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
       if (res.ok) {
         const d = await res.json();
         trackPixelEvent("Purchase", { value: finalTotal, currency: "BRL", order_id: d.orderId });
-        const isOnline = ONLINE_METHODS.includes((paymentMethod || "").toUpperCase());
+        const pmUpper = (paymentMethod || "").toUpperCase();
+        const isOnline = ONLINE_METHODS.some(m => pmUpper.includes(m));
         if (isOnline) {
-          // Pagamento online: mostrar gateway Pagar.me antes de confirmar
+          // Pagamento online: mostrar gateway Mercado Pago antes de confirmar
           setPendingOrderId(d.orderId);
           setPendingAmount(finalTotal);
           setShowPayment(true);
