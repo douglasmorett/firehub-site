@@ -3,16 +3,25 @@ import { useState, useEffect } from "react";
 import {
   Store, Clock, Truck, CreditCard, Tag, Gift, ArrowLeft,
   Settings, Image, Phone, MapPin, ChevronRight,
-  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users
+  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed
 } from "lucide-react";
 import StoreSettingsForm from "@/components/customer/StoreSettingsForm";
 import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
 import StoreTeamManager from "@/components/customer/StoreTeamManager";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "conta" | "equipe";
+type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "conta" | "equipe";
 
 const SECTIONS = [
+  {
+    id: "cardapio" as Section,
+    icon: <UtensilsCrossed size={28} />,
+    color: "#D97706",
+    bg: "#FEF3C7",
+    title: "Cardápio & Produtos",
+    desc: "Gerencie as categorias, produtos, fotos, adicionais e combos do cardápio",
+    link: "/store/cardapio",
+  },
   {
     id: "info" as Section,
     icon: <Store size={28} />,
@@ -155,7 +164,7 @@ export default function MinhaLojaClient({ user }: { user: any }) {
           {SECTIONS.map((s) => (
             <button
               key={s.id}
-              onClick={() => setSection(s.id)}
+              onClick={() => (s as any).link ? (window.location.href = (s as any).link) : setSection(s.id)}
               style={{
                 background: "#fff",
                 border: "1px solid #E2E8F0",

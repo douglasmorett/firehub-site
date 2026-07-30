@@ -314,6 +314,17 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             >
               ⚡ Pagamentos Online (MP)
             </button>
+            <button
+              style={{
+                ...tabStyle("relatorios"),
+                background: "#F1F5F9",
+                color: "#475569",
+                fontWeight: 700
+              }}
+              onClick={() => window.location.href = "/store/relatorios"}
+            >
+              📈 Relatórios
+            </button>
             <button style={tabStyle("mensalidade")} onClick={() => setActiveTab("mensalidade")}>💰 Mensalidade</button>
             <button
               style={{
