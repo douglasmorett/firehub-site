@@ -167,14 +167,16 @@ export async function POST(req: Request) {
       data: { storeOrderCount: { increment: 1 } }
     });
 
-    // Envia notificação WhatsApp de confirmação de pedido recebido
-    const { sendOrderNotification } = await import("@/lib/order-notifications");
-    sendOrderNotification(order.id, "CREATED").catch(err =>
-      console.warn("[CustomerOrder] Erro ao enviar notificação CREATED:", err)
-    );
+    // Envia notificação WhatsApp de confirmação de pedido recebido apenas se for pagamento presencial (não-online)
+    if (!isOnlinePayment) {
+      const { sendOrderNotification } = await import("@/lib/order-notifications");
+      sendOrderNotification(order.id, "CREATED").catch(err =>
+        console.warn("[CustomerOrder] Erro ao enviar notificação CREATED:", err)
+      );
+    }
 
-    // Se auto-aceito, já contabiliza no faturamento e deduz estoque imediatamente
-    if (franchisee.autoAcceptOrders) {
+    // Se auto-aceito e não-online, contabiliza no faturamento e deduz estoque imediatamente
+    if (franchisee.autoAcceptOrders && !isOnlinePayment) {
       trackSaleForBilling(franchisee.id).catch(err =>
         console.error("[Billing] Erro ao atualizar ciclo:", err)
       );
