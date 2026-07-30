@@ -1,38 +1,32 @@
 "use client";
 import { useState, useEffect } from "react";
-import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw, X, ArrowRight, Activity, CreditCard, Radio } from "lucide-react";
 
 export default function IntegracoesHubClient({
   ifoodMerchantId,
   ifoodClientId,
   ifoodWidgetId,
   userEmail,
-  mpSellerId: initialMpSellerId,
+  facebookPixelId: initialFacebookPixelId,
+  pagarmeRecipientId,
 }: {
   ifoodMerchantId?: string;
   ifoodClientId?: string;
   ifoodWidgetId?: string;
   userEmail: string;
-  mpSellerId?: string;
+  facebookPixelId?: string;
+  pagarmeRecipientId?: string;
 }) {
-  const [activeTab, setActiveTab] = useState<"all" | "whatsapp" | "jotaja" | "ifood" | "pagamentos">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
+  const [openModal, setOpenModal] = useState<"pixel" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | null>(null);
 
-  // Mercado Pago state
-  const [mpConnected, setMpConnected] = useState(!!initialMpSellerId);
-  const [mpSellerId, setMpSellerId] = useState(initialMpSellerId || "");
-  const [mpOnboardingUrl, setMpOnboardingUrl] = useState("");
-  const [mpLoading, setMpLoading] = useState(false);
+  // Meta Pixel state
+  const [pixelId, setPixelId] = useState(initialFacebookPixelId || "");
+  const [pixelSaving, setPixelSaving] = useState(false);
 
   // WhatsApp state
   const [waConnected, setWaConnected] = useState(false);
   const [waPhone, setWaPhone] = useState("");
-  const [showWaConfigModal, setShowWaConfigModal] = useState(false);
-  const [waCustomAnswers, setWaCustomAnswers] = useState(true);
-  const [waAiAnswers, setWaAiAnswers] = useState(true);
-  const [waAiEnhance, setWaAiEnhance] = useState(true);
-  const [waFailLimit, setWaFailLimit] = useState(3);
-  const [testPhone, setTestPhone] = useState("");
-  const [testMsgInput, setTestMsgInput] = useState("");
 
   // JotaJá credentials state
   const [jjClientId, setJjClientId] = useState("");
@@ -47,6 +41,7 @@ export default function IntegracoesHubClient({
   const [ifWidget, setIfWidget] = useState(ifoodWidgetId || "");
   const [ifSaving, setIfSaving] = useState(false);
 
+  // Toast alert
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
   const showToast = (msg: string, color = "#10B981") => {
     setToast({ msg, color });
@@ -95,6 +90,7 @@ export default function IntegracoesHubClient({
       if (data.ok) {
         setJjConnected(true);
         showToast("✅ Integração JotaJá salva e ativada com sucesso!", "#10B981");
+        setOpenModal(null);
       } else {
         showToast("⚠️ " + (data.error || "Erro ao salvar credenciais JotaJá"), "#EF4444");
       }
@@ -118,6 +114,7 @@ export default function IntegracoesHubClient({
       });
       if (res.ok) {
         showToast("✅ Configurações do iFood salvas!", "#10B981");
+        setOpenModal(null);
       } else {
         showToast("⚠️ Erro ao salvar configurações iFood", "#EF4444");
       }
@@ -128,8 +125,101 @@ export default function IntegracoesHubClient({
     }
   };
 
+  const handleSavePixel = async () => {
+    setPixelSaving(true);
+    try {
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          facebookPixelId: pixelId,
+          metaPixelId: pixelId,
+        })
+      });
+      if (res.ok) {
+        showToast("✅ Pixel do Meta configurado com sucesso!", "#10B981");
+        setOpenModal(null);
+      } else {
+        showToast("⚠️ Erro ao salvar Pixel do Meta", "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão ao salvar Pixel", "#EF4444");
+    } finally {
+      setPixelSaving(false);
+    }
+  };
+
+  // Modern Integration Card Data
+  const INTEGRATIONS = [
+    {
+      id: "pixel" as const,
+      category: "marketing",
+      title: "Meta Pixel & Conversões",
+      subtitle: "Facebook / Instagram Ads",
+      icon: "🎯",
+      gradient: "linear-gradient(135deg, #1877F2, #0052CC)",
+      badge: pixelId ? { text: `🟢 Pixel Ativo (${pixelId})`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Configurado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Rastreie PageView, Adicionar ao Carrinho e Vendas no seu cardápio via Pixel do Meta.",
+    },
+    {
+      id: "whatsapp" as const,
+      category: "marketing",
+      title: "WhatsApp IA & Notificações",
+      subtitle: "Robô Atendente 24/7 & Avisos",
+      icon: "💬",
+      gradient: "linear-gradient(135deg, #10B981, #059669)",
+      badge: waConnected ? { text: `🟢 Conectado (${waPhone || "Ativo"})`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚡ Pendente QR Code", bg: "#FEF3C7", color: "#B45309", border: "#FDE68A" },
+      description: "Robô inteligente com Gemini IA, envia avisos de entrega e aceita pedidos automaticamente.",
+    },
+    {
+      id: "jotaja" as const,
+      category: "channels",
+      title: "JotaJá (Open Delivery)",
+      subtitle: "API Oficial OpenDelivery",
+      icon: "🛵",
+      gradient: "linear-gradient(135deg, #2563EB, #1D4ED8)",
+      badge: jjConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Sincronização de pedidos e cardápio direto do seu painel JotaJá para o FireHub.",
+    },
+    {
+      id: "ifood" as const,
+      category: "channels",
+      title: "iFood Merchant API",
+      subtitle: "Loja Oficial iFood",
+      icon: "🔴",
+      gradient: "linear-gradient(135deg, #EA580C, #C2410C)",
+      badge: ifMerchant ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Receba pedidos do iFood automaticamente e despache entregas pelo nosso sistema.",
+    },
+    {
+      id: "pagarme" as const,
+      category: "payments",
+      title: "Pagar.me / Cartão & PIX",
+      subtitle: "Pagamentos Online no Site",
+      icon: "💳",
+      gradient: "linear-gradient(135deg, #6366F1, #4F46E5)",
+      badge: pagarmeRecipientId ? { text: "🟢 Recebimento Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "🟢 PIX / Cartão Ativos", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" },
+      description: "Processamento seguro de PIX instantâneo e Cartão de Crédito com repasse para sua loja.",
+    },
+    {
+      id: "99food" as const,
+      category: "channels",
+      title: "99Food Delivery",
+      subtitle: "Integração Open Delivery",
+      icon: "🟡",
+      gradient: "linear-gradient(135deg, #F59E0B, #D97706)",
+      badge: { text: "⚡ Em Breve", bg: "#FFFBEB", color: "#B45309", border: "#FDE68A" },
+      description: "Integração direta com o 99Food para captura e gerenciamento automático de pedidos.",
+    },
+  ];
+
+  const filteredIntegrations = INTEGRATIONS.filter(item => {
+    if (activeTab === "all") return true;
+    return item.category === activeTab;
+  });
+
   return (
-    <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "24px 16px", fontFamily: "inherit" }}>
+    <div style={{ maxWidth: "1150px", margin: "0 auto", padding: "24px 16px", fontFamily: "inherit" }}>
       {/* Toast alert */}
       {toast && (
         <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 9999, background: toast.color, color: "#fff", padding: "12px 20px", borderRadius: "10px", fontWeight: 700, boxShadow: "0 10px 25px rgba(0,0,0,0.2)", fontSize: "0.88rem", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -138,24 +228,24 @@ export default function IntegracoesHubClient({
       )}
 
       {/* Header Banner */}
-      <div style={{ background: "linear-gradient(135deg, #1E293B, #0F172A)", borderRadius: "20px", padding: "32px", color: "#fff", marginBottom: "28px", boxShadow: "0 10px 30px rgba(0,0,0,0.15)" }}>
+      <div style={{ background: "linear-gradient(135deg, #0F172A, #1E293B)", borderRadius: "24px", padding: "32px", color: "#fff", marginBottom: "28px", boxShadow: "0 12px 32px rgba(15,23,42,0.15)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.1)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, color: "#38BDF8", marginBottom: "12px" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.25)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, color: "#38BDF8", marginBottom: "12px" }}>
               🔌 Central de Integrações
             </div>
-            <h1 style={{ fontSize: "1.8rem", fontWeight: 900, margin: "0 0 8px 0" }}>
-              Integrações & Canais de Venda
+            <h1 style={{ fontSize: "1.85rem", fontWeight: 900, margin: "0 0 8px 0" }}>
+              Conecte Seus Canais & Ferramentas
             </h1>
             <p style={{ margin: 0, opacity: 0.8, fontSize: "0.9rem", maxWidth: "650px", lineHeight: 1.5 }}>
-              Conecte suas plataformas parceiras para receber pedidos automaticamente no FireHub, sincronizar cardápio e gerenciar entregas num só lugar.
+              Clique na integração desejada para configurar credenciais, sincronizar pedidos e ativar rastreamento de tráfego.
             </p>
           </div>
 
-          <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", padding: "12px 18px", borderRadius: "14px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <ShieldCheck size={28} color="#10B981" />
+          <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", padding: "12px 18px", borderRadius: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
+            <ShieldCheck size={26} color="#10B981" />
             <div>
-              <div style={{ fontSize: "0.75rem", opacity: 0.7 }}>Conta Vinculada</div>
+              <div style={{ fontSize: "0.72rem", opacity: 0.7 }}>Conta Registrada</div>
               <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#38BDF8" }}>{userEmail}</div>
             </div>
           </div>
@@ -165,415 +255,432 @@ export default function IntegracoesHubClient({
         <div style={{ display: "flex", gap: "8px", marginTop: "24px", flexWrap: "wrap" }}>
           <button
             onClick={() => setActiveTab("all")}
-            style={{ padding: "8px 16px", borderRadius: "10px", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "all" ? "#38BDF8" : "rgba(255,255,255,0.1)", color: activeTab === "all" ? "#0F172A" : "#fff" }}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "all" ? "#38BDF8" : "rgba(255,255,255,0.08)", color: activeTab === "all" ? "#0F172A" : "#fff", transition: "all 0.2s" }}
           >
-            Todas as Integrações
+            Todas as Integrações ({INTEGRATIONS.length})
           </button>
           <button
-            onClick={() => setActiveTab("whatsapp")}
-            style={{ padding: "8px 16px", borderRadius: "10px", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "whatsapp" ? "#10B981" : "rgba(255,255,255,0.1)", color: "#fff" }}
+            onClick={() => setActiveTab("channels")}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "channels" ? "#3B82F6" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
           >
-            💬 WhatsApp IA & Notificações
+            🛵 Canais de Venda & Delivery
           </button>
           <button
-            onClick={() => setActiveTab("jotaja")}
-            style={{ padding: "8px 16px", borderRadius: "10px", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "jotaja" ? "#3B82F6" : "rgba(255,255,255,0.1)", color: "#fff" }}
+            onClick={() => setActiveTab("marketing")}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "marketing" ? "#10B981" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
           >
-            🛵 JotaJá (Open Delivery)
+            🎯 Marketing & Tráfego
           </button>
           <button
-            onClick={() => setActiveTab("ifood")}
-            style={{ padding: "8px 16px", borderRadius: "10px", border: "none", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "ifood" ? "#EA580C" : "rgba(255,255,255,0.1)", color: "#fff" }}
+            onClick={() => setActiveTab("payments")}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "payments" ? "#8B5CF6" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
           >
-            🔴 iFood Merchant API
+            💳 Pagamentos & PIX
           </button>
         </div>
       </div>
 
-      {/* Grid of Integration Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))", gap: "24px" }}>
-
-        {/* ================= CARD 0: WHATSAPP IA ================= */}
-        {(activeTab === "all" || activeTab === "whatsapp") && (
-          <div style={{ background: "#fff", borderRadius: "20px", border: "1.5px solid #E2E8F0", padding: "24px", boxShadow: "0 4px 16px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+      {/* Grid of Compact Integration Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "20px" }}>
+        {filteredIntegrations.map((item) => (
+          <div
+            key={item.id}
+            onClick={() => setOpenModal(item.id)}
+            style={{
+              background: "#fff",
+              borderRadius: "20px",
+              border: "1.5px solid #E2E8F0",
+              padding: "20px",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
+              cursor: "pointer",
+              transition: "all 0.2s ease-in-out",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              position: "relative",
+              overflow: "hidden",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = "translateY(-4px)";
+              e.currentTarget.style.borderColor = "#94A3B8";
+              e.currentTarget.style.boxShadow = "0 12px 28px rgba(0,0,0,0.08)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.borderColor = "#E2E8F0";
+              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.03)";
+            }}
+          >
+            {/* Top row: Logo + Status Badge */}
             <div>
-              {/* Card Header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #10B981, #059669)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.4rem", fontWeight: 900 }}>
-                    💬
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.15rem", color: "#0F172A" }}>WhatsApp IA & Notificações</h3>
-                    <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Conexão 1-Clique por QR Code e Robô Atendente 24/7</span>
-                  </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
+                <div style={{ width: "52px", height: "52px", borderRadius: "16px", background: item.gradient, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.6rem", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }}>
+                  {item.icon}
                 </div>
 
-                {waConnected ? (
-                  <span style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D", padding: "4px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
-                    <CheckCircle2 size={14} /> {waPhone || "Conectado & Ativo"}
-                  </span>
-                ) : (
-                  <span style={{ background: "#FEF3C7", border: "1px solid #FDE68A", color: "#B45309", padding: "4px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800 }}>
-                    ⚡ Aguardando Leitura
-                  </span>
-                )}
-              </div>
-
-              <p style={{ fontSize: "0.83rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
-                Conecte o celular da sua loja lendo o QR Code pelo WhatsApp sem nenhuma configuração técnica. Envie status automáticos dos pedidos e deixe a Inteligência Artificial atender seus clientes com o cardápio atualizado.
-              </p>
-
-              <div style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.8rem", color: "#334155" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <CheckCircle2 size={14} color="#10B981" /> <strong>Conexão Simples:</strong> Apenas escaneie o QR Code no celular da loja.
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <CheckCircle2 size={14} color="#10B981" /> <strong>Notificações Automáticas:</strong> Envia avisos de "Pedido Aceito" e "Saiu para Entrega".
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <CheckCircle2 size={14} color="#10B981" /> <strong>Robô Inteligente:</strong> Gemini 2.5 responde dúvidas de produtos e links do cardápio.
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div style={{ marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-              <span style={{ fontSize: "0.75rem", color: "#64748B" }}>
-                Status: <strong style={{ color: waConnected ? "#16A34A" : "#D97706" }}>{waConnected ? "Conectado" : "Pendente QR Code"}</strong>
-              </span>
-
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <a
-                  href="/store/chatbot"
-                  title="Acessar Central de Chatbot"
-                  style={{ width: "34px", height: "34px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
-                >
-                  🔗
-                </a>
-                <a
-                  href="/store/chatbot"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Abrir em Nova Aba"
-                  style={{ width: "34px", height: "34px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
-                >
-                  ↗
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setShowWaConfigModal(true)}
-                  title="Configuração & Diagnóstico do WhatsApp"
-                  style={{ padding: "8px 14px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(37,99,235,0.25)" }}
-                >
-                  ⚙ Configuração
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= CARD 1: JOTAJA ================= */}
-        {(activeTab === "all" || activeTab === "jotaja") && (
-          <div style={{ background: "#fff", borderRadius: "20px", border: "1.5px solid #E2E8F0", padding: "24px", boxShadow: "0 4px 16px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <div>
-              {/* Card Header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.4rem", fontWeight: 900 }}>
-                    🛵
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.15rem", color: "#0F172A" }}>JotaJá (Open Delivery)</h3>
-                    <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Integração de pedidos via API Open Delivery</span>
-                  </div>
-                </div>
-
-                {jjConnected ? (
-                  <span style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D", padding: "4px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
-                    <CheckCircle2 size={14} /> Conectado & Ativo
-                  </span>
-                ) : (
-                  <span style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", color: "#64748B", padding: "4px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700 }}>
-                    ⚪ Não Conectado
-                  </span>
-                )}
-              </div>
-
-              <p style={{ fontSize: "0.83rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
-                Insira abaixo as credenciais fornecidas no seu painel JotaJá (em <strong>Configurações &rarr; Integrações / API OpenDelivery</strong>) para receber pedidos automaticamente no FireHub.
-              </p>
-
-              {/* Form inputs */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                    <Key size={14} color="#2563EB" /> Client ID (JotaJá)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: 92c66502-57ce-4563-a9e3-0df07dda5a38"
-                    value={jjClientId}
-                    onChange={e => setJjClientId(e.target.value)}
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                    <ShieldCheck size={14} color="#2563EB" /> Client Secret (JotaJá)
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Ex: bf6798ba-5abe-43b8-a5d7-adca54643492"
-                    value={jjClientSecret}
-                    onChange={e => setJjClientSecret(e.target.value)}
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                    <Store size={14} color="#2563EB" /> Store ID / Merchant ID (Código da Loja)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: 22238"
-                    value={jjMerchantId}
-                    onChange={e => setJjMerchantId(e.target.value)}
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Save Button */}
-            <div style={{ marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.75rem", color: "#64748B" }}>
-                Status: <strong style={{ color: jjConnected ? "#16A34A" : "#64748B" }}>{jjConnected ? "Ativo" : "Inativo"}</strong>
-              </span>
-              <button
-                type="button"
-                onClick={handleSaveJotaja}
-                disabled={jjSaving}
-                style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 12px rgba(37,99,235,0.25)", opacity: jjSaving ? 0.7 : 1 }}
-              >
-                <Save size={16} /> {jjSaving ? "Salvando..." : "Salvar e Ativar Integração JotaJá"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ================= CARD 2: IFOOD ================= */}
-        {(activeTab === "all" || activeTab === "ifood") && (
-          <div style={{ background: "#fff", borderRadius: "20px", border: "1.5px solid #E2E8F0", padding: "24px", boxShadow: "0 4px 16px rgba(0,0,0,0.04)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <div>
-              {/* Card Header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #EA580C, #C2410C)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.4rem", fontWeight: 900 }}>
-                    🔴
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.15rem", color: "#0F172A" }}>iFood Merchant API</h3>
-                    <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Integração de pedidos e loja oficial iFood</span>
-                  </div>
-                </div>
-
-                <span style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D", padding: "4px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
-                  <CheckCircle2 size={14} /> Ativo
+                <span style={{ background: item.badge.bg, border: `1px solid ${item.badge.border}`, color: item.badge.color, padding: "4px 10px", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
+                  {item.badge.text}
                 </span>
               </div>
 
-              <p style={{ fontSize: "0.83rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
-                Conecte a sua loja do iFood via Código de Autorização para aceitar pedidos, despachar entregas e sincronizar status automaticamente.
-              </p>
-
-              {/* Form inputs */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                    <Store size={14} color="#EA580C" /> Merchant ID (iFood)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: 6a5fb96d-68bd-46af-ada4-456a9a160787"
-                    value={ifMerchant}
-                    onChange={e => setIfMerchant(e.target.value)}
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                    💬 Widget ID (Chat iFood)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Cole o ID do widget do Portal iFood..."
-                    value={ifWidget}
-                    onChange={e => setIfWidget(e.target.value)}
-                    style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                  />
-                </div>
+              {/* Title & Subtitle */}
+              <h3 style={{ margin: "0 0 4px 0", fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>
+                {item.title}
+              </h3>
+              <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "#64748B", marginBottom: "10px" }}>
+                {item.subtitle}
               </div>
+
+              {/* Description */}
+              <p style={{ margin: 0, fontSize: "0.8rem", color: "#475569", lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                {item.description}
+              </p>
             </div>
 
-            {/* Save Button */}
-            <div style={{ marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.75rem", color: "#64748B" }}>
-                Status: <strong style={{ color: "#16A34A" }}>Conectado</strong>
-              </span>
+            {/* Action Footer */}
+            <div style={{ marginTop: "18px", paddingTop: "14px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.74rem", color: "#94A3B8", fontWeight: 600 }}>Clique para configurar</span>
               <button
                 type="button"
-                onClick={handleSaveIfood}
-                disabled={ifSaving}
-                style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", boxShadow: "0 4px 12px rgba(234,88,12,0.25)", opacity: ifSaving ? 0.7 : 1 }}
+                style={{ background: "#F1F5F9", color: "#0F172A", border: "none", padding: "6px 12px", borderRadius: "10px", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
               >
-                <Save size={16} /> {ifSaving ? "Salvando..." : "Salvar Configurações iFood"}
+                Configurar <ArrowRight size={14} />
               </button>
             </div>
           </div>
-        )}
-
-        {/* ================= CARD 3: 99FOOD (EM BREVE) ================= */}
-        {activeTab === "all" && (
-          <div style={{ background: "#F8FAFC", borderRadius: "20px", border: "1.5px dashed #CBD5E1", padding: "24px", opacity: 0.8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: "#F59E0B", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.3rem", fontWeight: 900 }}>
-                  🟡
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#334155" }}>99Food Delivery</h3>
-                  <span style={{ fontSize: "0.72rem", color: "#64748B" }}>Integração Open Delivery</span>
-                </div>
-              </div>
-              <span style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 10px", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 800 }}>
-                🚀 Em Breve
-              </span>
-            </div>
-            <p style={{ fontSize: "0.8rem", color: "#64748B", margin: 0 }}>
-              Integração direta com o 99Food para captura e gerenciamento automático de pedidos.
-            </p>
-          </div>
-        )}
-
+        ))}
       </div>
 
-      {/* ================= MODAL: CONFIGURAÇÃO & DIAGNÓSTICO DO WHATSAPP ================= */}
-      {showWaConfigModal && (
-        <div onClick={() => setShowWaConfigModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", zIndex: 10005, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", width: "100%", maxWidth: "560px", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: "1px solid #E2E8F0" }}>
+      {/* ================= MODAL DE CONFIGURAÇÃO DEDICADA ================= */}
+      {openModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(6px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div style={{ background: "#fff", borderRadius: "24px", width: "100%", maxWidth: "560px", padding: "28px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
             
-            {/* Modal Header */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #F1F5F9" }}>
-              <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
-                💬 WhatsApp Configurações & Diagnóstico
-              </div>
-              <button onClick={() => setShowWaConfigModal(false)} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: "1.2rem", color: "#64748B" }}>
-                ✕
-              </button>
-            </div>
+            {/* Close Button */}
+            <button
+              onClick={() => setOpenModal(null)}
+              style={{ position: "absolute", top: "20px", right: "20px", background: "#F1F5F9", border: "none", borderRadius: "50%", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#475569" }}
+            >
+              <X size={18} />
+            </button>
 
-            <div style={{ padding: "20px" }}>
-              <p style={{ fontSize: "0.83rem", color: "#475569", margin: "0 0 16px 0", lineHeight: 1.5 }}>
-                Conecte seu WhatsApp para enviar atualizações dos pedidos para seus clientes, enviar mensagens automáticas, campanhas e muito mais.
-              </p>
-
-              {/* 1. Atualizações */}
-              <div style={{ marginBottom: "16px", background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "8px" }}>Atualizações de Pedidos</div>
-                <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem", color: "#334155", cursor: "pointer" }}>
-                  <input type="checkbox" checked readOnly style={{ width: 16, height: 16, accentColor: "#10B981" }} />
-                  Enviar atualizações dos pedidos (Aceito, Em Transporte, Entregue)
-                </label>
-              </div>
-
-              {/* 2. Robô de Atendimento */}
-              <div style={{ marginBottom: "16px", background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "8px" }}>Robô de Atendimento</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.82rem", color: "#334155" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="checkbox" checked={waCustomAnswers} onChange={e => setWaCustomAnswers(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#10B981" }} />
-                    Respostas personalizadas (com link para a gestão do robô)
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="checkbox" checked={waAiAnswers} onChange={e => setWaAiAnswers(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#10B981" }} />
-                    Respostas pela IA (Gemini 2.5)
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                    <input type="checkbox" checked={waAiEnhance} onChange={e => setWaAiEnhance(e.target.checked)} style={{ width: 16, height: 16, accentColor: "#10B981" }} />
-                    Aprimorar respostas da IA com dados do cardápio ao vivo
-                  </label>
-                  <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "8px", fontSize: "0.8rem", color: "#475569" }}>
-                    Sugerir falar com atendente após
-                    <input type="number" value={waFailLimit} onChange={e => setWaFailLimit(Number(e.target.value))} style={{ width: "50px", padding: "4px 6px", borderRadius: "6px", border: "1px solid #CBD5E1", textAlign: "center", fontWeight: 700 }} />
-                    mensagens não entendidas.
+            {/* 🎯 MODAL: META PIXEL */}
+            {openModal === "pixel" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #1877F2, #0052CC)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    🎯
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Pixel do Meta (Facebook/Instagram)</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Rastreie conversões de tráfego pago no seu cardápio</span>
                   </div>
                 </div>
-              </div>
 
-              {/* 3. Opções & Ações */}
-              <div style={{ marginBottom: "16px" }}>
-                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "8px" }}>Opções & Controle</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                  <a href="/store/chatbot" style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontSize: "0.8rem", fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
-                    📱 QR Code & Pareamento
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
+                  Insira o ID do seu Pixel do Meta abaixo. Nosso sistema injetará automaticamente o Pixel no seu cardápio digital para registrar eventos de <strong>PageView</strong>, <strong>AddToCart</strong> (Adicionar ao Carrinho), <strong>InitiateCheckout</strong> e <strong>Purchase</strong> (Venda Concluída).
+                </p>
+
+                <div style={{ background: "#F8FAFC", borderRadius: "14px", padding: "16px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#1E293B", display: "block", marginBottom: "6px" }}>
+                    ID do Pixel do Meta (somente números):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 123456789012345"
+                    value={pixelId}
+                    onChange={(e) => setPixelId(e.target.value.replace(/\D/g, ""))}
+                    style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontFamily: "monospace", outline: "none" }}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "6px", display: "block" }}>
+                    Você encontra este ID no Gerenciador de Negócios da Meta em <em>Gerenciador de Eventos &rarr; Fontes de Dados</em>.
+                  </span>
+                </div>
+
+                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#1E40AF", marginBottom: "24px" }}>
+                  <strong>💡 Eventos Rastreados Automáticos:</strong>
+                  <ul style={{ margin: "4px 0 0 0", paddingLeft: "16px" }}>
+                    <li><code>PageView</code>: Sempre que alguém abre seu cardápio</li>
+                    <li><code>AddToCart</code>: Quando o cliente escolhe um produto</li>
+                    <li><code>Purchase</code>: Quando o pedido é finalizado</li>
+                  </ul>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSavePixel}
+                    disabled={pixelSaving}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #1877F2, #0052CC)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(24,119,242,0.3)", opacity: pixelSaving ? 0.7 : 1 }}
+                  >
+                    <Save size={16} /> {pixelSaving ? "Salvando..." : "Salvar Pixel do Meta"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 💬 MODAL: WHATSAPP IA */}
+            {openModal === "whatsapp" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #10B981, #059669)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    💬
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>WhatsApp IA & Notificações</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Conexão 1-Clique e Atendimento Automático</span>
+                  </div>
+                </div>
+
+                <div style={{ background: waConnected ? "#F0FDF4" : "#FEF3C7", border: `1px solid ${waConnected ? "#BBF7D0" : "#FDE68A"}`, padding: "14px", borderRadius: "14px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", opacity: 0.8, color: waConnected ? "#15803D" : "#B45309" }}>Status da Conexão:</div>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: waConnected ? "#15803D" : "#B45309" }}>
+                      {waConnected ? `🟢 Conectado (${waPhone || "Ativo"})` : "⚡ Aguardando QR Code"}
+                    </div>
+                  </div>
+                  <a
+                    href="/store/chatbot"
+                    style={{ padding: "8px 14px", background: "#10B981", color: "#fff", textDecoration: "none", borderRadius: "10px", fontWeight: 800, fontSize: "0.8rem" }}
+                  >
+                    Abrir QR Code / Robô &rarr;
                   </a>
-                  <button onClick={() => showToast(`✉️ Enviar teste para celular cadastrado (${waPhone || "Loja"})`, "#3B82F6")} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#F1F5F9", color: "#334155", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
-                    ✉️ Testar Envio
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
+                  O módulo de WhatsApp sincroniza diretamente com a inteligência artificial do Gemini para responder aos clientes, informar taxa de entrega por bairro, confirmar pedidos do Jotajá/iFood e enviar notificações automáticas de status.
+                </p>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Fechar
                   </button>
-                  <button onClick={() => showToast("✔️ Conexão com o WhatsApp verificada com sucesso!", "#10B981")} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #BBF7D0", background: "#ECFDF5", color: "#166534", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
-                    ✔️ Verificar Conexão
+                  <a
+                    href="/store/chatbot"
+                    style={{ padding: "10px 20px", borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}
+                  >
+                    Configurar Robô no Chatbot &rarr;
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* 🛵 MODAL: JOTAJA */}
+            {openModal === "jotaja" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    🛵
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>JotaJá (Open Delivery)</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração oficial via API OpenDelivery</span>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
+                  Insira abaixo as credenciais fornecidas no seu painel JotaJá (em <strong>Configurações &rarr; Integrações / API OpenDelivery</strong>) para receber pedidos automaticamente no FireHub.
+                </p>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Key size={14} color="#2563EB" /> Client ID (JotaJá)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 92c66502-57ce-4563-a9e3-0df07dda5a38"
+                      value={jjClientId}
+                      onChange={e => setJjClientId(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <ShieldCheck size={14} color="#2563EB" /> Client Secret (JotaJá)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Ex: bf6798ba-5abe-43b8-a5d7-adca54643492"
+                      value={jjClientSecret}
+                      onChange={e => setJjClientSecret(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Store size={14} color="#2563EB" /> Store ID / Merchant ID (Código da Loja)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 22238"
+                      value={jjMerchantId}
+                      onChange={e => setJjMerchantId(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
                   </button>
-                  <button onClick={() => { setWaConnected(false); showToast("🚪 Sessão desconectada. Acesse o QR Code para conectar.", "#DC2626"); }} style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#DC2626", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
-                    🚪 Desconectar Aparelho
+                  <button
+                    onClick={handleSaveJotaja}
+                    disabled={jjSaving}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(37,99,235,0.3)", opacity: jjSaving ? 0.7 : 1 }}
+                  >
+                    <Save size={16} /> {jjSaving ? "Salvando..." : "Salvar e Ativar JotaJá"}
                   </button>
                 </div>
               </div>
+            )}
 
-              {/* 4. Diagnóstico em Tempo Real */}
-              <div style={{ marginBottom: "16px", background: "#F8FAFC", padding: "14px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-                <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginBottom: "10px" }}>Diagnóstico em Tempo Real</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.78rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#166534" }}>
-                    🟢 <strong>Módulo do robô:</strong> O módulo do robô está ativo.
+            {/* 🔴 MODAL: IFOOD */}
+            {openModal === "ifood" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #EA580C, #C2410C)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    🔴
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: waConnected ? "#166534" : "#DC2626" }}>
-                    {waConnected ? "🟢" : "🔴"} <strong>Conexão com o WhatsApp:</strong> {waConnected ? `Conectado no número ${waPhone}` : "Nenhum aparelho conectado, conecte um WhatsApp para o robô responder."}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#166534" }}>
-                    🟢 <strong>Atualizações dos pedidos:</strong> As atualizações dos pedidos serão enviadas aos clientes.
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#166534" }}>
-                    🟢 <strong>Respostas por I.A:</strong> As respostas por I.A do Gemini 2.5 estão ativas.
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>iFood Merchant API</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração de pedidos e loja oficial iFood</span>
                   </div>
                 </div>
-              </div>
 
-              {/* 5. Diagnóstico de Teste Direto */}
-              <div style={{ marginBottom: "16px", background: "#F1F5F9", padding: "12px", borderRadius: "10px" }}>
-                <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#1E293B", marginBottom: "8px" }}>Testar Envio para Cliente</div>
-                <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-                  <input type="text" placeholder="Telefone do cliente (opcional)" value={testPhone} onChange={e => setTestPhone(e.target.value)} style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.78rem" }} />
-                  <input type="text" placeholder="Mensagem de teste (opcional)" value={testMsgInput} onChange={e => setTestMsgInput(e.target.value)} style={{ flex: 1, padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.78rem" }} />
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
+                  Conecte a sua loja do iFood via Código de Autorização para aceitar pedidos, despachar entregas e sincronizar status automaticamente.
+                </p>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Store size={14} color="#EA580C" /> Merchant ID (iFood)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 6a5fb96d-68bd-46af-ada4-456a9a160787"
+                      value={ifMerchant}
+                      onChange={e => setIfMerchant(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      💬 Widget ID (Chat iFood)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Cole o ID do widget do Portal iFood..."
+                      value={ifWidget}
+                      onChange={e => setIfWidget(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
                 </div>
-                <button onClick={() => showToast(`✅ Teste disparado para ${testPhone || "número informado"}`, "#2563EB")} style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "none", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
-                  Verificar e Enviar Mensagem de Teste
-                </button>
-              </div>
 
-              {/* Footer */}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid #F1F5F9", paddingTop: "12px" }}>
-                <button onClick={() => setShowWaConfigModal(false)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#64748B", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
-                  Fechar
-                </button>
-                <button onClick={() => { setShowWaConfigModal(false); showToast("✅ Configurações do WhatsApp salvas!", "#10B981"); }} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#10B981", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}>
-                  Salvar
-                </button>
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveIfood}
+                    disabled={ifSaving}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(234,88,12,0.3)", opacity: ifSaving ? 0.7 : 1 }}
+                  >
+                    <Save size={16} /> {ifSaving ? "Salvando..." : "Salvar Configurações iFood"}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* 💳 MODAL: PAGAR.ME */}
+            {openModal === "pagarme" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #6366F1, #4F46E5)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    💳
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Pagar.me / Cartão & PIX Online</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Processamento seguro de pagamento online</span>
+                  </div>
+                </div>
+
+                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status do Recebimento:</div>
+                  <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>
+                    🟢 Recebimento PIX e Cartão de Crédito Ativos no Cardápio
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "24px" }}>
+                  Os pagamentos efetuados via PIX instantâneo e Cartão de Crédito no cardápio online do seu restaurante são processados de forma automática com repasse direto para a sua conta.
+                </p>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 🟡 MODAL: 99FOOD */}
+            {openModal === "99food" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #F59E0B, #D97706)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    🟡
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>99Food Delivery</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração Open Delivery</span>
+                  </div>
+                </div>
+
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#B45309" }}>
+                    ⚡ Integração em Fase Final de Desenvolvimento
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "24px" }}>
+                  A integração oficial com o 99Food via protocolo OpenDelivery permitirá receber e despachar pedidos diretamente no FireHub. Em breve estará disponível para ativação!
+                </p>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Entendido
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}
