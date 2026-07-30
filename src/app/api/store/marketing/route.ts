@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
 
 export const dynamic = "force-dynamic";
 
@@ -224,6 +224,9 @@ export async function GET(req: NextRequest) {
         msg7d: chatbotConfig.msg7d || "Oie, sentimos sua falta! 🍕 Que tal matar a fome hoje com R$ 10 de desconto?",
         msg15d: chatbotConfig.msg15d || "Faz 15 dias que você não pede seu lanche favorito! 🚀 Ganhe 15% OFF hoje no nosso cardápio!",
         msg30d: chatbotConfig.msg30d || "Saudade do nosso tempero especial? ❤️ Liberamos Frete Grátis exclusivo para você pedir hoje!",
+        img7d: chatbotConfig.img7d || "",
+        img15d: chatbotConfig.img15d || "",
+        img30d: chatbotConfig.img30d || "",
       }
     });
   } catch (err: any) {
@@ -269,7 +272,14 @@ export async function POST(req: NextRequest) {
                           `Trouxemos 10% de desconto para você lanchar com a gente hoje!\n` +
                           `Use o cupom: *${coupon}* no nosso site:\n${storeUrl}`;
 
-      const success = await sendEvolutionMessage(targetFranchiseeId, fullPhone, messageText);
+      // Envia imagem primeiro (se configurada) e depois o texto
+      const imgUrl = chatbotConfig.img7d || "";
+      if (imgUrl) {
+        await sendEvolutionMediaUrl(targetFranchiseeId, fullPhone, imgUrl, messageText);
+      }
+      const success = imgUrl
+        ? true  // Imagem já foi enviada com caption
+        : await sendEvolutionMessage(targetFranchiseeId, fullPhone, messageText);
 
       if (success) {
         return NextResponse.json({ success: true, message: `🚀 Mensagem de teste de 7 dias enviada com sucesso para ${fullPhone}!` });
@@ -289,6 +299,9 @@ export async function POST(req: NextRequest) {
         msg7d: body.msg7d,
         msg15d: body.msg15d,
         msg30d: body.msg30d,
+        img7d: body.img7d,
+        img15d: body.img15d,
+        img30d: body.img30d,
       };
 
       await prisma.user.update({
@@ -299,9 +312,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Configurações de Marketing salvas!" });
     }
 
-    // 2. Disparo seguro em massa (Anti-Ban com delay aleatório entre 8s e 15s por mensagem)
-    if (body.action === "send_broadcast") {
-      const { message, targetPhones } = body;
+    // 2. Disparo seguro em massa COM IMAGEM (Anti-Ban com delay aleatório entre 8s e 15s por mensagem)
+    if (body.action === "send_campaign" || body.action === "send_broadcast") {
+      const { message, imageUrl, targetPhones } = body;
       if (!message || !Array.isArray(targetPhones) || targetPhones.length === 0) {
         return NextResponse.json({ error: "Mensagem e contatos alvo são obrigatórios." }, { status: 400 });
       }
@@ -316,7 +329,15 @@ export async function POST(req: NextRequest) {
           const cleanPhone = phone.replace(/\D/g, "");
           const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
 
-          await sendEvolutionMessage(targetFranchiseeId, fullPhone, message).catch(() => {});
+          try {
+            if (imageUrl) {
+              // Envia imagem com caption (mensagem como legenda da imagem)
+              await sendEvolutionMediaUrl(targetFranchiseeId, fullPhone, imageUrl, message);
+            } else {
+              // Envia apenas texto
+              await sendEvolutionMessage(targetFranchiseeId, fullPhone, message);
+            }
+          } catch {}
 
           // Intervalo de segurança anti-ban aleatório entre 8 a 15 segundos entre cada envio
           const delaySec = Math.floor(Math.random() * (15000 - 8000 + 1)) + 8000;
@@ -326,7 +347,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `🚀 Disparo anti-ban iniciado com segurança para ${safeBatch.length} contatos! As mensagens serão enviadas com intervalos de 8 a 15 segundos entre cada uma.`,
+        message: `🚀 Disparo anti-ban iniciado com segurança para ${safeBatch.length} contatos!${imageUrl ? " (com imagem)" : ""} As mensagens serão enviadas com intervalos de 8 a 15 segundos entre cada uma.`,
       });
     }
 

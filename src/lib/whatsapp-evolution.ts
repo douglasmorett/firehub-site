@@ -151,6 +151,50 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
   }
 }
 
+export async function sendEvolutionMediaUrl(userId: string, toPhone: string, mediaUrl: string, caption?: string) {
+  const instanceName = `firehub_${userId.slice(-10)}`;
+  const number = (toPhone.includes("@s.whatsapp.net") || toPhone.includes("@lid"))
+    ? toPhone
+    : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
+
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
+  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { chatbotConfig: true },
+    });
+    const config = (user?.chatbotConfig as any) || {};
+    if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
+    if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
+  } catch {}
+
+  try {
+    const res = await fetch(`${baseUrl}/message/sendMedia/${instanceName}`, {
+      method: "POST",
+      headers: {
+        "apikey": apiKey,
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Remainder": "true",
+        "User-Agent": "FireHub"
+      },
+      body: JSON.stringify({
+        number,
+        mediatype: "image",
+        media: mediaUrl,
+        caption: caption || "",
+        fileName: "promo.jpg",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error("[Evolution API Gateway] Erro ao enviar mídia:", err);
+    return false;
+  }
+}
+
 export async function disconnectEvolutionInstance(userId: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");

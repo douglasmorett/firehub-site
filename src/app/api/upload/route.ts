@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   }
 
   const type = formData.get("type") as string || "produtos";
-  const folder = type === "invoice" ? "invoices" : "produtos";
+  const folder = type === "invoice" ? "invoices" : type === "marketing" ? "marketing" : "produtos";
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "");
   const blob = await put(`${folder}/${Date.now()}-${safeName}`, file, {

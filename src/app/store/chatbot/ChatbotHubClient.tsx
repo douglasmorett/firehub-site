@@ -35,7 +35,7 @@ import {
 export default function ChatbotHubClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "phone" | "notifications" | "test" | "diagnostic">("qr");
+  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "disparos" | "phone" | "notifications" | "test" | "diagnostic">("qr");
 
   // Configuração principal
   const [config, setConfig] = useState<any>({
@@ -577,6 +577,16 @@ export default function ChatbotHubClient() {
             <Gift size={16} /> 🎁 Marketing &amp; Fidelização
           </button>
           <button
+            onClick={() => setActiveTab("disparos")}
+            style={{
+              padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
+              background: activeTab === "disparos" ? "linear-gradient(135deg, #F59E0B, #D97706)" : "rgba(255,255,255,0.1)", color: "#fff",
+              display: "flex", alignItems: "center", gap: "8px", boxShadow: activeTab === "disparos" ? "0 4px 12px rgba(245,158,11,0.3)" : "none"
+            }}
+          >
+            <Radio size={16} /> 📢 Disparos
+          </button>
+          <button
             onClick={() => setActiveTab("test")}
             style={{
               padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
@@ -1009,6 +1019,31 @@ export default function ChatbotHubClient() {
                       })()}
                     </div>
                   </div>
+
+                  <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                    <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>📷 Imagem do Disparo (opcional):</label>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {config.img7d ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <img src={config.img7d} alt="Imagem 7d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
+                          <button
+                            onClick={() => { setConfig((p: any) => ({ ...p, img7d: "" })); handleSaveConfig({ img7d: "" }); }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "10px", border: "2px dashed #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>
+                          📤 Enviar Imagem
+                          <input type="file" accept="image/*" hidden onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                            const res = await fetch("/api/upload", { method: "POST", body: fd });
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img7d: url })); handleSaveConfig({ img7d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                          }} />
+                        </label>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* CARD 15 DIAS */}
@@ -1076,6 +1111,31 @@ export default function ChatbotHubClient() {
                       })()}
                     </div>
                   </div>
+
+                  <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                    <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>📷 Imagem do Disparo (opcional):</label>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {config.img15d ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <img src={config.img15d} alt="Imagem 15d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
+                          <button
+                            onClick={() => { setConfig((p: any) => ({ ...p, img15d: "" })); handleSaveConfig({ img15d: "" }); }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "10px", border: "2px dashed #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>
+                          📤 Enviar Imagem
+                          <input type="file" accept="image/*" hidden onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                            const res = await fetch("/api/upload", { method: "POST", body: fd });
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img15d: url })); handleSaveConfig({ img15d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                          }} />
+                        </label>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* CARD 30 DIAS */}
@@ -1141,6 +1201,31 @@ export default function ChatbotHubClient() {
                           </div>
                         );
                       })()}
+                    </div>
+                  </div>
+
+                  <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                    <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>📷 Imagem do Disparo (opcional):</label>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {config.img30d ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <img src={config.img30d} alt="Imagem 30d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
+                          <button
+                            onClick={() => { setConfig((p: any) => ({ ...p, img30d: "" })); handleSaveConfig({ img30d: "" }); }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "10px", border: "2px dashed #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>
+                          📤 Enviar Imagem
+                          <input type="file" accept="image/*" hidden onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                            const res = await fetch("/api/upload", { method: "POST", body: fd });
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img30d: url })); handleSaveConfig({ img30d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                          }} />
+                        </label>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1282,6 +1367,366 @@ export default function ChatbotHubClient() {
               </div>
             </div>
           )}
+
+          {/* ABA DISPAROS: CAMPANHA DE MARKETING PERSONALIZADA */}
+          {activeTab === "disparos" && (() => {
+            // ── State local para a aba de disparos ──
+            const [campaignMsg, setCampaignMsg] = useState("");
+            const [campaignImg, setCampaignImg] = useState("");
+            const [campaignImgUploading, setCampaignImgUploading] = useState(false);
+            const [selectedCriteria, setSelectedCriteria] = useState("all");
+            const [sendingCampaign, setSendingCampaign] = useState(false);
+            const [showCampaignConfirm, setShowCampaignConfirm] = useState(false);
+
+            const criteriaOptions = [
+              { id: "all", label: "📋 Todos os Clientes", description: "Enviar para toda a base de contatos", color: "#6366F1", icon: "📋" },
+              { id: "7d", label: "🔥 Sumidos há 7 Dias", description: "Clientes que não pedem há 7 dias ou mais", color: "#EA580C", icon: "🔥" },
+              { id: "15d", label: "⏰ Sumidos há 15 Dias", description: "Clientes que não pedem há 15 dias ou mais", color: "#2563EB", icon: "⏰" },
+              { id: "30d", label: "💤 Sumidos há 30+ Dias", description: "Clientes inativos há mais de 30 dias", color: "#7C3AED", icon: "💤" },
+              { id: "loyal", label: "⭐ Clientes Fiéis", description: "Clientes com 3 ou mais pedidos feitos", color: "#16A34A", icon: "⭐" },
+              { id: "top_spenders", label: "👑 Top Clientes (VIP)", description: "Os 20 clientes que mais fizeram pedidos", color: "#D97706", icon: "👑" },
+              { id: "new_customers", label: "🆕 Clientes Novos", description: "Clientes com apenas 1 pedido — conquiste a fidelização", color: "#0EA5E9", icon: "🆕" },
+              { id: "never_ordered", label: "👻 Nunca Compraram", description: "Contatos WhatsApp que nunca fizeram um pedido", color: "#DC2626", icon: "👻" },
+            ];
+
+            const now = Date.now();
+            const DAY = 24 * 60 * 60 * 1000;
+
+            const filteredCustomers = marketingCustomers.filter((c: any) => {
+              const lastActivity = new Date(c.updatedAt).getTime();
+              const daysSince = (now - lastActivity) / DAY;
+              const orders = c.totalOrders || 0;
+
+              switch (selectedCriteria) {
+                case "all": return true;
+                case "7d": return daysSince >= 7;
+                case "15d": return daysSince >= 15;
+                case "30d": return daysSince >= 30;
+                case "loyal": return orders >= 3;
+                case "top_spenders": return true; // filtered below by sort + slice
+                case "new_customers": return orders === 1;
+                case "never_ordered": return orders === 0;
+                default: return true;
+              }
+            });
+
+            // Para "top_spenders", ordena por totalOrders desc e pega os top 20
+            const finalCustomers = selectedCriteria === "top_spenders"
+              ? [...filteredCustomers].sort((a: any, b: any) => (b.totalOrders || 0) - (a.totalOrders || 0)).slice(0, 20)
+              : filteredCustomers;
+
+            const handleSendCampaign = async () => {
+              if (!campaignMsg.trim()) {
+                showToast("⚠️ Escreva a mensagem do disparo", "#EF4444");
+                return;
+              }
+              if (finalCustomers.length === 0) {
+                showToast("⚠️ Nenhum cliente encontrado para esse critério", "#EF4444");
+                return;
+              }
+              setSendingCampaign(true);
+              try {
+                const phones = finalCustomers.map((c: any) => c.phone.replace(/\D/g, ""));
+                const res = await fetch("/api/store/marketing", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "send_campaign",
+                    message: campaignMsg,
+                    imageUrl: campaignImg || undefined,
+                    targetPhones: phones,
+                  }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                  showToast(data.message, "#10B981");
+                  setShowCampaignConfirm(false);
+                } else {
+                  showToast(`⚠️ ${data.error || "Erro ao disparar"}`, "#EF4444");
+                }
+              } catch {
+                showToast("⚠️ Erro de conexão ao disparar campanha", "#EF4444");
+              } finally {
+                setSendingCampaign(false);
+              }
+            };
+
+            return (
+              <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1.5rem" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: "12px", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
+                    📢
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>Central de Disparos</h3>
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Monte sua campanha, escolha o público e dispare com segurança anti-ban</p>
+                  </div>
+                </div>
+
+                {/* STEP 1: Critério de Audiência */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>1</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escolha o Público-Alvo</div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "8px" }}>
+                    {criteriaOptions.map((opt) => {
+                      const isSelected = selectedCriteria === opt.id;
+                      const count = opt.id === "top_spenders"
+                        ? Math.min(20, marketingCustomers.filter((c: any) => (c.totalOrders || 0) > 0).length)
+                        : opt.id === "all"
+                          ? marketingCustomers.length
+                          : marketingCustomers.filter((c: any) => {
+                              const lastActivity = new Date(c.updatedAt).getTime();
+                              const daysSince = (now - lastActivity) / DAY;
+                              const orders = c.totalOrders || 0;
+                              if (opt.id === "7d") return daysSince >= 7;
+                              if (opt.id === "15d") return daysSince >= 15;
+                              if (opt.id === "30d") return daysSince >= 30;
+                              if (opt.id === "loyal") return orders >= 3;
+                              if (opt.id === "new_customers") return orders === 1;
+                              if (opt.id === "never_ordered") return orders === 0;
+                              return true;
+                            }).length;
+
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => setSelectedCriteria(opt.id)}
+                          style={{
+                            padding: "12px 14px", borderRadius: "12px", border: isSelected ? `2px solid ${opt.color}` : "2px solid #E2E8F0",
+                            background: isSelected ? `${opt.color}10` : "#FAFAFA", cursor: "pointer", textAlign: "left",
+                            transition: "all 0.2s ease", boxShadow: isSelected ? `0 2px 8px ${opt.color}20` : "none",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <span style={{ fontWeight: 800, fontSize: "0.82rem", color: isSelected ? opt.color : "#334155" }}>{opt.label}</span>
+                            <span style={{
+                              padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", fontWeight: 900,
+                              background: isSelected ? opt.color : "#E2E8F0", color: isSelected ? "#fff" : "#64748B"
+                            }}>
+                              {count}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "0.7rem", color: "#94A3B8", lineHeight: 1.3 }}>{opt.description}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Resumo do público selecionado */}
+                  <div style={{ marginTop: "10px", padding: "10px 14px", borderRadius: "10px", background: "linear-gradient(135deg, #FEF3C7, #FDE68A)", border: "1px solid #FCD34D", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "1.1rem" }}>👥</span>
+                    <span style={{ fontWeight: 800, fontSize: "0.82rem", color: "#92400E" }}>
+                      {finalCustomers.length} {finalCustomers.length === 1 ? "cliente selecionado" : "clientes selecionados"}
+                      {finalCustomers.length > 50 && <span style={{ fontWeight: 600, color: "#B45309" }}> (máx. 50 por lote — anti-ban)</span>}
+                    </span>
+                  </div>
+                </div>
+
+                {/* STEP 2: Mensagem */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>2</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escreva a Mensagem</div>
+                  </div>
+
+                  <textarea
+                    value={campaignMsg}
+                    onChange={(e) => setCampaignMsg(e.target.value)}
+                    placeholder={"Ex: Oi! 🍕 Sentimos sua falta! Que tal aproveitar nosso combo especial hoje? Use o cupom VOLTEI10 e ganhe 10% de desconto! Peça já pelo nosso site: https://suaLoja.com"}
+                    style={{
+                      width: "100%", minHeight: "100px", padding: "12px 14px", borderRadius: "12px",
+                      border: "1px solid #CBD5E1", fontSize: "0.85rem", resize: "vertical", boxSizing: "border-box",
+                      lineHeight: 1.5, fontFamily: "inherit"
+                    }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                    <span style={{ fontSize: "0.7rem", color: campaignMsg.length > 1000 ? "#DC2626" : "#94A3B8", fontWeight: 700 }}>
+                      {campaignMsg.length} / 1000 caracteres
+                    </span>
+                  </div>
+
+                  {/* Modelos rápidos de mensagem */}
+                  <div style={{ marginTop: "8px" }}>
+                    <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", marginBottom: "6px" }}>💡 Modelos Rápidos:</div>
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      {[
+                        { label: "🔥 Promoção", text: "Oii! 🔥 Temos uma promoção ESPECIAL só pra você hoje! Peça agora e ganhe desconto exclusivo. Aproveita!" },
+                        { label: "😢 Saudade", text: "Oi, tudo bem? Sentimos sua falta! 😢 Faz tempo que você não pede com a gente. Que tal matar a saudade hoje?" },
+                        { label: "🎁 Cupom", text: "Oie! 🎁 Liberamos um cupom EXCLUSIVO pra você! Digite o código na hora do pedido e aproveite o desconto!" },
+                        { label: "🆕 Novidade", text: "Oi! 🆕 Temos novidades no nosso cardápio! Venha experimentar os novos sabores que preparamos com todo carinho!" },
+                      ].map((tpl, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setCampaignMsg(tpl.text)}
+                          style={{
+                            padding: "5px 10px", borderRadius: "8px", border: "1px solid #E2E8F0",
+                            background: "#F8FAFC", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700, color: "#475569"
+                          }}
+                        >
+                          {tpl.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* STEP 3: Imagem (Opcional) */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>3</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Imagem da Campanha <span style={{ fontWeight: 500, color: "#94A3B8", fontSize: "0.78rem" }}>(opcional)</span></div>
+                  </div>
+
+                  {campaignImg ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ position: "relative", display: "inline-block" }}>
+                        <img src={campaignImg} alt="Campanha" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: "14px", border: "2px solid #CBD5E1", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }} />
+                        <button
+                          onClick={() => setCampaignImg("")}
+                          style={{ position: "absolute", top: -8, right: -8, width: 24, height: 24, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "2px solid #fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900, boxShadow: "0 2px 4px rgba(0,0,0,0.15)" }}
+                        >✕</button>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#16A34A" }}>✅ Imagem carregada</div>
+                        <div style={{ fontSize: "0.7rem", color: "#94A3B8" }}>A imagem será enviada junto com a mensagem</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <label style={{
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
+                      padding: "24px", borderRadius: "14px", border: "2px dashed #CBD5E1",
+                      background: "#FAFAFA", cursor: "pointer", textAlign: "center",
+                      transition: "all 0.2s ease",
+                    }}>
+                      <span style={{ fontSize: "2rem" }}>{campaignImgUploading ? "⏳" : "📸"}</span>
+                      <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "#475569" }}>
+                        {campaignImgUploading ? "Enviando imagem..." : "Clique para enviar uma imagem"}
+                      </span>
+                      <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>PNG, JPG ou WEBP • Máx 5MB</span>
+                      <input type="file" accept="image/*" hidden disabled={campaignImgUploading} onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        setCampaignImgUploading(true);
+                        try {
+                          const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                          const res = await fetch("/api/upload", { method: "POST", body: fd });
+                          if (res.ok) { const { url } = await res.json(); setCampaignImg(url); showToast("✅ Imagem carregada!", "#10B981"); }
+                          else showToast("⚠️ Erro ao enviar imagem", "#EF4444");
+                        } catch { showToast("⚠️ Falha no upload", "#EF4444"); }
+                        finally { setCampaignImgUploading(false); }
+                      }} />
+                    </label>
+                  )}
+                </div>
+
+                {/* Prévia do Disparo */}
+                <div style={{ background: "#F0FDF4", borderRadius: "14px", padding: "16px", border: "1px solid #BBF7D0", marginBottom: "1.5rem" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#166534", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    📱 Prévia do Disparo
+                  </div>
+                  <div style={{ background: "#fff", borderRadius: "12px", padding: "12px", border: "1px solid #D1FAE5", maxWidth: "340px" }}>
+                    {campaignImg && (
+                      <img src={campaignImg} alt="Preview" style={{ width: "100%", maxHeight: "160px", objectFit: "cover", borderRadius: "8px", marginBottom: "8px" }} />
+                    )}
+                    <div style={{ fontSize: "0.8rem", color: "#334155", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                      {campaignMsg || "Sua mensagem aparecerá aqui..."}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                      <span style={{ fontSize: "0.65rem", color: "#94A3B8" }}>
+                        {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ✓✓
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botão de Disparar */}
+                <button
+                  onClick={() => {
+                    if (!campaignMsg.trim()) { showToast("⚠️ Escreva a mensagem antes de disparar", "#EF4444"); return; }
+                    if (finalCustomers.length === 0) { showToast("⚠️ Nenhum cliente para esse critério", "#EF4444"); return; }
+                    setShowCampaignConfirm(true);
+                  }}
+                  disabled={sendingCampaign || !campaignMsg.trim() || finalCustomers.length === 0}
+                  style={{
+                    width: "100%", padding: "14px", borderRadius: "14px", border: "none",
+                    background: sendingCampaign || !campaignMsg.trim() ? "#CBD5E1" : "linear-gradient(135deg, #F59E0B, #D97706)",
+                    color: "#fff", fontWeight: 900, fontSize: "0.95rem", cursor: sendingCampaign ? "wait" : "pointer",
+                    boxShadow: campaignMsg.trim() ? "0 4px 16px rgba(245,158,11,0.3)" : "none",
+                    transition: "all 0.2s ease", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+                  }}
+                >
+                  {sendingCampaign ? "⏳ Disparando..." : `🚀 Disparar para ${Math.min(finalCustomers.length, 50)} Clientes`}
+                </button>
+
+                <div style={{ marginTop: "8px", textAlign: "center", fontSize: "0.7rem", color: "#94A3B8" }}>
+                  ⚡ Envio seguro com intervalos de 8-15 segundos entre cada mensagem (anti-ban)
+                </div>
+
+                {/* Modal de Confirmação */}
+                {showCampaignConfirm && (
+                  <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+                    <div style={{ background: "#fff", borderRadius: "20px", padding: "1.5rem", maxWidth: "440px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+                      <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+                        <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>📢</div>
+                        <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>Confirmar Disparo</h3>
+                        <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "#64748B" }}>Revise os detalhes antes de enviar</p>
+                      </div>
+
+                      <div style={{ background: "#F8FAFC", borderRadius: "12px", padding: "12px", border: "1px solid #E2E8F0", marginBottom: "12px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                          <div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Público</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{criteriaOptions.find(o => o.id === selectedCriteria)?.label}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Destinatários</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{Math.min(finalCustomers.length, 50)} clientes</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Imagem</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{campaignImg ? "✅ Sim" : "❌ Sem imagem"}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Tempo Est.</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>~{Math.ceil(Math.min(finalCustomers.length, 50) * 11.5 / 60)} min</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ background: "#FFFBEB", borderRadius: "10px", padding: "10px 12px", border: "1px solid #FDE68A", marginBottom: "16px", fontSize: "0.75rem", color: "#92400E", display: "flex", alignItems: "flex-start", gap: "6px" }}>
+                        <span>⚠️</span>
+                        <span>Disparos são enviados com intervalos aleatórios de 8-15s para proteção anti-ban do WhatsApp. O processo roda em segundo plano.</span>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "10px" }}>
+                        <button
+                          onClick={() => setShowCampaignConfirm(false)}
+                          style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={handleSendCampaign}
+                          disabled={sendingCampaign}
+                          style={{
+                            flex: 1.5, padding: "12px", borderRadius: "12px", border: "none",
+                            background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff",
+                            fontWeight: 900, fontSize: "0.88rem", cursor: "pointer",
+                            boxShadow: "0 4px 12px rgba(245,158,11,0.3)"
+                          }}
+                        >
+                          {sendingCampaign ? "⏳ Enviando..." : "🚀 Confirmar Disparo"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ABA 4: TESTAR ENVIO */}
           {activeTab === "test" && (
