@@ -201,58 +201,57 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
                   ))}
                 </div>
 
-                {/* Dinheiro a Entregar para a Loja */}
-                <div style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#F0FDF4" : "#F8FAFC", border: `1.5px solid ${(r.stats.cashCollectedSum || 0) > 0 ? "#86EFAC" : "#E2E8F0"}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                    <div>
-                      <div style={{ fontSize: "0.75rem", fontWeight: 800, color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#64748B", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
-                        💵 Dinheiro a Entregar para a Loja ({r.stats.cashOrdersCount || 0} pedido(s) em dinheiro)
-                      </div>
-                      <div style={{ fontSize: "1.35rem", fontWeight: 900, color: (r.stats.cashCollectedSum || 0) > 0 ? "#15803D" : "#475569", marginTop: 2 }}>
-                        {fmt(r.stats.cashCollectedSum || 0)}
-                      </div>
+                {/* Conferência Unificada do Motoboy */}
+                <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 14, padding: 16, marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 900, color: "#0F172A", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+                      📋 CONFERÊNCIA DO MOTOBOY ({r.stats.totalDeliveries} entregas)
+                    </span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#166534", background: "#DCFCE7", padding: "4px 10px", borderRadius: 20 }}>
+                        💵 Entregar Dinheiro: {fmt(r.stats.cashCollectedSum || 0)}
+                      </span>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#6D28D9", background: "#F3E8FF", padding: "4px 10px", borderRadius: 20 }}>
+                        💳 Total Maquininha: {fmt(r.stats.cardPosTotal || 0)}
+                      </span>
                     </div>
-                    <span style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#16A34A" : "#94A3B8", color: "#fff", padding: "6px 14px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800 }}>
-                      {(r.stats.cashCollectedSum || 0) > 0 ? "💵 Motoboy deve acertar este valor com a loja" : "Sem cobranças em dinheiro"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Conferência de Cartões & Maquininha do Motoboy */}
-                <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: 14, marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
-                    <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#1E293B", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
-                      💳 Conferência da Maquininha ({r.stats.cardPosCount || 0} vendas)
-                    </span>
-                    <span style={{ fontWeight: 900, fontSize: "0.95rem", color: "#6D28D9" }}>
-                      Total Máquina: {fmt(r.stats.cardPosTotal || 0)}
-                    </span>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
-                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}>
-                      <div style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>💳 Débito</div>
-                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>{fmt(r.stats.debitTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{r.stats.debitCount || 0} pedido(s)</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+                    {/* Quadrado Dinheiro */}
+                    <div style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#F0FDF4" : "#fff", border: `1.5px solid ${(r.stats.cashCollectedSum || 0) > 0 ? "#86EFAC" : "#CBD5E1"}`, borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.72rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#64748B", fontWeight: 700 }}>💵 Dinheiro (em mãos)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#15803D" : "#0F172A", marginTop: 2 }}>{fmt(r.stats.cashCollectedSum || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#94A3B8", marginTop: 2 }}>{r.stats.cashOrdersCount || 0} pedido(s)</div>
                     </div>
 
-                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}>
-                      <div style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>💳 Crédito</div>
-                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>{fmt(r.stats.creditTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{r.stats.creditCount || 0} pedido(s)</div>
+                    {/* Quadrado Débito */}
+                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>💳 Débito (Máquina)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(r.stats.debitTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{r.stats.debitCount || 0} pedido(s)</div>
                     </div>
 
-                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}>
-                      <div style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>🎟️ Voucher (Vale)</div>
-                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>{fmt(r.stats.voucherTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{r.stats.voucherCount || 0} pedido(s)</div>
+                    {/* Quadrado Crédito */}
+                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>💳 Crédito (Máquina)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(r.stats.creditTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{r.stats.creditCount || 0} pedido(s)</div>
                     </div>
 
+                    {/* Quadrado Voucher */}
+                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>🎟️ Voucher (Vale)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(r.stats.voucherTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{r.stats.voucherCount || 0} pedido(s)</div>
+                    </div>
+
+                    {/* Quadrado Pago Online */}
                     {r.stats.onlineTotal > 0 && (
-                      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "8px 10px" }}>
-                        <div style={{ fontSize: "0.7rem", color: "#166534", fontWeight: 600 }}>⚡ Pago Online</div>
-                        <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#15803D" }}>{fmt(r.stats.onlineTotal)}</div>
-                        <div style={{ fontSize: "0.68rem", color: "#166534" }}>{r.stats.onlineCount} pedido(s) site/app</div>
+                      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 12px" }}>
+                        <div style={{ fontSize: "0.72rem", color: "#166534", fontWeight: 700 }}>⚡ Pago Online</div>
+                        <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#15803D", marginTop: 2 }}>{fmt(r.stats.onlineTotal)}</div>
+                        <div style={{ fontSize: "0.68rem", color: "#166534", marginTop: 2 }}>{r.stats.onlineCount} pedido(s) site/app</div>
                       </div>
                     )}
                   </div>
