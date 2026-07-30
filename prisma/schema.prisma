@@ -51,6 +51,7 @@ model User {
   chatbotConfig   Json?           // Config do Chatbot IA WhatsApp: { active, connected, phone, pairingCode, qrCode, personality, customPrompt, autoOrderLink }
   fixedCosts      Json?           // Custos fixos mensais: [{id, label, value}] ex: aluguel, funcionários
   financialGoals  Json?           // Metas financeiras mensais: { faturamento, margemLiquida, cmvPct, pedidos, ticketMedio }
+  repasseConfig   Json?           // Configurações de Repasse Automático: { chavePix, tipoChave, titular, cpfCnpj, frequencia, horario, status }
   resetToken      String?         // Token de recuperação de senha
   resetTokenExp   DateTime?       // Expiração do token de recuperação
   // === FATURAMENTO: USE FIRST, PAY LATER ===

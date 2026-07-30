@@ -44,6 +44,7 @@ export async function PUT(req: Request) {
     "storeLoyalty",      // Programa de fidelidade/cashback
     "city",              // Cidade / Estado (ex: Rio de Janeiro - RJ)
     "storeTimezone",     // Fuso Horário (ex: America/Sao_Paulo)
+    "repasseConfig",     // Configurações de Repasse Automático (Brendi Flow)
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
   }
