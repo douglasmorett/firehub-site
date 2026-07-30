@@ -57,6 +57,7 @@ export async function GET(req: Request) {
       customerAddress: true,
       status: true,
       motoboyId: true,
+      paymentMethod: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -88,6 +89,14 @@ export async function GET(req: Request) {
     const deliveryFeeSum = orders.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
     const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
 
+    // Entregas pagas em dinheiro em mãos
+    const cashOrders = orders.filter((o) => {
+      const pm = (o.paymentMethod || "").toUpperCase();
+      return pm === "CASH" || pm === "DINHEIRO";
+    });
+    const cashCollectedSum = cashOrders.reduce((s, o) => s + o.totalAmount, 0);
+    const cashOrdersCount = cashOrders.length;
+
     // Calcular pagamento baseado no tipo
     let dailyTotal = 0;
     let perDeliveryTotal = 0;
@@ -108,6 +117,11 @@ export async function GET(req: Request) {
     const totalWithDaily = dailyTotal + perDeliveryTotal + perKmTotal;
     const totalFeeOnly = perDeliveryTotal + perKmTotal;
     const totalToPay = calcMode === "fee_only" ? totalFeeOnly : totalWithDaily;
+
+    // Cálculo do acerto financeiro final com a loja (Dinheiro em Mãos vs O que a Loja Deve)
+    const netSettlement = cashCollectedSum - totalToPay;
+    const motoboyOwesStore = netSettlement > 0 ? netSettlement : 0;
+    const storeOwesMotoboy = netSettlement < 0 ? Math.abs(netSettlement) : 0;
 
     return {
       motoboy: {
@@ -132,6 +146,11 @@ export async function GET(req: Request) {
         totalWithDaily,
         totalFeeOnly,
         totalToPay,
+        cashCollectedSum,
+        cashOrdersCount,
+        netSettlement,
+        motoboyOwesStore,
+        storeOwesMotoboy,
       },
       orders: orders.map((o) => ({
         id: o.id,
@@ -143,6 +162,7 @@ export async function GET(req: Request) {
         motoboyFee: o.motoboyFee,
         deliveryDistance: o.deliveryDistance,
         status: o.status,
+        paymentMethod: o.paymentMethod || "Não informado",
       })),
     };
   });
