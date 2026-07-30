@@ -21,20 +21,22 @@ const PAYMENT_LABELS: Record<PayMethod, string> = {
 };
 
 export default function PaymentGateway({
-  orderId, amount, onPaid, onError, onCancel
+  orderId, amount, initialMethod = "pix", onPaid, onError, onCancel
 }: {
   orderId:  string;
   amount:   number;
+  initialMethod?: "pix" | "credit_card";
   onPaid:   () => void;
   onError:  (msg: string) => void;
   onCancel: () => void;
 }) {
-  const [method, setMethod]       = useState<PayMethod>("pix");
+  const [method, setMethod]       = useState<PayMethod>(initialMethod);
   const [loading, setLoading]     = useState(false);
   const [pixData, setPixData]     = useState<{ paymentId: string; pixKey: string; qrCodeBase64: string | null; expiresAt: string } | null>(null);
   const [pixPaid, setPixPaid]     = useState(false);
   const [pixExpired, setPixExpired] = useState(false);
   const [copied, setCopied]       = useState(false);
+  const autoTriggeredRef           = useRef(false);
 
   // Dados do cartão (tokenizados via MP Brick)
   const [cardNumber, setCardNumber]         = useState("");
@@ -49,6 +51,14 @@ export default function PaymentGateway({
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
+
+  // Disparar geração de PIX automaticamente na montagem se o método for PIX
+  useEffect(() => {
+    if (method === "pix" && !pixData && !loading && !autoTriggeredRef.current) {
+      autoTriggeredRef.current = true;
+      handlePixPay();
+    }
+  }, [method]);
 
   // ──────────────────────────── PIX ────────────────────────────
   const handlePixPay = async () => {

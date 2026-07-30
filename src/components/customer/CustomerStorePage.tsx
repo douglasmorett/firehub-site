@@ -297,11 +297,11 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   // Build dynamic payment options (Online via Mercado Pago vs Na Entrega)
   const paymentOptions = (() => {
     const base = [
-      { k: "PIX_ONLINE", l: "⚡ Pix Online" },
-      { k: "CREDITO_ONLINE", l: "⚡ Cartão Crédito (Online)" },
+      { k: "PIX", l: "💰 Pix" },
+      { k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" },
       { k: "DINHEIRO", l: "💵 Dinheiro" },
-      { k: "DEBITO", l: "💳 Débito" },
-      { k: "CREDITO", l: "💳 Crédito" },
+      { k: "DEBITO", l: "💳 Débito (Entrega)" },
+      { k: "CREDITO", l: "💳 Crédito (Entrega)" },
     ];
     const fees = franchisee.paymentFees as any;
     if (fees?.VOUCHER?.active && fees.VOUCHER.brands) {
@@ -345,7 +345,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   };
 
   // Métodos que exigem pagamento online via Mercado Pago
-  const ONLINE_METHODS = ["PIX_ONLINE", "CREDITO_ONLINE", "DEBITO_ONLINE", "ONLINE"];
+  const ONLINE_METHODS = ["PIX", "PIX_ONLINE", "CREDITO_ONLINE", "DEBITO_ONLINE", "ONLINE"];
 
   const handleCheckout = async () => {
     if (!customerName || !customerPhone) { alert("Preencha nome e telefone."); return; }
@@ -946,19 +946,40 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         </div>
       )}
 
-      {/* PAYMENT GATEWAY MODAL — Pagar.me (PIX / Cartão / Voucher) */}
+      {/* PAYMENT GATEWAY MODAL — Mercado Pago (PIX / Cartão) */}
       {showPayment && pendingOrderId && (
-        <div className="mob-cart-overlay" style={{ zIndex: 9999 }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: "white", borderRadius: "20px", padding: "1.75rem",
-            maxWidth: "440px", width: "92%", margin: "auto",
-            position: "relative", top: "50%", transform: "translateY(-50%)",
-            maxHeight: "90vh", overflowY: "auto",
-            boxShadow: "0 25px 60px rgba(0,0,0,0.25)"
-          }}>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.65)",
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+            backdropFilter: "blur(4px)"
+          }}
+          onClick={() => setShowPayment(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "white",
+              borderRadius: "24px",
+              padding: "1.75rem",
+              maxWidth: "440px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 25px 60px rgba(0,0,0,0.3)",
+              position: "relative"
+            }}
+          >
             <PaymentGateway
               orderId={pendingOrderId}
               amount={pendingAmount}
+              initialMethod={paymentMethod === "CREDITO_ONLINE" ? "credit_card" : "pix"}
               onPaid={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
               onError={(msg) => { alert(`❌ ${msg}`); }}
               onCancel={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
