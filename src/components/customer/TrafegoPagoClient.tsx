@@ -125,10 +125,13 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const liveInvestido = 412_580 + tick * 0.58;
   const livePedidos = 41_893 + tick;
 
-  // OAuth
   const handleConnectFacebook = () => {
     const state = btoa(JSON.stringify({ franchiseeId: user.id, investment }));
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || "";
+    if (!appId) {
+      setNotification({ type: "info", message: "⏳ Estamos finalizando a integração com o Facebook. Em breve você poderá conectar sua conta!" });
+      return;
+    }
     const redirectUri = encodeURIComponent(window.location.origin + "/api/meta-ads/callback");
     const scope = "ads_management,ads_read,pages_show_list,pages_read_engagement,business_management";
     window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=code`;
@@ -257,11 +260,6 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   if (step === "hero") return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 1rem 4rem" }}>
       <Banner />
-      {needsSetup && (
-        <div style={{ background: "#FEF9C3", border: "1px solid #FDE68A", borderRadius: 12, padding: "12px 16px", marginBottom: "1.5rem", fontSize: "0.85rem", color: "#92400E" }}>
-          <strong>⚙️ Configuração pendente:</strong> As variáveis META_APP_ID e META_APP_SECRET precisam ser configuradas no Vercel.
-        </div>
-      )}
       <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
         <span style={{ background: "#EF4444", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "4px 12px", borderRadius: 99, letterSpacing: 1 }}>TRÁFEGO PAGO + FIREHUB</span>
       </div>
