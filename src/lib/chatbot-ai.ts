@@ -76,6 +76,8 @@ export async function processChatbotAI(
         customerName: true,
         createdAt: true,
         deliveryType: true,
+        ifoodReference: true,
+        openDeliveryReference: true,
         items: {
           select: {
             quantity: true,
@@ -225,7 +227,8 @@ export async function processChatbotAI(
       };
       const statusReadable = statusMap[o.status] || o.status;
       const itemsList = o.items.map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
-      return `- Pedido #${o.id.slice(-5).toUpperCase()}: Status = "${statusReadable}" | Itens = ${itemsList} | Total = ${o.totalAmount} reais`;
+      const displayNum = (o as any).ifoodReference || (o as any).openDeliveryReference || o.id.slice(-4).toUpperCase();
+      return `- Pedido #${displayNum}: Status = "${statusReadable}" | Itens = ${itemsList} | Total = ${o.totalAmount} reais`;
     }).join("\n");
   }
 
