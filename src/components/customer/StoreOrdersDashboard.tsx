@@ -2064,10 +2064,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <span style={{ fontSize: "16px", fontWeight: "bold" }}>{`#${order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}`}</span>
                 </div>
 
+                <div style={{ fontSize: "13px", fontWeight: 900, color: "#000", marginBottom: "10px", background: "#F1F5F9", padding: "6px 8px", borderRadius: "4px", border: "1px solid #CBD5E1", textAlign: "center" }}>
+                  📅 DATA E HORA DO PEDIDO: {dateStr} às {timeStr}
+                </div>
+
                 <div style={{ marginBottom: "12px" }}>
                   <div>Estabelecimento: <strong style={{ textTransform: "uppercase" }}>{storeName}</strong></div>
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
-                  <div>Data: {dateStr} {timeStr}</div>
                 </div>
 
                 <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
@@ -2273,11 +2276,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         <div style={{ fontWeight: "bold", fontSize: "13px", color: "#000" }}>
                           Forma de Pagamento: {baseMethod} (Cobrar na Entrega)
                         </div>
-                        {order.changeAmount != null && Number(order.changeAmount) > 0 && (
-                          <div style={{ marginTop: "4px", fontSize: "12px", fontWeight: "bold" }}>
-                            💵 Troco para: R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
-                          </div>
-                        )}
+                        {order.changeAmount != null && Number(order.changeAmount) > 0 && (() => {
+                          const changeVal = Number(order.changeAmount);
+                          const changeToGive = changeVal > order.totalAmount ? (changeVal - order.totalAmount) : 0;
+                          return (
+                            <div style={{ marginTop: "6px", padding: "6px 8px", background: "#FFF3E0", border: "1.5px solid #000", borderRadius: "4px" }}>
+                              <div style={{ fontSize: "13px", fontWeight: 900, color: "#000" }}>
+                                💵 Troco para: R$ {changeVal.toFixed(2).replace('.', ',')}
+                              </div>
+                              {changeToGive > 0 && (
+                                <div style={{ color: "#C62828", fontSize: "13px", fontWeight: 900, marginTop: "3px" }}>
+                                  👉 SEPARAR R$ {changeToGive.toFixed(2).replace('.', ',')} DE TROCO
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <div style={{
                           marginTop: "10px",
                           padding: "8px 10px",
