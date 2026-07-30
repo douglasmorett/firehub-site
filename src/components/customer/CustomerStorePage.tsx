@@ -126,16 +126,33 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
   };
 
-  const activeTodayProducts = menuProducts.filter(p => isAvailableToday(p, currentDayCode));
-  const categories = ["Todos", ...Array.from(new Set(activeTodayProducts.map(p => p.category)))];
+  const isIntegrationCategory = (catName: string) => {
+    if (!catName) return false;
+    const c = catName.trim().toLowerCase();
+    return c === "jotajá" || c === "jotaja" || c === "jota já" || c === "ifood" || c.includes("jotajá") || c.includes("jotaja") || c.includes("ifood");
+  };
+
+  const activeTodayProducts = menuProducts.filter(p => isAvailableToday(p, currentDayCode) && !isIntegrationCategory(p.category));
+
+  const categories = [
+    "Todos",
+    ...Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))))
+  ];
 
   const filtered = activeTodayProducts.filter(p => {
-    const mc = selectedCategory === "Todos" || p.category === selectedCategory;
+    const pCat = (p.category || "").trim();
+    const mc = selectedCategory === "Todos" || pCat.toLowerCase() === selectedCategory.trim().toLowerCase();
     const ms = !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description?.toLowerCase().includes(searchTerm.toLowerCase());
     return mc && ms;
   });
+
   const grouped: Record<string, MenuProduct[]> = {};
-  filtered.forEach(p => { if (!grouped[p.category]) grouped[p.category] = []; grouped[p.category].push(p); });
+  filtered.forEach(p => {
+    const cat = (p.category || "").trim();
+    if (!cat) return;
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(p);
+  });
 
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const discount = couponApplied
@@ -162,9 +179,18 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
 
   const scrollToCategory = (cat: string) => {
     setSelectedCategory(cat);
-    if (cat !== "Todos" && sectionRefs.current[cat]) {
-      sectionRefs.current[cat]!.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (cat === "Todos") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
+    setTimeout(() => {
+      const el = sectionRefs.current[cat] || sectionRefs.current[cat.trim()];
+      if (el) {
+        const yOffset = -140;
+        const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset;
+        window.scrollTo({ top: y, behavior: "smooth" });
+      }
+    }, 50);
   };
 
   const applyCoupon = async () => {
