@@ -61,7 +61,6 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
   const totalDeliveries = report.reduce((s, r) => s + r.stats.totalDeliveries, 0);
   const totalCashCollected = report.reduce((s, r) => s + (r.stats.cashCollectedSum || 0), 0);
   const totalCardPos = report.reduce((s, r) => s + (r.stats.cardPosTotal || 0), 0);
-  const totalNetOwedToStore = report.reduce((s, r) => s + (r.stats.motoboyOwesStore || 0), 0);
 
   const PAYMENT_TYPE_LABEL: Record<string, string> = {
     PER_DELIVERY: "Por entrega",
@@ -142,10 +141,9 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
             {[
               { label: "Total Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#3B82F6" },
-              { label: "Taxas/Diárias", value: fmt(totalPay), icon: DollarSign, color: "#C62828" },
-              { label: "Dinheiro em Mãos", value: fmt(totalCashCollected), icon: DollarSign, color: "#D97706" },
+              { label: "Dinheiro a Entregar", value: fmt(totalCashCollected), icon: DollarSign, color: "#16A34A" },
               { label: "Maquininhas Cartão", value: fmt(totalCardPos), icon: DollarSign, color: "#6D28D9" },
-              { label: "Entregar à Loja", value: fmt(totalNetOwedToStore), icon: DollarSign, color: "#16A34A" },
+              { label: "Taxas/Diárias (Motoboy)", value: fmt(totalPay), icon: DollarSign, color: "#C62828" },
             ].map(card => (
               <div key={card.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -182,7 +180,7 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: "0.7rem", color: "#94A3B8", textTransform: "uppercase", fontWeight: 700 }}>
-                      Total a pagar {calcMode === "fee_only" ? "(Só Taxa)" : ""}
+                      Total a pagar ao motoboy {calcMode === "fee_only" ? "(Só Taxa)" : ""}
                     </div>
                     <div style={{ fontWeight: 900, fontSize: "1.4rem", color: "#C62828" }}>{fmt(payAmount)}</div>
                   </div>
@@ -201,6 +199,23 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
                       <div style={{ fontSize: "0.7rem", color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>{s.label}</div>
                     </div>
                   ))}
+                </div>
+
+                {/* Dinheiro a Entregar para a Loja */}
+                <div style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#F0FDF4" : "#F8FAFC", border: `1.5px solid ${(r.stats.cashCollectedSum || 0) > 0 ? "#86EFAC" : "#E2E8F0"}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 800, color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#64748B", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+                        💵 Dinheiro a Entregar para a Loja ({r.stats.cashOrdersCount || 0} pedido(s) em dinheiro)
+                      </div>
+                      <div style={{ fontSize: "1.35rem", fontWeight: 900, color: (r.stats.cashCollectedSum || 0) > 0 ? "#15803D" : "#475569", marginTop: 2 }}>
+                        {fmt(r.stats.cashCollectedSum || 0)}
+                      </div>
+                    </div>
+                    <span style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#16A34A" : "#94A3B8", color: "#fff", padding: "6px 14px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800 }}>
+                      {(r.stats.cashCollectedSum || 0) > 0 ? "💵 Motoboy deve acertar este valor com a loja" : "Sem cobranças em dinheiro"}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Conferência de Cartões & Maquininha do Motoboy */}
@@ -238,70 +253,6 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
                         <div style={{ fontSize: "0.7rem", color: "#166534", fontWeight: 600 }}>⚡ Pago Online</div>
                         <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#15803D" }}>{fmt(r.stats.onlineTotal)}</div>
                         <div style={{ fontSize: "0.68rem", color: "#166534" }}>{r.stats.onlineCount} pedido(s) site/app</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Fechamento / Acerto em Dinheiro com a Loja */}
-                <div style={{ background: r.stats.motoboyOwesStore > 0 ? "#F0FDF4" : (r.stats.storeOwesMotoboy > 0 ? "#EFF6FF" : "#F8FAFC"), border: `1.5px solid ${r.stats.motoboyOwesStore > 0 ? "#86EFAC" : (r.stats.storeOwesMotoboy > 0 ? "#BFDBFE" : "#E2E8F0")}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#1E293B", textTransform: "uppercase" }}>
-                      🤝 Fechamento & Acerto em Dinheiro
-                    </span>
-                    <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>
-                      {r.stats.cashOrdersCount} pedido(s) em dinheiro
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: 4 }}>
-                    <span style={{ color: "#475569" }}>💵 Total Cobrado em Dinheiro (em mãos):</span>
-                    <strong style={{ color: "#0F172A" }}>{fmt(r.stats.cashCollectedSum || 0)}</strong>
-                  </div>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", marginBottom: 8 }}>
-                    <span style={{ color: "#475569" }}>🛵 Total a Pagar ao Motoboy (Taxas/Diária):</span>
-                    <strong style={{ color: "#C62828" }}>- {fmt(payAmount)}</strong>
-                  </div>
-
-                  <div style={{
-                    borderTop: "2px dashed rgba(0,0,0,0.1)",
-                    paddingTop: 8,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}>
-                    {r.stats.motoboyOwesStore > 0 ? (
-                      <>
-                        <div>
-                          <div style={{ fontSize: "0.72rem", color: "#15803D", fontWeight: 800, textTransform: "uppercase" }}>
-                            💵 Motoboy deve entregar à loja
-                          </div>
-                          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#166534" }}>
-                            {fmt(r.stats.motoboyOwesStore)}
-                          </div>
-                        </div>
-                        <span style={{ background: "#16A34A", color: "#fff", padding: "4px 10px", borderRadius: 20, fontSize: "0.75rem", fontWeight: 800 }}>
-                          Entregar para a Loja
-                        </span>
-                      </>
-                    ) : r.stats.storeOwesMotoboy > 0 ? (
-                      <>
-                        <div>
-                          <div style={{ fontSize: "0.72rem", color: "#1D4ED8", fontWeight: 800, textTransform: "uppercase" }}>
-                            💰 Loja deve pagar ao motoboy
-                          </div>
-                          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#1E40AF" }}>
-                            {fmt(r.stats.storeOwesMotoboy)}
-                          </div>
-                        </div>
-                        <span style={{ background: "#2563EB", color: "#fff", padding: "4px 10px", borderRadius: 20, fontSize: "0.75rem", fontWeight: 800 }}>
-                          Pagar ao Motoboy
-                        </span>
-                      </>
-                    ) : (
-                      <div style={{ width: "100%", textAlign: "center", color: "#475569", fontWeight: 800, fontSize: "0.88rem" }}>
-                        ✅ Acerto Zerado (Valores iguais)
                       </div>
                     )}
                   </div>
