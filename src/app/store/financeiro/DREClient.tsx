@@ -114,7 +114,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dre" | "extrato" | "pagamentos" | "mensalidade" | "custosfix">("dre");
+  const [activeTab, setActiveTab] = useState<"dre" | "extrato" | "pagamentos" | "online" | "mensalidade" | "custosfix">("dre");
   const [showAllSemCusto, setShowAllSemCusto] = useState(false);
 
   // ===== CICLO DE FATURAMENTO REAL (API) =====
@@ -302,7 +302,18 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
           <div style={{ display: "flex", gap: "4px", marginTop: "1rem", background: "#F8FAFC", borderRadius: "12px", padding: "4px", width: "fit-content", flexWrap: "wrap" }}>
             <button style={tabStyle("dre")} onClick={() => setActiveTab("dre")}>📊 DRE</button>
             <button style={tabStyle("extrato")} onClick={() => setActiveTab("extrato")}>📋 Extrato</button>
-            <button style={tabStyle("pagamentos")} onClick={() => setActiveTab("pagamentos")}>💳 Pagamentos</button>
+            <button style={tabStyle("pagamentos")} onClick={() => setActiveTab("pagamentos")}>💳 Formas de Pgto</button>
+            <button
+              style={{
+                ...tabStyle("online"),
+                background: activeTab === "online" ? "#2563EB" : "#EFF6FF",
+                color: activeTab === "online" ? "#fff" : "#1D4ED8",
+                fontWeight: 800
+              }}
+              onClick={() => setActiveTab("online")}
+            >
+              ⚡ Pagamentos Online (MP)
+            </button>
             <button style={tabStyle("mensalidade")} onClick={() => setActiveTab("mensalidade")}>💰 Mensalidade</button>
             <button
               style={{
@@ -578,6 +589,148 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             )}
           </div>
         )}
+
+        {/* ===== ABA PAGAMENTOS ONLINE & MERCADO PAGO ===== */}
+        {activeTab === "online" && (() => {
+          const onlineOrders = allInRange.filter(o => {
+            const pm = (o.paymentMethod || "").toUpperCase();
+            const src = (o.source || "").toUpperCase();
+            return pm === "PIX" || pm === "ONLINE" || pm === "CREDIT" || pm === "CREDITO" || pm === "DEBITO" || pm === "DEBIT" || src === "ONLINE";
+          });
+
+          const pixOrders = onlineOrders.filter(o => (o.paymentMethod || "").toUpperCase() === "PIX");
+          const cardOrders = onlineOrders.filter(o => (o.paymentMethod || "").toUpperCase() !== "PIX");
+
+          const pixTotal = pixOrders.reduce((s, o) => s + o.totalAmount, 0);
+          const cardTotal = cardOrders.reduce((s, o) => s + o.totalAmount, 0);
+          const onlineTotal = pixTotal + cardTotal;
+
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* CARDS DE MÉTRICAS */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+                <KPICard icon={<DollarSign size={20} color="#2563EB" />} label="Total Online Recebido" value={fmtR(onlineTotal)} sub={`${onlineOrders.length} pedidos no período`} color="#2563EB" />
+                <KPICard icon={<CreditCard size={20} color="#059669" />} label="PIX Online (D+0 Na Hora)" value={fmtR(pixTotal)} sub={`${pixOrders.length} pedidos · Saldo Instantâneo`} color="#059669" />
+                <KPICard icon={<CreditCard size={20} color="#7C3AED" />} label="Cartão Online (D+0 / D+30)" value={fmtR(cardTotal)} sub={`${cardOrders.length} pedidos · Cartão no Site`} color="#7C3AED" />
+                <KPICard icon={<TrendingUp size={20} color="#D97706" />} label="Taxa Média Gateway" value="~ 0.99% - 3.99%" sub="Direto no Mercado Pago" color="#D97706" />
+              </div>
+
+              {/* CARD EXPLICATIVO DO MERCADO PAGO & ANTECIPAÇÃO */}
+              <div style={{ background: "linear-gradient(135deg, #1E293B 0%, #0F172A 100%)", borderRadius: "16px", padding: "1.5rem", color: "#fff", boxShadow: "0 10px 25px rgba(0,0,0,0.15)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
+                  <div>
+                    <span style={{ background: "#009EE3", color: "#fff", padding: "3px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>
+                      🤝 Gateway Oficial Mercado Pago
+                    </span>
+                    <h2 style={{ fontWeight: 800, fontSize: "1.2rem", margin: "0.5rem 0 0.25rem 0", color: "#fff" }}>
+                      Como funciona o recebimento e antecipação do seu dinheiro?
+                    </h2>
+                    <p style={{ color: "#94A3B8", fontSize: "0.85rem", margin: 0, maxWidth: "750px" }}>
+                      Todos os pagamentos online feitos no seu site caem direto na sua conta do Mercado Pago. Veja abaixo a regra de prazos e como antecipar seus recebíveis se precisar do dinheiro na hora.
+                    </p>
+                  </div>
+                  <a
+                    href="https://www.mercadopago.com.br/recebiveis/antecipacoes"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ background: "#009EE3", color: "#fff", textDecoration: "none", padding: "10px 18px", borderRadius: "10px", fontWeight: 800, fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  >
+                    🚀 Painel de Antecipação no Mercado Pago ↗
+                  </a>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+                  {/* Bloco PIX */}
+                  <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "12px", padding: "1.2rem", border: "1px solid rgba(255,255,255,0.1)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#34D399", fontWeight: 800, fontSize: "0.95rem", marginBottom: "6px" }}>
+                      ⚡ PIX (D+0 - Instantâneo)
+                    </div>
+                    <p style={{ fontSize: "0.82rem", color: "#CBD5E1", margin: 0, lineHeight: "1.5" }}>
+                      O pagamento por <strong>PIX é 100% automático e instantâneo</strong>. Assim que o cliente paga no seu site, o dinheiro entra na hora na sua conta do Mercado Pago e fica disponível para saque ou PIX de saída imediatamente.
+                    </p>
+                  </div>
+
+                  {/* Bloco Cartão */}
+                  <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "12px", padding: "1.2rem", border: "1px solid rgba(255,255,255,0.1)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#60A5FA", fontWeight: 800, fontSize: "0.95rem", marginBottom: "6px" }}>
+                      💳 Cartão de Crédito (D+0 ou D+30)
+                    </div>
+                    <p style={{ fontSize: "0.82rem", color: "#CBD5E1", margin: 0, lineHeight: "1.5" }}>
+                      No Mercado Pago você escolhe o seu plano de prazos:
+                      <br />• <strong>D+0 (Na hora)</strong>: Receba vendas no cartão no mesmo dia.
+                      <br />• <strong>D+30 (Prazo Padrão)</strong>: Menor taxa por transação, dinheiro a liberar em 30 dias.
+                    </p>
+                  </div>
+
+                  {/* Bloco Antecipação */}
+                  <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: "12px", padding: "1.2rem", border: "1px solid rgba(255,255,255,0.1)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#FBBF24", fontWeight: 800, fontSize: "0.95rem", marginBottom: "6px" }}>
+                      🔓 Ficou com valor preso em D+30 e quer antecipar?
+                    </div>
+                    <p style={{ fontSize: "0.82rem", color: "#CBD5E1", margin: 0, lineHeight: "1.5" }}>
+                      Se você começou vendendo em D+30 e deseja liberar o dinheiro acumulado imediatamente, basta entrar na sua conta Mercado Pago e solicitar a <strong>Antecipação de Recebíveis</strong>. O valor cai na hora na sua conta mediante a taxa de antecipação do próprio Mercado Pago.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* LISTA DE TRANSAÇÕES ONLINE */}
+              <div style={{ background: "#fff", borderRadius: "16px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+                <div style={{ padding: "16px 24px", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h2 style={{ fontWeight: 800, fontSize: "1rem", margin: 0 }}>📋 Transações Online no Período</h2>
+                  <span style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600 }}>{onlineOrders.length} transações</span>
+                </div>
+
+                {onlineOrders.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "3rem", color: "#94A3B8" }}>Nenhum pagamento online registrado neste período.</div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
+                      <thead>
+                        <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", color: "#64748B", fontWeight: 700 }}>
+                          <th style={{ padding: "12px 16px" }}>Pedido</th>
+                          <th style={{ padding: "12px 16px" }}>Data / Hora</th>
+                          <th style={{ padding: "12px 16px" }}>Método</th>
+                          <th style={{ padding: "12px 16px" }}>Valor Bruto</th>
+                          <th style={{ padding: "12px 16px" }}>Prazo Estimado</th>
+                          <th style={{ padding: "12px 16px" }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {onlineOrders.map((o, i) => {
+                          const isPix = (o.paymentMethod || "").toUpperCase() === "PIX";
+                          const created = new Date(o.createdAt);
+                          const dateFormatted = created.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+                          return (
+                            <tr key={i} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                              <td style={{ padding: "12px 16px", fontWeight: 800, color: "#0F172A" }}>#{o.id.slice(-5).toUpperCase()}</td>
+                              <td style={{ padding: "12px 16px", color: "#64748B" }}>{dateFormatted}</td>
+                              <td style={{ padding: "12px 16px" }}>
+                                <span style={{ background: isPix ? "#ECFDF5" : "#F3E8FF", color: isPix ? "#047857" : "#6D28D9", padding: "3px 8px", borderRadius: "6px", fontWeight: 800, fontSize: "0.75rem" }}>
+                                  {isPix ? "⚡ PIX Online" : "💳 Cartão Online"}
+                                </span>
+                              </td>
+                              <td style={{ padding: "12px 16px", fontWeight: 800, color: "#0F172A" }}>{fmtR(o.totalAmount)}</td>
+                              <td style={{ padding: "12px 16px", color: isPix ? "#059669" : "#D97706", fontWeight: 700 }}>
+                                {isPix ? "⚡ D+0 (Na hora)" : "💳 D+0 / D+30 (MP)"}
+                              </td>
+                              <td style={{ padding: "12px 16px" }}>
+                                <span style={{ background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: "6px", fontWeight: 800, fontSize: "0.75rem" }}>
+                                  ✅ Aprovado
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ===== ABA MENSALIDADE ===== */}
         {activeTab === "mensalidade" && (() => {
