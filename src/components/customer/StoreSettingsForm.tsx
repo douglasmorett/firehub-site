@@ -606,7 +606,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                   <Smartphone size={18} color="#00BFA5" />
                   <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Pix</strong>
                 </div>
-                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#E6F4EA", color: "#137333", fontSize: "0.72rem", fontWeight: 700 }}>🔒 Sempre ativo</span>
+                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#E6F4EA", color: "#137333", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 Sempre ativo</span>
               </div>
               <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
                 <div><strong>Taxa:</strong> 0,5% + R$ 0,40 por pedido</div>
@@ -622,7 +622,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                   <CreditCard size={18} color="#9C27B0" />
                   <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Cartão de crédito online</strong>
                 </div>
-                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>⚡ D+30 / D+0</span>
+                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>⚡ D+30 / D+0</span>
               </div>
               <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
                 <div><strong>Taxa:</strong> 3,99% por transação</div>
