@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
     // 4. Buscar chats recentes ao vivo na instância conectada da Evolution API
     try {
       const instanceName = `firehub_${targetFranchiseeId.slice(-10)}`;
-      let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway.onrender.com").replace(/\/$/, "");
+      let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
       let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
       
       const chatbotConfigObj = (user?.chatbotConfig as any) || {};

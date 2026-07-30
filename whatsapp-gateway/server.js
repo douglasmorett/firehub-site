@@ -129,6 +129,7 @@ async function getOrCreateSocket(instanceName) {
     if (connection === "open") {
       session.state = "open";
       session.qrBase64 = null;
+      reconnectCounters.set(instanceName, 0);
       const userJid = sock.user?.id || "";
       const rawPhone = userJid.split(":")[0] || "";
       session.phone = rawPhone ? `+55 ${rawPhone.replace(/^55/, "")}` : "";
@@ -144,7 +145,7 @@ async function getOrCreateSocket(instanceName) {
           body: JSON.stringify({
             event: "CONNECTION_UPDATE",
             instance: instanceName,
-            data: { state: "open", ownerJid: userJid },
+            data: { state: "open", ownerJid: userJid, phone: session.phone },
           }),
         });
       } catch (err) {
@@ -154,26 +155,29 @@ async function getOrCreateSocket(instanceName) {
 
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      const shouldReconnect = !isLoggedOut;
       session.state = "close";
       sessionLocks.delete(instanceName);
 
       const count = (reconnectCounters.get(instanceName) || 0) + 1;
       reconnectCounters.set(instanceName, count);
 
-      console.log(`[WhatsApp Gateway] Conexão encerrada para ${instanceName}. Reconectar: ${shouldReconnect} (tentativa ${count}/5)`);
+      console.log(`[WhatsApp Gateway] 🔄 Conexão encerrada para ${instanceName} (Status ${statusCode}). Reconectar: ${shouldReconnect} (tentativa #${count})`);
 
-      if (shouldReconnect && count < 5) {
-        const delay = Math.min(3000 * count, 15000);
-        setTimeout(() => getOrCreateSocket(instanceName), delay);
-      } else if (count >= 5) {
-        console.log(`[WhatsApp Gateway] ⛔ Max reconexões atingido para ${instanceName}. Limpando sessão corrompida...`);
-        reconnectCounters.delete(instanceName);
-        sessions.delete(instanceName);
-        try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
-        console.log(`[WhatsApp Gateway] 🗑️ Sessão ${instanceName} limpa. Pronta para nova conexão.`);
+      if (shouldReconnect) {
+        // Reconexão infinita com backoff de 3s até no máximo 30s
+        const delay = Math.min(3000 * Math.min(count, 10), 30000);
+        console.log(`[WhatsApp Gateway] ⏳ Agendando reconexão de ${instanceName} em ${delay / 1000}s...`);
+        setTimeout(() => {
+          getOrCreateSocket(instanceName).catch((err) => {
+            console.error(`[WhatsApp Gateway] Erro ao tentar reconectar ${instanceName}:`, err.message);
+          });
+        }, delay);
       } else {
+        console.log(`[WhatsApp Gateway] 🚪 Instância ${instanceName} desconectada pelo usuário (loggedOut). Limpando sessão...`);
         sessions.delete(instanceName);
+        reconnectCounters.delete(instanceName);
         try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
       }
     }

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
  * para evitar que o plano free desligue por inatividade.
  */
 export async function GET() {
-  const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway.onrender.com").replace(/\/$/, "");
+  const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
 
   try {
     const res = await fetch(`${gatewayUrl}/`, {
