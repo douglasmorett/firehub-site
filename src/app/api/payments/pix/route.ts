@@ -24,13 +24,27 @@ export async function POST(req: NextRequest) {
 
     const order = await prisma.customerOrder.findUnique({
       where: { id: orderId },
-      include: { franchisee: { select: { storeName: true, mpSellerId: true } } },
+      include: { franchisee: { select: { storeName: true, mpSellerId: true, mpAccessToken: true } } },
     });
 
     if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
     if (order.paymentPaidAt) return NextResponse.json({ error: "Pedido já pago" }, { status: 400 });
 
-    const client = new MercadoPagoConfig({ accessToken: ACCESS_TOKEN });
+    const accessToken =
+      order.franchisee?.mpAccessToken ||
+      process.env.MP_ACCESS_TOKEN ||
+      process.env.MERCADO_PAGO_ACCESS_TOKEN ||
+      process.env.MERCADOPAGO_ACCESS_TOKEN ||
+      "";
+
+    if (!accessToken) {
+      return NextResponse.json(
+        { error: "Credenciais do Mercado Pago não configuradas nesta loja. Conecte sua conta do Mercado Pago nas configurações." },
+        { status: 400 }
+      );
+    }
+
+    const client = new MercadoPagoConfig({ accessToken });
     const payment = new Payment(client);
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos

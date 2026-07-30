@@ -3,7 +3,11 @@
  */
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
-const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || "";
+const ACCESS_TOKEN =
+  process.env.MP_ACCESS_TOKEN ||
+  process.env.MERCADO_PAGO_ACCESS_TOKEN ||
+  process.env.MERCADOPAGO_ACCESS_TOKEN ||
+  "";
 const FIREHUB_CARD_FEE_PCT = 1.0; // 1% de margem
 
 export interface MpPaymentResult {
