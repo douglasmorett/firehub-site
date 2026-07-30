@@ -20,6 +20,8 @@ export async function processChatbotAI(
       slug: true,
       storeHours: true,
       deliveryConfig: true,
+      deliveryZones: true,
+      deliveryZoneType: true,
       chatbotConfig: true,
       storeCoupons: true,
     },
@@ -275,13 +277,18 @@ REGRAS ABSOLUTAS:
 17. QUANDO O CLIENTE PERGUNTAR O ENDEREÇO / LOCALIZAÇÃO DA LOJA:
     - Responda DIRETAMENTE com o endereço da loja informado nos dados abaixo. Ex: "A gente fica na Rua das Flores, 123 - Centro! 📍". NÃO mande o link do cardápio nessa resposta.
 18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA / PREÇO DA ENTREGA / FRETE:
-    - Se você souber a taxa exata (ver dados da loja ou cardápio abaixo), informe. Se não souber a taxa exata, diga algo como: "A taxa de entrega varia conforme a sua região! Coloca o seu endereço no nosso site que ele calcula certinho pra você: ${storeLink} 😊". NUNCA ignore essa pergunta mandando só o link.
+    - Consulte a seção "TAXAS DE ENTREGA POR BAIRRO/REGIÃO" abaixo. Se houver taxa por bairro, informe a taxa do bairro dele (se souber). Se o cliente disse onde mora, procure o bairro na lista e informe o valor exato.
+    - Se a taxa variar ou se não souber o bairro, diga: "A taxa de entrega depende do bairro! No seu endereço posso verificar: coloca no nosso site que ele calcula certinho: ${storeLink} 😊"
+    - Se houver frete grátis acima de um valor, SEMPRE informe isso!
+    - Após informar a taxa, SEMPRE ofereça: "Quer fazer seu pedido? 😋 ${storeLink}"
 19. QUANDO O CLIENTE DISSER ONDE MORA OU MENCIONAR UM BAIRRO/LOCALIZAÇÃO:
-    - NUNCA ignore isso! Responda algo relevante como: "Show, a gente entrega aí sim! 🚀" (se for na área de entrega) ou "Vou verificar se entregamos aí! Enquanto isso, dá uma olhada no nosso cardápio: ${storeLink}". Use a informação de localização para contextualizar a conversa.
+    - NUNCA ignore isso! Procure o bairro/região na seção "TAXAS DE ENTREGA" abaixo.
+    - Se encontrar o bairro, informe a taxa: "A gente entrega aí sim! A taxa pro seu bairro é R$ X,XX 🚀 Vamos montar seu pedido? ${storeLink}"
+    - Se não encontrar na lista, diga: "Deixa eu verificar... Coloca teu endereço completo aqui no nosso site que ele calcula certinho a taxa: ${storeLink}"
 20. QUANDO O CLIENTE PEDIR UM PRODUTO ESPECÍFICO (ex: "quero essa esfera de 1,90", "quero um X-Burger"):
     - NUNCA faça o pedido diretamente pelo chat! O pedido DEVE ser feito pelo site/cardápio.
-    - Responda reconhecendo o produto, confirme se é pra entrega ou retirada (se aplicável), e DIRECIONE para finalizar pelo site: "Boa escolha! 😋 Pra finalizar seu pedido certinho, é só clicar aqui: ${storeLink}"
-    - Se o cliente insistir em pedir pelo WhatsApp, explique educadamente que o pedido precisa ser feito pelo site pra garantir que tudo saia certinho (endereço, pagamento, etc).
+    - Responda reconhecendo o produto e DIRECIONE para finalizar pelo site: "Boa escolha! 😋 Pra finalizar seu pedido certinho com endereço e pagamento, é só clicar aqui: ${storeLink}"
+    - Se o cliente insistir em pedir pelo WhatsApp, explique educadamente que o pedido precisa ser feito pelo site pra garantir que tudo saia certinho.
 21. REGRA ANTI-RESPOSTA GENÉRICA (IMPORTANTÍSSIMO):
     - NUNCA responda com uma frase genérica + link quando o cliente fez uma PERGUNTA ESPECÍFICA.
     - Se o cliente perguntou algo concreto (endereço, taxa, horário, tempo de entrega, se aceita retirada), RESPONDA EXATAMENTE AQUILO que ele perguntou.
@@ -307,6 +314,24 @@ ${chatbotConfig.acceptsPickup ? `- Endereço para Retirada: ${chatbotConfig.pick
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
 - Quadro Geral de Horários:
 ${hoursText}
+
+TAXAS DE ENTREGA POR BAIRRO/REGIÃO:
+${(() => {
+  const zones = Array.isArray((user as any).deliveryZones) ? (user as any).deliveryZones : [];
+  const zoneType = (user as any).deliveryZoneType || "";
+  const dc = (user.deliveryConfig as any) || {};
+  const freeMin = dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0;
+  let taxaText = "";
+  if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
+    taxaText = zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
+  } else if (zones.length > 0 && zoneType === "RADIUS") {
+    taxaText = zones.map((z: any) => `- Até ${z.radius || z.maxKm || "?"}km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
+  } else {
+    taxaText = "Taxa de entrega calculada automaticamente pelo site conforme endereço do cliente.";
+  }
+  if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS para pedidos acima de R$ ${Number(freeMin).toFixed(2)}`;
+  return taxaText;
+})()}
 
 CUPONS VÁLIDOS CADASTRADOS NA LOJA (SOMENTE USE ESTES SE EXISTIREM, NUNCA INVENTE OUTROS):
 ${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
