@@ -278,6 +278,9 @@ DADOS DA LOJA:
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio: ${storeLink}
 - Tempo Médio de Entrega da Loja: 45 a 60 minutos
+- Aceita Retirada no Balcão: ${chatbotConfig.acceptsPickup ? "SIM" : "NÃO"}
+${chatbotConfig.acceptsPickup ? `- Endereço para Retirada: ${chatbotConfig.pickupAddress || user.storeAddress || user.city || "Mesmo endereço da loja"}
+- IMPORTANTE: Quando o cliente perguntar sobre retirada, buscar no balcão, ou pegar na loja, informe que SIM, aceita retirada e forneça o endereço completo de retirada acima.` : `- IMPORTANTE: A loja NÃO aceita retirada no balcão. Se o cliente perguntar sobre retirada/buscar na loja, informe educadamente que só fazem entrega (delivery) e envie o link do cardápio.`}
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
 - Quadro Geral de Horários:
 ${hoursText}

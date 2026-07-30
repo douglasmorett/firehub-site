@@ -1976,6 +1976,64 @@ export default function ChatbotHubClient() {
               </div>
             </div>
 
+            {/* ACEITA RETIRADA NO BALCÃO */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>
+                    🏪 Aceita Retirada no Balcão?
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px" }}>
+                    Se marcado como &quot;SIM&quot;, quando o cliente perguntar sobre retirada, o robô informará o endereço da sua loja e que aceita retirada no local.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ acceptsPickup: true })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.acceptsPickup ? "#16A34A" : "#E2E8F0",
+                      color: config.acceptsPickup ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ acceptsPickup: false })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.acceptsPickup === false || !config.acceptsPickup ? "#DC2626" : "#E2E8F0",
+                      color: config.acceptsPickup === false || !config.acceptsPickup ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    NÃO
+                  </button>
+                </div>
+              </div>
+
+              {config.acceptsPickup && (
+                <div style={{ marginTop: "10px" }}>
+                  <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    📍 Endereço para Retirada (se diferente do endereço cadastrado):
+                  </label>
+                  <input
+                    type="text"
+                    value={config.pickupAddress || ""}
+                    onChange={(e) => setConfig((prev: any) => ({ ...prev, pickupAddress: e.target.value }))}
+                    onBlur={() => handleSaveConfig({ pickupAddress: config.pickupAddress || "" })}
+                    placeholder="Ex: Rua das Flores, 123 - Centro (deixe vazio para usar o endereço da loja)"
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: "8px",
+                      border: "1px solid #CBD5E1", fontSize: "0.82rem", boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* INSTRUÇÕES CUSTOMIZADAS */}
             <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
               Instruções Especiais da Sua Loja (Opcional):
