@@ -24,7 +24,7 @@ export async function GET() {
   });
 
   // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
-  let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, total: 0 };
+  let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, total: 0, ifoodCoupons: 0 };
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
@@ -64,6 +64,11 @@ export async function GET() {
         expected.credit += val;
       }
       expected.total += val;
+
+      // Somar desconto custeado pelo iFood (cupons iFood) — apenas informativo
+      if (o.discountIfood && o.discountIfood > 0) {
+        expected.ifoodCoupons += o.discountIfood;
+      }
     }
     // Adicionar o troco inicial ao dinheiro esperado
     expected.cash += openSession.openingAmount;

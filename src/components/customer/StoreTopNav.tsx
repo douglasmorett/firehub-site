@@ -481,6 +481,17 @@ export default function StoreTopNav({
                         </td>
                       </tr>
                     ))}
+                    {(expected.ifoodCoupons || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF7ED" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#EA580C" }}>🔴 iFood (Cupons)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#EA580C", fontWeight:700 }}>{fmt(expected.ifoodCoupons)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#FED7AA", border:"1.5px solid #FDBA74", fontSize:"0.78rem", textAlign:"center", color:"#9A3412", fontWeight:700 }}>
+                            🔒 {fmt(expected.ifoodCoupons)}
+                          </span>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                   <tfoot>
                     <tr style={{ background: Math.abs(totalActual - expected.total) < 0.01 ? "#F0FDF4" : "#FEF2F2" }}>
