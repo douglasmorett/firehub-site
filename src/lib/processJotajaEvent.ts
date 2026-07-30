@@ -333,6 +333,7 @@ export async function processJotajaEvent(
           changeAmount,
           customerCpfCnpj,
           discountTotal: discountTotal > 0 ? discountTotal : null,
+          discountIfood: discountPlatform > 0 ? discountPlatform : (discountTotal > discountMerchant ? discountTotal - discountMerchant : null),
           discountMerchant: discountMerchant > 0 ? discountMerchant : null,
           discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
           source: "JOTAJA",

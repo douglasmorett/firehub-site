@@ -32,12 +32,19 @@ export async function GET() {
         status: { notIn: ["CANCELADO"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true },
+      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true },
     });
 
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
-      const val = (o.totalAmount || 0) + (o.deliveryFee || 0) + (o.discountIfood || 0);
+      const channelDisc = (o.discountIfood && o.discountIfood > 0)
+        ? o.discountIfood
+        : (o.discountTotal && o.discountMerchant && o.discountTotal > o.discountMerchant
+            ? o.discountTotal - o.discountMerchant
+            : (o.notes?.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i)?.[1]
+                ? parseFloat(o.notes.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i)![1].replace(",", "."))
+                : 0));
+      const val = (o.totalAmount || 0) + channelDisc;
       const src = ((o as any).source || "").toUpperCase();
       const isPaidOnline = !!(o.paymentPaidAt || o.gatewayProvider);
 

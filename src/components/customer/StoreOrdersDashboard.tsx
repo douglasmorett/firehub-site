@@ -1763,14 +1763,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // Resumo de vendas
   const allInRange = orders.filter(o => { const d = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt); return d >= fromDate && d <= toDate; });
   const resumo = {
-    pendentes: allInRange.filter(o => o.status === "NOVO"),
+    pendentes: allInRange.filter(o => o.status === "AGUARDANDO_PAGAMENTO"),
+    novos: allInRange.filter(o => o.status === "NOVO"),
     preparo: allInRange.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO"),
     transporte: allInRange.filter(o => o.status === "SAIU_ENTREGA"),
     entregues: allInRange.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO"),
     cancelados: allInRange.filter(o => o.status === "CANCELADO"),
     total: allInRange.filter(o => o.status !== "CANCELADO"),
   };
-  const sumVal = (arr: any[]) => arr.reduce((s, o) => s + o.totalAmount + (o.discountIfood ?? 0), 0);
+
+  const getChannelDiscount = (o: any): number => {
+    if (typeof o.discountIfood === "number" && o.discountIfood > 0) return o.discountIfood;
+    const totDisc = Number(o.discountTotal || 0);
+    const merchDisc = Number(o.discountMerchant || 0);
+    if (totDisc > merchDisc) return totDisc - merchDisc;
+    if (o.notes) {
+      const match = o.notes.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i);
+      if (match && match[1]) return parseFloat(match[1].replace(",", "."));
+    }
+    return 0;
+  };
+
+  const sumVal = (arr: any[]) => arr.reduce((s, o) => s + (Number(o.totalAmount) || 0) + getChannelDiscount(o), 0);
   const fmtR = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
 
 
@@ -2699,7 +2713,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
             {[
               { label: `PAGAMENTOS PENDENTES (${resumo.pendentes.length})`, val: sumVal(resumo.pendentes), bold: false, red: false },
-              { label: `NOVOS PEDIDOS (${resumo.pendentes.length})`, val: sumVal(resumo.pendentes), bold: false, red: false },
+              { label: `NOVOS PEDIDOS (${resumo.novos.length})`, val: sumVal(resumo.novos), bold: false, red: false },
               { label: `EM PREPARO (${resumo.preparo.length})`, val: sumVal(resumo.preparo), bold: false, red: false },
               { label: `EM TRANSPORTE (${resumo.transporte.length})`, val: sumVal(resumo.transporte), bold: false, red: false },
               { label: `ENTREGUES (${resumo.entregues.length})`, val: sumVal(resumo.entregues), bold: false, red: false },
