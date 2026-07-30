@@ -58,7 +58,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const [customerAddress, setCustomerAddress] = useState("");
   const [deliveryType, setDeliveryType] = useState("DELIVERY");
 
-  const hasOnlinePayment = franchisee.hasOnlinePayment ?? !!(franchisee.mpAccessToken || franchisee.mpSellerId);
+  const hasOnlinePayment = franchisee.hasOnlinePayment !== false;
   const [paymentMethod, setPaymentMethod] = useState(() => (hasOnlinePayment ? "PIX" : "DINHEIRO"));
   
   const [notes, setNotes] = useState("");

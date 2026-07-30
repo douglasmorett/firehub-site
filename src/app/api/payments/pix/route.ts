@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     if (!accessToken) {
       return NextResponse.json(
-        { error: "Credenciais do Mercado Pago não configuradas nesta loja. Conecte sua conta do Mercado Pago nas configurações." },
+        { error: "Não foi possível gerar o PIX no momento. Por favor, tente novamente ou escolha pagamento na entrega." },
         { status: 400 }
       );
     }
