@@ -160,27 +160,40 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           </HideOnCompras>
         )}
 
-        {/* Banner: BOLETO VENCIDO — sistema bloqueado */}
+        {/* Tela de Bloqueio por Inadimplência — permite o login, mas bloqueia o uso até pagar */}
         {isBlocked && (
           <div style={{
-            background: "linear-gradient(135deg, #DC2626, #B91C1C)",
-            color: "white", padding: "14px 1.5rem", textAlign: "center",
-            fontSize: ".9rem", fontWeight: 700,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
+            position: "fixed", top: 60, left: 0, right: 0, bottom: 0,
+            background: "rgba(15, 23, 42, 0.85)", backdropFilter: "blur(8px)",
+            zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem"
           }}>
-            <span>🔒 Seu sistema está bloqueado — pagamento de R$ {pendingPayment!.amount.toFixed(2).replace(".", ",")} vencido</span>
-            {pendingPayment!.url && (
-              <a href={pendingPayment!.url} target="_blank" rel="noopener noreferrer" style={{
-                background: "#fff", color: "#DC2626", padding: "6px 20px",
-                borderRadius: 8, fontWeight: 800, fontSize: ".85rem", textDecoration: "none",
-              }}>
-                ⚡ Pagar e Desbloquear
-              </a>
-            )}
+            <div style={{ background: "#fff", borderRadius: 20, padding: "2.5rem", maxWidth: 500, width: "100%", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)" }}>
+              <div style={{ fontSize: "3.5rem", marginBottom: "0.75rem" }}>🔒</div>
+              <h2 style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.5rem" }}>Sua conta está bloqueada</h2>
+              <p style={{ color: "#64748B", fontSize: "0.92rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
+                O prazo de 10 dias para pagamento da fatura do mês expirou. Para liberar o sistema imediatamente, efetue o pagamento do valor pendente.
+              </p>
+
+              <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>
+                <div style={{ fontSize: "0.8rem", color: "#991B1B", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Para liberar pague o valor de:</div>
+                <div style={{ fontSize: "2.4rem", fontWeight: 900, color: "#DC2626", marginTop: 4 }}>
+                  R$ {pendingPayment!.amount.toFixed(2).replace(".", ",")}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <a href="/store/financeiro#fatura" style={{ width: "100%", background: "#DC2626", color: "#fff", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, textDecoration: "none", display: "inline-block" }}>
+                  ⚡ Pagar e Liberar Conta →
+                </a>
+                <a href="https://wa.me/5521970067196?text=Preciso+de+ajuda+com+minha+conta+bloqueada" target="_blank" rel="noopener noreferrer" style={{ color: "#64748B", fontSize: "0.85rem", textDecoration: "underline" }}>
+                  Falar com suporte via WhatsApp
+                </a>
+              </div>
+            </div>
           </div>
         )}
 
-        <main style={{ flex: 1, opacity: isBlocked ? 0.4 : 1, pointerEvents: isBlocked ? "none" : "auto" }}>
+        <main style={{ flex: 1 }}>
           {children}
         </main>
 
