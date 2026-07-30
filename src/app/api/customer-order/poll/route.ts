@@ -594,7 +594,8 @@ export async function GET(req: NextRequest) {
       OR: [
         { franchiseeId: { in: validFranchiseeIds } },
         { franchisee: { ownerId: { in: validFranchiseeIds } } }
-      ]
+      ],
+      status: { notIn: ["AGUARDANDO_PAGAMENTO"] }
     },
     include: {
       items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },

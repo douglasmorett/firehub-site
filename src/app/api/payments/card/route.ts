@@ -56,9 +56,13 @@ export async function POST(req: NextRequest) {
         gatewayPaymentId: result.paymentId,
         pagarmeMethod:    "credit_card",
         pagarmeStatus:    result.status,
-        ...(paid ? { paymentPaidAt: new Date(), status: "CONFIRMADO" } : {}),
       },
     });
+
+    if (paid) {
+      const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
+      await confirmOrderPayment(orderId);
+    }
 
     return NextResponse.json({
       paid,

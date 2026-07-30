@@ -35,27 +35,8 @@ export async function GET(req: NextRequest) {
       const paid = status === "PAID";
 
       if (paid) {
-        const result = await prisma.customerOrder.updateMany({
-          where: { id: orderId, paymentPaidAt: null }, // atômico — só 1 chamada vence
-          data: { paymentPaidAt: new Date(), status: "CONFIRMADO", pagarmeStatus: "paid" },
-        });
-        if (result.count === 0) {
-          console.log(`[Payment Status] Celcoin: pedido ${orderId} já marcado como pago por outra instância`);
-        }
-
-        // === BILLING OFFSET: Abater taxa da fatura pendente ===
-        try {
-          const orderForBilling = await prisma.customerOrder.findUnique({
-            where: { id: orderId },
-            select: { franchiseeId: true, totalAmount: true },
-          });
-          if (orderForBilling?.franchiseeId) {
-            const { trackSaleForBilling } = await import("@/lib/billing");
-            await trackSaleForBilling(orderForBilling.franchiseeId);
-          }
-        } catch (billingErr: any) {
-          console.error("[Payment Status] Billing offset error:", billingErr.message);
-        }
+        const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
+        await confirmOrderPayment(orderId);
       }
 
       return NextResponse.json({ paid, failed: status === "EXPIRED", status });
@@ -65,27 +46,8 @@ export async function GET(req: NextRequest) {
       const result = await checkMpPaymentStatus(order.gatewayPaymentId);
 
       if (result.paid) {
-        const updated = await prisma.customerOrder.updateMany({
-          where: { id: orderId, paymentPaidAt: null }, // atômico — só 1 chamada vence
-          data: { paymentPaidAt: new Date(), status: "CONFIRMADO", pagarmeStatus: "approved" },
-        });
-        if (updated.count === 0) {
-          console.log(`[Payment Status] MP: pedido ${orderId} já marcado como pago por outra instância`);
-        }
-
-        // === BILLING OFFSET: Abater taxa da fatura pendente ===
-        try {
-          const orderForBilling = await prisma.customerOrder.findUnique({
-            where: { id: orderId },
-            select: { franchiseeId: true, totalAmount: true },
-          });
-          if (orderForBilling?.franchiseeId) {
-            const { trackSaleForBilling } = await import("@/lib/billing");
-            await trackSaleForBilling(orderForBilling.franchiseeId);
-          }
-        } catch (billingErr: any) {
-          console.error("[Payment Status] Billing offset error:", billingErr.message);
-        }
+        const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
+        await confirmOrderPayment(orderId);
       }
 
       return NextResponse.json(result);

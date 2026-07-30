@@ -92,8 +92,19 @@ export async function POST(req: Request) {
 
     const finalTotal = Math.max(0, totalAmount - discount + fee);
 
-    // Status inicial: auto-aceitar ou aguardar
-    const initialStatus = franchisee.autoAcceptOrders ? "ACEITO" : "NOVO";
+    const pmUpper = (paymentMethod || "").toUpperCase().trim();
+    const isOnlinePayment = pmUpper.includes("ONLINE") || pmUpper === "PIX" || pmUpper === "PIX_ONLINE" || pmUpper === "CREDITO_ONLINE" || pmUpper === "DEBITO_ONLINE";
+
+    // Se o pagamento for ONLINE (Pix / Cartão Online), o pedido fica travado em AGUARDANDO_PAGAMENTO
+    // e NÃO entra na cozinha (kdsStage: null) até que o pagamento seja 100% verificado e aprovado!
+    const initialStatus = isOnlinePayment
+      ? "AGUARDANDO_PAGAMENTO"
+      : franchisee.autoAcceptOrders
+      ? "ACEITO"
+      : "NOVO";
+
+    const initialKdsStage = isOnlinePayment ? null : "PRODUCTION";
+    const initialKdsProductionAt = isOnlinePayment ? null : new Date();
 
     // Se cupom válido foi aplicado, registra na observação para rastreio de marketing
     let finalNotes = notes || null;
@@ -114,11 +125,41 @@ export async function POST(req: Request) {
         totalAmount: finalTotal,
         deliveryFee: fee,
         status: initialStatus,
-        kdsStage: "PRODUCTION",
-        kdsProductionAt: new Date(),
+        kdsStage: initialKdsStage,
+        kdsProductionAt: initialKdsProductionAt,
         items: { create: orderItems }
       }
     });
+
+    // Se NÃO for pagamento online (ex: dinheiro/maquininha na entrega), envia direto para a fila de impressão da loja!
+    if (!isOnlinePayment) {
+      try {
+        const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
+        const formattedOrder = {
+          id: order.id,
+          dailyOrderNumber: order.id.slice(-4).toUpperCase(),
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          customerAddress: order.customerAddress,
+          deliveryType: order.deliveryType || "DELIVERY",
+          paymentMethod: order.paymentMethod || "Não informado",
+          isPrepaid: false,
+          items: orderItems.map((i: any) => ({
+            name: menuProducts.find(p => p.id === i.menuProductId)?.name || "Item",
+            qty: i.quantity,
+            price: i.price,
+            comboSelections: i.comboSelections,
+          })),
+          totalAmount: finalTotal,
+          deliveryFee: fee,
+          notes: finalNotes,
+          createdAt: order.createdAt.toISOString(),
+        };
+        pushJobToPrintQueue(franchisee.id, formattedOrder, franchisee.storeName || "FIREHUB", "80mm");
+      } catch (errPrint) {
+        console.error("[CustomerOrder] Auto-print error:", errPrint);
+      }
+    }
 
     // Incrementar contador de pedidos (Pay as You Grow)
     await prisma.user.update({
