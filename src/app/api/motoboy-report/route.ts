@@ -89,13 +89,36 @@ export async function GET(req: Request) {
     const deliveryFeeSum = orders.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
     const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
 
-    // Entregas pagas em dinheiro em mãos
-    const cashOrders = orders.filter((o) => {
+    // Classificação de pagamentos recebidos pelo motoboy na entrega vs online
+    let cashCollectedSum = 0, cashOrdersCount = 0;
+    let debitTotal = 0, debitCount = 0;
+    let creditTotal = 0, creditCount = 0;
+    let voucherTotal = 0, voucherCount = 0;
+    let onlineTotal = 0, onlineCount = 0;
+
+    for (const o of orders) {
       const pm = (o.paymentMethod || "").toUpperCase();
-      return pm === "CASH" || pm === "DINHEIRO";
-    });
-    const cashCollectedSum = cashOrders.reduce((s, o) => s + o.totalAmount, 0);
-    const cashOrdersCount = cashOrders.length;
+      if (pm === "CASH" || pm.includes("DINHEIR")) {
+        cashCollectedSum += o.totalAmount;
+        cashOrdersCount++;
+      } else if (pm.includes("DEBIT") || pm.includes("DEBITO") || pm.includes("DÉBITO")) {
+        debitTotal += o.totalAmount;
+        debitCount++;
+      } else if (pm.includes("VOUCHER") || pm.includes("VALE") || pm.includes("VR") || pm.includes("VA")) {
+        voucherTotal += o.totalAmount;
+        voucherCount++;
+      } else if (pm.includes("PIX") || pm.includes("ONLINE") || pm.includes("IFOOD") || pm.includes("PREPAID")) {
+        onlineTotal += o.totalAmount;
+        onlineCount++;
+      } else {
+        // Padrão para cartões de crédito ou máquinas sem especificação
+        creditTotal += o.totalAmount;
+        creditCount++;
+      }
+    }
+
+    const cardPosTotal = debitTotal + creditTotal + voucherTotal;
+    const cardPosCount = debitCount + creditCount + voucherCount;
 
     // Calcular pagamento baseado no tipo
     let dailyTotal = 0;
@@ -148,6 +171,16 @@ export async function GET(req: Request) {
         totalToPay,
         cashCollectedSum,
         cashOrdersCount,
+        debitTotal,
+        debitCount,
+        creditTotal,
+        creditCount,
+        voucherTotal,
+        voucherCount,
+        cardPosTotal,
+        cardPosCount,
+        onlineTotal,
+        onlineCount,
         netSettlement,
         motoboyOwesStore,
         storeOwesMotoboy,

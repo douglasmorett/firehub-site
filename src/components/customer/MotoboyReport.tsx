@@ -60,6 +60,7 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
   const totalPay = report.reduce((s, r) => s + getMotoboyPay(r), 0);
   const totalDeliveries = report.reduce((s, r) => s + r.stats.totalDeliveries, 0);
   const totalCashCollected = report.reduce((s, r) => s + (r.stats.cashCollectedSum || 0), 0);
+  const totalCardPos = report.reduce((s, r) => s + (r.stats.cardPosTotal || 0), 0);
   const totalNetOwedToStore = report.reduce((s, r) => s + (r.stats.motoboyOwesStore || 0), 0);
 
   const PAYMENT_TYPE_LABEL: Record<string, string> = {
@@ -138,21 +139,22 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
       {loaded && !loading && (
         <>
           {/* Totais */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
             {[
-              { label: "Total de Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#3B82F6" },
-              { label: "Taxas/Diárias a Pagar", value: fmt(totalPay), icon: DollarSign, color: "#C62828" },
+              { label: "Total Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#3B82F6" },
+              { label: "Taxas/Diárias", value: fmt(totalPay), icon: DollarSign, color: "#C62828" },
               { label: "Dinheiro em Mãos", value: fmt(totalCashCollected), icon: DollarSign, color: "#D97706" },
-              { label: "Acerto p/ Entregar à Loja", value: fmt(totalNetOwedToStore), icon: DollarSign, color: "#16A34A" },
+              { label: "Maquininhas Cartão", value: fmt(totalCardPos), icon: DollarSign, color: "#6D28D9" },
+              { label: "Entregar à Loja", value: fmt(totalNetOwedToStore), icon: DollarSign, color: "#16A34A" },
             ].map(card => (
-              <div key={card.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 8, background: card.color + "15", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <card.icon size={16} color={card.color} />
+              <div key={card.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: card.color + "15", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <card.icon size={15} color={card.color} />
                   </div>
-                  <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>{card.label}</span>
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>{card.label}</span>
                 </div>
-                <div style={{ fontWeight: 900, fontSize: "1.25rem", color: card.color }}>{card.value}</div>
+                <div style={{ fontWeight: 900, fontSize: "1.15rem", color: card.color }}>{card.value}</div>
               </div>
             ))}
           </div>
@@ -199,6 +201,46 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
                       <div style={{ fontSize: "0.7rem", color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>{s.label}</div>
                     </div>
                   ))}
+                </div>
+
+                {/* Conferência de Cartões & Maquininha do Motoboy */}
+                <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
+                    <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#1E293B", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+                      💳 Conferência da Maquininha ({r.stats.cardPosCount || 0} vendas)
+                    </span>
+                    <span style={{ fontWeight: 900, fontSize: "0.95rem", color: "#6D28D9" }}>
+                      Total Máquina: {fmt(r.stats.cardPosTotal || 0)}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}>
+                      <div style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>💳 Débito</div>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>{fmt(r.stats.debitTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{r.stats.debitCount || 0} pedido(s)</div>
+                    </div>
+
+                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}>
+                      <div style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>💳 Crédito</div>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>{fmt(r.stats.creditTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{r.stats.creditCount || 0} pedido(s)</div>
+                    </div>
+
+                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}>
+                      <div style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>🎟️ Voucher (Vale)</div>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>{fmt(r.stats.voucherTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{r.stats.voucherCount || 0} pedido(s)</div>
+                    </div>
+
+                    {r.stats.onlineTotal > 0 && (
+                      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "8px 10px" }}>
+                        <div style={{ fontSize: "0.7rem", color: "#166534", fontWeight: 600 }}>⚡ Pago Online</div>
+                        <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#15803D" }}>{fmt(r.stats.onlineTotal)}</div>
+                        <div style={{ fontSize: "0.68rem", color: "#166534" }}>{r.stats.onlineCount} pedido(s) site/app</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Fechamento / Acerto em Dinheiro com a Loja */}
