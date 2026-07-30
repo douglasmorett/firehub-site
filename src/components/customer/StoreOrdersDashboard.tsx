@@ -45,6 +45,56 @@ const cleanAddress = (addr: string | null) => {
   return addr.replace(/\s*-\s*null\s*$/gi, "").replace(/\s*-\s*undefined\s*$/gi, "").trim();
 };
 
+const cleanAddressForMap = (addr: string | null, city?: string): string => {
+  if (!addr) return city || "";
+  let clean = cleanAddress(addr).trim();
+
+  // Remove pontos e traços finais desnecessários
+  clean = clean.replace(/[\.,\s\-]+$/, "");
+
+  // Separa por traços ou vírgulas
+  const parts = clean.split(/[-–—,]/).map(p => p.trim()).filter(Boolean);
+
+  const cleanParts: string[] = [];
+
+  for (const part of parts) {
+    // Filtra pontos de referência e complementos que impedem a localização no Google Maps
+    if (
+      /^(ref|referencia|referência|ponto de ref|ponto de referencia|ponto de referência|comp|complemento|ao lado|proximo|próximo|prox|apto|apt|ap|bloco|bl|qd|lote|lt|fundos|frente|casa\s*\d+)/i.test(part) ||
+      /^(ref|referencia|referência|comp|complemento)\s*:/i.test(part) ||
+      /^ao lado d/i.test(part) ||
+      /^pr[óo]ximo/i.test(part)
+    ) {
+      continue;
+    }
+
+    // Normaliza número (ex: n51, N51, nº 51 -> 51)
+    let fixedPart = part.replace(/\bn[ºo]?\s*(\d+)\b/gi, "$1");
+
+    // Expande abreviações comuns para melhorar a precisão no Google Maps
+    fixedPart = fixedPart
+      .replace(/\bR\.\s*/gi, "Rua ")
+      .replace(/\bAv\.\s*/gi, "Avenida ")
+      .replace(/\bRes\.\s*/gi, "Residencial ")
+      .replace(/\bTv\.\s*/gi, "Travessa ")
+      .replace(/\bEst\.\s*/gi, "Estrada ")
+      .replace(/\bPq\.\s*/gi, "Parque ");
+
+    if (fixedPart.trim()) {
+      cleanParts.push(fixedPart.trim());
+    }
+  }
+
+  let result = cleanParts.join(", ");
+
+  // Garante que a cidade está no parâmetro de busca se informado
+  if (city && !result.toLowerCase().includes(city.toLowerCase())) {
+    result += `, ${city}`;
+  }
+
+  return result || clean;
+};
+
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
   // Apenas considera Motoboy iFood se houver motorista/status do iFood atribuído OU se for estritamente de logística parceira contratada
@@ -1773,11 +1823,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       {/* DELIVERY INFO & ROUTE MAP MODAL */}
       {deliveryInfoModalOrder && (() => {
         const order = deliveryInfoModalOrder;
-        const storeOriginAddress = user?.storeAddress || user?.address || (user?.city ? `São Francisco, ${user.city}` : "Sua Loja");
-        const customerDestAddress = cleanAddress(order.customerAddress) || "Endereço do Cliente";
+        const storeOriginAddress = user?.storeAddress || user?.address || (user?.city ? `São Francisco, ${user.city}` : "Sua Loja");
+        const rawCustomerAddress = cleanAddress(order.customerAddress) || "Endereço do Cliente";
 
-        const originFull = storeOriginAddress.includes(",") ? storeOriginAddress : `${storeOriginAddress}, ${user?.city || ""}`.trim();
-        const destFull = customerDestAddress.includes(",") ? customerDestAddress : `${customerDestAddress}, ${user?.city || ""}`.trim();
+        const originFull = cleanAddressForMap(storeOriginAddress, user?.city);
+        const destFull = cleanAddressForMap(rawCustomerAddress, user?.city || "Rio das Ostras");
 
         // Google Maps Directions Iframe URL (saddr = start/origem, daddr = destination/destino) -> gera a linha azul da rota e tempo estimado
         const mapEmbedUrl = `https://maps.google.com/maps?saddr=${encodeURIComponent(originFull)}&daddr=${encodeURIComponent(destFull)}&output=embed`;
@@ -1805,7 +1855,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 background: "#fff",
                 borderRadius: "16px",
                 width: "100%",
-                maxWidth: "520px",
+                maxWidth: "540px",
                 maxHeight: "92vh",
                 overflowY: "auto",
                 boxShadow: "0 25px 60px rgba(0,0,0,0.35)",
@@ -1884,13 +1934,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#2563EB", marginBottom: "6px" }}>
                     Rota de entrega
                   </div>
-                  <div style={{ fontSize: "0.82rem", color: "#475569", lineHeight: "1.5" }}>
-                    <span style={{ color: "#2563EB", fontWeight: 700 }}>↗ De</span> {originFull} <span style={{ color: "#0F172A", fontWeight: 700 }}>para</span> {destFull}.
+                  <div style={{ fontSize: "0.84rem", color: "#334155", lineHeight: "1.5", background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div><span style={{ color: "#2563EB", fontWeight: 700 }}>↗ De:</span> {originFull}</div>
+                    <div style={{ marginTop: "4px" }}><span style={{ color: "#059669", fontWeight: 700 }}>📍 Para:</span> {rawCustomerAddress}</div>
+                    {destFull !== rawCustomerAddress && (
+                      <div style={{ marginTop: "4px", fontSize: "0.78rem", color: "#64748B" }}>
+                        <span style={{ fontWeight: 700 }}>🗺️ Busca do Mapa:</span> {destFull}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Google Maps / Embed Rota com linha azul */}
-                <div style={{ marginBottom: "16px", borderRadius: "12px", overflow: "hidden", border: "1px solid #CBD5E1", height: "300px", background: "#E2E8F0" }}>
+                <div style={{ marginBottom: "14px", borderRadius: "12px", overflow: "hidden", border: "1px solid #CBD5E1", height: "280px", background: "#E2E8F0" }}>
                   <iframe
                     title="Mapa de Rota de Entrega"
                     width="100%"
@@ -1900,6 +1956,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     src={mapEmbedUrl}
                     allowFullScreen
                   />
+                </div>
+
+                {/* Botões de GPS Direto (Google Maps / Waze) */}
+                <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+                  <a
+                    href={googleMapsDirUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ flex: 1, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 12px", borderRadius: "8px", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}
+                  >
+                    🗺️ Abrir no Google Maps
+                  </a>
+                  <a
+                    href={wazeNavUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ flex: 1, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 12px", borderRadius: "8px", background: "#0284C7", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}
+                  >
+                    🧭 Abrir no Waze
+                  </a>
                 </div>
 
                 {/* Botões de Ação */}

@@ -200,16 +200,33 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === "finish_order") {
-    // Finalização concluída no KDS: marca kdsStage como FINISHED (exibe "✅ Pronto Cozinha" no Kanban)
-    // O status principal permanece para ser alterado manualmente ao selecionar o motoboy no painel de pedidos.
+    const isPickup = order.deliveryType !== "DELIVERY";
+    const updateData: any = {
+      kdsStage: "FINISHED",
+      kdsFinishingAt: new Date(),
+      kdsStationId: null,
+    };
+
+    // Para pedidos de RETIRADA, avança o status automaticamente para SAIU_ENTREGA (Pronto)
+    // assim o pedido sai da aba 'Em Preparo' e entra direto na aba 'Em Transporte/Finalizados' sem clique manual.
+    if (isPickup) {
+      updateData.status = "SAIU_ENTREGA";
+    }
+
     await prisma.customerOrder.update({
       where: { id: orderId },
-      data: {
-        kdsStage: "FINISHED",
-        kdsFinishingAt: new Date(),
-        kdsStationId: null,
-      },
+      data: updateData,
     });
+
+    // Notificação WhatsApp automática ao dar pronto para retirada no KDS
+    if (isPickup) {
+      try {
+        const { sendOrderNotification } = await import("@/lib/order-notifications");
+        sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+      } catch (errWp) {
+        console.warn("[KDS API] Erro ao disparar notificação WhatsApp:", errWp);
+      }
+    }
 
     return NextResponse.json({ success: true, stage: "FINISHED" });
   }

@@ -263,6 +263,24 @@ export async function PUT(req: Request) {
     data: updateData
   });
 
+  // ── Notificações via WhatsApp ──
+  try {
+    const { sendOrderNotification } = await import("@/lib/order-notifications");
+    if (status === "SAIU_ENTREGA" || status === "SAIU_PARA_ENTREGA") {
+      if (order.deliveryType === "DELIVERY") {
+        sendOrderNotification(orderId, "SAIU_ENTREGA").catch(() => {});
+      } else {
+        sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+      }
+    } else if (status === "PRONTO") {
+      sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+    } else if (status === "CANCELADO") {
+      sendOrderNotification(orderId, "CANCELADO", { cancelReason }).catch(() => {});
+    }
+  } catch (errWp) {
+    console.warn("[Status API] Erro ao disparar notificação WhatsApp:", errWp);
+  }
+
   // Estorno Automático para Pagamentos Online no Cancelamento
   if (status === "CANCELADO" && (order as any).paymentId) {
     try {

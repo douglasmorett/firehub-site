@@ -126,29 +126,11 @@ export async function POST(req: Request) {
       data: { storeOrderCount: { increment: 1 } }
     });
 
-    // Se a confirmação automática por WhatsApp estiver ativada (padrão true), envia detalhes do pedido
-    const franchiseeConfig = await prisma.user.findUnique({
-      where: { id: franchisee.id },
-      select: { chatbotConfig: true }
-    });
-    const chatbotConfig = (franchiseeConfig?.chatbotConfig as any) || {};
-    if (chatbotConfig.sendOrderConfirmation !== false && customerPhone) {
-      try {
-        const { sendEvolutionMessage } = await import("@/lib/whatsapp-evolution");
-        const itemsSummary = orderItems.map((i: any) => {
-          const prod = menuProducts.find(p => p.id === i.menuProductId);
-          return `${i.quantity}x ${prod?.name || "Item"}`;
-        }).join(", ");
-
-        const msgConfirm = `🎉 Pedido #${order.id.slice(-5).toUpperCase()} Confirmado!\n\nOlá, ${customerName}! Recebemos seu pedido:\n📝 Itens: ${itemsSummary}\n💰 Total: R$ ${finalTotal.toFixed(2).replace(".", ",")}\n🛵 Entrega: ${deliveryType === "DELIVERY" ? (customerAddress || "Endereço cadastrado") : "Retirada na Loja"}\n\nQualquer dúvida sobre seu pedido é só responder por aqui! 😊`;
-        
-        sendEvolutionMessage(franchisee.id, customerPhone, msgConfirm).catch(err =>
-          console.warn("[CustomerOrder] Erro ao enviar confirmação WhatsApp:", err)
-        );
-      } catch (errWp) {
-        console.warn("[CustomerOrder] Aviso envio WhatsApp:", errWp);
-      }
-    }
+    // Envia notificação WhatsApp de confirmação de pedido recebido
+    const { sendOrderNotification } = await import("@/lib/order-notifications");
+    sendOrderNotification(order.id, "CREATED").catch(err =>
+      console.warn("[CustomerOrder] Erro ao enviar notificação CREATED:", err)
+    );
 
     // Se auto-aceito, já contabiliza no faturamento e deduz estoque imediatamente
     if (franchisee.autoAcceptOrders) {
