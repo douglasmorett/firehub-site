@@ -473,14 +473,55 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             </span>
           </div>
 
-          {/* Badge Pronto Cozinha se aplicável */}
-          {order.kdsStage === "FINISHED" && (
+          {/* Badge Pronto Cozinha / Botão Marcar como Pronto Cozinha */}
+          {order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
             <div style={{ marginBottom: "4px" }}>
-              <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block" }}>
+              <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block", border: "1px solid #86EFAC" }}>
                 ✅ Pronto Cozinha
               </span>
             </div>
-          )}
+          ) : order.status !== "CANCELADO" && order.status !== "ENCERRADO" ? (
+            <div style={{ marginBottom: "4px" }}>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const res = await fetch("/api/kds", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ orderId: order.id, action: "finish_order" }),
+                    });
+                    if (res.ok) {
+                      setOrders((prev: any[]) => prev.map((o: any) => o.id === order.id ? { ...o, kdsStage: "FINISHED" } : o));
+                    } else {
+                      const d = await res.json();
+                      alert("❌ " + (d.error || "Erro ao atualizar"));
+                    }
+                  } catch {
+                    alert("❌ Erro ao conectar.");
+                  }
+                }}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: "6px",
+                  fontSize: "0.68rem",
+                  fontWeight: 800,
+                  background: "#FEF3C7",
+                  color: "#B45309",
+                  border: "1.5px solid #FCD34D",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontFamily: "inherit",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                }}
+                title="Clique para marcar este pedido como pronto na cozinha"
+              >
+                👨‍🍳 Marcar como Pronto Cozinha
+              </button>
+            </div>
+          ) : null}
 
           {/* Endereço Resumido (Bairro) em caixa verde */}
           {order.customerAddress && (
@@ -772,7 +813,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         p.scheduledDatetime !== n.scheduledDatetime ||
         (p.items?.length || 0) !== (n.items?.length || 0) ||
         p.ifoodDriverStatus !== n.ifoodDriverStatus ||
-        p.ifoodDriverName !== n.ifoodDriverName
+        p.ifoodDriverName !== n.ifoodDriverName ||
+        p.kdsStage !== n.kdsStage
       ) {
         return false;
       }
