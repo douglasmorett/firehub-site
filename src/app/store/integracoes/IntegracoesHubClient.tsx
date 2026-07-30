@@ -6,14 +6,22 @@ export default function IntegracoesHubClient({
   ifoodMerchantId,
   ifoodClientId,
   ifoodWidgetId,
-  userEmail
+  userEmail,
+  mpSellerId: initialMpSellerId,
 }: {
   ifoodMerchantId?: string;
   ifoodClientId?: string;
   ifoodWidgetId?: string;
   userEmail: string;
+  mpSellerId?: string;
 }) {
-  const [activeTab, setActiveTab] = useState<"all" | "whatsapp" | "jotaja" | "ifood">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "whatsapp" | "jotaja" | "ifood" | "pagamentos">("all");
+
+  // Mercado Pago state
+  const [mpConnected, setMpConnected] = useState(!!initialMpSellerId);
+  const [mpSellerId, setMpSellerId] = useState(initialMpSellerId || "");
+  const [mpOnboardingUrl, setMpOnboardingUrl] = useState("");
+  const [mpLoading, setMpLoading] = useState(false);
 
   // WhatsApp state
   const [waConnected, setWaConnected] = useState(false);

@@ -23,10 +23,12 @@ import { calcMensalidade } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 
 export function getCurrentYearMonth(offset = 0): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() + offset);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
+  // Sempre usa fuso horário do Brasil (UTC-3) para garantir que
+  // o fechamento do mês acontece à meia-noite de Brasília, não UTC.
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  now.setMonth(now.getMonth() + offset);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
 }
 

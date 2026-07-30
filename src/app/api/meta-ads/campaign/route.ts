@@ -16,35 +16,32 @@ export async function GET() {
 
   // Indica se a integração Meta ainda não foi configurada no Vercel
   if (!process.env.META_APP_ID) {
-    return NextResponse.json({ campaign: null, needsSetup: true });
+    return NextResponse.json({ campaigns: [], needsSetup: true });
   }
 
-  const campaign = await prisma.metaAdsCampaign.findFirst({
+  // Verifica se o Facebook está conectado
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { metaFbAccessToken: true, metaAdAccountId: true, metaFbPageId: true, metaAdsEnabled: true },
+  });
+
+  const campaigns = await prisma.metaAdsCampaign.findMany({
     where: { franchiseeId },
     orderBy: { createdAt: "desc" },
   });
 
-  if (!campaign) return NextResponse.json({ campaign: null });
-
-  // Busca métricas atualizadas se a campanha está ativa
-  let metrics = {
-    spend: campaign.spend,
-    impressions: campaign.impressions,
-    clicks: campaign.clicks,
-    ordersGenerated: campaign.ordersGenerated,
-  };
-
-  if (campaign.status === "ACTIVE" && campaign.metaCampaignId) {
-    const user = await prisma.user.findUnique({ where: { id: franchiseeId } });
-    if (user?.metaFbAccessToken) {
+  // Busca métricas atualizadas para campanhas ativas
+  for (const campaign of campaigns) {
+    if (campaign.status === "ACTIVE" && campaign.metaCampaignId && user?.metaFbAccessToken) {
       try {
         const live = await getCampaignInsights(campaign.metaCampaignId, user.metaFbAccessToken);
-        metrics = {
+        const metrics = {
           spend: (live as any).spend,
           impressions: (live as any).impressions,
           clicks: (live as any).clicks,
           ordersGenerated: (live as any).ordersGenerated ?? (live as any).orders ?? 0,
         };
+        Object.assign(campaign, metrics);
         await prisma.metaAdsCampaign.update({
           where: { id: campaign.id },
           data: { ...metrics, updatedAt: new Date() } as any,
@@ -53,7 +50,12 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ campaign: { ...campaign, ...metrics } });
+  return NextResponse.json({
+    campaigns,
+    connected: Boolean(user?.metaFbAccessToken),
+    hasAdAccount: Boolean(user?.metaAdAccountId),
+    hasPage: Boolean(user?.metaFbPageId),
+  });
 }
 
 export async function POST(req: NextRequest) {

@@ -19,10 +19,28 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
   const today = hours[dayIdx];
   if (!today || !today.active) return { open: false, text: "Fechado hoje" };
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const [oh, om] = today.open.split(":").map(Number);
-  const [ch, cm] = today.close.split(":").map(Number);
-  if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${today.close}` };
-  if (nowMin < oh * 60 + om) return { open: false, text: `Abre às ${today.open}` };
+
+  if (Array.isArray(today.shifts) && today.shifts.length > 0) {
+    const activeShifts = today.shifts.filter((s: any) => s.open && s.close && s.active !== false);
+    for (const shift of activeShifts) {
+      const [oh, om] = (shift.open || "").split(":").map(Number);
+      const [ch, cm] = (shift.close || "").split(":").map(Number);
+      if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${shift.close}` };
+    }
+    const nextShift = activeShifts.find((s: any) => {
+      const [oh, om] = (s.open || "").split(":").map(Number);
+      return nowMin < oh * 60 + om;
+    });
+    if (nextShift) return { open: false, text: `Abre às ${nextShift.open}` };
+    return { open: false, text: "Fechado · Abre amanhã" };
+  }
+
+  if (today.open && today.close) {
+    const [oh, om] = today.open.split(":").map(Number);
+    const [ch, cm] = today.close.split(":").map(Number);
+    if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${today.close}` };
+    if (nowMin < oh * 60 + om) return { open: false, text: `Abre às ${today.open}` };
+  }
   return { open: false, text: "Fechado · Abre amanhã" };
 }
 
@@ -136,6 +154,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
       if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
       return [...prev, { ...product, quantity: 1 }];
     });
+    trackPixelEvent("AddToCart", { content_name: product.name, value: product.price, currency: "BRL" });
   };
   const removeFromCart = (id: string) => setCart(prev => { const e = prev.find(i => i.id === id); if (e && e.quantity > 1) return prev.map(i => i.id === id ? { ...i, quantity: i.quantity - 1 } : i); return prev.filter(i => i.id !== id); });
   const deleteFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
@@ -318,6 +337,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
       });
       if (res.ok) {
         const d = await res.json();
+        trackPixelEvent("Purchase", { value: finalTotal, currency: "BRL", order_id: d.orderId });
         const isOnline = ONLINE_METHODS.includes((paymentMethod || "").toUpperCase());
         if (isOnline) {
           // Pagamento online: mostrar gateway Pagar.me antes de confirmar
@@ -544,7 +564,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         <div className="cart-footer">
           <div className="cart-total-row"><span className="cart-total-label">Total</span><span className="cart-total-value">R$ {finalTotal.toFixed(2)}</span></div>
           {!isCheckout ? (
-            <button onClick={() => setIsCheckout(true)} className="cart-checkout-btn">Continuar</button>
+            <button onClick={() => { setIsCheckout(true); trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" }); }} className="cart-checkout-btn">Continuar</button>
           ) : (
             <>
               <button onClick={handleCheckout} disabled={loading} className="cart-checkout-btn">{loading ? "Enviando..." : `Enviar Pedido • R$ ${finalTotal.toFixed(2)}`}</button>

@@ -263,6 +263,25 @@ export async function PUT(req: Request) {
     data: updateData
   });
 
+  // Estorno Automático para Pagamentos Online no Cancelamento
+  if (status === "CANCELADO" && (order as any).paymentId) {
+    try {
+      const { refundMpPayment } = await import("@/lib/mercadopago");
+      const franchisee = await prisma.user.findUnique({
+        where: { id: order.franchiseeId },
+        select: { mpAccessToken: true },
+      });
+      const refundRes = await refundMpPayment((order as any).paymentId, franchisee?.mpAccessToken || undefined);
+      if (refundRes.success) {
+        console.log(`[Automatic Refund] Order ${orderId} refunded successfully via MP.`);
+      } else {
+        console.warn(`[Automatic Refund] Order ${orderId} refund notice:`, refundRes.error);
+      }
+    } catch (refundErr: any) {
+      console.error(`[Automatic Refund] Erro ao estornar pedido ${orderId}:`, refundErr.message);
+    }
+  }
+
   // Atualiza faturamento do ciclo mensal se pedido foi confirmado
   if (BILLING_TRIGGER_STATUSES.includes(status)) {
     trackSaleForBilling(order.franchiseeId).catch(err =>

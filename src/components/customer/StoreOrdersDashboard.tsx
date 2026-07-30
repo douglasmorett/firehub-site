@@ -158,9 +158,22 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
   const today = hours[dayIdx];
   if (!today || !today.active) return { open: false, text: "Fechado hoje" };
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const [oh, om] = today.open.split(":").map(Number);
-  const [ch, cm] = today.close.split(":").map(Number);
-  if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${today.close}` };
+
+  if (Array.isArray(today.shifts) && today.shifts.length > 0) {
+    const activeShifts = today.shifts.filter((s: any) => s.open && s.close && s.active !== false);
+    for (const shift of activeShifts) {
+      const [oh, om] = (shift.open || "").split(":").map(Number);
+      const [ch, cm] = (shift.close || "").split(":").map(Number);
+      if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${shift.close}` };
+    }
+    return { open: false, text: "Fechado" };
+  }
+
+  if (today.open && today.close) {
+    const [oh, om] = today.open.split(":").map(Number);
+    const [ch, cm] = today.close.split(":").map(Number);
+    if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${today.close}` };
+  }
   return { open: false, text: "Fechado" };
 }
 

@@ -364,6 +364,29 @@ export async function GET(req: NextRequest) {
             if (isConcluded) {
               updateData.ifoodDriverStatus = "CONCLUDED";
             }
+
+            // === Sincronizar prazo de entrega do iFood ===
+            try {
+              const detailRes = await fetch(
+                `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (detailRes.ok) {
+                const detailData = await detailRes.json();
+                const updatedDeadline = detailData.delivery?.deliveryDateTime
+                  ?? detailData.delivery?.estimatedDeliveryWindow?.end
+                  ?? detailData.delivery?.estimatedDeliveryWindow?.start
+                  ?? detailData.takeout?.takeoutDateTime
+                  ?? detailData.takeout?.estimatedTakeoutWindow?.end;
+                if (updatedDeadline) {
+                  updateData.scheduledDatetime = new Date(updatedDeadline);
+                  log.push(`  ⏱️ Prazo atualizado: ${orderId} → ${updatedDeadline}`);
+                }
+              }
+            } catch (deadlineErr: any) {
+              log.push(`  ⚠️ Falha ao sincronizar prazo de ${orderId}: ${deadlineErr?.message}`);
+            }
+
             await (prisma.customerOrder as any).updateMany({
               where: { ifoodOrderId: orderId } as any,
               data: updateData,

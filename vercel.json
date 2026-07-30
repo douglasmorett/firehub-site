@@ -11,6 +11,14 @@
     {
       "path": "/api/cron/gateway-keepalive",
       "schedule": "*/14 * * * *"
+    },
+    {
+      "path": "/api/cron/billing-close",
+      "schedule": "0 3 1 * *"
+    },
+    {
+      "path": "/api/cron/meta-ads-sync",
+      "schedule": "0 6 * * *"
     }
   ]
 }

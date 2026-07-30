@@ -2,7 +2,7 @@
 import DeliveryZoneMap from "@/components/customer/DeliveryZoneMap";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle } from "lucide-react";
+import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle, ShieldCheck } from "lucide-react";
 
 const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 // Padrão 18h-23h — foco em delivery de jantar, igual Brendi
@@ -63,13 +63,17 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     DINHEIRO: { rate: 0, active: true },
     DEBITO: { rate: 0, active: true, brands: [
       { name: "Mastercard", rate: 1.5, active: true },
-      { name: "Visa", rate: 1.5, active: true },
       { name: "Elo", rate: 2.0, active: true },
+      { name: "Visa", rate: 1.5, active: true },
+      { name: "Hipercard", rate: 2.0, active: true },
+      { name: "American Express", rate: 2.5, active: true },
     ] },
     CREDITO: { rate: 0, active: true, brands: [
       { name: "Mastercard", rate: 3.0, active: true },
-      { name: "Visa", rate: 3.0, active: true },
       { name: "Elo", rate: 3.5, active: true },
+      { name: "Visa", rate: 3.0, active: true },
+      { name: "Hipercard", rate: 3.5, active: true },
+      { name: "American Express", rate: 4.0, active: true },
     ] },
     VOUCHER: { rate: 0, active: true, surcharge: 0, brands: [
       { name: "Ticket", rate: 5.0, active: true },
@@ -566,55 +570,97 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
       {/* TAXAS DE PAGAMENTO */}
       {show("payment") && <div className="card mb-4">
-        <h3 className="font-bold mb-4">💳 Formas de Pagamento & Taxas</h3>
-        <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "1rem" }}>Configure quais formas você aceita e a taxa de cada uma. Usado para calcular seu lucro líquido.</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <h3 className="font-bold mb-2">💳 Formas de Pagamento</h3>
+        <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.25rem" }}>Gerencie suas formas de pagamento online e na entrega do pedido.</p>
 
-          {/* PIX */}
-          {(() => {
-            const cfg = paymentConfig.PIX || { rate: 0, active: true };
-            return (
-              <div style={{ borderRadius: "12px", border: `1.5px solid ${cfg.active ? '#00BFA530' : '#E2E8F020'}`, background: cfg.active ? '#00BFA505' : '#F8FAFC', overflow: 'hidden' }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.7rem 0.85rem" }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#00BFA515", display: "flex", alignItems: "center", justifyContent: "center" }}><Smartphone size={17} color="#00BFA5" /></div>
-                  <span style={{ fontWeight: 600, fontSize: "0.92rem", flex: 1 }}>Pix</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <input type="number" step="0.1" min="0" max="100" value={cfg.rate} onChange={e => setPaymentConfig((p: any) => ({ ...p, PIX: { ...p.PIX, rate: Number(e.target.value) } }))} style={{ width: "68px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", textAlign: "right" }} />
-                    <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 600 }}>%</span>
-                  </div>
-                  <button onClick={() => setPaymentConfig((p: any) => ({ ...p, PIX: { ...p.PIX, active: !p.PIX.active } }))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                    {cfg.active ? <ToggleRight size={28} color="#00BFA5" /> : <ToggleLeft size={28} color="#CBD5E1" />}
-                  </button>
+        {/* ── ALERTA DE OBRIGATORIEDADE ── */}
+        <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: "14px", padding: "1rem 1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <ShieldCheck size={20} color="#1D4ED8" style={{ marginTop: 2, flexShrink: 0 }} />
+            <div style={{ fontSize: "0.83rem", color: "#1E40AF", lineHeight: 1.6 }}>
+              <strong>🔒 Pagamento Online no FireHub:</strong>
+              <ul style={{ margin: "4px 0 0", paddingLeft: "1.2rem" }}>
+                <li>O <strong>Pix Online</strong> é <strong>obrigatório e permanece sempre ativo</strong> para garantir praticidade ao cliente final e permitir o abatimento automático da sua fatura mensal.</li>
+                <li>O <strong>Cartão de Crédito Online</strong> pode ser ativado ou desativado por você a qualquer momento.</li>
+                <li>Pendências de mensalidade do sistema são <strong>descontadas automaticamente</strong> das vendas online recebidas.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* ── SEÇÃO PAGAMENTO ONLINE ── */}
+        <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem" }}>
+            <ShieldCheck size={20} color="#16A34A" />
+            <div>
+              <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Pagamento online</h4>
+              <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Sempre disponível para seus clientes. Não podem ser desativados.</span>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            {/* PIX Online */}
+            <div style={{ background: "#fff", border: "1.5px solid #00BFA530", borderRadius: "12px", padding: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Smartphone size={18} color="#00BFA5" />
+                  <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Pix</strong>
                 </div>
+                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#E6F4EA", color: "#137333", fontSize: "0.72rem", fontWeight: 700 }}>🔒 Sempre ativo</span>
               </div>
-            );
-          })()}
+              <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
+                <div><strong>Taxa:</strong> 0,5% + R$ 0,40 por pedido</div>
+                <div><strong>Recebimento:</strong> Conforme suas configurações de repasse</div>
+                <div style={{ color: "#166534", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático em até 24h na conta do cliente ao cancelar</div>
+              </div>
+            </div>
+
+            {/* Cartão de Crédito Online */}
+            <div style={{ background: "#fff", border: "1.5px solid #9C27B030", borderRadius: "12px", padding: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <CreditCard size={18} color="#9C27B0" />
+                  <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Cartão de crédito online</strong>
+                </div>
+                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>⚡ D+30 / D+0</span>
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
+                <div><strong>Taxa:</strong> 3,99% por transação</div>
+                <div><strong>Recebimento:</strong> D+30, ou no mesmo dia (D+0) com +1,7% de adiantamento</div>
+                <div style={{ color: "#166534", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático na fatura do cartão ao cancelar</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── SEÇÃO PAGAMENTO NA ENTREGA ── */}
+        <h4 style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", marginBottom: "0.85rem" }}>Pagamento na entrega (Maquininha / Dinheiro)</h4>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
 
           {/* DINHEIRO */}
           {(() => {
             const cfg = paymentConfig.DINHEIRO || { rate: 0, active: true };
             return (
               <div style={{ borderRadius: "12px", border: `1.5px solid ${cfg.active ? '#4CAF5030' : '#E2E8F020'}`, background: cfg.active ? '#4CAF5005' : '#F8FAFC', overflow: 'hidden' }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.7rem 0.85rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem" }}>
                   <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#4CAF5015", display: "flex", alignItems: "center", justifyContent: "center" }}><Banknote size={17} color="#4CAF50" /></div>
-                  <span style={{ fontWeight: 600, fontSize: "0.92rem", flex: 1 }}>Dinheiro</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <input type="number" step="0.1" min="0" max="100" value={cfg.rate} onChange={e => setPaymentConfig((p: any) => ({ ...p, DINHEIRO: { ...p.DINHEIRO, rate: Number(e.target.value) } }))} style={{ width: "68px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", textAlign: "right" }} />
-                    <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 600 }}>%</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0F172A", display: "block" }}>Dinheiro</span>
+                    <span style={{ fontSize: "0.72rem", color: "#64748B" }}>Ative esta opção para aceitar pagamentos em dinheiro na entrega.</span>
                   </div>
-                  <button onClick={() => setPaymentConfig((p: any) => ({ ...p, DINHEIRO: { ...p.DINHEIRO, active: !p.DINHEIRO.active } }))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                    {cfg.active ? <ToggleRight size={28} color="#4CAF50" /> : <ToggleLeft size={28} color="#CBD5E1" />}
+                  <button onClick={() => { setPaymentConfig((p: any) => ({ ...p, DINHEIRO: { ...p.DINHEIRO, active: !p.DINHEIRO.active } })); setDirtyPayment(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                    {cfg.active ? <ToggleRight size={32} color="#4CAF50" /> : <ToggleLeft size={32} color="#CBD5E1" />}
                   </button>
                 </div>
               </div>
             );
           })()}
 
-          {/* DÉBITO, CRÉDITO, VOUCHER - com bandeiras */}
+          {/* DÉBITO, CRÉDITO, VOUCHER - com bandeiras no estilo Brendi */}
           {[
-            { key: "DEBITO", label: "Débito", icon: CreditCard, color: "#2196F3", defaultBrands: ["Mastercard", "Visa", "Elo"] },
-            { key: "CREDITO", label: "Crédito", icon: CreditCard, color: "#9C27B0", defaultBrands: ["Mastercard", "Visa", "Elo"] },
-            { key: "VOUCHER", label: "Voucher / Vale", icon: Ticket, color: "#E65100", defaultBrands: ["Ticket", "VR", "Sodexo", "Pluxee"] },
+            { key: "CREDITO", label: "Cartão de crédito", desc: "Maquininha na entrega. Escolha as bandeiras aceitas.", icon: CreditCard, color: "#9C27B0", defaultBrands: ["Mastercard", "Elo", "Visa", "Hipercard", "American Express"] },
+            { key: "DEBITO", label: "Cartão de débito", desc: "Maquininha na entrega. Escolha as bandeiras aceitas.", icon: CreditCard, color: "#2196F3", defaultBrands: ["Mastercard", "Elo", "Visa", "Hipercard", "American Express"] },
+            { key: "VOUCHER", label: "Voucher / Vale", desc: "Maquininha na entrega. Escolha as bandeiras de vale aceitas.", icon: Ticket, color: "#E65100", defaultBrands: ["Ticket", "VR", "Sodexo", "Pluxee"] },
           ].map(pm => {
             const Icon = pm.icon;
             const cfg = paymentConfig[pm.key] || { rate: 0, active: true, brands: [] };
@@ -628,6 +674,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 updated.brands[idx] = { ...updated.brands[idx], [field]: val };
                 return { ...p, [pm.key]: updated };
               });
+              setDirtyPayment(true);
             };
             const removeBrand = (idx: number) => {
               setPaymentConfig((p: any) => {
@@ -635,6 +682,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 updated.brands = updated.brands.filter((_: any, i: number) => i !== idx);
                 return { ...p, [pm.key]: updated };
               });
+              setDirtyPayment(true);
             };
             const addBrand = () => {
               if (!newBrandName.trim()) return;
@@ -644,51 +692,66 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 return { ...p, [pm.key]: updated };
               });
               setNewBrandName("");
+              setDirtyPayment(true);
             };
 
             return (
-              <div key={pm.key} style={{ borderRadius: "12px", border: `1.5px solid ${cfg.active ? pm.color + '30' : '#E2E8F020'}`, background: cfg.active ? pm.color + '05' : '#F8FAFC', overflow: 'hidden' }}>
+              <div key={pm.key} style={{ borderRadius: "14px", border: `1.5px solid ${cfg.active ? pm.color + '25' : '#E2E8F0'}`, background: cfg.active ? '#fff' : '#F8FAFC', padding: "1.25rem", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                 {/* Header */}
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.7rem 0.85rem" }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: pm.color + '15', display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={pm.color} /></div>
-                  <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setExpandedPM(isOpen ? null : pm.key)}>
-                    <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{pm.label}</span>
-                    <span style={{ fontSize: "0.7rem", color: "#94A3B8", marginLeft: "8px" }}>{brands.filter((b: any) => b.active).length} bandeira(s) ativa(s)</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.85rem" }}>
+                  <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: pm.color + '12', display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={19} color={pm.color} /></div>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", display: "block" }}>{pm.label}</span>
+                    <span style={{ fontSize: "0.76rem", color: "#64748B" }}>{pm.desc}</span>
                   </div>
-                  <button onClick={() => setPaymentConfig((p: any) => ({ ...p, [pm.key]: { ...p[pm.key], active: !cfg.active } }))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                    {cfg.active ? <ToggleRight size={28} color={pm.color} /> : <ToggleLeft size={28} color="#CBD5E1" />}
-                  </button>
-                  <button onClick={() => setExpandedPM(isOpen ? null : pm.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-                    {isOpen ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
+                  <button onClick={() => { setPaymentConfig((p: any) => ({ ...p, [pm.key]: { ...p[pm.key], active: !cfg.active } })); setDirtyPayment(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                    {cfg.active ? <ToggleRight size={32} color={pm.color} /> : <ToggleLeft size={32} color="#CBD5E1" />}
                   </button>
                 </div>
 
-                {/* Brands Panel */}
-                {isOpen && (
-                  <div style={{ padding: "0 0.85rem 0.85rem", borderTop: '1px solid #E2E8F020' }}>
-                    <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "0.6rem 0", fontWeight: 600 }}>CADASTRAR POR BANDEIRA</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                {/* Bandeiras estilo Chip Pills (igual à Brendi) */}
+                {cfg.active && (
+                  <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: "0.85rem" }}>
+                    <p style={{ fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "0.6rem", textTransform: "uppercase", letterSpacing: 0.5 }}>Bandeiras aceitas</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
                       {brands.map((brand: any, idx: number) => (
-                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.6rem', borderRadius: '8px', background: brand.active ? '#fff' : '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                          <button onClick={() => updateBrand(idx, 'active', !brand.active)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                            {brand.active ? <ToggleRight size={22} color={pm.color} /> : <ToggleLeft size={22} color="#CBD5E1" />}
-                          </button>
-                          <span style={{ flex: 1, fontWeight: 500, fontSize: '0.85rem', color: brand.active ? '#1E293B' : '#94A3B8', textDecoration: brand.active ? 'none' : 'line-through' }}>{brand.name}</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <input type="number" step="0.1" min="0" max="100" value={brand.rate} onChange={e => updateBrand(idx, 'rate', Number(e.target.value))} disabled={!brand.active} style={{ width: '60px', padding: '0.3rem', borderRadius: '5px', border: '1px solid #E2E8F0', fontSize: '0.8rem', textAlign: 'right', opacity: brand.active ? 1 : 0.4 }} />
-                            <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>%</span>
-                          </div>
-                          {!pm.defaultBrands.includes(brand.name) && (
-                            <button onClick={() => removeBrand(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}><Trash2 size={14} color="#EF4444" /></button>
-                          )}
+                        <div key={idx} onClick={() => updateBrand(idx, 'active', !brand.active)}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            padding: "6px 14px", borderRadius: 99, cursor: "pointer",
+                            fontSize: "0.82rem", fontWeight: 700, transition: "all 0.2s",
+                            border: brand.active ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+                            background: brand.active ? "#FEF2F2" : "#F8FAFC",
+                            color: brand.active ? "#DC2626" : "#94A3B8",
+                          }}>
+                          <span style={{ width: 14, height: 14, borderRadius: "50%", background: brand.active ? "#DC2626" : "#CBD5E1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", color: "#fff" }}>
+                            {brand.active ? "✓" : ""}
+                          </span>
+                          {brand.name}
                         </div>
                       ))}
+
+                      {/* Botão + Nova bandeira */}
+                      <button onClick={() => setExpandedPM(isOpen ? null : pm.key)}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          padding: "6px 14px", borderRadius: 99, cursor: "pointer",
+                          fontSize: "0.82rem", fontWeight: 700, border: "1.5px dashed #EF4444",
+                          background: "#fff", color: "#EF4444", transition: "all 0.2s",
+                        }}>
+                        + Nova bandeira
+                      </button>
                     </div>
-                    {/* Add new brand */}
-                    <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem' }}>
-                      <input type="text" placeholder={pm.key === 'VOUCHER' ? 'Nome do voucher...' : 'Nova bandeira...'} value={expandedPM === pm.key ? newBrandName : ''} onChange={e => setNewBrandName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addBrand()} style={{ flex: 1, padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '0.82rem' }} />
-                      <button onClick={addBrand} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', background: pm.color, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}><Plus size={14} /> Adicionar</button>
-                    </div>
+
+                    {/* Input para adicionar nova bandeira customizada */}
+                    {isOpen && (
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem', background: '#F8FAFC', padding: '0.75rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                        <input type="text" placeholder={pm.key === 'VOUCHER' ? 'Nome do voucher...' : 'Nome da nova bandeira (ex: Hiper)'}
+                          value={newBrandName} onChange={e => setNewBrandName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addBrand()}
+                          style={{ flex: 1, padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.84rem' }} />
+                        <button onClick={addBrand} style={{ padding: '0.5rem 1rem', borderRadius: '8px', background: "#EF4444", color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><Plus size={14} /> Adicionar</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

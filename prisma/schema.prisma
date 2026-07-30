@@ -54,7 +54,7 @@ model User {
   resetToken      String?         // Token de recuperação de senha
   resetTokenExp   DateTime?       // Expiração do token de recuperação
   // === FATURAMENTO: USE FIRST, PAY LATER ===
-  planPercent     Float           @default(0)  // % cobrado sobre vendas (ex: 5.0 = 5%)
+  planPercent     Float           @default(1)  // % cobrado sobre vendas (ex: 1.0 = 1%)
   billingCycles   FranchiseeBillingCycle[]
   // === META ADS ===
   metaFbPageId      String?        // ID da Página do Facebook conectada
@@ -62,6 +62,7 @@ model User {
   metaAdAccountId   String?        // act_XXXXXXX — conta de anúncios
   metaPixelId       String?        // Pixel Meta instalado no cardápio
   metaAdsEnabled    Boolean        @default(false) // Módulo ativo
+  metaAdsWeeklyFee  Float           @default(50) // Taxa semanal FireHub pela gestão de Meta Ads (R$)
   metaAdsCampaigns  MetaAdsCampaign[]
   // === GATEWAYS DE PAGAMENTO ===
   mpSellerId        String?        // ID do vendedor no Mercado Pago Marketplace
@@ -500,6 +501,9 @@ model FranchiseeBillingCycle {
   amountOffset     Float     @default(0)   // Já abatido por recebimentos online (Pagar.me)
   // Resultado no fechamento
   amountPending    Float     @default(0)   // amountDue - amountOffset (o que ainda falta)
+  // Vencimento e taxas adicionais
+  dueDate          DateTime?                 // Data limite de pagamento (closedAt + 10 dias)
+  metaAdsFee       Float     @default(0)     // Taxa tráfego pago acumulada no mês (R$50/semana)
   // Status do ciclo
   status           String    @default("OPEN")
   // OPEN       = mês em andamento, abatendo em tempo real
@@ -524,7 +528,7 @@ model FranchiseeBillingCycle {
 
 // ========== META ADS MODULE ==========
 // Campanhas de tráfego pago gerenciadas automaticamente pelo FireHub.
-// Modelo: R$50/semana de gestão + verba do franqueado (100% vai pro Meta).
+// Modelo: R$50/semana de gestão quando campanha ativa.
 
 model MetaAdsCampaign {
   id               String    @id @default(cuid())
@@ -553,8 +557,9 @@ model MetaAdsCampaign {
   ordersGenerated  Int       @default(0)     // Pedidos rastreados pelo Pixel
   revenue          Float     @default(0)     // Faturamento atribuído aos anúncios
 
-  // Cobrança de gestão (R$50/semana FireHub)
-  managementFeePaid Float    @default(0)     // Total pago em taxa de gestão
+  // Cobrança FireHub (R$50/semana de gestão)
+  feeAccrued        Float    @default(0)     // Total de taxa FireHub acumulada (10% do spend)
+  feePaid           Float    @default(0)     // Total de taxa já cobrada
   lastBilledAt     DateTime?                 // Última cobrança semanal
 
   // Verba depositada via PIX

@@ -72,6 +72,28 @@ export async function checkMpPaymentStatus(paymentId: string): Promise<{
   };
 }
 
+export async function refundMpPayment(paymentId: string, customToken?: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const token = customToken || ACCESS_TOKEN;
+    const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}/refunds`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.error("[MP Refund] Error:", data);
+      return { success: false, error: data.message || "Falha ao estornar via MP" };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error("[MP Refund] Exception:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 export function getMpOnboardingUrl(restaurantId: string): string {
   const mpAppId = process.env.MP_APP_ID || "";
   const redirectUri = encodeURIComponent(`${process.env.NEXTAUTH_URL}/api/mp-connect/callback`);

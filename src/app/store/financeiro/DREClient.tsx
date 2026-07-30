@@ -705,9 +705,71 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     </div>
                   </div>
                 </div>
+
+                {/* ── Seção Fatura Detalhada ── */}
+                {bc && bc.status !== "OPEN" && bc.amountPending > 0 && (
+                  <div id="fatura" style={{ background: "#fff", border: "2px solid #FDE68A", borderRadius: 16, padding: "1.5rem", marginTop: "1rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                      <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: 0 }}>📄 Detalhes da Fatura</h3>
+                      <span style={{
+                        padding: "4px 12px", borderRadius: 99, fontSize: "0.72rem", fontWeight: 700,
+                        background: "#FEF9C3", color: "#92400E", border: "1px solid #FDE68A",
+                      }}>PENDENTE</span>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: "1rem" }}>
+                      {[
+                        { label: "Faturamento do mês", value: fmtR(bc.totalSales) },
+                        { label: `Taxa (${FIREHUB_PLAN.PERCENT_RATE}%, mín R$${FIREHUB_PLAN.MIN_MONTHLY})`, value: fmtR(bc.amountDue), bold: true },
+                        { label: "Abatido via pagamento online", value: `- ${fmtR(bc.amountOffset)}`, color: "#16A34A" },
+                        { label: "Saldo pendente", value: fmtR(bc.amountPending), color: "#DC2626", bold: true },
+                      ].map((r, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "8px 12px", background: i === 3 ? "#FEF2F2" : "#F9FAFB", borderRadius: 8 }}>
+                          <span style={{ color: "#64748B" }}>{r.label}</span>
+                          <strong style={{ color: r.color || "#0F172A", fontWeight: r.bold ? 800 : 600 }}>{r.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Abatimentos - log de pedidos */}
+                    {bc.amountOffset > 0 && (
+                      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "0.85rem", marginBottom: "1rem" }}>
+                        <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#166534", margin: "0 0 6px" }}>💚 Pedidos que abateram a fatura:</p>
+                        <p style={{ fontSize: "0.78rem", color: "#166534", margin: 0 }}>
+                          Total abatido via pagamento online (PIX/Cartão): <strong>{fmtR(bc.amountOffset)}</strong>
+                        </p>
+                      </div>
+                    )}
+
+                    {bc.asaasBoletoUrl && (
+                      <a href={bc.asaasBoletoUrl} target="_blank" rel="noopener noreferrer" style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        padding: "0.85rem", borderRadius: 12, background: "#16A34A",
+                        color: "#fff", fontWeight: 800, fontSize: "0.9rem", textDecoration: "none", marginBottom: "1rem",
+                      }}>
+                        ⚡ Pagar Saldo Pendente — {fmtR(bc.amountPending)}
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Termos ── */}
+                <div style={{ background: "#F1F5F9", borderRadius: 12, padding: "1rem", marginTop: "1rem", fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
+                  <p style={{ fontWeight: 700, margin: "0 0 6px", color: "#0F172A" }}>📜 Termos de cobrança:</p>
+                  <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+                    <li>O <strong>pagamento online</strong> (PIX e cartão) é <strong>obrigatório</strong> estar ativo.</li>
+                    <li>Pendências de cobrança são <strong>descontadas automaticamente</strong> dos pagamentos online recebidos.</li>
+                    <li>A fatura é gerada no fechamento do mês (<strong>horário de Brasília</strong>) e tem <strong>10 dias</strong> para pagamento.</li>
+                    <li>Após 10 dias sem regularizar, o sistema será <strong>bloqueado</strong> até o pagamento.</li>
+                    <li>Caso não tenha faturado no mês, <strong>não há cobrança</strong>. Pausou a loja e não vendeu? R$0.</li>
+                    <li><strong>Tráfego Pago:</strong> R$50/semana pelo <strong>serviço de gestão</strong>. Ativou campanha = cobra. O ROAS depende da qualidade do produto, atendimento e mercado local.</li>
+                  </ul>
+                  <a href="/termos" target="_blank" style={{ color: "#2563EB", fontWeight: 600, fontSize: "0.76rem", textDecoration: "underline" }}>Ver termos completos →</a>
+                </div>
               </div>
             </div>
           );
+
         })()}
       </div>
 

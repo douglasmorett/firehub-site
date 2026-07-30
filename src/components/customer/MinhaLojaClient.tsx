@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Store, Clock, Truck, CreditCard, Tag, Gift, ArrowLeft,
   Settings, Image, Phone, MapPin, ChevronRight,
@@ -87,8 +87,34 @@ const SECTION_TAB_MAP: Record<string, string> = {
   coupons: "coupons",
 };
 
+// Mapa de hash da URL → seção interna
+const HASH_TO_SECTION: Record<string, Section> = {
+  info: "info",
+  aparencia: "info",
+  horarios: "hours",
+  hours: "hours",
+  pagamento: "payment",
+  payment: "payment",
+  entrega: "delivery",
+  delivery: "delivery",
+  cupons: "coupons",
+  coupons: "coupons",
+  fidelidade: "loyalty",
+  loyalty: "loyalty",
+  equipe: "equipe",
+  conta: "conta",
+};
+
 export default function MinhaLojaClient({ user }: { user: any }) {
   const [section, setSection] = useState<Section>("menu");
+
+  // Lê o hash da URL ao montar e navega direto para a seção correspondente
+  useEffect(() => {
+    const hash = window.location.hash.replace("#", "").toLowerCase();
+    if (hash && HASH_TO_SECTION[hash]) {
+      setSection(HASH_TO_SECTION[hash]);
+    }
+  }, []);
 
   async function saveLoyalty(config: any) {
     await fetch("/api/store-settings", {

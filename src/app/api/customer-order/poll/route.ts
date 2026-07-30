@@ -419,6 +419,29 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 if (isConcluded) {
                   updateData.ifoodDriverStatus = "CONCLUDED";
                 }
+
+                // === Sincronizar prazo de entrega do iFood ===
+                try {
+                  const detailRes = await fetch(
+                    `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+                    { headers: { Authorization: `Bearer ${token}` } }
+                  );
+                  if (detailRes.ok) {
+                    const detailData = await detailRes.json();
+                    const updatedDeadline = detailData.delivery?.deliveryDateTime
+                      ?? detailData.delivery?.estimatedDeliveryWindow?.end
+                      ?? detailData.delivery?.estimatedDeliveryWindow?.start
+                      ?? detailData.takeout?.takeoutDateTime
+                      ?? detailData.takeout?.estimatedTakeoutWindow?.end;
+                    if (updatedDeadline) {
+                      updateData.scheduledDatetime = new Date(updatedDeadline);
+                      console.log(`[iFood Poll] ⏱️ Prazo atualizado: ${orderId} → ${updatedDeadline}`);
+                    }
+                  }
+                } catch (deadlineErr: any) {
+                  console.warn(`[iFood Poll] ⚠️ Falha ao sincronizar prazo de ${orderId}: ${deadlineErr?.message}`);
+                }
+
                 await (prisma.customerOrder as any).updateMany({
                   where: { ifoodOrderId: orderId } as any,
                   data: updateData,

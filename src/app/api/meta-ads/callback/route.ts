@@ -1,6 +1,6 @@
 /**
  * GET /api/meta-ads/callback
- * Meta OAuth callback — salva token do franqueado e redireciona para o painel
+ * Meta OAuth callback — salva token do franqueado e redireciona para wizard de criativo
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -25,23 +25,30 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { franchiseeId } = JSON.parse(Buffer.from(state, "base64").toString());
+    const parsed = JSON.parse(Buffer.from(state, "base64").toString());
+    const { franchiseeId, investment } = parsed;
+
     const accessToken = await exchangeCodeForToken(code);
     const { accounts, pages } = await getMetaAccounts(accessToken);
 
-    // Salva o token e a primeira conta/página disponível
+    const adAccountId = accounts[0]?.id ?? null;
+    const pageId = pages[0]?.id ?? null;
+
+    // Salva token e conta
     await prisma.user.update({
       where: { id: franchiseeId },
       data: {
         metaFbAccessToken: accessToken,
-        metaAdAccountId: accounts[0]?.id ?? null,
-        metaFbPageId: pages[0]?.id ?? null,
+        metaAdAccountId: adAccountId,
+        metaFbPageId: pageId,
         metaAdsEnabled: true,
       },
     });
 
+    // Redireciona para o wizard de criativo (NÃO cria campanha automaticamente)
+    const budgetParam = investment ? `&budget=${investment}` : "";
     return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL}/store/meta-ads?connected=true`
+      `${process.env.NEXTAUTH_URL}/store/meta-ads?connected=true${budgetParam}`
     );
   } catch (err) {
     console.error("[MetaAds OAuth]", err);

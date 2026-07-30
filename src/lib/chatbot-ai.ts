@@ -124,19 +124,33 @@ export async function processChatbotAI(
     return days.map((d) => d.toUpperCase()).includes(currentDayCode);
   };
 
-  // Formatar horários de funcionamento
+  // Formatar horários de funcionamento (com suporte a múltiplos turnos por dia)
   let hoursText = "Todos os dias das 18:00 às 23:30.";
   let nowStatusText = "";
   if (Array.isArray(user.storeHours) && (user.storeHours as any[]).length > 0) {
     const hoursArr = user.storeHours as any[];
+
+    const formatDayHours = (h: any): string => {
+      if (!h || !h.active) return "Fechado";
+      if (Array.isArray(h.shifts) && h.shifts.length > 0) {
+        const activeShifts = h.shifts.filter((s: any) => s.open && s.close && s.active !== false);
+        if (activeShifts.length > 0) {
+          return activeShifts.map((s: any) => `das ${s.open} às ${s.close}`).join(" e ");
+        }
+      }
+      if (h.open && h.close) return `das ${h.open} às ${h.close}`;
+      return "Aberto";
+    };
+
     hoursText = hoursArr
-      .map((h: any) => `${h.day || h.dayName || "Dia"}: ${h.active ? `${h.open || "18:00"} às ${h.close || "23:30"}` : "Fechado"}`)
+      .map((h: any) => `${h.day || h.dayName || "Dia"}: ${formatDayHours(h)}`)
       .join("\n");
 
     const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
     const today = hoursArr[dayIdx];
     if (today && today.active) {
-      nowStatusText = `Hoje (${currentDayName}) funcionamos exatamente das ${today.open || "18:00"} às ${today.close || "23:30"}.`;
+      const todayFormatted = formatDayHours(today);
+      nowStatusText = `Hoje (${currentDayName}) a loja funciona ${todayFormatted}.`;
     } else if (today && !today.active) {
       nowStatusText = `Hoje (${currentDayName}) a loja está fechada.`;
     }

@@ -60,7 +60,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   }
 
   // === PAGAMENTO: verificar ciclo pendente da loja proprietária ===
-  let pendingPayment: { amount: number; url: string | null; isOverdue: boolean } | null = null;
+  let pendingPayment: { amount: number; url: string | null; isOverdue: boolean; daysLeft: number } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
   const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
   const isSpecialStore = userEmailClean === "viniciusmenezes.ofc@gmail.com";
@@ -77,16 +77,20 @@ export default async function StoreLayout({ children }: { children: React.ReactN
       });
 
       if (closedCycle && closedCycle.amountPending > 0) {
-        // Verifica se o boleto já venceu (7 dias após fechamento)
+        // Prazo: 10 dias após fechamento (ou dueDate se definido)
         const closedAt = closedCycle.closedAt ? new Date(closedCycle.closedAt) : new Date();
-        const dueDate = new Date(closedAt);
-        dueDate.setDate(dueDate.getDate() + 7);
-        const isOverdue = new Date() > dueDate;
+        const dueDate = (closedCycle as any).dueDate
+          ? new Date((closedCycle as any).dueDate)
+          : new Date(closedAt.getTime() + 10 * 24 * 60 * 60 * 1000);
+        const now = new Date();
+        const isOverdue = now > dueDate;
+        const daysLeft = Math.max(0, Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 
         pendingPayment = {
           amount: closedCycle.amountPending,
           url: closedCycle.asaasBoletoUrl,
-          isOverdue, // true = vencido = BLOQUEIA | false = dentro do prazo = só avisa
+          isOverdue,
+          daysLeft,
         };
       }
     } catch (err) {
@@ -137,7 +141,13 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               fontSize: ".85rem", fontWeight: 600,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
             }}>
-              <span>💳 Pagamento de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")} pendente — pague dentro do prazo para manter seu acesso</span>
+              <span>⚠️ Cobrança pendente de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")} — <strong>Faltam {pendingPayment.daysLeft} {pendingPayment.daysLeft === 1 ? "dia" : "dias"}</strong> para o vencimento. Regularize para evitar bloqueios.</span>
+              <a href="/store/financeiro#fatura" style={{
+                background: "#fff", color: "#D97706", padding: "5px 16px",
+                borderRadius: 8, fontWeight: 700, fontSize: ".8rem", textDecoration: "none",
+              }}>
+                Ver Fatura
+              </a>
               {pendingPayment.url && (
                 <a href={pendingPayment.url} target="_blank" rel="noopener noreferrer" style={{
                   background: "#fff", color: "#D97706", padding: "5px 16px",
