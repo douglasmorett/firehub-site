@@ -31,6 +31,13 @@ export async function processChatbotAI(
     return { reply: "Desculpe, loja não encontrada." };
   }
 
+  // ── DETECÇÃO DE CONFIRMAÇÃO DE PEDIDO (JOTAJA / IFOOD / SITE) ──
+  if (/SEU PEDIDO:|RESUMO DO PEDIDO|Pedido n[oº]:|Acompanhe abaixo o pedido|app\.jotaja\.com\/.*\/pedido\//i.test(message)) {
+    return {
+      reply: `Obaa! 🎉 Recebemos a confirmação do seu pedido por aqui! Muito obrigado pela preferência! Já vamos preparar tudo com muito carinho. ❤️🍕`
+    };
+  }
+
   const targetFranchiseeId = user.ownerId || user.id;
 
   // Extrai telefone limpo se fornecido remoteJid
@@ -302,6 +309,11 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
       ✅ Cliente: "Qual seu endereço?" → ${(chatbotConfig.storeType === "PHYSICAL") ? `"Temos loja física sim! Nosso endereço é: ${user.storeAddress || "Rua X, 123"}"` : `"Desculpe, somos só delivery no momento! Para fazer seu pedido acesse: ${storeLink}"`}
       ✅ Cliente: "Qual o preço da entrega?" → "A taxa varia por região! Coloca teu endereço no site que calcula: link"
       ✅ Cliente: "Vocês aceitam cartão?" → "Aceitamos sim! Cartão de crédito e débito 💳"
+22. QUANDO A MENSAGEM RECEBIDA FOR UMA CONFIRMAÇÃO / RESUMO DE PEDIDO (ex: mensagens do Jotajá ou iFood com 'SEU PEDIDO:', 'RESUMO DO PEDIDO', 'Pedido nº:', 'Acompanhe abaixo o pedido'):
+    - O CLIENTE JÁ REALIZOU O PEDIDO COM SUCESSO!
+    - É ABSOLUTAMENTE PROIBIDO oferecer mais produtos, falar de promoções ou enviar o link do cardápio!
+    - Apenas agradeça pela compra com muita alegria, simpatia e carinho.
+    - Exemplo: "Obaa! 🎉 Recebemos a confirmação do seu pedido por aqui! Muito obrigado pela preferência! Já vamos preparar tudo com muito carinho. ❤️🍕"
 
 
 DADOS DA LOJA:
