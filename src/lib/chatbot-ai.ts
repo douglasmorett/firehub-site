@@ -323,12 +323,16 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         { role: "user", parts: userParts }
       ];
 
-      const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash"];
+      const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash"];
       
       let generatedText = "";
       
       for (const mName of modelNames) {
         try {
+          // Timeout de 12 segundos por modelo para não travar o webhook
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 12000);
+
           const response = await ai.models.generateContent({
             model: mName,
             contents: fullContents,
@@ -337,15 +341,19 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
               temperature: 0.9,
               topP: 0.95,
               maxOutputTokens: 1000,
+              abortSignal: controller.signal,
             }
           });
+          
+          clearTimeout(timeoutId);
           
           if (response && response.text) {
             generatedText = response.text;
             break;
           }
-        } catch (mErr) {
-          console.warn(`[Chatbot AI] Tentativa com modelo ${mName} falhou:`, mErr);
+        } catch (mErr: any) {
+          const isTimeout = mErr?.name === "AbortError" || mErr?.message?.includes("abort");
+          console.warn(`[Chatbot AI] Tentativa com modelo ${mName} ${isTimeout ? "⏳ timeout" : "❌ falhou"}:`, mErr?.message || mErr);
         }
       }
 
