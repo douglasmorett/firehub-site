@@ -44,21 +44,18 @@ export async function sendOrderNotification(
       return;
     }
 
-    // Determinar o número sequencial do pedido no dia (ex: #34, #35 ou #2828 do iFood/JotaJá)
-    let shortId = order.ifoodReference || order.openDeliveryReference;
-    if (!shortId) {
-      const orderDate = new Date(order.createdAt);
-      const dayStart = new Date(orderDate);
-      dayStart.setHours(0, 0, 0, 0);
+    // Determinar o número sequencial do pedido no dia no sistema (ex: #52)
+    const orderDate = new Date(order.createdAt);
+    const dayStart = new Date(orderDate);
+    dayStart.setHours(0, 0, 0, 0);
 
-      const seqCount = await prisma.customerOrder.count({
-        where: {
-          franchiseeId: order.franchiseeId,
-          createdAt: { gte: dayStart, lte: orderDate }
-        }
-      });
-      shortId = seqCount > 0 ? seqCount.toString() : order.id.slice(-4).toUpperCase();
-    }
+    const seqCount = await prisma.customerOrder.count({
+      where: {
+        franchiseeId: order.franchiseeId,
+        createdAt: { gte: dayStart, lte: orderDate }
+      }
+    });
+    const shortId = seqCount > 0 ? seqCount.toString() : (order.openDeliveryReference || order.ifoodReference || order.id.slice(-4).toUpperCase());
     const storeName = order.franchisee?.storeName || "Nossa Loja";
 
     // Formata o resumo dos itens
