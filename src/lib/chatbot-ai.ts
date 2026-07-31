@@ -365,6 +365,11 @@ ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "address": "Rua X", "paymentMethod": "PIX", "finalized": false}]]
       Se o cliente confirmou TUDO (itens, endereço e pagamento), mude "status" para "NOVO" (ou "ACEITO") e "finalized" para true:
       [[PEDIDO_IA: {"status": "NOVO", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "address": "Rua X", "paymentMethod": "PIX", "finalized": true}]]
+    - REGRA DE CANCELAMENTO / DESISTÊNCIA NO WHATSAPP:
+      Se o cliente pedir para cancelar ou desistir do pedido (ex: "cancela", "não vou querer mais não", "deixa pra lá", "desisto"):
+      a) Responda gentilmente confirmando o cancelamento.
+      b) Anexe obrigatoriamente a tag no final:
+         [[PEDIDO_IA: {"status": "CANCELADO", "canceled": true, "items": []}]]
     - AVISO TRANSPARÊNCIA IA: Se o cliente perguntar se é uma IA ou se pode errar, responda com simpatia: "Sou a atendente virtual por IA da loja! 😊 Faço o máximo pra anotar tudo certinho e nossa equipe humana acompanha cada detalhe no painel!"` : `20. QUANDO O CLIENTE PEDIR UM PRODUTO ESPECÍFICO (ex: "quero essa esfera de 1,90", "quero um X-Burger"):
     - NUNCA faça o pedido diretamente pelo chat! O pedido DEVE ser feito pelo site/cardápio.
     - Responda reconhecendo o produto e DIRECIONE para finalizar pelo site: "Boa escolha! 😋 Pra finalizar seu pedido certinho com endereço e pagamento, é só clicar aqui: ${storeLink}"`}
@@ -618,6 +623,24 @@ async function syncAiOrderToDatabase({
   });
 
   const rawStatus = (payload.status || "").toUpperCase().replace(/_/g, "");
+  const isCanceled = payload.canceled === true || rawStatus.includes("CANCEL") || rawStatus.includes("DESIST");
+
+  if (isCanceled) {
+    if (existingDraft) {
+      await prisma.customerOrder.update({
+        where: { id: existingDraft.id },
+        data: {
+          status: "CANCELADO",
+          cancelledBy: "CUSTOMER",
+          cancelReason: "Cliente desistiu/cancelou no WhatsApp com a IA",
+          notes: "🤖 Rascunho cancelado pelo cliente no WhatsApp",
+        },
+      });
+      console.log(`[Chatbot AI Order Sync] ❌ Pedido IA cancelado (${existingDraft.id})`);
+    }
+    return;
+  }
+
   const isFinal = payload.finalized === true || rawStatus === "NOVO" || rawStatus === "ACEITO" || rawStatus === "FINALIZADO";
   const finalStatus = isFinal
     ? (autoAccept ? "ACEITO" : (rawStatus === "ACEITO" ? "ACEITO" : "NOVO"))
