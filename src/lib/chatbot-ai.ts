@@ -657,6 +657,9 @@ async function syncAiOrderToDatabase({
   storeProducts: any[];
   autoAccept?: boolean;
 }) {
+  const phoneClean = customerPhone.replace(/\D/g, "");
+  if (!phoneClean) return;
+
   const isLid = phoneClean.length > 13 || phoneClean.startsWith("22010");
   let formattedCustomerPhone = phoneClean;
   if (!isLid) {
@@ -667,21 +670,6 @@ async function syncAiOrderToDatabase({
       : phoneClean;
   } else {
     formattedCustomerPhone = `WhatsApp (ID: ${phoneClean.slice(-4)})`;
-  }
-
-  // Extrai nome real do cliente se o robô capturou no payload da IA
-  const payloadName = (payload.customerName || payload.name || "").trim();
-  const finalCustomerName = (payloadName && !payloadName.includes("Cliente WhatsApp"))
-    ? payloadName
-    : (customerName && !customerName.includes("Cliente WhatsApp") ? customerName : (existingDraft?.customerName || "Cliente WhatsApp"));
-
-  // Salva/Atualiza na base de clientes (StoreCustomer) se o nome for válido e tiver número limpo
-  if (finalCustomerName !== "Cliente WhatsApp" && phoneClean && !isLid) {
-    prisma.storeCustomer.upsert({
-      where: { phone: phoneClean },
-      update: { name: finalCustomerName, updatedAt: new Date() },
-      create: { phone: phoneClean, name: finalCustomerName, password: "" },
-    }).catch((e) => console.error("[Chatbot AI] Erro ao salvar StoreCustomer:", e));
   }
 
   // Busca pedido rascunho em aberto ou pedido recente nos últimos 20 minutos para evitar duplicidades
@@ -698,6 +686,21 @@ async function syncAiOrderToDatabase({
     include: { items: true },
     orderBy: { createdAt: "desc" },
   });
+
+  // Extrai nome real do cliente se o robô capturou no payload da IA
+  const payloadName = (payload.customerName || payload.name || "").trim();
+  const finalCustomerName = (payloadName && !payloadName.includes("Cliente WhatsApp"))
+    ? payloadName
+    : (customerName && !customerName.includes("Cliente WhatsApp") ? customerName : (existingDraft?.customerName || "Cliente WhatsApp"));
+
+  // Salva/Atualiza na base de clientes (StoreCustomer) se o nome for válido e tiver número limpo
+  if (finalCustomerName !== "Cliente WhatsApp" && phoneClean && !isLid) {
+    prisma.storeCustomer.upsert({
+      where: { phone: phoneClean },
+      update: { name: finalCustomerName, updatedAt: new Date() },
+      create: { phone: phoneClean, name: finalCustomerName, password: "" },
+    }).catch((e) => console.error("[Chatbot AI] Erro ao salvar StoreCustomer:", e));
+  }
 
   const rawStatus = (payload.status || "").toUpperCase().replace(/_/g, "");
   const isCanceled = payload.canceled === true || rawStatus.includes("CANCEL") || rawStatus.includes("DESIST");
@@ -798,7 +801,6 @@ async function syncAiOrderToDatabase({
       },
     });
     console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
-  }
   }
 
   // 🖨️ APENAS SE O PEDIDO FOI TOTALMENTE FINALIZADO E CONFIRMADO PELO CLIENTE:
