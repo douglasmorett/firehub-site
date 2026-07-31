@@ -184,6 +184,7 @@ export async function processChatbotAI(
       .map((h: any) => `${h.day || h.dayName || "Dia"}: ${formatDayHours(h)}`)
       .join("\n");
 
+    const now = new Date();
     const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
     const today = hoursArr[dayIdx];
     if (today && today.active) {
