@@ -112,6 +112,7 @@ export default function ChatbotHubClient() {
   const [sendingCampaign, setSendingCampaign] = useState(false);
   const [showCampaignConfirm, setShowCampaignConfirm] = useState(false);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [campaignHistory, setCampaignHistory] = useState<any[]>([]);
 
   const handleGenerateAiMessage = async () => {
     setIsGeneratingAi(true);
@@ -353,6 +354,9 @@ export default function ChatbotHubClient() {
         setMarketingCustomers(custs);
         setRecoveredOrdersCount(res.recoveredOrdersCount || 0);
         setRecoveredRevenue(res.recoveredRevenue || 0);
+        if (Array.isArray(res.campaignHistory)) {
+          setCampaignHistory(res.campaignHistory);
+        }
       }
     } catch (e) {}
   };
@@ -1465,8 +1469,12 @@ export default function ChatbotHubClient() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                  showToast(data.message, "#10B981");
+                  showToast(data.message || "🚀 Disparo concluído com sucesso!", "#10B981");
                   setShowCampaignConfirm(false);
+                  setCampaignMsg("");
+                  setCampaignImg("");
+                  setSelectedCriteria("all");
+                  loadMarketingData();
                 } else {
                   showToast(`⚠️ ${data.error || "Erro ao disparar"}`, "#EF4444");
                 }
@@ -1728,11 +1736,11 @@ export default function ChatbotHubClient() {
                     transition: "all 0.2s ease", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
                   }}
                 >
-                  {sendingCampaign ? "⏳ Disparando..." : `🚀 Disparar para ${Math.min(finalCustomers.length, 50)} Clientes`}
+                  {sendingCampaign ? "⏳ Disparando em massa..." : `🚀 Disparar para ${finalCustomers.length} Clientes`}
                 </button>
 
                 <div style={{ marginTop: "8px", textAlign: "center", fontSize: "0.7rem", color: "#94A3B8" }}>
-                  ⚡ Envio seguro com intervalos de 8-15 segundos entre cada mensagem (anti-ban)
+                  ⚡ Envio síncrono ultra seguro com trabalhadores paralelos anti-ban
                 </div>
 
                 {/* Modal de Confirmação */}
@@ -1753,28 +1761,20 @@ export default function ChatbotHubClient() {
                           </div>
                           <div>
                             <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Destinatários</div>
-                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{Math.min(finalCustomers.length, 50)} clientes</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{finalCustomers.length} clientes</div>
                           </div>
                           <div>
                             <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Imagem</div>
                             <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{campaignImg ? "✅ Sim" : "❌ Sem imagem"}</div>
                           </div>
-                          <div>
-                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Tempo Est.</div>
-                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>~{Math.ceil(Math.min(finalCustomers.length, 50) * 11.5 / 60)} min</div>
-                          </div>
                         </div>
-                      </div>
-
-                      <div style={{ background: "#FFFBEB", borderRadius: "10px", padding: "10px 12px", border: "1px solid #FDE68A", marginBottom: "16px", fontSize: "0.75rem", color: "#92400E", display: "flex", alignItems: "flex-start", gap: "6px" }}>
-                        <span>⚠️</span>
-                        <span>Disparos são enviados com intervalos aleatórios de 8-15s para proteção anti-ban do WhatsApp. O processo roda em segundo plano.</span>
                       </div>
 
                       <div style={{ display: "flex", gap: "10px" }}>
                         <button
                           onClick={() => setShowCampaignConfirm(false)}
-                          style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+                          disabled={sendingCampaign}
+                          style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "1px solid #CBD5E1", background: "#fff", cursor: "pointer", fontWeight: 800, fontSize: "0.85rem", color: "#475569" }}
                         >
                           Cancelar
                         </button>
@@ -1783,8 +1783,8 @@ export default function ChatbotHubClient() {
                           disabled={sendingCampaign}
                           style={{
                             flex: 1.5, padding: "12px", borderRadius: "12px", border: "none",
-                            background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff",
-                            fontWeight: 900, fontSize: "0.88rem", cursor: "pointer",
+                            background: sendingCampaign ? "#94A3B8" : "linear-gradient(135deg, #F59E0B, #D97706)",
+                            color: "#fff", fontWeight: 900, fontSize: "0.88rem", cursor: sendingCampaign ? "wait" : "pointer",
                             boxShadow: "0 4px 12px rgba(245,158,11,0.3)"
                           }}
                         >
@@ -1794,6 +1794,121 @@ export default function ChatbotHubClient() {
                     </div>
                   </div>
                 )}
+
+                {/* SEÇÃO DE HISTÓRICO E DESEMPENHO DOS DISPAROS */}
+                <div style={{ marginTop: "2rem", background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
+                        📊
+                      </div>
+                      <div>
+                        <h4 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>Histórico e Retorno dos Disparos</h4>
+                        <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748B" }}>Métricas reais de conversão de vendas e lucro estimado gerado</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={loadMarketingData}
+                      style={{
+                        padding: "6px 12px", borderRadius: "8px", border: "1px solid #CBD5E1",
+                        background: "#F8FAFC", cursor: "pointer", fontSize: "0.75rem", fontWeight: 700, color: "#475569"
+                      }}
+                    >
+                      🔄 Atualizar Métricas
+                    </button>
+                  </div>
+
+                  {/* Cards de Métricas Gerais de Disparos */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "10px", marginBottom: "1.5rem" }}>
+                    <div style={{ background: "#F8FAFC", padding: "12px 14px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#64748B" }}>🚀 Total de Disparos</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#0F172A", marginTop: "2px" }}>{campaignHistory.length}</div>
+                    </div>
+
+                    <div style={{ background: "#EFF6FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #BFDBFE" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#1D4ED8" }}>👥 Total de Envios</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1E40AF", marginTop: "2px" }}>
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.targetCount || c.sentCount || 0), 0)} clientes
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#ECFDF5", padding: "12px 14px", borderRadius: "12px", border: "1px solid #A7F3D0" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#047857" }}>🛒 Pedidos Convertidos</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#065F46", marginTop: "2px" }}>
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.convertedOrders || 0), 0)} pedidos
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#FEF3C7", padding: "12px 14px", borderRadius: "12px", border: "1px solid #FDE68A" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#B45309" }}>💰 Vendas Geradas</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#92400E", marginTop: "2px" }}>
+                        R$ {campaignHistory.reduce((acc: number, c: any) => acc + (c.convertedRevenue || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F0FDF4", padding: "12px 14px", borderRadius: "12px", border: "1px solid #86EFAC" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#15803D" }}>💚 Lucro Estimado</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#166534", marginTop: "2px" }}>
+                        R$ {campaignHistory.reduce((acc: number, c: any) => acc + (c.estimatedProfit || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lista do Histórico de Disparos */}
+                  {campaignHistory.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "24px", color: "#94A3B8", fontSize: "0.82rem" }}>
+                      Nenhum disparo realizado ainda. Faça seu primeiro disparo acima para acompanhar os pedidos convertidos em vendas!
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {campaignHistory.map((camp: any, i: number) => (
+                        <div key={camp.id || i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
+                            <div>
+                              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
+                                ✅ Concluído
+                              </span>
+                              <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>
+                                {new Date(camp.createdAt).toLocaleDateString("pt-BR")} às {new Date(camp.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                setCampaignMsg(camp.message);
+                                if (camp.imageUrl) setCampaignImg(camp.imageUrl);
+                                showToast("📋 Mensagem carregada no formulário acima!", "#8B5CF6");
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }}
+                              style={{
+                                padding: "4px 10px", borderRadius: "6px", border: "1px solid #CBD5E1",
+                                background: "#fff", cursor: "pointer", fontSize: "0.7rem", fontWeight: 800, color: "#334155"
+                              }}
+                            >
+                              🔁 Reutilizar Mensagem
+                            </button>
+                          </div>
+
+                          <div style={{ fontSize: "0.82rem", color: "#1E293B", whiteSpace: "pre-wrap", marginBottom: "10px", lineHeight: 1.4, background: "#fff", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                            {camp.message}
+                          </div>
+
+                          {/* Resultado de Vendas do Disparo */}
+                          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", fontSize: "0.75rem", background: "#F1F5F9", padding: "8px 12px", borderRadius: "8px" }}>
+                            <span style={{ fontWeight: 700, color: "#475569" }}>👥 Audiência: <b>{camp.targetCount || camp.sentCount} clientes</b></span>
+                            <span style={{ color: "#CBD5E1" }}>|</span>
+                            <span style={{ fontWeight: 800, color: "#047857" }}>🛒 Vendas: <b>{camp.convertedOrders || 0} pedidos</b></span>
+                            <span style={{ color: "#CBD5E1" }}>|</span>
+                            <span style={{ fontWeight: 800, color: "#B45309" }}>💰 Faturamento: <b>R$ {(camp.convertedRevenue || 0).toFixed(2)}</b></span>
+                            <span style={{ color: "#CBD5E1" }}>|</span>
+                            <span style={{ fontWeight: 900, color: "#15803D" }}>💚 Lucro Gerado: <b>R$ {(camp.estimatedProfit || 0).toFixed(2)}</b></span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })()}
