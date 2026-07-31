@@ -44,7 +44,6 @@ export async function GET(req: Request) {
       motoboyId: { in: motoboyIds },
       createdAt: { gte: fromDate, lte: toDate },
       deliveryType: "DELIVERY",
-      status: { notIn: ["CANCELADO"] },
     },
     select: {
       id: true,
@@ -100,6 +99,7 @@ export async function GET(req: Request) {
     let onlineTotal = 0, onlineCount = 0;
 
     for (const o of orders) {
+      if (o.status === "CANCELADO") continue; // Pedido cancelado: não cobrar prestação de contas do motoboy
       const pm = (o.paymentMethod || "").toUpperCase();
       if (pm === "CASH" || pm.includes("DINHEIR")) {
         cashCollectedSum += o.totalAmount;

@@ -173,7 +173,6 @@ export async function PUT(req: Request) {
 
       if (status === "CANCELADO") {
         // Cancel on iFood
-        updateData.motoboyId = null;
         updateData.cancelledBy = "LOJA";
         if (cancelReason) updateData.cancelReason = cancelReason;
 
@@ -234,7 +233,6 @@ export async function PUT(req: Request) {
       }
 
       if (status === "CANCELADO") {
-        updateData.motoboyId = null;
         updateData.cancelledBy = "LOJA";
         if (cancelReason) updateData.cancelReason = cancelReason;
 
@@ -254,7 +252,6 @@ export async function PUT(req: Request) {
 
   // Handle non-iFood/non-Jotajá cancellations
   if (status === "CANCELADO" && !order.ifoodOrderId && !order.openDeliveryOrderId) {
-    updateData.motoboyId = null;
     updateData.cancelledBy = "LOJA";
     if (cancelReason) updateData.cancelReason = cancelReason;
   }

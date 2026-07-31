@@ -1504,7 +1504,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         })
       });
       if (res.ok) {
-        setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", motoboyId: null, motoboy: null } : o));
+        setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
         router.refresh();
       } else showToast("Erro ao cancelar.", "#EF4444");
     } catch { showToast("Erro.", "#EF4444"); } finally {
