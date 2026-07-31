@@ -143,18 +143,20 @@ export async function PUT(req: Request) {
         console.log(`[iFood Sync] confirm ${ifoodId}: ${r.status}`);
       }
 
-      if (status === "PREPARANDO") {
-        // Start preparation
-        const r = await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers });
-        console.log(`[iFood Sync] startPreparation ${ifoodId}: ${r.status}`);
+      if (status === "PRONTO") {
+        // Envia readyToPickup para o iFood (acelera a alocação/chegada do motoboy parceiro do iFood e notifica cliente)
+        const r = await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers });
+        console.log(`[iFood Sync] readyToPickup ${ifoodId}: ${r.status}`);
       }
 
       if (status === "SAIU_ENTREGA") {
-        // Guarantee startPreparation occurred if jumping directly from ACEITO/NOVO
+        // Garantir que startPreparation e readyToPickup foram enviados ao iFood
         if (order.status === "ACEITO" || order.status === "NOVO") {
           await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers }).catch(() => {});
         }
-        // Dispatch (delivery orders)
+        await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
+
+        // Dispatch (pedidos de entrega)
         const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
         console.log(`[iFood Sync] dispatch ${ifoodId}: ${r.status}`);
       }

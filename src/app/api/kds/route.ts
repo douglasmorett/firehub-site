@@ -160,7 +160,7 @@ export async function PUT(req: NextRequest) {
 
   const order = await prisma.customerOrder.findUnique({
     where: { id: orderId },
-    select: { id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true },
+    select: { id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true, ifoodOrderId: true, openDeliveryOrderId: true },
   });
 
   if (!order) {
@@ -210,7 +210,6 @@ export async function PUT(req: NextRequest) {
     };
 
     // Para pedidos de RETIRADA, avança o status automaticamente para SAIU_ENTREGA (Pronto)
-    // assim o pedido sai da aba 'Em Preparo' e entra direto na aba 'Em Transporte/Finalizados' sem clique manual.
     if (isPickup) {
       updateData.status = "SAIU_ENTREGA";
     }
@@ -219,6 +218,32 @@ export async function PUT(req: NextRequest) {
       where: { id: orderId },
       data: updateData,
     });
+
+    // 🚀 Sincronizar com o iFood (readyToPickup): acelera a vinda do motoboy parceiro do iFood e notifica o cliente
+    if (order.ifoodOrderId) {
+      try {
+        const { getIfoodToken } = await import("@/lib/ifood-api");
+        const token = await getIfoodToken();
+        const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+        const readyRes = await fetch(`https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/readyToPickup`, {
+          method: "POST",
+          headers,
+        });
+        console.log(`[KDS iFood Sync] readyToPickup ${order.ifoodOrderId}: ${readyRes.status}`);
+      } catch (errIfood) {
+        console.warn("[KDS iFood Sync Error]:", errIfood);
+      }
+    }
+
+    // Sincronizar com o Jotajá / OpenDelivery
+    if (order.openDeliveryOrderId) {
+      try {
+        const { jotajaFetch } = await import("@/lib/jotaja-api");
+        await jotajaFetch(`/v1/orders/${order.openDeliveryOrderId}/readyToPickup`, { method: "POST" });
+      } catch (errOd) {
+        console.warn("[KDS Jotajá Sync Error]:", errOd);
+      }
+    }
 
     // Notificação WhatsApp automática ao dar pronto para retirada no KDS
     if (isPickup) {
