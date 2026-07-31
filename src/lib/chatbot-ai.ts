@@ -312,7 +312,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     const systemPrompt = `Você é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.
 
 REGRAS ABSOLUTAS:
-1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem.
+1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem. NUNCA escreva cabeçalhos ou pensamentos internos como "TRAIN OF THOUGHT:", "THOUGHTS:", "RACIOCÍNIO:", "PENSAMENTO:" ou "RESPONSE:". Responda diretamente com o texto final em linguagem humana natural!
 2. Responda de forma RESUMIDA, DIRETA e NATURAL como uma pessoa real no WhatsApp. (Quando estiver anotando um pedido, confirme o que foi anotado e pergunte de forma proativa os dados que faltam para finalizar: endereço e forma de pagamento!).
 3. NUNCA use markdown, asteriscos, bullet points ou formatação de código. Apenas texto puro com emojis naturais.
 4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí', 'bora').
@@ -569,7 +569,19 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       }
 
       if (generatedText) {
+        // REGRA DE SEGURANÇA MÁXIMA: Sanitizar e remover vazamentos de 'TRAIN OF THOUGHT:', 'RESPONSE:', etc.
+        if (/TRAIN OF THOUGHT:|THOUGHTS:|RACIOCÍNIO:|THINKING:|PENSAMENTO:/i.test(generatedText)) {
+          if (/RESPONSE:/i.test(generatedText)) {
+            generatedText = generatedText.split(/RESPONSE:/i).pop() || generatedText;
+          } else if (/RESPOSTA:/i.test(generatedText)) {
+            generatedText = generatedText.split(/RESPOSTA:/i).pop() || generatedText;
+          } else {
+            generatedText = generatedText.replace(/(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO):[\s\S]*?(?=\n\n|\n[A-Z]|$)/gi, "").trim();
+          }
+        }
+
         let cleanText = generatedText
+          .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA):\s*/gi, "")
           .replace(/(\*\*|\*|_|#|`)/g, "")
           .replace(/R\$\s?(\d+)[.,](\d{2})/gi, (_, g1, g2) => (g2 === "00" ? `${g1} reais` : `${g1},${g2} reais`))
           .trim();
