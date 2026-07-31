@@ -1023,6 +1023,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false) => {
     if (!order) return;
+    if (order.status === "CRIANDO_IA") {
+      showToast("⚠️ O pedido ainda está sendo montado pela IA no WhatsApp. Aguarde a finalização para imprimir.", "#F59E0B");
+      return;
+    }
     const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
     if (!isManual && orderKey && (printingInProgressRef.current.has(orderKey) || isAutoPrinted(order))) {
       console.log(`[Print] ⚠️ Impressão já em andamento ou pedido já impresso para ${orderKey}. Ignorando chamada duplicada.`);

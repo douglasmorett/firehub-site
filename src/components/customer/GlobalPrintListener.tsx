@@ -116,6 +116,9 @@ export default function GlobalPrintListener() {
               const isRecent = orderTime > thirtyMinutesAgo;
 
               if (!isFinished && isRecent) {
+                // IGNORAR RASCUNHOS IA (CRIANDO_IA) — Rascunho não deve ser impresso até o pedido ser finalizado pelo cliente!
+                if (statusUpper === "CRIANDO_IA" || statusUpper === "AGUARDANDO_PAGAMENTO") continue;
+
                 // ATOMIC CHECK: Se já foi impresso ou reclamado, ignora!
                 if (isOrderPrinted(order)) continue;
 
