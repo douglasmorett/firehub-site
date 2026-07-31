@@ -197,6 +197,7 @@ export async function processChatbotAI(
   }
 
   // Separar catálogo entre Combos, Produtos Avulsos Disponíveis Hoje e Indisponíveis
+  const todayPromotions: string[] = [];
   const availableCombos: string[] = [];
   const availableSingleProducts: string[] = [];
   const unavailableTodayProducts: string[] = [];
@@ -212,7 +213,7 @@ export async function processChatbotAI(
       if (isToday) {
         dayNotice = ` [DISPONÍVEL HOJE (${currentDayName})]`;
       } else {
-        dayNotice = ` [⚠️ INDISPONÍVEL HOJE (${currentDayName})! Disponível apenas: ${dayNamesList}]`;
+        dayNotice = ` [⚠️ INDISPONÍVEL HOJE (${currentDayName})! Promoção/Item válido apenas em: ${dayNamesList}]`;
       }
     }
 
@@ -226,28 +227,36 @@ export async function processChatbotAI(
       } catch {}
     }
 
-    const line = `- ${p.name} (${p.category}): PREÇO = R$ ${p.price.toFixed(2)}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
-
     const isCombo = p.isCombo === true || /combo|oferta|kit|pack|imperia|príncip|principe|rei|sábio|sabio/i.test(p.name) || /combo|oferta/i.test(p.category || "");
+    const isPromoItem = /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(p.name) || /promo|promoção|promocao/i.test(p.category || "");
 
     if (isToday) {
+      const line = `- ${p.name} (${p.category}): PREÇO = R$ ${p.price.toFixed(2)}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
+      if (isPromoItem) {
+        todayPromotions.push(line);
+      }
       if (isCombo) {
         availableCombos.push(line);
       } else {
         availableSingleProducts.push(line);
       }
     } else {
-      unavailableTodayProducts.push(`${line}${dayNotice}`);
+      const line = `- ${p.name} (${p.category}): [PROIBIDO VENDER PELO VALOR PROMOCIONAL HOJE]${dayNotice}`;
+      unavailableTodayProducts.push(line);
     }
   });
 
-  const catalogSummary = `=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
+  const catalogSummary = `=== 🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE (${currentDayName}) 🌟 ===
+${todayPromotions.length > 0 ? todayPromotions.join("\n") : "Nenhuma esfirra de promoção avulsa cadastrada para hoje."}
+(SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE OU QUAL A ESFIRRA DA PROMOÇÃO, RESPONDA EXATAMENTE A OPÇÃO ACIMA! É PROIBIDO MENCIONAR QUALQUER OUTRA ESFIRRA COMO SE FOSSE A PROMOÇÃO DE HOJE!)
+
+=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
 ${availableCombos.length > 0 ? availableCombos.join("\n") : "Nenhum combo específico cadastrado."}
 
 === PRODUTOS E ITENS AVULSOS DISPONÍVEIS HOJE (${currentDayName}) ===
 ${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "Nenhum item avulso cadastrado."}
 
-=== PRODUTOS INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER! ===
+=== PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER E PROIBIDO DAR O DESCONTO HOJE! ===
 ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
 
   // Formatar pedidos recentes deste cliente
@@ -334,9 +343,9 @@ REGRAS ABSOLUTAS:
 14. Seu estilo: ${personalityInstruction}
 15. REGRAS ABSOLUTAS DE PREÇO E DISPONIBILIDADE DO DIA (MUITA ATENÇÃO!):
     - Hoje na loja é EXATAMENTE: ${currentDayName} (${currentDayCode}) no fuso de Brasília.
-    - REGRA 1 DE PREÇOS EXATOS E SEM CONFUSÃO: Diga o preço exato do produto HOJE de primeira! NUNCA diga um preço promocional de outro dia para depois se corrigir dizendo "ah, me confundi".
-    - REGRA 2 DE PROMOÇÕES E DIAS: Se um item promocional (ex: Esfirra de Carne Promo R$ 1,90) estiver na lista "PRODUTOS INDISPONÍVEIS HOJE", significa que essa promoção NÃO VALE HOJE! Se o cliente pedir esse item hoje, diga o preço normal de hoje (ex: R$ 2,90) e explique simpaticamente que a promoção de 1,90 é válida apenas no dia cadastrado (ex: Quinta-feira).
-    - REGRA 3 DE ITENS INDISPONÍVEIS: Produtos na seção "PRODUTOS INDISPONÍVEIS HOJE" NÃO PODEM ser oferecidos nem vendidos hoje pelo valor promocional sob hipótese alguma.
+    - REGRA INFALÍVEL DA PROMOÇÃO DO DIA: Se o cliente perguntar "qual a esfirra da promoção?", "qual a promoção de hoje?" ou similar, consulte a seção "🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE" no cardápio. RESPONDA EXATAMENTE E APENAS ESSA PROMOÇÃO! É ESTRITAMENTE PROIBIDO citar qualquer outra esfirra de outro dia e DEPOIS mandar mensagem se corrigindo dizendo "me enganei" ou "confundi"!
+    - REGRA DE PREÇOS EXATOS: Diga o preço exato do produto HOJE de primeira! Se um produto promocional de outro dia estiver indisponível hoje, NUNCA mencione o valor promocional dele hoje.
+    - REGRA DE ITENS INDISPONÍVEIS: Produtos na seção "PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE" NÃO PODEM ser oferecidos nem vendidos hoje pelo valor promocional sob hipótese alguma.
 16. REGRA ABSOLUTA DE ATENDIMENTO 24/7 (MESMO COM CAIXA / LOJA FECHADO):
     - O ROBÔ DEVE FICAR ATIVO E RESPONDER PRA SEMPRE 24 HORAS POR DIA!
     - NUNCA DEIXE DE RESPONDER NENHUMA MENSAGEM SÓ PORQUE A LOJA OU O CAIXA ESTÁ FECHADO.
