@@ -29,6 +29,7 @@ export async function processChatbotAI(
       storeName: true,
       storePhone: true,
       storeAddress: true,
+      storeLatLng: true,
       city: true,
       slug: true,
       storeHours: true,
@@ -308,6 +309,50 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     return { reply: `Olá! 😊 No momento estou com uma instabilidade técnica. Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}` };
   }
 
+  // Geocodificação e verificação de raio no mapa em tempo real
+  let addressValidationText = "";
+  const potentialAddressText = `${message || ""} ${history ? history.slice(-2).map((h: any) => h.text).join(" ") : ""}`;
+  const addressRegex = /\b(rua|r\.|avenida|av\.|bairro|estrada|est\.|alameda|travessa|praça|praca|quadra|qd|lote|lt|serra mar|zabulão|zambulao|mariléa|marilea|centro|costa azul|cidade praiana|âncora|ancora|remanso)\b/i;
+
+  if (addressRegex.test(potentialAddressText)) {
+    try {
+      const { verifyStoreDeliveryAddress } = await import("@/lib/geocoding");
+      const geoResult = await verifyStoreDeliveryAddress(
+        user.storeAddress,
+        user.storeLatLng as any,
+        user.city,
+        (user.deliveryZones as any) || [],
+        user.deliveryZoneType,
+        potentialAddressText
+      );
+
+      if (geoResult && geoResult.addressFound && geoResult.distanceKm != null) {
+        if (geoResult.isWithinRadius) {
+          addressValidationText = `
+🗺️ VALIDAÇÃO DE MAPA E RAIO DE ENTREGA EM TEMPO REAL:
+- Endereço do cliente no mapa: "${geoResult.matchedAddress || geoResult.searchedQuery}"
+- Distância calculada no mapa até a loja: ${geoResult.distanceKm} KM
+- Raio Máximo Configurado da Loja: ${geoResult.maxRadiusKm} KM
+- RESULTADO DO MAPA: ✅ ATENDE COM SUCESSO!
+- Taxa de Entrega Calculada: R$ ${geoResult.deliveryFee?.toFixed(2)} (${geoResult.estimatedTimeMin} min)
+- INSTRUÇÃO OBRIGATÓRIA DA IA: Diga ao cliente que a loja atende esse endereço SIM com muita alegria! A taxa de entrega é de R$ ${geoResult.deliveryFee?.toFixed(2)}. NUNCA RECUSE ESSE PEDIDO!
+`;
+        } else {
+          addressValidationText = `
+🗺️ VALIDAÇÃO DE MAPA E RAIO DE ENTREGA EM TEMPO REAL:
+- Endereço do cliente no mapa: "${geoResult.matchedAddress || geoResult.searchedQuery}"
+- Distância calculada no mapa até a loja: ${geoResult.distanceKm} KM
+- Raio Máximo Configurado da Loja: ${geoResult.maxRadiusKm} KM
+- RESULTADO DO MAPA: 🛑 FORA DO RAIO MÁXIMO (${geoResult.distanceKm} km excede o limite de ${geoResult.maxRadiusKm} km da loja)!
+- INSTRUÇÃO OBRIGATÓRIA DA IA: Informe com gentileza que o endereço do cliente fica a ${geoResult.distanceKm} km da loja, o que ultrapassa o nosso raio máximo de entrega de ${geoResult.maxRadiusKm} km.
+`;
+        }
+      }
+    } catch (errGeo) {
+      console.warn("[Chatbot AI] Erro no geocoding do mapa:", errGeo);
+    }
+  }
+
   try {
     const systemPrompt = `Você é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.
 
@@ -361,16 +406,14 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
     - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || "Centro"}" (SEM NENHUM LINK!).` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
     - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
 18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA, FRETE OU SE ENTREGAMOS EM UM BAIRRO/RUA:
-    - REQUISITO OBRIGATÓRIO DE RUA E NÚMERO (REGRA CRÍTICA PARA ENTREGAS POR RAIO/KM!):
-      a) NUNCA confirme que entrega nem chute um valor fixo (tipo R$ 5,00) sem antes pedir o ENDEREÇO COMPLETO (RUA E NÚMERO DA CASA)!
-      b) Se a loja entrega por Raio de KM (até 5km): responda informando que a taxa depende da localização exata e peça a rua e o número para verificar no sistema:
-         "A nossa taxa de entrega é calculada pela distância exata até o seu endereço (atendemos num raio de até 5km da loja). Qual a sua rua e número para eu conferir se fica dentro da área de entrega e o valor certinho pra você? 😊"
-    - REJEIÇÃO DE ENDEREÇOS FORA DA ÁREA DE ENTREGA (FORA DO RAIO MÁXIMO):
-      a) Se o endereço fornecido pelo cliente for além do raio máximo de atendimento (ex: mais de 5km da loja ou em regiões não atendidas como Cidade Praiana se for além do raio):
-         Responda com simpatia: "Poxa, infelizmente esse endereço fica fora da nossa área de entrega (atendemos até 5km da nossa loja). Desculpa por não conseguir te atender nessa localização! 😔"
-      b) É ESTRITAMENTE PROIBIDO aceitar ou criar pedidos para endereços fora da área de entrega!
+    - REGRA INFALÍVEL DE ÁREA DE ENTREGA:
+      a) Consulte o campo "VALIDAÇÃO DE MAPA E RAIO DE ENTREGA EM TEMPO REAL" abaixo caso o cliente tenha enviado um endereço.
+      b) Se o resultado do mapa indicar "ATENDE COM SUCESSO", aceite o pedido imediatamente, diga que entregamos sim com alegria e informe o valor da taxa de entrega!
+      c) Se o resultado do mapa indicar "FORA DO RAIO MÁXIMO", informe com carinho que o endereço fica além do raio máximo da loja.
+    - REQUISITO DE RUA E NÚMERO PARA VALOR EXATO DE TAXA DE ENTREGA:
+      a) Se o cliente perguntar se entregamos na rua/bairro dele ou o valor da taxa, diga a taxa estimada ou peça a rua e número para conferir o valor exato no mapa: "A nossa taxa de entrega é calculada conforme o seu endereço. Qual a sua rua e número para eu colocar no pedido e ver o valor certinho pra você? 😊"
 19. DISCRIMINAÇÃO OBRIGATÓRIA DA TAXA DE ENTREGA NO RESUMO DO PEDIDO:
-    - Ao apresentar o resumo do pedido para o cliente (ou ao finalizar):
+    - Ao apresentar o resumo do pedido para o cliente (or ao finalizar):
       a) Você DEVE obrigatoriamente discriminar no texto:
          - Subtotal dos itens: R$ X,XX
          - Taxa de entrega: R$ X,XX (ou Frete Grátis)
@@ -388,53 +431,14 @@ ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       c) NUNCA pergunte se o cliente quer fazer "um novo pedido ou alterar o pedido anterior" enquanto ele estiver montando, alterando ou confirmando o pedido atual!
     - CONFIRMAÇÃO E FINALIZAÇÃO IMEDIATA (REGRA CRÍTICA!):
       Se você enviou o resumo do pedido (com Itens, Taxa de Entrega, Total, Endereço e Pagamento) e perguntou "Confirma pra mim?" (ou similar), E O CLIENTE RESPONDEU CONFIRMANDO (ex: "Certo", "Sim", "Tudo certo", "Pode mandar", "Certo!!!!", "OK"):
-      a) VOCÊ DEVE FINALIZAR O PEDIDO NA HORA! Responda agradecendo com entusiasmo e informando que o pedido já foi para a cozinha.
-      b) É OBRIGATÓRIO mudar "status" para "NOVO" (ou "ACEITO") e "finalized" para true na tag:
-         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome Do Cliente", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 16.40, "finalized": true}]]
-      c) NUNCA, sob hipótese alguma, responda fazendo novas perguntas de confirmação ou perguntando se é um novo pedido após o cliente ter dito "Certo" ou "Sim"!
-    - INSTRUÇÃO OBRIGATÓRIA DE RASCUNHO EM TEMPO REAL:
-      Se estiver criando ou atualizando o rascunho em andamento, coloque no FINAL da sua resposta:
-      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "customerName": "Nome do Cliente (se souber)", "address": "Rua X", "paymentMethod": "PIX", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]
-    - REGRA ABSOLUTA DE CANCELAMENTO / DESISTÊNCIA NO WHATSAPP (ATENÇÃO SUPREMA!):
-      Se o cliente solicitar o cancelamento ou desistência do pedido (ex: "cancela", "não vou querer mais não", "desisto", "cancela por favor"):
-      a) SE O PEDIDO ESTIVER EM MONTAGEM/RASCUNHO OU EM PREPARAÇÃO NA COZINHA (Status: 'CRIANDO_IA', 'NOVO', 'ACEITO', 'EM_PREPARO'):
-         - O cancelamento direto via chat É PERMITIDO.
-         - Responda gentilmente confirmando o cancelamento do pedido.
-         - Anexe obrigatoriamente a tag no final:
-           [[PEDIDO_IA: {"status": "CANCELADO", "canceled": true, "items": []}]]
-      b) SE O PEDIDO JÁ SAIU PARA ENTREGA COM O MOTOBOY (Status: 'SAIU_PARA_ENTREGA' em pedidos recentes):
-         - O CLIENTE NÃO PODE CANCELAR DIRETO PELO CHAT DA IA!
-         - NUNCA cancele automaticamente nem anexe status CANCELADO quando o pedido já saiu para entrega!
-         - Na primeira solicitação de cancelamento com o pedido na rua, pergunte EXATAMENTE neste tom:
-           "Poxa, seu pedido já saiu para entrega com nosso motoboy! 🛵💨 Tem certeza que deseja cancelar?"
-         - Se o cliente responder CONFIRMANDO que deseja cancelar mesmo (ex: "sim", "tenho certeza", "quero cancelar mesmo", "sim, cancela"):
-           Responda EXATAMENTE:
-           "Entendido! Vou chamar um atendente da nossa equipe agora mesmo para te ajudar com isso, por favor aguarde um momento! 😊"
-           E anexe obrigatoriamente no final da resposta a tag:
-           [[CHAMAR_ATENDENTE: true]]
-    - AVISO TRANSPARÊNCIA IA: Se o cliente perguntar se é uma IA ou se pode errar, responda com simpatia: "Sou a atendente virtual por IA da loja! 😊 Faço o máximo pra anotar tudo certinho e nossa equipe humana acompanha cada detalhe no painel!"` : `20. QUANDO O CLIENTE PEDIR UM PRODUTO ESPECÍFICO (ex: "quero essa esfera de 1,90", "quero um X-Burger"):
-    - NUNCA faça o pedido diretamente pelo chat! O pedido DEVE ser feito pelo site/cardápio.
-    - Responda reconhecendo o produto e DIRECIONE para finalizar pelo site: "Boa escolha! 😋 Pra finalizar seu pedido certinho com endereço e pagamento, é só clicar aqui: ${storeLink}"`}
-21. REGRA ANTI-RESPOSTA GENÉRICA (IMPORTANTÍSSIMO):
-    - NUNCA responda com uma frase genérica + link quando o cliente fez uma PERGUNTA ESPECÍFICA.
-    - Se o cliente perguntou algo concreto (endereço, taxa, horário, tempo de entrega, se aceita áudio, se é de Rio das Ostras), RESPONDA EXATAMENTE AQUILO que ele perguntou.
-22. QUANDO A MENSAGEM RECEBIDA FOR UMA CONFIRMAÇÃO / RESUMO DE PEDIDO (ex: Jotajá, iFood, etc):
-    - O CLIENTE JÁ REALIZOU O PEDIDO COM SUCESSO!
-    - É ABSOLUTAMENTE PROIBIDO oferecer mais produtos ou enviar o link do cardápio!
-    - Apenas agradeça pela compra com muita alegria, confirmação do pedido e simpatia.
-23. TRATAMENTO E USO DO NOME DO CLIENTE:
-${customerFirstName ? `    - O primeiro nome do cliente é "${customerFirstName}".
-    - REGRAS DE USO DO NOME: Use o nome "${customerFirstName}" APENAS na saudação inicial (ex: "E aí, ${customerFirstName}!") ou na finalização do pedido.
-    - É ESTRITAMENTE PROIBIDO repetir o nome do cliente em mensagens seguidas ou em frases como "E aí, ${customerFirstName}! Claro, te mando sim!". Fale de forma fluida e natural!` : `    - Se o cliente se apresentar, você pode usar o nome dele na saudação ou na finalização, sem repetições excessivas.`}
-24. QUANDO O CLIENTE PERGUNTAR SE PODE MANDAR ÁUDIO ("posso mandar áudio?", "posso falar em áudio?", etc):
-    - Responda de forma ultra simpática e receptiva: "Pode sim! Pode mandar áudio por aqui que eu escuto e te respondo! 🎙️😊" (SEM MANDAR NENHUM LINK!).
-25. QUANDO O CLIENTE PERGUNTAR SE A LOJA É DE RIO DAS OSTRAS OU ONDE FICA:
-    - Responda diretamente: "Somos de ${user.city || "Rio das Ostras"} sim! 😊" (SEM MANDAR NENHUM LINK!).
-26. QUANDO O CLIENTE DISSER QUE A INTERNET ESTÁ LENTA OU QUE NÃO CONSEGUE ABRIR O SITE:
-    - Responda com empatia: "Poxa, sem problemas! Pode ir me mandando por texto mesmo por aqui o que você quer que eu te ajudo a montar! 😊" (SEM MANDAR NENHUM LINK!).
-27. QUANDO O CLIENTE PEDIR MAIS INFORMAÇÕES ("posso ter mais informações sobre isso?", "como funciona?", etc):
-    - Responda de forma simpática: "Oii! 😊 Te ajudo sim! O que você gostaria de saber? Posso te falar sobre nossos lanches, entregas, valores ou horários!"
-28. REGRA DE VERIFICAÇÃO DE PEDIDOS ANTERIORES E ANTI-DUPLICIDADE:
+      a) Você DEVE imediatamente incluir a tag JSON de finalização:
+         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome", "address": "Endereço", "paymentMethod": "Forma", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": true}]]
+      b) Diga ao cliente: "Perfeito! Seu pedido foi confirmado e enviado para a cozinha! Te avisamos assim que sair para entrega! 🚀"
+    - ANOTAÇÃO TEMPORÁRIA DO RASCUNHO (RASCUNHO EM ANDAMENTO):
+      Em TODA mensagem onde você estiver anotando itens ou dados sem ter a confirmação final:
+      Inclua a tag JSON com "finalized": false:
+      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]` : ""}
+28. REGRA CRÍTICA PARA SEGUNDO PEDIDO / MUDANÇA DE PEDIDO DA MESMA PESSOA:
     - Esta regra se aplica APENAS se o cliente JÁ tiver um pedido que JÁ ESTÁ NA COZINHA OU EM ENTREGA (status "Em Preparação", "Aceito", "Saiu para Entrega") cadastrado no campo "PEDIDOS RECENTES DO CLIENTE".
     - Se o cliente mandar uma nova mensagem solicitando itens DO ZERO enquanto já tem um pedido em preparação na cozinha, informe com gentileza que o pedido anterior já está em preparo e pergunte se ele quer fazer um SEGUNDO pedido separado.
     - ATENÇÃO SUPREMA: NUNCA acione esta regra nem pergunte sobre "pedido novo vs pedido anterior" durante o atendimento de um pedido que está sendo montado ou alterado nesta conversa! Se o cliente está informando itens, endereço, pagamento, fazendo alterações ou confirmando ("Certo!", "Sim!"), MANTENHA O FLUXO NORMAL DO PEDIDO ATUAL E FINALIZE SEM PERGUNTAR SOBRE PEDIDO NOVO OU ANTIGO!
@@ -476,8 +480,7 @@ ${(() => {
     const maxKm = Math.max(...zones.map((z: any) => Number(z.radius || z.maxKm || 0)));
     taxaText = `TIPO DE ENTREGA DA LOJA: POR RAIO DE DISTÂNCIA DA LOJA!\n- FAIXAS DE KM E TAXAS PERMITIDAS:\n` +
       zones.map((z: any) => `  * Até ${z.radius || z.maxKm || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
-      `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM. (Qualquer endereço acima de ${maxKm}km está ESTRITAMENTE FORA DA ÁREA DE ENTREGA!).\n` +
-      `- REGRA OBRIGATÓRIA: NUNCA confirme que entrega nem chute R$ 5,00 sem pedir o ENDEREÇO COMPLETO (RUA E NÚMERO) para calcular o raio exato no sistema!`;
+      `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.`;
   } else if (fixedFee !== null) {
     taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
@@ -494,9 +497,8 @@ PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
 ${recentOrdersSummary}
 
 NOSSO CARDÁPIO COMPLETO DA LOJA:
-${catalogSummary || "Cardápio disponível no nosso link."}
-
 ${customPrompt ? `INSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}` : ""}
+${addressValidationText}
 
 Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no WhatsApp!`;
 

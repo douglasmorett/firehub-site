@@ -1469,12 +1469,15 @@ export default function ChatbotHubClient() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                  showToast(data.message || "🚀 Disparo concluído com sucesso!", "#10B981");
+                  showToast(data.message || "🚀 Disparo iniciado com sucesso!", "#10B981");
                   setShowCampaignConfirm(false);
                   setCampaignMsg("");
                   setCampaignImg("");
                   setSelectedCriteria("all");
                   loadMarketingData();
+                  setTimeout(() => {
+                    document.getElementById("history-section")?.scrollIntoView({ behavior: "smooth" });
+                  }, 300);
                 } else {
                   showToast(`⚠️ ${data.error || "Erro ao disparar"}`, "#EF4444");
                 }
@@ -1796,7 +1799,7 @@ export default function ChatbotHubClient() {
                 )}
 
                 {/* SEÇÃO DE HISTÓRICO E DESEMPENHO DOS DISPAROS */}
-                <div style={{ marginTop: "2rem", background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
+                <div id="history-section" style={{ marginTop: "2rem", background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "10px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       <div style={{ width: 36, height: 36, borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
@@ -1878,9 +1881,15 @@ export default function ChatbotHubClient() {
                           <div key={camp.id || i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
                               <div>
-                                <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
-                                  ✅ Concluído
-                                </span>
+                                {camp.status === "DISPARANDO" ? (
+                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#D97706", background: "#FEF3C7", padding: "2px 10px", borderRadius: "6px", border: "1px solid #FCD34D", marginRight: "8px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                    ⏳ Disparando em segundo plano ({camp.sentCount || 0} / {camp.targetCount || 0} enviados)
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
+                                    ✅ Concluído
+                                  </span>
+                                )}
                                 <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>
                                   {new Date(camp.createdAt).toLocaleDateString("pt-BR")} às {new Date(camp.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                                 </span>

@@ -6,6 +6,82 @@ import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evol
 
 export const dynamic = "force-dynamic";
 
+async function processBackgroundCampaign(userId: string, targetFranchiseeId: string, campaignId: string, message: string, imageUrl: string | undefined, allTargetPhones: string[]) {
+  try {
+    let sentSuccessCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < allTargetPhones.length; i++) {
+      const phone = allTargetPhones[i];
+      const cleanPhone = phone.replace(/\D/g, "");
+      const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
+
+      try {
+        let ok = false;
+        if (imageUrl) {
+          ok = await sendEvolutionMediaUrl(targetFranchiseeId, fullPhone, imageUrl, message);
+          if (!ok && userId !== targetFranchiseeId) {
+            ok = await sendEvolutionMediaUrl(userId, fullPhone, imageUrl, message);
+          }
+        } else {
+          ok = await sendEvolutionMessage(targetFranchiseeId, fullPhone, message);
+          if (!ok && userId !== targetFranchiseeId) {
+            ok = await sendEvolutionMessage(userId, fullPhone, message);
+          }
+        }
+
+        if (ok) {
+          sentSuccessCount++;
+        } else {
+          failedCount++;
+        }
+      } catch (errSend) {
+        failedCount++;
+      }
+
+      // Atualiza progresso no banco a cada 5 envios ou no último item para o cliente ver o progresso ao vivo no painel
+      if (i % 5 === 0 || i === allTargetPhones.length - 1) {
+        try {
+          const freshUser = await prisma.user.findUnique({ where: { id: userId }, select: { chatbotConfig: true } });
+          if (freshUser) {
+            const config = (freshUser.chatbotConfig as any) || {};
+            const history = Array.isArray(config.campaignHistory) ? config.campaignHistory : [];
+            const isDone = i === allTargetPhones.length - 1;
+
+            const updatedHistory = history.map((c: any) => {
+              if (c.id === campaignId) {
+                const viewed = Math.round(sentSuccessCount * 0.76);
+                return {
+                  ...c,
+                  sentCount: sentSuccessCount,
+                  failedCount,
+                  viewedCount: viewed,
+                  status: isDone ? "COMPLETED" : "DISPARANDO",
+                };
+              }
+              return c;
+            });
+
+            await prisma.user.update({
+              where: { id: userId },
+              data: { chatbotConfig: { ...config, campaignHistory: updatedHistory } },
+            });
+          }
+        } catch (dbErr) {
+          console.error("[Background Campaign DB Update Error]:", dbErr);
+        }
+      }
+
+      // Delay seguro anti-ban de 800ms entre mensagens
+      if (i < allTargetPhones.length - 1) {
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+  } catch (err: any) {
+    console.error(`[Background Campaign Error] campId=${campaignId}:`, err?.message);
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -362,7 +438,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Configurações salvas com sucesso!" });
     }
 
-    // 3. Disparo em massa 100% GARANTIDO E SEQUENCIAL (evita concorrência no Baileys socket)
+    // 3. Disparo em massa 100% INSTANTÂNEO & ASSÍNCRONO EM SEGUNDO PLANO
     if (body.action === "send_campaign" || body.action === "send_broadcast") {
       const { message, imageUrl, targetPhones } = body;
       if (!message || !Array.isArray(targetPhones) || targetPhones.length === 0) {
@@ -370,62 +446,23 @@ export async function POST(req: NextRequest) {
       }
 
       const allTargetPhones = targetPhones;
-      let sentSuccessCount = 0;
-      let failedCount = 0;
+      const campaignId = `camp_${Date.now()}`;
 
-      // Executa o envio SEQUENCIAL (1 por 1) com pequeno delay para garantir que o Baileys/WhatsApp socket não rejeite por concorrência
-      for (let i = 0; i < allTargetPhones.length; i++) {
-        const phone = allTargetPhones[i];
-        const cleanPhone = phone.replace(/\D/g, "");
-        const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
-
-        try {
-          let ok = false;
-          if (imageUrl) {
-            ok = await sendEvolutionMediaUrl(targetFranchiseeId, fullPhone, imageUrl, message);
-            if (!ok && user.id !== targetFranchiseeId) {
-              ok = await sendEvolutionMediaUrl(user.id, fullPhone, imageUrl, message);
-            }
-          } else {
-            ok = await sendEvolutionMessage(targetFranchiseeId, fullPhone, message);
-            if (!ok && user.id !== targetFranchiseeId) {
-              ok = await sendEvolutionMessage(user.id, fullPhone, message);
-            }
-          }
-
-          if (ok) {
-            sentSuccessCount++;
-          } else {
-            failedCount++;
-          }
-        } catch (errSend) {
-          failedCount++;
-          console.error(`[Marketing Broadcast Error] Falha ao enviar para ${fullPhone}:`, errSend);
-        }
-
-        // Delay seguro de 800ms entre cada mensagem para não dar conflito no socket do WhatsApp
-        if (i < allTargetPhones.length - 1) {
-          await new Promise((r) => setTimeout(r, 800));
-        }
-      }
-
-      const viewedCount = Math.round(sentSuccessCount * 0.76);
-
-      // Registrar o disparo no histórico da loja com rastreamento de ROI
+      // Registrar o disparo IMEDIATAMENTE no histórico da loja com status "DISPARANDO"
       const currentConfig = (user.chatbotConfig as any) || {};
       const historyList = Array.isArray(currentConfig.campaignHistory) ? currentConfig.campaignHistory : [];
 
       const newCampaignRecord = {
-        id: `camp_${Date.now()}`,
+        id: campaignId,
         createdAt: new Date().toISOString(),
         message,
         imageUrl: imageUrl || null,
         targetCount: allTargetPhones.length,
-        sentCount: sentSuccessCount,
-        failedCount: failedCount,
-        viewedCount: viewedCount,
+        sentCount: 0,
+        failedCount: 0,
+        viewedCount: 0,
         targetPhones: allTargetPhones.slice(0, 2000), // Guarda os telefones para cálculo de vendas convertidas
-        status: "COMPLETED",
+        status: "DISPARANDO",
         convertedOrders: 0,
         convertedRevenue: 0,
         estimatedProfit: 0,
@@ -433,7 +470,7 @@ export async function POST(req: NextRequest) {
 
       const updatedConfig = {
         ...currentConfig,
-        campaignHistory: [newCampaignRecord, ...historyList].slice(0, 50), // Mantém o histórico das últimas 50 campanhas
+        campaignHistory: [newCampaignRecord, ...historyList].slice(0, 50),
       };
 
       await prisma.user.update({
@@ -441,9 +478,12 @@ export async function POST(req: NextRequest) {
         data: { chatbotConfig: updatedConfig },
       });
 
+      // Dispara o worker assíncrono em segundo plano SEM travar a requisição do usuário na tela
+      processBackgroundCampaign(user.id, targetFranchiseeId, campaignId, message, imageUrl, allTargetPhones).catch(() => {});
+
       return NextResponse.json({
         success: true,
-        message: `🚀 Disparo concluído! ${sentSuccessCount} mensagens entregues com sucesso (${failedCount} falhas)!`,
+        message: `🚀 Disparo iniciado para ${allTargetPhones.length} clientes! O envio está sendo realizado em segundo plano.`,
         campaign: newCampaignRecord,
       });
     }
