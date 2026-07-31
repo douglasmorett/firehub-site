@@ -8,6 +8,7 @@ const {
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } = require("@whiskeysockets/baileys");
 
 const app = express();
@@ -245,13 +246,21 @@ async function getOrCreateSocket(instanceName) {
       const remoteJid = msg.key.remoteJid || "";
       if (remoteJid.endsWith("@g.us")) continue;
 
+      const isAudio = Boolean(
+        msg.message.audioMessage ||
+        msg.message.pttMessage ||
+        msg.message.ephemeralMessage?.message?.audioMessage ||
+        msg.message.viewOnceMessage?.message?.audioMessage ||
+        msg.message.viewOnceMessageV2?.message?.audioMessage
+      );
+
       const textMessage =
         msg.message.conversation ||
         msg.message.extendedTextMessage?.text ||
         msg.message.imageMessage?.caption ||
-        "";
+        (isAudio ? "O cliente enviou a mensagem de áudio em anexo." : "");
 
-      if (!textMessage.trim()) continue;
+      if (!textMessage.trim() && !isAudio) continue;
 
       const now = Date.now();
       const lastReply = replyCooldowns.get(remoteJid) || 0;
@@ -261,11 +270,27 @@ async function getOrCreateSocket(instanceName) {
       }
       replyCooldowns.set(remoteJid, now);
 
-      console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}"`);
+      let payloadMessage = JSON.parse(JSON.stringify(msg.message));
+
+      if (isAudio) {
+        try {
+          console.log(`[WhatsApp Gateway] 🎙️ Baixando áudio de ${remoteJid}...`);
+          const buffer = await downloadMediaMessage(msg, "buffer", {});
+          const base64Str = buffer.toString("base64");
+          if (!payloadMessage.audioMessage) payloadMessage.audioMessage = {};
+          payloadMessage.audioMessage.base64 = base64Str;
+          payloadMessage.audioMessage.mimetype = "audio/ogg";
+          console.log(`[WhatsApp Gateway] ✅ Áudio de ${remoteJid} baixado com sucesso (${base64Str.length} chars)`);
+        } catch (audioErr) {
+          console.error(`[WhatsApp Gateway] ❌ Erro ao baixar áudio de ${remoteJid}:`, audioErr?.message || audioErr);
+        }
+      }
+
+      console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}" (isAudio: ${isAudio})`);
 
       try {
         const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
-        const res = await fetch(webhookUrl, {
+        await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -273,7 +298,9 @@ async function getOrCreateSocket(instanceName) {
             instance: instanceName,
             data: {
               key: msg.key,
-              message: msg.message,
+              message: payloadMessage,
+              sender: remoteJid,
+              pushName: msg.pushName || "",
             },
           }),
         });
@@ -421,6 +448,36 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
   } catch (err) {
     console.error(`[WhatsApp Gateway] ❌ Erro ao enviar mensagem para ${jid}:`, err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// 4.5 Obter Base64 de Mídia / Áudio via API REST
+app.post("/chat/getBase64FromMediaMessage/:instanceName", async (req, res) => {
+  const { instanceName } = req.params;
+  const { message } = req.body || {};
+
+  try {
+    let session = sessions.get(instanceName);
+    if (!session || session.state !== "open") {
+      for (const s of sessions.values()) {
+        if (s.state === "open" && s.sock) {
+          session = s;
+          break;
+        }
+      }
+    }
+
+    if (!session || !session.sock) {
+      return res.status(400).json({ error: "Sessão não conectada" });
+    }
+
+    const msgObj = message?.key ? message : { key: message?.key || {}, message: message?.message || message };
+    const buffer = await downloadMediaMessage(msgObj, "buffer", {});
+    const base64Str = buffer.toString("base64");
+    return res.json({ base64: base64Str, status: "SUCCESS" });
+  } catch (err) {
+    console.error("[WhatsApp Gateway] Erro no endpoint getBase64FromMediaMessage:", err);
+    return res.status(500).json({ error: err.message || "Falha ao baixar mídia" });
   }
 });
 
