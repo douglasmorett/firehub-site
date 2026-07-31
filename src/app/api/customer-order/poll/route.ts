@@ -672,5 +672,11 @@ export async function GET(req: NextRequest) {
     dailyOrderNumber: dailyNumMap.get(o.id) || null,
   }));
 
+  // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
+  try {
+    const { checkAndCleanupStaleAiDrafts } = await import("@/lib/chatbot-ai");
+    checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
+  } catch {}
+
   return NextResponse.json(ordersWithDailyNum);
 }

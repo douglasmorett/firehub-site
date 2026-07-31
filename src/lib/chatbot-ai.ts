@@ -846,4 +846,96 @@ async function syncAiOrderToDatabase({
       console.error("[Chatbot AI Order Sync] Erro ao enfileirar impressão do pedido IA:", printErr);
     }
   }
+
+  // Executa limpeza preventiva de rascunhos antigos da loja
+  checkAndCleanupStaleAiDrafts(franchiseeId).catch(() => {});
+}
+
+/**
+ * Verifica rascunhos de pedidos IA ("CRIANDO_IA"):
+ * 1. Após 20 minutos de inatividade sem resposta do cliente: envia mensagem no WhatsApp perguntando se deseja continuar o pedido.
+ * 2. Se continuar sem retorno por mais 10 minutos (30 min no total): cancela o rascunho automaticamente para não ficar estacionado no painel da loja.
+ */
+export async function checkAndCleanupStaleAiDrafts(franchiseeIdFilter?: string) {
+  try {
+    const now = Date.now();
+    const twentyMinAgo = new Date(now - 20 * 60 * 1000);
+    const thirtyMinAgo = new Date(now - 30 * 60 * 1000);
+
+    const whereCondition: any = {
+      status: "CRIANDO_IA",
+    };
+    if (franchiseeIdFilter) {
+      whereCondition.franchiseeId = franchiseeIdFilter;
+    }
+
+    const staleDrafts = await prisma.customerOrder.findMany({
+      where: whereCondition,
+      select: {
+        id: true,
+        franchiseeId: true,
+        customerPhone: true,
+        customerName: true,
+        notes: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!staleDrafts || staleDrafts.length === 0) return;
+
+    const { sendEvolutionMessage } = await import("@/lib/whatsapp-evolution");
+
+    for (const draft of staleDrafts) {
+      const updatedAtMs = new Date(draft.updatedAt).getTime();
+      const notesStr = draft.notes || "";
+      const hasFollowup = notesStr.includes("[FOLLOWUP_INATIVIDADE]");
+      const cleanPhone = (draft.customerPhone || "").replace(/\D/g, "");
+
+      // 1. Passaram 30+ min no total OU 10 minutos após o acompanhamento enviando sem resposta -> CANCELAR RASCUNHO AUTOMATICAMENTE
+      if ((hasFollowup && updatedAtMs <= twentyMinAgo.getTime()) || updatedAtMs <= thirtyMinAgo.getTime()) {
+        await prisma.customerOrder.update({
+          where: { id: draft.id },
+          data: {
+            status: "CANCELADO",
+            cancelledBy: "SYSTEM_INACTIVITY",
+            cancelReason: "Cancelado por inatividade do cliente (rascunho IA abandonado no WhatsApp)",
+            notes: `${notesStr}\n🤖 Pedido cancelado automaticamente por inatividade (20+ min sem retorno)`,
+          },
+        });
+        console.log(`[Chatbot AI Cleanup] ❌ Rascunho IA cancelado por inatividade (${draft.id})`);
+
+        if (cleanPhone) {
+          sendEvolutionMessage(
+            draft.franchiseeId,
+            cleanPhone,
+            `Oi! Como não tivemos retorno por um tempinho, cancelamos seu rascunho de pedido por aqui para manter nosso sistema organizado. 😊\n\nQuando quiser pedir de novo, é só me mandar uma mensagem por aqui! 🍔`
+          ).catch(() => {});
+        }
+        continue;
+      }
+
+      // 2. Passaram 20 minutos de inatividade e ainda NÃO enviou acompanhamento -> Perguntar ao cliente no WhatsApp
+      if (!hasFollowup && updatedAtMs <= twentyMinAgo.getTime()) {
+        await prisma.customerOrder.update({
+          where: { id: draft.id },
+          data: {
+            notes: `${notesStr}\n[FOLLOWUP_INATIVIDADE]`,
+            updatedAt: new Date(),
+          },
+        });
+        console.log(`[Chatbot AI Cleanup] 💬 Acompanhamento de inatividade enviado para (${draft.id})`);
+
+        if (cleanPhone) {
+          sendEvolutionMessage(
+            draft.franchiseeId,
+            cleanPhone,
+            `Oi! Vi que você começou a montar seu pedido com a gente mas parou por um tempinho. 😊\n\nVocê gostaria de continuar seu pedido ou deseja alterar algum item?`
+          ).catch(() => {});
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error("[Chatbot AI Cleanup Error]:", err?.message);
+  }
 }

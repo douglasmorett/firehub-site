@@ -376,9 +376,22 @@ export default function MenuProductManager({
     }));
   };
 
-  const itemProducts = products.filter(p => !p.isCombo);
-  const comboProducts = products.filter(p => p.isCombo);
-  const noPhotoCount = products.filter(p => !p.imageUrl).length;
+  const isHiddenIntegrationItem = (p: any) => {
+    const catUpper = (p.category || "").toUpperCase().trim();
+    if (["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"].some(h => catUpper.includes(h))) {
+      return true;
+    }
+    // Se existirem categorias dinâmicas ativas, oculta itens cujas categorias não existem nas categorias do cardápio visível da loja
+    if (dynCategories && dynCategories.length > 0) {
+      const validCatNames = new Set(dynCategories.map((c: any) => (c.name || "").toUpperCase().trim()));
+      if (!validCatNames.has(catUpper)) return true;
+    }
+    return false;
+  };
+
+  const itemProducts = products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p));
+  const comboProducts = products.filter(p => p.isCombo && !isHiddenIntegrationItem(p));
+  const noPhotoCount = products.filter(p => !p.imageUrl && !isHiddenIntegrationItem(p)).length;
 
   const handleCleanNoPhoto = async () => {
     if (!confirm("Deseja excluir todos os produtos que não possuem foto? (Eles serão removidos do cardápio e desvinculados de todos os combos automaticamente)")) return;
