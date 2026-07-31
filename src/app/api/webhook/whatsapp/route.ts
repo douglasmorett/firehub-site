@@ -305,7 +305,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   try {
     aiResponse = await withTimeout(
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData),
-      15000 // 15 segundos máximo
+      25000 // 25 segundos máximo (10s modelo 1 + 6s modelo 2 + 6s modelo 3 + margem)
     );
   } catch (aiErr: any) {
     console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro na IA para ${remoteJid}:`, aiErr?.message || aiErr);

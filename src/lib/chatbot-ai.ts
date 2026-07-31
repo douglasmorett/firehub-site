@@ -417,10 +417,12 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       
       let generatedText = "";
       
-      for (const mName of modelNames) {
+      for (let idx = 0; idx < modelNames.length; idx++) {
+        const mName = modelNames[idx];
+        const modelTimeout = idx === 0 ? 10000 : 6000; // 10s primeiro, 6s retries
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 18000);
+          const timeoutId = setTimeout(() => controller.abort(), modelTimeout);
 
           const response = await ai.models.generateContent({
             model: mName,
@@ -442,7 +444,10 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           }
         } catch (mErr: any) {
           const isTimeout = mErr?.name === "AbortError" || mErr?.message?.includes("abort");
-          console.warn(`[Chatbot AI] Tentativa com modelo ${mName} ${isTimeout ? "⏳ timeout" : "❌ falhou"}:`, mErr?.message || mErr);
+          const errDetail = mErr?.message || mErr?.status || JSON.stringify(mErr).slice(0, 200);
+          console.warn(`[Chatbot AI] Modelo ${mName} ${isTimeout ? "⏳ timeout" : "❌ falhou"} (${modelTimeout}ms): ${errDetail}`);
+          // Se não foi timeout, o modelo falhou rápido — não vale tentar o próximo com mesmo prompt
+          if (!isTimeout && idx === 0) continue;
         }
       }
 
