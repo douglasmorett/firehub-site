@@ -31,21 +31,34 @@ export async function GET(req: NextRequest) {
   // Filtro de status ativo amplo para capturar qualquer pedido em andamento (iFood, Jotajá, WhatsApp ou Site)
   const activeStatusFilter = { in: ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "RECEBIDO", "CONFIRMADO", "PENDENTE"] };
 
+  // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos de dias anteriores
+  const activeSession = await prisma.cashSession.findFirst({
+    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+    orderBy: { openedAt: "desc" },
+    select: { openedAt: true }
+  });
+
+  const sessionStartCutoff = activeSession?.openedAt
+    ? new Date(activeSession.openedAt)
+    : new Date(Date.now() - 24 * 60 * 60 * 1000);
+
   if (stage === "production") {
-    // Tela de Preparo: mostra todos os pedidos ativos na cozinha que ainda não foram concluídos na produção
+    // Tela de Preparo: mostra apenas pedidos ativos da sessão/turno atual
     where = {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
       status: activeStatusFilter,
+      createdAt: { gte: sessionStartCutoff },
       OR: [
         { kdsStage: "PRODUCTION" },
         { kdsStage: null },
       ],
     };
   } else if (stage === "finishing") {
-    // Tela de Finalização: mostra TODOS os pedidos ativos na cozinha (em produção ou prontos para finalizar)
+    // Tela de Finalização: mostra apenas pedidos ativos da sessão/turno atual
     where = {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
       status: activeStatusFilter,
+      createdAt: { gte: sessionStartCutoff },
       OR: [
         { kdsStage: "PRODUCTION" },
         { kdsStage: "FINISHING" },
@@ -96,17 +109,6 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: "asc" },
     take: 50,
   });
-
-  // Buscar data de abertura do caixa ativo para calcular sequência contínua
-  const activeSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { openedAt: true }
-  });
-
-  const sessionStartCutoff = activeSession?.openedAt
-    ? new Date(activeSession.openedAt)
-    : new Date(Date.now() - 48 * 60 * 60 * 1000);
 
   // Buscar todos os pedidos da sessão de caixa atual por ordem de criação
   const sessionOrders = await prisma.customerOrder.findMany({
