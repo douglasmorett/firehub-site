@@ -93,6 +93,16 @@ export default function RoteirizacaoModal({
   // Custom Created Routes State
   const [createdRoutes, setCreatedRoutes] = useState<RouteItem[]>([]);
 
+  // Saipos Roteirização Configuration Settings
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [routeMode, setRouteMode] = useState<"Manual" | "Automatizada" | "Inteligente">("Inteligente");
+  const [maxWaitMinutes, setMaxWaitMinutes] = useState(5);
+  const [targetStatus, setTargetStatus] = useState("Cozinha");
+  const [autoMoveStatus, setAutoMoveStatus] = useState("Não");
+  const [autoPrint, setAutoPrint] = useState("Não");
+  const [maxOrdersPerRoute, setMaxOrdersPerRoute] = useState(3);
+  const [maxDistanceKm, setMaxDistanceKm] = useState(2);
+
   // Dispatch Modal
   const [showDispatchModal, setShowDispatchModal] = useState(false);
   const [selectedMotoboyId, setSelectedMotoboyId] = useState("");
@@ -257,6 +267,50 @@ export default function RoteirizacaoModal({
 
     geocodeAddresses();
   }, [isOpen, deliveryOrders, storeCity]);
+
+  // Haversine Distance Calculation (in KM)
+  const calculateHaversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Radius of Earth in KM
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Smart Auto-Clustering Algorithm (Modo Inteligente / Automatizado)
+  const handleAutoClusterRoutes = () => {
+    const unrouted = filteredPendingOrders.filter(o => geocodedMap[o.id]);
+    if (unrouted.length === 0) {
+      alert("Nenhum pedido pendente mapeado no GPS para agrupar!");
+      return;
+    }
+
+    const firstOrder = unrouted[0];
+    const cluster: string[] = [firstOrder.id];
+
+    for (let i = 1; i < unrouted.length; i++) {
+      if (cluster.length >= maxOrdersPerRoute) break;
+      const candidate = unrouted[i];
+      const candidateCoords = geocodedMap[candidate.id];
+
+      const isClose = cluster.every(clusterOrderId => {
+        const cCoords = geocodedMap[clusterOrderId];
+        if (!cCoords || !candidateCoords) return false;
+        const dist = calculateHaversineKm(cCoords.lat, cCoords.lng, candidateCoords.lat, candidateCoords.lng);
+        return dist <= maxDistanceKm;
+      });
+
+      if (isClose) {
+        cluster.push(candidate.id);
+      }
+    }
+
+    setSelectedOrderIds(cluster);
+  };
 
   // Initialize and Update Leaflet Map
   useEffect(() => {
@@ -573,6 +627,17 @@ export default function RoteirizacaoModal({
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <button
+              onClick={() => setShowConfigModal(true)}
+              style={{
+                padding: "8px 14px", background: "#EFF6FF", border: "1px solid #93C5FD",
+                borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#1D4ED8",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 6
+              }}
+            >
+              ⚙️ Configurações
+            </button>
+
             {onRefreshOrders && (
               <button
                 onClick={onRefreshOrders}
@@ -639,8 +704,8 @@ export default function RoteirizacaoModal({
             {activeTab === "PENDING" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 
-                {/* Search Bar */}
-                <div style={{ padding: "0.75rem 1rem", borderBottom: "1px solid #F1F5F9" }}>
+                {/* Search Bar & Smart Auto-Cluster */}
+                <div style={{ padding: "0.75rem 1rem", borderBottom: "1px solid #F1F5F9", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   <div style={{
                     display: "flex", alignItems: "center", background: "#F8FAFC",
                     border: "1px solid #CBD5E1", borderRadius: "8px", padding: "6px 10px"
@@ -657,6 +722,19 @@ export default function RoteirizacaoModal({
                       }}
                     />
                   </div>
+
+                  {(routeMode === "Inteligente" || routeMode === "Automatizada") && (
+                    <button
+                      onClick={handleAutoClusterRoutes}
+                      style={{
+                        width: "100%", padding: "7px 12px", background: "#F0FDF4", border: "1px solid #86EFAC",
+                        borderRadius: "8px", fontSize: "0.78rem", fontWeight: 800, color: "#166534",
+                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6
+                      }}
+                    >
+                      🤖 Auto-Agrupar Rota {routeMode} (Máx: {maxOrdersPerRoute} pedidos / {maxDistanceKm}km)
+                    </button>
+                  )}
                 </div>
 
                 {/* Orders List Scroll Area */}
@@ -970,6 +1048,156 @@ export default function RoteirizacaoModal({
               >
                 {isDispatching ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={16} />}
                 Despachar Rota agora
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ─── CONFIGURAÇÃO DE MODALIDADES (ESTILO SAIPOS) ─── */}
+      {showConfigModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem"
+        }}>
+          <div style={{
+            background: "#FFFFFF", borderRadius: "14px", width: "100%", maxWidth: "560px",
+            padding: "1.75rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)"
+          }}>
+            <h3 style={{ margin: "0 0 0.25rem 0", fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>
+              ⚙️ Configurações da Roteirização
+            </h3>
+            <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.25rem" }}>
+              Escolha e configure as regras de agrupamento de pedidos estilo Saipos.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+              
+              {/* Modalidade */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#334155", marginBottom: 4 }}>
+                  Escolha a modalidade de roteirização que deseja habilitar:
+                </label>
+                <select
+                  value={routeMode}
+                  onChange={(e: any) => setRouteMode(e.target.value)}
+                  style={{
+                    width: "100%", padding: "10px", borderRadius: "8px", border: "1.5px solid #2563EB",
+                    fontSize: "0.9rem", fontWeight: 800, color: "#1D4ED8", background: "#EFF6FF"
+                  }}
+                >
+                  <option value="Manual">Manual</option>
+                  <option value="Automatizada">Automatizada</option>
+                  <option value="Inteligente">Inteligente</option>
+                </select>
+              </div>
+
+              {routeMode !== "Manual" && (
+                <>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                      Tempo limite para que o pedido seja inserido em uma rota (em minutos - máximo 15):
+                    </label>
+                    <input
+                      type="number"
+                      max={15}
+                      min={1}
+                      value={maxWaitMinutes}
+                      onChange={(e) => setMaxWaitMinutes(Number(e.target.value))}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                      Em qual status os pedidos deverão ser roteirizados?
+                    </label>
+                    <select
+                      value={targetStatus}
+                      onChange={(e) => setTargetStatus(e.target.value)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }}
+                    >
+                      <option value="Cozinha">Cozinha</option>
+                      <option value="Pronto">Pronto</option>
+                      <option value="Aceito">Aceito</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                      Depois de roteirizados, os pedidos deverão ser movimentados automaticamente ao próximo status?
+                    </label>
+                    <select
+                      value={autoMoveStatus}
+                      onChange={(e) => setAutoMoveStatus(e.target.value)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }}
+                    >
+                      <option value="Não">Não</option>
+                      <option value="Sim">Sim</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                      Imprimir automaticamente os pedidos após roteirizar?
+                    </label>
+                    <select
+                      value={autoPrint}
+                      onChange={(e) => setAutoPrint(e.target.value)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }}
+                    >
+                      <option value="Não">Não</option>
+                      <option value="Sim">Sim</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {routeMode === "Inteligente" && (
+                <>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#1D4ED8", marginBottom: 4 }}>
+                      Número máximo de pedidos a serem inseridos em uma mesma rota:
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={maxOrdersPerRoute}
+                      onChange={(e) => setMaxOrdersPerRoute(Number(e.target.value))}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #93C5FD", background: "#EFF6FF", fontWeight: 800 }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#1D4ED8", marginBottom: 4 }}>
+                      Distância máxima entre pedidos de uma mesma rota (em quilômetros):
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={maxDistanceKm}
+                      onChange={(e) => setMaxDistanceKm(Number(e.target.value))}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #93C5FD", background: "#EFF6FF", fontWeight: 800 }}
+                    />
+                  </div>
+                </>
+              )}
+
+            </div>
+
+            <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+              <button
+                onClick={() => setShowConfigModal(false)}
+                style={{
+                  padding: "10px 20px", background: "#2563EB", color: "#FFFFFF",
+                  border: "none", borderRadius: "8px", fontWeight: 800, fontSize: "0.9rem",
+                  cursor: "pointer"
+                }}
+              >
+                💾 SALVAR CONFIGURAÇÃO
               </button>
             </div>
 

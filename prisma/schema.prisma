@@ -434,6 +434,8 @@ model Motoboy {
   franchiseeId     String
   name             String
   phone            String?
+  password         String?         // Senha de acesso ao App do Motoboy
+  pinCode          String?         // PIN de acesso rápido
   active           Boolean         @default(true)
   // Tipo: "PER_DELIVERY" | "DAILY_RATE" | "BOTH" | "PER_KM"
   paymentType      String          @default("PER_DELIVERY")
