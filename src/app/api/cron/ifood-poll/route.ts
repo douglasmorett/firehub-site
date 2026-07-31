@@ -120,17 +120,132 @@ export async function GET(req: NextRequest) {
         if (isCancelled) {
           const existingOrder: any = await prisma.customerOrder.findFirst({
             where: { ifoodOrderId: orderId } as any,
-            select: { cancelledBy: true } as any,
+            select: { id: true, cancelledBy: true } as any,
           });
-          const cancelData: any = { status: "CANCELADO" };
-          if (!existingOrder?.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
-            cancelData.cancelledBy = "IFOOD";
+
+          if (existingOrder) {
+            // Pedido já existe — apenas atualizar status para CANCELADO
+            const cancelData: any = { status: "CANCELADO" };
+            if (!existingOrder.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
+              cancelData.cancelledBy = "IFOOD";
+            }
+            await (prisma.customerOrder as any).updateMany({
+              where: { ifoodOrderId: orderId } as any,
+              data: cancelData,
+            });
+            log.push(`  🚫 Cancelado (existente): ${orderId}`);
+          } else {
+            // Pedido NÃO existe no nosso DB — importar como CANCELADO
+            // Isso acontece quando o sistema estava fora do ar e o iFood cancelou por timeout
+            try {
+              const cancelOrderRes = await fetch(
+                `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (cancelOrderRes.ok) {
+                const cancelOrderData = await cancelOrderRes.json();
+                const cancelFranchisee = await prisma.user.findFirst({
+                  where: { email: "contatohakim@gmail.com" }
+                }) || await prisma.user.findFirst({
+                  where: { ifoodMerchantId: merchantId } as any,
+                });
+
+                if (cancelFranchisee) {
+                  const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
+                  const cancelItems = (cancelOrderData.items ?? []).map((i: any) => {
+                    const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
+                    const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
+                      ? JSON.stringify(subItemsList.map((s: any) => ({
+                          name: s.name || s.label || s.productName || "",
+                          quantity: s.quantity || 1,
+                          price: s.price || s.unitPrice || s.addition || 0,
+                        })))
+                      : null;
+                    const itemUnitPrice = getIfoodItemUnitPrice(i);
+                    return {
+                      price: itemUnitPrice,
+                      quantity: i.quantity ?? 1,
+                      comboSelections: comboSels,
+                      menuProduct: {
+                        connectOrCreate: {
+                          where: { id: `ifood-${i.id}` } as any,
+                          create: {
+                            id: `ifood-${i.id}`,
+                            franchiseeId: cancelFranchisee.id,
+                            name: i.name ?? "Item iFood",
+                            description: "",
+                            price: itemUnitPrice,
+                            category: "iFood",
+                            active: true,
+                          } as any,
+                        } as any,
+                      },
+                    };
+                  });
+
+                  const cancelTotal = typeof cancelOrderData.total === "object"
+                    ? (cancelOrderData.total?.orderAmount ?? cancelOrderData.total?.subTotal ?? 0)
+                    : (cancelOrderData.totalPrice ?? cancelOrderData.total ?? 0);
+
+                  const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+                  const cancelParsedPay = parseOrderPaymentInfo(cancelOrderData, "IFOOD");
+
+                  const cancelMeta = event.metadata || {};
+                  const cancelReason = cancelMeta.cancelCodeDescription
+                    || cancelMeta.message
+                    || cancelMeta.reason
+                    || "Pedido cancelado automaticamente pelo iFood (não confirmado a tempo)";
+
+                  await (prisma.customerOrder as any).create({
+                    data: {
+                      franchiseeId: cancelFranchisee.id,
+                      ifoodOrderId: orderId,
+                      ifoodReference: cancelOrderData.displayId ?? undefined,
+                      source: "IFOOD",
+                      customerName: cancelOrderData.customer?.name ?? "Cliente iFood",
+                      customerPhone: (() => {
+                        const phone = cancelOrderData.customer?.phone;
+                        const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
+                        const localizer = phone?.localizer;
+                        return localizer ? `${number} ID: ${localizer}` : number;
+                      })(),
+                      customerAddress: (() => {
+                        const addr = cancelOrderData.delivery?.deliveryAddress;
+                        if (!addr) return "";
+                        const parts: string[] = [];
+                        if (addr.formattedAddress) parts.push(addr.formattedAddress);
+                        else if (addr.streetName) parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
+                        if (addr.neighborhood) parts.push(addr.neighborhood);
+                        if (addr.city) parts.push(addr.city);
+                        return parts.join(" - ");
+                      })(),
+                      deliveryType: cancelOrderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
+                      paymentMethod: cancelParsedPay.paymentMethod,
+                      totalAmount: cancelTotal,
+                      deliveryFee: cancelOrderData.total?.deliveryFee ?? cancelOrderData.delivery?.deliveryFee ?? 0,
+                      status: "CANCELADO",
+                      cancelledBy: "IFOOD",
+                      cancelReason,
+                      kdsStage: "PRODUCTION",
+                      kdsProductionAt: new Date(),
+                      notes: `Pedido iFood #${(cancelOrderData.displayId ?? orderId.slice(-6)).toUpperCase()} | ❌ Cancelado: ${cancelReason}`,
+                      createdAt: cancelOrderData.createdAt ? new Date(cancelOrderData.createdAt) : undefined,
+                      items: { create: cancelItems },
+                    },
+                  });
+                  created++;
+                  log.push(`  🚫📦 Cancelado + IMPORTADO: ${orderId} (R$ ${cancelTotal})`);
+                } else {
+                  log.push(`  ⚠️ Cancelado mas sem franqueado: ${orderId}`);
+                }
+              } else {
+                log.push(`  ⚠️ Cancelado mas detalhes indisponíveis: ${orderId} (${cancelOrderRes.status})`);
+              }
+            } catch (cancelErr: any) {
+              log.push(`  ⚠️ Erro ao importar cancelado ${orderId}: ${cancelErr.message}`);
+            }
           }
-          await (prisma.customerOrder as any).updateMany({
-            where: { ifoodOrderId: orderId } as any,
-            data: cancelData,
-          });
-          log.push(`  🚫 Cancelado: ${orderId}`);
+
           if (event.id) {
             processedEventIds.push({
               id: event.id,
