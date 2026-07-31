@@ -134,9 +134,19 @@ export async function processChatbotAI(
     SAB: "Sábado",
   };
 
-  const now = new Date();
-  const currentDayCode = DAYS_MAP[now.getDay()];
-  const currentDayName = DAY_NAMES[currentDayCode] || "Hoje";
+  // ── FIX CRÍTICO DE TIMEZONE (BRASÍLIA / UTC-3) ──
+  // No Vercel, new Date() roda em UTC (ex: 22h50 no BR já é 01h50 de sexta em UTC).
+  // Precisamos forçar a data atual para o fuso 'America/Sao_Paulo'.
+  const getBrazilDayCode = (): { code: string; name: string } => {
+    const brDayStr = new Date().toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Sao_Paulo" });
+    const EN_TO_BR: Record<string, string> = {
+      Sun: "DOM", Mon: "SEG", Tue: "TER", Wed: "QUA", Thu: "QUI", Fri: "SEX", Sat: "SAB"
+    };
+    const code = EN_TO_BR[brDayStr] || "QUI";
+    return { code, name: DAY_NAMES[code] || "Hoje" };
+  };
+
+  const { code: currentDayCode, name: currentDayName } = getBrazilDayCode();
 
   const parseAvailableDays = (val: any): string[] => {
     if (!val) return [];
@@ -184,35 +194,49 @@ export async function processChatbotAI(
     }
   }
 
-  const catalogSummary = products
-    .map((p: any) => {
-      const days = parseAvailableDays(p.availableDays);
-      let dayNotice = "";
-      if (days.length > 0) {
-        const isToday = days.map((d) => d.toUpperCase()).includes(currentDayCode);
-        const dayNamesList = days.map((d) => DAY_NAMES[d.toUpperCase()] || d).join(", ");
-        if (isToday) {
-          dayNotice = ` [DISPONÍVEL HOJE (${currentDayName})]`;
-        } else {
-          dayNotice = ` [⚠️ NÃO DISPONÍVEL HOJE (${currentDayName})! Disponível APENAS nos dias: ${dayNamesList}]`;
-        }
+  // Separar catálogo entre Disponíveis Hoje vs Indisponíveis Hoje
+  const availableTodayProducts: string[] = [];
+  const unavailableTodayProducts: string[] = [];
+
+  products.forEach((p: any) => {
+    const days = parseAvailableDays(p.availableDays);
+    let isToday = true;
+    let dayNotice = "";
+
+    if (days.length > 0) {
+      isToday = days.map((d) => d.toUpperCase()).includes(currentDayCode);
+      const dayNamesList = days.map((d) => DAY_NAMES[d.toUpperCase()] || d).join(", ");
+      if (isToday) {
+        dayNotice = ` [DISPONÍVEL HOJE (${currentDayName})]`;
       } else {
-        dayNotice = ` [DISPONÍVEL TODOS OS DIAS]`;
+        dayNotice = ` [⚠️ INDISPONÍVEL HOJE (${currentDayName})! Disponível apenas: ${dayNamesList}]`;
       }
+    }
 
-      let tagsNotice = "";
-      if (p.tags) {
-        try {
-          const parsedTags = typeof p.tags === "string" ? JSON.parse(p.tags) : p.tags;
-          if (Array.isArray(parsedTags) && parsedTags.length > 0) {
-            tagsNotice = ` (Tags: ${parsedTags.join(", ")})`;
-          }
-        } catch {}
-      }
+    let tagsNotice = "";
+    if (p.tags) {
+      try {
+        const parsedTags = typeof p.tags === "string" ? JSON.parse(p.tags) : p.tags;
+        if (Array.isArray(parsedTags) && parsedTags.length > 0) {
+          tagsNotice = ` (Tags: ${parsedTags.join(", ")})`;
+        }
+      } catch {}
+    }
 
-      return `- ${p.name} (${p.category}): ${p.price} reais${tagsNotice}${p.description ? ` — ${p.description}` : ""}${dayNotice}`;
-    })
-    .join("\n");
+    const line = `- ${p.name} (${p.category}): PREÇO = R$ ${p.price.toFixed(2)}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
+
+    if (isToday) {
+      availableTodayProducts.push(line);
+    } else {
+      unavailableTodayProducts.push(`${line}${dayNotice}`);
+    }
+  });
+
+  const catalogSummary = `=== PRODUTOS DISPONÍVEIS PARA VENDA HOJE (${currentDayName} / ${currentDayCode}) ===
+${availableTodayProducts.length > 0 ? availableTodayProducts.join("\n") : "Nenhum produto cadastrado para hoje."}
+
+=== PRODUTOS INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER! ===
+${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
 
   // Formatar pedidos recentes deste cliente
   let recentOrdersSummary = "Nenhum pedido recente encontrado para este número.";
@@ -295,11 +319,11 @@ REGRAS ABSOLUTAS:
 12. Quando informar preços, fale de forma natural (ex: "24,90 reais").
 13. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
 14. Seu estilo: ${personalityInstruction}
-15. REGRAS DE PROMOÇÕES DO DIA E DIAS DE DISPONIBILIDADE NO CARDÁPIO:
-    - Hoje é ${currentDayName} (${currentDayCode}).
-    - ATENÇÃO CRÍTICA: Observe o aviso de cada produto no cardápio abaixo. Se um produto ou promoção estiver marcado como "[⚠️ NÃO DISPONÍVEL HOJE (${currentDayName})! Disponível APENAS nos dias: X]", isso significa que ele NÃO ESTÁ DISPONÍVEL HOJE!
-    - Se o cliente perguntar sobre a promoção desse produto:
-      - Responda de forma ultra clara e simpática explicando em qual dia aquela promoção fica ativa.
+15. REGRAS ABSOLUTAS DE PREÇO E DISPONIBILIDADE DO DIA (MUITA ATENÇÃO!):
+    - Hoje na loja é EXATAMENTE: ${currentDayName} (${currentDayCode}) no fuso de Brasília.
+    - REGRA 1 DE PREÇOS EXATOS: NUNCA troque o preço de um produto por outro! Consulte a lista "PRODUTOS DISPONÍVEIS PARA VENDA HOJE" abaixo. Se Esfirra de Calabresa está 1,90 reais e Esfirra de Carne está 2,90 reais, você DEVE dizer exatamente que a Esfirra de Calabresa é 1,90 reais!
+    - REGRA 2 DE PROMOÇÕES DO DIA: Se o cliente perguntar "o que tem na promoção hoje?", diga EXATAMENTE o produto que está disponível HOJE no preço promocional.
+    - REGRA 3 DE ITENS INDISPONÍVEIS: Produtos na seção "PRODUTOS INDISPONÍVEIS HOJE" NÃO PODEM ser oferecidos nem vendidos hoje sob hipótese alguma. Se o cliente pedir um item indisponível hoje, explique com simpatia em qual dia ele fica disponível.
 16. REGRA ABSOLUTA DE ATENDIMENTO 24/7 (MESMO COM CAIXA / LOJA FECHADO):
     - O ROBÔ DEVE FICAR ATIVO E RESPONDER PRA SEMPRE 24 HORAS POR DIA!
     - NUNCA DEIXE DE RESPONDER NENHUMA MENSAGEM SÓ PORQUE A LOJA OU O CAIXA ESTÁ FECHADO.
