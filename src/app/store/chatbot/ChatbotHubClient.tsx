@@ -1937,6 +1937,51 @@ export default function ChatbotHubClient() {
               </div>
             </div>
 
+            {/* MÓDULO DE PEDIDOS DIRETO VIA IA NO WHATSAPP */}
+            <div style={{ marginBottom: "1.25rem", padding: "14px", background: "linear-gradient(135deg, #FAF5FF, #F3E8FF)", borderRadius: "14px", border: "1.5px solid #D8B4FE" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#6B21A8", display: "flex", alignItems: "center", gap: "6px" }}>
+                    🤖 Permitir que a IA anote e crie pedidos diretamente pelo WhatsApp?
+                  </div>
+                  <p style={{ fontSize: "0.76rem", color: "#7E22CE", marginTop: "4px", lineHeight: "1.4" }}>
+                    Quando ativo, a IA apresenta o cardápio no WhatsApp, anota produtos, quantidade, endereço e forma de pagamento, montando o pedido ao vivo na sua tela!
+                  </p>
+                  <div style={{ marginTop: "8px", padding: "8px 10px", background: "#FFFBEB", borderRadius: "8px", border: "1px solid #FDE68A", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <AlertCircle size={16} color="#D97706" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: "0.72rem", color: "#B45309", fontWeight: 600 }}>
+                      ⚠️ <strong>Aviso:</strong> A IA está em modo de auxílio e pode cometer eventuais equívocos nos detalhes do pedido. Recomendamos conferir os pedidos novos.
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0, marginTop: "4px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ aiOrderingEnabled: true })}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.aiOrderingEnabled === true ? "#7C3AED" : "#E2E8F0",
+                      color: config.aiOrderingEnabled === true ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ aiOrderingEnabled: false })}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.aiOrderingEnabled !== true ? "#64748B" : "#E2E8F0",
+                      color: config.aiOrderingEnabled !== true ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    NÃO
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* PAUSAR ROBÔ QUANDO PEDIR ATENDENTE HUMANO */}
             <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

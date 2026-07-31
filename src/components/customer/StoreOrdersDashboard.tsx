@@ -6,6 +6,7 @@ import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
+  CRIANDO_IA: { label: "🤖 IA criando pedido...", emoji: "🤖", color: "#7C3AED", bg: "#F3E8FF" },
   ACEITO: { label: "Aceito", emoji: "✅", color: "#10B981", bg: "#ECFDF5" },
   PREPARANDO: { label: "Em Preparo", emoji: "👨‍🍳", color: "#F59E0B", bg: "#FFFBEB" },
   SAIU_ENTREGA: { label: "Em Transporte/Finalizados", emoji: "🛵", color: "#8B5CF6", bg: "#F5F3FF" },
@@ -365,25 +366,30 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
   const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
 
+  const isAiCreating = order.status === "CRIANDO_IA";
   const cardBackground = isDragging
     ? "#DBEAFE"
-    : isRedAlert
-      ? "#FEF2F2"
-      : isYellowAlert
-        ? "#FFFBEB"
-        : "#fff";
+    : isAiCreating
+      ? "#FAF5FF"
+      : isRedAlert
+        ? "#FEF2F2"
+        : isYellowAlert
+          ? "#FFFBEB"
+          : "#fff";
 
   const cardBorder = isDragging
     ? "2.5px solid #2563EB"
-    : isRedAlert
-      ? "2.5px solid #EF4444"
-      : isYellowAlert
-        ? "2.5px solid #F59E0B"
-        : isLate
-          ? "1.5px solid #EF4444"
-          : isUrgent
-            ? "1.5px solid #F59E0B"
-            : "1px solid #E2E8F0";
+    : isAiCreating
+      ? "2px dashed #A855F7"
+      : isRedAlert
+        ? "2.5px solid #EF4444"
+        : isYellowAlert
+          ? "2.5px solid #F59E0B"
+          : isLate
+            ? "1.5px solid #EF4444"
+            : isUrgent
+              ? "1.5px solid #F59E0B"
+              : "1px solid #E2E8F0";
 
   const cardBoxShadow = isDragging
     ? "0 20px 40px -4px rgba(37, 99, 235, 0.45), 0 0 0 5px rgba(59, 130, 246, 0.2)"
@@ -445,10 +451,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
             <span style={{
               padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
-              background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
-              color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
+              background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
+              color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
             }}>
-              {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
+              {order.status === "CRIANDO_IA" ? "🤖 IA criando..." : order.source === "WHATSAPP_IA" ? "🤖 IA Whats" : order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
             </span>
             {(order.ifoodReference || order.openDeliveryReference) && (
               <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#4F46E5" }}>
@@ -1754,7 +1760,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   };
 
-  const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
+  const novos = filteredOrders.filter(o => (o.status === "NOVO" || o.status === "CRIANDO_IA") && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO").sort(sortByOrderNumberAsc);
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);

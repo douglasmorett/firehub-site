@@ -106,6 +106,7 @@ export async function processChatbotAI(
   const customerFirstName = getFirstName(rawCustomerName);
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
+  const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || "").trim();
   const agentName = (chatbotConfig.agentName || "Hakim").trim();
@@ -315,9 +316,22 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
     - NUNCA ignore isso! Procure o bairro/região na seção "TAXAS DE ENTREGA" abaixo.
     - Se encontrar o bairro, informe a taxa: "A gente entrega aí sim! A taxa pro seu bairro (${customerFirstName ? `${customerFirstName}, ` : ""})é R$ X,XX 🚀 Quer que eu te passe o cardápio pra pedir?"
     - Se não encontrar na lista, peça o endereço completo ou rua para conferir.
-20. QUANDO O CLIENTE PEDIR UM PRODUTO ESPECÍFICO (ex: "quero essa esfera de 1,90", "quero um X-Burger"):
+${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (MUITO IMPORTANTE!):
+    - Você PODE e DEVE anotar pedidos diretamente pelo WhatsApp!
+    - Se o cliente demonstrar intenção de fazer pedido (ex: "quero pedir", "me vê 2 esfirras", "quero pizza"):
+      a) Confirme os produtos, sabores e quantidades.
+      b) Sugira uma bebida ou acompanhamento.
+      c) Peça o endereço de entrega (rua, número, bairro).
+      d) Peça a forma de pagamento (Pix, Cartão ou Dinheiro).
+      e) Ao final, confirme o resumo completo.
+    - INSTRUÇÃO OBRIGATÓRIA DE RASCUNHO EM TEMPO REAL:
+      Se estiver criando ou atualizando o pedido do cliente, você DEVE colocar no FINAL da sua resposta a tag oculta no formato:
+      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "address": "Rua X", "paymentMethod": "PIX", "finalized": false}]]
+      Se o cliente confirmou TUDO (itens, endereço e pagamento), mude "status" para "NOVO" (ou "ACEITO") e "finalized" para true:
+      [[PEDIDO_IA: {"status": "NOVO", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "address": "Rua X", "paymentMethod": "PIX", "finalized": true}]]
+    - AVISO TRANSPARÊNCIA IA: Se o cliente perguntar se é uma IA ou se pode errar, responda com simpatia: "Sou a atendente virtual por IA da loja! 😊 Faço o máximo pra anotar tudo certinho e nossa equipe humana acompanha cada detalhe no painel!"` : `20. QUANDO O CLIENTE PEDIR UM PRODUTO ESPECÍFICO (ex: "quero essa esfera de 1,90", "quero um X-Burger"):
     - NUNCA faça o pedido diretamente pelo chat! O pedido DEVE ser feito pelo site/cardápio.
-    - Responda reconhecendo o produto e DIRECIONE para finalizar pelo site: "Boa escolha! 😋 Pra finalizar seu pedido certinho com endereço e pagamento, é só clicar aqui: ${storeLink}"
+    - Responda reconhecendo o produto e DIRECIONE para finalizar pelo site: "Boa escolha! 😋 Pra finalizar seu pedido certinho com endereço e pagamento, é só clicar aqui: ${storeLink}"`}
 21. REGRA ANTI-RESPOSTA GENÉRICA (IMPORTANTÍSSIMO):
     - NUNCA responda com uma frase genérica + link quando o cliente fez uma PERGUNTA ESPECÍFICA.
     - Se o cliente perguntou algo concreto (endereço, taxa, horário, tempo de entrega, se aceita áudio, se é de Rio das Ostras), RESPONDA EXATAMENTE AQUILO que ele perguntou.
@@ -456,6 +470,27 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           .replace(/(\*\*|\*|_|#|`)/g, "")
           .replace(/R\$\s?(\d+)[.,](\d{2})/gi, "$1 reais")
           .trim();
+
+        // ── SINCRONIZAR PEDIDO IA EM TEMPO REAL ──
+        const aiOrderMatch = cleanText.match(/\[\[PEDIDO_IA:\s*({[\s\S]*?})\]\]/i);
+        if (aiOrderMatch) {
+          cleanText = cleanText.replace(/\[\[PEDIDO_IA:\s*({[\s\S]*?})\]\]/gi, "").trim();
+          try {
+            const orderPayload = JSON.parse(aiOrderMatch[1]);
+            if (orderPayload && Array.isArray(orderPayload.items) && clientPhoneDigits) {
+              await syncAiOrderToDatabase({
+                franchiseeId: targetFranchiseeId,
+                customerPhone: clientPhoneDigits,
+                customerName: rawCustomerName || customerFirstName || "Cliente WhatsApp",
+                payload: orderPayload,
+                storeProducts: products,
+                autoAccept: user.chatbotConfig ? (user.chatbotConfig as any).autoAcceptOrders === true : false,
+              });
+            }
+          } catch (syncErr) {
+            console.error("[Chatbot AI] Erro ao sincronizar pedido IA no banco:", syncErr);
+          }
+        }
           
         return { reply: cleanText };
       }
@@ -488,4 +523,110 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
   return {
     reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Tô com uma instabilidade aqui, mas já já normaliza! Enquanto isso, faz teu pedido direto pelo nosso cardápio: ${storeLink}`
   };
+}
+
+async function syncAiOrderToDatabase({
+  franchiseeId,
+  customerPhone,
+  customerName,
+  payload,
+  storeProducts,
+  autoAccept,
+}: {
+  franchiseeId: string;
+  customerPhone: string;
+  customerName: string;
+  payload: any;
+  storeProducts: any[];
+  autoAccept?: boolean;
+}) {
+  const phoneClean = customerPhone.replace(/\D/g, "");
+  if (!phoneClean) return;
+
+  // Busca pedido rascunho em aberto em status CRIANDO_IA
+  const existingDraft = await prisma.customerOrder.findFirst({
+    where: {
+      franchiseeId,
+      customerPhone: { contains: phoneClean.slice(-8) },
+      status: "CRIANDO_IA",
+    },
+    include: { items: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const finalStatus = payload.finalized
+    ? (autoAccept ? "ACEITO" : (payload.status === "ACEITO" ? "ACEITO" : "NOVO"))
+    : "CRIANDO_IA";
+
+  const orderItemsData = (payload.items || []).map((it: any) => {
+    const matchedProduct = storeProducts.find(
+      (p) => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim()
+    ) || storeProducts.find(
+      (p) => p.name.toLowerCase().includes((it.name || "").toLowerCase()) || (it.name || "").toLowerCase().includes(p.name.toLowerCase())
+    );
+
+    const price = it.price || matchedProduct?.price || 0;
+    const quantity = Math.max(1, parseInt(it.quantity) || 1);
+
+    return {
+      menuProductId: matchedProduct?.id || null,
+      name: it.name || matchedProduct?.name || "Item",
+      quantity,
+      price,
+    };
+  });
+
+  const totalItemsSum = orderItemsData.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
+  const notesText = payload.finalized
+    ? `🤖 Pedido finalizado via IA pelo WhatsApp`
+    : `🤖 Pedido sendo montado pela IA no WhatsApp`;
+
+  if (existingDraft) {
+    // Atualiza rascunho existente
+    await prisma.customerOrderItem.deleteMany({ where: { orderId: existingDraft.id } });
+
+    await prisma.customerOrder.update({
+      where: { id: existingDraft.id },
+      data: {
+        customerName: customerName || existingDraft.customerName,
+        customerAddress: payload.address || existingDraft.customerAddress,
+        paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
+        totalAmount: totalItemsSum,
+        status: finalStatus,
+        notes: notesText,
+        items: {
+          create: orderItemsData.map((i: any) => ({
+            quantity: i.quantity,
+            price: i.price,
+            ...(i.menuProductId ? { menuProduct: { connect: { id: i.menuProductId } } } : {}),
+          })),
+        },
+      },
+    });
+    console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${finalStatus}, total=R$${totalItemsSum}`);
+  } else {
+    // Cria novo pedido rascunho
+    const newOrder = await prisma.customerOrder.create({
+      data: {
+        franchiseeId,
+        customerName: customerName || "Cliente WhatsApp",
+        customerPhone: phoneClean,
+        customerAddress: payload.address || null,
+        paymentMethod: payload.paymentMethod || null,
+        totalAmount: totalItemsSum,
+        deliveryType: "DELIVERY",
+        source: "WHATSAPP_IA",
+        status: finalStatus,
+        notes: notesText,
+        items: {
+          create: orderItemsData.map((i: any) => ({
+            quantity: i.quantity,
+            price: i.price,
+            ...(i.menuProductId ? { menuProduct: { connect: { id: i.menuProductId } } } : {}),
+          })),
+        },
+      },
+    });
+    console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalItemsSum}`);
+  }
 }
