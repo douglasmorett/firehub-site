@@ -153,6 +153,7 @@ export default function CadastroPage() {
     if (!tipoChave) { setError("Selecione o tipo da chave Pix."); return; }
     if (!chavePix.trim()) { setError("Digite sua chave Pix."); return; }
     if (!titularNome.trim()) { setError("Digite o nome do titular."); return; }
+    if (!titularDoc.replace(/\D/g, "")) { setError("Digite o CPF ou CNPJ do titular."); return; }
     createAccount({
       tipoChave,
       chavePix: chavePix.trim(),
@@ -164,9 +165,7 @@ export default function CadastroPage() {
     });
   }
 
-  function handleSkipRepasse() {
-    createAccount();
-  }
+
 
   const labels = ["Seus dados", "CPF", "CNPJ", "Senha", "Recebimento", "Pronto"];
   const si = step - 1;
@@ -353,7 +352,7 @@ export default function CadastroPage() {
                 </div>
 
                 <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#111", marginBottom: 4 }}>Crie sua senha</h2>
-                <p style={{ color: "#6B7280", marginBottom: 18, fontSize: ".84rem" }}>Última etapa! Defina uma senha para acessar seu painel.</p>
+                <p style={{ color: "#6B7280", marginBottom: 18, fontSize: ".84rem" }}>Defina uma senha para acessar seu painel.</p>
                 {error && <div className="err">{error}</div>}
 
                 <form onSubmit={handleStep4} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -448,12 +447,9 @@ export default function CadastroPage() {
                   </button>
                 </form>
 
-                <button className="back" onClick={handleSkipRepasse} disabled={loading}
-                  style={{ color: "#EF4444", fontWeight: 600, marginTop: 10 }}>
-                  {loading ? "Criando..." : "Configurar depois →"}
-                </button>
+                <button className="back" onClick={() => { setStep(4); setError(""); }}>← Voltar</button>
                 <p style={{ textAlign: "center", fontSize: ".74rem", color: "#9CA3AF", marginTop: 8 }}>
-                  Você pode configurar o repasse a qualquer momento no painel da loja.
+                  🔒 Seus dados financeiros são protegidos e usados exclusivamente para o repasse.
                 </p>
               </>
             )}
