@@ -191,16 +191,37 @@ async function handleIncomingMessage(body: any, instance: string) {
     return;
   }
 
-  // Suporte a Mensagens de Áudio (audioMessage / ptt)
-  const audioObj = data.message?.audioMessage || data.message?.pttMessage || data.audio;
+  // Suporte Avançado a Mensagens de Áudio e Voz (audioMessage / ptt / ephemeral / viewOnce)
+  const isAudioMessage = Boolean(
+    data.message?.audioMessage ||
+    data.message?.pttMessage ||
+    data.message?.ephemeralMessage?.message?.audioMessage ||
+    data.message?.viewOnceMessage?.message?.audioMessage ||
+    data.message?.viewOnceMessageV2?.message?.audioMessage ||
+    data.audio ||
+    data.messageType === "audio" ||
+    data.messageType === "audioMessage" ||
+    data.messageType === "pttMessage" ||
+    data.type === "audio" ||
+    data.type === "ptt"
+  );
+
+  const audioObj =
+    data.message?.audioMessage ||
+    data.message?.pttMessage ||
+    data.message?.ephemeralMessage?.message?.audioMessage ||
+    data.message?.viewOnceMessage?.message?.audioMessage ||
+    data.message?.viewOnceMessageV2?.message?.audioMessage ||
+    data.audio;
+
   let audioData: { base64: string; mimeType: string } | undefined = undefined;
 
-  if (audioObj) {
-    let base64Data = audioObj.base64 || audioObj.data || data.base64;
-    const rawMime = audioObj.mimetype || audioObj.mimeType || "audio/ogg";
+  if (isAudioMessage || audioObj) {
+    let base64Data = audioObj?.base64 || audioObj?.data || data.base64 || data.message?.base64;
+    const rawMime = audioObj?.mimetype || audioObj?.mimeType || "audio/ogg";
     const mimeType = rawMime.split(";")[0].trim() || "audio/ogg";
 
-    if (!base64Data && audioObj.url) {
+    if (!base64Data && audioObj?.url) {
       try {
         const audioRes = await fetch(audioObj.url);
         if (audioRes.ok) {
@@ -215,12 +236,12 @@ async function handleIncomingMessage(body: any, instance: string) {
     if (!base64Data && key.id) {
       try {
         const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
-        base64Data = await getEvolutionAudioBase64(instance || user.id, key, data.message || { audioMessage: audioObj });
+        base64Data = await getEvolutionAudioBase64(instance || user.id, key, data);
         if (!base64Data && user.id) {
-          base64Data = await getEvolutionAudioBase64(user.id, key, data.message || { audioMessage: audioObj });
+          base64Data = await getEvolutionAudioBase64(user.id, key, data);
         }
         if (!base64Data && user.ownerId) {
-          base64Data = await getEvolutionAudioBase64(user.ownerId, key, data.message || { audioMessage: audioObj });
+          base64Data = await getEvolutionAudioBase64(user.ownerId, key, data);
         }
       } catch (err) {
         console.error("[WhatsApp Webhook] Erro ao buscar base64 do áudio via Evolution API:", err);
@@ -259,7 +280,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     const cleanTarget = remoteJid.replace(/@.*$/, "");
     if (cleanTarget) {
       sendEvolutionMessage(
-        user.id,
+        instance || user.id,
         cleanTarget,
         "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?"
       ).catch(() => {});
@@ -268,16 +289,16 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   let textMessage = rawText;
-  if (!textMessage.trim() && audioObj) {
+  if (!textMessage.trim() && (isAudioMessage || audioObj)) {
     if (audioData?.base64) {
       textMessage = "O cliente enviou a mensagem de áudio em anexo. Por favor escute o áudio com atenção, entenda o pedido ou dúvida do cliente e responda no mesmo tom carinhoso e prestativo do cardápio.";
     } else {
       // Se não conseguiu baixar o áudio de jeito nenhum, envia uma resposta amigável de fallback pedindo para o cliente regravar ou digitar
       const cleanTarget = remoteJid.replace(/@.*$/, "");
       sendEvolutionMessage(
-        user.id,
+        instance || user.id,
         cleanTarget,
-        "Ops, não consegui ouvir o seu áudio direitinho por aqui! 😅\n\nVocê pode me mandar em texto ou gravar um novo áudio para eu te ajudar?"
+        "Ops, tentei ouvir o seu áudio mas deu uma instabilidade no sinal! 😅\n\nVocê pode me mandar em texto ou gravar um novo áudio para eu te ajudar?"
       ).catch(() => {});
       return;
     }
