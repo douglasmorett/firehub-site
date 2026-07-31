@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "
 import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
+import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -891,6 +892,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     redMinutes: 5,
   });
   const [showAlertModal, setShowAlertModal] = useState(false);
+  const [showRoteirizacaoModal, setShowRoteirizacaoModal] = useState(false);
   const [showJotajaManualModal, setShowJotajaManualModal] = useState(false);
   const [jjOrderNumber, setJjOrderNumber] = useState("");
   const [jjCustomerName, setJjCustomerName] = useState("");
@@ -3226,6 +3228,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               <Bell size={14} /> ⏱️ Alertas de Produção
             </button>
+
+            {/* Módulo de Roteirização */}
+            <button
+              onClick={() => setShowRoteirizacaoModal(true)}
+              style={{
+                padding: "5px 12px", border: "1.5px solid #2563EB", borderRadius: "8px",
+                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: "5px",
+                background: "#EFF6FF", color: "#1D4ED8",
+                boxShadow: "0 2px 6px rgba(37,99,235,0.15)"
+              }}
+              title="Abrir Módulo de Roteirização e Mapa de Entregas Estilo Saipos"
+            >
+              <MapPin size={14} /> 🗺️ Roteirização
+            </button>
           </div>
 
         </div>
@@ -3581,6 +3598,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         </div>
       )}
+
+      {/* Módulo de Roteirização */}
+      <RoteirizacaoModal
+        isOpen={showRoteirizacaoModal}
+        onClose={() => setShowRoteirizacaoModal(false)}
+        orders={orders}
+        storeAddress={user.storeAddress}
+        storeCity={user.city}
+        storeLatLng={user.storeLatLng}
+        onRefreshOrders={() => router.refresh()}
+        onUpdateOrderStatus={updateStatus}
+      />
 
       {/* TOAST NOTIFICATION */}
       {toastMsg && (
