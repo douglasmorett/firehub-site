@@ -481,7 +481,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
               systemInstruction: systemPrompt,
               temperature: 0.9,
               topP: 0.95,
-              maxOutputTokens: 1000,
+              maxOutputTokens: 2000,
               abortSignal: controller.signal,
             }
           });
@@ -508,15 +508,38 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           .trim();
 
         // ── SINCRONIZAR PEDIDO IA EM TEMPO REAL ──
-        const aiOrderMatch = cleanText.match(/\[\[\s*(?:PEDIDO_?IA|PEDIDOIA|PEDIDO|ORDER_?IA)\s*:\s*({[\s\S]*?})\s*\]\]/i);
+        let rawJsonPayload = "";
+        const tagStartIdx = cleanText.indexOf("[[");
+        
+        if (tagStartIdx !== -1) {
+          const tagContent = cleanText.substring(tagStartIdx);
+          // Extrai o conteúdo entre o primeiro { e o último }
+          const jsonStart = tagContent.indexOf("{");
+          if (jsonStart !== -1) {
+            let jsonEnd = tagContent.lastIndexOf("}");
+            if (jsonEnd > jsonStart) {
+              rawJsonPayload = tagContent.substring(jsonStart, jsonEnd + 1);
+            } else {
+              // Se o JSON foi truncado sem '}', tenta fechar o JSON automaticamente
+              rawJsonPayload = tagContent.substring(jsonStart) + '}]}]}';
+            }
+          }
+          // REGRA DE SEGURANÇA IMPERDIÁVEL: Corta TUDO a partir do '[[' da mensagem final enviada ao WhatsApp
+          cleanText = cleanText.substring(0, tagStartIdx).trim();
+        }
 
-        // REGRA DE SEGURANÇA ABSOLUTA: remove QUALQUER tag [[...]] do texto para o cliente NUNCA ver JSON técnico no WhatsApp
-        cleanText = cleanText.replace(/\[\[[\s\S]*?\]\]/gi, "").trim();
-
-        if (aiOrderMatch && aiOrderMatch[1]) {
+        if (rawJsonPayload) {
           try {
-            const rawJson = aiOrderMatch[1].trim();
-            const orderPayload = JSON.parse(rawJson);
+            // Tenta dar parse (com fallback de reparo para JSONs incompletos)
+            let orderPayload: any = null;
+            try {
+              orderPayload = JSON.parse(rawJsonPayload);
+            } catch {
+              // Tenta fechar colchetes e chaves caso tenha sido cortado
+              const repaired = rawJsonPayload.replace(/,\s*$/, "") + '}]}';
+              try { orderPayload = JSON.parse(repaired); } catch {}
+            }
+
             if (orderPayload && Array.isArray(orderPayload.items) && clientPhoneDigits) {
               await syncAiOrderToDatabase({
                 franchiseeId: targetFranchiseeId,
