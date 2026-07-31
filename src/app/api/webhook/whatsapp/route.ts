@@ -215,7 +215,10 @@ async function handleIncomingMessage(body: any, instance: string) {
     if (!base64Data && key.id) {
       try {
         const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
-        base64Data = await getEvolutionAudioBase64(user.id, key, data.message || { audioMessage: audioObj });
+        base64Data = await getEvolutionAudioBase64(instance || user.id, key, data.message || { audioMessage: audioObj });
+        if (!base64Data && user.id) {
+          base64Data = await getEvolutionAudioBase64(user.id, key, data.message || { audioMessage: audioObj });
+        }
         if (!base64Data && user.ownerId) {
           base64Data = await getEvolutionAudioBase64(user.ownerId, key, data.message || { audioMessage: audioObj });
         }

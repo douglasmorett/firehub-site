@@ -106,8 +106,9 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   throw new Error("Servidor de WhatsApp indisponível no momento. Certifique-se de que o Gateway está ativo.");
 }
 
-export async function sendEvolutionMessage(userId: string, toPhone: string, text: string) {
-  const instanceName = `firehub_${userId.slice(-10)}`;
+export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: string, text: string) {
+  const isInstanceName = userIdOrInstance.startsWith("firehub_");
+  const instanceName = isInstanceName ? userIdOrInstance : `firehub_${userIdOrInstance.slice(-10)}`;
   const number = (toPhone.includes("@s.whatsapp.net") || toPhone.includes("@lid"))
     ? toPhone
     : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
@@ -116,8 +117,9 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
+    const shortId = instanceName.replace(/^firehub_/, "");
+    const user = await prisma.user.findFirst({
+      where: isInstanceName ? { id: { endsWith: shortId } } : { id: userIdOrInstance },
       select: { chatbotConfig: true },
     });
     const config = (user?.chatbotConfig as any) || {};
@@ -151,8 +153,9 @@ export async function sendEvolutionMessage(userId: string, toPhone: string, text
   }
 }
 
-export async function sendEvolutionMediaUrl(userId: string, toPhone: string, mediaUrl: string, caption?: string) {
-  const instanceName = `firehub_${userId.slice(-10)}`;
+export async function sendEvolutionMediaUrl(userIdOrInstance: string, toPhone: string, mediaUrl: string, caption?: string) {
+  const isInstanceName = userIdOrInstance.startsWith("firehub_");
+  const instanceName = isInstanceName ? userIdOrInstance : `firehub_${userIdOrInstance.slice(-10)}`;
   const number = (toPhone.includes("@s.whatsapp.net") || toPhone.includes("@lid"))
     ? toPhone
     : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
@@ -161,8 +164,9 @@ export async function sendEvolutionMediaUrl(userId: string, toPhone: string, med
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
+    const shortId = instanceName.replace(/^firehub_/, "");
+    const user = await prisma.user.findFirst({
+      where: isInstanceName ? { id: { endsWith: shortId } } : { id: userIdOrInstance },
       select: { chatbotConfig: true },
     });
     const config = (user?.chatbotConfig as any) || {};
@@ -181,12 +185,14 @@ export async function sendEvolutionMediaUrl(userId: string, toPhone: string, med
       },
       body: JSON.stringify({
         number,
-        mediatype: "image",
-        media: mediaUrl,
-        caption: caption || "",
-        fileName: "promo.jpg",
+        mediaMessage: {
+          mediatype: "image",
+          caption: caption || "",
+          media: mediaUrl,
+        },
+        options: { delay: 1200, presence: "composing" },
       }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(12000),
     });
     return res.ok;
   } catch (err) {
@@ -225,14 +231,16 @@ export async function disconnectEvolutionInstance(userId: string) {
   }
 }
 
-export async function getEvolutionAudioBase64(userId: string, messageKey: any, messageObj: any): Promise<string | null> {
-  const instanceName = `firehub_${userId.slice(-10)}`;
+export async function getEvolutionAudioBase64(userIdOrInstance: string, messageKey: any, messageObj: any): Promise<string | null> {
+  const isInstanceName = userIdOrInstance.startsWith("firehub_");
+  const instanceName = isInstanceName ? userIdOrInstance : `firehub_${userIdOrInstance.slice(-10)}`;
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
+    const shortId = instanceName.replace(/^firehub_/, "");
+    const user = await prisma.user.findFirst({
+      where: isInstanceName ? { id: { endsWith: shortId } } : { id: userIdOrInstance },
       select: { chatbotConfig: true },
     });
     const config = (user?.chatbotConfig as any) || {};
@@ -293,6 +301,30 @@ export async function getEvolutionAudioBase64(userId: string, messageKey: any, m
     }
   } catch (err: any) {
     console.warn("[Evolution API Gateway] Tentativa 2 de áudio falhou:", err?.message);
+  }
+
+  // Tentativa 3: Enviar apenas messageObj completo
+  try {
+    const res3 = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message: messageObj,
+        convertToMp4: false,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res3.ok) {
+      const data3 = await res3.json();
+      let base64Str = data3.base64 || data3.data || data3.response?.base64 || null;
+      if (base64Str && base64Str.includes(";base64,")) {
+        base64Str = base64Str.split(";base64,")[1];
+      }
+      if (base64Str) return base64Str;
+    }
+  } catch (err: any) {
+    console.warn("[Evolution API Gateway] Tentativa 3 de áudio falhou:", err?.message);
   }
 
   return null;
