@@ -723,4 +723,23 @@ async function syncAiOrderToDatabase({
     });
     console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalItemsSum}`);
   }
+
+  // 🖨️ APENAS SE O PEDIDO FOI TOTALMENTE FINALIZADO E CONFIRMADO PELO CLIENTE:
+  if (isFinal) {
+    try {
+      const targetOrderId = existingDraft ? existingDraft.id : null;
+      const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
+      const fullOrderForPrint = await prisma.customerOrder.findFirst({
+        where: targetOrderId ? { id: targetOrderId } : { franchiseeId, status: finalStatus },
+        include: { items: { include: { menuProduct: true } } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (fullOrderForPrint) {
+        pushJobToPrintQueue(franchiseeId, fullOrderForPrint);
+        console.log(`[Chatbot AI Order Sync] 🖨️ Pedido IA finalizado (${fullOrderForPrint.id}) enviado para impressão na cozinha!`);
+      }
+    } catch (printErr) {
+      console.error("[Chatbot AI Order Sync] Erro ao enfileirar impressão do pedido IA:", printErr);
+    }
+  }
 }

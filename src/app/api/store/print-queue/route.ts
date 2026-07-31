@@ -10,6 +10,12 @@ const queuedOrderKeys = new Set<string>();
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   if (!targetId || !order) return;
 
+  const statusUpper = (order.status || "").toUpperCase();
+  if (statusUpper === "CRIANDO_IA" || statusUpper === "AGUARDANDO_PAGAMENTO") {
+    console.log(`[PrintQueue] 🛑 Pedido #${order.dailyOrderNumber || order.id} está em rascunho (${statusUpper}). Ignorando impressão.`);
+    return;
+  }
+
   // Ignorar enfileiramento de pedidos antigos (criados há mais de 6 horas) para evitar a impressão retroativa de notas de ontem
   const orderCreatedTime = order.createdAt ? new Date(order.createdAt).getTime() : Date.now();
   if (Date.now() - orderCreatedTime > 6 * 60 * 60 * 1000) {
