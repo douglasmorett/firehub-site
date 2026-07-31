@@ -194,8 +194,9 @@ export async function processChatbotAI(
     }
   }
 
-  // Separar catálogo entre Disponíveis Hoje vs Indisponíveis Hoje
-  const availableTodayProducts: string[] = [];
+  // Separar catálogo entre Combos, Produtos Avulsos Disponíveis Hoje e Indisponíveis
+  const availableCombos: string[] = [];
+  const availableSingleProducts: string[] = [];
   const unavailableTodayProducts: string[] = [];
 
   products.forEach((p: any) => {
@@ -225,15 +226,24 @@ export async function processChatbotAI(
 
     const line = `- ${p.name} (${p.category}): PREÇO = R$ ${p.price.toFixed(2)}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
 
+    const isCombo = p.isCombo === true || /combo|oferta|kit|pack|imperia|príncip|principe|rei|sábio|sabio/i.test(p.name) || /combo|oferta/i.test(p.category || "");
+
     if (isToday) {
-      availableTodayProducts.push(line);
+      if (isCombo) {
+        availableCombos.push(line);
+      } else {
+        availableSingleProducts.push(line);
+      }
     } else {
       unavailableTodayProducts.push(`${line}${dayNotice}`);
     }
   });
 
-  const catalogSummary = `=== PRODUTOS DISPONÍVEIS PARA VENDA HOJE (${currentDayName} / ${currentDayCode}) ===
-${availableTodayProducts.length > 0 ? availableTodayProducts.join("\n") : "Nenhum produto cadastrado para hoje."}
+  const catalogSummary = `=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
+${availableCombos.length > 0 ? availableCombos.join("\n") : "Nenhum combo específico cadastrado."}
+
+=== PRODUTOS E ITENS AVULSOS DISPONÍVEIS HOJE (${currentDayName}) ===
+${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "Nenhum item avulso cadastrado."}
 
 === PRODUTOS INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER! ===
 ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
@@ -312,10 +322,11 @@ REGRAS ABSOLUTAS:
    - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
    - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
-10. QUANDO O CLIENTE PERGUNTAR QUAL É O MAIS VENDIDO OU RECOMENDAÇÃO:
-    - Responda DIRETO ao ponto citando apenas 1 opção campeã com o preço real. Ex: "O campeão aqui é a Esfirra de Carne por 3,50 reais! O pessoal ama! Quer dar uma olhada no nosso cardápio?"
+10. REGRA DE OURO DE SUGESTÃO DE COMBOS E OFERTAS (PRIORIDADE MÁXIMA!):
+    - Ao sugerir opções, recomendar mais vendidos ou responder "o que você tem de bom/promoção hoje?", SUGIRA SEMPRE OS COMBOS E OFERTAS COMPLETAS (Ex: Combo 10 Esfirras, Oferta HK 5 itens, Combo Imperial) em vez de esfirras/itens avulsos!
+    - Só fale de itens avulsos se o cliente fizer uma pergunta ESPECÍFICA sobre um item individual (ex: "quanto é a esfirra de carne?", "tem de queijo?").
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
-    - Fale 2 destaques rápidos e mande o link (${storeLink}).
+    - Cite 1 ou 2 COMBOS em destaque com o preço e envie o link (${storeLink}).
 12. Quando informar preços, fale de forma natural (ex: "24,90 reais").
 13. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
 14. Seu estilo: ${personalityInstruction}
