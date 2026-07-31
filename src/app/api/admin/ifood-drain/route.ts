@@ -137,7 +137,7 @@ export async function GET(req: NextRequest) {
                   status: "CANCELADO", // Already cancelled
                   cancelledBy: "IFOOD_AUTO",
                   cancelReason: "Pedido não confirmado a tempo (sistema fora do ar)",
-                  notes: ["Importado retroativamente - pedido cancelado por timeout"],
+                  notes: "Importado retroativamente - pedido cancelado por timeout",
                   kdsProductionAt: new Date(),
                   createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
                   items: { create: items },
@@ -191,7 +191,7 @@ export async function GET(req: NextRequest) {
                   status: "CANCELADO",
                   cancelledBy: "IFOOD_AUTO",
                   cancelReason: "Pedido não confirmado a tempo (sistema fora do ar)",
-                  notes: ["Importado retroativamente - pedido cancelado por timeout"],
+                  notes: "Importado retroativamente - pedido cancelado por timeout",
                   kdsProductionAt: new Date(),
                   createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
                   items: {
