@@ -391,6 +391,20 @@ ${customerFirstName ? `    - O primeiro nome do cliente é "${customerFirstName}
     - Responda com empatia: "Poxa, sem problemas! Pode ir me mandando por texto mesmo por aqui o que você quer que eu te ajudo a montar! 😊" (SEM MANDAR NENHUM LINK!).
 27. QUANDO O CLIENTE PEDIR MAIS INFORMAÇÕES ("posso ter mais informações sobre isso?", "como funciona?", etc):
     - Responda de forma simpática: "Oii! 😊 Te ajudo sim! O que você gostaria de saber? Posso te falar sobre nossos lanches, entregas, valores ou horários!"
+28. REGRA ABSOLUTA DE VERIFICAÇÃO DE PEDIDOS ANTERIORES E ANTI-DUPLICIDADE:
+    - Se o cliente JÁ possui um pedido recente em andamento (consulte o campo "PEDIDOS RECENTES DO CLIENTE" abaixo com status "Recebido", "Em Preparação", "CRIANDO_IA", etc.):
+    - NUNCA crie nem lance um segundo pedido igual automaticamente com a tag [[PEDIDO_IA: ...]]!
+    - Se o cliente mencionar itens ou tentar pedir novamente enquanto já possui um pedido em andamento, você DEVE PERGUNTAR PROATIVAMENTE:
+      "Olá ${customerFirstName ? customerFirstName : "cliente"}! Identifiquei que você já possui o Pedido #[Número/ID] (com os itens: [Itens], Total: R$ [Valor]) em andamento no nosso sistema! Você deseja fazer MAIS UM PEDIDO NOVO separado igual a esse, ou é referente/alteração sobre o pedido que você já fez?"
+    - Se o cliente disser que é sobre o pedido que já fez ou se não confirmar explicitamente que deseja um NOVO pedido separado:
+      NÃO inclua a tag [[PEDIDO_IA: ...]] e apenas responda sobre o status ou alteração do pedido existente!
+    - SOMENTE se o cliente disser explicitamente "quero fazer outro pedido novo mesmo", "pode lançar mais um", "quero um segundo pedido", aí sim você anota e inclui a tag [[PEDIDO_IA: ...]].
+29. REGRA ABSOLUTA DE ERRO DE IA, RECALCULO DE PREÇO E PROIBIÇÃO DE DAR DESCONTOS CUSTOMIZADOS:
+    - A IA É ABSOLUTAMENTE PROIBIDA DE DAR DESCONTOS CUSTOMIZADOS OU DIZER "A GENTE VAI HONRAR O VALOR QUE TE PASSEI PRIMEIRO"!
+    - Se o cliente pedir para pagar um valor mais barato porque a IA errou o cálculo inicialmente ou recalculou o valor correto depois:
+    - Você DEVE OBRIGATORIAMENTE responder usando EXATAMENTE a seguinte estrutura de justificativa e postura:
+      "Desculpa, como sou uma IA posso cometer algum engano no cálculo inicial, por isso logo me corrigi com você! 😊 Só estou autorizada a te vender no preço oficial do nosso cardápio. Deseja continuar com o pedido no valor correto?"
+    - NUNCA honre ou aceite um valor inferior incorreto, NUNCA altere o preço oficial dos produtos e NUNCA invente descontos!
 
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
@@ -617,12 +631,16 @@ async function syncAiOrderToDatabase({
     ? `(${phoneClean.slice(0, 2)}) ${phoneClean.slice(2, 7)}-${phoneClean.slice(7)}`
     : phoneClean;
 
-  // Busca pedido rascunho em aberto em status CRIANDO_IA
+  // Busca pedido rascunho em aberto ou pedido recente nos últimos 20 minutos para evitar duplicidades
+  const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
   const existingDraft = await prisma.customerOrder.findFirst({
     where: {
       franchiseeId,
       customerPhone: { contains: phoneClean.slice(-8) },
-      status: "CRIANDO_IA",
+      OR: [
+        { status: "CRIANDO_IA" },
+        { createdAt: { gte: twentyMinutesAgo }, status: { in: ["NOVO", "ACEITO", "PREPARANDO"] } }
+      ]
     },
     include: { items: true },
     orderBy: { createdAt: "desc" },
