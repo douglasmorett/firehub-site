@@ -372,18 +372,54 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
   
   if (aiResponse?.reply) {
+    let replyText = aiResponse.reply;
+    let callHuman = false;
+
+    if (replyText.includes("[[CHAMAR_ATENDENTE: true]]") || replyText.includes("[[CHAMAR_ATENDENTE]]")) {
+      callHuman = true;
+      replyText = replyText.replace(/\[\[CHAMAR_ATENDENTE.*\]\]/g, "").trim();
+    }
+
     // Human typing delay (1000ms a 2500ms)
     const delay = Math.floor(Math.random() * (2500 - 1000 + 1)) + 1000;
     await new Promise(r => setTimeout(r, delay));
 
     const recipientTarget = remoteJid || data.from || "";
-    await sendEvolutionMessage(user.id, recipientTarget, aiResponse.reply);
+    await sendEvolutionMessage(user.id, recipientTarget, replyText);
     
-    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${aiResponse.reply}"`);
+    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${replyText}"`);
+
+    if (callHuman) {
+      cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
+      if (!global.__humanSupportChats) {
+        global.__humanSupportChats = new Map();
+      }
+      const humanKey = `${user.id}_${remoteJid}`;
+      const existing = global.__humanSupportChats.get(humanKey);
+      const formattedPhone = cleanPhone ? `+55 ${cleanPhone.replace(/^55/, "")}` : remoteJid;
+
+      const newMsgList = existing ? existing.messages : [];
+      newMsgList.push({ sender: "user", text: textMessage, timestamp: now });
+      newMsgList.push({ sender: "bot", text: replyText, timestamp: Date.now() });
+
+      global.__humanSupportChats.set(humanKey, {
+        id: humanKey,
+        userId: user.id,
+        jid: remoteJid,
+        phone: formattedPhone,
+        clientName: data.pushName || formattedPhone,
+        status: "PENDING",
+        unreadCount: (existing?.unreadCount || 0) + 1,
+        lastMessage: textMessage,
+        updatedAt: Date.now(),
+        messages: newMsgList,
+      });
+      console.log(`[WhatsApp Webhook] 🙋 Chat transferido para atendimento humano por solicitação/cancelamento (${remoteJid})`);
+    }
     
     // Update cache after response
     history.push({ sender: 'user', text: textMessage, timestamp: now });
-    history.push({ sender: 'bot', text: aiResponse.reply, timestamp: Date.now() });
+    history.push({ sender: 'bot', text: replyText, timestamp: Date.now() });
     
     // Keep only the last 15 messages
     const updatedHistory = history.slice(-15);
