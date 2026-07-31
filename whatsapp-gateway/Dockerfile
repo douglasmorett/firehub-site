@@ -3,5 +3,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --production
 COPY . .
+RUN chmod +x start.sh
 EXPOSE 8080
-CMD ["node", "--expose-gc", "--max-old-space-size=450", "server.js"]
+ENTRYPOINT ["sh", "./start.sh"]
