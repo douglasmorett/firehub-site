@@ -508,11 +508,15 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           .trim();
 
         // ── SINCRONIZAR PEDIDO IA EM TEMPO REAL ──
-        const aiOrderMatch = cleanText.match(/\[\[PEDIDO_IA:\s*({[\s\S]*?})\]\]/i);
-        if (aiOrderMatch) {
-          cleanText = cleanText.replace(/\[\[PEDIDO_IA:\s*({[\s\S]*?})\]\]/gi, "").trim();
+        const aiOrderMatch = cleanText.match(/\[\[\s*(?:PEDIDO_?IA|PEDIDOIA|PEDIDO|ORDER_?IA)\s*:\s*({[\s\S]*?})\s*\]\]/i);
+
+        // REGRA DE SEGURANÇA ABSOLUTA: remove QUALQUER tag [[...]] do texto para o cliente NUNCA ver JSON técnico no WhatsApp
+        cleanText = cleanText.replace(/\[\[[\s\S]*?\]\]/gi, "").trim();
+
+        if (aiOrderMatch && aiOrderMatch[1]) {
           try {
-            const orderPayload = JSON.parse(aiOrderMatch[1]);
+            const rawJson = aiOrderMatch[1].trim();
+            const orderPayload = JSON.parse(rawJson);
             if (orderPayload && Array.isArray(orderPayload.items) && clientPhoneDigits) {
               await syncAiOrderToDatabase({
                 franchiseeId: targetFranchiseeId,
@@ -590,8 +594,10 @@ async function syncAiOrderToDatabase({
     orderBy: { createdAt: "desc" },
   });
 
-  const finalStatus = payload.finalized
-    ? (autoAccept ? "ACEITO" : (payload.status === "ACEITO" ? "ACEITO" : "NOVO"))
+  const rawStatus = (payload.status || "").toUpperCase().replace(/_/g, "");
+  const isFinal = payload.finalized === true || rawStatus === "NOVO" || rawStatus === "ACEITO" || rawStatus === "FINALIZADO";
+  const finalStatus = isFinal
+    ? (autoAccept ? "ACEITO" : (rawStatus === "ACEITO" ? "ACEITO" : "NOVO"))
     : "CRIANDO_IA";
 
   const orderItemsData = (payload.items || []).map((it: any) => {
