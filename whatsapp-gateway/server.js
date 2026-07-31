@@ -29,16 +29,72 @@ if (CLEAN_ON_BOOT) {
   console.log("[WhatsApp Gateway] 🗑️ Sessões limpas no boot (CLEAN_SESSIONS=true)");
 }
 
-// Monitoramento de memória - previne OOM
+// Monitoramento de memória - previne OOM + limpeza de cooldowns + auto-restart
 setInterval(() => {
   const mem = process.memoryUsage();
   const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
   const rssMB = Math.round(mem.rss / 1024 / 1024);
+  if (heapMB > 420) {
+    // Memória crítica: forçar restart gracioso (Railway ALWAYS policy reinicia)
+    console.error(`[WhatsApp Gateway] 🔴 Memória CRÍTICA: heap=${heapMB}MB. Reiniciando processo...`);
+    process.exit(1);
+  }
   if (heapMB > 350) {
     console.warn(`[WhatsApp Gateway] ⚠️ Memória alta: heap=${heapMB}MB rss=${rssMB}MB - forçando GC`);
     if (global.gc) { try { global.gc(); } catch(e) {} }
   }
+  // Fix 2: Limpar replyCooldowns antigos para evitar memory leak
+  const now = Date.now();
+  for (const [key, ts] of replyCooldowns.entries()) {
+    if (now - ts > 10000) replyCooldowns.delete(key);
+  }
+  // Limpar sessionLocks órfãos
+  for (const [key] of sessionLocks.entries()) {
+    if (!sessions.has(key)) sessionLocks.delete(key);
+  }
 }, 15000);
+
+// Self-ping: mantém o processo ativo a cada 4 min (evita sleep em qualquer hosting)
+setInterval(() => {
+  const url = `http://localhost:${PORT}/`;
+  fetch(url).catch(() => {});
+  console.log(`[WhatsApp Gateway] 💓 Self-ping (uptime: ${Math.round(process.uptime())}s, sessões: ${sessions.size})`);
+}, 4 * 60 * 1000);
+
+// Fix 1: GC periódico global (único, nunca duplica em reconexões)
+if (global.gc) {
+  setInterval(() => { try { global.gc(); } catch(e) {} }, 30000);
+}
+
+// Fix 3: Auto-health-check - reconecta sessões mortas a cada 5 minutos
+// Garante que o bot continue ativo na madrugada mesmo sem tráfego externo
+setInterval(() => {
+  for (const [name, session] of sessions.entries()) {
+    if (session.state !== "open" && session.state !== "connecting") {
+      console.log(`[WhatsApp Gateway] 🩺 Health-check: sessão "${name}" está ${session.state}. Reconectando...`);
+      getOrCreateSocket(name).catch((err) => {
+        console.warn(`[WhatsApp Gateway] ⚠️ Health-check reconexão falhou para ${name}:`, err.message);
+      });
+    }
+  }
+  // Também reconectar sessões salvas em disco que não estão no Map
+  const sessionsDir = path.join(__dirname, "data", "sessions");
+  if (fs.existsSync(sessionsDir)) {
+    try {
+      const folders = fs.readdirSync(sessionsDir).filter(f => {
+        try { return fs.statSync(path.join(sessionsDir, f)).isDirectory(); } catch { return false; }
+      });
+      for (const folder of folders) {
+        if (!sessions.has(folder)) {
+          console.log(`[WhatsApp Gateway] 🩺 Health-check: sessão salva "${folder}" não está no Map. Reconectando...`);
+          getOrCreateSocket(folder).catch((err) => {
+            console.warn(`[WhatsApp Gateway] ⚠️ Health-check reconexão falhou para ${folder}:`, err.message);
+          });
+        }
+      }
+    } catch (e) {}
+  }
+}, 5 * 60 * 1000);
 
 process.on("uncaughtException", (err) => {
   console.warn("[WhatsApp Gateway] Aviso uncaughtException ignorado:", err.message || err);
@@ -108,10 +164,7 @@ async function getOrCreateSocket(instanceName) {
   sock.ev.on("blocklist.set", () => {});
   sock.ev.on("blocklist.update", () => {});
 
-  // Forçar garbage collection periódico
-  if (global.gc) {
-    setInterval(() => { try { global.gc(); } catch(e) {} }, 30000);
-  }
+  // Fix 1: GC periódico agora é global (não duplica em reconexões)
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async (update) => {

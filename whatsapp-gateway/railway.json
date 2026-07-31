@@ -7,6 +7,6 @@
     "startCommand": "node --expose-gc --max-old-space-size=450 server.js",
     "healthcheckPath": "/",
     "healthcheckTimeout": 100,
-    "restartPolicyType": "ON_FAILURE"
+    "restartPolicyType": "ALWAYS"
   }
 }

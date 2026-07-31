@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/gateway-keepalive",
-      "schedule": "*/14 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/billing-close",
