@@ -38,7 +38,7 @@ const FATURAMENTO = [
 ];
 
 export default function CadastroPage() {
-  const [step, setStep] = useState<1|2|3|4|5>(1);
+  const [step, setStep] = useState<1|2|3|4|5|6>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -64,6 +64,14 @@ export default function CadastroPage() {
 
   // Step 5 - Sucesso
   const [createdStore, setCreatedStore] = useState("");
+
+  // Step 5 - Repasse Pix
+  const [tipoChave, setTipoChave] = useState("");
+  const [chavePix, setChavePix] = useState("");
+  const [titularNome, setTitularNome] = useState("");
+  const [titularDoc, setTitularDoc] = useState("");
+  const [repFrequencia, setRepFrequencia] = useState("DAILY");
+  const [repHorario, setRepHorario] = useState("03:00");
 
   // === HANDLERS ===
   function handleStep1() {
@@ -107,29 +115,60 @@ export default function CadastroPage() {
 
   async function handleStep4(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     if (senha.length < 6) { setError("Senha precisa ter pelo menos 6 caracteres."); return; }
     if (!termos) { setError("Aceite os termos para continuar."); return; }
+    setError("");
+    if (!titularNome) setTitularNome(nome);
+    if (!titularDoc) setTitularDoc(cpf.replace(/\D/g, "") || cnpjData?.cnpj || "");
+    setStep(5);
+  }
+
+  async function createAccount(repasseData?: any) {
     setLoading(true);
+    setError("");
     try {
       const storeName = cnpjData?.nome_fantasia || cnpjData?.razao_social || empresa;
+      const body: any = {
+        name: nome, email, password: senha, phone: whatsapp.replace(/\D/g, ""),
+        cnpj: cnpjData?.cnpj, cpf: cpf.replace(/\D/g, ""),
+        storeName, city: cnpjData?.municipio,
+      };
+      if (repasseData) body.repasseConfig = repasseData;
+
       const res = await fetch(`${API}/api/register`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: nome, email, password: senha, phone: whatsapp.replace(/\D/g,""),
-          cnpj: cnpjData?.cnpj, cpf: cpf.replace(/\D/g,""),
-          storeName, city: cnpjData?.municipio,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Erro ao criar conta."); return; }
       setCreatedStore(storeName);
-      setStep(5);
+      setStep(6);
     } catch { setError("Erro de conexão."); }
     finally { setLoading(false); }
   }
 
-  const labels = ["Seus dados", "CPF", "CNPJ", "Senha", "Pronto"];
+  function handleStep5(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!tipoChave) { setError("Selecione o tipo da chave Pix."); return; }
+    if (!chavePix.trim()) { setError("Digite sua chave Pix."); return; }
+    if (!titularNome.trim()) { setError("Digite o nome do titular."); return; }
+    createAccount({
+      tipoChave,
+      chavePix: chavePix.trim(),
+      titularNome: titularNome.trim(),
+      titularDoc: titularDoc.replace(/\D/g, ""),
+      frequencia: repFrequencia,
+      horario: repHorario,
+      status: "ATIVO",
+    });
+  }
+
+  function handleSkipRepasse() {
+    createAccount();
+  }
+
+  const labels = ["Seus dados", "CPF", "CNPJ", "Senha", "Recebimento", "Pronto"];
   const si = step - 1;
 
   return (
@@ -337,8 +376,90 @@ export default function CadastroPage() {
               </>
             )}
 
-            {/* ===== STEP 5: SUCESSO — redireciona automaticamente ===== */}
+            {/* ===== STEP 5: REPASSE PIX ===== */}
             {step === 5 && (
+              <>
+                <div style={{ textAlign: "center", marginBottom: 20 }}>
+                  <div style={{ fontSize: "2rem", marginBottom: 8 }}>💰</div>
+                  <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#111", marginBottom: 4 }}>Onde você quer receber?</h2>
+                  <p style={{ color: "#6B7280", fontSize: ".84rem", lineHeight: 1.6 }}>
+                    Configure sua conta Pix para receber os pagamentos das vendas online automaticamente.
+                  </p>
+                </div>
+                {error && <div className="err">{error}</div>}
+
+                <form onSubmit={handleStep5} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div>
+                    <label className="lbl">Tipo de Chave Pix *</label>
+                    <select className="sel" value={tipoChave} onChange={e => setTipoChave(e.target.value)}>
+                      <option value="">Selecione...</option>
+                      <option value="CPF">CPF</option>
+                      <option value="CNPJ">CNPJ</option>
+                      <option value="EMAIL">E-mail</option>
+                      <option value="TELEFONE">Telefone</option>
+                      <option value="ALEATORIA">Chave Aleatória</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="lbl">Chave Pix *</label>
+                    <input className="inp" placeholder="Digite sua chave Pix" value={chavePix}
+                      onChange={e => setChavePix(e.target.value)} />
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label className="lbl">Nome do Titular</label>
+                      <input className="inp" placeholder="Nome completo" value={titularNome}
+                        onChange={e => setTitularNome(e.target.value)} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="lbl">CPF/CNPJ do Titular</label>
+                      <input className="inp" placeholder="Documento" value={titularDoc}
+                        onChange={e => setTitularDoc(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="lbl">Frequência do repasse</label>
+                    <div className="radio-group">
+                      <label className="radio-opt">
+                        <input type="radio" name="freq" checked={repFrequencia==="DAILY"} onChange={() => setRepFrequencia("DAILY")} /> Todos os dias
+                      </label>
+                      <label className="radio-opt">
+                        <input type="radio" name="freq" checked={repFrequencia==="WEEKLY"} onChange={() => setRepFrequencia("WEEKLY")} /> Semanal
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="lbl">Horário do repasse (Brasília)</label>
+                    <select className="sel" value={repHorario} onChange={e => setRepHorario(e.target.value)}>
+                      <option value="03:00">03:00 — Madrugada (mais usado)</option>
+                      <option value="06:00">06:00 — Manhã</option>
+                      <option value="12:00">12:00 — Meio-dia</option>
+                      <option value="18:00">18:00 — Fim de tarde</option>
+                      <option value="22:00">22:00 — Noite</option>
+                    </select>
+                  </div>
+
+                  <button type="submit" className="btn" disabled={loading}>
+                    {loading ? "Criando sua conta..." : "🔥 Salvar e Começar"}
+                  </button>
+                </form>
+
+                <button className="back" onClick={handleSkipRepasse} disabled={loading}
+                  style={{ color: "#EF4444", fontWeight: 600, marginTop: 10 }}>
+                  {loading ? "Criando..." : "Configurar depois →"}
+                </button>
+                <p style={{ textAlign: "center", fontSize: ".74rem", color: "#9CA3AF", marginTop: 8 }}>
+                  Você pode configurar o repasse a qualquer momento no painel da loja.
+                </p>
+              </>
+            )}
+
+            {/* ===== STEP 6: SUCESSO ===== */}
+            {step === 6 && (
               <div style={{ textAlign: "center", padding: "10px 0" }}>
                 <div style={{ fontSize: "3.5rem", marginBottom: 14, animation: "bounceIn .5s" }}>🎉</div>
                 <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#111", marginBottom: 8 }}>Conta criada!</h2>

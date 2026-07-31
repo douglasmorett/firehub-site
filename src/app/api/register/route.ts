@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, password, phone, storeName, cnpj, cpf, city } = await req.json();
+    const { name, email, password, phone, storeName, cnpj, cpf, city, repasseConfig } = await req.json();
 
     // Validações básicas
     if (!name || !email || !password) {
@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
         city: city || null,
         cpfCnpj: cnpjClean,
         slug,
+        ...(repasseConfig && Object.keys(repasseConfig).length > 0 ? { repasseConfig } : {}),
         permissions: "",
         isFranqueadoHakim: false,
         storeOpen: true,
