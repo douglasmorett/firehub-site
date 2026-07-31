@@ -463,20 +463,22 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             }}>
               {order.status === "CRIANDO_IA" ? "🤖 IA criando..." : order.source === "WHATSAPP_IA" ? "🤖 IA Whats" : order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
             </span>
-            {(order.ifoodReference || order.openDeliveryReference) && (
+            {order.source === "IFOOD" && order.ifoodReference && (
               <span style={{
-                fontSize: "0.76rem",
+                fontSize: "0.68rem",
                 fontWeight: 900,
-                background: order.source === "IFOOD" ? "#7C3AED" : "#4F46E5",
+                background: "#7C3AED",
                 color: "#FFFFFF",
-                padding: "2px 8px",
+                padding: "2px 6px",
                 borderRadius: "6px",
                 boxShadow: "0 1px 3px rgba(124, 58, 237, 0.3)",
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "3px"
+                gap: "2px",
+                whiteSpace: "nowrap",
+                flexShrink: 0
               }}>
-                🔑 Coleta: #{order.ifoodReference || order.openDeliveryReference}
+                🔑 Coleta: #{order.ifoodReference}
               </span>
             )}
           </div>
