@@ -164,7 +164,9 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   if (audioObj) {
     let base64Data = audioObj.base64 || audioObj.data || data.base64;
-    const mimeType = audioObj.mimetype || audioObj.mimeType || "audio/ogg; codecs=opus";
+    const rawMime = audioObj.mimetype || audioObj.mimeType || "audio/ogg";
+    const mimeType = rawMime.split(";")[0].trim();
+
     if (!base64Data && audioObj.url) {
       try {
         const audioRes = await fetch(audioObj.url);
@@ -176,6 +178,23 @@ async function handleIncomingMessage(body: any, instance: string) {
         console.error("[WhatsApp Webhook] Erro ao baixar áudio da URL:", err);
       }
     }
+
+    if (!base64Data && key.id) {
+      try {
+        const shortId = instance.replace(/^firehub_/, "");
+        const matchedUser = await prisma.user.findFirst({
+          where: { id: { endsWith: shortId } },
+          select: { id: true },
+        });
+        if (matchedUser) {
+          const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
+          base64Data = await getEvolutionAudioBase64(matchedUser.id, key, data.message || { audioMessage: audioObj });
+        }
+      } catch (err) {
+        console.error("[WhatsApp Webhook] Erro ao buscar base64 do áudio via Evolution API:", err);
+      }
+    }
+
     if (base64Data) {
       audioData = { base64: base64Data, mimeType };
     }

@@ -463,10 +463,12 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 
       const userParts: any[] = [];
       if (audioData?.base64) {
+        const rawMime = audioData.mimeType || "audio/ogg";
+        const cleanMime = rawMime.split(";")[0].trim() || "audio/ogg";
         userParts.push({
           inlineData: {
             data: audioData.base64,
-            mimeType: audioData.mimeType || "audio/ogg; codecs=opus",
+            mimeType: cleanMime,
           },
         });
       }

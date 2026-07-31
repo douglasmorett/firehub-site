@@ -224,3 +224,44 @@ export async function disconnectEvolutionInstance(userId: string) {
     console.error("[Evolution API Gateway] Erro ao desconectar instância:", err);
   }
 }
+
+export async function getEvolutionAudioBase64(userId: string, messageKey: any, messageObj: any): Promise<string | null> {
+  const instanceName = `firehub_${userId.slice(-10)}`;
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
+  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { chatbotConfig: true },
+    });
+    const config = (user?.chatbotConfig as any) || {};
+    if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
+    if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
+  } catch {}
+
+  try {
+    const res = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: "POST",
+      headers: {
+        "apikey": apiKey,
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Remainder": "true",
+        "User-Agent": "FireHub"
+      },
+      body: JSON.stringify({
+        message: { key: messageKey, message: messageObj },
+        convertToMp4: false,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data.base64 || data.data || null;
+    }
+  } catch (err) {
+    console.error("[Evolution API Gateway] Erro ao buscar base64 do áudio:", err);
+  }
+  return null;
+}
