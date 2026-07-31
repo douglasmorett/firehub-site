@@ -29,11 +29,10 @@ export async function GET(req: NextRequest) {
 
   try {
     const { getIfoodToken } = await import("@/lib/ifood-api");
-    const merchantId = process.env.IFOOD_MERCHANT_UUID;
-    
+    let merchantId = process.env.IFOOD_MERCHANT_UUID;
     if (!merchantId) {
-      log.push("❌ IFOOD_MERCHANT_UUID não configurado");
-      return NextResponse.json({ ok: false, log });
+      const hakim = await prisma.user.findFirst({ where: { email: "contatohakim@gmail.com" }, select: { ifoodMerchantId: true } });
+      merchantId = hakim?.ifoodMerchantId || undefined;
     }
 
     // Get token

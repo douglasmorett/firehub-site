@@ -17,8 +17,12 @@ async function pollIfoodEvents(sessionUserId?: string) {
   try {
     const { getIfoodToken } = await import("@/lib/ifood-api");
     let merchantId = process.env.IFOOD_MERCHANT_UUID;
-    if (!merchantId && sessionUserId) {
+    if (sessionUserId) {
       const u = await prisma.user.findUnique({ where: { id: sessionUserId }, select: { ifoodMerchantId: true } });
+      if (u?.ifoodMerchantId) merchantId = u.ifoodMerchantId;
+    }
+    if (!merchantId) {
+      const u = await prisma.user.findFirst({ where: { email: "contatohakim@gmail.com" }, select: { ifoodMerchantId: true } });
       merchantId = u?.ifoodMerchantId || undefined;
     }
 

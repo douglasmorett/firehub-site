@@ -10,15 +10,15 @@ const BILLING_TRIGGER_STATUSES = ["ENTREGUE"];
 
 // Transições de status permitidas (state machine flexível para a operação do restaurante)
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  NOVO:          ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  CONFIRMADO:    ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  ACEITO:        ["PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  NOVO:          ["ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  CONFIRMADO:    ["ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
+  ACEITO:        ["PREPARANDO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
   PREPARANDO:    ["ACEITO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
   PRONTO:        ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  SAIU_ENTREGA:  ["ACEITO", "PREPARANDO", "ENTREGUE", "CANCELADO"],
-  SAIU_PARA_ENTREGA: ["ACEITO", "PREPARANDO", "ENTREGUE", "CANCELADO"],
-  ENTREGUE:      ["SAIU_ENTREGA", "PREPARANDO", "ACEITO", "CANCELADO"],
-  CANCELADO:     ["NOVO", "ACEITO", "PREPARANDO"],
+  SAIU_ENTREGA:  ["ACEITO", "PREPARANDO", "PRONTO", "ENTREGUE", "CANCELADO"],
+  SAIU_PARA_ENTREGA: ["ACEITO", "PREPARANDO", "PRONTO", "ENTREGUE", "CANCELADO"],
+  ENTREGUE:      ["SAIU_ENTREGA", "PREPARANDO", "ACEITO", "PRONTO", "CANCELADO"],
+  CANCELADO:     ["NOVO", "ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA"],
 };
 
 // GET: Public status check (no auth required)
@@ -51,10 +51,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
 
   const role = (session.user as any)?.role;
   const body = await req.json();
@@ -316,4 +317,8 @@ export async function PUT(req: Request) {
   }
 
   return NextResponse.json({ success: true });
+} catch (err: any) {
+    console.error("[PUT Status Error]:", err);
+    return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });
+  }
 }
