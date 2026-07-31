@@ -183,11 +183,13 @@ export default function RoteirizacaoModal({
 
   // Filter Delivery Orders (Exclude Pickup/Presencial unless needed)
   const deliveryOrders = useMemo(() => {
-    return orders.filter(o => {
+    return orders.filter((o: any) => {
       const isCancelled = o.status === "CANCELLED" || o.status === "CANCELED";
       if (isCancelled) return false;
-      const addr = o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
-      return addr.trim().length > 3;
+      const isDelivered = o.status === "ENTREGUE" || o.status === "ENCERRADO";
+      if (isDelivered) return false;
+      const addr = o.customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
+      return addr.trim().length > 2 || o.deliveryType === "DELIVERY" || !o.deliveryType;
     });
   }, [orders]);
 
@@ -216,11 +218,11 @@ export default function RoteirizacaoModal({
       let updated = false;
 
       for (const order of deliveryOrders) {
-        const fullAddr = order.address || `${order.street || ""}, ${order.number || ""}, ${order.neighborhood || ""}, ${storeCity}`;
-        if (!fullAddr || newMap[order.id]) continue;
+        const rawAddr = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`;
+        if (newMap[order.id]) continue;
 
         try {
-          const searchAddress = `${order.street || ""} ${order.number || ""}, ${order.neighborhood || ""}, ${storeCity}, RJ, Brasil`;
+          const searchAddress = `${rawAddr}, ${storeCity}, RJ, Brasil`;
           const res = await fetch(
             `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}&limit=1`,
             { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" } }
@@ -756,8 +758,8 @@ export default function RoteirizacaoModal({
                     filteredPendingOrders.map((order) => {
                       const isSelected = selectedOrderIds.includes(order.id);
                       const seqIndex = selectedOrderIds.indexOf(order.id);
-                      const displayNum = order.orderNumber || order.displayId || order.id.slice(-4);
-                      const addrText = order.address || `${order.street || ""}, ${order.number || ""} - ${order.neighborhood || ""}`;
+                      const displayNum = (order as any).dailyOrderNumber || order.orderNumber || order.displayId || order.id.slice(-4);
+                      const addrText = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}` || "Endereço a confirmar";
 
                       return (
                         <div

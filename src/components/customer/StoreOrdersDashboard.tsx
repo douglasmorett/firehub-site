@@ -447,10 +447,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             fontSize: (order.customerName || "").length > 25 ? "0.80rem" : (order.customerName || "").length > 15 ? "0.86rem" : "0.95rem",
             color: "#0F172A",
             flex: 1,
-            minWidth: 0,
-            whiteSpace: "normal",
-            wordBreak: "normal",
-            overflowWrap: "break-word",
+            minWidth: "120px",
+            wordBreak: "keep-all",
+            overflowWrap: "normal",
             lineHeight: "1.25",
             letterSpacing: "-0.2px"
           }}>
