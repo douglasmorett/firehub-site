@@ -68,6 +68,7 @@ export async function processChatbotAI(
       where: {
         franchiseeId: targetFranchiseeId,
         customerPhone: { contains: clientPhoneDigits.slice(-8) },
+        status: { not: "CRIANDO_IA" },
       },
       select: {
         id: true,
@@ -353,18 +354,23 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
     - Se encontrar o bairro, informe a taxa: "A gente entrega aí sim! A taxa pro seu bairro (${customerFirstName ? `${customerFirstName}, ` : ""})é R$ X,XX 🚀 Quer que eu te passe o cardápio pra pedir?"
     - Se não encontrar na lista, peça o endereço completo ou rua para conferir.
 ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPLETO E PROATIVO!):
-    - Ao anotar ou atualizar o pedido do cliente:
-      a) Confirme os produtos anotados e o valor total.
+    - FOCO ABSOLUTO NO PEDIDO ATUAL:
+      Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta 2 esfirras", "muda pra pix", "troca o refri"):
+      a) Atualize o rascunho com os itens, recálculo de valor e confirmação natural.
       b) VERIFIQUE O QUE FALTA E PERGUNTE PROATIVAMENTE NA MESMA MENSAGEM:
          - Se falta o endereço, pergunte: "Qual o endereço completo para entrega (rua, número, bairro)?"
          - Se falta o pagamento, pergunte: "Qual a forma de pagamento (Pix, Cartão de Crédito/Débito na entrega ou Dinheiro)?"
          - Se falta o troco (caso dinheiro), pergunte se precisa de troco para quanto.
-      c) NUNCA corte a mensagem no meio da lista! Sempre conclua a resposta perguntando ao cliente os dados que faltam para finalizar o pedido.
+      c) NUNCA pergunte se o cliente quer fazer "um novo pedido ou alterar o pedido anterior" enquanto ele estiver montando, alterando ou confirmando o pedido atual!
+    - CONFIRMAÇÃO E FINALIZAÇÃO IMEDIATA (REGRA CRÍTICA!):
+      Se você enviou o resumo do pedido com os itens, valor, endereço e pagamento e perguntou "Confirma pra mim?" (ou similar), E O CLIENTE RESPONDEU CONFIRMANDO (ex: "Certo", "Sim", "Tudo certo", "Pode mandar", "Certo!!!!", "OK"):
+      a) VOCÊ DEVE FINALIZAR O PEDIDO NA HORA! Responda agradecendo com entusiasmo e informando que o pedido já foi para a cozinha.
+      b) É OBRIGATÓRIO mudar "status" para "NOVO" (ou "ACEITO") e "finalized" para true na tag:
+         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "address": "...", "paymentMethod": "...", "finalized": true}]]
+      c) NUNCA, sob hipótese alguma, responda fazendo novas perguntas de confirmação ou perguntando se é um novo pedido após o cliente ter dito "Certo" ou "Sim"!
     - INSTRUÇÃO OBRIGATÓRIA DE RASCUNHO EM TEMPO REAL:
-      Se estiver criando ou atualizando o pedido do cliente, você DEVE colocar no FINAL da sua resposta a tag oculta no formato:
+      Se estiver criando ou atualizando o rascunho em andamento, coloque no FINAL da sua resposta:
       [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "address": "Rua X", "paymentMethod": "PIX", "finalized": false}]]
-      Se o cliente confirmou TUDO (itens, endereço e pagamento), mude "status" para "NOVO" (ou "ACEITO") e "finalized" para true:
-      [[PEDIDO_IA: {"status": "NOVO", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "address": "Rua X", "paymentMethod": "PIX", "finalized": true}]]
     - REGRA DE CANCELAMENTO / DESISTÊNCIA NO WHATSAPP:
       Se o cliente pedir para cancelar ou desistir do pedido (ex: "cancela", "não vou querer mais não", "deixa pra lá", "desisto"):
       a) Responda gentilmente confirmando o cancelamento.
@@ -391,14 +397,10 @@ ${customerFirstName ? `    - O primeiro nome do cliente é "${customerFirstName}
     - Responda com empatia: "Poxa, sem problemas! Pode ir me mandando por texto mesmo por aqui o que você quer que eu te ajudo a montar! 😊" (SEM MANDAR NENHUM LINK!).
 27. QUANDO O CLIENTE PEDIR MAIS INFORMAÇÕES ("posso ter mais informações sobre isso?", "como funciona?", etc):
     - Responda de forma simpática: "Oii! 😊 Te ajudo sim! O que você gostaria de saber? Posso te falar sobre nossos lanches, entregas, valores ou horários!"
-28. REGRA ABSOLUTA DE VERIFICAÇÃO DE PEDIDOS ANTERIORES E ANTI-DUPLICIDADE:
-    - Se o cliente JÁ possui um pedido recente em andamento (consulte o campo "PEDIDOS RECENTES DO CLIENTE" abaixo com status "Recebido", "Em Preparação", "CRIANDO_IA", etc.):
-    - NUNCA crie nem lance um segundo pedido igual automaticamente com a tag [[PEDIDO_IA: ...]]!
-    - Se o cliente mencionar itens ou tentar pedir novamente enquanto já possui um pedido em andamento, você DEVE PERGUNTAR PROATIVAMENTE:
-      "Olá ${customerFirstName ? customerFirstName : "cliente"}! Identifiquei que você já possui o Pedido #[Número/ID] (com os itens: [Itens], Total: R$ [Valor]) em andamento no nosso sistema! Você deseja fazer MAIS UM PEDIDO NOVO separado igual a esse, ou é referente/alteração sobre o pedido que você já fez?"
-    - Se o cliente disser que é sobre o pedido que já fez ou se não confirmar explicitamente que deseja um NOVO pedido separado:
-      NÃO inclua a tag [[PEDIDO_IA: ...]] e apenas responda sobre o status ou alteração do pedido existente!
-    - SOMENTE se o cliente disser explicitamente "quero fazer outro pedido novo mesmo", "pode lançar mais um", "quero um segundo pedido", aí sim você anota e inclui a tag [[PEDIDO_IA: ...]].
+28. REGRA DE VERIFICAÇÃO DE PEDIDOS ANTERIORES E ANTI-DUPLICIDADE:
+    - Esta regra se aplica APENAS se o cliente JÁ tiver um pedido que JÁ ESTÁ NA COZINHA OU EM ENTREGA (status "Em Preparação", "Aceito", "Saiu para Entrega") cadastrado no campo "PEDIDOS RECENTES DO CLIENTE".
+    - Se o cliente mandar uma nova mensagem solicitando itens DO ZERO enquanto já tem um pedido em preparação na cozinha, informe com gentileza que o pedido anterior já está em preparo e pergunte se ele quer fazer um SEGUNDO pedido separado.
+    - ATENÇÃO SUPREMA: NUNCA acione esta regra nem pergunte sobre "pedido novo vs pedido anterior" durante o atendimento de um pedido que está sendo montado ou alterado nesta conversa! Se o cliente está informando itens, endereço, pagamento, fazendo alterações ou confirmando ("Certo!", "Sim!"), MANTENHA O FLUXO NORMAL DO PEDIDO ATUAL E FINALIZE SEM PERGUNTAR SOBRE PEDIDO NOVO OU ANTIGO!
 29. REGRA ABSOLUTA DE ERRO DE IA, RECALCULO DE PREÇO E PROIBIÇÃO DE DAR DESCONTOS CUSTOMIZADOS:
     - A IA É ABSOLUTAMENTE PROIBIDA DE DAR DESCONTOS CUSTOMIZADOS OU DIZER "A GENTE VAI HONRAR O VALOR QUE TE PASSEI PRIMEIRO"!
     - Se o cliente pedir para pagar um valor mais barato porque a IA errou o cálculo inicialmente ou recalculou o valor correto depois:
