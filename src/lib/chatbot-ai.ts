@@ -611,6 +611,12 @@ async function syncAiOrderToDatabase({
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return;
 
+  const formattedCustomerPhone = phoneClean.length === 13 && phoneClean.startsWith("55")
+    ? `+55 (${phoneClean.slice(2, 4)}) ${phoneClean.slice(4, 9)}-${phoneClean.slice(9)}`
+    : phoneClean.length === 11
+    ? `(${phoneClean.slice(0, 2)}) ${phoneClean.slice(2, 7)}-${phoneClean.slice(7)}`
+    : phoneClean;
+
   // Busca pedido rascunho em aberto em status CRIANDO_IA
   const existingDraft = await prisma.customerOrder.findFirst({
     where: {
@@ -698,7 +704,7 @@ async function syncAiOrderToDatabase({
       data: {
         franchiseeId,
         customerName: customerName || "Cliente WhatsApp",
-        customerPhone: phoneClean,
+        customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || null,
         paymentMethod: payload.paymentMethod || null,
         totalAmount: totalItemsSum,

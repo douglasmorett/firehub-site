@@ -666,17 +666,21 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           {/* Right: Icon buttons */}
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
             {/* WhatsApp */}
-            {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (
-              <a
-                href={`https://wa.me/55${(order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "")}`}
-                target="_blank" rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
-                title="WhatsApp"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
-              >
-                <MessageCircle size={15} />
-              </a>
-            )}
+            {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (() => {
+              const rawDigits = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "");
+              const waPhone = rawDigits.startsWith("55") ? rawDigits : `55${rawDigits}`;
+              return (
+                <a
+                  href={`https://wa.me/${waPhone}`}
+                  target="_blank" rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  title="WhatsApp do Cliente"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
+                >
+                  <MessageCircle size={15} />
+                </a>
+              );
+            })()}
 
             {/* Print */}
             <button

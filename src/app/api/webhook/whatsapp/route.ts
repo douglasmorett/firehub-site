@@ -130,7 +130,24 @@ async function handleIncomingMessage(body: any, instance: string) {
   const data = body.data || body;
   const key = data.key || data.message?.key || {};
   const fromMe = key.fromMe;
-  const remoteJid = key.remoteJid || data.from || "";
+
+  // Extrai o remoteJid e telefone real (filtrando IDs internos @lid do WhatsApp)
+  const getRealJid = (): string => {
+    const candidates = [
+      key.remoteJidAlt,
+      data.sender,
+      key.participant,
+      key.remoteJid,
+      data.from,
+    ].filter(Boolean);
+
+    const realCandidate = candidates.find(
+      (c: string) => typeof c === "string" && (c.includes("@s.whatsapp.net") || (c.replace(/\D/g, "").length >= 10 && !c.includes("@lid") && !c.replace(/\D/g, "").startsWith("22010")))
+    );
+    return realCandidate || key.remoteJid || data.from || "";
+  };
+
+  const remoteJid = getRealJid();
 
   // Anti-loop: ALWAYS ignore fromMe (mensagens do próprio bot)
   if (fromMe === true) return;
