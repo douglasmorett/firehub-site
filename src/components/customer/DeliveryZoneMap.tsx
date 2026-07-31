@@ -606,52 +606,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           <h4 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "4px" }}>Raios de entrega</h4>
           <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "12px" }}>Configure raio, tempo estimado e taxa por faixa.</p>
 
-          {/* iFood Sync Toggle Box */}
-          <div style={{
-            background: ifoodSync ? "#FEF2F2" : "#F8FAFC",
-            border: `1.5px solid ${ifoodSync ? "#FCA5A5" : "#E2E8F0"}`,
-            borderRadius: "12px",
-            padding: "10px 12px",
-            marginBottom: "14px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "10px"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ background: ifoodSync ? "#EA1D2C" : "#94A3B8", color: "#fff", padding: "3px 6px", borderRadius: "6px", fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.03em" }}>
-                iFood
-              </span>
-              <div style={{ lineHeight: 1.2 }}>
-                <div style={{ fontWeight: 700, fontSize: "0.8rem", color: "#0F172A" }}>
-                  Sincronizar prazo com o iFood
-                </div>
-                <div style={{ fontSize: "0.68rem", color: "#64748B" }}>
-                  Mudou no site, atualiza o iFood automático
-                </div>
-              </div>
-            </div>
-            <label style={{ position: "relative", display: "inline-block", width: "36px", height: "20px", cursor: "pointer", flexShrink: 0 }}>
-              <input
-                type="checkbox"
-                checked={ifoodSync}
-                onChange={e => setIfoodSync(e.target.checked)}
-                style={{ opacity: 0, width: 0, height: 0 }}
-              />
-              <span style={{
-                position: "absolute", inset: 0,
-                background: ifoodSync ? "#EA1D2C" : "#CBD5E1",
-                borderRadius: "20px", transition: "0.2s"
-              }}>
-                <span style={{
-                  position: "absolute", content: '""', height: "14px", width: "14px",
-                  left: ifoodSync ? "19px" : "3px", bottom: "3px",
-                  background: "#fff", borderRadius: "50%", transition: "0.2s"
-                }} />
-              </span>
-            </label>
-          </div>
-
           {/* Mode 1: KM (Por Raio) */}
           {(currentZoneType === "KM" || currentZoneType === "RADIUS") && (
             <>
