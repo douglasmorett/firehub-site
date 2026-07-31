@@ -360,12 +360,15 @@ REGRAS ABSOLUTAS:
 ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESENCIAL / FÍSICA!
     - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || "Centro"}" (SEM NENHUM LINK!).` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
     - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
-18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA / FRETE OU MENCIONAR SEU BAIRRO/RUA:
-    - VOCÊ DEVE OBRIGATORIAMENTE INFORMAR O VALOR EM REAIS DA TAXA DE ENTREGA!
-    - Consulte a seção "TAXAS DE ENTREGA POR BAIRRO/REGIÃO" abaixo.
-    - Se o cliente perguntar se entrega no bairro dele (ex: "Vocês entregam em Nova Esperança?") ou disser o nome da rua:
-      a) Responda confirmando a entrega E JÁ INFORME O VALOR DA TAXA imediatamente (ex: "Entregamos em Nova Esperança sim! A taxa de entrega pra aí é R$ 5,00! 🛵").
-      b) NUNCA diga respostas evasivas como "é calculada automaticamente pelo sistema no final" sem dar o valor. Informe a taxa exata em reais!
+18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA, FRETE OU SE ENTREGAMOS EM UM BAIRRO/RUA:
+    - REQUISITO OBRIGATÓRIO DE RUA E NÚMERO (REGRA CRÍTICA PARA ENTREGAS POR RAIO/KM!):
+      a) NUNCA confirme que entrega nem chute um valor fixo (tipo R$ 5,00) sem antes pedir o ENDEREÇO COMPLETO (RUA E NÚMERO DA CASA)!
+      b) Se a loja entrega por Raio de KM (até 5km): responda informando que a taxa depende da localização exata e peça a rua e o número para verificar no sistema:
+         "A nossa taxa de entrega é calculada pela distância exata até o seu endereço (atendemos num raio de até 5km da loja). Qual a sua rua e número para eu conferir se fica dentro da área de entrega e o valor certinho pra você? 😊"
+    - REJEIÇÃO DE ENDEREÇOS FORA DA ÁREA DE ENTREGA (FORA DO RAIO MÁXIMO):
+      a) Se o endereço fornecido pelo cliente for além do raio máximo de atendimento (ex: mais de 5km da loja ou em regiões não atendidas como Cidade Praiana se for além do raio):
+         Responda com simpatia: "Poxa, infelizmente esse endereço fica fora da nossa área de entrega (atendemos até 5km da nossa loja). Desculpa por não conseguir te atender nessa localização! 😔"
+      b) É ESTRITAMENTE PROIBIDO aceitar ou criar pedidos para endereços fora da área de entrega!
 19. DISCRIMINAÇÃO OBRIGATÓRIA DA TAXA DE ENTREGA NO RESUMO DO PEDIDO:
     - Ao apresentar o resumo do pedido para o cliente (ou ao finalizar):
       a) Você DEVE obrigatoriamente discriminar no texto:
@@ -459,7 +462,7 @@ DADOS DA LOJA:
 - Quadro Geral de Horários:
 ${hoursText}
 
-TAXAS DE ENTREGA POR BAIRRO/REGIÃO:
+TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO:
 ${(() => {
   const zones = Array.isArray((user as any).deliveryZones) ? (user as any).deliveryZones : [];
   const zoneType = (user as any).deliveryZoneType || "";
@@ -468,13 +471,17 @@ ${(() => {
   const freeMin = dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0;
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
-    taxaText = zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
+    taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
   } else if (zones.length > 0 && zoneType === "RADIUS") {
-    taxaText = zones.map((z: any) => `- Até ${z.radius || z.maxKm || "?"}km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
+    const maxKm = Math.max(...zones.map((z: any) => Number(z.radius || z.maxKm || 0)));
+    taxaText = `TIPO DE ENTREGA DA LOJA: POR RAIO DE DISTÂNCIA DA LOJA!\n- FAIXAS DE KM E TAXAS PERMITIDAS:\n` +
+      zones.map((z: any) => `  * Até ${z.radius || z.maxKm || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
+      `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM. (Qualquer endereço acima de ${maxKm}km está ESTRITAMENTE FORA DA ÁREA DE ENTREGA!).\n` +
+      `- REGRA OBRIGATÓRIA: NUNCA confirme que entrega nem chute R$ 5,00 sem pedir o ENDEREÇO COMPLETO (RUA E NÚMERO) para calcular o raio exato no sistema!`;
   } else if (fixedFee !== null) {
     taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
-    taxaText = "- Taxa Padrão de Entrega da Loja: R$ 5,00 (ou conforme bairro informado pelo cliente).";
+    taxaText = "- Taxa Padrão de Entrega da Loja: R$ 5,00 (ou conforme distância/bairro do cliente).";
   }
   if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS para pedidos acima de R$ ${Number(freeMin).toFixed(2)}`;
   return taxaText;
