@@ -562,7 +562,7 @@ export default function StoreTopNav({
         <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", flexWrap:"wrap" }}>
           {isCompras ? (
             <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              <div style={{ width:30, height:30, borderRadius:7, background:"rgba(255,255,255,0.15)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.1rem" }}>🧊</div>
+              <img src="/firehub-flame.png" alt="FireHub" style={{ width:30, height:30, borderRadius:7, objectFit:"cover" }} />
               <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1 }}>
                 <span style={{ color:"#fff", fontWeight:900, fontSize:"0.95rem" }}>Ice<span style={{ color:"#90CAF9" }}>box</span></span>
                 <span style={{ color:"rgba(255,255,255,0.65)", fontWeight:500, fontSize:"0.55rem", letterSpacing:"0.5px", textTransform:"uppercase" }}>Congelados & Insumos</span>

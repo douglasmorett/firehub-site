@@ -165,9 +165,9 @@ export default function IceboxLoginPage() {
       `}</style>
 
       <div className="ice-card">
-        {/* Logo Icebox */}
+        {/* Logo FireHub / Icebox */}
         <div className="ice-logo">
-          <div className="ice-logo-icon">🧊</div>
+          <img src="/firehub-flame.png" alt="FireHub" style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover" }} />
           <div className="ice-logo-text">
             <div className="brand">Icebox</div>
             <div className="sub">Distribuidora</div>
@@ -218,7 +218,7 @@ export default function IceboxLoginPage() {
           </div>
 
           <button type="submit" className="ice-btn" disabled={loading}>
-            {loading ? "Entrando..." : "🧊 Entrar na Icebox"}
+            {loading ? "Entrando..." : "Entrar no Sistema"}
           </button>
         </form>
 

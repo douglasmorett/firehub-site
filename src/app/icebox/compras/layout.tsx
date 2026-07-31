@@ -40,9 +40,7 @@ export default async function IceboxLayout({ children }: { children: React.React
           boxShadow: "0 2px 12px rgba(13,71,161,0.3)",
         }}>
           <Link href="/icebox/compras" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: "1.3rem" }}>🧊</span>
-            </div>
+            <img src="/firehub-flame.png" alt="FireHub" style={{ width: 32, height: 32, borderRadius: 7, objectFit: "cover" }} />
             <div>
               <span style={{ color: "#fff", fontWeight: 800, fontSize: "1.1rem", letterSpacing: "-0.3px" }}>Icebox</span>
               <span style={{ color: "#93C5FD", fontWeight: 600, fontSize: "0.72rem", marginLeft: 6 }}>Distribuidora</span>
