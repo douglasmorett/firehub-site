@@ -464,8 +464,19 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               {order.status === "CRIANDO_IA" ? "🤖 IA criando..." : order.source === "WHATSAPP_IA" ? "🤖 IA Whats" : order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
             </span>
             {(order.ifoodReference || order.openDeliveryReference) && (
-              <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#4F46E5" }}>
-                #{order.ifoodReference || order.openDeliveryReference}
+              <span style={{
+                fontSize: "0.76rem",
+                fontWeight: 900,
+                background: order.source === "IFOOD" ? "#7C3AED" : "#4F46E5",
+                color: "#FFFFFF",
+                padding: "2px 8px",
+                borderRadius: "6px",
+                boxShadow: "0 1px 3px rgba(124, 58, 237, 0.3)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "3px"
+              }}>
+                🔑 Coleta: #{order.ifoodReference || order.openDeliveryReference}
               </span>
             )}
           </div>
@@ -598,13 +609,28 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           {/* Banner de Alerta para Entrega Parceira iFood */}
           {isIfoodMotoboy(order) && (
             <div style={{
-              marginTop: "6px", padding: "4px 8px", borderRadius: "6px",
+              marginTop: "6px", padding: "6px 10px", borderRadius: "8px",
               background: "#FEF2F2", border: "1.5px solid #FCA5A5",
-              color: "#DC2626", fontWeight: 800, fontSize: "0.72rem",
-              display: "flex", alignItems: "center", gap: "6px"
+              color: "#DC2626", fontWeight: 800, fontSize: "0.75rem",
+              display: "flex", flexDirection: "column", gap: "4px"
             }}>
-              <span>🛵</span>
-              <span>ENTREGA PARCEIRA IFOOD — Entregador do iFood (Não enviar motoboy da loja!)</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>🛵</span>
+                <span>ENTREGA PARCEIRA IFOOD — Entregador do iFood (Não enviar motoboy da loja!)</span>
+              </div>
+              {(order.ifoodReference || order.openDeliveryReference) && (
+                <div style={{
+                  marginTop: "2px", padding: "5px 10px", borderRadius: "6px",
+                  background: "#FFF", border: "2px dashed #7C3AED",
+                  color: "#581C87", fontWeight: 900, fontSize: "0.84rem",
+                  display: "flex", alignItems: "center", justifyContent: "space-between"
+                }}>
+                  <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR:</span>
+                  <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
+                    #{order.ifoodReference || order.openDeliveryReference}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2166,6 +2192,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div>Estabelecimento: <strong style={{ textTransform: "uppercase" }}>{storeName}</strong></div>
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
                 </div>
+
+                {order.ifoodReference && (
+                  <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR IFOOD</div>
+                    <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodReference}</div>
+                  </div>
+                )}
 
                 <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
                   <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>CLIENTE</span>
