@@ -257,25 +257,13 @@ export async function processChatbotAI(
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
-  // ── RESPOSTAS RÁPIDAS PARA SAUDAÇÕES (sem precisar de IA) ──
-  const msgLower = message.toLowerCase().trim().replace(/[^a-záàâãéèêíïóôõúç\s]/gi, "").trim();
-  const greetings = ["oi", "oia", "oii", "oiii", "oie", "ola", "olá", "eai", "e ai", "eae", "fala", "salve", "hey", "hi", "hello"];
-  const timeGreetings = ["bom dia", "boa tarde", "boa noite", "boanoite", "bdia", "btarde"];
-  const isGreeting = greetings.includes(msgLower) || timeGreetings.some(g => msgLower.startsWith(g)) || (msgLower.length <= 4 && /^(oi|ol)/i.test(msgLower));
-
-  if (isGreeting && !apiKey) {
-    // Sem API key — resposta rápida de saudação
-    const hour = new Date().getHours();
-    const period = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-    const nameStr = customerFirstName ? `, ${customerFirstName}` : "";
-    return {
-      reply: `${period}${nameStr}! 😊 Seja bem-vindo(a) ao ${storeName}! Tudo bem?\n\nPosso te ajudar a fazer seu pedido, tirar dúvidas sobre o cardápio ou informar sobre entregas! O que você precisa? 🔥\n\nNosso cardápio: ${storeLink}`
-    };
+  if (!apiKey) {
+    console.error("[Chatbot AI] CRITICAL: No Gemini API key configured!");
+    return { reply: `Olá! 😊 No momento estou com uma instabilidade técnica. Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}` };
   }
 
-  if (apiKey) {
-    try {
-      const systemPrompt = `Você é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.
+  try {
+    const systemPrompt = `Você é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.
 
 REGRAS ABSOLUTAS:
 1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem.
@@ -425,7 +413,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         { role: "user", parts: userParts }
       ];
 
-      const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash"];
+      const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite"];
       
       let generatedText = "";
       
@@ -467,51 +455,32 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         return { reply: cleanText };
       }
 
+      // Todos os modelos falharam — última tentativa com prompt mínimo
+      console.warn("[Chatbot AI] Todos os modelos falharam com prompt completo. Tentando prompt mínimo...");
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const miniResponse = await ai.models.generateContent({
+          model: "gemini-2.0-flash-lite",
+          contents: [{ role: "user", parts: [{ text: message }] }],
+          config: {
+            systemInstruction: `Você é ${agentName}, atendente do ${storeName}. Responda de forma curta, simpática e natural como uma pessoa no WhatsApp. Link do cardápio: ${storeLink}. ${customerFirstName ? `O cliente se chama ${customerFirstName}.` : ""}`,
+            temperature: 0.9,
+            maxOutputTokens: 300,
+          }
+        });
+        if (miniResponse?.text) {
+          return { reply: miniResponse.text.replace(/(\*\*|\*|_|#|`)/g, "").trim() };
+        }
+      } catch (miniErr) {
+        console.error("[Chatbot AI] Prompt mínimo também falhou:", miniErr);
+      }
+
     } catch (geminiErr) {
-      console.warn("[Chatbot AI] Erro geral ao chamar API Gemini:", geminiErr);
+      console.error("[Chatbot AI] Erro geral crítico:", geminiErr);
     }
-  }
 
-  // ── RESPOSTA INTELIGENTE SE A API GEMINI FALHAR TOTALMENTE ──
-  const hour = new Date().getHours();
-  const period = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-  const nameStr = customerFirstName ? `, ${customerFirstName}` : "";
-  const msgNorm = message.toLowerCase().trim();
-
-  // Detectar intenção básica mesmo sem IA
-  const wantsMenu = /cardapio|cardápio|menu|opç|opcao|sabor|lanch|combos?|promo/i.test(msgNorm);
-  const wantsPrice = /preço|preco|valor|quanto|custa|quanto é/i.test(msgNorm);
-  const wantsHours = /horario|horário|abre|fecha|funciona|aberto|fechado/i.test(msgNorm);
-  const wantsDelivery = /entrega|delivery|taxa|frete|demora|tempo/i.test(msgNorm);
-  const wantsOrder = /pedir|pedido|quero|fazer.*pedido|encomen/i.test(msgNorm);
-  const isGreetingFallback = /^(oi|olá|ola|eai|bom dia|boa tarde|boa noite|fala|salve|hey|hi)/i.test(msgNorm);
-
-  if (wantsMenu || wantsPrice) {
-    return {
-      reply: `${period}${nameStr}! 😊 Nosso cardápio completo com todos os preços tá aqui: ${storeLink}\n\nÉ só escolher, montar seu pedido e finalizar por lá! Qualquer dúvida me chama! 🔥`
-    };
-  }
-
-  if (wantsHours) {
-    return {
-      reply: `${period}${nameStr}! ⏰ ${nowStatusText || `Nosso horário de funcionamento é de segunda a domingo!`}\n\nQuer fazer um pedido? Nosso cardápio: ${storeLink}`
-    };
-  }
-
-  if (wantsDelivery) {
-    return {
-      reply: `${period}${nameStr}! 🛵 Fazemos entrega sim! O tempo médio é de 45 a 60 minutos e a taxa é calculada automaticamente pelo site conforme seu endereço.\n\nFaz seu pedido aqui: ${storeLink}`
-    };
-  }
-
-  if (wantsOrder) {
-    return {
-      reply: `${period}${nameStr}! 🔥 Bora fazer seu pedido! É só acessar nosso cardápio, escolher seus itens e finalizar com seu endereço: ${storeLink}\n\nÉ rápido e fácil! Qualquer dúvida me chama! 😊`
-    };
-  }
-
-  // Saudação genérica ou qualquer outra mensagem
+  // Último recurso absoluto — só se TUDO falhou
   return {
-    reply: `${period}${nameStr}! 😊 Seja bem-vindo(a) ao ${storeName}! Tudo bem?\n\nComo posso te ajudar? Posso te mostrar nosso cardápio, informar valores, horários ou tempo de entrega!\n\nNosso cardápio completo: ${storeLink}`
+    reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Tô com uma instabilidade aqui, mas já já normaliza! Enquanto isso, faz teu pedido direto pelo nosso cardápio: ${storeLink}`
   };
 }
