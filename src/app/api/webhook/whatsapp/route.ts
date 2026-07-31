@@ -103,8 +103,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "connected" });
     }
 
-    // 2. Recebimento de mensagens (MESSAGES_UPSERT / MESSAGES.UPSERT)
-    if ((event.includes("MESSAGE") || event.includes("UPSERT") || body.data?.message) && instance) {
+    // 2. Recebimento de mensagens e chamadas (MESSAGES_UPSERT, CALL, etc.)
+    if ((event.includes("MESSAGE") || event.includes("UPSERT") || event.includes("CALL") || body.data?.message || body.data?.call) && instance) {
       try {
         await handleIncomingMessage(body, instance);
       } catch (msgErr: any) {
@@ -236,6 +236,33 @@ async function handleIncomingMessage(body: any, instance: string) {
     data.body ||
     data.text ||
     "";
+
+  // Detecção de Ligação de Voz / Chamada Perdida
+  const eventName = (body.event || body.type || "").toUpperCase();
+  const isCallEvent =
+    eventName.includes("CALL") ||
+    eventName.includes("LIGAÇÃO") ||
+    eventName.includes("LIGACAO") ||
+    data.messageType === "call" ||
+    data.type === "call" ||
+    Boolean(data.message?.callLogMessage) ||
+    Boolean(data.call) ||
+    Boolean(data.callLog) ||
+    Boolean(data.messageStubType && String(data.messageStubType).toUpperCase().includes("CALL")) ||
+    (typeof rawText === "string" && /ligação de voz|ligacao de voz|chamada perdida|missed call|voice call/i.test(rawText));
+
+  if (isCallEvent) {
+    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 📞 Chamada de voz detectada de ${remoteJid}`);
+    const cleanTarget = remoteJid.replace(/@.*$/, "");
+    if (cleanTarget) {
+      sendEvolutionMessage(
+        user.id,
+        cleanTarget,
+        "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?"
+      ).catch(() => {});
+    }
+    return;
+  }
 
   let textMessage = rawText;
   if (!textMessage.trim() && audioObj) {
