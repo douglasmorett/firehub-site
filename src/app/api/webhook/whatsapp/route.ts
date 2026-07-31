@@ -135,16 +135,32 @@ async function handleIncomingMessage(body: any, instance: string) {
   const getRealJid = (): string => {
     const candidates = [
       key.remoteJidAlt,
+      data.key?.remoteJidAlt,
+      data.senderAlt,
       data.sender,
       key.participant,
+      data.participantAlt,
       key.remoteJid,
       data.from,
     ].filter(Boolean);
 
-    const realCandidate = candidates.find(
-      (c: string) => typeof c === "string" && (c.includes("@s.whatsapp.net") || (c.replace(/\D/g, "").length >= 10 && !c.includes("@lid") && !c.replace(/\D/g, "").startsWith("22010")))
+    const isCleanPhoneJid = (c: string) => {
+      if (typeof c !== "string") return false;
+      if (c.includes("@lid") || c.includes("@broadcast") || c.includes("@g.us")) return false;
+      const digits = c.replace(/\D/g, "");
+      // Telefone válido do WhatsApp Brasil tem entre 10 e 13 dígitos. LIDs possuem 14+ dígitos.
+      return digits.length >= 10 && digits.length <= 13 && !digits.startsWith("22010");
+    };
+
+    const cleanCandidate = candidates.find(isCleanPhoneJid);
+    if (cleanCandidate) return cleanCandidate;
+
+    const whatsappNetCandidate = candidates.find(
+      (c: string) => typeof c === "string" && c.includes("@s.whatsapp.net") && !c.includes("@lid")
     );
-    return realCandidate || key.remoteJid || data.from || "";
+    if (whatsappNetCandidate) return whatsappNetCandidate;
+
+    return key.remoteJid || data.from || "";
   };
 
   const remoteJid = getRealJid();

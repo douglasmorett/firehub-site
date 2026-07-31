@@ -334,9 +334,9 @@ REGRAS ABSOLUTAS:
 14. Seu estilo: ${personalityInstruction}
 15. REGRAS ABSOLUTAS DE PREÇO E DISPONIBILIDADE DO DIA (MUITA ATENÇÃO!):
     - Hoje na loja é EXATAMENTE: ${currentDayName} (${currentDayCode}) no fuso de Brasília.
-    - REGRA 1 DE PREÇOS EXATOS: NUNCA troque o preço de um produto por outro! Consulte a lista "PRODUTOS DISPONÍVEIS PARA VENDA HOJE" abaixo. Se Esfirra de Calabresa está 1,90 reais e Esfirra de Carne está 2,90 reais, você DEVE dizer exatamente que a Esfirra de Calabresa é 1,90 reais!
-    - REGRA 2 DE PROMOÇÕES DO DIA: Se o cliente perguntar "o que tem na promoção hoje?", diga EXATAMENTE o produto que está disponível HOJE no preço promocional.
-    - REGRA 3 DE ITENS INDISPONÍVEIS: Produtos na seção "PRODUTOS INDISPONÍVEIS HOJE" NÃO PODEM ser oferecidos nem vendidos hoje sob hipótese alguma. Se o cliente pedir um item indisponível hoje, explique com simpatia em qual dia ele fica disponível.
+    - REGRA 1 DE PREÇOS EXATOS E SEM CONFUSÃO: Diga o preço exato do produto HOJE de primeira! NUNCA diga um preço promocional de outro dia para depois se corrigir dizendo "ah, me confundi".
+    - REGRA 2 DE PROMOÇÕES E DIAS: Se um item promocional (ex: Esfirra de Carne Promo R$ 1,90) estiver na lista "PRODUTOS INDISPONÍVEIS HOJE", significa que essa promoção NÃO VALE HOJE! Se o cliente pedir esse item hoje, diga o preço normal de hoje (ex: R$ 2,90) e explique simpaticamente que a promoção de 1,90 é válida apenas no dia cadastrado (ex: Quinta-feira).
+    - REGRA 3 DE ITENS INDISPONÍVEIS: Produtos na seção "PRODUTOS INDISPONÍVEIS HOJE" NÃO PODEM ser oferecidos nem vendidos hoje pelo valor promocional sob hipótese alguma.
 16. REGRA ABSOLUTA DE ATENDIMENTO 24/7 (MESMO COM CAIXA / LOJA FECHADO):
     - O ROBÔ DEVE FICAR ATIVO E RESPONDER PRA SEMPRE 24 HORAS POR DIA!
     - NUNCA DEIXE DE RESPONDER NENHUMA MENSAGEM SÓ PORQUE A LOJA OU O CAIXA ESTÁ FECHADO.
@@ -358,6 +358,7 @@ ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta 2 esfirras", "muda pra pix", "troca o refri"):
       a) Atualize o rascunho com os itens, recálculo de valor e confirmação natural.
       b) VERIFIQUE O QUE FALTA E PERGUNTE PROATIVAMENTE NA MESMA MENSAGEM:
+         - Se não sabe o NOME DO CLIENTE (quando constar "Primeiro Nome: Não identificado" ou "Cliente WhatsApp"), PERGUNTE OBRIGATORIAMENTE: "Qual o seu nome para o cadastro do pedido?"
          - Se falta o endereço, pergunte: "Qual o endereço completo para entrega (rua, número, bairro)?"
          - Se falta o pagamento, pergunte: "Qual a forma de pagamento (Pix, Cartão de Crédito/Débito na entrega ou Dinheiro)?"
          - Se falta o troco (caso dinheiro), pergunte se precisa de troco para quanto.
@@ -366,11 +367,11 @@ ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       Se você enviou o resumo do pedido com os itens, valor, endereço e pagamento e perguntou "Confirma pra mim?" (ou similar), E O CLIENTE RESPONDEU CONFIRMANDO (ex: "Certo", "Sim", "Tudo certo", "Pode mandar", "Certo!!!!", "OK"):
       a) VOCÊ DEVE FINALIZAR O PEDIDO NA HORA! Responda agradecendo com entusiasmo e informando que o pedido já foi para a cozinha.
       b) É OBRIGATÓRIO mudar "status" para "NOVO" (ou "ACEITO") e "finalized" para true na tag:
-         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "address": "...", "paymentMethod": "...", "finalized": true}]]
+         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome Do Cliente", "address": "...", "paymentMethod": "...", "finalized": true}]]
       c) NUNCA, sob hipótese alguma, responda fazendo novas perguntas de confirmação ou perguntando se é um novo pedido após o cliente ter dito "Certo" ou "Sim"!
     - INSTRUÇÃO OBRIGATÓRIA DE RASCUNHO EM TEMPO REAL:
       Se estiver criando ou atualizando o rascunho em andamento, coloque no FINAL da sua resposta:
-      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "address": "Rua X", "paymentMethod": "PIX", "finalized": false}]]
+      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "customerName": "Nome do Cliente (se souber)", "address": "Rua X", "paymentMethod": "PIX", "finalized": false}]]
     - REGRA DE CANCELAMENTO / DESISTÊNCIA NO WHATSAPP:
       Se o cliente pedir para cancelar ou desistir do pedido (ex: "cancela", "não vou querer mais não", "deixa pra lá", "desisto"):
       a) Responda gentilmente confirmando o cancelamento.
@@ -527,7 +528,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       if (generatedText) {
         let cleanText = generatedText
           .replace(/(\*\*|\*|_|#|`)/g, "")
-          .replace(/R\$\s?(\d+)[.,](\d{2})/gi, "$1 reais")
+          .replace(/R\$\s?(\d+)[.,](\d{2})/gi, (_, g1, g2) => (g2 === "00" ? `${g1} reais` : `${g1},${g2} reais`))
           .trim();
 
         // ── SINCRONIZAR PEDIDO IA EM TEMPO REAL ──
@@ -626,14 +627,32 @@ async function syncAiOrderToDatabase({
   storeProducts: any[];
   autoAccept?: boolean;
 }) {
-  const phoneClean = customerPhone.replace(/\D/g, "");
-  if (!phoneClean) return;
+  const isLid = phoneClean.length > 13 || phoneClean.startsWith("22010");
+  let formattedCustomerPhone = phoneClean;
+  if (!isLid) {
+    formattedCustomerPhone = phoneClean.length === 13 && phoneClean.startsWith("55")
+      ? `+55 (${phoneClean.slice(2, 4)}) ${phoneClean.slice(4, 9)}-${phoneClean.slice(9)}`
+      : phoneClean.length === 11
+      ? `(${phoneClean.slice(0, 2)}) ${phoneClean.slice(2, 7)}-${phoneClean.slice(7)}`
+      : phoneClean;
+  } else {
+    formattedCustomerPhone = `WhatsApp (ID: ${phoneClean.slice(-4)})`;
+  }
 
-  const formattedCustomerPhone = phoneClean.length === 13 && phoneClean.startsWith("55")
-    ? `+55 (${phoneClean.slice(2, 4)}) ${phoneClean.slice(4, 9)}-${phoneClean.slice(9)}`
-    : phoneClean.length === 11
-    ? `(${phoneClean.slice(0, 2)}) ${phoneClean.slice(2, 7)}-${phoneClean.slice(7)}`
-    : phoneClean;
+  // Extrai nome real do cliente se o robô capturou no payload da IA
+  const payloadName = (payload.customerName || payload.name || "").trim();
+  const finalCustomerName = (payloadName && !payloadName.includes("Cliente WhatsApp"))
+    ? payloadName
+    : (customerName && !customerName.includes("Cliente WhatsApp") ? customerName : (existingDraft?.customerName || "Cliente WhatsApp"));
+
+  // Salva/Atualiza na base de clientes (StoreCustomer) se o nome for válido e tiver número limpo
+  if (finalCustomerName !== "Cliente WhatsApp" && phoneClean && !isLid) {
+    prisma.storeCustomer.upsert({
+      where: { phone: phoneClean },
+      update: { name: finalCustomerName, updatedAt: new Date() },
+      create: { phone: phoneClean, name: finalCustomerName, password: "" },
+    }).catch((e) => console.error("[Chatbot AI] Erro ao salvar StoreCustomer:", e));
+  }
 
   // Busca pedido rascunho em aberto ou pedido recente nos últimos 20 minutos para evitar duplicidades
   const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
@@ -704,7 +723,7 @@ async function syncAiOrderToDatabase({
     await prisma.customerOrder.update({
       where: { id: existingDraft.id },
       data: {
-        customerName: customerName || existingDraft.customerName,
+        customerName: finalCustomerName,
         customerAddress: payload.address || existingDraft.customerAddress,
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
         totalAmount: totalItemsSum,
@@ -725,7 +744,7 @@ async function syncAiOrderToDatabase({
     const newOrder = await prisma.customerOrder.create({
       data: {
         franchiseeId,
-        customerName: customerName || "Cliente WhatsApp",
+        customerName: finalCustomerName,
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || null,
         paymentMethod: payload.paymentMethod || null,
