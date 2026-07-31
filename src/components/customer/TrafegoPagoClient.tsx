@@ -409,7 +409,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <p style={{ textAlign: "center", color: "#6B7280", marginBottom: "2rem" }}>Escolha a modalidade que funciona melhor pra você.</p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
         {[
-          { title: "Configuração Acompanhada", desc: "Um especialista FireHub configura com você via WhatsApp", href: "https://wa.me/5521970067196?text=Quero+ativar+o+Tráfego+Pago" },
+          { title: "Configuração Acompanhada", desc: "Um especialista FireHub configura com você via WhatsApp", href: "https://wa.me/5522998851680?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja" },
           { title: "Configurar Sozinho", desc: "Configure no seu ritmo, passo a passo em menos de 5 minutos", action: () => setStep("invest") },
         ].map((opt, i) => (
           <div key={i} onClick={() => opt.action ? opt.action() : window.open(opt.href, "_blank")}
@@ -848,7 +848,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       </div>
 
       <div style={{ marginTop: "1rem", textAlign: "center" }}>
-        <button onClick={() => window.open("https://wa.me/5521970067196?text=Quero+ajuda+com+tráfego+pago", "_blank")}
+        <button onClick={() => window.open("https://wa.me/5522998851680?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja", "_blank")}
           style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 10, padding: "10px 20px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer", color: "#475569", display: "inline-flex", alignItems: "center", gap: 8 }}>
           💬 Falar com especialista <ExternalLink size={14} />
         </button>

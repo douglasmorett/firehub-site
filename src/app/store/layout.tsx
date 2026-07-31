@@ -185,7 +185,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
                 <a href="/store/financeiro#fatura" style={{ width: "100%", background: "#DC2626", color: "#fff", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, textDecoration: "none", display: "inline-block" }}>
                   ⚡ Pagar e Liberar Conta →
                 </a>
-                <a href="https://wa.me/5521970067196?text=Preciso+de+ajuda+com+minha+conta+bloqueada" target="_blank" rel="noopener noreferrer" style={{ color: "#64748B", fontSize: "0.85rem", textDecoration: "underline" }}>
+                <a href="https://wa.me/5522998851680?text=Preciso+de+ajuda+com+minha+conta+bloqueada" target="_blank" rel="noopener noreferrer" style={{ color: "#64748B", fontSize: "0.85rem", textDecoration: "underline" }}>
                   Falar com suporte via WhatsApp
                 </a>
               </div>
