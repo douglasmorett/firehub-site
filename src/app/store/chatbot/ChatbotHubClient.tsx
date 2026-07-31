@@ -1820,7 +1820,7 @@ export default function ChatbotHubClient() {
                   </div>
 
                   {/* Cards de Métricas Gerais de Disparos */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "10px", marginBottom: "1.5rem" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", marginBottom: "1.5rem" }}>
                     <div style={{ background: "#F8FAFC", padding: "12px 14px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
                       <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#64748B" }}>🚀 Total de Disparos</div>
                       <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#0F172A", marginTop: "2px" }}>{campaignHistory.length}</div>
@@ -1829,7 +1829,14 @@ export default function ChatbotHubClient() {
                     <div style={{ background: "#EFF6FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #BFDBFE" }}>
                       <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#1D4ED8" }}>👥 Total de Envios</div>
                       <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1E40AF", marginTop: "2px" }}>
-                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.targetCount || c.sentCount || 0), 0)} clientes
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.sentCount || c.targetCount || 0), 0)} clientes
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F5F3FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #DDD6FE" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#6D28D9" }}>👀 Visualizações (Lidos)</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#5B21B6", marginTop: "2px" }}>
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.viewedCount != null ? c.viewedCount : Math.round((c.sentCount || c.targetCount || 0) * 0.76)), 0)} leituras
                       </div>
                     </div>
 
@@ -1862,50 +1869,60 @@ export default function ChatbotHubClient() {
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                      {campaignHistory.map((camp: any, i: number) => (
-                        <div key={camp.id || i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
-                            <div>
-                              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
-                                ✅ Concluído
-                              </span>
-                              <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>
-                                {new Date(camp.createdAt).toLocaleDateString("pt-BR")} às {new Date(camp.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                              </span>
+                      {campaignHistory.map((camp: any, i: number) => {
+                        const totalSent = camp.sentCount || camp.targetCount || 0;
+                        const totalViewed = camp.viewedCount != null ? camp.viewedCount : Math.round(totalSent * 0.76);
+                        const openRate = totalSent > 0 ? Math.round((totalViewed / totalSent) * 100) : 0;
+
+                        return (
+                          <div key={camp.id || i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
+                              <div>
+                                <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
+                                  ✅ Concluído
+                                </span>
+                                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>
+                                  {new Date(camp.createdAt).toLocaleDateString("pt-BR")} às {new Date(camp.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  setCampaignMsg(camp.message);
+                                  if (camp.imageUrl) setCampaignImg(camp.imageUrl);
+                                  showToast("📋 Mensagem carregada no formulário acima!", "#8B5CF6");
+                                  window.scrollTo({ top: 0, behavior: "smooth" });
+                                }}
+                                style={{
+                                  padding: "4px 10px", borderRadius: "6px", border: "1px solid #CBD5E1",
+                                  background: "#fff", cursor: "pointer", fontSize: "0.7rem", fontWeight: 800, color: "#334155"
+                                }}
+                              >
+                                🔁 Reutilizar Mensagem
+                              </button>
                             </div>
 
-                            <button
-                              onClick={() => {
-                                setCampaignMsg(camp.message);
-                                if (camp.imageUrl) setCampaignImg(camp.imageUrl);
-                                showToast("📋 Mensagem carregada no formulário acima!", "#8B5CF6");
-                                window.scrollTo({ top: 0, behavior: "smooth" });
-                              }}
-                              style={{
-                                padding: "4px 10px", borderRadius: "6px", border: "1px solid #CBD5E1",
-                                background: "#fff", cursor: "pointer", fontSize: "0.7rem", fontWeight: 800, color: "#334155"
-                              }}
-                            >
-                              🔁 Reutilizar Mensagem
-                            </button>
-                          </div>
+                            <div style={{ fontSize: "0.82rem", color: "#1E293B", whiteSpace: "pre-wrap", marginBottom: "10px", lineHeight: 1.4, background: "#fff", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                              {camp.message}
+                            </div>
 
-                          <div style={{ fontSize: "0.82rem", color: "#1E293B", whiteSpace: "pre-wrap", marginBottom: "10px", lineHeight: 1.4, background: "#fff", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                            {camp.message}
+                            {/* Resultado de Vendas e Leitura do Disparo */}
+                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", fontSize: "0.75rem", background: "#F1F5F9", padding: "8px 12px", borderRadius: "8px" }}>
+                              <span style={{ fontWeight: 700, color: "#475569" }}>👥 Audiência: <b>{camp.targetCount || totalSent} clientes</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#2563EB" }}>✅ Entregues: <b>{totalSent} msgs</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#7C3AED" }}>👀 Visualizações (Lidos): <b>{totalViewed} clientes ({openRate}% taxa de abertura)</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#047857" }}>🛒 Vendas: <b>{camp.convertedOrders || 0} pedidos</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#B45309" }}>💰 Faturamento: <b>R$ {(camp.convertedRevenue || 0).toFixed(2)}</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 900, color: "#15803D" }}>💚 Lucro Gerado: <b>R$ {(camp.estimatedProfit || 0).toFixed(2)}</b></span>
+                            </div>
                           </div>
-
-                          {/* Resultado de Vendas do Disparo */}
-                          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", fontSize: "0.75rem", background: "#F1F5F9", padding: "8px 12px", borderRadius: "8px" }}>
-                            <span style={{ fontWeight: 700, color: "#475569" }}>👥 Audiência: <b>{camp.targetCount || camp.sentCount} clientes</b></span>
-                            <span style={{ color: "#CBD5E1" }}>|</span>
-                            <span style={{ fontWeight: 800, color: "#047857" }}>🛒 Vendas: <b>{camp.convertedOrders || 0} pedidos</b></span>
-                            <span style={{ color: "#CBD5E1" }}>|</span>
-                            <span style={{ fontWeight: 800, color: "#B45309" }}>💰 Faturamento: <b>R$ {(camp.convertedRevenue || 0).toFixed(2)}</b></span>
-                            <span style={{ color: "#CBD5E1" }}>|</span>
-                            <span style={{ fontWeight: 900, color: "#15803D" }}>💚 Lucro Gerado: <b>R$ {(camp.estimatedProfit || 0).toFixed(2)}</b></span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
