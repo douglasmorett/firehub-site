@@ -1111,8 +1111,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
         items: (order.items || []).map((i: any) => {
           const rawName = i.menuProduct?.name || i.name || "Item";
+          const cleanName = rawName.split(" | ")[0].trim();
           return {
-            name: rawName,
+            name: cleanName,
             qty: i.quantity || i.qty || 1,
             price: i.price || 0,
             notes: i.notes || "",
@@ -2245,8 +2246,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         return [];
                       } catch { return []; }
                     })();
-                    const nameParts = (item.menuProduct?.name || "Item").split(" | ");
-                    const mainName = nameParts[0];
+                    const nameParts = (item.menuProduct?.name || item.name || "Item").split(" | ");
+                    const mainName = nameParts[0].trim();
                     const extras = nameParts.slice(1);
                     const itemPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
                     const isStandaloneBeverage = comboSels.length === 0 && isBeverageItem(item);

@@ -149,8 +149,9 @@ export default function GlobalPrintListener() {
                     isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
                     items: (order.items || []).map((i: any) => {
                       const rawName = i.menuProduct?.name || i.name || "Item";
+                      const cleanName = rawName.split(" | ")[0].trim();
                       return {
-                        name: rawName,
+                        name: cleanName,
                         qty: i.quantity || i.qty || 1,
                         price: i.price || 0,
                         notes: i.notes || "",
