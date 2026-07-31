@@ -23,7 +23,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
     }
     if (!merchantId) {
       const u = await prisma.user.findFirst({ where: { email: "contatohakim@gmail.com" }, select: { ifoodMerchantId: true } });
-      merchantId = u?.ifoodMerchantId || undefined;
+      merchantId = u?.ifoodMerchantId || "5bfb7d90-b184-4b95-a2bc-ae61db896cb0";
     }
 
     const token = await getIfoodToken();
