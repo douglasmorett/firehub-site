@@ -354,14 +354,19 @@ REGRAS ABSOLUTAS:
 ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESENCIAL / FÍSICA!
     - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || "Centro"}" (SEM NENHUM LINK!).` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
     - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
-18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA / PREÇO DA ENTREGA / FRETE:
-    - Consulte a seção "TAXAS DE ENTREGA POR BAIRRO/REGIÃO" abaixo. Se houver taxa por bairro, informe a taxa do bairro dele (se souber). Se o cliente disse onde mora, procure o bairro na lista e informe o valor exato.
-    - Se a taxa variar ou não souber o bairro, pergunte o bairro dele: "A taxa de entrega depende do bairro! Qual a sua rua ou bairro para eu verificar o valor certinho pra você? 😊"
-    - NÃO mande o link do cardápio aqui a não ser que o cliente peça.
-19. QUANDO O CLIENTE DISSER ONDE MORA OU MENCIONAR UM BAIRRO/LOCALIZAÇÃO:
-    - NUNCA ignore isso! Procure o bairro/região na seção "TAXAS DE ENTREGA" abaixo.
-    - Se encontrar o bairro, informe a taxa: "A gente entrega aí sim! A taxa pro seu bairro (${customerFirstName ? `${customerFirstName}, ` : ""})é R$ X,XX 🚀 Quer que eu te passe o cardápio pra pedir?"
-    - Se não encontrar na lista, peça o endereço completo ou rua para conferir.
+18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA / FRETE OU MENCIONAR SEU BAIRRO/RUA:
+    - VOCÊ DEVE OBRIGATORIAMENTE INFORMAR O VALOR EM REAIS DA TAXA DE ENTREGA!
+    - Consulte a seção "TAXAS DE ENTREGA POR BAIRRO/REGIÃO" abaixo.
+    - Se o cliente perguntar se entrega no bairro dele (ex: "Vocês entregam em Nova Esperança?") ou disser o nome da rua:
+      a) Responda confirmando a entrega E JÁ INFORME O VALOR DA TAXA imediatamente (ex: "Entregamos em Nova Esperança sim! A taxa de entrega pra aí é R$ 5,00! 🛵").
+      b) NUNCA diga respostas evasivas como "é calculada automaticamente pelo sistema no final" sem dar o valor. Informe a taxa exata em reais!
+19. DISCRIMINAÇÃO OBRIGATÓRIA DA TAXA DE ENTREGA NO RESUMO DO PEDIDO:
+    - Ao apresentar o resumo do pedido para o cliente (ou ao finalizar):
+      a) Você DEVE obrigatoriamente discriminar no texto:
+         - Subtotal dos itens: R$ X,XX
+         - Taxa de entrega: R$ X,XX (ou Frete Grátis)
+         - Valor Total a pagar: R$ X,XX
+      b) NUNCA omita a taxa de entrega no resumo final do pedido!
 ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPLETO E PROATIVO!):
     - FOCO ABSOLUTO NO PEDIDO ATUAL:
       Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta 2 esfirras", "muda pra pix", "troca o refri"):
@@ -373,14 +378,14 @@ ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
          - Se falta o troco (caso dinheiro), pergunte se precisa de troco para quanto.
       c) NUNCA pergunte se o cliente quer fazer "um novo pedido ou alterar o pedido anterior" enquanto ele estiver montando, alterando ou confirmando o pedido atual!
     - CONFIRMAÇÃO E FINALIZAÇÃO IMEDIATA (REGRA CRÍTICA!):
-      Se você enviou o resumo do pedido com os itens, valor, endereço e pagamento e perguntou "Confirma pra mim?" (ou similar), E O CLIENTE RESPONDEU CONFIRMANDO (ex: "Certo", "Sim", "Tudo certo", "Pode mandar", "Certo!!!!", "OK"):
+      Se você enviou o resumo do pedido (com Itens, Taxa de Entrega, Total, Endereço e Pagamento) e perguntou "Confirma pra mim?" (ou similar), E O CLIENTE RESPONDEU CONFIRMANDO (ex: "Certo", "Sim", "Tudo certo", "Pode mandar", "Certo!!!!", "OK"):
       a) VOCÊ DEVE FINALIZAR O PEDIDO NA HORA! Responda agradecendo com entusiasmo e informando que o pedido já foi para a cozinha.
       b) É OBRIGATÓRIO mudar "status" para "NOVO" (ou "ACEITO") e "finalized" para true na tag:
-         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome Do Cliente", "address": "...", "paymentMethod": "...", "finalized": true}]]
+         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome Do Cliente", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 16.40, "finalized": true}]]
       c) NUNCA, sob hipótese alguma, responda fazendo novas perguntas de confirmação ou perguntando se é um novo pedido após o cliente ter dito "Certo" ou "Sim"!
     - INSTRUÇÃO OBRIGATÓRIA DE RASCUNHO EM TEMPO REAL:
       Se estiver criando ou atualizando o rascunho em andamento, coloque no FINAL da sua resposta:
-      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "customerName": "Nome do Cliente (se souber)", "address": "Rua X", "paymentMethod": "PIX", "finalized": false}]]
+      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "Nome do Produto", "quantity": 1, "price": 25.00}], "customerName": "Nome do Cliente (se souber)", "address": "Rua X", "paymentMethod": "PIX", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]
     - REGRA DE CANCELAMENTO / DESISTÊNCIA NO WHATSAPP:
       Se o cliente pedir para cancelar ou desistir do pedido (ex: "cancela", "não vou querer mais não", "deixa pra lá", "desisto"):
       a) Responda gentilmente confirmando o cancelamento.
@@ -441,14 +446,17 @@ ${(() => {
   const zones = Array.isArray((user as any).deliveryZones) ? (user as any).deliveryZones : [];
   const zoneType = (user as any).deliveryZoneType || "";
   const dc = (user.deliveryConfig as any) || {};
+  const fixedFee = dc.fixedFee ?? dc.defaultFee ?? dc.deliveryFee ?? dc.fixedDeliveryFee ?? dc.fee ?? null;
   const freeMin = dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0;
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
     taxaText = zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
   } else if (zones.length > 0 && zoneType === "RADIUS") {
     taxaText = zones.map((z: any) => `- Até ${z.radius || z.maxKm || "?"}km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
+  } else if (fixedFee !== null) {
+    taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
-    taxaText = "Taxa de entrega calculada automaticamente pelo site conforme endereço do cliente.";
+    taxaText = "- Taxa Padrão de Entrega da Loja: R$ 5,00 (ou conforme bairro informado pelo cliente).";
   }
   if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS para pedidos acima de R$ ${Number(freeMin).toFixed(2)}`;
   return taxaText;
@@ -722,6 +730,9 @@ async function syncAiOrderToDatabase({
   });
 
   const totalItemsSum = orderItemsData.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
+  const deliveryFee = Number(payload.deliveryFee || payload.deliveryTax || payload.shippingFee || 0);
+  const totalOrderAmount = Number(payload.totalAmount || (totalItemsSum + deliveryFee));
+
   const notesText = payload.finalized
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`
     : `🤖 Pedido sendo montado pela IA no WhatsApp`;
@@ -736,7 +747,8 @@ async function syncAiOrderToDatabase({
         customerName: finalCustomerName,
         customerAddress: payload.address || existingDraft.customerAddress,
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
-        totalAmount: totalItemsSum,
+        deliveryFee: deliveryFee,
+        totalAmount: totalOrderAmount,
         status: finalStatus,
         notes: notesText,
         items: {
@@ -748,7 +760,7 @@ async function syncAiOrderToDatabase({
         },
       },
     });
-    console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${finalStatus}, total=R$${totalItemsSum}`);
+    console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
   } else {
     // Cria novo pedido rascunho
     const newOrder = await prisma.customerOrder.create({
@@ -758,7 +770,8 @@ async function syncAiOrderToDatabase({
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || null,
         paymentMethod: payload.paymentMethod || null,
-        totalAmount: totalItemsSum,
+        deliveryFee: deliveryFee,
+        totalAmount: totalOrderAmount,
         deliveryType: "DELIVERY",
         source: "WHATSAPP_IA",
         status: finalStatus,
@@ -772,7 +785,8 @@ async function syncAiOrderToDatabase({
         },
       },
     });
-    console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalItemsSum}`);
+    console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
+  }
   }
 
   // 🖨️ APENAS SE O PEDIDO FOI TOTALMENTE FINALIZADO E CONFIRMADO PELO CLIENTE:
