@@ -99,12 +99,19 @@ const cleanAddressForMap = (addr: string | null, city?: string): string => {
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
   const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
-  
-  // Se for entrega própria do comerciante (MERCHANT), NUNCA trava!
-  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO") return false;
+  const dMode = (order.deliveryMode || "").toString().toUpperCase();
+  const ifoodRef = order.ifoodOrderId || order.ifoodReference;
 
-  // Apenas considera Motoboy iFood travado se for estritamente logística parceira contratada do iFood
-  if (dBy === "IFOOD_LOGISTICS" || (dBy === "IFOOD" && (order.ifoodDriverName || order.ifoodDriverStatus))) {
+  // Se for entrega própria do comerciante (MERCHANT), NUNCA trava!
+  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dMode === "MERCHANT") return false;
+
+  // Se for pedido do iFood e for entrega parceira (IFOOD, LOGISTIC, PARTNER)
+  if (ifoodRef && (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy.includes("LOGISTIC") || dMode === "DEFAULT" || dMode === "LOGISTIC" || dMode === "PARTNER")) {
+    return true;
+  }
+
+  // Fallback: motorista registrado pelo iFood
+  if (order.ifoodDriverName || order.ifoodDriverStatus) {
     return true;
   }
 
@@ -587,6 +594,19 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               </span>
             )}
           </div>
+
+          {/* Banner de Alerta para Entrega Parceira iFood */}
+          {isIfoodMotoboy(order) && (
+            <div style={{
+              marginTop: "6px", padding: "4px 8px", borderRadius: "6px",
+              background: "#FEF2F2", border: "1.5px solid #FCA5A5",
+              color: "#DC2626", fontWeight: 800, fontSize: "0.72rem",
+              display: "flex", alignItems: "center", gap: "6px"
+            }}>
+              <span>🛵</span>
+              <span>ENTREGA PARCEIRA IFOOD — Entregador do iFood (Não enviar motoboy da loja!)</span>
+            </div>
+          )}
         </div>
 
         {/* Action Bar (Botões + Motoboy Dropdown Inline + WhatsApp + Print + Receipt) */}
