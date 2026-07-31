@@ -111,6 +111,32 @@ export default function ChatbotHubClient() {
   const [selectedCriteria, setSelectedCriteria] = useState("all");
   const [sendingCampaign, setSendingCampaign] = useState(false);
   const [showCampaignConfirm, setShowCampaignConfirm] = useState(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+
+  const handleGenerateAiMessage = async () => {
+    setIsGeneratingAi(true);
+    try {
+      const res = await fetch("/api/chatbot/generate-broadcast-msg", { method: "POST" });
+      const data = await res.json();
+      if (data.success && data.message) {
+        setCampaignMsg(data.message);
+        showToast("✨ Mensagem persuasiva gerada pela IA com sucesso!", "#8B5CF6");
+      } else {
+        throw new Error();
+      }
+    } catch {
+      const fallbackMsgs = [
+        "Oi! 🍕 Sentimos sua falta! Que tal aproveitar nossos combos hoje? Peça agora e receba quentinho na sua casa!",
+        "Oie! 🔥 Liberamos uma oferta ESPECIAL hoje só pra você! Peça seu lanche favorito pelo nosso site e aproveite! 🚀",
+        "Que tal um lanche delicioso hoje? 🍔 Preparamos tudo com muito carinho pra você! Peça já pelo nosso cardápio!",
+        "Bateu aquela fome? 😋 Aproveite as nossas promoções exclusivas com entrega super rápida! Peça pelo site agora!"
+      ];
+      setCampaignMsg(fallbackMsgs[Math.floor(Math.random() * fallbackMsgs.length)]);
+      showToast("✨ Mensagem rápida gerada com IA!", "#8B5CF6");
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
 
   const handleRequestDeleteCoupon = (code: string) => {
     const found = storeCoupons.find((c: any) => c.code === code);
@@ -1528,9 +1554,40 @@ export default function ChatbotHubClient() {
 
                 {/* STEP 2: Mensagem */}
                 <div style={{ marginBottom: "1.5rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>2</div>
-                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escreva a Mensagem</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>2</div>
+                      <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escreva a Mensagem</div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGenerateAiMessage}
+                      disabled={isGeneratingAi}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "20px",
+                        border: "none",
+                        background: isGeneratingAi
+                          ? "#94A3B8"
+                          : "linear-gradient(135deg, #8B5CF6, #EC4899)",
+                        color: "#fff",
+                        fontSize: "0.76rem",
+                        fontWeight: 800,
+                        cursor: isGeneratingAi ? "wait" : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        boxShadow: "0 4px 12px rgba(139, 92, 246, 0.35)",
+                        transition: "all 0.2s"
+                      }}
+                    >
+                      {isGeneratingAi ? (
+                        <>✨ Criando texto com IA...</>
+                      ) : (
+                        <>✨ Gerar Texto com IA (1 Clique)</>
+                      )}
+                    </button>
                   </div>
 
                   <textarea
@@ -1551,7 +1608,20 @@ export default function ChatbotHubClient() {
 
                   {/* Modelos rápidos de mensagem */}
                   <div style={{ marginTop: "8px" }}>
-                    <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", marginBottom: "6px" }}>💡 Modelos Rápidos:</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B" }}>💡 Modelos Rápidos:</div>
+                      <button
+                        type="button"
+                        onClick={handleGenerateAiMessage}
+                        disabled={isGeneratingAi}
+                        style={{
+                          background: "none", border: "none", color: "#8B5CF6", cursor: "pointer",
+                          fontSize: "0.72rem", fontWeight: 800, textDecoration: "underline", padding: 0
+                        }}
+                      >
+                        🤖 Criar outra mensagem com IA
+                      </button>
+                    </div>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                       {[
                         { label: "🔥 Promoção", text: "Oii! 🔥 Temos uma promoção ESPECIAL só pra você hoje! Peça agora e ganhe desconto exclusivo. Aproveita!" },
