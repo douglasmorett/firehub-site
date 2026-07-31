@@ -174,6 +174,23 @@ async function handleIncomingMessage(body: any, instance: string) {
   // Ignore groups
   if (remoteJid.endsWith("@g.us") || remoteJid.includes("@g.us")) return;
 
+  const shortId = instance.replace(/^firehub_/, "");
+  let user = await prisma.user.findFirst({
+    where: { id: { endsWith: shortId } },
+    select: { id: true, ownerId: true, chatbotConfig: true },
+  });
+
+  if (!user) {
+    user = await prisma.user.findFirst({
+      select: { id: true, ownerId: true, chatbotConfig: true },
+    });
+  }
+
+  if (!user) {
+    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Usuário com id curto ${shortId} não encontrado.`);
+    return;
+  }
+
   // Suporte a Mensagens de Áudio (audioMessage / ptt)
   const audioObj = data.message?.audioMessage || data.message?.pttMessage || data.audio;
   let audioData: { base64: string; mimeType: string } | undefined = undefined;
@@ -181,7 +198,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   if (audioObj) {
     let base64Data = audioObj.base64 || audioObj.data || data.base64;
     const rawMime = audioObj.mimetype || audioObj.mimeType || "audio/ogg";
-    const mimeType = rawMime.split(";")[0].trim();
+    const mimeType = rawMime.split(";")[0].trim() || "audio/ogg";
 
     if (!base64Data && audioObj.url) {
       try {
@@ -197,14 +214,10 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     if (!base64Data && key.id) {
       try {
-        const shortId = instance.replace(/^firehub_/, "");
-        const matchedUser = await prisma.user.findFirst({
-          where: { id: { endsWith: shortId } },
-          select: { id: true },
-        });
-        if (matchedUser) {
-          const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
-          base64Data = await getEvolutionAudioBase64(matchedUser.id, key, data.message || { audioMessage: audioObj });
+        const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
+        base64Data = await getEvolutionAudioBase64(user.id, key, data.message || { audioMessage: audioObj });
+        if (!base64Data && user.ownerId) {
+          base64Data = await getEvolutionAudioBase64(user.ownerId, key, data.message || { audioMessage: audioObj });
         }
       } catch (err) {
         console.error("[WhatsApp Webhook] Erro ao buscar base64 do áudio via Evolution API:", err);
@@ -216,13 +229,29 @@ async function handleIncomingMessage(body: any, instance: string) {
     }
   }
 
-  const textMessage =
+  const rawText =
     data.message?.conversation ||
     data.message?.extendedTextMessage?.text ||
     data.message?.imageMessage?.caption ||
     data.body ||
     data.text ||
-    (audioObj ? "[Mensagem de Áudio enviada pelo cliente]" : "");
+    "";
+
+  let textMessage = rawText;
+  if (!textMessage.trim() && audioObj) {
+    if (audioData?.base64) {
+      textMessage = "O cliente enviou a mensagem de áudio em anexo. Por favor escute o áudio com atenção, entenda o pedido ou dúvida do cliente e responda no mesmo tom carinhoso e prestativo do cardápio.";
+    } else {
+      // Se não conseguiu baixar o áudio de jeito nenhum, envia uma resposta amigável de fallback pedindo para o cliente regravar ou digitar
+      const cleanTarget = remoteJid.replace(/@.*$/, "");
+      sendEvolutionMessage(
+        user.id,
+        cleanTarget,
+        "Ops, não consegui ouvir o seu áudio direitinho por aqui! 😅\n\nVocê pode me mandar em texto ou gravar um novo áudio para eu te ajudar?"
+      ).catch(() => {});
+      return;
+    }
+  }
 
   if (!textMessage.trim() && !audioData) return;
 
@@ -231,23 +260,6 @@ async function handleIncomingMessage(body: any, instance: string) {
   const lastResponse = cooldownCache.get(remoteJid) || 0;
   if (now - lastResponse < 3000) {
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Cooldown ativo para ${remoteJid}`);
-    return;
-  }
-
-  const shortId = instance.replace(/^firehub_/, "");
-  let user = await prisma.user.findFirst({
-    where: { id: { endsWith: shortId } },
-    select: { id: true, chatbotConfig: true },
-  });
-
-  if (!user) {
-    user = await prisma.user.findFirst({
-      select: { id: true, chatbotConfig: true },
-    });
-  }
-
-  if (!user) {
-    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Usuário com id curto ${shortId} não encontrado.`);
     return;
   }
 

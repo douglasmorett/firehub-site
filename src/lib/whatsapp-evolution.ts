@@ -240,15 +240,18 @@ export async function getEvolutionAudioBase64(userId: string, messageKey: any, m
     if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
   } catch {}
 
+  const headers = {
+    "apikey": apiKey,
+    "Content-Type": "application/json",
+    "Bypass-Tunnel-Remainder": "true",
+    "User-Agent": "FireHub"
+  };
+
+  // Tentativa 1: Enviar payload completo de mensagem
   try {
     const res = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
       method: "POST",
-      headers: {
-        "apikey": apiKey,
-        "Content-Type": "application/json",
-        "Bypass-Tunnel-Remainder": "true",
-        "User-Agent": "FireHub"
-      },
+      headers,
       body: JSON.stringify({
         message: { key: messageKey, message: messageObj },
         convertToMp4: false,
@@ -258,10 +261,39 @@ export async function getEvolutionAudioBase64(userId: string, messageKey: any, m
 
     if (res.ok) {
       const data = await res.json();
-      return data.base64 || data.data || null;
+      let base64Str = data.base64 || data.data || data.response?.base64 || null;
+      if (base64Str && base64Str.includes(";base64,")) {
+        base64Str = base64Str.split(";base64,")[1];
+      }
+      if (base64Str) return base64Str;
     }
-  } catch (err) {
-    console.error("[Evolution API Gateway] Erro ao buscar base64 do áudio:", err);
+  } catch (err: any) {
+    console.warn("[Evolution API Gateway] Tentativa 1 de áudio falhou:", err?.message);
   }
+
+  // Tentativa 2: Enviar apenas key
+  try {
+    const res2 = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message: { key: messageKey },
+        convertToMp4: false,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res2.ok) {
+      const data2 = await res2.json();
+      let base64Str = data2.base64 || data2.data || data2.response?.base64 || null;
+      if (base64Str && base64Str.includes(";base64,")) {
+        base64Str = base64Str.split(";base64,")[1];
+      }
+      if (base64Str) return base64Str;
+    }
+  } catch (err: any) {
+    console.warn("[Evolution API Gateway] Tentativa 2 de áudio falhou:", err?.message);
+  }
+
   return null;
 }
