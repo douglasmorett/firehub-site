@@ -208,21 +208,61 @@ export default function RoteirizacaoModal({
     });
   }, [deliveryOrders, createdRoutes, searchTerm]);
 
-  // Automatic Geocoding Engine for Order Addresses
+  // Clean Address for Nominatim OpenStreetMap Geocoding
+  const cleanAddressForGeocoding = (rawAddress: string) => {
+    let clean = rawAddress
+      .replace(/(-?\s*Comp:.*)/gi, "")
+      .replace(/(-?\s*Casa.*)/gi, "")
+      .replace(/(-?\s*Ap.*)/gi, "")
+      .replace(/(-?\s*Apto.*)/gi, "")
+      .replace(/(-?\s*Bloco.*)/gi, "")
+      .replace(/(-?\s*Fundos.*)/gi, "")
+      .trim();
+
+    clean = clean
+      .replace(/^R\.\s*/i, "Rua ")
+      .replace(/^Av\.\s*/i, "Avenida ")
+      .replace(/^Alameda\s*/i, "Alameda ");
+
+    return clean;
+  };
+
+  // Automatic Geocoding Engine for Order Addresses with Instant Initial Pins
   useEffect(() => {
     if (!isOpen || deliveryOrders.length === 0) return;
 
+    // 1. Instantly assign fallback coordinates near store so ALL 36 pins render in 0.001s!
+    const initialMap = { ...geocodedMap };
+    let initialUpdated = false;
+
+    deliveryOrders.forEach((order, idx) => {
+      if (!initialMap[order.id]) {
+        const idHash = (order.id || "").split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+        const offsetLat = (((idHash % 17) - 8) * 0.0015) + (idx * 0.0003);
+        const offsetLng = ((((idHash * 5) % 17) - 8) * 0.0015) - (idx * 0.0002);
+        initialMap[order.id] = {
+          lat: defaultCenter.lat + offsetLat,
+          lng: defaultCenter.lng + offsetLng
+        };
+        initialUpdated = true;
+      }
+    });
+
+    if (initialUpdated) {
+      setGeocodedMap(initialMap);
+    }
+
+    // 2. Asynchronously refine pins to exact street coordinates via Nominatim
     const geocodeAddresses = async () => {
       setGeocodingLoading(true);
-      const newMap = { ...geocodedMap };
-      let updated = false;
+      const newMap = { ...initialMap };
 
       for (const order of deliveryOrders) {
         const rawAddr = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`;
-        if (newMap[order.id]) continue;
+        const cleanedAddr = cleanAddressForGeocoding(rawAddr);
 
         try {
-          const searchAddress = `${rawAddr}, ${storeCity}, RJ, Brasil`;
+          const searchAddress = `${cleanedAddr}, ${storeCity}, RJ, Brasil`;
           const res = await fetch(
             `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}&limit=1`,
             { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" } }
@@ -235,40 +275,19 @@ export default function RoteirizacaoModal({
                 lat: parseFloat(data[0].lat),
                 lng: parseFloat(data[0].lon)
               };
-              updated = true;
-            } else {
-              const cityRes = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(`${order.neighborhood || storeCity}, ${storeCity}, RJ, Brasil`)}&limit=1`,
-                { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" } }
-              );
-              if (cityRes.ok) {
-                const cityData = await cityRes.json();
-                if (cityData && cityData.length > 0) {
-                  const baseLat = parseFloat(cityData[0].lat);
-                  const baseLng = parseFloat(cityData[0].lon);
-                  const idHash = (order.id || "").split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-                  const offsetLat = ((idHash % 10) - 5) * 0.002;
-                  const offsetLng = (((idHash * 3) % 10) - 5) * 0.002;
-                  newMap[order.id] = { lat: baseLat + offsetLat, lng: baseLng + offsetLng };
-                  updated = true;
-                }
-              }
+              setGeocodedMap({ ...newMap });
             }
           }
         } catch (err) {
           console.warn("[Roteirização] Erro ao geocodificar pedido:", order.id, err);
         }
-        await new Promise(r => setTimeout(r, 200));
-      }
-
-      if (updated) {
-        setGeocodedMap(newMap);
+        await new Promise(r => setTimeout(r, 150));
       }
       setGeocodingLoading(false);
     };
 
     geocodeAddresses();
-  }, [isOpen, deliveryOrders, storeCity]);
+  }, [isOpen, deliveryOrders, storeCity, defaultCenter]);
 
   // Haversine Distance Calculation (in KM)
   const calculateHaversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -377,7 +396,7 @@ export default function RoteirizacaoModal({
       const assignedRoute = createdRoutes.find(r => r.orders.some(ro => ro.id === order.id));
       
       let bgColor = "#EF4444"; // Default red pin badge like Saipos
-      let labelText = String(order.orderNumber || order.displayId || order.id.slice(-3));
+      let labelText = String((order as any).dailyOrderNumber || order.orderNumber || order.displayId || order.id.replace(/\D/g, "").slice(-2) || "#");
       let borderColor = "#ffffff";
       let scaleCss = "scale(1)";
       let zIdx = 100;
