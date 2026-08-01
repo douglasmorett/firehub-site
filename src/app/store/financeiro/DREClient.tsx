@@ -34,6 +34,16 @@ function calcPlatformFee(total: number): number {
   return calcMensalidade(total).mensalidade;
 }
 
+function getOrderDisplayNumber(o: any): string {
+  if (!o) return "—";
+  if (o.dailyOrderNumber != null && o.dailyOrderNumber !== "") return String(o.dailyOrderNumber);
+  if (o.ifoodReference) return String(o.ifoodReference);
+  if (o.openDeliveryReference) return String(o.openDeliveryReference);
+  if (o.orderNumber) return String(o.orderNumber);
+  if (o.displayId) return String(o.displayId);
+  return String(o.id || "").slice(-4).toUpperCase();
+}
+
 const PERIOD_PRESETS = [
   { label: "Hoje", days: 0 },
   { label: "7 dias", days: 7 },
@@ -192,22 +202,42 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
     let countPix = 0;
     let countCard = 0;
     let reembolsos = 0;
+    let faturamentoTotalSemFiltro = 0;
     const lancamentos: any[] = [];
 
     allInRange.forEach(o => {
       const isCancelled = o.status === "CANCELADO";
       const pm = (o.paymentMethod || "").toUpperCase();
-      const isPix = pm === "PIX" || pm.includes("PIX");
-      const isCard = pm.includes("CREDITO") || pm.includes("CARD") || pm.includes("ONLINE");
+      const src = (o.source || "").toUpperCase();
       const gross = (o.totalAmount || 0) + ((o as any).discountIfood || 0);
 
+      faturamentoTotalSemFiltro += gross;
+
+      // Identify if payment was processed strictly through Store's Mercado Pago / Celcoin Gateway
+      const isIfood = src === "IFOOD" || pm.includes("IFOOD");
+      const isJotaja = src === "JOTAJA" || pm.includes("JOTAJA") || src === "OPEN_DELIVERY";
+      const isPresencial = src === "PRESENCIAL" || pm.includes("DINHEIRO") || pm.includes("MAQUININHA") || pm.includes("ENTREGA");
+
+      const isMercadoPagoGateway = !isIfood && !isJotaja && !isPresencial && (
+        Boolean((o as any).gatewayProvider) || Boolean((o as any).gatewayPaymentId) || Boolean((o as any).pagarmeOrderId) ||
+        pm.includes("MERCADOPAGO") || pm.includes("CELCOIN") || pm.includes("PAGARME") || (
+          (src === "ONLINE" || src === "SITE" || src === "APP") && (pm.includes("PIX") || pm.includes("CREDITO") || pm.includes("ONLINE"))
+        )
+      );
+
+      const displayOrderNum = getOrderDisplayNumber(o);
+
       if (isCancelled) {
-        reembolsos += gross;
+        if (isMercadoPagoGateway) reembolsos += gross;
         lancamentos.push({
+          id: o.id,
           tipo: "Estorno",
           horario: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-          descricao: `Cancelamento Pedido #${o.id.slice(-4)}`,
-          formaPagamento: o.paymentMethod || "Online",
+          descricao: `Cancelamento Pedido #${displayOrderNum}`,
+          formaPagamento: isIfood ? "iFood Pago Online" : isJotaja ? "Jotajá Pago Online" : (o.paymentMethod || "Online"),
+          origem: isIfood ? "iFood (Repasse)" : isJotaja ? "Jotajá (Repasse)" : isMercadoPagoGateway ? "Gateway Mercado Pago" : "Loja",
+          isGateway: isMercadoPagoGateway,
+          sourceChannel: isIfood ? "IFOOD" : isJotaja ? "JOTAJA" : isMercadoPagoGateway ? "GATEWAY" : "LOJA",
           status: "Cancelado",
           dataLiberacao: "—",
           valorBruto: -gross,
@@ -217,28 +247,37 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         return;
       }
 
+      const isPix = pm.includes("PIX");
+      const isCard = pm.includes("CREDITO") || pm.includes("CARD") || pm.includes("ONLINE");
+
       let fee = 0;
-      if (isPix) {
-        pixTotal += gross;
-        countPix++;
-        fee = gross * 0.005 + 0.40;
-      } else if (isCard) {
-        cardTotal += gross;
-        countCard++;
-        fee = gross * 0.0399;
-      } else {
-        fee = gross * 0.01;
+      if (isMercadoPagoGateway) {
+        if (isPix) {
+          pixTotal += gross;
+          countPix++;
+          fee = gross * 0.005 + 0.40;
+        } else if (isCard) {
+          cardTotal += gross;
+          countCard++;
+          fee = gross * 0.0399;
+        } else {
+          fee = gross * 0.01;
+        }
       }
 
       const net = Math.max(0, gross - fee);
 
       lancamentos.push({
-        tipo: "Venda Online",
+        id: o.id,
+        tipo: isMercadoPagoGateway ? "Venda Online (Mercado Pago)" : isIfood ? "Venda iFood" : isJotaja ? "Venda Jotajá" : "Venda Presencial",
         horario: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-        descricao: `Pedido #${o.id.slice(-4)}`,
+        descricao: `Pedido #${displayOrderNum}`,
         formaPagamento: o.paymentMethod || "Online",
+        origem: isMercadoPagoGateway ? "Gateway Mercado Pago" : isIfood ? "Repasse Direto iFood" : isJotaja ? "Repasse Direto Jotajá" : "Loja (Entrega)",
+        isGateway: isMercadoPagoGateway,
+        sourceChannel: isIfood ? "IFOOD" : isJotaja ? "JOTAJA" : isMercadoPagoGateway ? "GATEWAY" : "LOJA",
         status: "Aprovado",
-        dataLiberacao: isPix ? "Imediato (D+0)" : "30 dias (D+30)",
+        dataLiberacao: !isMercadoPagoGateway ? "Repasse Externo" : isPix ? "Imediato (D+0)" : "30 dias (D+30)",
         valorBruto: gross,
         taxa: fee,
         valorLiquido: net
@@ -249,9 +288,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
     const taxasPix = pixTotal * 0.005 + countPix * 0.40;
     const taxasCard = cardTotal * 0.0399;
     const taxasOperacionais = taxasPix + taxasCard;
-    const mensalidadeVal = calcPlatformFee(receitaBruta);
-    const receitaLiquida = Math.max(0, receitaBruta - taxasOperacionais - mensalidadeVal - reembolsos);
-    const saldoDisponivel = Math.max(0, pixTotal - taxasPix - mensalidadeVal);
+    const mensalidadeVal = calcPlatformFee(faturamentoTotalSemFiltro);
+    const receitaLiquida = Math.max(0, receitaBruta - taxasOperacionais - reembolsos);
+    const saldoDisponivel = Math.max(0, pixTotal - taxasPix);
     const saldoALiberar = Math.max(0, cardTotal - taxasCard);
 
     return {
@@ -686,19 +725,29 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
               {/* Esquerda: Saldo Disponível e Saldo a Liberar */}
               <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748B", fontSize: "0.85rem", fontWeight: 700 }}>
-                  <span>💳 Saldo Disponível</span>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#1E40AF", fontSize: "0.88rem", fontWeight: 800 }}>
+                    <span>💳 Saldo Gateway da Loja (Mercado Pago / Celcoin)</span>
+                  </div>
+                  <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
+                    Vendas Online Próprias
+                  </span>
                 </div>
-                <p style={{ fontSize: "2rem", fontWeight: 900, color: "#16A34A", margin: "6px 0 16px" }}>
+
+                <p style={{ fontSize: "2.1rem", fontWeight: 900, color: "#16A34A", margin: "4px 0 12px" }}>
                   {fmtR(extratoCalc.saldoDisponivel)}
                 </p>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748B", fontSize: "0.85rem", fontWeight: 700 }}>
-                  <span>🔒 Saldo a Liberar ℹ️</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748B", fontSize: "0.82rem", fontWeight: 700 }}>
+                  <span>🔒 Saldo a Liberar (Crédito D+30)</span>
                 </div>
-                <p style={{ fontSize: "1.5rem", fontWeight: 800, color: "#0F172A", margin: "6px 0 20px" }}>
+                <p style={{ fontSize: "1.4rem", fontWeight: 800, color: "#334155", margin: "4px 0 16px" }}>
                   {fmtR(extratoCalc.saldoALiberar)}
                 </p>
+
+                <div style={{ fontSize: "0.75rem", color: "#64748B", background: "#F8FAFC", padding: "8px 12px", borderRadius: "8px", border: "1px solid #E2E8F0", marginBottom: "12px" }}>
+                  💡 <strong>Nota Importante:</strong> Vendas do iFood e Jotajá não são depositadas neste saldo — elas são repassadas diretamente pelas próprias plataformas para a conta bancária da sua loja.
+                </div>
 
                 {/* Box Azul de taxas operacionais */}
                 <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "1rem", fontSize: "0.76rem", color: "#1E40AF", lineHeight: 1.7 }}>
@@ -768,6 +817,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     <th style={{ padding: "10px 14px" }}>Tipo</th>
                     <th style={{ padding: "10px 14px" }}>Horário</th>
                     <th style={{ padding: "10px 14px" }}>Descrição</th>
+                    <th style={{ padding: "10px 14px" }}>Canal / Origem</th>
                     <th style={{ padding: "10px 14px" }}>Forma de pagamento</th>
                     <th style={{ padding: "10px 14px" }}>Status</th>
                     <th style={{ padding: "10px 14px" }}>Data de liberação</th>
@@ -779,24 +829,42 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 <tbody>
                   {extratoCalc.lancamentos.length === 0 ? (
                     <tr>
-                      <td colSpan={9} style={{ padding: "2.5rem", textAlign: "center", color: "#64748B" }}>
+                      <td colSpan={10} style={{ padding: "2.5rem", textAlign: "center", color: "#64748B" }}>
                         ⚠️ Sem dados disponíveis para o período selecionado.
                       </td>
                     </tr>
                   ) : (
-                    extratoCalc.lancamentos.map((l: any, i: number) => (
-                      <tr key={i} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                        <td style={{ padding: "10px 14px", fontWeight: 700 }}>{l.tipo}</td>
-                        <td style={{ padding: "10px 14px" }}>{l.horario}</td>
-                        <td style={{ padding: "10px 14px" }}>{l.descricao}</td>
-                        <td style={{ padding: "10px 14px" }}>{l.formaPagamento}</td>
-                        <td style={{ padding: "10px 14px" }}><span style={{ padding: "2px 8px", borderRadius: 99, background: l.status === "Aprovado" ? "#E6F4EA" : "#FEF3C7", color: l.status === "Aprovado" ? "#137333" : "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>{l.status}</span></td>
-                        <td style={{ padding: "10px 14px" }}>{l.dataLiberacao}</td>
-                        <td style={{ padding: "10px 14px", color: "#16A34A", fontWeight: 700 }}>{fmtR(l.valorBruto)}</td>
-                        <td style={{ padding: "10px 14px", color: "#DC2626" }}>- {fmtR(l.taxa)}</td>
-                        <td style={{ padding: "10px 14px", fontWeight: 800 }}>{fmtR(l.valorLiquido)}</td>
-                      </tr>
-                    ))
+                    extratoCalc.lancamentos.map((l: any, i: number) => {
+                      const isMp = l.sourceChannel === "GATEWAY";
+                      const isIf = l.sourceChannel === "IFOOD";
+                      const isJt = l.sourceChannel === "JOTAJA";
+                      return (
+                        <tr key={l.id || i} style={{ borderBottom: "1px solid #F1F5F9", background: isMp ? "#F0FDF4" : "#FFFFFF" }}>
+                          <td style={{ padding: "10px 14px", fontWeight: 700 }}>{l.tipo}</td>
+                          <td style={{ padding: "10px 14px" }}>{l.horario}</td>
+                          <td style={{ padding: "10px 14px" }}>{l.descricao}</td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <span style={{
+                              padding: "2px 8px", borderRadius: 6, fontSize: "0.72rem", fontWeight: 800,
+                              background: isMp ? "#DBEAFE" : isIf ? "#FEE2E2" : isJt ? "#FFEDD5" : "#F1F5F9",
+                              color: isMp ? "#1E40AF" : isIf ? "#991B1B" : isJt ? "#9A3412" : "#475569"
+                            }}>
+                              {l.origem}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 14px" }}>{l.formaPagamento}</td>
+                          <td style={{ padding: "10px 14px" }}>
+                            <span style={{ padding: "2px 8px", borderRadius: 99, background: l.status === "Aprovado" ? "#E6F4EA" : "#FEF3C7", color: l.status === "Aprovado" ? "#137333" : "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>
+                              {l.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 14px" }}>{l.dataLiberacao}</td>
+                          <td style={{ padding: "10px 14px", color: "#16A34A", fontWeight: 700 }}>{fmtR(l.valorBruto)}</td>
+                          <td style={{ padding: "10px 14px", color: "#DC2626" }}>- {fmtR(l.taxa)}</td>
+                          <td style={{ padding: "10px 14px", fontWeight: 800 }}>{fmtR(l.valorLiquido)}</td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
