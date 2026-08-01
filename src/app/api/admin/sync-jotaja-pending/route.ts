@@ -110,27 +110,40 @@ export async function GET(req: NextRequest) {
       if (existing2) {
         await prisma.customerOrderItem.deleteMany({ where: { orderId: existing2.id } });
 
-        let itemDataPrice = 65.78;
-        let itemSelections: string[] = [
-          "1x Combo Esfirras JotaJá",
-          "Portão marrom de madeira - Âncora"
-        ];
-
-        await (prisma.customerOrderItem as any).create({
-          data: {
-            orderId: existing2.id,
-            quantity: 1,
-            price: itemDataPrice,
-            comboSelections: itemSelections
-          }
+        await (prisma.customerOrderItem as any).createMany({
+          data: [
+            {
+              orderId: existing2.id,
+              quantity: 1,
+              price: 37.84,
+              comboSelections: [
+                "1x Combo 6 Esfirras Mix",
+                "3x Esfirra de Calabresa",
+                "1x Esfirra de Bacon",
+                "2x Esfirra de Bacon c/ Catupiry"
+              ]
+            },
+            {
+              orderId: existing2.id,
+              quantity: 2,
+              price: 7.98,
+              comboSelections: ["Esfirra Duo"]
+            },
+            {
+              orderId: existing2.id,
+              quantity: 1,
+              price: 9.98,
+              comboSelections: ["Esfirra de Banana Nevada"]
+            }
+          ]
         });
 
         await prisma.customerOrder.update({
           where: { id: existing2.id },
           data: {
-            notes: "Obs: Portão marrom de madeira - Âncora",
+            notes: "Obs: Rua dos LÍrios, 2002 - Casa, portão marrom de madeira - Âncora",
             totalAmount: 71.77,
-            deliveryFee: 5.99,
+            deliveryFee: 7.99,
           }
         });
       }

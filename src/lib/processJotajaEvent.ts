@@ -243,34 +243,16 @@ export async function processJotajaEvent(
       const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
       const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
 
-      // Delivery fee — Jotajá sends in otherFees array
+      // Delivery fee — Jotajá sends in total.deliveryFee or otherFees array
       let deliveryFeeValue = priceVal(orderData.total?.deliveryFee) || priceVal(orderData.delivery?.deliveryFee) || priceVal(orderData.deliveryFee) || 0;
       if (!deliveryFeeValue && Array.isArray(orderData.otherFees)) {
-        const delFee = orderData.otherFees.find((f: any) => f.type === "DELIVERY_FEE" || f.name === "DELIVERY_FEE");
-        if (delFee) deliveryFeeValue = priceVal(delFee.price);
+        const delFee = orderData.otherFees.find((f: any) =>
+          (f.type || f.name || "").toUpperCase().includes("DELIVERY") ||
+          (f.type || f.name || "").toUpperCase().includes("FRETE") ||
+          (f.type || f.name || "").toUpperCase().includes("FEE")
+        );
+        if (delFee) deliveryFeeValue = priceVal(delFee.price ?? delFee.value);
       }
-
-      // Agendamento / Sincronização de prazo de entrega
-      const rawScheduled = orderData.delivery?.deliveryDateTime
-        ?? orderData.delivery?.deliveryDeadline
-        ?? orderData.delivery?.estimatedDeliveryWindow?.end
-        ?? orderData.delivery?.estimatedDeliveryWindow?.start
-        ?? orderData.takeout?.takeoutDateTime
-        ?? orderData.schedule?.scheduledDatetimeEnd
-        ?? orderData.schedule?.scheduledDatetimeStart
-        ?? orderData.scheduledDatetime
-        ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
-          ? orderData.preparationStartDateTime : null);
-      const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
-      const deliveryDeadline = scheduledDatetime;
-
-      // Pagamento
-      const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
-      const parsedPay = parseOrderPaymentInfo(orderData, "JOTAJA");
-      const resolvedPaymentMethod = parsedPay.paymentMethod;
-      const changeAmount = parsedPay.changeAmount;
-
-      const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
       // Descontos/benefits (completo)
       const benefits = orderData.benefits ?? [];
@@ -301,6 +283,37 @@ export async function processJotajaEvent(
           description: benefit.campaign?.name ?? benefit.description ?? null,
         });
       }
+
+      // Se a taxa de entrega ainda veio 0 em pedido DELIVERY, calcula como a diferença entre total e subtotal
+      if (deliveryFeeValue === 0 && (orderData.total?.orderAmount || orderData.totalPrice) && orderData.total?.subTotal) {
+        const orderTotal = priceVal(orderData.total?.orderAmount ?? orderData.totalPrice);
+        const subTotal = priceVal(orderData.total?.subTotal);
+        const benefitsValue = discountTotal || 0;
+        const calcFee = orderTotal - subTotal + benefitsValue;
+        if (calcFee > 0 && calcFee < 100) {
+          deliveryFeeValue = Math.round(calcFee * 100) / 100;
+        }
+      }
+      const rawScheduled = orderData.delivery?.deliveryDateTime
+        ?? orderData.delivery?.deliveryDeadline
+        ?? orderData.delivery?.estimatedDeliveryWindow?.end
+        ?? orderData.delivery?.estimatedDeliveryWindow?.start
+        ?? orderData.takeout?.takeoutDateTime
+        ?? orderData.schedule?.scheduledDatetimeEnd
+        ?? orderData.schedule?.scheduledDatetimeStart
+        ?? orderData.scheduledDatetime
+        ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
+          ? orderData.preparationStartDateTime : null);
+      const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
+      const deliveryDeadline = scheduledDatetime;
+
+      // Pagamento
+      const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+      const parsedPay = parseOrderPaymentInfo(orderData, "JOTAJA");
+      const resolvedPaymentMethod = parsedPay.paymentMethod;
+      const changeAmount = parsedPay.changeAmount;
+
+      const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
       // Notas — customer observations prominent
       const customerNote = orderData.extraInfo ?? orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
