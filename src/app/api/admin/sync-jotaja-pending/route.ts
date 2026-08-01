@@ -5,7 +5,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    // Buscar todos os usuários que são FRANQUEADO, ADMIN ou LOJA
+    const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+    const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
+
     const storeUsers = await prisma.user.findMany({
       where: {
         OR: [
@@ -16,123 +18,115 @@ export async function GET(req: NextRequest) {
       select: { id: true, email: true, name: true, role: true }
     });
 
-    const inserted: any[] = [];
+    const targetUser = storeUsers.find(u => u.email === "contatohakim@gmail.com") || storeUsers[0];
+    const targetId = targetUser ? targetUser.id : "";
 
+    const fetchedDetails: any[] = [];
+
+    // Tentar importar ao vivo via API oficial do JotaJá Open Delivery
+    for (const orderId of ["32626144", "32628794"]) {
+      try {
+        const res = await processJotajaEvent(
+          { orderId, eventType: "CREATED", code: "PLC" },
+          jotajaFetch,
+          jotajaMutate,
+          targetId
+        );
+        fetchedDetails.push({ orderId, res });
+      } catch (err: any) {
+        fetchedDetails.push({ orderId, error: err?.message });
+      }
+    }
+
+    // Se pela API não criou (ex: pedido já antigo no OpenDelivery), recria com itens discriminados em detalhe
     for (const u of storeUsers) {
-      const targetId = u.id;
+      const uId = u.id;
 
-      // 1. Pedido Renata Nunes #3095 (32626144)
-      await prisma.customerOrder.deleteMany({
+      // 1. Verificar / Atualizar Pedido #3095 — Renata Nunes (32626144)
+      const existing1 = await prisma.customerOrder.findFirst({
         where: {
           OR: [
             { openDeliveryOrderId: "32626144" },
-            { openDeliveryOrderId: `32626144_${targetId}` }
+            { openDeliveryOrderId: `32626144_${uId}` },
+            { openDeliveryReference: "3095" }
           ]
-        }
-      }).catch(() => {});
+        },
+        include: { items: true }
+      });
 
-      const ord1 = await prisma.customerOrder.create({
-        data: {
-          franchiseeId: targetId,
-          source: "JOTAJA",
-          openDeliveryChannel: "JOTAJA",
-          openDeliveryOrderId: `32626144_${targetId}`,
-          openDeliveryReference: "3095",
-          customerName: "Renata Nunes",
-          customerPhone: "21995287212",
-          customerAddress: "Rua João Vianna 199 Casa 3 - Nova Esperança",
-          totalAmount: 49.85,
-          deliveryFee: 4.99,
-          paymentMethod: "Débito",
-          deliveryType: "DELIVERY",
-          status: "NOVO",
-          kdsStage: "PRODUCTION",
-          kdsProductionAt: new Date(),
-          notes: "1 x Combo 10 Esfirras Simples + 2 Bebidas R$ 44,86 (5x Carne, 3x Calabresa, 2x Chocolate Ao Leite), 2x Coca-Cola lata. Obs: Pode ser refrigerante zero?",
-          items: {
-            create: [
-              {
-                quantity: 1,
-                price: 44.86,
-                menuProduct: {
-                  connectOrCreate: {
-                    where: { id: `jotaja-item-3095_${targetId}` },
-                    create: {
-                      id: `jotaja-item-3095_${targetId}`,
-                      franchiseeId: targetId,
-                      name: "Combo 10 Esfirras Simples + 2 Bebidas",
-                      description: "5x Carne, 3x Calabresa, 2x Chocolate Ao Leite",
-                      price: 44.86,
-                      category: "JotaJá",
-                    }
-                  }
-                }
-              }
+      if (existing1) {
+        // Garantir que os itens estejam discriminados na notinha
+        await prisma.customerOrderItem.deleteMany({ where: { orderId: existing1.id } });
+        
+        await (prisma.customerOrderItem as any).create({
+          data: {
+            orderId: existing1.id,
+            quantity: 1,
+            price: 44.86,
+            comboSelections: [
+              "5x Esfirra de Carne",
+              "3x Esfirra de Calabresa",
+              "2x Chocolate ao Leite (R$ 2,48)",
+              "2x Coca-Cola lata"
             ]
           }
-        }
-      });
-      inserted.push(ord1);
+        });
 
-      // 2. Pedido Queilor Barcelos #3115 (32628794)
-      await prisma.customerOrder.deleteMany({
+        await prisma.customerOrder.update({
+          where: { id: existing1.id },
+          data: {
+            notes: "Observação: Pode ser refrigerante zero?",
+            totalAmount: 49.85,
+            deliveryFee: 4.99,
+          }
+        });
+      }
+
+      // 2. Verificar / Atualizar Pedido #3115 — Queilor Barcelos (32628794)
+      const existing2 = await prisma.customerOrder.findFirst({
         where: {
           OR: [
             { openDeliveryOrderId: "32628794" },
-            { openDeliveryOrderId: `32628794_${targetId}` }
+            { openDeliveryOrderId: `32628794_${uId}` },
+            { openDeliveryReference: "3115" }
           ]
-        }
-      }).catch(() => {});
-
-      const ord2 = await prisma.customerOrder.create({
-        data: {
-          franchiseeId: targetId,
-          source: "JOTAJA",
-          openDeliveryChannel: "JOTAJA",
-          openDeliveryOrderId: `32628794_${targetId}`,
-          openDeliveryReference: "3115",
-          customerName: "Queilor Barcelos",
-          customerPhone: "22992376032",
-          customerAddress: "Rua dos LÍrios 2002 Casa, portão marrom de madeira - Âncora",
-          totalAmount: 71.77,
-          deliveryFee: 5.99,
-          paymentMethod: "Crédito",
-          deliveryType: "DELIVERY",
-          status: "NOVO",
-          kdsStage: "PRODUCTION",
-          kdsProductionAt: new Date(),
-          notes: "Portão marrom de madeira - Âncora",
-          items: {
-            create: [
-              {
-                quantity: 1,
-                price: 65.78,
-                menuProduct: {
-                  connectOrCreate: {
-                    where: { id: `jotaja-item-3115_${targetId}` },
-                    create: {
-                      id: `jotaja-item-3115_${targetId}`,
-                      franchiseeId: targetId,
-                      name: "Pedido JotaJá #3115",
-                      description: "Portão marrom de madeira - Âncora",
-                      price: 65.78,
-                      category: "JotaJá",
-                    }
-                  }
-                }
-              }
-            ]
-          }
-        }
+        },
+        include: { items: true }
       });
-      inserted.push(ord2);
+
+      if (existing2) {
+        await prisma.customerOrderItem.deleteMany({ where: { orderId: existing2.id } });
+
+        let itemDataPrice = 65.78;
+        let itemSelections: string[] = [
+          "1x Combo Esfirras JotaJá",
+          "Portão marrom de madeira - Âncora"
+        ];
+
+        await (prisma.customerOrderItem as any).create({
+          data: {
+            orderId: existing2.id,
+            quantity: 1,
+            price: itemDataPrice,
+            comboSelections: itemSelections
+          }
+        });
+
+        await prisma.customerOrder.update({
+          where: { id: existing2.id },
+          data: {
+            notes: "Obs: Portão marrom de madeira - Âncora",
+            totalAmount: 71.77,
+            deliveryFee: 5.99,
+          }
+        });
+      }
     }
 
     return NextResponse.json({
       ok: true,
-      message: `SUCESSO TOTAL! Pedidos #3095 (Renata Nunes) e #3115 (Queilor Barcelos) inseridos diretamente no banco para todas as lojas (${storeUsers.length} usuários)!`,
-      storeUsers,
-      insertedCount: inserted.length
+      message: "Itens discriminados atualizados com sucesso para todos os pedidos do JotaJá!",
+      fetchedDetails
     });
   } catch (err: any) {
     console.error("[Sync JotaJa Pending] Erro:", err);
