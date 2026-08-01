@@ -99,20 +99,27 @@ const cleanAddressForMap = (addr: string | null, city?: string): string => {
 
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
-  const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
-  const dMode = (order.deliveryMode || "").toString().toUpperCase();
-  const ifoodRef = order.ifoodOrderId || order.ifoodReference;
 
-  // Se for entrega própria do comerciante (MERCHANT), NUNCA trava!
-  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dMode === "MERCHANT") return false;
+  const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase().trim();
+  const dMode = (order.deliveryMode || "").toString().toUpperCase().trim();
 
-  // Se for pedido do iFood e for entrega parceira (IFOOD, LOGISTIC, PARTNER)
-  if (ifoodRef && (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy.includes("LOGISTIC") || dMode === "DEFAULT" || dMode === "LOGISTIC" || dMode === "PARTNER")) {
+  // 1. Se explicitamente for "MERCHANT", "LOJA", "PROPRIO", "MERCHANT_DELIVERY" -> É ENTREGA PRÓPRIA DA LOJA!
+  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dBy === "MERCHANT_DELIVERY") {
+    return false;
+  }
+
+  // 2. Se o modo de entrega for DEFAULT, ECONOMIC, MERCHANT_DELIVERY, TAKEOUT, PICKUP -> É ENTREGA PRÓPRIA DA LOJA!
+  if (dMode === "DEFAULT" || dMode === "ECONOMIC" || dMode === "MERCHANT_DELIVERY" || dMode === "TAKEOUT" || dMode === "PICKUP") {
+    return false;
+  }
+
+  // 3. Apenas se explicitamente for "IFOOD" ou "IFOOD_LOGISTICS" ou "LOGISTICS" ou dMode === "LOGISTIC" / "PARTNER" -> É ENTREGA DO IFOOD
+  if (order.source === "IFOOD" && (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy === "LOGISTICS" || dMode === "LOGISTIC" || dMode === "PARTNER")) {
     return true;
   }
 
-  // Fallback: motorista registrado pelo iFood
-  if (order.ifoodDriverName || order.ifoodDriverStatus) {
+  // 4. Fallback: se houver motorista do iFood alocado
+  if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) {
     return true;
   }
 
@@ -2208,7 +2215,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
                 </div>
 
-                {order.ifoodReference && (
+                {isIfoodMotoboy(order) && order.ifoodReference && (
                   <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
                     <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR IFOOD</div>
                     <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodReference}</div>
