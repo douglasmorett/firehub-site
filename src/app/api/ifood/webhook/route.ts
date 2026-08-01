@@ -312,11 +312,23 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     // "IFOOD" = entrega parceira iFood (motoboy iFood). "MERCHANT" = entrega própria da loja.
     const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS")) ? "IFOOD" : "MERCHANT";
 
+    const ifoodPickupCode = (
+      orderData.delivery?.pickupCode ||
+      orderData.pickupCode ||
+      orderData.takeout?.pickupCode ||
+      orderData.driver?.pickupCode ||
+      orderData.logistics?.pickupCode ||
+      event?.pickupCode ||
+      event?.data?.pickupCode ||
+      null
+    )?.toString().trim() || null;
+
       const createdOrder = await (prisma.customerOrder as any).create({
         data: {
           franchiseeId:     franchisee.id,
           ifoodOrderId:     orderId,
           ifoodReference:   orderData.displayId ?? undefined,
+          ifoodPickupCode:  ifoodPickupCode ?? undefined,
           scheduledDatetime,
           changeAmount,
           customerCpfCnpj,
@@ -427,6 +439,17 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
   if (isDriverEvent) {
     const meta = event.metadata || {};
     const driverUpdate: any = {};
+
+    const pickupCodeCandidate = (
+      meta.pickupCode ||
+      meta.delivery?.pickupCode ||
+      event.pickupCode ||
+      event.data?.pickupCode ||
+      null
+    )?.toString().trim();
+    if (pickupCodeCandidate) {
+      driverUpdate.ifoodPickupCode = pickupCodeCandidate;
+    }
 
     if (code === "ASSIGN_DRIVER" || code === "ADR" || event.fullCode === "ASSIGN_DRIVER" || code === "REQUEST_DRIVER_SUCCESS" || code === "RDS" || event.fullCode === "REQUEST_DRIVER_SUCCESS") {
       driverUpdate.ifoodDriverName = meta.driverName || meta.name || null;

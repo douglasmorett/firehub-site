@@ -302,6 +302,7 @@ model CustomerOrder {
   discountDetails     Json?              // JSON com detalhes: [{target, value, sponsor, description}]
   // === LOGÍSTICA IFOOD (Motoboy iFood) ===
   deliveryBy             String?            // "IFOOD" (Entrega Parceira) ou "MERCHANT" (Entrega Própria)
+  ifoodPickupCode        String?            // Código de Coleta Parceira do iFood (ex: 1595)
   ifoodDriverName        String?            // Nome do entregador iFood
   ifoodDriverPhone       String?            // Telefone do entregador
   ifoodDriverVehicle     String?            // Veículo (MOTORCYCLE, BICYCLE, CAR)

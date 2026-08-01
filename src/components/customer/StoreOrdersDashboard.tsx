@@ -618,7 +618,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 }}>
                   <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR:</span>
                   <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
-                    #{order.ifoodReference || order.openDeliveryReference}
+                    #{order.ifoodPickupCode || order.ifoodReference || order.openDeliveryReference}
                   </span>
                 </div>
               )}
@@ -2197,10 +2197,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
                 </div>
 
-                {isIfoodMotoboy(order) && order.ifoodReference && (
+                {isIfoodMotoboy(order) && (order.ifoodPickupCode || order.ifoodReference) && (
                   <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
                     <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR IFOOD</div>
-                    <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodReference}</div>
+                    <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodPickupCode || order.ifoodReference}</div>
                   </div>
                 )}
 
