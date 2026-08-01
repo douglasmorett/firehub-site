@@ -126,6 +126,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   const [useCustom, setUseCustom] = useState(false);
   const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos">("mensalidade");
   const [showAllSemCusto, setShowAllSemCusto] = useState(false);
+  const [showFaturaModal, setShowFaturaModal] = useState(false);
 
   // ===== CICLO DE FATURAMENTO REAL (API) =====
   const [billingCycle, setBillingCycle] = useState<BillingCycle | null>(null);
@@ -447,95 +448,100 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem" }}>
 
         {/* ===== ABA MENSALIDADE FIREHUB ===== */}
-        {activeTab === "mensalidade" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            {/* Card Principal de Fatura Atual */}
-            <div style={{
-              background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
-              borderRadius: "20px", padding: "1.75rem", color: "#FFFFFF",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: "1px solid #334155"
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
-                <div>
-                  <span style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    ⚠️ Cobrança Pendente · Vencimento em 10 dias
-                  </span>
-                  <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>
-                    Mensalidade FireHub Pro
-                  </h2>
-                  <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
-                    Plano Oficial: 3% sobre vendas · Mínimo R$ 60,00 · Teto Máximo R$ 499,00/mês
+        {activeTab === "mensalidade" && (() => {
+          const mensalidadeInfo = calcMensalidade(dre.receitaBruta);
+          const valFatura = mensalidadeInfo.mensalidade;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* Card Principal de Fatura Atual */}
+              <div style={{
+                background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
+                borderRadius: "20px", padding: "1.75rem", color: "#FFFFFF",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: "1px solid #334155"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
+                  <div>
+                    <span style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      ⚠️ Cobrança Pendente · Vencimento em 10 dias
+                    </span>
+                    <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>
+                      Mensalidade FireHub Pro
+                    </h2>
+                    <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
+                      Plano Oficial: 1% sobre vendas · Mínimo R$ 50,00 · Teto Máximo R$ 400,00/mês
+                    </p>
+                  </div>
+
+                  <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: "14px", border: "1px solid #334155" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#94A3B8", fontWeight: 700 }}>VALOR DA FATURA ATUAL</div>
+                    <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#38BDF8", marginTop: 2 }}>
+                      {fmtR(valFatura)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botões de Ação de Pagamento */}
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", borderTop: "1px solid #334155", paddingTop: "1.25rem" }}>
+                  <button
+                    onClick={() => alert(`🔑 Código PIX de ${fmtR(valFatura)} gerado com sucesso! Cole no seu app de banco.`)}
+                    style={{
+                      background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFFFFF",
+                      border: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
+                      fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                      boxShadow: "0 4px 14px rgba(16, 185, 129, 0.4)", fontFamily: "inherit"
+                    }}
+                  >
+                    ⚡ Pagar Fatura Agora (PIX)
+                  </button>
+                  <button
+                    onClick={() => setShowFaturaModal(true)}
+                    style={{
+                      background: "#334155", color: "#F8FAFC", border: "1px solid #475569",
+                      padding: "12px 18px", borderRadius: "12px", fontSize: "0.88rem",
+                      fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+                      display: "flex", alignItems: "center", gap: 6
+                    }}
+                  >
+                    📄 Detalhes da Cobrança
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid com Destaques Financeiros da Mensalidade */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
+                <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>📈 Vendas no Ciclo Atual</div>
+                  <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#0F172A", marginTop: 4 }}>
+                    {fmtR(dre.receitaBruta)}
+                  </div>
+                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#64748B" }}>
+                    Base de cálculo da comissão de 1%
                   </p>
                 </div>
 
-                <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: "14px", border: "1px solid #334155" }}>
-                  <div style={{ fontSize: "0.75rem", color: "#94A3B8", fontWeight: 700 }}>VALOR DA FATURA ATUAL</div>
-                  <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#38BDF8", marginTop: 2 }}>
-                    R$ 333,73
+                <div style={{ background: "#F0FDF4", borderRadius: "16px", padding: "1.25rem", border: "1px solid #BBF7D0", boxShadow: "0 2px 10px rgba(16,185,129,0.05)" }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#166534" }}>💚 Economia Estimada (vs iFood)</div>
+                  <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#15803D", marginTop: 4 }}>
+                    {fmtR(dre.receitaBruta * 0.26)}
                   </div>
+                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#166534" }}>
+                    Sua loja economizou ~26% pedindo direto no FireHub
+                  </p>
                 </div>
-              </div>
 
-              {/* Botões de Ação de Pagamento */}
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", borderTop: "1px solid #334155", paddingTop: "1.25rem" }}>
-                <button
-                  onClick={() => alert("🔑 Código PIX de R$ 333,73 gerado com sucesso! Cole no seu app de banco.")}
-                  style={{
-                    background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFFFFF",
-                    border: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
-                    fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
-                    boxShadow: "0 4px 14px rgba(16, 185, 129, 0.4)", fontFamily: "inherit"
-                  }}
-                >
-                  ⚡ Pagar Fatura Agora (PIX)
-                </button>
-                <button
-                  onClick={() => alert("📄 Fatura gerada! Vendas registradas no ciclo: R$ 11.124,33 (Taxa 3% = R$ 333,73).")}
-                  style={{
-                    background: "#334155", color: "#F8FAFC", border: "1px solid #475569",
-                    padding: "12px 18px", borderRadius: "12px", fontSize: "0.88rem",
-                    fontWeight: 800, cursor: "pointer", fontFamily: "inherit"
-                  }}
-                >
-                  📄 Detalhes da Cobrança
-                </button>
+                <div style={{ background: "#EFF6FF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #BFDBFE" }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#1E40AF" }}>💳 Status do Ciclo</div>
+                  <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#1D4ED8", marginTop: 4 }}>
+                    Aberto (Faturado)
+                  </div>
+                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1E40AF" }}>
+                    Vencimento regular em 10 dias
+                  </p>
+                </div>
               </div>
             </div>
-
-            {/* Grid com Destaques Financeiros da Mensalidade */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
-              <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
-                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>📈 Vendas no Ciclo Atual</div>
-                <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#0F172A", marginTop: 4 }}>
-                  {fmtR(dre.receitaBruta)}
-                </div>
-                <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#64748B" }}>
-                  Base de cálculo da comissão de 3%
-                </p>
-              </div>
-
-              <div style={{ background: "#F0FDF4", borderRadius: "16px", padding: "1.25rem", border: "1px solid #BBF7D0", boxShadow: "0 2px 10px rgba(16,185,129,0.05)" }}>
-                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#166534" }}>💚 Economia Estimada (vs iFood)</div>
-                <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#15803D", marginTop: 4 }}>
-                  {fmtR(dre.receitaBruta * 0.24)}
-                </div>
-                <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#166534" }}>
-                  Sua loja economizou ~24% pedindo direto no FireHub
-                </p>
-              </div>
-
-              <div style={{ background: "#EFF6FF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #BFDBFE" }}>
-                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#1E40AF" }}>💳 Status do Ciclo</div>
-                <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#1D4ED8", marginTop: 4 }}>
-                  Aberto (Faturado)
-                </div>
-                <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1E40AF" }}>
-                  Vencimento regular em 10 dias
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ===== ALERTA CMV + KPIs — visíveis apenas na aba DRE ===== */}
         {activeTab === "dre" && (
@@ -1141,6 +1147,162 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
           )}
 
           {savedFC && <div style={{ marginTop: 12, textAlign: "center", color: "#16A34A", fontWeight: 700 }}>✅ Custos salvos!</div>}
+        </div>
+      )}
+
+      {/* ===== MODAL DE EXTRATO DETALHADO DA COBRANÇA ===== */}
+      {showFaturaModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(6px)", zIndex: 99999, display: "flex",
+          alignItems: "center", justifyContent: "center", padding: "1.5rem"
+        }}>
+          <div style={{
+            background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "820px",
+            maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)", border: "1px solid #E2E8F0"
+          }}>
+            {/* Header */}
+            <div style={{
+              background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "1.25rem 1.5rem",
+              color: "#FFFFFF", display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ background: "rgba(255,255,255,0.1)", padding: "8px 12px", borderRadius: "10px", fontSize: "1.2rem" }}>
+                  📄
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "#F8FAFC" }}>
+                    Extrato Detalhado da Cobrança — FireHub Pro
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>
+                    Detalhamento de todos os pedidos e cálculo transparente da comissão oficial de 1%
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFaturaModal(false)}
+                style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "1.2rem", fontWeight: 900 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
+              {/* Card Resumo 1% Promessa */}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "14px", padding: "1.25rem", marginBottom: "1.25rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+                  <div>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>VENDAS REGISTRADAS NO CICLO</span>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>
+                      {fmtR(dre.receitaBruta)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>TAXA OFICIAL APLICADA</span>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#059669", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                      1,0% <span style={{ fontSize: "0.7rem", color: "#166534", background: "#DCFCE7", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>Promessa Landing Page</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>VALOR DA MENSALIDADE</span>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#2563EB", marginTop: 2 }}>
+                      {fmtR(calcMensalidade(dre.receitaBruta).mensalidade)}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0", fontSize: "0.78rem", color: "#475569", lineHeight: 1.5 }}>
+                  💡 <strong>Regra Oficial do Plano FireHub:</strong> A comissão é de exatamente <strong>1% sobre o faturamento do mês</strong> (respeitando o piso mínimo de R$ 50,00 e o teto máximo fixo de R$ 400,00/mês).
+                </div>
+              </div>
+
+              {/* Tabela de Pedidos Integrantes */}
+              <h4 style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: "0.75rem" }}>
+                📦 Pedidos Integrantes da Cobrança ({filtered.length} pedidos)
+              </h4>
+
+              <div style={{ border: "1px solid #E2E8F0", borderRadius: "12px", overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                  <thead>
+                    <tr style={{ background: "#F1F5F9", color: "#475569", textAlign: "left" }}>
+                      <th style={{ padding: "10px 12px" }}>Pedido</th>
+                      <th style={{ padding: "10px 12px" }}>Data / Hora</th>
+                      <th style={{ padding: "10px 12px" }}>Cliente</th>
+                      <th style={{ padding: "10px 12px" }}>Forma de Pagam.</th>
+                      <th style={{ padding: "10px 12px" }}>Valor Total</th>
+                      <th style={{ padding: "10px 12px" }}>Comissão (1%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "#94A3B8" }}>
+                          Nenhum pedido no período selecionado.
+                        </td>
+                      </tr>
+                    ) : (
+                      filtered.slice(0, 50).map((o: any) => {
+                        const comissaoPedido = (o.totalAmount || 0) * 0.01;
+                        return (
+                          <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                            <td style={{ padding: "10px 12px", fontWeight: 800, color: "#0F172A" }}>
+                              #{getOrderDisplayNumber(o)}
+                            </td>
+                            <td style={{ padding: "10px 12px", color: "#64748B" }}>
+                              {new Date(o.createdAt).toLocaleDateString("pt-BR")} {new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                            </td>
+                            <td style={{ padding: "10px 12px" }}>{o.customerName}</td>
+                            <td style={{ padding: "10px 12px" }}>{o.paymentMethod || "Online"}</td>
+                            <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0F172A" }}>{fmtR(o.totalAmount)}</td>
+                            <td style={{ padding: "10px 12px", fontWeight: 800, color: "#2563EB" }}>{fmtR(comissaoPedido)}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+                {filtered.length > 50 && (
+                  <div style={{ padding: "8px 12px", textAlign: "center", background: "#F8FAFC", fontSize: "0.75rem", color: "#64748B" }}>
+                    Mostrando os primeiros 50 pedidos de {filtered.length} no ciclo.
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div style={{ background: "#F8FAFC", borderTop: "1px solid #E2E8F0", padding: "1rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button
+                onClick={() => window.print()}
+                style={{ background: "#FFFFFF", border: "1px solid #CBD5E1", borderRadius: "8px", padding: "8px 14px", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", color: "#334155" }}
+              >
+                🖨️ Imprimir / Salvar Extrato (PDF)
+              </button>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setShowFaturaModal(false)}
+                  style={{ background: "#E2E8F0", border: "none", borderRadius: "8px", padding: "8px 14px", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", color: "#475569" }}
+                >
+                  Fechar
+                </button>
+                <button
+                  onClick={() => {
+                    setShowFaturaModal(false);
+                    alert(`🔑 Código PIX de ${fmtR(calcMensalidade(dre.receitaBruta).mensalidade)} copiado com sucesso!`);
+                  }}
+                  style={{ background: "linear-gradient(135deg, #10B981, #059669)", border: "none", borderRadius: "8px", padding: "8px 16px", fontSize: "0.82rem", fontWeight: 900, color: "#FFFFFF", cursor: "pointer" }}
+                >
+                  ⚡ Pagar Fatura Agora (PIX)
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
       )}
 
