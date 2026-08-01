@@ -3678,7 +3678,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "0.75rem" }}>
+            <div style={{ display: "flex" }}>
               <button
                 onClick={() => {
                   const link = `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy`;
@@ -3687,25 +3687,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   setTimeout(() => setCopiedMotoboyLink(false), 3000);
                 }}
                 style={{
-                  flex: 1, padding: "12px", background: copiedMotoboyLink ? "#10B981" : "#2563EB",
-                  color: "#FFFFFF", border: "none", borderRadius: "10px", fontWeight: 800,
-                  fontSize: "0.9rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+                  width: "100%", padding: "14px", background: copiedMotoboyLink ? "#10B981" : "#2563EB",
+                  color: "#FFFFFF", border: "none", borderRadius: "10px", fontWeight: 900,
+                  fontSize: "0.95rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  boxShadow: "0 4px 12px rgba(37,99,235,0.25)"
                 }}
               >
-                {copiedMotoboyLink ? "✅ Link Copiado!" : "📋 Copiar Link para Motoboys"}
-              </button>
-              <button
-                onClick={() => {
-                  const link = `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy`;
-                  window.open(`https://wa.me/?text=${encodeURIComponent(`Olá! Acesse o portal do entregador para ver suas rotas de entrega: ${link}`)}`, "_blank");
-                }}
-                style={{
-                  padding: "12px 16px", background: "#25D366", color: "#FFFFFF",
-                  border: "none", borderRadius: "10px", fontWeight: 800, fontSize: "0.9rem",
-                  cursor: "pointer", display: "flex", alignItems: "center", gap: 6
-                }}
-              >
-                💬 WhatsApp
+                {copiedMotoboyLink ? "✅ Link Copiado para a Área de Transferência!" : "📋 Copiar Link para Motoboys"}
               </button>
             </div>
 

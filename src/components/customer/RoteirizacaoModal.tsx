@@ -885,12 +885,18 @@ export default function RoteirizacaoModal({
                     <button
                       onClick={handleAutoClusterRoutes}
                       style={{
-                        width: "100%", padding: "7px 12px", background: "#F0FDF4", border: "1px solid #86EFAC",
-                        borderRadius: "8px", fontSize: "0.78rem", fontWeight: 800, color: "#166534",
-                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6
+                        width: "100%", padding: "10px 14px",
+                        background: "linear-gradient(135deg, #10B981 0%, #059669 100%)",
+                        border: "none",
+                        borderRadius: "10px", fontSize: "0.85rem", fontWeight: 900, color: "#FFFFFF",
+                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        boxShadow: "0 4px 12px rgba(16, 185, 129, 0.35)",
+                        transition: "transform 0.1s ease"
                       }}
+                      onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
+                      onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
                     >
-                      🤖 Auto-Agrupar Rota {routeMode} (Máx: {maxOrdersPerRoute} pedidos / {maxDistanceKm}km)
+                      ⚡ 🤖 Auto-Agrupar Rota {routeMode} (Máx: {maxOrdersPerRoute} pedidos / {maxDistanceKm}km)
                     </button>
                   )}
                 </div>

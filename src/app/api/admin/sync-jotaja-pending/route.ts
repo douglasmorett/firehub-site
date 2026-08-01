@@ -9,55 +9,54 @@ export async function GET(req: NextRequest) {
       select: { id: true, email: true, name: true, role: true }
     });
 
-    const createdOrders: any[] = [];
+    const inserted: any[] = [];
 
-    // Loop through ALL users in the system and create/assign the Hewller order so EVERY account sees it!
     for (const u of allUsers) {
-      await prisma.user.update({
-        where: { id: u.id },
-        data: { jotajaMerchantId: "22238", jotajaConnected: true }
-      }).catch(() => {});
-
-      const ord = await prisma.customerOrder.upsert({
-        where: { openDeliveryOrderId: `32511181_${u.id}` },
+      // 1. Pedido Renata Nunes #3095 (32626144)
+      const ord1 = await prisma.customerOrder.upsert({
+        where: { openDeliveryOrderId: `32626144_${u.id}` },
         update: {
           franchiseeId: u.id,
-          status: "ACEITO",
-          customerName: "Hewller",
-          customerPhone: "22997016114",
-          customerAddress: "Rua Acerbal Pinto Malheiros 451 Casa 2 - Chácara Mariléa",
-          totalAmount: 56.79,
-          paymentMethod: "Dinheiro",
+          status: "NOVO",
+          kdsStage: "PRODUCTION",
+          customerName: "Renata Nunes",
+          customerPhone: "21995287212",
+          customerAddress: "Rua João Vianna 199 Casa 3 - Nova Esperança",
+          totalAmount: 49.85,
+          deliveryFee: 4.99,
+          paymentMethod: "Débito",
         },
         create: {
           franchiseeId: u.id,
           source: "JOTAJA",
           openDeliveryChannel: "JOTAJA",
-          openDeliveryOrderId: `32511181_${u.id}`,
-          openDeliveryReference: "2280",
-          customerName: "Hewller",
-          customerPhone: "22997016114",
-          customerAddress: "Rua Acerbal Pinto Malheiros 451 Casa 2 - Chácara Mariléa",
-          totalAmount: 56.79,
-          deliveryFee: 5.99,
-          paymentMethod: "Dinheiro",
+          openDeliveryOrderId: `32626144_${u.id}`,
+          openDeliveryReference: "3095",
+          customerName: "Renata Nunes",
+          customerPhone: "21995287212",
+          customerAddress: "Rua João Vianna 199 Casa 3 - Nova Esperança",
+          totalAmount: 49.85,
+          deliveryFee: 4.99,
+          paymentMethod: "Débito",
           deliveryType: "DELIVERY",
-          status: "ACEITO",
-          notes: "Pedido JotaJá #2280",
+          status: "NOVO",
+          kdsStage: "PRODUCTION",
+          kdsProductionAt: new Date(),
+          notes: "1 x Combo 10 Esfirras Simples + 2 Bebidas R$ 44,86 (5x Carne, 3x Calabresa, 2x Chocolate Ao Leite), 2x Coca-Cola lata. Obs: Pode ser refrigerante zero?",
           items: {
             create: [
               {
                 quantity: 1,
-                price: 50.80,
+                price: 44.86,
                 menuProduct: {
                   connectOrCreate: {
-                    where: { id: `jotaja-item-2280_${u.id}` },
+                    where: { id: `jotaja-item-3095_${u.id}` },
                     create: {
-                      id: `jotaja-item-2280_${u.id}`,
+                      id: `jotaja-item-3095_${u.id}`,
                       franchiseeId: u.id,
-                      name: "Combo Esfirras JotaJá #2280",
-                      description: "Pedido JotaJá #2280",
-                      price: 50.80,
+                      name: "Combo 10 Esfirras Simples + 2 Bebidas",
+                      description: "5x Carne, 3x Calabresa, 2x Chocolate Ao Leite",
+                      price: 44.86,
                       category: "JotaJá",
                     }
                   }
@@ -67,14 +66,68 @@ export async function GET(req: NextRequest) {
           }
         }
       });
-      createdOrders.push(ord);
+      inserted.push(ord1);
+
+      // 2. Pedido Queilor Barcelos #3115 (32628794)
+      const ord2 = await prisma.customerOrder.upsert({
+        where: { openDeliveryOrderId: `32628794_${u.id}` },
+        update: {
+          franchiseeId: u.id,
+          status: "NOVO",
+          kdsStage: "PRODUCTION",
+          customerName: "Queilor Barcelos",
+          customerPhone: "22992376032",
+          customerAddress: "Rua dos LÍrios 2002 Casa, portão marrom de madeira - Âncora",
+          totalAmount: 71.77,
+          paymentMethod: "Crédito",
+        },
+        create: {
+          franchiseeId: u.id,
+          source: "JOTAJA",
+          openDeliveryChannel: "JOTAJA",
+          openDeliveryOrderId: `32628794_${u.id}`,
+          openDeliveryReference: "3115",
+          customerName: "Queilor Barcelos",
+          customerPhone: "22992376032",
+          customerAddress: "Rua dos LÍrios 2002 Casa, portão marrom de madeira - Âncora",
+          totalAmount: 71.77,
+          deliveryFee: 5.99,
+          paymentMethod: "Crédito",
+          deliveryType: "DELIVERY",
+          status: "NOVO",
+          kdsStage: "PRODUCTION",
+          kdsProductionAt: new Date(),
+          notes: "Portão marrom de madeira - Âncora",
+          items: {
+            create: [
+              {
+                quantity: 1,
+                price: 65.78,
+                menuProduct: {
+                  connectOrCreate: {
+                    where: { id: `jotaja-item-3115_${u.id}` },
+                    create: {
+                      id: `jotaja-item-3115_${u.id}`,
+                      franchiseeId: u.id,
+                      name: "Pedido JotaJá #3115",
+                      description: "Portão marrom de madeira - Âncora",
+                      price: 65.78,
+                      category: "JotaJá",
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      });
+      inserted.push(ord2);
     }
 
     return NextResponse.json({
       ok: true,
-      message: `SUCESSO TOTAL! Pedido #2280 Hewller adicionado para TODOS os ${allUsers.length} usuários do sistema!`,
-      users: allUsers,
-      createdCount: createdOrders.length
+      message: `SUCESSO! Pedidos Jotajá #3095 (Renata Nunes) e #3115 (Queilor Barcelos) inseridos/sincronizados com sucesso no sistema!`,
+      insertedCount: inserted.length
     });
   } catch (err: any) {
     console.error("[Sync JotaJa Pending] Erro:", err);
