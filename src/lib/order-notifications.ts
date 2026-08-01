@@ -44,18 +44,27 @@ export async function sendOrderNotification(
       return;
     }
 
-    // Determinar o número sequencial do pedido no dia no sistema (ex: #52)
+    // Determinar o número sequencial/referência idêntico ao exibido no painel da loja
     const orderDate = new Date(order.createdAt);
     const dayStart = new Date(orderDate);
     dayStart.setHours(0, 0, 0, 0);
 
-    const seqCount = await prisma.customerOrder.count({
+    const refNum = order.openDeliveryReference || order.ifoodReference;
+
+    const allTodayOrders = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: order.franchiseeId,
-        createdAt: { gte: dayStart, lte: orderDate }
-      }
+        createdAt: { gte: dayStart },
+        status: { notIn: ["CANCELADO", "CANCELED"] }
+      },
+      select: { id: true },
+      orderBy: { createdAt: "asc" }
     });
-    const shortId = seqCount > 0 ? seqCount.toString() : (order.openDeliveryReference || order.ifoodReference || order.id.slice(-4).toUpperCase());
+
+    const orderIndex = allTodayOrders.findIndex(o => o.id === order.id);
+    const dailySeqNumber = orderIndex >= 0 ? (orderIndex + 1).toString() : "";
+
+    const shortId = refNum || (order as any).dailyOrderNumber || dailySeqNumber || order.id.slice(-4).toUpperCase();
     const storeName = order.franchisee?.storeName || "Nossa Loja";
 
     // Formata o resumo dos itens
