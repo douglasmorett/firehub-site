@@ -463,7 +463,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             }}>
               {order.status === "CRIANDO_IA" ? "🤖 IA criando..." : order.source === "WHATSAPP_IA" ? "🤖 IA Whats" : order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
             </span>
-            {order.source === "IFOOD" && order.ifoodReference && (
+            {isIfoodMotoboy(order) && order.ifoodReference && (
               <span style={{
                 fontSize: "0.68rem",
                 fontWeight: 900,
@@ -894,6 +894,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   });
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showRoteirizacaoModal, setShowRoteirizacaoModal] = useState(false);
+  const [showMotoboyLinkModal, setShowMotoboyLinkModal] = useState(false);
+  const [copiedMotoboyLink, setCopiedMotoboyLink] = useState(false);
   const [showJotajaManualModal, setShowJotajaManualModal] = useState(false);
   const [jjOrderNumber, setJjOrderNumber] = useState("");
   const [jjCustomerName, setJjCustomerName] = useState("");
@@ -3244,6 +3246,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               <MapPin size={14} /> 🗺️ Roteirização
             </button>
+
+            {/* App Motoboys Link Button */}
+            <button
+              onClick={() => setShowMotoboyLinkModal(true)}
+              style={{
+                padding: "5px 12px", border: "1.5px solid #059669", borderRadius: "8px",
+                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: "5px",
+                background: "#ECFDF5", color: "#047857",
+                boxShadow: "0 2px 6px rgba(5,150,105,0.15)"
+              }}
+              title="App Motoboys - Copiar Link de Acesso para seus Entregadores"
+            >
+              🛵 App Motoboys
+            </button>
           </div>
 
         </div>
@@ -3607,10 +3624,94 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         orders={orders}
         storeAddress={user.storeAddress}
         storeCity={user.city}
+        storeSlug={user.slug}
+        storeId={user.id}
         storeLatLng={user.storeLatLng}
         onRefreshOrders={() => router.refresh()}
         onUpdateOrderStatus={updateStatus}
       />
+
+      {/* Modal App Motoboys - Link de Acesso Exclusivo */}
+      {showMotoboyLinkModal && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(6px)",
+          zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem"
+        }}>
+          <div style={{
+            background: "#FFFFFF", width: "100%", maxWidth: "520px", borderRadius: "16px",
+            padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.4)", border: "1px solid #E2E8F0"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.8rem" }}>🛵</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0F172A" }}>
+                    Portal de Acesso dos Motoboys
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748B" }}>
+                    Envie este link para seus entregadores cadastrarem/acessarem
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMotoboyLinkModal(false)}
+                style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontWeight: 800 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{
+              background: "#F8FAFC", border: "1.5px solid #CBD5E1", borderRadius: "10px",
+              padding: "1rem", marginBottom: "1.25rem"
+            }}>
+              <label style={{ fontSize: "0.76rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+                Link Direto da Loja ({user.slug || "sua-loja"}):
+              </label>
+              <div style={{
+                background: "#FFFFFF", border: "1px solid #E2E8F0", padding: "10px 12px",
+                borderRadius: "8px", fontSize: "0.88rem", fontWeight: 700, color: "#1D4ED8",
+                wordBreak: "break-all"
+              }}>
+                {typeof window !== "undefined" ? `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy` : `https://firehubfood.com.br/loja/${user.slug || "sua-loja"}/motoboy`}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button
+                onClick={() => {
+                  const link = `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy`;
+                  navigator.clipboard.writeText(link);
+                  setCopiedMotoboyLink(true);
+                  setTimeout(() => setCopiedMotoboyLink(false), 3000);
+                }}
+                style={{
+                  flex: 1, padding: "12px", background: copiedMotoboyLink ? "#10B981" : "#2563EB",
+                  color: "#FFFFFF", border: "none", borderRadius: "10px", fontWeight: 800,
+                  fontSize: "0.9rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+                }}
+              >
+                {copiedMotoboyLink ? "✅ Link Copiado!" : "📋 Copiar Link para Motoboys"}
+              </button>
+              <button
+                onClick={() => {
+                  const link = `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy`;
+                  window.open(`https://wa.me/?text=${encodeURIComponent(`Olá! Acesse o portal do entregador para ver suas rotas de entrega: ${link}`)}`, "_blank");
+                }}
+                style={{
+                  padding: "12px 16px", background: "#25D366", color: "#FFFFFF",
+                  border: "none", borderRadius: "10px", fontWeight: 800, fontSize: "0.9rem",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 6
+                }}
+              >
+                💬 WhatsApp
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* TOAST NOTIFICATION */}
       {toastMsg && (

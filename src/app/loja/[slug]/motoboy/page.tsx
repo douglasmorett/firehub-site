@@ -82,11 +82,44 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   };
 
   useEffect(() => {
-    if (session) {
-      fetchMotoboyOrders();
-      const interval = setInterval(fetchMotoboyOrders, 10000); // Polling 10s
-      return () => clearInterval(interval);
+    if (!session) return;
+
+    fetchMotoboyOrders();
+    const interval = setInterval(fetchMotoboyOrders, 10000); // Polling 10s
+
+    // Real-Time HTML5 Geolocation Tracking for Motoboy
+    let watchId: number | null = null;
+
+    const sendLocation = (lat: number, lng: number) => {
+      fetch("/api/motoboys/location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motoboyId: session.motoboyId, lat, lng })
+      }).catch(e => console.warn("Erro enviando GPS do motoboy:", e));
+    };
+
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
+      // Immediate location update
+      navigator.geolocation.getCurrentPosition(
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        (err) => console.warn("GPS motoboy:", err),
+        { enableHighAccuracy: true }
+      );
+
+      // Continuous tracking
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        (err) => console.warn("Watch GPS error:", err),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+      );
     }
+
+    return () => {
+      clearInterval(interval);
+      if (watchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
   }, [session]);
 
   // Handle Login Submit

@@ -59,6 +59,8 @@ interface RoteirizacaoModalProps {
   orders: CustomerOrder[];
   storeAddress?: string;
   storeCity?: string;
+  storeSlug?: string;
+  storeId?: string;
   storeLatLng?: { lat: number; lng: number } | null;
   onRefreshOrders?: () => void;
   onUpdateOrderStatus?: (orderId: string, status: string, motoboyId?: string) => Promise<void>;
@@ -81,6 +83,8 @@ export default function RoteirizacaoModal({
   orders = [],
   storeAddress = "",
   storeCity = "Rio das Ostras",
+  storeSlug,
+  storeId,
   storeLatLng = null,
   onRefreshOrders,
   onUpdateOrderStatus
@@ -88,6 +92,7 @@ export default function RoteirizacaoModal({
   const [activeTab, setActiveTab] = useState<"PENDING" | "ROTAS">("PENDING");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [motoboys, setMotoboys] = useState<Motoboy[]>([]);
 
   // Custom Created Routes State
@@ -96,6 +101,7 @@ export default function RoteirizacaoModal({
   // Saipos Roteirização Configuration Settings
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [routeMode, setRouteMode] = useState<"Manual" | "Automatizada" | "Inteligente">("Inteligente");
+  const [onlyProntoOrders, setOnlyProntoOrders] = useState(false); // Roteirizar só os prontos ou todos
   const [maxWaitMinutes, setMaxWaitMinutes] = useState(5);
   const [targetStatus, setTargetStatus] = useState("Cozinha");
   const [autoMoveStatus, setAutoMoveStatus] = useState("Não");
@@ -210,7 +216,7 @@ export default function RoteirizacaoModal({
     } catch (e) {}
   };
 
-  // Filter Delivery Orders (Strictly exclude Pickup/Retirada and Orders already Out for Delivery)
+  // Filter Delivery Orders (Strictly exclude Pickup/Retirada, Dispatched, and respect onlyProntoOrders setting)
   const deliveryOrders = useMemo(() => {
     return orders.filter((o: any) => {
       // 1. Exclude Cancelled / Delivered / Finished
@@ -223,7 +229,12 @@ export default function RoteirizacaoModal({
       const isAlreadyDispatched = o.status === "SAIU_ENTREGA" || o.status === "OUT_FOR_DELIVERY" || o.status === "EM_ROTA";
       if (isAlreadyDispatched) return false;
 
-      // 3. Exclude Pickup / Retirada na Loja / Balcão / Mesa
+      // 3. Filter by Config: Only Pronto orders or All Pending
+      if (onlyProntoOrders && o.status !== "PRONTO" && o.status !== "ACEITO") {
+        return false;
+      }
+
+      // 4. Exclude Pickup / Retirada na Loja / Balcão / Mesa
       const deliveryTypeUpper = String(o.deliveryType || o.orderType || o.type || "").toUpperCase();
       const isPickupType = deliveryTypeUpper === "TAKEOUT" || deliveryTypeUpper === "PICKUP" || deliveryTypeUpper === "RETIRADA" || deliveryTypeUpper === "BALCAO" || deliveryTypeUpper === "MESA" || o.isPickup === true;
       if (isPickupType) return false;
@@ -231,10 +242,10 @@ export default function RoteirizacaoModal({
       const addrRaw = String(o.customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`).toLowerCase();
       if (addrRaw.includes("retirada") || addrRaw.includes("retirar")) return false;
 
-      // 4. Must be a valid delivery order address
+      // 5. Must be a valid delivery order address
       return addrRaw.trim().length > 2;
     });
-  }, [orders]);
+  }, [orders, onlyProntoOrders]);
 
   // Filtered Orders based on search term
   const filteredPendingOrders = useMemo(() => {
@@ -435,7 +446,8 @@ export default function RoteirizacaoModal({
 
       const isSelected = selectedOrderIds.includes(order.id);
       const selectedIndex = selectedOrderIds.indexOf(order.id);
-      
+      const isHovered = hoveredOrderId === order.id;
+
       const assignedRoute = createdRoutes.find(r => r.orders.some(ro => ro.id === order.id));
       
       let bgColor = "#EF4444"; // Default red pin badge like Saipos
@@ -443,8 +455,15 @@ export default function RoteirizacaoModal({
       let borderColor = "#ffffff";
       let scaleCss = "scale(1)";
       let zIdx = 100;
+      let shadowCss = "0 4px 10px rgba(0,0,0,0.3)";
 
-      if (isSelected) {
+      if (isHovered) {
+        bgColor = "#2563EB";
+        borderColor = "#93C5FD";
+        scaleCss = "scale(1.4)";
+        shadowCss = "0 0 20px rgba(37,99,235,0.8)";
+        zIdx = 999;
+      } else if (isSelected) {
         bgColor = "#2563EB"; // Bright blue for active route selection
         labelText = `${selectedIndex + 1}`; // Sequence 1, 2, 3
         borderColor = "#93C5FD";
@@ -460,7 +479,7 @@ export default function RoteirizacaoModal({
         <div style="
           background: ${bgColor}; color: #ffffff;
           padding: 4px 9px; border-radius: 6px; font-size: 0.85rem; font-weight: 900;
-          border: 2px solid ${borderColor}; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+          border: 2px solid ${borderColor}; box-shadow: ${shadowCss};
           transform: ${scaleCss}; transition: all 0.2s ease; display: inline-flex;
           align-items: center; justify-content: center; min-width: 28px; height: 26px;
           cursor: pointer;
@@ -493,7 +512,49 @@ export default function RoteirizacaoModal({
       markersRef.current.set(order.id, orderMarker);
     });
 
-    // 3. Draw Polylines for Active Selection Sequence
+    // 3. Render Motoboys Markers with Helmets & Blue Name Badges (Saipos Style)
+    motoboys.forEach(mb => {
+      const mbLat = (mb as any).lastLat;
+      const mbLng = (mb as any).lastLng;
+      if (!mbLat || !mbLng) return;
+
+      const mbHtml = `
+        <div style="
+          display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer;
+        ">
+          <div style="
+            background: #1D4ED8; color: #FFFFFF; font-size: 0.72rem; font-weight: 900;
+            padding: 2px 7px; border-radius: 4px; border: 1.5px solid #FFFFFF;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3); text-transform: uppercase; white-space: nowrap;
+            margin-bottom: 2px;
+          ">
+            ${mb.name}
+          </div>
+          <div style="
+            background: #DC2626; color: #FFFFFF; width: 30px; height: 30px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid #FFFFFF; box-shadow: 0 3px 8px rgba(0,0,0,0.35); font-size: 0.95rem;
+          ">
+            ⛑️
+          </div>
+        </div>
+      `;
+
+      const mbIcon = L.divIcon({
+        html: mbHtml,
+        className: `custom-motoboy-pin-${mb.id}`,
+        iconSize: [60, 48],
+        iconAnchor: [30, 44],
+      });
+
+      const mbMarker = L.marker([mbLat, mbLng], { icon: mbIcon, zIndexOffset: 950 })
+        .addTo(map)
+        .bindPopup(`<b>🛵 Entregador ${mb.name}</b><br/>📍 Localização GPS em tempo real`);
+
+      markersRef.current.set(`MOTOBOY_${mb.id}`, mbMarker);
+    });
+
+    // 4. Draw Polylines for Active Selection Sequence
     if (selectedOrderIds.length > 0) {
       const routePoints: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
 
@@ -608,6 +669,52 @@ export default function RoteirizacaoModal({
 
       const updated = [newRoute, ...createdRoutes];
       saveRoutes(updated);
+
+      // Automatic WhatsApp Dispatch to Motoboy
+      let targetPhone = "";
+      if (selectedMotoboyId) {
+        const found = motoboys.find(m => m.id === selectedMotoboyId);
+        if (found && found.phone) targetPhone = found.phone.replace(/\D/g, "");
+      }
+
+      // Build Multi-stop Google Maps URL & Itinerary Text
+      const mapWaypoints = routeOrders.map(o => {
+        const addr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
+        return encodeURIComponent(`${addr}, ${storeCity}`);
+      });
+      const googleMapsLink = `https://www.google.com/maps/dir/${mapWaypoints.join("/")}`;
+      const motoboyAppLink = typeof window !== "undefined" ? `${window.location.origin}/loja/${storeSlug}/motoboy` : "";
+
+      let waMsg = `🚀 *NOVA ROTA DE ENTREGA DESPACHADA!*\n`;
+      waMsg += `🛵 *Entregador:* ${motoboyName}\n`;
+      waMsg += `📦 *Total de Pedidos:* ${routeOrders.length}\n\n`;
+
+      routeOrders.forEach((o, idx) => {
+        const num = (o as any).dailyOrderNumber || o.orderNumber || o.displayId || o.id;
+        const name = o.customerName || "Cliente";
+        const addr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
+        const phone = o.customerPhone ? `📞 *Tel:* ${o.customerPhone}\n` : "";
+        waMsg += `*${idx + 1}º Parada:* Pedido #${num}\n👤 *Cliente:* ${name}\n📍 *Endereço:* ${addr}\n${phone}\n`;
+      });
+
+      waMsg += `🗺️ *Navegação Google Maps:* ${googleMapsLink}\n\n`;
+      if (motoboyAppLink) waMsg += `📲 *Seu App de Entregador:* ${motoboyAppLink}\n`;
+
+      if (targetPhone) {
+        try {
+          await fetch("/api/chatbot/test-send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phone: targetPhone,
+              message: waMsg,
+              storeId
+            })
+          });
+        } catch (e) {
+          window.open(`https://wa.me/55${targetPhone}?text=${encodeURIComponent(waMsg)}`, "_blank");
+        }
+      }
 
       setSelectedOrderIds([]);
       setShowDispatchModal(false);
@@ -806,6 +913,7 @@ export default function RoteirizacaoModal({
                   ) : (
                     filteredPendingOrders.map((order) => {
                       const isSelected = selectedOrderIds.includes(order.id);
+                      const isHovered = hoveredOrderId === order.id;
                       const seqIndex = selectedOrderIds.indexOf(order.id);
                       const displayNum = (order as any).dailyOrderNumber || order.orderNumber || order.displayId || order.id.slice(-4);
                       const addrText = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}` || "Endereço a confirmar";
@@ -814,9 +922,13 @@ export default function RoteirizacaoModal({
                         <div
                           key={order.id}
                           onClick={() => toggleOrderSelection(order.id)}
+                          onMouseEnter={() => setHoveredOrderId(order.id)}
+                          onMouseLeave={() => setHoveredOrderId(null)}
                           style={{
-                            border: isSelected ? "2px solid #2563EB" : "1px solid #E2E8F0",
-                            background: isSelected ? "#F0F6FF" : "#FFFFFF",
+                            border: isHovered ? "2px solid #3B82F6" : isSelected ? "2px solid #2563EB" : "1px solid #E2E8F0",
+                            background: isHovered ? "#E0E7FF" : isSelected ? "#F0F6FF" : "#FFFFFF",
+                            boxShadow: isHovered ? "0 4px 14px rgba(59,130,246,0.25)" : "none",
+                            transform: isHovered ? "translateX(4px)" : "none",
                             borderRadius: "10px", padding: "0.75rem 0.85rem", marginBottom: "0.6rem",
                             cursor: "pointer", transition: "all 0.15s ease", position: "relative"
                           }}
@@ -1186,6 +1298,20 @@ export default function RoteirizacaoModal({
                     >
                       <option value="Não">Não</option>
                       <option value="Sim">Sim</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 4 }}>
+                      Quais pedidos exibir na Roteirização?
+                    </label>
+                    <select
+                      value={onlyProntoOrders ? "PRONTOS" : "TODOS"}
+                      onChange={(e) => setOnlyProntoOrders(e.target.value === "PRONTOS")}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #2563EB", background: "#EFF6FF", fontWeight: 800, color: "#1E40AF" }}
+                    >
+                      <option value="TODOS">Todos os pedidos pendentes (Cozinha, Aceito, Pronto)</option>
+                      <option value="PRONTOS">Roteirizar APENAS pedidos com status "Pronto"</option>
                     </select>
                   </div>
 

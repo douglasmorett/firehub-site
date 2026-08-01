@@ -437,6 +437,9 @@ model Motoboy {
   password         String?         // Senha de acesso ao App do Motoboy
   pinCode          String?         // PIN de acesso rápido
   active           Boolean         @default(true)
+  lastLat          Float?          // Latitude em tempo real
+  lastLng          Float?          // Longitude em tempo real
+  lastLocationUpdate DateTime?     // Data/hora da última atualização de GPS
   // Tipo: "PER_DELIVERY" | "DAILY_RATE" | "BOTH" | "PER_KM"
   paymentType      String          @default("PER_DELIVERY")
   dailyRate        Float?          // Diária fixa (R$/dia)
