@@ -459,16 +459,32 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
     if (code === "HSD" || code === "CRR" || code === "DDC" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED" || event.fullCode === "DUE_DATE_CHANGE_REQUESTED") {
       const meta = event.metadata || {};
-      const actionType = (meta.action || meta.handshakeType || event.fullCode || "").toUpperCase();
-      const isDueDateChange = actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC";
+      const actionType = (meta.action || meta.handshakeType || meta.type || event.fullCode || "").toUpperCase();
+      const rawReason = meta.message || meta.cancelCodeDescription || meta.subCodeDescription || meta.reason || meta.description || "";
+      
+      let disputeType = "CANCELLATION";
+      if (actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC") {
+        disputeType = "DUE_DATE_CHANGE";
+      } else if (actionType.includes("RESEND") || actionType.includes("REPLACEMENT") || actionType.includes("REENVIO") || /reenvio|reenviar|repor|substituir/i.test(rawReason)) {
+        disputeType = "RESEND_ITEMS";
+      } else if (actionType.includes("REFUND") || /reembolso|reembolsar/i.test(rawReason)) {
+        disputeType = "REFUND_ITEMS";
+      }
+
+      const finalReason = rawReason || (
+        disputeType === "DUE_DATE_CHANGE" ? "O pedido está atrasado. Quero uma nova previsão de entrega." :
+        disputeType === "RESEND_ITEMS" ? "Cliente prefere o reenvio de itens pra resolver o problema." :
+        disputeType === "REFUND_ITEMS" ? "Cliente solicitou reembolso de item." :
+        "Cliente solicitou cancelamento do pedido pelo iFood."
+      );
 
       const disputeData = {
         pending: true,
         disputeId: meta.disputeId || "",
-        type: isDueDateChange ? "DUE_DATE_CHANGE" : "CANCELLATION",
-        reason: meta.message || meta.cancelCodeDescription || (isDueDateChange ? "O pedido está atrasado. Quero uma nova previsão de entrega." : "Cliente solicitou cancelamento"),
+        type: disputeType,
+        reason: finalReason,
         customerName: meta.customerName || "",
-        handshakeType: meta.handshakeType || "",
+        handshakeType: meta.handshakeType || actionType,
         expiresAt: meta.expiresAt || "",
         requestedAt: meta.createdAt || new Date().toISOString(),
       };

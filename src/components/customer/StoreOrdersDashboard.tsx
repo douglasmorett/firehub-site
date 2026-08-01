@@ -2693,24 +2693,53 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         }
 
         const timeLeftStr = timeLeft != null ? `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, "0")}` : null;
+
+        const isResend = dispute.type === "RESEND_ITEMS" || /reenvio|reenviar|repor|substituir|troca/i.test(dispute.reason || "");
+        const isRefund = dispute.type === "REFUND_ITEMS" || /reembolso|reembolsar/i.test(dispute.reason || "");
+        const isDueDate = dispute.type === "DUE_DATE_CHANGE" || /previsão|atraso|tempo/i.test(dispute.reason || "");
+
+        const modalEmoji = isResend ? "📦" : isRefund ? "💰" : isDueDate ? "⏱️" : "⚠️";
+        const modalTitle = isResend
+          ? `Pedido #${orderNum}: Solicitação de Reenvio de Item`
+          : isRefund
+          ? `Pedido #${orderNum}: Solicitação de Reembolso`
+          : isDueDate
+          ? `Pedido #${orderNum}: Nova Previsão de Entrega`
+          : `Pedido #${orderNum} em negociação`;
+
+        const modalSubtitle = isResend
+          ? `O cliente prefere o reenvio de itens para resolver o problema no iFood.`
+          : isRefund
+          ? `O cliente solicitou o reembolso de um item pelo iFood.`
+          : isDueDate
+          ? `O cliente pediu atualização do tempo de entrega pelo iFood.`
+          : `O cliente solicitou o cancelamento ${(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : "pelo iFood"}`;
+
+        const boxBg = isResend ? "#EFF6FF" : isRefund ? "#ECFDF5" : "#FEF3C7";
+        const boxBorder = isResend ? "#93C5FD" : isRefund ? "#A7F3D0" : "#FDE68A";
+        const boxTitleColor = isResend ? "#1D4ED8" : isRefund ? "#047857" : "#92400E";
+        const boxTextColor = isResend ? "#1E40AF" : isRefund ? "#065F46" : "#78350F";
+
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "440px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: "3px solid #F59E0B" }}>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "450px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: `3px solid ${isResend ? "#2563EB" : isRefund ? "#10B981" : "#F59E0B"}` }}>
               <div style={{ textAlign: "center", marginBottom: "16px" }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>⚠️</div>
-                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#92400E" }}>Pedido #{orderNum} em negociação</div>
-                <div style={{ fontSize: "0.82rem", color: "#6B7280", marginTop: "4px" }}>O cliente solicitou o cancelamento {(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : "pelo iFood"}</div>
+                <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>{modalEmoji}</div>
+                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: isResend ? "#1E40AF" : "#92400E" }}>{modalTitle}</div>
+                <div style={{ fontSize: "0.82rem", color: "#4B5563", marginTop: "4px", fontWeight: 600 }}>{modalSubtitle}</div>
                 {timeLeftStr && (
                   <div style={{ marginTop: "8px", padding: "4px 12px", display: "inline-block", background: timeLeft! < 60 ? "#FEE2E2" : "#FEF3C7", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, color: timeLeft! < 60 ? "#DC2626" : "#92400E" }}>
-                    ⏱ Tempo restante: {timeLeftStr}
+                    ⏱ Tempo para responder no iFood: {timeLeftStr}
                   </div>
                 )}
               </div>
-              <div style={{ background: "#FEF3C7", borderRadius: "10px", padding: "14px", marginBottom: "16px", border: "1px solid #FDE68A" }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#92400E", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Motivo do cliente:</div>
-                <div style={{ fontSize: "0.95rem", color: "#78350F", fontWeight: 600 }}>"{dispute.reason || "Não informado"}"</div>
+              <div style={{ background: boxBg, borderRadius: "10px", padding: "14px", marginBottom: "16px", border: `1px solid ${boxBorder}` }}>
+                <div style={{ fontSize: "0.75rem", fontWeight: 800, color: boxTitleColor, marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {isResend ? "📦 SOLICITAÇÃO DO CLIENTE / MOTIVO:" : "MOTIVO DO CLIENTE:"}
+                </div>
+                <div style={{ fontSize: "0.95rem", color: boxTextColor, fontWeight: 700 }}>"{dispute.reason || "Cliente prefere o reenvio de itens pra resolver o problema."}"</div>
                 {dispute.requestedAt && (
-                  <div style={{ fontSize: "0.72rem", color: "#A16207", marginTop: "6px" }}>
+                  <div style={{ fontSize: "0.72rem", color: boxTitleColor, marginTop: "6px" }}>
                     Solicitado às {new Date(dispute.requestedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                   </div>
                 )}
@@ -2720,12 +2749,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
                 {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? "Jotajá" : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
               </div>
-              {/* Campo de motivo para recusa */}
+              {/* Campo de motivo para resposta */}
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>Sua resposta ao cliente (obrigatório para recusar):</label>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>Sua resposta ao cliente (opcional/obrigatório para recusar):</label>
                 <textarea
                   id="dispute-deny-reason"
-                  placeholder="Ex: O pedido já está em preparo e sairá em breve..."
+                  placeholder={isResend ? "Ex: Reenviaremos o item em até 25 minutos..." : "Ex: O pedido já foi preparado e entregue corretamente..."}
                   rows={3}
                   style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #D1D5DB", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
                 />
@@ -2735,8 +2764,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   disabled={!!loadingId}
                   onClick={async () => {
                     const reasonEl = document.getElementById("dispute-deny-reason") as HTMLTextAreaElement;
-                    const reason = reasonEl?.value?.trim();
-                    if (!reason) { showToast("Por favor, informe o motivo da recusa.", "#EF4444"); reasonEl?.focus(); return; }
+                    const reason = reasonEl?.value?.trim() || (isResend ? "Item será reenviado" : "Pedido mantido conforme solicitado");
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
@@ -2750,12 +2778,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : "✋ Recusar cancelamento — manter pedido"}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "📦 Reenviar item — manter pedido" : "✋ Recusar cancelamento — manter pedido")}
                 </button>
                 <button
                   disabled={!!loadingId}
                   onClick={async () => {
-                    if (!confirm("Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
+                    if (!confirm(isResend ? "Deseja recusar a proposta de reenvio e cancelar o pedido?" : "Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
@@ -2769,7 +2797,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : "✅ Aceitar cancelamento"}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "❌ Recusar reenvio — cancelar pedido" : "✅ Aceitar cancelamento")}
                 </button>
               </div>
             </div>
