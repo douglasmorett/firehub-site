@@ -24,7 +24,7 @@ export async function GET() {
   });
 
   // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
-  let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, total: 0, ifoodCoupons: 0 };
+  let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 };
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
@@ -37,6 +37,8 @@ export async function GET() {
 
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
+      const src = ((o as any).source || "").toUpperCase();
+
       const channelDisc = (o.discountIfood && o.discountIfood > 0)
         ? o.discountIfood
         : (o.discountTotal && o.discountMerchant && o.discountTotal > o.discountMerchant
@@ -45,12 +47,22 @@ export async function GET() {
                 ? parseFloat(o.notes.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i)![1].replace(",", "."))
                 : 0));
       const val = (o.totalAmount || 0) + channelDisc;
-      const src = ((o as any).source || "").toUpperCase();
-      const isPaidOnline = !!(o.paymentPaidAt || o.gatewayProvider);
 
-      // iFood orders paid online — count but under the correct method
-      // For iFood paid on delivery (Dinheiro), count as cash
-      if (pm.includes("dinheiro") || pm.includes("cash")) {
+      // Identificar pagamentos ON-LINE (iFood Pago Online, PIX Online, Crédito Online via App)
+      // Pagamentos Online NÃO passam pelas maquininhas da loja nem dinheiro de motoboy!
+      const isOnlinePayment =
+        pm.includes("online") ||
+        pm.includes("prepaid") ||
+        pm.includes("ifood") ||
+        pm.includes("pago_online") ||
+        !!(o.paymentPaidAt || o.gatewayProvider) ||
+        (src === "IFOOD" && !pm.includes("dinheiro") && !pm.includes("debito") && !pm.includes("débito") && !pm.includes("credito") && !pm.includes("crédito") && !pm.includes("maquininha") && !pm.includes("cobrar"));
+
+      if (src === "IFOOD" && isOnlinePayment) {
+        expected.ifoodOnline += val;
+      } else if (isOnlinePayment && src !== "PDV") {
+        expected.ifoodOnline += val;
+      } else if (pm.includes("dinheiro") || pm.includes("cash")) {
         expected.cash += val;
       } else if (pm.includes("débito") || pm.includes("debito") || pm.includes("debit")) {
         expected.debit += val;
@@ -60,16 +72,10 @@ export async function GET() {
         expected.pix += val;
       } else if (pm.includes("voucher") || pm.includes("vale") || pm.includes("meal") || pm.includes("food")) {
         expected.voucher += val;
-      } else if (src === "IFOOD" && isPaidOnline) {
-        // iFood online payment (credit card via app) — categorize as credit
-        expected.credit += val;
-      } else if (src === "JOTAJA" && isPaidOnline) {
-        // Jotajá online payment — categorize as credit
-        expected.credit += val;
       } else {
-        // Unknown method — count as credit (most common online)
-        expected.credit += val;
+        expected.cash += val;
       }
+
       expected.total += val;
 
       // Somar desconto custeado pelo iFood (cupons iFood) — apenas informativo

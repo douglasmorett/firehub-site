@@ -162,7 +162,7 @@ export default function StoreTopNav({
   };
 
   // ── CLOSE CASH ──────────────────────────────────────────────────
-  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0);
+  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0) + (expected.ifoodCoupons || 0);
 
   const tryClose = () => {
     const d = totalActual - expected.total;
@@ -479,6 +479,17 @@ export default function StoreTopNav({
                         </td>
                       </tr>
                     ))}
+                    {(expected.ifoodOnline || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#F0F9FF" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#0284C7" }}>🔴 iFood (Pago Online)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#0284C7", fontWeight:700 }}>{fmt(expected.ifoodOnline)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#BAE6FD", border:"1.5px solid #7DD3FC", fontSize:"0.78rem", textAlign:"center", color:"#0369A1", fontWeight:700 }}>
+                            🔒 {fmt(expected.ifoodOnline)}
+                          </span>
+                        </td>
+                      </tr>
+                    )}
                     {(expected.ifoodCoupons || 0) > 0 && (
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF7ED" }}>
                         <td style={{ padding:"8px 10px", fontWeight:600, color:"#EA580C" }}>🔴 iFood (Cupons)</td>
