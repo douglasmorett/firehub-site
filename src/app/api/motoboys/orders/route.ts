@@ -11,15 +11,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "motoboyId e storeId são obrigatórios" }, { status: 400 });
     }
 
-    // Busca apenas os pedidos pertencentes estritamente a esta loja e atribuídos a este motoboy
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Busca apenas os pedidos desta loja atribuídos a ESTE MOTOBOY E ESPECÍFICOS DE HOJE para concluídos
     const orders = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: storeId,
         motoboyId: motoboyId,
-        status: { notIn: ["CANCELLED", "CANCELED"] }
+        status: { notIn: ["CANCELLED", "CANCELED"] },
+        OR: [
+          // 1. Pedidos ativos pendentes de entrega
+          { status: { notIn: ["ENTREGUE", "ENCERRADO"] } },
+          // 2. Pedidos entregues HOJE por este motoboy
+          {
+            status: { in: ["ENTREGUE", "ENCERRADO"] },
+            updatedAt: { gte: todayStart }
+          }
+        ]
       },
       orderBy: { createdAt: "desc" },
-      take: 50
+      take: 100
     });
 
     return NextResponse.json({ success: true, orders });

@@ -372,12 +372,18 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
           </div>
         ) : (
           activeOrders.map((order, index) => {
-            const addr = order.address || `${order.street || ""}, ${order.number || ""} - ${order.neighborhood || ""}`;
-            const cleanPhone = (order.customerPhone || "").replace(/\D/g, "");
-            const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a caminho%20do%20seu%20endereço!` : null;
+            const rawAddr = (order.customerAddress || order.address || "").trim();
+            const addr = rawAddr || [order.street, order.number ? `nº ${order.number}` : "", order.neighborhood ? `Bairro: ${order.neighborhood}` : ""].filter(Boolean).join(", ") || "Endereço a confirmar";
 
-            const mapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
+            const num = (order as any).dailyOrderNumber || order.orderNumber || order.displayId || order.id.replace(/\D/g, "").slice(-2) || "#";
+            const cleanPhone = (order.customerPhone || "").replace(/\D/g, "");
+            const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
+
+            const mapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addr}`)}`;
             const wazeNavUrl = `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`;
+
+            const changeAmount = (order as any).changeAmount;
+            const notesText = order.notes || "";
 
             return (
               <div
@@ -395,32 +401,50 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                       background: "#2563EB", color: "#fff", width: "26px", height: "26px", borderRadius: "50%",
                       fontSize: "0.85rem", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center"
                     }}>
-                      {index + 1}
+                      {index + 1}º
                     </span>
-                    <span style={{ fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>
-                      Pedido #{order.orderNumber || order.displayId || order.id.slice(-4)}
+                    <span style={{ fontWeight: 900, fontSize: "1.15rem", color: "#0F172A" }}>
+                      Pedido #{num}
                     </span>
                   </div>
 
                   <span style={{ background: "#EFF6FF", color: "#1D4ED8", fontSize: "0.75rem", fontWeight: 800, padding: "3px 8px", borderRadius: "6px" }}>
-                    {order.platform || "Direto"}
+                    {order.source || order.platform || "Direto"}
                   </span>
                 </div>
 
                 {/* Customer Details */}
-                <div style={{ marginBottom: "0.85rem" }}>
-                  <p style={{ margin: "0 0 4px 0", fontWeight: 800, fontSize: "0.95rem", color: "#1E293B" }}>
+                <div style={{ marginBottom: "0.85rem", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: "0.98rem", color: "#1E293B" }}>
                     👤 {order.customerName}
                   </p>
-                  <p style={{ margin: "0 0 6px 0", fontWeight: 700, fontSize: "0.9rem", color: "#2563EB" }}>
-                    📍 {addr}
-                  </p>
-
-                  {/* Payment Info */}
-                  <div style={{ background: "#F8FAFC", padding: "6px 10px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 700, color: "#334155", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <DollarSign size={14} color="#16A34A" />
-                    <span>Pagamento: <b>{order.paymentMethod || "Na entrega"}</b> — R$ {Number(order.totalAmount || 0).toFixed(2).replace(".", ",")}</span>
+                  
+                  <div style={{ background: "#EFF6FF", padding: "8px 12px", borderRadius: "10px", border: "1px solid #BFDBFE" }}>
+                    <p style={{ margin: 0, fontWeight: 800, fontSize: "0.92rem", color: "#1D4ED8", lineHeight: "1.4" }}>
+                      📍 {addr}
+                    </p>
                   </div>
+
+                  {/* Payment & Change Info */}
+                  <div style={{ background: "#F8FAFC", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", fontWeight: 800, color: "#334155" }}>
+                      <DollarSign size={16} color="#16A34A" />
+                      <span>Pagamento: <b style={{ color: "#0F172A" }}>{order.paymentMethod || "Na entrega"}</b> — R$ {Number(order.totalAmount || 0).toFixed(2).replace(".", ",")}</span>
+                    </div>
+
+                    {(changeAmount || notesText.toLowerCase().includes("troco")) && (
+                      <div style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4, width: "fit-content" }}>
+                        💵 {changeAmount ? `Levar Troco para R$ ${Number(changeAmount).toFixed(2).replace(".", ",")}` : `Atenção: ${notesText}`}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Notes / Reference Point */}
+                  {notesText && !notesText.toLowerCase().includes("troco") && (
+                    <div style={{ background: "#F1F5F9", padding: "6px 10px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 700, color: "#475569" }}>
+                      📌 <b>Obs/Ref:</b> {notesText}
+                    </div>
+                  )}
                 </div>
 
                 {/* Quick Navigation Buttons (Google Maps + Waze + WhatsApp) */}
