@@ -197,17 +197,61 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const activeOrders = orders.filter(o => o.status !== "ENTREGUE" && o.status !== "CANCELADO" && o.status !== "CANCELED");
   const completedOrders = orders.filter(o => o.status === "ENTREGUE");
 
+  // Change Password State
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [currentPassInput, setCurrentPassInput] = useState("");
+  const [newPassInput, setNewPassInput] = useState("");
+  const [loadingPass, setLoadingPass] = useState(false);
+  const [passMsg, setPassMsg] = useState("");
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session) return;
+    if (!currentPassInput || !newPassInput) {
+      setPassMsg("❌ Preencha todos os campos");
+      return;
+    }
+    setLoadingPass(true);
+    setPassMsg("");
+    try {
+      const res = await fetch("/api/motoboys/login", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          motoboyId: session.motoboyId,
+          currentPassword: currentPassInput,
+          newPassword: newPassInput
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao alterar senha");
+      setPassMsg("✅ Senha alterada com sucesso!");
+      setTimeout(() => {
+        setShowPassModal(false);
+        setCurrentPassInput("");
+        setNewPassInput("");
+        setPassMsg("");
+      }, 1500);
+    } catch (err: any) {
+      setPassMsg(`❌ ${err.message}`);
+    } finally {
+      setLoadingPass(false);
+    }
+  };
+
   // ── LOGIN VIEW ──
   if (!session) {
     return (
       <div style={{
-        minHeight: "100vh", background: "linear-[#0F172A, #1E293B]",
+        minHeight: "100vh", background: "linear-gradient(135deg, #0F172A, #1E293B)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "1.25rem", fontFamily: "sans-serif"
+        padding: "1.25rem", fontFamily: "sans-serif",
+        width: "100%", maxWidth: "100vw", overflowX: "hidden", touchAction: "pan-y",
+        position: "relative", boxSizing: "border-box"
       }}>
         <div style={{
           background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "420px",
-          padding: "2rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)"
+          padding: "2rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)", boxSizing: "border-box"
         }}>
           <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
             <div style={{
@@ -259,7 +303,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               </label>
               <input
                 type="password"
-                placeholder="Digite sua senha"
+                placeholder="Senha (Padrão: 123456)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={{
@@ -286,7 +330,8 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
           </form>
 
           <div style={{ marginTop: "1.5rem", padding: "10px", background: "#F8FAFC", borderRadius: "10px", textAlign: "center", fontSize: "0.76rem", color: "#64748B" }}>
-            🔒 Acesso restrito e isolado para motoboys cadastrados da loja.
+            🔒 Acesso restrito e isolado para motoboys cadastrados da loja.<br />
+            💡 <b>Senha padrão:</b> 123456
           </div>
         </div>
       </div>
@@ -295,7 +340,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
   // ── MOTOBOY APP DASHBOARD VIEW ──
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "sans-serif", paddingBottom: "3rem" }}>
+    <div style={{
+      minHeight: "100vh", background: "#F1F5F9", fontFamily: "sans-serif", paddingBottom: "3rem",
+      width: "100%", maxWidth: "100vw", overflowX: "hidden", touchAction: "pan-y",
+      position: "relative", boxSizing: "border-box"
+    }}>
 
       {/* Top Header */}
       <div style={{
@@ -313,7 +362,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             </p>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              onClick={() => setShowPassModal(true)}
+              style={{ background: "#334155", color: "#F8FAFC", border: "none", padding: "8px 10px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+              title="Alterar Senha"
+            >
+              <Lock size={14} /> Senha
+            </button>
             <button
               onClick={fetchMotoboyOrders}
               style={{ background: "#334155", color: "#fff", border: "none", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
@@ -516,6 +572,79 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         )}
 
       </div>
+
+      {/* Modal Alterar Senha */}
+      {showPassModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", zIndex: 10000
+        }}>
+          <div style={{
+            background: "#FFFFFF", borderRadius: "18px", width: "100%", maxWidth: "380px",
+            padding: "1.5rem", boxShadow: "0 20px 40px rgba(0,0,0,0.3)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 900, color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
+                🔑 Alterar Minha Senha
+              </h3>
+              <button onClick={() => setShowPassModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B" }}>
+                ✕
+              </button>
+            </div>
+
+            {passMsg && (
+              <div style={{ padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 700, marginBottom: "1rem", background: passMsg.includes("✅") ? "#DCFCE7" : "#FEF2F2", color: passMsg.includes("✅") ? "#15803D" : "#DC2626" }}>
+                {passMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: 4 }}>
+                  SENHA ATUAL:
+                </label>
+                <input
+                  type="password"
+                  placeholder="Sua senha atual (Padrão: 123456)"
+                  value={currentPassInput}
+                  onChange={(e) => setCurrentPassInput(e.target.value)}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: 4 }}>
+                  NOVA SENHA:
+                </label>
+                <input
+                  type="password"
+                  placeholder="Digite sua nova senha"
+                  value={newPassInput}
+                  onChange={(e) => setNewPassInput(e.target.value)}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop: "0.5rem" }}>
+                <button
+                  type="submit"
+                  disabled={loadingPass}
+                  style={{ flex: 1, padding: "12px", background: "#2563EB", color: "#FFFFFF", border: "none", borderRadius: "10px", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
+                >
+                  {loadingPass ? "Salvando..." : "Salvar Nova Senha"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPassModal(false)}
+                  style={{ padding: "12px 16px", background: "#F1F5F9", color: "#475569", border: "none", borderRadius: "10px", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Toast Feedback */}
       {toastMsg && (

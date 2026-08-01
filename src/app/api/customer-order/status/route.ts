@@ -207,7 +207,7 @@ export async function PUT(req: Request) {
   if (order.openDeliveryOrderId) {
     try {
       const { jotajaFetch } = await import("@/lib/jotaja-api");
-      const odId = order.openDeliveryOrderId;
+      const odId = order.openDeliveryOrderId.split("_")[0];
 
       if (status === "ACEITO") {
         const r = await jotajaFetch(`/v1/orders/${odId}/confirm`, { method: "POST" });

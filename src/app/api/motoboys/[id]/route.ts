@@ -14,20 +14,20 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const targetFranchiseeId = user.ownerId || user.id;
 
-  // Verifica se o motoboy pertence a este franqueado
   const existing = await prisma.motoboy.findFirst({
     where: { id, franchiseeId: targetFranchiseeId },
   });
   if (!existing) return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
 
   const body = await req.json();
-  const { name, phone, paymentType, dailyRate, perDeliveryRate, perKmRate, notes, active } = body;
+  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, notes, active } = body;
 
   const motoboy = await prisma.motoboy.update({
     where: { id },
     data: {
       ...(name !== undefined && { name: name.trim() }),
       ...(phone !== undefined && { phone: phone?.trim() || null }),
+      ...(password !== undefined && { password: password?.trim() || "123456" }),
       ...(paymentType !== undefined && { paymentType }),
       ...(dailyRate !== undefined && { dailyRate: dailyRate ? Number(dailyRate) : null }),
       ...(perDeliveryRate !== undefined && { perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null }),

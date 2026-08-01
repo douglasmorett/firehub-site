@@ -37,6 +37,12 @@ export async function GET(req: NextRequest) {
             targetId
           );
           fetchedDetails.push({ orderId, res });
+
+          // Forçar envio do evento DISPATCH para o Jotajá Open Delivery
+          const dRes = await jotajaFetch(`/v1/orders/${orderId}/dispatch`, { method: "POST" }).catch(() => null);
+          if (dRes) {
+            fetchedDetails.push({ orderId, dispatchStatus: dRes.status });
+          }
         } catch (err: any) {
           fetchedDetails.push({ orderId, error: err?.message });
         }

@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!phone || !password) {
-      return NextResponse.json({ error: "Telefone e senha são obrigatórios" }, { status: 400 });
+      return NextResponse.json({ error: "Telefone/Nome e senha são obrigatórios" }, { status: 400 });
     }
 
     // Busca a loja pelo slug para garantir isolamento multi-tenant
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
         franchiseeId: storeUser.id,
         active: true,
         OR: [
-          { phone: { contains: cleanPhone } },
+          ...(cleanPhone ? [{ phone: { contains: cleanPhone } }] : []),
           { name: { contains: phone, mode: "insensitive" } }
         ]
       }
@@ -46,11 +46,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Motoboy não cadastrado nesta loja" }, { status: 401 });
     }
 
-    // Se o motoboy já tiver senha cadastrada, verifica. Caso contrário, permite primeiro login e grava a senha!
-    if (motoboy.password && motoboy.password !== password) {
-      return NextResponse.json({ error: "Senha incorreta" }, { status: 401 });
+    const expectedPassword = motoboy.password || "123456";
+
+    if (expectedPassword !== password) {
+      return NextResponse.json({ error: "Senha incorreta. A senha padrão é 123456." }, { status: 401 });
     }
 
+    // Se não tinha senha gravada, salva a senha informada
     if (!motoboy.password) {
       await prisma.motoboy.update({
         where: { id: motoboy.id },
@@ -58,38 +60,47 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const response = NextResponse.json({
+    return NextResponse.json({
       success: true,
-      motoboy: {
-        id: motoboy.id,
-        name: motoboy.name,
-        phone: motoboy.phone,
-      },
-      store: {
-        id: storeUser.id,
-        name: storeUser.name,
-        slug: storeUser.slug,
-        storeAddress: storeUser.storeAddress,
-        city: storeUser.city
-      }
-    });
-
-    // Grava cookie de sessão isolado para o motoboy nesta loja
-    response.cookies.set("motoboy_session", JSON.stringify({
       motoboyId: motoboy.id,
+      motoboyName: motoboy.name,
       storeId: storeUser.id,
-      storeSlug: storeUser.slug
-    }), {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 30 * 24 * 60 * 60 // 30 dias
+      storeName: storeUser.name,
+      storeAddress: storeUser.storeAddress
+    });
+  } catch (err: any) {
+    console.error("[Motoboy Login Error]:", err);
+    return NextResponse.json({ error: err?.message || "Erro interno ao realizar login" }, { status: 500 });
+  }
+}
+
+// PATCH - Alterar senha do motoboy pelo próprio app
+export async function PATCH(req: NextRequest) {
+  try {
+    const { motoboyId, currentPassword, newPassword } = await req.json();
+
+    if (!motoboyId || !newPassword) {
+      return NextResponse.json({ error: "ID do motoboy e nova senha são obrigatórios" }, { status: 400 });
+    }
+
+    const motoboy = await prisma.motoboy.findUnique({ where: { id: motoboyId } });
+    if (!motoboy) {
+      return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
+    }
+
+    const validCurrent = (motoboy.password || "123456") === currentPassword;
+    if (!validCurrent) {
+      return NextResponse.json({ error: "Senha atual incorreta!" }, { status: 401 });
+    }
+
+    const updated = await prisma.motoboy.update({
+      where: { id: motoboyId },
+      data: { password: newPassword.trim() }
     });
 
-    return response;
-
+    return NextResponse.json({ success: true, message: "Senha alterada com sucesso!", motoboy: updated });
   } catch (err: any) {
-    console.error("[Motoboy Login API Error]", err);
-    return NextResponse.json({ error: "Erro interno no login" }, { status: 500 });
+    console.error("[Motoboy Change Password Error]:", err);
+    return NextResponse.json({ error: err?.message || "Erro ao alterar senha" }, { status: 500 });
   }
 }

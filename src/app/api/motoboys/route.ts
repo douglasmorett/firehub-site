@@ -12,6 +12,16 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = user.ownerId || user.id;
+
+  // Garantir que todos os motoboys sem senha fiquem com a senha padrão "123456"
+  await prisma.motoboy.updateMany({
+    where: {
+      franchiseeId: targetFranchiseeId,
+      OR: [{ password: null }, { password: "" }]
+    },
+    data: { password: "123456" }
+  }).catch(() => {});
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -37,10 +47,8 @@ export async function GET() {
 
     let deliveryFees = 0;
     if (mb.paymentType === "DAILY_PLUS_FEE") {
-      // Sum actual delivery fees from orders
       deliveryFees = todayOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
     } else {
-      // Fixed per-delivery rate
       deliveryFees = (mb.perDeliveryRate || 0) * deliveryCount;
     }
 
@@ -48,7 +56,8 @@ export async function GET() {
 
     return {
       ...mb,
-      orders: undefined, // don't send full orders to client
+      password: mb.password || "123456",
+      orders: undefined,
       todayDeliveryCount: deliveryCount,
       todayDeliveryFees: deliveryFees,
       todayDailyRate: daily,
@@ -69,7 +78,7 @@ export async function POST(req: Request) {
 
   const targetFranchiseeId = user.ownerId || user.id;
   const body = await req.json();
-  const { name, phone, paymentType, dailyRate, perDeliveryRate, perKmRate, notes } = body;
+  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, notes } = body;
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
@@ -80,6 +89,7 @@ export async function POST(req: Request) {
       franchiseeId: targetFranchiseeId,
       name: name.trim(),
       phone: phone?.trim() || null,
+      password: password?.trim() || "123456",
       paymentType: paymentType || "PER_DELIVERY",
       dailyRate: dailyRate ? Number(dailyRate) : null,
       perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null,
