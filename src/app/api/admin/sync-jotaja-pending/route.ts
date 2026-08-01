@@ -23,19 +23,26 @@ export async function GET(req: NextRequest) {
 
     const fetchedDetails: any[] = [];
 
-    // Tentar importar ao vivo via API oficial do JotaJá Open Delivery
-    for (const orderId of ["32626144", "32628794"]) {
-      try {
-        const res = await processJotajaEvent(
-          { orderId, eventType: "CREATED", code: "PLC" },
-          jotajaFetch,
-          jotajaMutate,
-          targetId
-        );
-        fetchedDetails.push({ orderId, res });
-      } catch (err: any) {
-        fetchedDetails.push({ orderId, error: err?.message });
+    // Tentar importar ao vivo via API oficial do JotaJá Open Delivery (com proteção try/catch)
+    try {
+      const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+      const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
+
+      for (const orderId of ["32626144", "32628794"]) {
+        try {
+          const res = await processJotajaEvent(
+            { orderId, eventType: "CREATED", code: "PLC" },
+            jotajaFetch,
+            jotajaMutate,
+            targetId
+          );
+          fetchedDetails.push({ orderId, res });
+        } catch (err: any) {
+          fetchedDetails.push({ orderId, error: err?.message });
+        }
       }
+    } catch (e: any) {
+      fetchedDetails.push({ error: e?.message });
     }
 
     // Se pela API não criou (ex: pedido já antigo no OpenDelivery), recria com itens discriminados em detalhe
