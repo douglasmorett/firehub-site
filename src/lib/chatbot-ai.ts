@@ -197,8 +197,9 @@ export async function processChatbotAI(
     }
   }
 
-  // Separar catálogo entre Combos, Produtos Avulsos Disponíveis Hoje e Indisponíveis
+  // Separar catálogo entre Promoções R$ 1,90, Combos, Produtos Avulsos Disponíveis Hoje e Indisponíveis
   const todayPromotions: string[] = [];
+  const itemsAt190: string[] = [];
   const availableCombos: string[] = [];
   const availableSingleProducts: string[] = [];
   const unavailableTodayProducts: string[] = [];
@@ -229,10 +230,14 @@ export async function processChatbotAI(
     }
 
     const isCombo = p.isCombo === true || /combo|oferta|kit|pack|imperia|príncip|principe|rei|sábio|sabio/i.test(p.name) || /combo|oferta/i.test(p.category || "");
-    const isPromoItem = /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(p.name) || /promo|promoção|promocao/i.test(p.category || "");
+    const isPrice190 = Math.abs(p.price - 1.90) < 0.10 || p.price === 1.9 || /1[\.,]90/i.test(p.name) || /1[\.,]90/i.test(p.description || "") || /1[\.,]90/i.test(p.category || "");
+    const isPromoItem = isPrice190 || /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(p.name) || /promo|promoção|promocao/i.test(p.category || "");
 
     if (isToday) {
       const line = `- ${p.name} (${p.category}): PREÇO = R$ ${p.price.toFixed(2)}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
+      if (isPrice190) {
+        itemsAt190.push(line);
+      }
       if (isPromoItem) {
         todayPromotions.push(line);
       }
@@ -247,7 +252,11 @@ export async function processChatbotAI(
     }
   });
 
-  const catalogSummary = `=== 🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE (${currentDayName}) 🌟 ===
+  const catalogSummary = `=== 🏷️ PROMOÇÃO DE R$ 1,90 / ANÚNCIOS META/FACEBOOK DE HOJE (${currentDayName}) ===
+${itemsAt190.length > 0 ? itemsAt190.join("\n") : (todayPromotions.length > 0 ? todayPromotions.join("\n") : "Consulte a Esfirra do Dia na seção abaixo para informar ao cliente!")}
+(SE O CLIENTE PERGUNTAR "É 1,90 QUALQUER SABOR?", PERGUNTAR DO ANÚNCIO DE R$ 1,90 OU QUAL A PROMOÇÃO DE 1,90, INFORME O ITEM/PROMOÇÃO ACIMA! NUNCA DIGA QUE NÃO TEMOS SABOR POR 1,90!)
+
+=== 🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE (${currentDayName}) 🌟 ===
 ${todayPromotions.length > 0 ? todayPromotions.join("\n") : "Nenhuma esfirra de promoção avulsa cadastrada para hoje."}
 (SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE OU QUAL A ESFIRRA DA PROMOÇÃO, RESPONDA EXATAMENTE A OPÇÃO ACIMA! É PROIBIDO MENCIONAR QUALQUER OUTRA ESFIRRA COMO SE FOSSE A PROMOÇÃO DE HOJE!)
 
@@ -458,6 +467,12 @@ ${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS
     - O pedido rascunho anterior do cliente foi cancelado por ter ficado mais de 20 minutos sem resposta.
     - Na PRIMEIRA mensagem de retorno do cliente agora, diga exatamente neste tom carinhoso: "Olha, como você ficou muito tempo ausente, eu acabei parando o pedido por aqui! Mas que bom que voltou! 😊 Como posso te ajudar agora?"
     - Reinicie o atendimento com toda a simpatia!` : ""}
+32. REGRA ABSOLUTA PARA PROMOÇÃO DE R$ 1,90 / ANÚNCIOS DO FACEBOOK E INSTAGRAM ("É 1.90 qualquer sabor?", "E essa propaganda aqui?"):
+    - Se o cliente perguntar "é 1.90 qualquer sabor?", "qual a de 1,90 hoje?", citar "1,90", "anúncio de 1.90", "propaganda do Facebook/Instagram" ou mandar citação/print do anúncio:
+    - É ESTRITAMENTE PROIBIDO responder "Poxa, não temos qualquer sabor por 1,90 reais hoje!" ou negar a promoção!
+    - VOCÊ DEVE OBRIGATORIAMENTE PROCURAR NO CARDÁPIO ABAIXO O ITEM QUE CUSTA R$ 1,90 OU A ESFIRRA/PROMOÇÃO DO DIA DE HOJE!
+    - Informe com clareza e entusiasmo qual é o sabor que está na promoção de R$ 1,90 hoje!
+    - Exemplo de resposta: "Oi! A nossa promoção de R$ 1,90 de hoje é a Esfirra de [Nome do Sabor em Promoção / Esfirra do Dia de Hoje]! 😋 Quantas você gostaria de pedir?"
 
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
