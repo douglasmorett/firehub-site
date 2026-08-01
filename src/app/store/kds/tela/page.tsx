@@ -49,6 +49,32 @@ function getOrderLabel(order: Order): string {
   return `#${order.id.slice(-4).toUpperCase()}`;
 }
 
+function getNumericOrderNumber(order: Order, seqNum?: number): number {
+  if (typeof seqNum === "number" && !isNaN(seqNum) && seqNum > 0) return seqNum;
+  if (typeof order.dailyOrderNumber === "number" && !isNaN(order.dailyOrderNumber) && order.dailyOrderNumber > 0) {
+    return order.dailyOrderNumber;
+  }
+  if (order.ifoodReference) {
+    const num = parseInt(order.ifoodReference.replace(/\D/g, ""), 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  if (order.openDeliveryReference) {
+    const num = parseInt(order.openDeliveryReference.replace(/\D/g, ""), 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  const labelDigits = getOrderLabel(order).replace(/\D/g, "");
+  if (labelDigits) {
+    const num = parseInt(labelDigits, 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  let hash = 0;
+  for (let i = 0; i < order.id.length; i++) {
+    hash = (hash << 5) - hash + order.id.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
 function getSourceInfo(order: Order): { label: string; color: string; bg: string } {
   const src = (order.source || "").toLowerCase();
   const ref = order.ifoodReference || order.openDeliveryReference;
@@ -328,10 +354,16 @@ export default function KDSTelaPage() {
 
     switch (filter) {
       case "odd":
-        result = result.filter((_, i) => i % 2 === 0);
+        result = result.filter((o) => {
+          const num = getNumericOrderNumber(o, orderNumberMap.get(o.id));
+          return num % 2 !== 0;
+        });
         break;
       case "even":
-        result = result.filter((_, i) => i % 2 === 1);
+        result = result.filter((o) => {
+          const num = getNumericOrderNumber(o, orderNumberMap.get(o.id));
+          return num % 2 === 0;
+        });
         break;
       case "delivery":
         result = result.filter((o) => o.deliveryType === "DELIVERY");
@@ -357,7 +389,7 @@ export default function KDSTelaPage() {
     }
 
     return result;
-  }, [orders, filter, activeCategories]);
+  }, [orders, filter, activeCategories, orderNumberMap]);
 
 
 
