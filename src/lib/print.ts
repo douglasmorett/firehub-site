@@ -106,6 +106,7 @@ async function printToDevice(
           openDeliveryReference: (order as any).openDeliveryReference,
           source: (order as any).source,
           notes: order.notes,
+          createdAt: order.createdAt,
         },
         storeName,
         copies,
