@@ -247,9 +247,9 @@ export default function RoteirizacaoModal({
     });
   }, [orders, onlyProntoOrders]);
 
-  // Filtered Orders based on search term
+  // Filtered Orders based on search term (com os selecionados SEMPRE no topo em ordem #1, #2, #3)
   const filteredPendingOrders = useMemo(() => {
-    return deliveryOrders.filter(o => {
+    const list = deliveryOrders.filter(o => {
       const isInRoute = createdRoutes.some(r => r.orders.some(ro => ro.id === o.id));
       if (isInRoute) return false;
 
@@ -260,7 +260,19 @@ export default function RoteirizacaoModal({
       const addr = (o.address || `${o.street || ""} ${o.neighborhood || ""}`).toLowerCase();
       return numStr.includes(term) || name.includes(term) || addr.includes(term);
     });
-  }, [deliveryOrders, createdRoutes, searchTerm]);
+
+    return list.sort((a, b) => {
+      const idxA = selectedOrderIds.indexOf(a.id);
+      const idxB = selectedOrderIds.indexOf(b.id);
+      const isSelA = idxA !== -1;
+      const isSelB = idxB !== -1;
+
+      if (isSelA && isSelB) return idxA - idxB;
+      if (isSelA) return -1;
+      if (isSelB) return 1;
+      return 0;
+    });
+  }, [deliveryOrders, createdRoutes, searchTerm, selectedOrderIds]);
 
   // Clean Address for Nominatim OpenStreetMap Geocoding
   const cleanAddressForGeocoding = (rawAddress: string) => {
@@ -943,14 +955,15 @@ export default function RoteirizacaoModal({
 
                             {/* Sequence Badge / Checkbox */}
                             <div style={{
-                              width: "28px", height: "28px", borderRadius: "50%",
-                              background: isSelected ? "#2563EB" : "#F1F5F9",
+                              width: "30px", height: "30px", borderRadius: "50%",
+                              background: isSelected ? "linear-gradient(135deg, #2563EB, #1D4ED8)" : "#F1F5F9",
                               color: isSelected ? "#FFFFFF" : "#64748B",
-                              border: isSelected ? "none" : "1px solid #CBD5E1",
+                              border: isSelected ? "none" : "1.5px solid #CBD5E1",
+                              boxShadow: isSelected ? "0 3px 8px rgba(37,99,235,0.4)" : "none",
                               display: "flex", alignItems: "center", justifyContent: "center",
-                              fontWeight: 900, fontSize: "0.85rem", flexShrink: 0, marginTop: 2
+                              fontWeight: 900, fontSize: "0.82rem", flexShrink: 0, marginTop: 2
                             }}>
-                              {isSelected ? seqIndex + 1 : ""}
+                              {isSelected ? `#${seqIndex + 1}` : ""}
                             </div>
 
                             {/* Order Details */}
