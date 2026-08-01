@@ -5,32 +5,38 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const allUsers = await prisma.user.findMany({
+    // Buscar todos os usuários que são FRANQUEADO, ADMIN ou LOJA
+    const storeUsers = await prisma.user.findMany({
+      where: {
+        OR: [
+          { email: "contatohakim@gmail.com" },
+          { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } }
+        ]
+      },
       select: { id: true, email: true, name: true, role: true }
     });
 
     const inserted: any[] = [];
 
-    for (const u of allUsers) {
+    for (const u of storeUsers) {
+      const targetId = u.id;
+
       // 1. Pedido Renata Nunes #3095 (32626144)
-      const ord1 = await prisma.customerOrder.upsert({
-        where: { openDeliveryOrderId: `32626144_${u.id}` },
-        update: {
-          franchiseeId: u.id,
-          status: "NOVO",
-          kdsStage: "PRODUCTION",
-          customerName: "Renata Nunes",
-          customerPhone: "21995287212",
-          customerAddress: "Rua João Vianna 199 Casa 3 - Nova Esperança",
-          totalAmount: 49.85,
-          deliveryFee: 4.99,
-          paymentMethod: "Débito",
-        },
-        create: {
-          franchiseeId: u.id,
+      await prisma.customerOrder.deleteMany({
+        where: {
+          OR: [
+            { openDeliveryOrderId: "32626144" },
+            { openDeliveryOrderId: `32626144_${targetId}` }
+          ]
+        }
+      }).catch(() => {});
+
+      const ord1 = await prisma.customerOrder.create({
+        data: {
+          franchiseeId: targetId,
           source: "JOTAJA",
           openDeliveryChannel: "JOTAJA",
-          openDeliveryOrderId: `32626144_${u.id}`,
+          openDeliveryOrderId: `32626144_${targetId}`,
           openDeliveryReference: "3095",
           customerName: "Renata Nunes",
           customerPhone: "21995287212",
@@ -50,10 +56,10 @@ export async function GET(req: NextRequest) {
                 price: 44.86,
                 menuProduct: {
                   connectOrCreate: {
-                    where: { id: `jotaja-item-3095_${u.id}` },
+                    where: { id: `jotaja-item-3095_${targetId}` },
                     create: {
-                      id: `jotaja-item-3095_${u.id}`,
-                      franchiseeId: u.id,
+                      id: `jotaja-item-3095_${targetId}`,
+                      franchiseeId: targetId,
                       name: "Combo 10 Esfirras Simples + 2 Bebidas",
                       description: "5x Carne, 3x Calabresa, 2x Chocolate Ao Leite",
                       price: 44.86,
@@ -69,23 +75,21 @@ export async function GET(req: NextRequest) {
       inserted.push(ord1);
 
       // 2. Pedido Queilor Barcelos #3115 (32628794)
-      const ord2 = await prisma.customerOrder.upsert({
-        where: { openDeliveryOrderId: `32628794_${u.id}` },
-        update: {
-          franchiseeId: u.id,
-          status: "NOVO",
-          kdsStage: "PRODUCTION",
-          customerName: "Queilor Barcelos",
-          customerPhone: "22992376032",
-          customerAddress: "Rua dos LÍrios 2002 Casa, portão marrom de madeira - Âncora",
-          totalAmount: 71.77,
-          paymentMethod: "Crédito",
-        },
-        create: {
-          franchiseeId: u.id,
+      await prisma.customerOrder.deleteMany({
+        where: {
+          OR: [
+            { openDeliveryOrderId: "32628794" },
+            { openDeliveryOrderId: `32628794_${targetId}` }
+          ]
+        }
+      }).catch(() => {});
+
+      const ord2 = await prisma.customerOrder.create({
+        data: {
+          franchiseeId: targetId,
           source: "JOTAJA",
           openDeliveryChannel: "JOTAJA",
-          openDeliveryOrderId: `32628794_${u.id}`,
+          openDeliveryOrderId: `32628794_${targetId}`,
           openDeliveryReference: "3115",
           customerName: "Queilor Barcelos",
           customerPhone: "22992376032",
@@ -105,10 +109,10 @@ export async function GET(req: NextRequest) {
                 price: 65.78,
                 menuProduct: {
                   connectOrCreate: {
-                    where: { id: `jotaja-item-3115_${u.id}` },
+                    where: { id: `jotaja-item-3115_${targetId}` },
                     create: {
-                      id: `jotaja-item-3115_${u.id}`,
-                      franchiseeId: u.id,
+                      id: `jotaja-item-3115_${targetId}`,
+                      franchiseeId: targetId,
                       name: "Pedido JotaJá #3115",
                       description: "Portão marrom de madeira - Âncora",
                       price: 65.78,
@@ -126,7 +130,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `SUCESSO! Pedidos Jotajá #3095 (Renata Nunes) e #3115 (Queilor Barcelos) inseridos/sincronizados com sucesso no sistema!`,
+      message: `SUCESSO TOTAL! Pedidos #3095 (Renata Nunes) e #3115 (Queilor Barcelos) inseridos diretamente no banco para todas as lojas (${storeUsers.length} usuários)!`,
+      storeUsers,
       insertedCount: inserted.length
     });
   } catch (err: any) {
