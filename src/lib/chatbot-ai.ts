@@ -260,9 +260,14 @@ ${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "Nen
 === PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER E PROIBIDO DAR O DESCONTO HOJE! ===
 ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
 
+  let wasInactivityCancelled = false;
   // Formatar pedidos recentes deste cliente
   let recentOrdersSummary = "Nenhum pedido recente encontrado para este número.";
   if (Array.isArray(recentOrders) && recentOrders.length > 0) {
+    const last = recentOrders[0] as any;
+    if (last.status === "CANCELADO" && (last.cancelledBy === "SYSTEM_INACTIVITY" || (last.notes || "").includes("inatividade"))) {
+      wasInactivityCancelled = true;
+    }
     recentOrdersSummary = recentOrders.map(o => {
       const statusMap: Record<string, string> = {
         NOVO: "Recebido (Aguardando confirmação da loja)",
@@ -449,6 +454,10 @@ ${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
     - Você DEVE OBRIGATORIAMENTE responder usando EXATAMENTE a seguinte estrutura de justificativa e postura:
 30. QUANDO O CLIENTE FIZER UMA LIGAÇÃO DE VOZ OU PERGUNTAR POR QUE NÃO ATENDEU A CHAMADA:
     - Responda educadamente com exatamente este tom carinhoso: "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?" (SEM MANDAR LINK!).
+${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
+    - O pedido rascunho anterior do cliente foi cancelado por ter ficado mais de 20 minutos sem resposta.
+    - Na PRIMEIRA mensagem de retorno do cliente agora, diga exatamente neste tom carinhoso: "Olha, como você ficou muito tempo ausente, eu acabei parando o pedido por aqui! Mas que bom que voltou! 😊 Como posso te ajudar agora?"
+    - Reinicie o atendimento com toda a simpatia!` : ""}
 
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
@@ -857,16 +866,17 @@ async function syncAiOrderToDatabase({
 /**
  * Verifica rascunhos de pedidos IA ("CRIANDO_IA"):
  * 1. Após 20 minutos de inatividade sem resposta do cliente: envia mensagem no WhatsApp perguntando se deseja continuar o pedido.
- * 2. Se continuar sem retorno por mais 10 minutos (30 min no total): cancela o rascunho automaticamente para não ficar estacionado no painel da loja.
+/**
+ * Cancela automaticamente rascunhos em estado CRIANDO_IA após 20 minutos sem resposta/interação do cliente.
  */
 export async function checkAndCleanupStaleAiDrafts(franchiseeIdFilter?: string) {
   try {
     const now = Date.now();
-    const twentyMinAgo = new Date(now - 20 * 60 * 1000);
-    const thirtyMinAgo = new Date(now - 30 * 60 * 1000);
+    const twentyMinAgo = new Date(now - 20 * 60 * 1000); // 20 minutos sem interagir
 
     const whereCondition: any = {
       status: "CRIANDO_IA",
+      updatedAt: { lte: twentyMinAgo }
     };
     if (franchiseeIdFilter) {
       whereCondition.franchiseeId = franchiseeIdFilter;
@@ -880,63 +890,22 @@ export async function checkAndCleanupStaleAiDrafts(franchiseeIdFilter?: string) 
         customerPhone: true,
         customerName: true,
         notes: true,
-        createdAt: true,
-        updatedAt: true,
       },
     });
 
     if (!staleDrafts || staleDrafts.length === 0) return;
 
-    const { sendEvolutionMessage } = await import("@/lib/whatsapp-evolution");
-
     for (const draft of staleDrafts) {
-      const updatedAtMs = new Date(draft.updatedAt).getTime();
-      const notesStr = draft.notes || "";
-      const hasFollowup = notesStr.includes("[FOLLOWUP_INATIVIDADE]");
-      const cleanPhone = (draft.customerPhone || "").replace(/\D/g, "");
-
-      // 1. Passaram 30+ min no total OU 10 minutos após o acompanhamento enviando sem resposta -> CANCELAR RASCUNHO AUTOMATICAMENTE
-      if ((hasFollowup && updatedAtMs <= twentyMinAgo.getTime()) || updatedAtMs <= thirtyMinAgo.getTime()) {
-        await prisma.customerOrder.update({
-          where: { id: draft.id },
-          data: {
-            status: "CANCELADO",
-            cancelledBy: "SYSTEM_INACTIVITY",
-            cancelReason: "Cancelado por inatividade do cliente (rascunho IA abandonado no WhatsApp)",
-            notes: `${notesStr}\n🤖 Pedido cancelado automaticamente por inatividade (20+ min sem retorno)`,
-          },
-        });
-        console.log(`[Chatbot AI Cleanup] ❌ Rascunho IA cancelado por inatividade (${draft.id})`);
-
-        if (cleanPhone) {
-          sendEvolutionMessage(
-            draft.franchiseeId,
-            cleanPhone,
-            `Oi! Como não tivemos retorno por um tempinho, cancelamos seu rascunho de pedido por aqui para manter nosso sistema organizado. 😊\n\nQuando quiser pedir de novo, é só me mandar uma mensagem por aqui! 🍔`
-          ).catch(() => {});
-        }
-        continue;
-      }
-
-      // 2. Passaram 20 minutos de inatividade e ainda NÃO enviou acompanhamento -> Perguntar ao cliente no WhatsApp
-      if (!hasFollowup && updatedAtMs <= twentyMinAgo.getTime()) {
-        await prisma.customerOrder.update({
-          where: { id: draft.id },
-          data: {
-            notes: `${notesStr}\n[FOLLOWUP_INATIVIDADE]`,
-            updatedAt: new Date(),
-          },
-        });
-        console.log(`[Chatbot AI Cleanup] 💬 Acompanhamento de inatividade enviado para (${draft.id})`);
-
-        if (cleanPhone) {
-          sendEvolutionMessage(
-            draft.franchiseeId,
-            cleanPhone,
-            `Oi! Vi que você começou a montar seu pedido com a gente mas parou por um tempinho. 😊\n\nVocê gostaria de continuar seu pedido ou deseja alterar algum item?`
-          ).catch(() => {});
-        }
-      }
+      await prisma.customerOrder.update({
+        where: { id: draft.id },
+        data: {
+          status: "CANCELADO",
+          cancelledBy: "SYSTEM_INACTIVITY",
+          cancelReason: "Cancelado por inatividade do cliente por mais de 20 minutos",
+          notes: `${draft.notes || ""}\n🤖 Rascunho IA cancelado por inatividade de 20 min`,
+        },
+      });
+      console.log(`[Chatbot AI Cleanup] ❌ Rascunho IA cancelado por inatividade de 20 min (${draft.id})`);
     }
   } catch (err: any) {
     console.error("[Chatbot AI Cleanup Error]:", err?.message);
