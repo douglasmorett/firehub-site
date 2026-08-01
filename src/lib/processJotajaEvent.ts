@@ -103,10 +103,18 @@ export async function processJotajaEvent(
     });
 
     if (!existing) {
-      // ── CRIAR pedido novo ──────────────────────────────────────────────
-      const orderRes = await jotajaFetch(`/v1/orders/${orderId}`);
-      if (!orderRes.ok) {
-        return { action: "error", orderId, message: `GET /orders falhou: ${orderRes.status}` };
+      // ── CRIAR pedido novo (com até 3 tentativas resilientes) ──────────────
+      let orderRes: Response | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await jotajaFetch(`/v1/orders/${orderId}`);
+          if (res.ok) { orderRes = res; break; }
+        } catch (e) {}
+        if (attempt < 3) await new Promise(r => setTimeout(r, 500));
+      }
+
+      if (!orderRes || !orderRes.ok) {
+        return { action: "error", orderId, message: `GET /orders falhou após 3 tentativas (${orderRes?.status || "network error"})` };
       }
       const orderData = await orderRes.json();
 
