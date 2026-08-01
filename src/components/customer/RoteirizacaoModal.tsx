@@ -210,15 +210,29 @@ export default function RoteirizacaoModal({
     } catch (e) {}
   };
 
-  // Filter Delivery Orders (Exclude Pickup/Presencial unless needed)
+  // Filter Delivery Orders (Strictly exclude Pickup/Retirada and Orders already Out for Delivery)
   const deliveryOrders = useMemo(() => {
     return orders.filter((o: any) => {
+      // 1. Exclude Cancelled / Delivered / Finished
       const isCancelled = o.status === "CANCELLED" || o.status === "CANCELED";
       if (isCancelled) return false;
       const isDelivered = o.status === "ENTREGUE" || o.status === "ENCERRADO";
       if (isDelivered) return false;
-      const addr = o.customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
-      return addr.trim().length > 2 || o.deliveryType === "DELIVERY" || !o.deliveryType;
+
+      // 2. Exclude Orders Already Out For Delivery (SAIU_ENTREGA / OUT_FOR_DELIVERY / EM_ROTA)
+      const isAlreadyDispatched = o.status === "SAIU_ENTREGA" || o.status === "OUT_FOR_DELIVERY" || o.status === "EM_ROTA";
+      if (isAlreadyDispatched) return false;
+
+      // 3. Exclude Pickup / Retirada na Loja / Balcão / Mesa
+      const deliveryTypeUpper = String(o.deliveryType || o.orderType || o.type || "").toUpperCase();
+      const isPickupType = deliveryTypeUpper === "TAKEOUT" || deliveryTypeUpper === "PICKUP" || deliveryTypeUpper === "RETIRADA" || deliveryTypeUpper === "BALCAO" || deliveryTypeUpper === "MESA" || o.isPickup === true;
+      if (isPickupType) return false;
+
+      const addrRaw = String(o.customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`).toLowerCase();
+      if (addrRaw.includes("retirada") || addrRaw.includes("retirar")) return false;
+
+      // 4. Must be a valid delivery order address
+      return addrRaw.trim().length > 2;
     });
   }, [orders]);
 
