@@ -2130,7 +2130,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const order = orders.find(o => o.id === viewReceiptOrderId);
         if (!order) return null;
 
-        const phone = order.customerPhone || "";
+        const rawPhone = order.customerPhone || "";
+        const phoneDigits = rawPhone.replace(/\D/g, "");
+        let phone = rawPhone;
+        if (phoneDigits.length >= 10 && phoneDigits.length <= 13) {
+          phone = phoneDigits.length === 13 && phoneDigits.startsWith("55")
+            ? `+55 (${phoneDigits.slice(2, 4)}) ${phoneDigits.slice(4, 9)}-${phoneDigits.slice(9)}`
+            : phoneDigits.length === 11
+            ? `(${phoneDigits.slice(0, 2)}) ${phoneDigits.slice(2, 7)}-${phoneDigits.slice(7)}`
+            : rawPhone;
+        }
         const createdDate = new Date(order.createdAt);
         const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
         const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });

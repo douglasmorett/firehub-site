@@ -712,16 +712,20 @@ async function syncAiOrderToDatabase({
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return;
 
-  const isLid = phoneClean.length > 13 || phoneClean.startsWith("22010");
-  let formattedCustomerPhone = phoneClean;
-  if (!isLid) {
-    formattedCustomerPhone = phoneClean.length === 13 && phoneClean.startsWith("55")
-      ? `+55 (${phoneClean.slice(2, 4)}) ${phoneClean.slice(4, 9)}-${phoneClean.slice(9)}`
-      : phoneClean.length === 11
-      ? `(${phoneClean.slice(0, 2)}) ${phoneClean.slice(2, 7)}-${phoneClean.slice(7)}`
-      : phoneClean;
+  // Formatar número de telefone de forma numérico limpa (ex: +55 (22) 99823-2027 ou (22) 99823-2027)
+  let formattedCustomerPhone = "";
+  if (phoneClean.length === 13 && phoneClean.startsWith("55")) {
+    formattedCustomerPhone = `+55 (${phoneClean.slice(2, 4)}) ${phoneClean.slice(4, 9)}-${phoneClean.slice(9)}`;
+  } else if (phoneClean.length === 12 && phoneClean.startsWith("55")) {
+    formattedCustomerPhone = `+55 (${phoneClean.slice(2, 4)}) ${phoneClean.slice(4, 8)}-${phoneClean.slice(8)}`;
+  } else if (phoneClean.length === 11) {
+    formattedCustomerPhone = `(${phoneClean.slice(0, 2)}) ${phoneClean.slice(2, 7)}-${phoneClean.slice(7)}`;
+  } else if (phoneClean.length === 10) {
+    formattedCustomerPhone = `(${phoneClean.slice(0, 2)}) ${phoneClean.slice(2, 6)}-${phoneClean.slice(6)}`;
+  } else if (phoneClean.length > 0) {
+    formattedCustomerPhone = `+${phoneClean}`;
   } else {
-    formattedCustomerPhone = `WhatsApp (ID: ${phoneClean.slice(-4)})`;
+    formattedCustomerPhone = customerPhone;
   }
 
   // Busca pedido rascunho em aberto ou pedido recente nos últimos 20 minutos para evitar duplicidades
@@ -746,7 +750,7 @@ async function syncAiOrderToDatabase({
     : (customerName && !customerName.includes("Cliente WhatsApp") ? customerName : (existingDraft?.customerName || "Cliente WhatsApp"));
 
   // Salva/Atualiza na base de clientes (StoreCustomer) se o nome for válido e tiver número limpo
-  if (finalCustomerName !== "Cliente WhatsApp" && phoneClean && !isLid) {
+  if (finalCustomerName !== "Cliente WhatsApp" && phoneClean && phoneClean.length <= 13) {
     prisma.storeCustomer.upsert({
       where: { phone: phoneClean },
       update: { name: finalCustomerName, updatedAt: new Date() },
@@ -812,6 +816,7 @@ async function syncAiOrderToDatabase({
       where: { id: existingDraft.id },
       data: {
         customerName: finalCustomerName,
+        customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || existingDraft.customerAddress,
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
         deliveryFee: deliveryFee,
