@@ -431,7 +431,8 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             const rawAddr = (order.customerAddress || order.address || "").trim();
             const addr = rawAddr || [order.street, order.number ? `nº ${order.number}` : "", order.neighborhood ? `Bairro: ${order.neighborhood}` : ""].filter(Boolean).join(", ") || "Endereço a confirmar";
 
-            const num = (order as any).dailyOrderNumber || order.orderNumber || order.displayId || order.id.replace(/\D/g, "").slice(-2) || "#";
+            const displayRef = (order as any).ifoodReference || (order as any).openDeliveryReference || order.displayId;
+            const num = displayRef ? displayRef : ((order as any).dailyOrderNumber || order.orderNumber || order.id.replace(/\D/g, "").slice(-2) || "#");
             const cleanPhone = (order.customerPhone || "").replace(/\D/g, "");
             const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
 
@@ -439,7 +440,12 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             const wazeNavUrl = `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`;
 
             const changeAmount = (order as any).changeAmount;
-            const notesText = order.notes || "";
+            const rawNotes = order.notes || "";
+            const cleanNotes = rawNotes
+              .replace(/Pedido iFood #[A-Za-z0-9_-]+/gi, "")
+              .replace(/Pedido Jotajá #[A-Za-z0-9_-]+/gi, "")
+              .replace(/^(\s*\|\s*)+|(\s*\|\s*)+$/g, "")
+              .trim();
 
             return (
               <div
@@ -488,17 +494,17 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                       <span>Pagamento: <b style={{ color: "#0F172A" }}>{order.paymentMethod || "Na entrega"}</b> — R$ {Number(order.totalAmount || 0).toFixed(2).replace(".", ",")}</span>
                     </div>
 
-                    {(changeAmount || notesText.toLowerCase().includes("troco")) && (
+                    {(changeAmount || cleanNotes.toLowerCase().includes("troco")) && (
                       <div style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4, width: "fit-content" }}>
-                        💵 {changeAmount ? `Levar Troco para R$ ${Number(changeAmount).toFixed(2).replace(".", ",")}` : `Atenção: ${notesText}`}
+                        💵 {changeAmount ? `Levar Troco para R$ ${Number(changeAmount).toFixed(2).replace(".", ",")}` : `Atenção: ${cleanNotes}`}
                       </div>
                     )}
                   </div>
 
                   {/* Notes / Reference Point */}
-                  {notesText && !notesText.toLowerCase().includes("troco") && (
+                  {cleanNotes && !cleanNotes.toLowerCase().includes("troco") && (
                     <div style={{ background: "#F1F5F9", padding: "6px 10px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 700, color: "#475569" }}>
-                      📌 <b>Obs/Ref:</b> {notesText}
+                      📌 <b>Obs/Ref:</b> {cleanNotes}
                     </div>
                   )}
                 </div>

@@ -1839,7 +1839,7 @@ export default function ChatbotHubClient() {
                     <div style={{ background: "#F5F3FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #DDD6FE" }}>
                       <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#6D28D9" }}>👀 Visualizações (Lidos)</div>
                       <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#5B21B6", marginTop: "2px" }}>
-                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.viewedCount != null ? c.viewedCount : Math.round((c.sentCount || c.targetCount || 0) * 0.76)), 0)} leituras
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.viewedCount || 0), 0)} leituras
                       </div>
                     </div>
 
@@ -1873,8 +1873,8 @@ export default function ChatbotHubClient() {
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       {campaignHistory.map((camp: any, i: number) => {
-                        const totalSent = camp.sentCount || camp.targetCount || 0;
-                        const totalViewed = camp.viewedCount != null ? camp.viewedCount : Math.round(totalSent * 0.76);
+                        const totalSent = typeof camp.sentCount === "number" ? camp.sentCount : 0;
+                        const totalViewed = totalSent > 0 ? (camp.viewedCount || 0) : 0;
                         const openRate = totalSent > 0 ? Math.round((totalViewed / totalSent) * 100) : 0;
 
                         return (
