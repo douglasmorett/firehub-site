@@ -337,6 +337,28 @@ async function handleIncomingMessage(body: any, instance: string) {
   const chatbotConfig = (user.chatbotConfig as any) || {};
   if (chatbotConfig.active === false) return;
 
+  // ── DETECT JOTAJA / IFOOD AUTOMATIC ORDER CONFIRMATION MESSAGE FROM CUSTOMER ──
+  const isJotajaConfirmationMsg =
+    (textMessage.includes("SEU PEDIDO:") || textMessage.includes("Acompanhe abaixo o pedido") || textMessage.includes("RESUMO DO PEDIDO") || textMessage.includes("Jotajá") || textMessage.includes("jotaja.com.br")) &&
+    (textMessage.includes("Pedido nº:") || textMessage.includes("Realizado em:") || textMessage.includes("RESUMO DO PEDIDO") || textMessage.includes("ENDEREÇO DE ENTREGA"));
+
+  if (isJotajaConfirmationMsg) {
+    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Mensagem de confirmação automática do Jotajá recebida de ${remoteJid}`);
+    const cleanTarget = remoteJid.replace(/@.*$/, "");
+    cooldownCache.set(remoteJid, Date.now());
+
+    // Extrair o número do pedido para a resposta carinhosa
+    const orderNumMatch = textMessage.match(/Pedido\s*n[ºo]?:\s*#?(\d+)/i);
+    const orderNum = orderNumMatch ? orderNumMatch[1] : "";
+
+    const thankMsg = orderNum
+      ? `Recebemos a confirmação do seu pedido *#${orderNum}* pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`
+      : `Recebemos a confirmação do seu pedido pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`;
+
+    sendEvolutionMessage(instance || user.id, cleanTarget, thankMsg).catch(() => {});
+    return;
+  }
+
   // Se o cliente já pediu atendente humano nesta conversa e a opção de pausar está ligada
   const pausedCacheKey = `paused_${user.id}_${remoteJid}`;
   const pausedUntil = cooldownCache.get(pausedCacheKey);
