@@ -22,8 +22,11 @@ interface Motoboy {
 
 interface CustomerOrder {
   id: string;
+  dailyOrderNumber?: number | string;
   orderNumber?: number | string;
   displayId?: string;
+  ifoodReference?: string;
+  openDeliveryReference?: string;
   customerName: string;
   customerPhone?: string;
   address?: string;
@@ -41,6 +44,18 @@ interface CustomerOrder {
   motoboy?: Motoboy;
   routeId?: string;
 }
+
+export const getOrderDisplayNumber = (order: any): string => {
+  if (!order) return "—";
+  if (order.dailyOrderNumber != null && order.dailyOrderNumber !== "") {
+    return String(order.dailyOrderNumber);
+  }
+  if (order.ifoodReference) return String(order.ifoodReference);
+  if (order.openDeliveryReference) return String(order.openDeliveryReference);
+  if (order.orderNumber) return String(order.orderNumber);
+  if (order.displayId) return String(order.displayId);
+  return String(order.id || "").slice(-4).toUpperCase();
+};
 
 interface RouteItem {
   id: string;
@@ -216,31 +231,58 @@ export default function RoteirizacaoModal({
     } catch (e) {}
   };
 
-  // Filter Delivery Orders (Strictly exclude Pickup/Retirada, Dispatched, and respect onlyProntoOrders setting)
+  // Filter Delivery Orders (Strictly exclude Pickup/Retirada, Dispatched/Out for delivery, and respect onlyProntoOrders setting)
   const deliveryOrders = useMemo(() => {
     return orders.filter((o: any) => {
       // 1. Exclude Cancelled / Delivered / Finished
-      const isCancelled = o.status === "CANCELLED" || o.status === "CANCELED";
-      if (isCancelled) return false;
-      const isDelivered = o.status === "ENTREGUE" || o.status === "ENCERRADO";
-      if (isDelivered) return false;
+      const statusUpper = String(o.status || "").toUpperCase().trim();
+      if (statusUpper.includes("CANCEL")) return false;
+      if (statusUpper === "ENTREGUE" || statusUpper === "ENCERRADO" || statusUpper === "FINISHED") return false;
 
-      // 2. Exclude Orders Already Out For Delivery (SAIU_ENTREGA / OUT_FOR_DELIVERY / EM_ROTA)
-      const isAlreadyDispatched = o.status === "SAIU_ENTREGA" || o.status === "OUT_FOR_DELIVERY" || o.status === "EM_ROTA";
+      // 2. Exclude Orders Already Out For Delivery OR Dispatched OR Assigned to Motoboy (SAIU PARA ENTREGA NUNCA ENTRA NA ROTEIRIZAÇÃO)
+      const isAlreadyDispatched =
+        statusUpper === "SAIU_ENTREGA" ||
+        statusUpper === "SAIU_PARA_ENTREGA" ||
+        statusUpper === "OUT_FOR_DELIVERY" ||
+        statusUpper === "EM_TRANSITO" ||
+        statusUpper === "DISPATCHED" ||
+        statusUpper === "EM_ROTA" ||
+        Boolean(o.motoboyId) ||
+        Boolean(o.dispatchedAt);
+
       if (isAlreadyDispatched) return false;
 
-      // 3. Filter by Config: Only Pronto orders or All Pending
-      if (onlyProntoOrders && o.status !== "PRONTO" && o.status !== "ACEITO") {
-        return false;
-      }
+      // 3. Exclude Pickup / Retirada na Loja / Balcão / Mesa (RETIRADAS NUNCA ENTRAM NA ROTEIRIZAÇÃO)
+      const deliveryTypeUpper = String(o.deliveryType || o.orderType || o.type || "").toUpperCase().trim();
+      const isPickupType =
+        deliveryTypeUpper === "TAKEOUT" ||
+        deliveryTypeUpper === "PICKUP" ||
+        deliveryTypeUpper === "RETIRADA" ||
+        deliveryTypeUpper === "BALCAO" ||
+        deliveryTypeUpper === "MESA" ||
+        deliveryTypeUpper === "PRESENCIAL" ||
+        deliveryTypeUpper === "IN_STORE" ||
+        o.isPickup === true ||
+        Boolean(o.takeout);
 
-      // 4. Exclude Pickup / Retirada na Loja / Balcão / Mesa
-      const deliveryTypeUpper = String(o.deliveryType || o.orderType || o.type || "").toUpperCase();
-      const isPickupType = deliveryTypeUpper === "TAKEOUT" || deliveryTypeUpper === "PICKUP" || deliveryTypeUpper === "RETIRADA" || deliveryTypeUpper === "BALCAO" || deliveryTypeUpper === "MESA" || o.isPickup === true;
       if (isPickupType) return false;
 
       const addrRaw = String(o.customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`).toLowerCase();
-      if (addrRaw.includes("retirada") || addrRaw.includes("retirar")) return false;
+      if (
+        addrRaw.includes("retirada") ||
+        addrRaw.includes("retirar") ||
+        addrRaw.includes("retira em loja") ||
+        addrRaw.includes("no balcao") ||
+        addrRaw.includes("comer no local")
+      ) {
+        return false;
+      }
+
+      // 4. Filter by Config: Only Pronto orders or All Pending (NOVO, ACEITO, PREPARANDO, PRONTO)
+      if (onlyProntoOrders) {
+        const isPronto = statusUpper === "PRONTO" || o.kdsStage === "READY" || o.kdsStage === "FINISHED";
+        if (!isPronto) return false;
+      }
 
       // 5. Must be a valid delivery order address
       return addrRaw.trim().length > 2;
@@ -255,7 +297,7 @@ export default function RoteirizacaoModal({
 
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
-      const numStr = String(o.orderNumber || o.displayId || o.id).toLowerCase();
+      const numStr = getOrderDisplayNumber(o).toLowerCase();
       const name = (o.customerName || "").toLowerCase();
       const addr = (o.address || `${o.street || ""} ${o.neighborhood || ""}`).toLowerCase();
       return numStr.includes(term) || name.includes(term) || addr.includes(term);
@@ -293,16 +335,34 @@ export default function RoteirizacaoModal({
     return clean;
   };
 
-  // Automatic Geocoding Engine for Order Addresses with Instant Initial Pins
+  // Automatic Geocoding Engine for Order Addresses with Instant LocalStorage Cache & Parallel Batches
   useEffect(() => {
     if (!isOpen || deliveryOrders.length === 0) return;
 
-    // 1. Instantly assign fallback coordinates near store so ALL 36 pins render in 0.001s!
+    // Load persistent address cache from localStorage
+    let localCache: Record<string, { lat: number; lng: number }> = {};
+    try {
+      const stored = localStorage.getItem("firehub_geo_cache");
+      if (stored) localCache = JSON.parse(stored);
+    } catch {}
+
     const initialMap = { ...geocodedMap };
     let initialUpdated = false;
+    const toGeocode: { id: string; searchAddress: string; cleanAddr: string }[] = [];
 
     deliveryOrders.forEach((order, idx) => {
-      if (!initialMap[order.id]) {
+      const rawAddr = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`;
+      const cleanedAddr = cleanAddressForGeocoding(rawAddr);
+      const cacheKey = `${cleanedAddr}_${storeCity}`.toLowerCase().trim();
+
+      // Check if address is in persistent localStorage cache
+      if (localCache[cacheKey]) {
+        if (!initialMap[order.id] || initialMap[order.id].lat !== localCache[cacheKey].lat) {
+          initialMap[order.id] = localCache[cacheKey];
+          initialUpdated = true;
+        }
+      } else if (!initialMap[order.id]) {
+        // Fallback coordinates near store so pins render instantly in 0.001s
         const idHash = (order.id || "").split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
         const offsetLat = (((idHash % 17) - 8) * 0.0015) + (idx * 0.0003);
         const offsetLng = ((((idHash * 5) % 17) - 8) * 0.0015) - (idx * 0.0002);
@@ -311,6 +371,11 @@ export default function RoteirizacaoModal({
           lng: defaultCenter.lng + offsetLng
         };
         initialUpdated = true;
+        toGeocode.push({
+          id: order.id,
+          cleanAddr: cacheKey,
+          searchAddress: `${cleanedAddr}, ${storeCity}, RJ, Brasil`
+        });
       }
     });
 
@@ -318,41 +383,66 @@ export default function RoteirizacaoModal({
       setGeocodedMap(initialMap);
     }
 
-    // 2. Asynchronously refine pins to exact street coordinates via Nominatim
+    if (toGeocode.length === 0) {
+      setGeocodingLoading(false);
+      return;
+    }
+
+    // Process un-cached addresses in fast parallel batches
+    let isMounted = true;
     const geocodeAddresses = async () => {
       setGeocodingLoading(true);
-      const newMap = { ...initialMap };
+      const updatedMap = { ...initialMap };
+      const updatedCache = { ...localCache };
+      let hasNewCache = false;
 
-      for (const order of deliveryOrders) {
-        const rawAddr = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`;
-        const cleanedAddr = cleanAddressForGeocoding(rawAddr);
+      // Process in batches of 4 for maximum speed without hitting rate limits
+      const BATCH_SIZE = 4;
+      for (let i = 0; i < toGeocode.length; i += BATCH_SIZE) {
+        if (!isMounted) break;
+        const batch = toGeocode.slice(i, i + BATCH_SIZE);
 
-        try {
-          const searchAddress = `${cleanedAddr}, ${storeCity}, RJ, Brasil`;
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}&limit=1`,
-            { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" } }
-          );
+        await Promise.all(
+          batch.map(async (item) => {
+            try {
+              const res = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(item.searchAddress)}&limit=1`,
+                { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" }, signal: AbortSignal.timeout(4000) }
+              );
 
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.length > 0) {
-              newMap[order.id] = {
-                lat: parseFloat(data[0].lat),
-                lng: parseFloat(data[0].lon)
-              };
-              setGeocodedMap({ ...newMap });
-            }
-          }
-        } catch (err) {
-          console.warn("[Roteirização] Erro ao geocodificar pedido:", order.id, err);
+              if (res.ok) {
+                const data = await res.json();
+                if (data && data.length > 0) {
+                  const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                  updatedMap[item.id] = coords;
+                  updatedCache[item.cleanAddr] = coords;
+                  hasNewCache = true;
+                }
+              }
+            } catch (err) {}
+          })
+        );
+
+        if (isMounted) {
+          setGeocodedMap({ ...updatedMap });
         }
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 200));
       }
-      setGeocodingLoading(false);
+
+      if (hasNewCache) {
+        try {
+          localStorage.setItem("firehub_geo_cache", JSON.stringify(updatedCache));
+        } catch {}
+      }
+
+      if (isMounted) setGeocodingLoading(false);
     };
 
     geocodeAddresses();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, deliveryOrders, storeCity, defaultCenter]);
 
   // Haversine Distance Calculation (in KM)
@@ -463,7 +553,7 @@ export default function RoteirizacaoModal({
       const assignedRoute = createdRoutes.find(r => r.orders.some(ro => ro.id === order.id));
       
       let bgColor = "#EF4444"; // Default red pin badge like Saipos
-      let labelText = String((order as any).dailyOrderNumber || order.orderNumber || order.displayId || order.id.replace(/\D/g, "").slice(-2) || "#");
+      let labelText = getOrderDisplayNumber(order);
       let borderColor = "#ffffff";
       let scaleCss = "scale(1)";
       let zIdx = 100;
@@ -511,7 +601,7 @@ export default function RoteirizacaoModal({
         .addTo(map)
         .bindPopup(`
           <div style="font-family: sans-serif; font-size: 0.85rem; padding: 4px;">
-            <b style="color:#0F172A;">Pedido #${order.orderNumber || order.displayId || order.id}</b><br/>
+            <b style="color:#0F172A;">Pedido #${getOrderDisplayNumber(order)}</b><br/>
             <span>👤 ${order.customerName || "Cliente"}</span><br/>
             <span style="color:#64748B;">📍 ${order.address || `${order.street || ""}, ${order.neighborhood || ""}`}</span>
           </div>
@@ -933,7 +1023,7 @@ export default function RoteirizacaoModal({
                       const isSelected = selectedOrderIds.includes(order.id);
                       const isHovered = hoveredOrderId === order.id;
                       const seqIndex = selectedOrderIds.indexOf(order.id);
-                      const displayNum = (order as any).dailyOrderNumber || order.orderNumber || order.displayId || order.id.slice(-4);
+                      const displayNum = getOrderDisplayNumber(order);
                       const addrText = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}` || "Endereço a confirmar";
 
                       return (
