@@ -162,7 +162,7 @@ export default function RoteirizacaoModal({
     fetchMotoboys();
   }, [isOpen]);
 
-  // Load saved routes from localStorage
+  // Load saved routes and config from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -170,8 +170,37 @@ export default function RoteirizacaoModal({
       if (saved) {
         setCreatedRoutes(JSON.parse(saved));
       }
+
+      const savedConfig = localStorage.getItem("firehub_roteirizacao_config");
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig);
+        if (parsed.routeMode) setRouteMode(parsed.routeMode);
+        if (parsed.maxWaitMinutes) setMaxWaitMinutes(parsed.maxWaitMinutes);
+        if (parsed.targetStatus) setTargetStatus(parsed.targetStatus);
+        if (parsed.autoMoveStatus) setAutoMoveStatus(parsed.autoMoveStatus);
+        if (parsed.autoPrint) setAutoPrint(parsed.autoPrint);
+        if (parsed.maxOrdersPerRoute) setMaxOrdersPerRoute(parsed.maxOrdersPerRoute);
+        if (parsed.maxDistanceKm) setMaxDistanceKm(parsed.maxDistanceKm);
+      }
     } catch (e) {}
   }, []);
+
+  // Save config to localStorage
+  const handleSaveConfig = () => {
+    try {
+      const cfg = {
+        routeMode,
+        maxWaitMinutes,
+        targetStatus,
+        autoMoveStatus,
+        autoPrint,
+        maxOrdersPerRoute,
+        maxDistanceKm
+      };
+      localStorage.setItem("firehub_roteirizacao_config", JSON.stringify(cfg));
+    } catch (e) {}
+    setShowConfigModal(false);
+  };
 
   // Save routes to localStorage
   const saveRoutes = (routes: RouteItem[]) => {
@@ -658,19 +687,6 @@ export default function RoteirizacaoModal({
             >
               ⚙️ Configurações
             </button>
-
-            {onRefreshOrders && (
-              <button
-                onClick={onRefreshOrders}
-                style={{
-                  padding: "8px 14px", background: "#F1F5F9", border: "1px solid #CBD5E1",
-                  borderRadius: "8px", fontSize: "0.85rem", fontWeight: 700, color: "#475569",
-                  cursor: "pointer", display: "flex", alignItems: "center", gap: 6
-                }}
-              >
-                <RefreshCw size={15} /> Atualizar Pedidos
-              </button>
-            )}
 
             <button
               onClick={onClose}
@@ -1211,7 +1227,7 @@ export default function RoteirizacaoModal({
 
             <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
               <button
-                onClick={() => setShowConfigModal(false)}
+                onClick={handleSaveConfig}
                 style={{
                   padding: "10px 20px", background: "#2563EB", color: "#FFFFFF",
                   border: "none", borderRadius: "8px", fontWeight: 800, fontSize: "0.9rem",
