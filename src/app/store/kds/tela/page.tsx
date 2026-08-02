@@ -164,7 +164,7 @@ export default function KDSTelaPage() {
   const [tick, setTick] = useState(0); // forces timer re-render every second
   const [currentTime, setCurrentTime] = useState(new Date());
   const [toast, setToast] = useState<{ orderId: string; label: string } | null>(null);
-  const [exitingOrderId, setExitingOrderId] = useState<string | null>(null);
+  const [exitingOrderIds, setExitingOrderIds] = useState<Set<string>>(new Set());
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasEnteredIds, setHasEnteredIds] = useState<Set<string>>(new Set());
 
@@ -380,7 +380,7 @@ export default function KDSTelaPage() {
   const markAsPronto = useCallback(
     async (order: Order) => {
       if (!stage) return;
-      if (exitingOrderId) return; // prevent double-action
+      if (exitingOrderIds.has(order.id)) return; // prevent double-action for this order
 
       const action = stage === "production" ? "finish_production" : "finish_order";
 
@@ -390,7 +390,7 @@ export default function KDSTelaPage() {
         previousStage: stage === "production" ? "production" : "finishing",
       });
 
-      setExitingOrderId(order.id);
+      setExitingOrderIds((prev) => new Set(prev).add(order.id));
 
       // Show toast
       setToast({ orderId: order.id, label: getOrderLabel(order) });
@@ -407,17 +407,21 @@ export default function KDSTelaPage() {
         });
       } catch {
         // will be picked up on next poll
+      } finally {
+        // Remove card after exit animation & re-fetch
+        setTimeout(() => {
+          setOrders((prev) => prev.filter((o) => o.id !== order.id));
+          setExitingOrderIds((prev) => {
+            const next = new Set(prev);
+            next.delete(order.id);
+            return next;
+          });
+          lastJsonRef.current = "";
+          fetchOrders();
+        }, 350);
       }
-
-      // Remove card after exit animation & re-fetch
-      setTimeout(() => {
-        setOrders((prev) => prev.filter((o) => o.id !== order.id));
-        setExitingOrderId(null);
-        lastJsonRef.current = "";
-        fetchOrders();
-      }, 500);
     },
-    [stage, exitingOrderId, fetchOrders]
+    [stage, exitingOrderIds, fetchOrders]
   );
 
   // ─── Desfazer ÚLTIMA baixa ──────────────────────────────────────────────────
@@ -834,7 +838,7 @@ export default function KDSTelaPage() {
                   position={index + 1}
                   stage={stage}
                   accent={accent}
-                  isExiting={exitingOrderId === order.id}
+                  isExiting={exitingOrderIds.has(order.id)}
                   tick={tick}
                   onMarkPronto={() => markAsPronto(order)}
                 />
