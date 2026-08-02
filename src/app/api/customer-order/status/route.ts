@@ -123,8 +123,9 @@ export async function PUT(req: Request) {
       updateData.kdsProductionAt = new Date();
     }
   }
-  if (["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"].includes(status)) {
-    // Saiu para entrega/cancelou/entregou: marca como FINISHED para sair de ambos os KDS
+  if (["ENTREGUE", "CANCELADO"].includes(status)) {
+    // Apenas ENTREGUE e CANCELADO encerram o pedido do KDS da cozinha.
+    // SAIU_ENTREGA mantém o pedido no KDS se a cozinha ainda estiver preparando!
     updateData.kdsStage = "FINISHED";
     updateData.kdsStationId = null;
   }
