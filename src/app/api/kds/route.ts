@@ -170,7 +170,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[KDS GET Error]:", err?.message || err);
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: err?.message || String(err), stack: err?.stack }, { status: 500 });
   }
 }
 
