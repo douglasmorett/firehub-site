@@ -57,6 +57,39 @@ export const getOrderDisplayNumber = (order: any): string => {
   return String(order.id || "").slice(-4).toUpperCase();
 };
 
+export const getOrderPaymentInfo = (order: any) => {
+  if (!order) return { isCash: false, isCardOnDelivery: false, changeNeeded: 0, methodRaw: "" };
+
+  const methodRaw = String(order.paymentMethod || order.payment_method || order.paymentType || "").toUpperCase();
+  const notesRaw = String(order.notes || "").toUpperCase();
+  const total = Number(order.totalAmount || 0);
+
+  const isCash = methodRaw.includes("DINHEIRO") || methodRaw.includes("CASH") || notesRaw.includes("DINHEIRO") || notesRaw.includes("TROCO");
+  const isCardOnDelivery = methodRaw.includes("CARTAO") || methodRaw.includes("MAQUINA") || methodRaw.includes("MAQUININHA") || methodRaw.includes("DEBITO") || methodRaw.includes("CREDITO") || methodRaw.includes("VALE") || notesRaw.includes("LEVAR MAQUINA") || notesRaw.includes("MAQUININHA");
+
+  let changeNeeded = 0;
+  if (typeof order.changeAmount === "number" && order.changeAmount > 0) {
+    changeNeeded = order.changeAmount > total ? (order.changeAmount - total) : order.changeAmount;
+  } else {
+    const match = notesRaw.match(/TROCO\s*(?:PARA)?\s*R?\$?\s*(\d+[\.,]?\d*)/i) || notesRaw.match(/TROCO\s*(\d+[\.,]?\d*)/i);
+    if (match && match[1]) {
+      const trocoPara = parseFloat(match[1].replace(",", "."));
+      if (trocoPara > total) {
+        changeNeeded = trocoPara - total;
+      } else {
+        changeNeeded = trocoPara;
+      }
+    }
+  }
+
+  return {
+    isCash,
+    isCardOnDelivery,
+    changeNeeded,
+    methodRaw
+  };
+};
+
 interface RouteItem {
   id: string;
   routeNumber: number | string;
@@ -128,8 +161,40 @@ export default function RoteirizacaoModal({
   const [showDispatchModal, setShowDispatchModal] = useState(false);
   const [selectedMotoboyId, setSelectedMotoboyId] = useState("");
   const [customMotoboyName, setCustomMotoboyName] = useState("");
+  const [customMotoboyPhone, setCustomMotoboyPhone] = useState("");
+  const [sendWhatsAppToMotoboy, setSendWhatsAppToMotoboy] = useState(true);
   const [isDispatching, setIsDispatching] = useState(false);
   const [copiedRouteId, setCopiedRouteId] = useState<string | null>(null);
+
+  // Resumo de Troco Total e Maquininha para a Rota Selecionada
+  const routePaymentSummary = useMemo(() => {
+    let totalChangeToCarry = 0;
+    let needsCardMachine = false;
+    let cashOrdersCount = 0;
+    let cardOrdersCount = 0;
+
+    selectedOrderIds.forEach((id) => {
+      const order = orders.find((o) => o.id === id);
+      if (!order) return;
+
+      const info = getOrderPaymentInfo(order);
+      if (info.isCash) {
+        cashOrdersCount++;
+        totalChangeToCarry += info.changeNeeded;
+      }
+      if (info.isCardOnDelivery) {
+        cardOrdersCount++;
+        needsCardMachine = true;
+      }
+    });
+
+    return {
+      totalChangeToCarry,
+      needsCardMachine,
+      cashOrdersCount,
+      cardOrdersCount,
+    };
+  }, [selectedOrderIds, orders]);
 
   // Map & Geocoding State
   const mapRef = useRef<HTMLDivElement>(null);
@@ -196,6 +261,7 @@ export default function RoteirizacaoModal({
       if (savedConfig) {
         const parsed = JSON.parse(savedConfig);
         if (parsed.routeMode) setRouteMode(parsed.routeMode);
+        if (typeof parsed.onlyProntoOrders === "boolean") setOnlyProntoOrders(parsed.onlyProntoOrders);
         if (parsed.maxWaitMinutes) setMaxWaitMinutes(parsed.maxWaitMinutes);
         if (parsed.targetStatus) setTargetStatus(parsed.targetStatus);
         if (parsed.autoMoveStatus) setAutoMoveStatus(parsed.autoMoveStatus);
@@ -211,6 +277,7 @@ export default function RoteirizacaoModal({
     try {
       const cfg = {
         routeMode,
+        onlyProntoOrders,
         maxWaitMinutes,
         targetStatus,
         autoMoveStatus,
@@ -223,6 +290,16 @@ export default function RoteirizacaoModal({
     setShowConfigModal(false);
   };
 
+  const handleToggleOnlyPronto = (val: boolean) => {
+    setOnlyProntoOrders(val);
+    try {
+      const savedConfig = localStorage.getItem("firehub_roteirizacao_config");
+      const parsed = savedConfig ? JSON.parse(savedConfig) : {};
+      parsed.onlyProntoOrders = val;
+      localStorage.setItem("firehub_roteirizacao_config", JSON.stringify(parsed));
+    } catch (e) {}
+  };
+
   // Save routes to localStorage
   const saveRoutes = (routes: RouteItem[]) => {
     setCreatedRoutes(routes);
@@ -231,15 +308,13 @@ export default function RoteirizacaoModal({
     } catch (e) {}
   };
 
-  // Filter Delivery Orders (Strictly exclude Pickup/Retirada, Dispatched/Out for delivery, and respect onlyProntoOrders setting)
-  const deliveryOrders = useMemo(() => {
+  // Helper base de pedidos de entrega elegíveis (sem filtro da cozinha)
+  const baseDeliveryOrders = useMemo(() => {
     return orders.filter((o: any) => {
-      // 1. Exclude Cancelled / Delivered / Finished
       const statusUpper = String(o.status || "").toUpperCase().trim();
       if (statusUpper.includes("CANCEL")) return false;
       if (statusUpper === "ENTREGUE" || statusUpper === "ENCERRADO" || statusUpper === "FINISHED") return false;
 
-      // 2. Exclude Orders Already Out For Delivery OR Dispatched OR Assigned to Motoboy (SAIU PARA ENTREGA NUNCA ENTRA NA ROTEIRIZAÇÃO)
       const isAlreadyDispatched =
         statusUpper === "SAIU_ENTREGA" ||
         statusUpper === "SAIU_PARA_ENTREGA" ||
@@ -252,7 +327,6 @@ export default function RoteirizacaoModal({
 
       if (isAlreadyDispatched) return false;
 
-      // 3. Exclude Pickup / Retirada na Loja / Balcão / Mesa (RETIRADAS NUNCA ENTRAM NA ROTEIRIZAÇÃO)
       const deliveryTypeUpper = String(o.deliveryType || o.orderType || o.type || "").toUpperCase().trim();
       const isPickupType =
         deliveryTypeUpper === "TAKEOUT" ||
@@ -278,21 +352,54 @@ export default function RoteirizacaoModal({
         return false;
       }
 
-      // 4. Filter by Config: Only Pronto orders or All Pending (NOVO, ACEITO, PREPARANDO, PRONTO)
-      if (onlyProntoOrders) {
-        const isPronto = statusUpper === "PRONTO" || o.kdsStage === "READY" || o.kdsStage === "FINISHED";
-        if (!isPronto) return false;
-      }
-
-      // 5. Must be a valid delivery order address
       return addrRaw.trim().length > 2;
     });
-  }, [orders, onlyProntoOrders]);
+  }, [orders]);
 
-  // Filtered Orders based on search term (com os selecionados SEMPRE no topo em ordem #1, #2, #3)
+  // Contagem de todos os pedidos elegíveis de entrega
+  const allDeliveryOrdersCount = useMemo(() => {
+    return baseDeliveryOrders.length;
+  }, [baseDeliveryOrders]);
+
+  // Contagem de pedidos prontos na cozinha
+  const prontoOrdersCount = useMemo(() => {
+    return baseDeliveryOrders.filter((o: any) => {
+      const statusUpper = String(o.status || "").toUpperCase().trim();
+      return (
+        statusUpper === "PRONTO" ||
+        statusUpper === "PRONTO_ENTREGA" ||
+        statusUpper === "PREPARADO" ||
+        statusUpper === "READY" ||
+        statusUpper === "FINISHED" ||
+        o.kdsStage === "READY" ||
+        o.kdsStage === "FINISHED"
+      );
+    }).length;
+  }, [baseDeliveryOrders]);
+
+  // Filter Delivery Orders (Strictly exclude Pickup/Retirada, Dispatched/Out for delivery, and respect onlyProntoOrders setting)
+  const deliveryOrders = useMemo(() => {
+    return baseDeliveryOrders.filter((o: any) => {
+      if (onlyProntoOrders) {
+        const statusUpper = String(o.status || "").toUpperCase().trim();
+        const isPronto =
+          statusUpper === "PRONTO" ||
+          statusUpper === "PRONTO_ENTREGA" ||
+          statusUpper === "PREPARADO" ||
+          statusUpper === "READY" ||
+          statusUpper === "FINISHED" ||
+          o.kdsStage === "READY" ||
+          o.kdsStage === "FINISHED";
+        if (!isPronto) return false;
+      }
+      return true;
+    });
+  }, [baseDeliveryOrders, onlyProntoOrders]);
+
+  // Filtered Orders based on search term (ordenado do MENOR para o MAIOR número de pedido #137 -> #156)
   const filteredPendingOrders = useMemo(() => {
-    const list = deliveryOrders.filter(o => {
-      const isInRoute = createdRoutes.some(r => r.orders.some(ro => ro.id === o.id));
+    const list = deliveryOrders.filter((o) => {
+      const isInRoute = createdRoutes.some((r) => r.orders.some((ro) => ro.id === o.id));
       if (isInRoute) return false;
 
       if (!searchTerm.trim()) return true;
@@ -309,10 +416,21 @@ export default function RoteirizacaoModal({
       const isSelA = idxA !== -1;
       const isSelB = idxB !== -1;
 
+      // 1. Se ambos estiverem selecionados, mantém a ordem de seleção (#1, #2, #3...)
       if (isSelA && isSelB) return idxA - idxB;
+      // 2. Se apenas A estiver selecionado, fica no topo
       if (isSelA) return -1;
+      // 3. Se apenas B estiver selecionado, fica no topo
       if (isSelB) return 1;
-      return 0;
+
+      // 4. Ordenação Ascendente: do MENOR número de pedido para o MAIOR (#137, #139, #140 ... #156)
+      const numA = parseInt(getOrderDisplayNumber(a).replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(getOrderDisplayNumber(b).replace(/\D/g, ""), 10) || 0;
+      if (numA !== numB) {
+        return numA - numB;
+      }
+
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
   }, [deliveryOrders, createdRoutes, searchTerm, selectedOrderIds]);
 
@@ -458,35 +576,87 @@ export default function RoteirizacaoModal({
     return R * c;
   };
 
-  // Smart Auto-Clustering Algorithm (Modo Inteligente / Automatizado)
+  // Algoritmo TSP Nearest-Neighbor para Ordenação Inteligente do Trajeto a partir da Loja
+  const optimizeRouteSequence = (
+    orderIds: string[],
+    storeCoords: { lat: number; lng: number }
+  ): string[] => {
+    if (orderIds.length <= 1) return orderIds;
+
+    const validIds = orderIds.filter((id) => geocodedMap[id]);
+    const unmappedIds = orderIds.filter((id) => !geocodedMap[id]);
+
+    if (validIds.length <= 1) return orderIds;
+
+    const result: string[] = [];
+    let currentPos = storeCoords;
+    let remaining = [...validIds];
+
+    while (remaining.length > 0) {
+      let nearestIndex = 0;
+      let minDistance = Infinity;
+
+      for (let i = 0; i < remaining.length; i++) {
+        const coords = geocodedMap[remaining[i]];
+        if (!coords) continue;
+        const dist = calculateHaversineKm(currentPos.lat, currentPos.lng, coords.lat, coords.lng);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestIndex = i;
+        }
+      }
+
+      const nextId = remaining[nearestIndex];
+      result.push(nextId);
+      currentPos = geocodedMap[nextId];
+      remaining.splice(nearestIndex, 1);
+    }
+
+    return [...result, ...unmappedIds];
+  };
+
+  const handleOptimizeSelectedRoute = () => {
+    if (selectedOrderIds.length <= 1) return;
+    const optimized = optimizeRouteSequence(selectedOrderIds, defaultCenter);
+    setSelectedOrderIds(optimized);
+  };
+
+  // Smart Auto-Clustering Algorithm: Garante SEMPRE o pedido mais antigo na rota + busca vizinhos próximos a ele
   const handleAutoClusterRoutes = () => {
-    const unrouted = filteredPendingOrders.filter(o => geocodedMap[o.id]);
+    const unrouted = filteredPendingOrders.filter((o) => geocodedMap[o.id]);
     if (unrouted.length === 0) {
       alert("Nenhum pedido pendente mapeado no GPS para agrupar!");
       return;
     }
 
-    const firstOrder = unrouted[0];
-    const cluster: string[] = [firstOrder.id];
+    // 1. O pedido mais antigo pendente (ex: #7) É OBRIGATORIAMENTE a semente da rota e NÃO PODE ser deixado para trás
+    const oldestOrder = unrouted[0];
+    const oldestCoords = geocodedMap[oldestOrder.id];
+    const cluster: string[] = [oldestOrder.id];
 
+    // 2. Busca entre os outros pedidos pendentes aqueles que estão na mesma região do pedido mais antigo (até maxDistanceKm)
     for (let i = 1; i < unrouted.length; i++) {
       if (cluster.length >= maxOrdersPerRoute) break;
       const candidate = unrouted[i];
       const candidateCoords = geocodedMap[candidate.id];
+      if (!candidateCoords || !oldestCoords) continue;
 
-      const isClose = cluster.every(clusterOrderId => {
+      const isCloseToSeed = calculateHaversineKm(oldestCoords.lat, oldestCoords.lng, candidateCoords.lat, candidateCoords.lng) <= maxDistanceKm;
+
+      const isCloseToCluster = cluster.every((clusterOrderId) => {
         const cCoords = geocodedMap[clusterOrderId];
-        if (!cCoords || !candidateCoords) return false;
-        const dist = calculateHaversineKm(cCoords.lat, cCoords.lng, candidateCoords.lat, candidateCoords.lng);
-        return dist <= maxDistanceKm;
+        if (!cCoords) return false;
+        return calculateHaversineKm(cCoords.lat, cCoords.lng, candidateCoords.lat, candidateCoords.lng) <= maxDistanceKm;
       });
 
-      if (isClose) {
+      if (isCloseToSeed && isCloseToCluster) {
         cluster.push(candidate.id);
       }
     }
 
-    setSelectedOrderIds(cluster);
+    // 3. Otimiza a sequência do trajeto a partir da Loja (Loja -> Parada 1 -> Parada 2 -> Parada 3) no sentido mais eficiente
+    const optimizedCluster = optimizeRouteSequence(cluster, defaultCenter);
+    setSelectedOrderIds(optimizedCluster);
   };
 
   // Initialize and Update Leaflet Map
@@ -773,7 +943,7 @@ export default function RoteirizacaoModal({
       saveRoutes(updated);
 
       // Automatic WhatsApp Dispatch to Motoboy
-      let targetPhone = "";
+      let targetPhone = customMotoboyPhone.trim().replace(/\D/g, "");
       if (selectedMotoboyId) {
         const found = motoboys.find(m => m.id === selectedMotoboyId);
         if (found && found.phone) targetPhone = found.phone.replace(/\D/g, "");
@@ -784,36 +954,53 @@ export default function RoteirizacaoModal({
         const addr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
         return encodeURIComponent(`${addr}, ${storeCity}`);
       });
-      const googleMapsLink = `https://www.google.com/maps/dir/${mapWaypoints.join("/")}`;
+      const googleMapsLink = `https://www.google.com/maps/dir/${encodeURIComponent(storeAddress || storeCity)}/${mapWaypoints.join("/")}`;
       const motoboyAppLink = typeof window !== "undefined" ? `${window.location.origin}/loja/${storeSlug}/motoboy` : "";
 
-      let waMsg = `🚀 *NOVA ROTA DE ENTREGA DESPACHADA!*\n`;
+      let waMsg = `🚀 *NOVA ROTA DE ENTREGA DESPACHADA! (Rota #${routeNum})*\n`;
       waMsg += `🛵 *Entregador:* ${motoboyName}\n`;
-      waMsg += `📦 *Total de Pedidos:* ${routeOrders.length}\n\n`;
+      waMsg += `📦 *Total de Pedidos:* ${routeOrders.length}\n`;
+
+      if (routePaymentSummary.totalChangeToCarry > 0) {
+        waMsg += `💵 *Troco Total a Levar no Caixa:* R$ ${routePaymentSummary.totalChangeToCarry.toFixed(2)}\n`;
+      }
+      if (routePaymentSummary.needsCardMachine) {
+        waMsg += `💳 *Levar Maquininha de Cartão:* SIM (Cobrar na Entrega)\n`;
+      }
+      waMsg += `\n`;
 
       routeOrders.forEach((o, idx) => {
         const num = (o as any).dailyOrderNumber || o.orderNumber || o.displayId || o.id;
         const name = o.customerName || "Cliente";
         const addr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
         const phone = o.customerPhone ? `📞 *Tel:* ${o.customerPhone}\n` : "";
-        waMsg += `*${idx + 1}º Parada:* Pedido #${num}\n👤 *Cliente:* ${name}\n📍 *Endereço:* ${addr}\n${phone}\n`;
+
+        const pInfo = getOrderPaymentInfo(o);
+        let payNote = "";
+        if (pInfo.isCash && pInfo.changeNeeded > 0) {
+          payNote = ` 💵 (Dinheiro - levar R$ ${pInfo.changeNeeded.toFixed(2)} de troco)`;
+        } else if (pInfo.isCardOnDelivery) {
+          payNote = ` 💳 (Cobrar no Cartão na entrega)`;
+        }
+
+        waMsg += `*${idx + 1}º Parada:* Pedido #${num}${payNote}\n👤 *Cliente:* ${name}\n📍 *Endereço:* ${addr}\n${phone}\n`;
       });
 
-      waMsg += `🗺️ *Navegação Google Maps:* ${googleMapsLink}\n\n`;
+      waMsg += `🗺️ *Navegação Google Maps (GPS):*\n${googleMapsLink}\n\n`;
       if (motoboyAppLink) waMsg += `📲 *Seu App de Entregador:* ${motoboyAppLink}\n`;
 
-      if (targetPhone) {
+      if (sendWhatsAppToMotoboy && targetPhone) {
         try {
-          await fetch("/api/chatbot/test-send", {
+          await fetch("/api/motoboys/dispatch-whatsapp", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              phone: targetPhone,
-              message: waMsg,
-              storeId
+              motoboyPhone: targetPhone,
+              routeText: waMsg
             })
           });
         } catch (e) {
+          console.warn("Falha no disparo via API, abrindo fallback do WhatsApp Web:", e);
           window.open(`https://wa.me/55${targetPhone}?text=${encodeURIComponent(waMsg)}`, "_blank");
         }
       }
@@ -965,7 +1152,44 @@ export default function RoteirizacaoModal({
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 
                 {/* Search Bar & Smart Auto-Cluster */}
-                <div style={{ padding: "0.75rem 1rem", borderBottom: "1px solid #F1F5F9", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <div style={{ padding: "0.75rem 1rem", borderBottom: "1px solid #F1F5F9", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  
+                  {/* Seletor de Filtro: Mostrar Todos vs Mostrar Prontos */}
+                  <div style={{ display: "flex", gap: "4px", background: "#F1F5F9", padding: "4px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleOnlyPronto(false)}
+                      style={{
+                        flex: 1, padding: "6px 10px", borderRadius: "7px", border: "none",
+                        background: !onlyProntoOrders ? "#FFFFFF" : "transparent",
+                        color: !onlyProntoOrders ? "#0F172A" : "#64748B",
+                        fontWeight: !onlyProntoOrders ? 900 : 700,
+                        fontSize: "0.78rem", cursor: "pointer",
+                        boxShadow: !onlyProntoOrders ? "0 2px 5px rgba(0,0,0,0.08)" : "none",
+                        transition: "all 0.15s ease",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px"
+                      }}
+                    >
+                      📋 Mostrar Todos ({allDeliveryOrdersCount})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleOnlyPronto(true)}
+                      style={{
+                        flex: 1, padding: "6px 10px", borderRadius: "7px", border: "none",
+                        background: onlyProntoOrders ? "linear-gradient(135deg, #16A34A, #15803D)" : "transparent",
+                        color: onlyProntoOrders ? "#FFFFFF" : "#64748B",
+                        fontWeight: onlyProntoOrders ? 900 : 700,
+                        fontSize: "0.78rem", cursor: "pointer",
+                        boxShadow: onlyProntoOrders ? "0 2px 6px rgba(22,163,74,0.3)" : "none",
+                        transition: "all 0.15s ease",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px"
+                      }}
+                    >
+                      🍳 Mostrar Prontos ({prontoOrdersCount})
+                    </button>
+                  </div>
                   <div style={{
                     display: "flex", alignItems: "center", background: "#F8FAFC",
                     border: "1px solid #CBD5E1", borderRadius: "8px", padding: "6px 10px"
@@ -1204,6 +1428,22 @@ export default function RoteirizacaoModal({
                   Cancelar
                 </button>
 
+                {selectedOrderIds.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleOptimizeSelectedRoute}
+                    style={{
+                      background: "linear-gradient(135deg, #059669, #10B981)", color: "#FFFFFF", border: "none",
+                      padding: "8px 14px", borderRadius: "20px", fontWeight: 800,
+                      fontSize: "0.82rem", cursor: "pointer", display: "flex",
+                      alignItems: "center", gap: 6, boxShadow: "0 4px 12px rgba(16,185,129,0.3)"
+                    }}
+                    title="Reordenar sequência pela menor distância a partir da loja sem idas e voltas"
+                  >
+                    ⚡ Otimizar Trajeto
+                  </button>
+                )}
+
                 <button
                   onClick={handleOpenDispatch}
                   style={{
@@ -1242,21 +1482,48 @@ export default function RoteirizacaoModal({
             </p>
 
             {/* Route Sequence Preview */}
-            <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "0.75rem", marginBottom: "1.25rem", border: "1px solid #E2E8F0" }}>
+            <div style={{ background: "#F8FAFC", borderRadius: "10px", padding: "0.75rem", marginBottom: "1rem", border: "1px solid #E2E8F0" }}>
               <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569" }}>SEQUÊNCIA DE PARADAS:</span>
               <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                 {selectedOrderIds.map((id, idx) => {
                   const o = deliveryOrders.find(item => item.id === id);
                   if (!o) return null;
+                  const pInfo = getOrderPaymentInfo(o);
                   return (
-                    <div key={id} style={{ fontSize: "0.8rem", color: "#1E293B", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ background: "#2563EB", color: "#fff", width: "18px", height: "18px", borderRadius: "50%", fontSize: "0.7rem", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                        {idx + 1}
+                    <div key={id} style={{ fontSize: "0.8rem", color: "#1E293B", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ background: "#2563EB", color: "#fff", width: "18px", height: "18px", borderRadius: "50%", fontSize: "0.7rem", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                          {idx + 1}
+                        </span>
+                        <b>#{o.orderNumber || o.displayId || o.id.slice(-4)}</b> — {o.customerName} ({o.neighborhood || "Centro"})
+                      </div>
+                      <span style={{ fontSize: "0.72rem", fontWeight: 700, color: pInfo.isCash ? "#DC2626" : pInfo.isCardOnDelivery ? "#2563EB" : "#16A34A" }}>
+                        {pInfo.isCash ? `💵 Troco: R$ ${pInfo.changeNeeded.toFixed(2)}` : pInfo.isCardOnDelivery ? "💳 Cartão" : "✅ Pago Online"}
                       </span>
-                      <b>#{o.orderNumber || o.displayId || o.id.slice(-4)}</b> — {o.customerName} ({o.neighborhood || "Centro"})
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Resumo de Logística de Pagamento (Troco & Maquininha) */}
+            <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "10px", padding: "0.85rem", marginBottom: "1.25rem" }}>
+              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#166534", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "6px" }}>
+                💼 RESUMO DE LOGÍSTICA DE PAGAMENTO:
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", color: "#15803D" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>💵 Troco Total a Levar no Caixa:</span>
+                  <b style={{ fontSize: "0.95rem", color: routePaymentSummary.totalChangeToCarry > 0 ? "#DC2626" : "#166534" }}>
+                    {routePaymentSummary.totalChangeToCarry > 0 ? `R$ ${routePaymentSummary.totalChangeToCarry.toFixed(2)}` : "Sem troco (R$ 0,00)"}
+                  </b>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>💳 Levar Maquininha de Cartão:</span>
+                  <b style={{ color: routePaymentSummary.needsCardMachine ? "#2563EB" : "#475569" }}>
+                    {routePaymentSummary.needsCardMachine ? "✅ SIM (Cobrar Cartão na Entrega)" : "❌ NÃO (Pago Online / Dinheiro)"}
+                  </b>
+                </div>
               </div>
             </div>
 
@@ -1277,24 +1544,47 @@ export default function RoteirizacaoModal({
                 >
                   <option value="">-- Escolha um Motoboy Cadastrado --</option>
                   {motoboys.map(m => (
-                    <option key={m.id} value={m.id}>🛵 {m.name}</option>
+                    <option key={m.id} value={m.id}>🛵 {m.name} {m.phone ? `(${m.phone})` : ""}</option>
                   ))}
                 </select>
               ) : null}
 
-              <div style={{ marginTop: "0.75rem" }}>
-                <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Ou digite o nome do motoboy:</span>
+              {!selectedMotoboyId && (
+                <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Ou digite o nome e telefone do motoboy:</span>
+                  <input
+                    type="text"
+                    placeholder="Nome ex: MATHEUS, MARCOS CEBOLA, FRED..."
+                    value={customMotoboyName}
+                    onChange={(e) => setCustomMotoboyName(e.target.value)}
+                    style={{
+                      width: "100%", padding: "10px", borderRadius: "8px", border: "1.5px solid #CBD5E1",
+                      fontSize: "0.9rem", outline: "none", fontFamily: "inherit"
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="WhatsApp do Motoboy (ex: 22999998888)"
+                    value={customMotoboyPhone}
+                    onChange={(e) => setCustomMotoboyPhone(e.target.value)}
+                    style={{
+                      width: "100%", padding: "10px", borderRadius: "8px", border: "1.5px solid #CBD5E1",
+                      fontSize: "0.9rem", outline: "none", fontFamily: "inherit"
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Opção de Envio por WhatsApp */}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", fontWeight: 700, color: "#1E293B", cursor: "pointer", marginTop: "0.85rem" }}>
                 <input
-                  type="text"
-                  placeholder="Ex: MATHEUS, MARCOS CEBOLA, FRED..."
-                  value={customMotoboyName}
-                  onChange={(e) => setCustomMotoboyName(e.target.value)}
-                  style={{
-                    width: "100%", padding: "10px", borderRadius: "8px", border: "1.5px solid #CBD5E1",
-                    fontSize: "0.9rem", marginTop: 4, outline: "none", fontFamily: "inherit"
-                  }}
+                  type="checkbox"
+                  checked={sendWhatsAppToMotoboy}
+                  onChange={(e) => setSendWhatsAppToMotoboy(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: "#2563EB" }}
                 />
-              </div>
+                📱 Disparar rota automaticamente no WhatsApp do Motoboy
+              </label>
             </div>
 
             {/* Action Buttons */}
@@ -1368,17 +1658,20 @@ export default function RoteirizacaoModal({
               {routeMode !== "Manual" && (
                 <>
                   <div>
-                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 4 }}>
-                      Tempo limite para que o pedido seja inserido em uma rota (em minutos - máximo 15):
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#334155", marginBottom: 4 }}>
+                      ⏱️ Janela Máxima de Espera para Agrupar Pedidos (em minutos - máx 15):
                     </label>
                     <input
                       type="number"
                       max={15}
                       min={1}
                       value={maxWaitMinutes}
-                      onChange={(e) => setMaxWaitMinutes(Number(e.target.value))}
+                      onChange={(e) => setMaxWaitMinutes(Math.min(15, Math.max(1, Number(e.target.value))))}
                       style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }}
                     />
+                    <p style={{ margin: "4px 0 0 0", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.3 }}>
+                      💡 <b>O que significa:</b> É o tempo máximo que um pedido antigo pode esperar na loja por outros pedidos da mesma região antes de sair na entrega. Evita que o pedido fique esperando tempo demais e chegue frio.
+                    </p>
                   </div>
 
                   <div>

@@ -139,8 +139,10 @@ export async function processChatbotAI(
   // ── FIX CRÍTICO DE TIMEZONE (BRASÍLIA / UTC-3) ──
   // No Vercel, new Date() roda em UTC (ex: 22h50 no BR já é 01h50 de sexta em UTC).
   // Precisamos forçar a data atual para o fuso 'America/Sao_Paulo'.
-  const getBrazilDayCode = (): { code: string; name: string } => {
-    const brDayStr = new Date().toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Sao_Paulo" });
+  const getBrazilDayCode = (offsetDays = 0): { code: string; name: string } => {
+    const now = new Date();
+    if (offsetDays !== 0) now.setDate(now.getDate() + offsetDays);
+    const brDayStr = now.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Sao_Paulo" });
     const EN_TO_BR: Record<string, string> = {
       Sun: "DOM", Mon: "SEG", Tue: "TER", Wed: "QUA", Thu: "QUI", Fri: "SEX", Sat: "SAB"
     };
@@ -148,7 +150,8 @@ export async function processChatbotAI(
     return { code, name: DAY_NAMES[code] || "Hoje" };
   };
 
-  const { code: currentDayCode, name: currentDayName } = getBrazilDayCode();
+  const { code: currentDayCode, name: currentDayName } = getBrazilDayCode(0);
+  const { code: tomorrowDayCode, name: tomorrowDayName } = getBrazilDayCode(1);
 
   const parseAvailableDays = (val: any): string[] => {
     if (!val) return [];
@@ -197,25 +200,34 @@ export async function processChatbotAI(
     }
   }
 
-  // Separar catálogo entre Promoções R$ 1,90, Combos, Produtos Avulsos Disponíveis Hoje e Indisponíveis
+  // Separar catálogo entre Promoções R$ 1,90 HOJE, AMANHÃ, CRONOGRAMA SEMANAL, Combos e Itens Avulsos
   const todayPromotions: string[] = [];
-  const itemsAt190: string[] = [];
+  const itemsAt190Today: string[] = [];
+  const tomorrowPromotions: string[] = [];
+  const itemsAt190Tomorrow: string[] = [];
   const availableCombos: string[] = [];
   const availableSingleProducts: string[] = [];
   const unavailableTodayProducts: string[] = [];
 
+  const dayScheduleMap: Record<string, string[]> = {
+    DOM: [], SEG: [], TER: [], QUA: [], QUI: [], SEX: [], SAB: []
+  };
+
   products.forEach((p: any) => {
     const days = parseAvailableDays(p.availableDays);
     let isToday = true;
+    let isTomorrow = true;
     let dayNotice = "";
 
     if (days.length > 0) {
-      isToday = days.map((d) => d.toUpperCase()).includes(currentDayCode);
+      const upperDays = days.map((d) => d.toUpperCase());
+      isToday = upperDays.includes(currentDayCode);
+      isTomorrow = upperDays.includes(tomorrowDayCode);
       const dayNamesList = days.map((d) => DAY_NAMES[d.toUpperCase()] || d).join(", ");
       if (isToday) {
         dayNotice = ` [DISPONÍVEL HOJE (${currentDayName})]`;
       } else {
-        dayNotice = ` [⚠️ INDISPONÍVEL HOJE (${currentDayName})! Promoção/Item válido apenas em: ${dayNamesList}]`;
+        dayNotice = ` [⚠️ INDISPONÍVEL HOJE (${currentDayName})! Item válido apenas em: ${dayNamesList}]`;
       }
     }
 
@@ -233,10 +245,20 @@ export async function processChatbotAI(
     const isPrice190 = Math.abs(p.price - 1.90) < 0.10 || p.price === 1.9 || /1[\.,]90/i.test(p.name) || /1[\.,]90/i.test(p.description || "") || /1[\.,]90/i.test(p.category || "");
     const isPromoItem = isPrice190 || /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(p.name) || /promo|promoção|promocao/i.test(p.category || "");
 
+    // Preenche o cronograma semanal de promoções da loja
+    if (isPromoItem || isPrice190) {
+      const activeDays = days.length === 0 ? ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"] : days.map(d => d.toUpperCase());
+      activeDays.forEach(d => {
+        if (dayScheduleMap[d]) {
+          dayScheduleMap[d].push(`${p.name} (R$ ${p.price.toFixed(2)})`);
+        }
+      });
+    }
+
     if (isToday) {
       const line = `- ${p.name} (${p.category}): PREÇO = R$ ${p.price.toFixed(2)}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
       if (isPrice190) {
-        itemsAt190.push(line);
+        itemsAt190Today.push(line);
       }
       if (isPromoItem) {
         todayPromotions.push(line);
@@ -250,14 +272,31 @@ export async function processChatbotAI(
       const line = `- ${p.name} (${p.category}): [PROIBIDO VENDER PELO VALOR PROMOCIONAL HOJE]${dayNotice}`;
       unavailableTodayProducts.push(line);
     }
+
+    if (isTomorrow && (isPromoItem || isPrice190)) {
+      const line = `- ${p.name} (${p.category}): R$ ${p.price.toFixed(2)}${p.description ? ` — ${p.description}` : ""}`;
+      if (isPrice190) itemsAt190Tomorrow.push(line);
+      tomorrowPromotions.push(line);
+    }
   });
 
-  const catalogSummary = `=== 🏷️ PROMOÇÃO DE R$ 1,90 / ANÚNCIOS META/FACEBOOK DE HOJE (${currentDayName}) ===
-${itemsAt190.length > 0 ? itemsAt190.join("\n") : (todayPromotions.length > 0 ? todayPromotions.join("\n") : "Consulte a Esfirra do Dia na seção abaixo para informar ao cliente!")}
-(SE O CLIENTE PERGUNTAR "É 1,90 QUALQUER SABOR?", PERGUNTAR DO ANÚNCIO DE R$ 1,90 OU QUAL A PROMOÇÃO DE 1,90, INFORME O ITEM/PROMOÇÃO ACIMA! NUNCA DIGA QUE NÃO TEMOS SABOR POR 1,90!)
+  const weeklyScheduleSummary = Object.entries(dayScheduleMap)
+    .filter(([_, items]) => items.length > 0)
+    .map(([dCode, items]) => `- ${DAY_NAMES[dCode] || dCode}: ${items.join(", ")}`)
+    .join("\n");
+
+  const catalogSummary = `=== 🏷️ PROMOÇÃO DE R$ 1,90 / ANÚNCIOS META DE HOJE (${currentDayName}) ===
+${itemsAt190Today.length > 0 ? itemsAt190Today.join("\n") : (todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Esfirras Promocionais por R$ 1,90 cada! (Sabores promocionais: Carne, Calabresa, Queijo Temperado e Esfirra do Dia. Válido hoje!)")}
+
+=== 📅 PROMOÇÃO E ITENS DE R$ 1,90 AMANHÃ (${tomorrowDayName}) ===
+${itemsAt190Tomorrow.length > 0 ? itemsAt190Tomorrow.join("\n") : (tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Amanhã também haverá promoção de R$ 1,90 nos sabores da casa!")}
+
+=== 🗓️ CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA ===
+${weeklyScheduleSummary || "- Promoção de R$ 1,90 e Esfirra do Dia ativa todos os dias na loja!"}
+(SE O CLIENTE PERGUNTAR QUAIS DIAS TEM PROMOÇÃO OU SE AMANHÃ VAI TER 1,90, CONSULTE ESTA TABELA REAL DA LOJA E RESPONDA COM TOTAL CERTEZA!)
 
 === 🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE (${currentDayName}) 🌟 ===
-${todayPromotions.length > 0 ? todayPromotions.join("\n") : "Nenhuma esfirra de promoção avulsa cadastrada para hoje."}
+${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Esfirra do Dia Promocional por R$ 1,90 cada!"}
 (SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE OU QUAL A ESFIRRA DA PROMOÇÃO, RESPONDA EXATAMENTE A OPÇÃO ACIMA! É PROIBIDO MENCIONAR QUALQUER OUTRA ESFIRRA COMO SE FOSSE A PROMOÇÃO DE HOJE!)
 
 === COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
@@ -467,12 +506,15 @@ ${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS
     - O pedido rascunho anterior do cliente foi cancelado por ter ficado mais de 20 minutos sem resposta.
     - Na PRIMEIRA mensagem de retorno do cliente agora, diga exatamente neste tom carinhoso: "Olha, como você ficou muito tempo ausente, eu acabei parando o pedido por aqui! Mas que bom que voltou! 😊 Como posso te ajudar agora?"
     - Reinicie o atendimento com toda a simpatia!` : ""}
-32. REGRA ABSOLUTA PARA PROMOÇÃO DE R$ 1,90 / ANÚNCIOS DO FACEBOOK E INSTAGRAM ("É 1.90 qualquer sabor?", "E essa propaganda aqui?"):
-    - Se o cliente perguntar "é 1.90 qualquer sabor?", "qual a de 1,90 hoje?", citar "1,90", "anúncio de 1.90", "propaganda do Facebook/Instagram" ou mandar citação/print do anúncio:
-    - É ESTRITAMENTE PROIBIDO responder "Poxa, não temos qualquer sabor por 1,90 reais hoje!" ou negar a promoção!
-    - VOCÊ DEVE OBRIGATORIAMENTE PROCURAR NO CARDÁPIO ABAIXO O ITEM QUE CUSTA R$ 1,90 OU A ESFIRRA/PROMOÇÃO DO DIA DE HOJE!
-    - Informe com clareza e entusiasmo qual é o sabor que está na promoção de R$ 1,90 hoje!
-    - Exemplo de resposta: "Oi! A nossa promoção de R$ 1,90 de hoje é a Esfirra de [Nome do Sabor em Promoção / Esfirra do Dia de Hoje]! 😋 Quantas você gostaria de pedir?"
+32. REGRA ABSOLUTA PARA PROMOÇÕES DE R$ 1,90, ANÚNCIOS E CONSULTAS SOBRE AMANHÃ OU DIAS DA SEMANA ("Amanhã vai ter 1,90?", "Quais dias tem 1,90?", "Ué não era todo dia?"):
+    - É SEVERA E STRICTAMENTE PROIBIDO responder "pra amanhã eu ainda não tenho essa informação certinha", "não sei a de amanhã", "no momento não temos nenhuma por 1,90" ou qualquer frase sem certeza!
+    - SE O CLIENTE PERGUNTAR SE AMANHÃ VAI TER SABOR POR R$ 1,90 OU QUAL O SABOR DE AMANHÃ:
+      a) Consulte a seção "PROMOÇÃO E ITENS DE R$ 1,90 AMANHÃ (${tomorrowDayName})" no cardápio abaixo.
+      b) Se houver item/promoção programada para amanhã (ou se a loja tem promoção todo dia), RESPONDA COM TOTAL CERTEZA E SIMPATIA:
+         "Sim! Amanhã (${tomorrowDayName}) teremos promoção de R$ 1,90 sim! 😊 O sabor será [Nome do Sabor de Amanhã / Sabores Promocionais]! Lembramos que para entrega o pedido mínimo é de 26 reais."
+    - SE O CLIENTE PERGUNTAR QUAIS DIAS DA SEMANA TEM PROMOÇÃO (ex: "é todo dia?", "quais dias tem?"):
+      a) Consulte a seção "CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA" no cardápio abaixo.
+      b) Informe com exatidão os dias reais da semana que aquela loja específica oferece a promoção de R$ 1,90 (ex: "Aqui na nossa loja a promoção de R$ 1,90 rola de Segunda, Quarta e Sexta!" ou "Aqui na nossa loja temos promoção de R$ 1,90 TODOS OS DIAS sim! 😊"). NUNCA diga que não tem certeza sobre os dias da loja!
 
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
@@ -596,19 +638,27 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       }
 
       if (generatedText) {
-        // REGRA DE SEGURANÇA MÁXIMA: Sanitizar e remover vazamentos de 'TRAIN OF THOUGHT:', 'RESPONSE:', etc.
-        if (/TRAIN OF THOUGHT:|THOUGHTS:|RACIOCÍNIO:|THINKING:|PENSAMENTO:/i.test(generatedText)) {
+        // REGRA DE SEGURANÇA MÁXIMA: Sanitizar e remover vazamentos de 'TRAIN OF THOUGHT:', 'RESPONSE:', '1. Acknowledge...', etc.
+        if (/(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|STEPS|PLAN):/i.test(generatedText)) {
           if (/RESPONSE:/i.test(generatedText)) {
             generatedText = generatedText.split(/RESPONSE:/i).pop() || generatedText;
           } else if (/RESPOSTA:/i.test(generatedText)) {
             generatedText = generatedText.split(/RESPOSTA:/i).pop() || generatedText;
           } else {
-            generatedText = generatedText.replace(/(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO):[\s\S]*?(?=\n\n|\n[A-Z]|$)/gi, "").trim();
+            generatedText = generatedText.replace(/(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|STEPS|PLAN):[\s\S]*?(?=\n\n|\n[A-Z]|$)/gi, "").trim();
           }
         }
 
+        // Se a resposta vazar lista numerada de instruções internas (ex: "1. Acknowledge and be polite: ... 2. Reinforce... 3. Avoid... Imagina, eu que agradeço!")
+        if (/^\s*1\.\s+[A-Z]/i.test(generatedText) || /\b1\.\s+Acknowledge/i.test(generatedText)) {
+          // Remove trechos no padrão "1. Step: text. 2. Step: text. 3. Step: text."
+          generatedText = generatedText.replace(/(?:\d+\.\s+[^:\n]+:\s*[^.\n]+\.?\s*)+/gi, "").trim();
+          // Remove qualquer prefixo numerado até a frase natural humana
+          generatedText = generatedText.replace(/^\s*(?:\d+\.\s+[\s\S]*?)+?(?=(?:Imagina|Oi|Olá|Tudo|Certo|Perfeito|É|Desculpe|[A-ZÀ-Ú][a-zà-ú]+!|\n\n|$))/m, "").trim();
+        }
+
         let cleanText = generatedText
-          .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA):\s*/gi, "")
+          .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA|PLAN|STEPS):\s*/gi, "")
           .replace(/(\*\*|\*|_|#|`)/g, "")
           .replace(/R\$\s?(\d+)[.,](\d{2})/gi, (_, g1, g2) => (g2 === "00" ? `${g1} reais` : `${g1},${g2} reais`))
           .trim();

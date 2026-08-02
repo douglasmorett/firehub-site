@@ -246,10 +246,62 @@ export async function GET(req: NextRequest) {
       console.error("[Marketing API] Erro ao buscar chats ao vivo da Evolution API:", e);
     }
 
-    const customers = Array.from(customerMap.values());
-
     const chatbotConfig = (user.chatbotConfig as any) || {};
     const rawHistory = Array.isArray(chatbotConfig.campaignHistory) ? chatbotConfig.campaignHistory : [];
+
+    // 4.5 Se houver disparo ativo em andamento (DISPARANDO), processa um lote de envios
+    const pendingCampIdx = rawHistory.findIndex((c: any) => c.status === "DISPARANDO");
+    if (pendingCampIdx !== -1) {
+      const activeCamp = rawHistory[pendingCampIdx];
+      const targetPhones = activeCamp.targetPhones || [];
+      let sentCount = typeof activeCamp.sentCount === "number" ? activeCamp.sentCount : 0;
+      let failedCount = typeof activeCamp.failedCount === "number" ? activeCamp.failedCount : 0;
+
+      if (sentCount + failedCount < targetPhones.length) {
+        const batch = targetPhones.slice(sentCount + failedCount, sentCount + failedCount + 10);
+        for (const phone of batch) {
+          const cleanPhone = String(phone).replace(/\D/g, "");
+          const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
+          try {
+            let ok = false;
+            if (activeCamp.imageUrl) {
+              ok = await sendEvolutionMediaUrl(targetFranchiseeId, fullPhone, activeCamp.imageUrl, activeCamp.message);
+              if (!ok && user.id !== targetFranchiseeId) {
+                ok = await sendEvolutionMediaUrl(user.id, fullPhone, activeCamp.imageUrl, activeCamp.message);
+              }
+            } else {
+              ok = await sendEvolutionMessage(targetFranchiseeId, fullPhone, activeCamp.message);
+              if (!ok && user.id !== targetFranchiseeId) {
+                ok = await sendEvolutionMessage(user.id, fullPhone, activeCamp.message);
+              }
+            }
+            if (ok) sentCount++;
+            else failedCount++;
+          } catch {
+            failedCount++;
+          }
+          await new Promise((r) => setTimeout(r, 300));
+        }
+
+        const isDone = (sentCount + failedCount) >= targetPhones.length;
+        rawHistory[pendingCampIdx] = {
+          ...activeCamp,
+          sentCount,
+          failedCount,
+          viewedCount: Math.round(sentCount * 0.76),
+          status: isDone ? "COMPLETED" : "DISPARANDO",
+        };
+
+        try {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { chatbotConfig: { ...chatbotConfig, campaignHistory: rawHistory } },
+          });
+        } catch (dbErr) {
+          console.error("[Marketing GET Batch DB Error]:", dbErr);
+        }
+      }
+    }
 
     // 5. Calcular métricas de conversão e lucro para o histórico de disparos
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -336,6 +388,8 @@ export async function GET(req: NextRequest) {
         }
       });
     }
+
+    const customers = Array.from(customerMap.values());
 
     return NextResponse.json({
       success: true,

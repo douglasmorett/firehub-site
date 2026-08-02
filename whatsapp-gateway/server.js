@@ -451,6 +451,55 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
   }
 });
 
+// 4.1 Enviar Mídia (Imagem com legenda)
+app.post("/message/sendMedia/:instanceName", async (req, res) => {
+  const { instanceName } = req.params;
+  const { number, mediaMessage, mediaUrl: directMediaUrl, caption: directCaption } = req.body || {};
+
+  let session = sessions.get(instanceName);
+  if (!session || session.state !== "open") {
+    for (const s of sessions.values()) {
+      if (s.state === "open" && s.sock) {
+        session = s;
+        break;
+      }
+    }
+  }
+
+  if (!session || session.state !== "open" || !session.sock) {
+    return res.status(400).json({ error: "Instância não conectada no celular" });
+  }
+
+  const cleanNum = String(number || "").trim();
+  const jid = (cleanNum.includes("@s.whatsapp.net") || cleanNum.includes("@lid"))
+    ? cleanNum
+    : `${cleanNum.replace(/\D/g, "")}@s.whatsapp.net`;
+
+  const mediaUrl = mediaMessage?.media || mediaMessage?.url || directMediaUrl;
+  const caption = mediaMessage?.caption || directCaption || "";
+
+  if (!mediaUrl) {
+    return res.status(400).json({ error: "URL da mídia é obrigatória" });
+  }
+
+  try {
+    await session.sock.sendMessage(jid, {
+      image: { url: mediaUrl },
+      caption: caption || undefined,
+    });
+    console.log(`[WhatsApp Gateway] 📸 Mídia enviada com sucesso para ${jid}: "${mediaUrl}"`);
+    return res.json({ status: "SENT", to: jid });
+  } catch (err) {
+    console.error(`[WhatsApp Gateway] ❌ Erro ao enviar mídia para ${jid}:`, err);
+    try {
+      if (caption) {
+        await session.sock.sendMessage(jid, { text: caption });
+      }
+    } catch {}
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // 4.5 Obter Base64 de Mídia / Áudio via API REST
 app.post("/chat/getBase64FromMediaMessage/:instanceName", async (req, res) => {
   const { instanceName } = req.params;

@@ -346,7 +346,10 @@ export default function ChatbotHubClient() {
     }
   };
 
-  const loadMarketingData = async () => {
+  const [refreshingMetrics, setRefreshingMetrics] = useState(false);
+
+  const loadMarketingData = async (isManualClick = false) => {
+    if (isManualClick) setRefreshingMetrics(true);
     try {
       const res = await fetch("/api/store/marketing").then((r) => r.json());
       if (res.success) {
@@ -357,14 +360,33 @@ export default function ChatbotHubClient() {
         if (Array.isArray(res.campaignHistory)) {
           setCampaignHistory(res.campaignHistory);
         }
+        if (isManualClick) {
+          showToast("📊 Métricas e disparos atualizados com sucesso!", "#10B981");
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      if (isManualClick) showToast("⚠️ Erro ao atualizar métricas.", "#EF4444");
+    } finally {
+      if (isManualClick) setRefreshingMetrics(false);
+    }
   };
 
   useEffect(() => {
     loadData();
     loadMarketingData();
   }, [marketingStartDate, marketingEndDate]);
+
+  // Polling automático dos disparos em andamento a cada 4 segundos
+  useEffect(() => {
+    const hasSending = Array.isArray(campaignHistory) && campaignHistory.some((c: any) => c.status === "DISPARANDO");
+    if (!hasSending) return;
+
+    const interval = setInterval(() => {
+      loadMarketingData(false);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [campaignHistory]);
 
   // Polling automático de status de conexão a cada 3s enquanto aguarda leitura do QR Code
   useEffect(() => {
@@ -1812,13 +1834,19 @@ export default function ChatbotHubClient() {
                     </div>
 
                     <button
-                      onClick={loadMarketingData}
+                      onClick={() => loadMarketingData(true)}
+                      disabled={refreshingMetrics}
                       style={{
-                        padding: "6px 12px", borderRadius: "8px", border: "1px solid #CBD5E1",
-                        background: "#F8FAFC", cursor: "pointer", fontSize: "0.75rem", fontWeight: 700, color: "#475569"
+                        padding: "6px 14px", borderRadius: "8px", border: "1px solid #CBD5E1",
+                        background: refreshingMetrics ? "#E2E8F0" : "#F8FAFC",
+                        cursor: refreshingMetrics ? "not-allowed" : "pointer",
+                        fontSize: "0.75rem", fontWeight: 700, color: "#475569",
+                        display: "inline-flex", alignItems: "center", gap: "6px",
+                        opacity: refreshingMetrics ? 0.7 : 1, transition: "all 0.2s"
                       }}
                     >
-                      🔄 Atualizar Métricas
+                      <RefreshCw size={14} className={refreshingMetrics ? "animate-spin" : ""} />
+                      {refreshingMetrics ? "Atualizando..." : "🔄 Atualizar Métricas"}
                     </button>
                   </div>
 
