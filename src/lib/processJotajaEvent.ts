@@ -201,8 +201,22 @@ export async function processJotajaEvent(
           : itemName;
         const qty = i.quantity ?? i.qty ?? 1;
         const rawUnit = priceVal(i.unitPrice) || priceVal(i.price) || 0;
-        const rawTotal = priceVal(i.totalPrice) || 0;
-        const itemPrice = rawUnit > 0 ? rawUnit : (rawTotal > 0 && qty > 0 ? rawTotal / qty : 0);
+        const rawTotal = priceVal(i.totalPrice) || priceVal(i.total) || 0;
+        const optionsSum = options.reduce(
+          (sum: number, o: any) => sum + (priceVal(o.price) || priceVal(o.addition) || priceVal(o.unitPrice) || 0) * (o.quantity || 1),
+          0
+        );
+
+        // Se o payload informar totalPrice da linha (incluindo subitens e acréscimos), ele tem prioridade se for maior que o preço base.
+        // Caso contrário, soma o unitPrice base do item aos acréscimos das opções/sabores adicionais.
+        let itemPrice = 0;
+        if (rawTotal > 0 && qty > 0 && (rawTotal / qty) > rawUnit) {
+          itemPrice = rawTotal / qty;
+        } else if (rawUnit > 0 || optionsSum > 0) {
+          itemPrice = rawUnit + optionsSum;
+        } else if (rawTotal > 0 && qty > 0) {
+          itemPrice = rawTotal / qty;
+        }
 
         const comboSelsList = options.length > 0 ? options.map((o: any) => ({
           id: o.id,
