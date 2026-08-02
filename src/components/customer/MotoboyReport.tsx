@@ -12,17 +12,27 @@ const PERIODS = [
   { label: "Personalizado", value: "custom" },
 ];
 
+function getBrasilDateString(d: Date = new Date()): string {
+  const spDate = new Date(d.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const yyyy = spDate.getFullYear();
+  const mm = String(spDate.getMonth() + 1).padStart(2, "0");
+  const dd = String(spDate.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function getRange(period: string) {
   const now = new Date();
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
-  if (period === "today") return { from: fmt(now), to: fmt(now) };
+  if (period === "today") return { from: getBrasilDateString(now), to: getBrasilDateString(now) };
   if (period === "week") {
-    const start = new Date(now); start.setDate(now.getDate() - now.getDay());
-    return { from: fmt(start), to: fmt(now) };
+    const spNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const start = new Date(spNow);
+    start.setDate(spNow.getDate() - spNow.getDay());
+    return { from: getBrasilDateString(start), to: getBrasilDateString(now) };
   }
   if (period === "month") {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { from: fmt(start), to: fmt(now) };
+    const spNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const start = new Date(spNow.getFullYear(), spNow.getMonth(), 1);
+    return { from: getBrasilDateString(start), to: getBrasilDateString(now) };
   }
   return null;
 }

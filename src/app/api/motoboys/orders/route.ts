@@ -11,8 +11,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "motoboyId e storeId são obrigatórios" }, { status: 400 });
     }
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Início do dia de hoje em Brasília (00:00:00 BRT = 03:00:00 UTC)
+    const nowSp = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const yyyy = nowSp.getFullYear();
+    const mm = String(nowSp.getMonth() + 1).padStart(2, "0");
+    const dd = String(nowSp.getDate()).padStart(2, "0");
+    const todayStart = new Date(`${yyyy}-${mm}-${dd}T03:00:00.000Z`);
 
     // Busca apenas os pedidos desta loja atribuídos a ESTE MOTOBOY E ESPECÍFICOS DE HOJE para concluídos
     const orders = await prisma.customerOrder.findMany({

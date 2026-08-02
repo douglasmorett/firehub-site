@@ -23,11 +23,28 @@ export async function GET(req: Request) {
   const to = url.searchParams.get("to");
   const calcMode = url.searchParams.get("calcMode") || "all"; // "all" | "fee_only"
 
-  // Determinar período
-  const fromDate = from ? new Date(from + "T00:00:00") : (() => {
-    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
-  })();
-  const toDate = to ? new Date(to + "T23:59:59") : new Date();
+  // Determinar período exato respeitando fuso horário do Brasil (America/Sao_Paulo UTC-3)
+  let fromDate: Date;
+  let toDate: Date;
+
+  if (from) {
+    // Ex: "2026-08-01" -> inicio do dia em Brasília (00:00:00 BRT = 03:00:00 UTC)
+    fromDate = new Date(`${from}T03:00:00.000Z`);
+  } else {
+    // Início do mês atual em Brasília (00:00:00 BRT = 03:00:00 UTC)
+    const nowSp = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const yyyy = nowSp.getFullYear();
+    const mm = String(nowSp.getMonth() + 1).padStart(2, "0");
+    fromDate = new Date(`${yyyy}-${mm}-01T03:00:00.000Z`);
+  }
+
+  if (to) {
+    // Ex: "2026-08-01" -> fim do dia em Brasília (23:59:59.999 BRT = 2026-08-02T02:59:59.999Z UTC)
+    const [y, m, d] = to.split("-").map(Number);
+    toDate = new Date(Date.UTC(y, m - 1, d + 1, 2, 59, 59, 999));
+  } else {
+    toDate = new Date();
+  }
 
   // Buscar motoboys do franqueado
   const motoboyFilter = motoboyId ? { id: motoboyId } : {};
@@ -82,9 +99,9 @@ export async function GET(req: Request) {
     const totalDeliveries = orders.length;
     const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
 
-    // Calcular dias únicos trabalhados (para diária)
+    // Calcular dias únicos trabalhados em fuso horário do Brasil (America/Sao_Paulo)
     const uniqueDays = orders.length > 0
-      ? new Set(orders.map((o) => o.createdAt.toISOString().split("T")[0])).size
+      ? new Set(orders.map((o) => new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0])).size
       : 0;
 
     // Soma das taxas dos pedidos
@@ -110,104 +127,115 @@ export async function GET(req: Request) {
       } else if (pm.includes("VOUCHER") || pm.includes("VALE") || pm.includes("VR") || pm.includes("VA")) {
         voucherTotal += o.totalAmount;
         voucherCount++;
-      } else if (pm.includes("PIX") || pm.includes("ONLINE") || pm.includes("IFOOD") || pm.includes("PREPAID")) {
-        onlineTotal += o.totalAmount;
-        onlineCount++;
-      } else {
-        // Padrão para cartões de crédito ou máquinas sem especificação
+      } else if (pm.includes("CARD") || pm.includes("CART") || pm.includes("CREDIT") || pm.includes("MAQUININHA") || pm.includes("MAQUINA")) {
         creditTotal += o.totalAmount;
         creditCount++;
+      } else {
+        // PIX Online, iFood Pago Online, etc.
+        onlineTotal += o.totalAmount;
+        onlineCount++;
       }
     }
 
     const cardPosTotal = debitTotal + creditTotal + voucherTotal;
     const cardPosCount = debitCount + creditCount + voucherCount;
 
-    // Calcular pagamento baseado no tipo
+    // Calcular remuneração segundo o tipo do motoboy
+    const dailyRate = mb.dailyRate || 0;
+    const perDeliveryRate = mb.perDeliveryRate || 0;
+    const perKmRate = mb.perKmRate || 0;
+
+    let feeTotal = 0;
     let dailyTotal = 0;
-    let perDeliveryTotal = 0;
-    let perKmTotal = 0;
 
-    if (mb.paymentType === "DAILY_RATE" || mb.paymentType === "BOTH" || mb.paymentType === "DAILY_PLUS_FEE") {
-      dailyTotal = (mb.dailyRate || 0) * uniqueDays;
-    }
-    if (mb.paymentType === "PER_DELIVERY" || mb.paymentType === "BOTH") {
-      perDeliveryTotal = (mb.perDeliveryRate || 0) * totalDeliveries;
-    } else if (mb.paymentType === "DAILY_PLUS_FEE") {
-      perDeliveryTotal = deliveryFeeSum;
-    }
-    if (mb.paymentType === "PER_KM" || (mb.paymentType === "BOTH" && mb.perKmRate)) {
-      perKmTotal = (mb.perKmRate || 0) * totalDistance;
+    switch (mb.paymentType) {
+      case "DAILY_RATE":
+        dailyTotal = uniqueDays * dailyRate;
+        feeTotal = 0;
+        break;
+
+      case "PER_DELIVERY":
+        feeTotal = perDeliveryRate > 0
+          ? totalDeliveries * perDeliveryRate
+          : deliveryFeeSum;
+        dailyTotal = 0;
+        break;
+
+      case "BOTH":
+      case "DAILY_PLUS_FEE":
+        dailyTotal = uniqueDays * dailyRate;
+        feeTotal = perDeliveryRate > 0
+          ? totalDeliveries * perDeliveryRate
+          : deliveryFeeSum;
+        break;
+
+      case "PER_KM":
+        feeTotal = totalDistance * perKmRate;
+        dailyTotal = 0;
+        break;
+
+      default:
+        feeTotal = deliveryFeeSum;
+        dailyTotal = 0;
     }
 
-    const totalWithDaily = dailyTotal + perDeliveryTotal + perKmTotal;
-    const totalFeeOnly = perDeliveryTotal + perKmTotal;
-    const totalToPay = calcMode === "fee_only" ? totalFeeOnly : totalWithDaily;
-
-    // Cálculo do acerto financeiro final com a loja (Dinheiro em Mãos vs O que a Loja Deve)
-    const netSettlement = cashCollectedSum - totalToPay;
-    const motoboyOwesStore = netSettlement > 0 ? netSettlement : 0;
-    const storeOwesMotoboy = netSettlement < 0 ? Math.abs(netSettlement) : 0;
+    const totalWithDaily = dailyTotal + feeTotal;
+    const totalFeeOnly = feeTotal;
 
     return {
       motoboy: {
         id: mb.id,
         name: mb.name,
-        phone: mb.phone,
         paymentType: mb.paymentType,
-        dailyRate: mb.dailyRate,
-        perDeliveryRate: mb.perDeliveryRate,
-        perKmRate: mb.perKmRate,
+        dailyRate,
+        perDeliveryRate,
+        perKmRate,
         active: mb.active,
       },
       stats: {
         totalDeliveries,
-        totalDistance: Math.round(totalDistance * 10) / 10,
+        totalDistance,
         uniqueDays,
-        dailyTotal,
-        perDeliveryTotal,
-        perKmTotal,
         deliveryFeeSum,
         motoboyFeeSum,
-        totalWithDaily,
-        totalFeeOnly,
-        totalToPay,
         cashCollectedSum,
         cashOrdersCount,
+        cardPosTotal,
+        cardPosCount,
         debitTotal,
         debitCount,
         creditTotal,
         creditCount,
         voucherTotal,
         voucherCount,
-        cardPosTotal,
-        cardPosCount,
         onlineTotal,
         onlineCount,
-        netSettlement,
-        motoboyOwesStore,
-        storeOwesMotoboy,
+        dailyTotal,
+        feeTotal,
+        totalWithDaily,
+        totalFeeOnly,
       },
-      orders: orders.map((o) => ({
+      orders: orders.map(o => ({
         id: o.id,
-        date: o.createdAt.toISOString(),
-        customerName: o.customerName,
-        customerPhone: o.customerPhone,
-        customerAddress: o.customerAddress,
+        createdAt: o.createdAt,
         totalAmount: o.totalAmount,
-        deliveryFee: o.deliveryFee || o.motoboyFee || 0,
+        deliveryFee: o.deliveryFee,
         motoboyFee: o.motoboyFee,
-        deliveryDistance: o.deliveryDistance,
+        customerName: o.customerName,
+        customerAddress: o.customerAddress,
+        paymentMethod: o.paymentMethod,
         status: o.status,
-        paymentMethod: o.paymentMethod || "Não informado",
-        items: o.items,
-        notes: o.notes,
       })),
     };
   });
 
   return NextResponse.json({
-    period: { from: fromDate.toISOString(), to: toDate.toISOString() },
+    period: {
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      fromFormatted: fromDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+      toFormatted: toDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+    },
     report,
   });
 }
