@@ -527,11 +527,15 @@ export default function RoteirizacaoModal({
     "village rio das ostras": { lat: -22.5040, lng: -41.9120 },
     marilea: { lat: -22.5130, lng: -41.9340 },
     mariléa: { lat: -22.5130, lng: -41.9340 },
+    "jardim marilea": { lat: -22.5130, lng: -41.9340 },
+    "jardim mariléa": { lat: -22.5130, lng: -41.9340 },
+    "jardim marileia": { lat: -22.5130, lng: -41.9340 },
     "marilea chacara": { lat: -22.5080, lng: -41.9310 },
     "mariléa chácara": { lat: -22.5080, lng: -41.9310 },
     "chacara marilea": { lat: -22.5080, lng: -41.9310 },
     "chácara mariléa": { lat: -22.5080, lng: -41.9310 },
     "chacara marileia": { lat: -22.5080, lng: -41.9310 },
+    "nova cidade": { lat: -22.5210, lng: -41.9480 },
     "ouro verde": { lat: -22.5170, lng: -41.9240 },
     "jardim bela vista": { lat: -22.5140, lng: -41.9270 },
     "parque sao jorge": { lat: -22.5220, lng: -41.9360 },
@@ -622,7 +626,11 @@ export default function RoteirizacaoModal({
       const orderLng = (order as any).customerLatLng?.lng || (order as any).longitude || (order as any).lng;
 
       const cleanBairroKey = neighborhood.toLowerCase().trim();
-      const dictFallback = NEIGHBORHOOD_COORDS_MAP[cleanBairroKey];
+      const dictFallback =
+        NEIGHBORHOOD_COORDS_MAP[cleanBairroKey] ||
+        NEIGHBORHOOD_COORDS_MAP[cleanBairroKey.replace(/^jardim\s+/i, "")] ||
+        NEIGHBORHOOD_COORDS_MAP[cleanBairroKey.replace(/^bairro\s+/i, "")] ||
+        NEIGHBORHOOD_COORDS_MAP[cleanBairroKey.replace(/^residencial\s+/i, "")];
 
       // Se o pedido já possui lat/lng válidas e NÃO estão no mar, usa direto
       if (orderLat && orderLng && !isNaN(Number(orderLat)) && !isNaN(Number(orderLng)) && !isPointInSea(Number(orderLat), Number(orderLng))) {
