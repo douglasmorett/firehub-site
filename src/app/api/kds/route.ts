@@ -13,13 +13,28 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 250): Promise<T> {
+  let lastErr: any;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 export async function GET(req: NextRequest) {
   try {
-    // Buscar conta principal da loja (Hakim) para garantir correspondência universal de IDs
-    const hakimUser = await prisma.user.findFirst({
-      where: { email: "contatohakim@gmail.com" },
-      select: { id: true }
-    });
+    // Buscar conta principal da loja (Hakim) com retentativa automatica
+    const hakimUser = await withRetry(() =>
+      prisma.user.findFirst({
+        where: { email: "contatohakim@gmail.com" },
+        select: { id: true },
+      })
+    ).catch(() => null);
 
     let email: string | null = null;
     try {
@@ -27,32 +42,32 @@ export async function GET(req: NextRequest) {
       email = session?.user?.email || null;
     } catch {}
 
-    let userStoreIds: string[] = [];
+    const defaultHakimId = hakimUser?.id || "cm6x65p660000uj48x4s1y881";
+    let userStoreIds: string[] = [defaultHakimId];
 
     if (email) {
-      const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
+      const user = await withRetry(() =>
+        prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } })
+      ).catch(() => null);
+
       if (user) {
-        userStoreIds = Array.from(new Set([
-          user.id,
-          user.ownerId,
-          user.ownerId || user.id,
-          hakimUser?.id
-        ].filter(Boolean))) as string[];
+        if (user.id) userStoreIds.push(user.id);
+        if (user.ownerId) userStoreIds.push(user.ownerId);
       }
     }
 
-    if (userStoreIds.length === 0 && hakimUser?.id) {
-      userStoreIds = [hakimUser.id];
-    }
+    userStoreIds = Array.from(new Set(userStoreIds.filter(Boolean)));
 
     const stage = req.nextUrl.searchParams.get("stage") || "production";
 
     // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos
-    const activeSession = userStoreIds.length > 0 ? await prisma.cashSession.findFirst({
-      where: { franchiseeId: { in: userStoreIds }, status: "OPEN" },
-      orderBy: { openedAt: "desc" },
-      select: { openedAt: true }
-    }) : null;
+    const activeSession = await withRetry(() =>
+      prisma.cashSession.findFirst({
+        where: { franchiseeId: { in: userStoreIds }, status: "OPEN" },
+        orderBy: { openedAt: "desc" },
+        select: { openedAt: true },
+      })
+    ).catch(() => null);
 
     // Usar corte amplo de 48 horas para NUNCA ocultar pedidos criados antes da abertura do caixa ativo!
     const safeCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
@@ -72,56 +87,71 @@ export async function GET(req: NextRequest) {
       createdAt: { gte: safeCutoff },
     };
 
-    const orders = await prisma.customerOrder.findMany({
-      where,
-      select: {
-        id: true,
-        customerName: true,
-        customerPhone: true,
-        customerAddress: true,
-        deliveryType: true,
-        paymentMethod: true,
-        totalAmount: true,
-        deliveryFee: true,
-        status: true,
-        source: true,
-        notes: true,
-        ifoodReference: true,
-        openDeliveryReference: true,
-        kdsStage: true,
-        kdsStationId: true,
-        kdsProductionAt: true,
-        kdsFinishingAt: true,
-        createdAt: true,
-        updatedAt: true,
-        items: {
-          select: {
-            id: true,
-            quantity: true,
-            price: true,
-            comboSelections: true,
-            menuProduct: {
-              select: {
-                name: true,
-                category: true,
+    if (stage === "finishing") {
+      where.kdsStage = "FINISHING";
+    } else if (stage === "production") {
+      where.OR = [
+        { kdsStage: "PRODUCTION" },
+        { kdsStage: null },
+      ];
+    } else if (stage !== "all") {
+      where.kdsStage = { not: "FINISHED" };
+    }
+
+    const orders = await withRetry(() =>
+      prisma.customerOrder.findMany({
+        where,
+        select: {
+          id: true,
+          customerName: true,
+          customerPhone: true,
+          customerAddress: true,
+          deliveryType: true,
+          paymentMethod: true,
+          totalAmount: true,
+          deliveryFee: true,
+          status: true,
+          source: true,
+          notes: true,
+          ifoodReference: true,
+          openDeliveryReference: true,
+          kdsStage: true,
+          kdsStationId: true,
+          kdsProductionAt: true,
+          kdsFinishingAt: true,
+          createdAt: true,
+          updatedAt: true,
+          items: {
+            select: {
+              id: true,
+              quantity: true,
+              price: true,
+              comboSelections: true,
+              menuProduct: {
+                select: {
+                  name: true,
+                  category: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: { createdAt: "asc" },
-      take: 100,
-    });
+        orderBy: { createdAt: "asc" },
+        take: 100,
+      })
+    ).catch(() => []);
 
     // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
-    const allRecentOrders = await prisma.customerOrder.findMany({
-      where: {
-        franchiseeId: { in: userStoreIds },
-        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-      },
-      select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
-      orderBy: { createdAt: "asc" },
-    });
+    const allRecentOrders = await withRetry(() =>
+      prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: { in: userStoreIds },
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
+        orderBy: { createdAt: "asc" },
+      })
+    ).catch(() => []);
 
     const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
     const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
