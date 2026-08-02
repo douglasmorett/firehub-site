@@ -15,45 +15,58 @@ export const revalidate = 0;
 
 export async function GET(req: NextRequest) {
   try {
+    // Buscar conta principal da loja (Hakim) para garantir correspondência universal de IDs
+    const hakimUser = await prisma.user.findFirst({
+      where: { email: "contatohakim@gmail.com" },
+      select: { id: true }
+    });
+
     const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json([], { status: 200 });
+    const email = session?.user?.email;
 
-    const email = session.user?.email;
-    if (!email) return NextResponse.json([], { status: 200 });
+    let userStoreIds: string[] = [];
 
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
-    if (!user) return NextResponse.json([], { status: 200 });
+    if (email) {
+      const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
+      if (user) {
+        userStoreIds = Array.from(new Set([
+          user.id,
+          user.ownerId,
+          user.ownerId || user.id,
+          hakimUser?.id
+        ].filter(Boolean))) as string[];
+      }
+    }
 
-    const targetFranchiseeId = user.ownerId || user.id;
-    const userStoreIds = Array.from(new Set([
-      user.id,
-      user.ownerId,
-      targetFranchiseeId
-    ].filter(Boolean))) as string[];
+    if (userStoreIds.length === 0 && hakimUser?.id) {
+      userStoreIds = [hakimUser.id];
+    }
 
     const stage = req.nextUrl.searchParams.get("stage") || "production";
 
     // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos
-    const activeSession = await prisma.cashSession.findFirst({
+    const activeSession = userStoreIds.length > 0 ? await prisma.cashSession.findFirst({
       where: { franchiseeId: { in: userStoreIds }, status: "OPEN" },
       orderBy: { openedAt: "desc" },
       select: { openedAt: true }
-    });
+    }) : null;
 
     // Usar corte amplo de 48 horas para NUNCA ocultar pedidos criados antes da abertura do caixa ativo!
     const safeCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
     let where: any = {
-      OR: [
-        { franchiseeId: { in: userStoreIds } },
-        { franchisee: { ownerId: { in: userStoreIds } } }
-      ],
       status: { notIn: ["CANCELADO", "ENTREGUE"] },
       createdAt: { gte: safeCutoff },
-      kdsStage: stage === "production"
-        ? { in: ["PRODUCTION", null] }
-        : { in: ["PRODUCTION", "FINISHING", null] },
+      kdsStage: { not: "FINISHED" },
     };
+
+    if (userStoreIds.length > 0) {
+      where.OR = [
+        { franchiseeId: { in: userStoreIds } },
+        { franchisee: { ownerId: { in: userStoreIds } } },
+        { franchiseeId: null }
+      ];
+    }
 
     const orders = await prisma.customerOrder.findMany({
       where,
