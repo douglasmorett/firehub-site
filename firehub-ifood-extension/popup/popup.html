@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FireHub Dynamic ETA</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body {
+      width: 350px;
+      padding: 1.25rem;
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      color: #F8FAFC;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #334155;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-badge {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #FF5722, #F44336);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; font-weight: 900;
+      box-shadow: 0 4px 12px rgba(255, 87, 34, 0.4);
+    }
+    .title { font-size: 1.05rem; font-weight: 900; letter-spacing: -0.3px; color: #FFF; }
+    .subtitle { font-size: 0.7rem; color: #FF7A59; font-weight: 700; }
+    
+    .status-pill {
+      font-size: 0.7rem; font-weight: 800;
+      padding: 3px 8px; border-radius: 12px;
+      background: #064E3B; color: #34D399; border: 1px solid #059669;
+    }
+
+    .card {
+      background: #1E293B;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    }
+    .card-title {
+      font-size: 0.78rem; font-weight: 800; color: #94A3B8;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+    }
+    
+    .counter-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .btn-step {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      border: 1.5px solid #475569;
+      background: #334155; color: #FFF;
+      font-size: 1.2rem; font-weight: 900;
+      cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-step:hover { background: #475569; border-color: #64748B; }
+    .btn-step:active { transform: scale(0.95); }
+    .count-display {
+      font-size: 1.4rem; font-weight: 900; color: #38BDF8;
+      text-align: center; flex: 1;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 1rem;
+    }
+    .metric-box {
+      background: #0F172A;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 10px;
+      text-align: center;
+    }
+    .metric-val { font-size: 1.3rem; font-weight: 900; color: #F59E0B; }
+    .metric-label { font-size: 0.7rem; color: #94A3B8; font-weight: 700; margin-top: 2px; }
+
+    .result-banner {
+      background: linear-gradient(135deg, #064E3B 0%, #022C22 100%);
+      border: 1.5px solid #10B981;
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .eta-val { font-size: 1.4rem; font-weight: 900; color: #34D399; }
+    .eta-desc { font-size: 0.72rem; color: #A7F3D0; font-weight: 600; }
+
+    .btn-sync {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, #FF5722 0%, #E64A19 100%);
+      color: #FFF;
+      font-size: 0.9rem; font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(255, 87, 34, 0.4);
+      transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-sync:hover { filter: brightness(1.1); }
+    .btn-sync:active { transform: scale(0.98); }
+
+    .last-sync {
+      font-size: 0.68rem; color: #64748B; text-align: center; margin-top: 10px;
+    }
+    .server-input {
+      width: 100%; padding: 7px 10px; borderRadius: 8px;
+      background: #0F172A; border: 1px solid #334155; color: #FFF;
+      font-size: 0.75rem; outline: none; margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <div class="logo-badge">🔥</div>
+      <div>
+        <div class="title">FireHub iFood</div>
+        <div class="subtitle">AUTOMATION & ETA</div>
+      </div>
+    </div>
+    <div class="status-pill" id="statusBadge">CONECTADO</div>
+  </div>
+
+  <!-- Motoboys Counter -->
+  <div class="card">
+    <div class="card-title">🛵 Motoboys na Casa Hoje</div>
+    <div class="counter-row">
+      <button class="btn-step" id="btnMinus">-</button>
+      <div class="count-display" id="motoboysCount">2</div>
+      <button class="btn-step" id="btnPlus">+</button>
+    </div>
+  </div>
+
+  <!-- Realtime KDS Metrics -->
+  <div class="metrics-grid">
+    <div class="metric-box">
+      <div class="metric-val" id="kdsOrders">0</div>
+      <div class="metric-label">Cozinha (KDS)</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-val" id="currentRule" style="color: #38BDF8; font-size: 1.05rem;">Leve</div>
+      <div class="metric-label">Status Carga</div>
+    </div>
+  </div>
+
+  <!-- Computed ETA Result -->
+  <div class="result-banner">
+    <div>
+      <div class="eta-desc">PRAZO RECOMENDADO</div>
+      <div style="font-size: 0.72rem; color: #94A3B8;">iFood & FireHub Site</div>
+    </div>
+    <div class="eta-val" id="recommendedEta">30 - 45 min</div>
+  </div>
+
+  <!-- Action Button -->
+  <button class="btn-sync" id="btnSync">
+    ⚡ Sincronizar Agora no iFood
+  </button>
+
+  <div style="margin-top: 12px; border-top: 1px solid #334155; padding-top: 8px;">
+    <label style="font-size: 0.7rem; color: #94A3B8; font-weight: 700;">Servidor FireHub / Loja:</label>
+    <input type="text" id="serverUrl" class="server-input" value="https://firehub-site.vercel.app" placeholder="URL ou Token da Loja">
+  </div>
+
+  <div class="last-sync" id="lastSyncText">⏱️ Timer automático ativo (a cada 5 min)</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
