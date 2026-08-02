@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-async function withRetry(operation, retries = 3, delay = 500) {
+async function withRetry<T>(operation: () => Promise<T>, retries = 3, delay = 500): Promise<T> {
   for (let i = 0; i < retries; i++) {
     try {
       return await operation();
@@ -15,6 +15,7 @@ async function withRetry(operation, retries = 3, delay = 500) {
       await new Promise(r => setTimeout(r, delay));
     }
   }
+  throw new Error("Operation failed after retries");
 }
 
 
@@ -647,7 +648,7 @@ export async function GET(req: NextRequest) {
     },
     orderBy: { createdAt: "desc" },
     take: 200
-  });
+  }));
 
   // Auto-repair zero-price items in existing orders
   for (const o of orders) {
@@ -689,7 +690,7 @@ export async function GET(req: NextRequest) {
     where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
     orderBy: { openedAt: "desc" },
     select: { openedAt: true }
-  });
+  }));
 
   // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
   const allRecentOrders = await withRetry(() => prisma.customerOrder.findMany({
@@ -699,7 +700,7 @@ export async function GET(req: NextRequest) {
     },
     select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
     orderBy: { createdAt: "asc" },
-  });
+  }));
 
   const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
   const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
