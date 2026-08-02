@@ -165,6 +165,62 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SEÇÃO INOVAÇÃO EXCLUSIVA: AUTO-ETA IFOOD & SITE */}
+      <section className="sec" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#FFF", padding: "5rem 0", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -100, right: -100, width: 400, height: 400, background: "radial-gradient(circle, rgba(232,54,12,0.25) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "3rem", alignItems: "center" }}>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(232,54,12,0.2)", border: "1px solid rgba(232,54,12,0.5)", color: "#FF5722", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                ⚡ INOVAÇÃO EXCLUSIVA FIREHUB
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Automação Inteligente do Tempo de Entrega no <span style={{ color: "#EA1D2C" }}>iFood</span> & Site
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Chega de ter que parar o atendimento para ficar ajustando o iFood manualmente no meio da correria. O FireHub é a <strong style={{ color: "#FFF" }}>primeira tecnologia do Brasil</strong> que lê a carga real do seu KDS e a quantidade de motoboys na casa para atualizar os prazos no iFood e no seu site próprio 100% no automático!
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }}>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🤖 100% Silencioso</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Atualiza os prazos nos bastidores sem fechar a tela do caixa</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🛡️ Trava de Estouro</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Pausa a loja por 40 min se estourar a capacidade da cozinha</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🛵 Cálculo por Motoboy</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Ajusta os prazos conforme a quantidade de motoboys ativos</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⭐ Zero Avaliações 1 Estrela</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Elimine reclamações de atrasos e cancelamentos de pedidos</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem" }}>
+                  🔥 Testar Tecnologia Exclusiva Grátis
+                </a>
+                <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>
+                  Incluída sem custo adicional em todos os planos FireHub!
+                </span>
+              </div>
+            </div>
+
+            <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5)", background: "#000" }}>
+              <img
+                src="/images/ifood_eta_banner.jpg"
+                alt="FireHub Auto-ETA iFood Automation"
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* COMO FUNCIONA */}
       <section className="sec sec-alt" id="como-funciona">
         <div className="w">

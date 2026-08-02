@@ -99,7 +99,7 @@ export default function ExtensaoIfoodPage() {
           {/* Banner Hero Image */}
           <div style={{ borderRadius: 20, overflow: "hidden", border: "1px solid #E2E8F0", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", background: "#FFF" }}>
             <img
-              src="/images/ifood-eta-banner.jpg"
+              src="/images/ifood_eta_banner.jpg"
               alt="FireHub iFood Dynamic ETA"
               style={{ width: "100%", height: "auto", display: "block" }}
             />
