@@ -434,7 +434,19 @@ export default function RoteirizacaoModal({
     });
   }, [deliveryOrders, createdRoutes, searchTerm, selectedOrderIds]);
 
-  // Helper para extrair e destacar o Bairro (Casas Velhas, Mariléa, Verdes Mares, etc.) e formatar endereço completo
+  // Helper para verificar se um ponto caiu no Oceano Atlântico em Rio das Ostras
+  const isPointInSea = (lat: number, lng: number): boolean => {
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) return true;
+    // Linha costeira de Rio das Ostras: terra fica estritamente a oeste de Lng -41.915
+    if (lng > -41.915) return true;
+    // Na curva ao sul de Costazul / Boca da Barra (Lat < -22.525), a costa entra para Oeste
+    if (lat < -22.525 && lng > -41.921) return true;
+    // Na região de Cidade Beira Mar / Praiana / Cantinho do Mar (Lat < -22.533)
+    if (lat < -22.533 && lng > -41.952) return true;
+    return false;
+  };
+
+  // Helper para extrair e destacar o Bairro e formatar endereço completo
   const parseAddressDetails = (rawAddr: string) => {
     if (!rawAddr || typeof rawAddr !== "string") {
       return { neighborhood: "", fullAddress: "Endereço a confirmar" };
@@ -449,18 +461,20 @@ export default function RoteirizacaoModal({
       neighborhood = bairroMatch[1].trim();
     }
 
-    // 2. Se não achou com rótulo "Bairro", procurar por nomes de bairros conhecidos na região (ordenados dos compostos mais longos para os simples)
+    // 2. Se não achou com rótulo "Bairro", procurar por nomes de bairros conhecidos na região
     if (!neighborhood) {
       const knownNeighborhoods = [
         "Mariléa Chácara", "Marilea Chacara", "Chácara Mariléa", "Chacara Marilea", "Chacara Marileia",
         "Jardim Mariléa", "Jardim Marilea", "Novo Rio das Ostras", "Extensão Novo Rio das Ostras",
         "Extensao Novo Rio das Ostras", "Recanto Rio das Ostras", "Bairro Operário", "Bairro Operario",
         "Parque São Jorge", "Parque Sao Jorge", "Extensão do Bosque", "Extensao do Bosque",
-        "Jardim Bela Vista", "Cidade Beira Mar", "Cidade Praiana", "Costa Azul", "Costa Azul",
+        "Jardim Bela Vista", "Cidade Beira Mar", "Cidade Praiana", "Costa Azul", "Costazul",
         "Serra Mar", "Verdes Mares", "Ouro Verde", "Terra Firme", "Enseada das Gaivotas",
         "Nova Esperança", "Nova Esperanca", "Jardim Esperança", "Jardim Esperanca",
         "Casas Velhas", "Rocha Leão", "Rocha Leao", "Balneário Remanso", "Balneario Remanso",
-        "Boca do Mato", "Jardim Atlântico", "Jardim Atlantico", "Nova Aliança", "Nova Alianca",
+        "Boca da Barra", "Boca do Mato", "Jardim Atlântico", "Jardim Atlantico", "Nova Aliança", "Nova Alianca",
+        "São Cristóvão", "São Cristovao", "Sao Cristovao", "Cantinho do Mar", "Gelson Apicelo",
+        "Jardim Campomar", "Campomar", "Bosque da Praia", "Viverde", "Cláudio Ribeiro", "Claudio Ribeiro",
         "Mariléa", "Marilea", "Centro", "Remanso", "Âncora", "Ancora", "Zabulão", "Zambulao",
         "Extremoz", "Recreio", "Operários", "Operarios", "Cantagalo", "Unamar", "Tamoios",
         "Peró", "Atlântica", "Atlantica", "Recanto"
@@ -495,9 +509,11 @@ export default function RoteirizacaoModal({
     };
   };
 
-  // Dicionário de Bairros de Rio das Ostras e Região com Coordenadas de Alta Precisão
+  // Dicionário de Bairros de Rio das Ostras e Região com Coordenadas de Alta Precisão (RIGOROSAMENTE EM TERRA FIRME)
   const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
-    recreio: { lat: -22.5220, lng: -41.9280 },
+    costazul: { lat: -22.5205, lng: -41.9175 },
+    "costa azul": { lat: -22.5205, lng: -41.9175 },
+    recreio: { lat: -22.5210, lng: -41.9260 },
     marilea: { lat: -22.5130, lng: -41.9340 },
     mariléa: { lat: -22.5130, lng: -41.9340 },
     "marilea chacara": { lat: -22.5080, lng: -41.9310 },
@@ -505,21 +521,25 @@ export default function RoteirizacaoModal({
     "chacara marilea": { lat: -22.5080, lng: -41.9310 },
     "chácara mariléa": { lat: -22.5080, lng: -41.9310 },
     "chacara marileia": { lat: -22.5080, lng: -41.9310 },
-    costazul: { lat: -22.5320, lng: -41.9240 },
-    "costa azul": { lat: -22.5320, lng: -41.9240 },
-    "ouro verde": { lat: -22.5180, lng: -41.9260 },
+    "ouro verde": { lat: -22.5170, lng: -41.9240 },
     "jardim bela vista": { lat: -22.5140, lng: -41.9270 },
-    "parque sao jorge": { lat: -22.5240, lng: -41.9380 },
-    "parque são jorge": { lat: -22.5240, lng: -41.9380 },
-    "nova alianca": { lat: -22.5310, lng: -41.9540 },
-    "nova aliança": { lat: -22.5310, lng: -41.9540 },
+    "parque sao jorge": { lat: -22.5220, lng: -41.9360 },
+    "parque são jorge": { lat: -22.5220, lng: -41.9360 },
+    "sao cristovao": { lat: -22.5160, lng: -41.9420 },
+    "são cristóvão": { lat: -22.5160, lng: -41.9420 },
+    "sao cristóvão": { lat: -22.5160, lng: -41.9420 },
+    "são cristovao": { lat: -22.5160, lng: -41.9420 },
+    "cantinho do mar": { lat: -22.5310, lng: -41.9560 },
+    "nova alianca": { lat: -22.5300, lng: -41.9530 },
+    "nova aliança": { lat: -22.5300, lng: -41.9530 },
     "extensao do bosque": { lat: -22.5280, lng: -41.9480 },
     "extensão do bosque": { lat: -22.5280, lng: -41.9480 },
     "extensao novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
     "extensão novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
+    "novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
     ancora: { lat: -22.5050, lng: -41.9480 },
     âncora: { lat: -22.5050, lng: -41.9480 },
-    "cidade praiana": { lat: -22.5360, lng: -41.9620 },
+    "cidade praiana": { lat: -22.5360, lng: -41.9660 },
     centro: { lat: -22.5245, lng: -41.9455 },
     recanto: { lat: -22.5320, lng: -41.9560 },
     "recanto rio das ostras": { lat: -22.5320, lng: -41.9560 },
@@ -535,20 +555,26 @@ export default function RoteirizacaoModal({
     "bairro operário": { lat: -22.5230, lng: -41.9380 },
     "verdes mares": { lat: -22.5380, lng: -41.9520 },
     "serra mar": { lat: -22.5290, lng: -41.9620 },
-    "cidade beira mar": { lat: -22.5350, lng: -41.9650 },
+    "cidade beira mar": { lat: -22.5350, lng: -41.9630 },
+    "jardim campomar": { lat: -22.5320, lng: -41.9600 },
+    campomar: { lat: -22.5320, lng: -41.9600 },
+    "gelson apicelo": { lat: -22.5150, lng: -41.9380 },
+    "boca da barra": { lat: -22.5280, lng: -41.9320 },
+    viverde: { lat: -22.5180, lng: -41.9520 },
   };
 
-  // Clean Address for Nominatim OpenStreetMap Geocoding
+  // Limpa Complementos / Referências mantendo rua, número e bairro intactos para a geocodificação
   const cleanAddressForGeocoding = (rawAddress: string) => {
     let clean = rawAddress
-      .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
-      .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
-      .replace(/(-?\s*Ponto de Ref(?:erencia)?:.*)/gi, "")
-      .replace(/(-?\s*Casa\s*\d+.*)/gi, "")
-      .replace(/(-?\s*Apto?\s*\d+.*)/gi, "")
-      .replace(/(-?\s*Bloco\s*\w+.*)/gi, "")
-      .replace(/(-?\s*Sobrado.*)/gi, "")
-      .replace(/(-?\s*Muro\s*\w+.*)/gi, "")
+      .replace(/(-?\s*Comp(?:lemento)?:[^-,]*)/gi, "")
+      .replace(/(-?\s*Ref(?:erencia)?:[^-,]*)/gi, "")
+      .replace(/(-?\s*Ponto de Ref(?:erencia)?:[^-,]*)/gi, "")
+      .replace(/(-?\s*Casa\s*\d+[^-,]*)/gi, "")
+      .replace(/(-?\s*Apto?\s*\d+[^-,]*)/gi, "")
+      .replace(/(-?\s*Bloco\s*\w+[^-,]*)/gi, "")
+      .replace(/(-?\s*Sobrado[^-,]*)/gi, "")
+      .replace(/(-?\s*Muro\s*\w+[^-,]*)/gi, "")
+      .replace(/\s+/g, " ")
       .trim();
 
     clean = clean
@@ -559,11 +585,11 @@ export default function RoteirizacaoModal({
     return clean;
   };
 
-  // Automatic Geocoding Engine for Order Addresses with Instant LocalStorage Cache & Parallel Batches
+  // Motor Inteligente de Geocodificação Automática com Filtro Anti-Mar e Cache Persistente
   useEffect(() => {
     if (!isOpen || deliveryOrders.length === 0) return;
 
-    // Load persistent address cache from localStorage
+    // Carregar cache local de geocodificação
     let localCache: Record<string, { lat: number; lng: number }> = {};
     try {
       const stored = localStorage.getItem("firehub_geo_cache");
@@ -586,23 +612,24 @@ export default function RoteirizacaoModal({
       const cleanBairroKey = neighborhood.toLowerCase().trim();
       const dictFallback = NEIGHBORHOOD_COORDS_MAP[cleanBairroKey];
 
-      if (orderLat && orderLng && !isNaN(Number(orderLat)) && !isNaN(Number(orderLng))) {
+      // Se o pedido já possui lat/lng válidas e NÃO estão no mar, usa direto
+      if (orderLat && orderLng && !isNaN(Number(orderLat)) && !isNaN(Number(orderLng)) && !isPointInSea(Number(orderLat), Number(orderLng))) {
         if (!initialMap[order.id] || initialMap[order.id].lat !== Number(orderLat)) {
           initialMap[order.id] = { lat: Number(orderLat), lng: Number(orderLng) };
           initialUpdated = true;
         }
-      } else if (localCache[cacheKey]) {
+      } else if (localCache[cacheKey] && !isPointInSea(localCache[cacheKey].lat, localCache[cacheKey].lng)) {
         if (!initialMap[order.id] || initialMap[order.id].lat !== localCache[cacheKey].lat) {
           initialMap[order.id] = localCache[cacheKey];
           initialUpdated = true;
         }
-      } else if (dictFallback) {
-        // Se o bairro é conhecido na tabela fixa de Rio das Ostras, atribui imediatamente para a tela abrir instantânea!
-        if (!initialMap[order.id]) {
+      } else {
+        // Atribui o dictFallback provisório para a tela não abrir em branco
+        if (dictFallback && !initialMap[order.id]) {
           initialMap[order.id] = dictFallback;
           initialUpdated = true;
         }
-      } else if (!initialMap[order.id]) {
+        // SEMPRE coloca no toGeocode para buscar a rua exata no Nominatim
         toGeocode.push({
           id: order.id,
           idx,
@@ -640,7 +667,12 @@ export default function RoteirizacaoModal({
           if (res.ok) {
             const data = await res.json();
             if (data && data.length > 0) {
-              return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+              const lat = parseFloat(data[0].lat);
+              const lng = parseFloat(data[0].lon);
+              // FILTRO ANTI-MAR: Se o Nominatim retornar uma coordenada no oceano, ignora!
+              if (!isPointInSea(lat, lng)) {
+                return { lat, lng };
+              }
             }
           }
         } catch {}
@@ -660,10 +692,15 @@ export default function RoteirizacaoModal({
             const query1 = `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
             coords = await fetchNominatim(query1);
 
-            // 2. Tentativa apenas com Nome da Rua + Bairro (sem número predial)
-            if (!coords && item.cleanedStreet.length > 5) {
-              const streetOnly = item.cleanedStreet.replace(/,\s*\d+.*/, "").replace(/\d+/g, "").trim();
-              if (streetOnly) {
+            // 2. Tentativa apenas com Nome da Rua (sem número predial/letras) + Bairro + Cidade
+            if (!coords && item.cleanedStreet.length > 3) {
+              // Limpa números e letras como 53A, 14B, nº 10, etc.
+              const streetOnly = item.cleanedStreet
+                .replace(/,\s*\d+.*$/i, "")
+                .replace(/\b\d+\s*[a-z]?\b/gi, "")
+                .replace(/n[ºo]?\s*/gi, "")
+                .trim();
+              if (streetOnly.length > 3) {
                 const query2 = `${streetOnly}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
                 coords = await fetchNominatim(query2);
               }
@@ -675,17 +712,22 @@ export default function RoteirizacaoModal({
               coords = await fetchNominatim(query3);
             }
 
-            // 4. Fallback pelo Dicionário Estático do Bairro
+            // 4. Fallback pelo Dicionário Estático do Bairro (RIGOROSAMENTE EM TERRA)
             if (!coords && item.dictFallback) {
               coords = item.dictFallback;
             }
 
-            // 5. Fallback Absoluto Garantido (Centro da Cidade com Jitter) — NENHUM PEDIDO FICA SEM PINO!
+            // 5. Fallback Absoluto Garantido em Terra Firme (Centro da Cidade com Jitter)
             if (!coords) {
               coords = {
-                lat: defaultCenter.lat + ((item.idx % 5) - 2) * 0.003,
-                lng: defaultCenter.lng + (Math.floor(item.idx / 5) - 2) * 0.003,
+                lat: defaultCenter.lat + ((item.idx % 5) - 2) * 0.002,
+                lng: defaultCenter.lng + (Math.floor(item.idx / 5) - 2) * 0.002,
               };
+            }
+
+            // Garante 100% que o ponto final não cai no oceano!
+            if (isPointInSea(coords.lat, coords.lng)) {
+              coords = item.dictFallback || { lat: -22.5245, lng: -41.9455 };
             }
 
             updatedMap[item.id] = coords;
