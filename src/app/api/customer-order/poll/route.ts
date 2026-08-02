@@ -692,5 +692,11 @@ export async function GET(req: NextRequest) {
     checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
   } catch {}
 
-  return NextResponse.json(ordersWithDailyNum);
+  return NextResponse.json(ordersWithDailyNum, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    },
+  });
 }

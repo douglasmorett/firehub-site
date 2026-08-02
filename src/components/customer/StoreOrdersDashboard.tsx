@@ -1240,7 +1240,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const poll = async () => {
       try {
         if (!isDraggingRef.current) {
-          const res = await fetch("/api/customer-order/poll");
+          const res = await fetch(`/api/customer-order/poll?t=${Date.now()}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" }
+          });
           if (res.ok && active) {
             const text = await res.text();
             // Only update if data actually changed — prevents re-render closing dropdowns
@@ -1249,6 +1252,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               const newOrders = JSON.parse(text);
               if (!areOrdersEqual(ordersRef.current, newOrders)) {
                 setOrders(newOrders);
+              }
+
+              // Detectar pedidos verdadeiramente NOVOS que chegaram via polling
+              const currentKnown = knownOrderIdsRef.current;
+              const freshOrders = newOrders.filter((o: any) => !currentKnown.has(o.id));
+
+              if (freshOrders.length > 0) {
+                freshOrders.forEach((o: any) => {
+                  if (o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
+                    if (printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
+                      markAutoPrinted(o);
+                      console.log("[AutoPrint] 🖨️ Disparando impressão automática para pedido novo:", o.id);
+                      handlePrint(o, "cozinha");
+                    }
+                  }
+                });
               }
 
               // Atualizar IDs e status conhecidos
