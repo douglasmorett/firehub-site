@@ -141,6 +141,15 @@ export async function GET(req: NextRequest) {
       })
     ).catch(() => []);
 
+    const allCashSessions = await withRetry(() =>
+      prisma.cashSession.findMany({
+        where: { franchiseeId: { in: userStoreIds } },
+        select: { id: true, openedAt: true, closedAt: true, status: true },
+        orderBy: { openedAt: "asc" },
+        take: 100,
+      })
+    ).catch(() => []);
+
     // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
     const allRecentOrders = await withRetry(() =>
       prisma.customerOrder.findMany({
@@ -148,17 +157,17 @@ export async function GET(req: NextRequest) {
           franchiseeId: { in: userStoreIds },
           createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
         },
-        select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
+        select: { id: true, createdAt: true },
         orderBy: { createdAt: "asc" },
       })
     ).catch(() => []);
 
     const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions);
 
     const ordersWithDailyNum = orders.map((o: any) => ({
       ...o,
-      dailyOrderNumber: dailyNumMap.get(o.id) || o.dailyOrderNumber || null,
+      dailyOrderNumber: dailyNumMap.get(o.id) || null,
     }));
 
     return NextResponse.json(ordersWithDailyNum, {
