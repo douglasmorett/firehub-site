@@ -14,128 +14,120 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json([], { status: 200 });
 
-  const email = session.user?.email;
-  if (!email) return NextResponse.json({ error: "Email não encontrado" }, { status: 400 });
+    const email = session.user?.email;
+    if (!email) return NextResponse.json([], { status: 200 });
 
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
-  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
+    if (!user) return NextResponse.json([], { status: 200 });
 
-  const targetFranchiseeId = user.ownerId || user.id;
-  const stage = req.nextUrl.searchParams.get("stage") || "production";
+    const targetFranchiseeId = user.ownerId || user.id;
+    const stage = req.nextUrl.searchParams.get("stage") || "production";
 
-  let where: any;
+    // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos
+    const activeSession = await prisma.cashSession.findFirst({
+      where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+      orderBy: { openedAt: "desc" },
+      select: { openedAt: true }
+    });
 
-  // Filtro de status ativo amplo para capturar qualquer pedido em andamento (iFood, Jotajá, WhatsApp ou Site)
-  const activeStatusFilter = { in: ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "RECEBIDO", "CONFIRMADO", "PENDENTE"] };
+    const sessionStartCutoff = activeSession?.openedAt
+      ? new Date(activeSession.openedAt)
+      : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos de dias anteriores
-  const activeSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { openedAt: true }
-  });
-
-  const sessionStartCutoff = activeSession?.openedAt
-    ? new Date(activeSession.openedAt)
-    : new Date(Date.now() - 24 * 60 * 60 * 1000);
-
-  if (stage === "production") {
-    // Tela de Preparo: mostra apenas pedidos ativos da sessão/turno atual
-    where = {
-      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: activeStatusFilter,
+    // Filtro amplo para capturar todos os pedidos ativos na cozinha sem ocultar nada
+    let where: any = {
+      franchiseeId: targetFranchiseeId,
+      status: { notIn: ["CANCELADO", "ENTREGUE"] },
       createdAt: { gte: sessionStartCutoff },
-      OR: [
+    };
+
+    if (stage === "production") {
+      where.OR = [
         { kdsStage: "PRODUCTION" },
         { kdsStage: null },
-      ],
-    };
-  } else if (stage === "finishing") {
-    // Tela de Finalização: mostra apenas pedidos ativos da sessão/turno atual
-    where = {
-      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: activeStatusFilter,
-      createdAt: { gte: sessionStartCutoff },
-      OR: [
+      ];
+    } else if (stage === "finishing") {
+      where.OR = [
         { kdsStage: "PRODUCTION" },
         { kdsStage: "FINISHING" },
         { kdsStage: null },
-      ],
-    };
-  } else {
-    return NextResponse.json({ error: "Stage inválido" }, { status: 400 });
-  }
+      ];
+    }
 
-  const orders = await prisma.customerOrder.findMany({
-    where,
-    select: {
-      id: true,
-      customerName: true,
-      customerPhone: true,
-      customerAddress: true,
-      deliveryType: true,
-      paymentMethod: true,
-      totalAmount: true,
-      deliveryFee: true,
-      status: true,
-      source: true,
-      notes: true,
-      ifoodReference: true,
-      openDeliveryReference: true,
-      kdsStage: true,
-      kdsStationId: true,
-      kdsProductionAt: true,
-      kdsFinishingAt: true,
-      createdAt: true,
-      updatedAt: true,
-      items: {
-        select: {
-          id: true,
-          quantity: true,
-          price: true,
-          comboSelections: true,
-          menuProduct: {
-            select: {
-              name: true,
-              category: true,
+    const orders = await prisma.customerOrder.findMany({
+      where,
+      select: {
+        id: true,
+        customerName: true,
+        customerPhone: true,
+        customerAddress: true,
+        deliveryType: true,
+        paymentMethod: true,
+        totalAmount: true,
+        deliveryFee: true,
+        status: true,
+        source: true,
+        notes: true,
+        ifoodReference: true,
+        openDeliveryReference: true,
+        kdsStage: true,
+        kdsStationId: true,
+        kdsProductionAt: true,
+        kdsFinishingAt: true,
+        createdAt: true,
+        updatedAt: true,
+        items: {
+          select: {
+            id: true,
+            quantity: true,
+            price: true,
+            comboSelections: true,
+            menuProduct: {
+              select: {
+                name: true,
+                category: true,
+              },
             },
           },
         },
       },
-    },
-    orderBy: { createdAt: "asc" },
-    take: 50,
-  });
+      orderBy: { createdAt: "asc" },
+      take: 100,
+    });
 
-  // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
-  const allRecentOrders = await prisma.customerOrder.findMany({
-    where: {
-      franchiseeId: targetFranchiseeId,
-      createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-    },
-    select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
-    orderBy: { createdAt: "asc" },
-  });
+    // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
+    const allRecentOrders = await prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: targetFranchiseeId,
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      },
+      select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
+      orderBy: { createdAt: "asc" },
+    });
 
-  const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-  const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
+    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
 
-  const ordersWithDailyNum = orders.map((o: any) => ({
-    ...o,
-    dailyOrderNumber: dailyNumMap.get(o.id) || o.dailyOrderNumber || null,
-  }));
+    const ordersWithDailyNum = orders.map((o: any) => ({
+      ...o,
+      dailyOrderNumber: dailyNumMap.get(o.id) || o.dailyOrderNumber || null,
+    }));
 
-
-  return NextResponse.json(ordersWithDailyNum, {
-    headers: {
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-      "Pragma": "no-cache",
-      "Expires": "0",
-    },
-  });
+    return NextResponse.json(ordersWithDailyNum, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
+    });
+  } catch (err: any) {
+    console.error("[KDS GET Error]:", err?.message || err);
+    return NextResponse.json([], { status: 200 });
+  }
 }
 
 export async function PUT(req: NextRequest) {
