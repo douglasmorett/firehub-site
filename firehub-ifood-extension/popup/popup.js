@@ -1,4 +1,17 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const loginScreen = document.getElementById("loginScreen");
+  const mainScreen = document.getElementById("mainScreen");
+  const loginEmailInput = document.getElementById("loginEmail");
+  const loginPasswordInput = document.getElementById("loginPassword");
+  const btnLogin = document.getElementById("btnLogin");
+  const loginError = document.getElementById("loginError");
+  const btnLogout = document.getElementById("btnLogout");
+
+  const headerTitle = document.getElementById("headerTitle");
+  const headerSub = document.getElementById("headerSub");
+  const firehubSyncStatus = document.getElementById("firehubSyncStatus");
+  const ifoodSyncStatus = document.getElementById("ifoodSyncStatus");
+
   const tabAutoBtn = document.getElementById("tabAutoBtn");
   const tabManualBtn = document.getElementById("tabManualBtn");
   const tabAutoContent = document.getElementById("tabAutoContent");
@@ -21,7 +34,76 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let activeMode = "auto";
   let count = 2;
+  let authToken = null;
+  let storeName = "FireHub";
+
   const serverUrl = "https://firehub-site.vercel.app";
+
+  // ── AUTENTICAÇÃO FIREHUB ──
+  btnLogin.addEventListener("click", async () => {
+    loginError.style.display = "none";
+    btnLogin.textContent = "⏳ Verificando...";
+    btnLogin.disabled = true;
+
+    try {
+      const email = loginEmailInput.value.trim();
+      const password = loginPasswordInput.value.trim();
+
+      const res = await fetch(`${serverUrl}/api/store/extensao-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        authToken = data.token;
+        storeName = data.storeName;
+
+        if (typeof chrome !== "undefined" && chrome.storage) {
+          chrome.storage.local.set({ authToken, storeName, userEmail: email });
+        }
+
+        showMainScreen();
+      } else {
+        loginError.textContent = "❌ " + (data.error || "Login inválido");
+        loginError.style.display = "block";
+      }
+    } catch (err) {
+      loginError.textContent = "❌ Erro ao conectar ao FireHub";
+      loginError.style.display = "block";
+    } finally {
+      btnLogin.textContent = "🔑 Entrar e Conectar Loja";
+      btnLogin.disabled = false;
+    }
+  });
+
+  btnLogout.addEventListener("click", () => {
+    authToken = null;
+    if (typeof chrome !== "undefined" && chrome.storage) {
+      chrome.storage.local.remove(["authToken", "storeName"]);
+    }
+    showLoginScreen();
+  });
+
+  // ── ATUALIZAÇÃO DE TELAS ──
+  function showLoginScreen() {
+    loginScreen.style.display = "block";
+    mainScreen.style.display = "none";
+    headerTitle.textContent = "FireHub iFood";
+    headerSub.textContent = "AUTENTICAÇÃO";
+    statusBadgeEl.textContent = "DESCONECTADO";
+    statusBadgeEl.style.background = "#7F1D1D";
+    statusBadgeEl.style.color = "#FCA5A5";
+  }
+
+  function showMainScreen() {
+    loginScreen.style.display = "none";
+    mainScreen.style.display = "block";
+    headerTitle.textContent = storeName;
+    headerSub.textContent = "CONECTADO AO FIREHUB";
+    fetchData();
+  }
 
   // Alternância de Abas
   tabAutoBtn.addEventListener("click", () => {
@@ -43,7 +125,6 @@ document.addEventListener("DOMContentLoaded", () => {
     saveState();
   });
 
-  // Controle de Motoboys
   btnMinus.addEventListener("click", () => {
     if (count > 1) {
       count--;
@@ -60,7 +141,6 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchData();
   });
 
-  // Ações de Sincronização
   btnSyncAuto.addEventListener("click", async () => {
     btnSyncAuto.textContent = "⏳ Sincronizando...";
     btnSyncAuto.disabled = true;
@@ -76,7 +156,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnSyncManual.disabled = true;
 
     const orders = manualOrdersInput.value || 15;
-    const minutes = manualMinutesInput.value || 60;
+    const minutes = manualMinutesInput.value || 58;
 
     await sendManualSync(orders, minutes);
 
@@ -88,13 +168,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Carregar Estado Salvo
   if (typeof chrome !== "undefined" && chrome.storage) {
-    chrome.storage.local.get(["activeMode", "motoboysCount", "manualOrders", "manualMinutes", "lastEtaFormatted", "lastSyncTime"], (res) => {
-      if (res.activeMode) {
-        activeMode = res.activeMode;
-        if (activeMode === "manual") {
-          tabManualBtn.click();
-        }
+    chrome.storage.local.get(["authToken", "storeName", "activeMode", "motoboysCount", "manualOrders", "manualMinutes", "lastEtaFormatted", "lastSyncTime"], (res) => {
+      if (res.authToken) {
+        authToken = res.authToken;
+        storeName = res.storeName || "Minha Loja";
+        showMainScreen();
+      } else {
+        showLoginScreen();
       }
+
+      if (res.activeMode) activeMode = res.activeMode;
       if (res.motoboysCount) {
         count = res.motoboysCount;
         motoboysCountEl.textContent = count;
@@ -103,11 +186,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (res.manualMinutes) manualMinutesInput.value = res.manualMinutes;
       if (res.lastEtaFormatted) recommendedEtaEl.textContent = res.lastEtaFormatted;
       if (res.lastSyncTime) lastSyncTextEl.textContent = `✅ Última sync: ${res.lastSyncTime}`;
-
-      fetchData();
     });
   } else {
-    fetchData();
+    showLoginScreen();
   }
 
   function saveState() {
@@ -122,8 +203,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function fetchData(triggerSync = false) {
+    if (!authToken) return;
+
     try {
-      const apiUrl = `${serverUrl}/api/store/dynamic-eta?mode=${activeMode}&motoboys=${count}`;
+      const apiUrl = `${serverUrl}/api/store/dynamic-eta?mode=${activeMode}&motoboys=${count}&token=${authToken}`;
       const res = await fetch(apiUrl);
       const data = await res.json();
 
@@ -155,6 +238,9 @@ document.addEventListener("DOMContentLoaded", () => {
         statusBadgeEl.style.color = "#34D399";
 
         const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        firehubSyncStatus.textContent = `🟢 ${nowStr}`;
+        firehubSyncStatus.style.color = "#34D399";
+
         lastSyncTextEl.textContent = `✅ Atualizado às ${nowStr} (${data.ordersInProduction} ped. / ${count} motoboys)`;
 
         if (triggerSync) {
@@ -163,9 +249,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (err) {
       console.warn("[FireHub Extension Popup]", err);
-      statusBadgeEl.textContent = "OFFLINE";
-      statusBadgeEl.style.background = "#7F1D1D";
-      statusBadgeEl.style.color = "#FCA5A5";
+      firehubSyncStatus.textContent = `🔴 Erro`;
+      firehubSyncStatus.style.color = "#FCA5A5";
     }
   }
 
@@ -176,21 +261,48 @@ document.addEventListener("DOMContentLoaded", () => {
     const formatted = `${minutesNum} min`;
 
     const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    firehubSyncStatus.textContent = `🟢 ${nowStr}`;
     lastSyncTextEl.textContent = `✅ Modo Manual Aplicado às ${nowStr} (${minutesNum} min)`;
 
     dispatchToIfood(minMin, maxMin, formatted);
   }
 
-  function dispatchToIfood(minMin, maxMin, formatted) {
+  function dispatchToIfood(minMin, maxMin, formatted, shouldPause = false) {
+    const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
     if (typeof chrome !== "undefined" && chrome.tabs) {
       chrome.tabs.query({ url: "https://*.ifood.com.br/*" }, (tabs) => {
         if (tabs && tabs.length > 0) {
+          ifoodSyncStatus.textContent = `🟢 ${nowStr}`;
+          ifoodSyncStatus.style.color = "#34D399";
+
           chrome.tabs.sendMessage(tabs[0].id, {
             action: "SET_DELIVERY_TIME",
             minMinutes: minMin,
             maxMinutes: maxMin,
             formatted,
             mode: activeMode,
+            shouldPause,
+          });
+        } else {
+          ifoodSyncStatus.textContent = `🔴 Abrindo...`;
+          ifoodSyncStatus.style.color = "#FCA5A5";
+
+          chrome.tabs.create({ url: "https://portal.ifood.com.br/", active: false }, (newTab) => {
+            if (newTab && newTab.id) {
+              setTimeout(() => {
+                ifoodSyncStatus.textContent = `🟢 ${nowStr}`;
+                ifoodSyncStatus.style.color = "#34D399";
+                chrome.tabs.sendMessage(newTab.id, {
+                  action: "SET_DELIVERY_TIME",
+                  minMinutes: minMin,
+                  maxMinutes: maxMin,
+                  formatted,
+                  mode: activeMode,
+                  shouldPause,
+                }).catch(() => {});
+              }, 6000);
+            }
           });
         }
       });

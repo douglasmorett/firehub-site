@@ -38,16 +38,34 @@
       background: #064E3B; color: #34D399; border: 1px solid #059669;
     }
 
+    .login-container {
+      background: #1E293B;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 1rem;
+      margin-top: 0.5rem;
+    }
+
     .notice-box {
       background: rgba(245, 158, 11, 0.1);
       border: 1px solid #F59E0B;
       border-radius: 10px;
-      padding: 8px 10px;
+      padding: 7px 9px;
       margin-bottom: 0.75rem;
       font-size: 0.68rem;
       color: #FDE68A;
       line-height: 1.35;
     }
+
+    /* Dual Sync Status Grid */
+    .sync-status-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 0.75rem;
+    }
+    .sync-badge-box {
+      background: #0F172A; border: 1px solid #334155; border-radius: 8px; padding: 6px; text-align: center;
+    }
+    .sync-badge-title { font-size: 0.65rem; color: #94A3B8; font-weight: 700; }
+    .sync-badge-status { font-size: 0.72rem; font-weight: 800; margin-top: 2px; }
 
     /* Tabs Navigation */
     .tabs-nav {
@@ -166,74 +184,114 @@
     <div class="logo">
       <div class="logo-badge">🔥</div>
       <div>
-        <div class="title">FireHub iFood</div>
-        <div class="subtitle">AUTOMATION & ETA</div>
+        <div class="title" id="headerTitle">FireHub iFood</div>
+        <div class="subtitle" id="headerSub">AUTOMATION & ETA</div>
       </div>
     </div>
-    <div class="status-pill" id="statusBadge">ONLINE</div>
+    <div class="status-pill" id="statusBadge">CONECTANDO</div>
   </div>
 
-  <!-- Orientação ao Lojista -->
-  <div class="notice-box">
-    💡 <b>Orientação ao Lojista:</b> Mantenha a aba do <b>Portal do iFood</b> aberta e logada na área de entregas para a automação funcionar 100%. Caso a aba seja fechada, o bot tentará abri-la no navegador.
-  </div>
-
-  <!-- Abas de Modo -->
-  <div class="tabs-nav">
-    <button class="tab-btn active" id="tabAutoBtn">🤖 Automático (Hakim)</button>
-    <button class="tab-btn" id="tabManualBtn">✍️ Manual</button>
-  </div>
-
-  <!-- CONTEÚDO MODO AUTOMÁTICO -->
-  <div class="tab-content active" id="tabAutoContent">
-    <div class="card">
-      <div class="card-title">🛵 Motoboys na Casa</div>
-      <div class="counter-row">
-        <button class="btn-step" id="btnMinus">-</button>
-        <div class="count-display" id="motoboysCount">2</div>
-        <button class="btn-step" id="btnPlus">+</button>
-      </div>
+  <!-- TELA DE LOGIN FIREHUB (Exibida se não autenticado) -->
+  <div class="login-container" id="loginScreen" style="display: none;">
+    <div style="font-size: 0.85rem; font-weight: 800; color: #FFF; margin-bottom: 8px; text-align: center;">
+      🔐 Faça Login na sua Conta FireHub
     </div>
+    <p style="font-size: 0.7rem; color: #94A3B8; margin-bottom: 12px; text-align: center;">
+      Para usar a automação dual do FireHub + iFood, informe suas credenciais do painel.
+    </p>
 
-    <div class="metrics-grid">
-      <div class="metric-box">
-        <div class="metric-val" id="kdsOrders">0</div>
-        <div class="metric-label">Cozinha (KDS)</div>
-      </div>
-      <div class="metric-box">
-        <div class="metric-val" id="currentRule" style="color: #38BDF8; font-size: 0.95rem;">38 min</div>
-        <div class="metric-label">Status Carga</div>
-      </div>
-    </div>
+    <label style="font-size: 0.68rem; color: #94A3B8; display: block; margin-bottom: 4px;">E-mail do FireHub:</label>
+    <input type="email" id="loginEmail" class="input-field" placeholder="ex: contato@restaurante.com">
 
-    <div class="result-banner" id="resultBanner">
-      <div>
-        <div class="eta-desc" id="bannerTitle">TEMPO HAKIM CALCULADO</div>
-        <div style="font-size: 0.65rem; color: #94A3B8;" id="ruleLabelSub">Planilha Prazos Hakim + KDS</div>
-      </div>
-      <div class="eta-val" id="recommendedEta">38 min</div>
-    </div>
+    <label style="font-size: 0.68rem; color: #94A3B8; display: block; margin-bottom: 4px;">Senha:</label>
+    <input type="password" id="loginPassword" class="input-field" placeholder="••••••••">
 
-    <button class="btn-sync" id="btnSyncAuto">⚡ Sincronizar Automático</button>
-  </div>
-
-  <!-- CONTEÚDO MODO MANUAL -->
-  <div class="tab-content" id="tabManualContent">
-    <div class="card">
-      <div class="card-title">📦 Parâmetro Manual de Carga</div>
-      <label style="font-size: 0.68rem; color: #94A3B8; display: block; margin-bottom: 4px;">Quantidade de pedidos:</label>
-      <input type="number" id="manualOrdersInput" class="input-field" value="15" placeholder="Ex: 15">
-
-      <label style="font-size: 0.68rem; color: #94A3B8; display: block; margin-bottom: 4px;">Prazo de entrega desejado (minutos):</label>
-      <input type="number" id="manualMinutesInput" class="input-field" value="58" placeholder="Ex: 58">
-    </div>
-
-    <button class="btn-sync" id="btnSyncManual" style="background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);">
-      ⚡ Aplicar Tempo Manual
+    <button class="btn-sync" id="btnLogin" style="margin-top: 4px;">
+      🔑 Entrar e Conectar Loja
     </button>
+
+    <div id="loginError" style="font-size: 0.7rem; color: #EF4444; text-align: center; margin-top: 8px; display: none;"></div>
   </div>
 
-  <div class="last-sync" id="lastSyncText">⏱️ Timer automático ativo (a cada 5 min)</div>
+  <!-- CONTEÚDO PRINCIPAL (Exibido após Login) -->
+  <div id="mainScreen" style="display: none;">
+    <!-- Orientação ao Lojista -->
+    <div class="notice-box">
+      💡 <b>Orientação:</b> Mantenha a aba do <b>Portal do iFood</b> aberta e logada na área de entregas.
+    </div>
+
+    <!-- Status Duplo (FireHub + iFood) -->
+    <div class="sync-status-grid">
+      <div class="sync-badge-box">
+        <div class="sync-badge-title">FIREHUB SITE</div>
+        <div class="sync-badge-status" id="firehubSyncStatus" style="color: #34D399;">🟢 --:--</div>
+      </div>
+      <div class="sync-badge-box">
+        <div class="sync-badge-title">PORTAL IFOOD</div>
+        <div class="sync-badge-status" id="ifoodSyncStatus" style="color: #34D399;">🟢 --:--</div>
+      </div>
+    </div>
+
+    <!-- Abas de Modo -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" id="tabAutoBtn">🤖 Automático (Hakim)</button>
+      <button class="tab-btn" id="tabManualBtn">✍️ Manual</button>
+    </div>
+
+    <!-- CONTEÚDO MODO AUTOMÁTICO -->
+    <div class="tab-content active" id="tabAutoContent">
+      <div class="card">
+        <div class="card-title">🛵 Motoboys na Casa</div>
+        <div class="counter-row">
+          <button class="btn-step" id="btnMinus">-</button>
+          <div class="count-display" id="motoboysCount">2</div>
+          <button class="btn-step" id="btnPlus">+</button>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-box">
+          <div class="metric-val" id="kdsOrders">0</div>
+          <div class="metric-label">Cozinha (KDS)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val" id="currentRule" style="color: #38BDF8; font-size: 0.95rem;">38 min</div>
+          <div class="metric-label">Status Carga</div>
+        </div>
+      </div>
+
+      <div class="result-banner" id="resultBanner">
+        <div>
+          <div class="eta-desc" id="bannerTitle">TEMPO HAKIM CALCULADO</div>
+          <div style="font-size: 0.65rem; color: #94A3B8;" id="ruleLabelSub">Planilha Prazos Hakim + KDS</div>
+        </div>
+        <div class="eta-val" id="recommendedEta">38 min</div>
+      </div>
+
+      <button class="btn-sync" id="btnSyncAuto">⚡ Sincronizar Automático</button>
+    </div>
+
+    <!-- CONTEÚDO MODO MANUAL -->
+    <div class="tab-content" id="tabManualContent">
+      <div class="card">
+        <div class="card-title">📦 Parâmetro Manual de Carga</div>
+        <label style="font-size: 0.68rem; color: #94A3B8; display: block; margin-bottom: 4px;">Quantidade de pedidos:</label>
+        <input type="number" id="manualOrdersInput" class="input-field" value="15" placeholder="Ex: 15">
+
+        <label style="font-size: 0.68rem; color: #94A3B8; display: block; margin-bottom: 4px;">Prazo de entrega desejado (minutos):</label>
+        <input type="number" id="manualMinutesInput" class="input-field" value="58" placeholder="Ex: 58">
+      </div>
+
+      <button class="btn-sync" id="btnSyncManual" style="background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);">
+        ⚡ Aplicar Tempo Manual
+      </button>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+      <div class="last-sync" id="lastSyncText" style="margin-top:0;">⏱️ Sync ativo (5 min)</div>
+      <button id="btnLogout" style="background: none; border: none; color: #EF4444; font-size: 0.68rem; font-weight: 700; cursor: pointer;">[ Sair ]</button>
+    </div>
+  </div>
 
   <script src="popup.js"></script>
 </body>
