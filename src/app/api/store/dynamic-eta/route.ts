@@ -3,38 +3,32 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
-export type EtaRule = {
-  maxOrders: number;
-  minMinutes: number;
-  maxMinutes: number;
-};
-
-export const DEFAULT_ETA_RULES: EtaRule[] = [
-  { maxOrders: 6, minMinutes: 30, maxMinutes: 45 },
-  { maxOrders: 12, minMinutes: 45, maxMinutes: 60 },
-  { maxOrders: 20, minMinutes: 60, maxMinutes: 80 },
-  { maxOrders: 999, minMinutes: 80, maxMinutes: 110 },
-];
-
 /**
  * GET /api/store/dynamic-eta
- * Retorna o cálculo do tempo de entrega recomendado com base nos pedidos em produção no KDS
- * e no número de motoboys informados na casa.
- * Aceita autenticação por Session (Navegador) ou Header X-Store-Token / Query token (Extensão Chrome).
+ * Implementa rigorosamente a tabela oficial "Planilha prazos de entrega Hakim":
+ *  - 1 Motoboy: 38m (até 2 ped), 58m (até 3 ped), 78m (até 4 ped), > 4 ped ➔ Fechar 40m
+ *  - 2 Motoboys: 38m (até 4 ped), 58m (até 6 ped), 78m (até 8 ped), > 8 ped ➔ Fechar 40m
+ *  - 3 Motoboys: 38m (até 6 ped), 58m (até 9 ped), 78m (até 12 ped), > 12 ped ➔ Fechar 40m
+ *  - 4 Motoboys: 38m (até 8 ped), 58m (até 12 ped), 78m (até 16 ped), > 16 ped ➔ Fechar 40m
+ *  - 5 Motoboys: 38m (até 10 ped), 58m (até 15 ped), 78m (até 20 ped), > 20 ped ➔ Fechar 40m
+ *  - 6 Motoboys: 38m (até 12 ped), 58m (até 18 ped), 78m (até 24 ped), > 24 ped ➔ Fechar 40m
+ * Formula Geral para M motoboys:
+ *  - Até 2*M ped: 38 min
+ *  - Até 3*M ped: 58 min
+ *  - Até 4*M ped: 78 min
+ *  - Acima de 4*M ped: ALERTA DE CRÍTICO ➔ Fechar a loja por 40 min!
  */
 export async function GET(req: NextRequest) {
   try {
     let franchiseeId: string | null = null;
     let storeName = "FIREHUB";
 
-    // 1. Tentar autenticação via Session
     const session = await getServerSession(authOptions);
     if (session && (session.user as any)?.id) {
       franchiseeId = (session.user as any).ownerId || (session.user as any).id;
       storeName = (session.user as any).storeName || "FIREHUB";
     }
 
-    // 2. Tentar autenticação via Query token / Header (usado pela Extensão do Chrome)
     const urlToken = req.nextUrl.searchParams.get("token") || req.headers.get("x-store-token");
     if (!franchiseeId && urlToken) {
       const user = await prisma.user.findFirst({
@@ -54,7 +48,6 @@ export async function GET(req: NextRequest) {
     }
 
     if (!franchiseeId) {
-      // Tentar loja padrão se houver apenas 1 ou fallback para contatohakim
       const defaultUser = await prisma.user.findFirst({
         where: { email: "contatohakim@gmail.com" },
         select: { id: true, name: true },
@@ -69,7 +62,30 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Loja não identificada" }, { status: 401 });
     }
 
-    // 3. Obter pedidos ativos em produção no KDS
+    const mode = req.nextUrl.searchParams.get("mode") || "auto";
+
+    // ── MODO MANUAL (Override direto) ──
+    if (mode === "manual") {
+      const manualOrders = parseInt(req.nextUrl.searchParams.get("orders") || "10", 10);
+      const manualMinutes = parseInt(req.nextUrl.searchParams.get("minutes") || "58", 10);
+
+      return NextResponse.json({
+        success: true,
+        mode: "manual",
+        franchiseeId,
+        storeName,
+        ordersInProduction: manualOrders,
+        activeMotoboys: null,
+        recommendedMinutes: manualMinutes,
+        etaRangeFormatted: `${manualMinutes} min`,
+        shouldPauseStore: false,
+        pauseMinutes: 0,
+        matchedRuleLabel: `Modo Manual (${manualOrders} ped. ➔ ${manualMinutes} min)`,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    // ── MODO AUTOMÁTICO (Tabela Oficial Hakim) ──
     const activeStatusFilter = { in: ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "RECEBIDO", "CONFIRMADO", "PENDENTE"] };
     const ordersInProduction = await prisma.customerOrder.count({
       where: {
@@ -82,81 +98,64 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // 4. Obter override de motoboys via query param ou do banco
     const queryMotoboys = req.nextUrl.searchParams.get("motoboys");
     let activeMotoboys = queryMotoboys ? parseInt(queryMotoboys, 10) : 2;
-    if (isNaN(activeMotoboys) || activeMotoboys < 1) activeMotoboys = 2;
+    if (isNaN(activeMotoboys) || activeMotoboys < 1) activeMotoboys = 1;
 
-    // 5. Aplicar Matriz de Regras
-    let matchedRule = DEFAULT_ETA_RULES[DEFAULT_ETA_RULES.length - 1];
-    for (const rule of DEFAULT_ETA_RULES) {
-      if (ordersInProduction <= rule.maxOrders) {
-        matchedRule = rule;
-        break;
-      }
+    // Cálculo exato pela fórmula da Planilha Hakim:
+    // Limite 38m = 2 * motoboys
+    // Limite 58m = 3 * motoboys
+    // Limite 78m = 4 * motoboys
+    // Estourou (> 4 * motoboys) ➔ Fechar loja por 40 min
+
+    const max38 = 2 * activeMotoboys;
+    const max58 = 3 * activeMotoboys;
+    const max78 = 4 * activeMotoboys;
+
+    let recommendedMinutes = 38;
+    let etaRangeFormatted = "38 min";
+    let shouldPauseStore = false;
+    let pauseMinutes = 0;
+    let matchedRuleLabel = "";
+
+    if (ordersInProduction <= max38) {
+      recommendedMinutes = 38;
+      etaRangeFormatted = "38 min";
+      matchedRuleLabel = `Até ${max38} ped. (38 min)`;
+    } else if (ordersInProduction <= max58) {
+      recommendedMinutes = 58;
+      etaRangeFormatted = "58 min";
+      matchedRuleLabel = `Até ${max58} ped. (58 min)`;
+    } else if (ordersInProduction <= max78) {
+      recommendedMinutes = 78;
+      etaRangeFormatted = "78 min";
+      matchedRuleLabel = `Até ${max78} ped. (78 min)`;
+    } else {
+      // ESTOURO DE CAPACIDADE ➔ FECHAR LOJA POR 40 MIN!
+      recommendedMinutes = 78;
+      shouldPauseStore = true;
+      pauseMinutes = 40;
+      etaRangeFormatted = "⚠️ PAUSAR LOJA (40 MIN)";
+      matchedRuleLabel = `🚨 Estourou (${ordersInProduction} > ${max78} ped.) ➔ Pausar 40m`;
     }
-
-    // 6. Aplicar Fator de Alívio por Motoboys
-    // Cada motoboy acima de 2 reduz 5 minutos no tempo de entrega (com piso mínimo de 25 min)
-    let minMinutes = matchedRule.minMinutes;
-    let maxMinutes = matchedRule.maxMinutes;
-
-    if (activeMotoboys > 2) {
-      const extraMotoboys = activeMotoboys - 2;
-      const reduction = extraMotoboys * 5;
-      minMinutes = Math.max(25, minMinutes - reduction);
-      maxMinutes = Math.max(40, maxMinutes - reduction);
-    } else if (activeMotoboys === 1 && ordersInProduction > 4) {
-      // 1 motoboy apenas com cozinha cheia adiciona 10 minutos
-      minMinutes += 10;
-      maxMinutes += 15;
-    }
-
-    // Label descritiva da faixa
-    const matchedRuleLabel = ordersInProduction <= 6
-      ? "Cozinha Leve (0 a 6 pedidos)"
-      : ordersInProduction <= 12
-      ? "Cozinha Moderada (7 a 12 pedidos)"
-      : ordersInProduction <= 20
-      ? "Cozinha Movimentada (13 a 20 pedidos)"
-      : "Cozinha Pico (20+ pedidos)";
 
     return NextResponse.json({
       success: true,
+      mode: "auto",
       franchiseeId,
       storeName,
       ordersInProduction,
       activeMotoboys,
-      recommendedEtaMin: minMinutes,
-      recommendedEtaMax: maxMinutes,
-      etaRangeFormatted: `${minMinutes}-${maxMinutes} min`,
+      recommendedMinutes,
+      etaRangeFormatted,
+      shouldPauseStore,
+      pauseMinutes,
       matchedRuleLabel,
+      limits: { max38, max58, max78 },
       updatedAt: new Date().toISOString(),
     });
   } catch (err: any) {
     console.error("[Dynamic ETA API]", err);
     return NextResponse.json({ error: err.message || "Erro ao calcular tempo dinâmico" }, { status: 500 });
-  }
-}
-
-/**
- * POST /api/store/dynamic-eta
- * Permite salvar overrides manuais ou matriz de regras no servidor.
- */
-export async function POST(req: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-
-    const body = await req.json();
-    const { motoboysCount } = body;
-
-    return NextResponse.json({
-      success: true,
-      motoboysCount: motoboysCount || 2,
-      message: "Configuração de tempo dinâmico atualizada com sucesso!",
-    });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Erro ao salvar" }, { status: 500 });
   }
 }

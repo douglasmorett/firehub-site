@@ -1,74 +1,88 @@
 /**
  * FireHub Chrome Extension — Content Script no Portal do Parceiro iFood (portal.ifood.com.br)
- * Interage com a página do iFood ou simula alteração no módulo de tempo de entrega.
+ * Injeta uma pílula compacta e discreta no canto da tela com a opção de minimizar.
  */
 
 console.log("[FireHub Extension] 🍕 Script carregado no Portal do Parceiro iFood!");
 
-// Ouvir requisições vindas da extensão (Popup ou Background Alarm)
+// Injetar pílula flutuante discreta no canto superior direito
+createFloatingCornerPill();
+
+// Ouvir mensagens da extensão
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "SET_DELIVERY_TIME") {
-    console.log(`[FireHub Auto-ETA] ⏱️ Recebido novo prazo para aplicar no iFood: ${request.formatted}`);
-    applyDeliveryTimeOnIfoodPortal(request.minMinutes, request.maxMinutes, request.formatted);
+    console.log(`[FireHub Auto-ETA] ⏱️ Recebido novo prazo: ${request.formatted} (${request.mode || "auto"})`);
+    updateFloatingPill(request.formatted, request.mode);
     sendResponse({ success: true });
   }
 });
 
-/**
- * Função responsável por aplicar o novo tempo de entrega no DOM ou chamar endpoints do Portal iFood
- */
-function applyDeliveryTimeOnIfoodPortal(minMin, maxMin, formattedStr) {
-  try {
-    // 1. Notificação de confirmação visual no portal do iFood
-    showToastNotification(`🔥 FireHub Auto-ETA: Prazo ajustado para ${formattedStr}`);
+function createFloatingCornerPill() {
+  if (document.getElementById("firehub-corner-pill")) return;
 
-    // 2. Procurar seletores de tempo no Portal do iFood (Perfil / Entrega / Prazos)
-    const timeSelects = document.querySelectorAll("select[name*='time'], select[id*='deliveryTime'], input[placeholder*='minuto']");
-    if (timeSelects.length > 0) {
-      timeSelects.forEach(select => {
-        const option = Array.from((select as any).options || []).find((opt: any) => opt.text.includes(String(minMin)) || opt.text.includes(String(maxMin)));
-        if (option) {
-          (select as HTMLSelectElement).value = (option as HTMLOptionElement).value;
-          select.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-      });
+  const pill = document.createElement("div");
+  pill.id = "firehub-corner-pill";
+  pill.style.position = "fixed";
+  pill.style.bottom = "20px";
+  pill.style.right = "20px";
+  pill.style.zIndex = "999999";
+  pill.style.background = "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)";
+  pill.style.color = "#FFF";
+  pill.style.border = "1.5px solid #FF5722";
+  pill.style.borderRadius = "20px";
+  pill.style.padding = "6px 14px";
+  pill.style.boxShadow = "0 8px 20px rgba(0,0,0,0.3)";
+  pill.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  pill.style.fontSize = "12px";
+  pill.style.fontWeight = "800";
+  pill.style.display = "flex";
+  pill.style.alignItems = "center";
+  pill.style.gap = "8px";
+  pill.style.cursor = "pointer";
+  pill.style.userSelect = "none";
+  pill.style.transition = "all 0.3s";
+
+  pill.innerHTML = `
+    <span style="font-size: 14px;">🔥</span>
+    <span id="firehub-pill-text">FireHub: Auto-ETA Ativo</span>
+    <span id="firehub-pill-toggle" style="background: #334155; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; margin-left: 4px;">—</span>
+  `;
+
+  let isCollapsed = false;
+  pill.addEventListener("click", () => {
+    isCollapsed = !isCollapsed;
+    const textEl = document.getElementById("firehub-pill-text");
+    const toggleEl = document.getElementById("firehub-pill-toggle");
+    if (isCollapsed) {
+      if (textEl) textEl.style.display = "none";
+      if (toggleEl) toggleEl.textContent = "+";
+      pill.style.padding = "6px 10px";
+    } else {
+      if (textEl) textEl.style.display = "inline";
+      if (toggleEl) toggleEl.textContent = "—";
+      pill.style.padding = "6px 14px";
     }
+  });
 
-    console.log(`[FireHub Auto-ETA] ✅ Prazo de ${formattedStr} aplicado com sucesso!`);
-  } catch (err) {
-    console.error("[FireHub Auto-ETA Error]", err);
-  }
+  document.body.appendChild(pill);
 }
 
-/**
- * Exibe um Toast minimalista no topo da página do iFood avisando o operador
- */
-function showToastNotification(message) {
-  let toast = document.getElementById("firehub-eta-toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "firehub-eta-toast";
-    toast.style.position = "fixed";
-    toast.style.top = "20px";
-    toast.style.right = "20px";
-    toast.style.zIndex = "999999";
-    toast.style.background = "#0F172A";
-    toast.style.color = "#34D399";
-    toast.style.border = "1.5px solid #10B981";
-    toast.style.padding = "10px 16px";
-    toast.style.borderRadius = "12px";
-    toast.style.fontSize = "13px";
-    toast.style.fontWeight = "800";
-    toast.style.boxShadow = "0 10px 25px rgba(0,0,0,0.3)";
-    toast.style.fontFamily = "-apple-system, BlinkMacSystemFont, sans-serif";
-    toast.style.transition = "opacity 0.4s";
-    document.body.appendChild(toast);
+function updateFloatingPill(formattedStr, mode = "auto", shouldPause = false) {
+  const pill = document.getElementById("firehub-corner-pill");
+  const textEl = document.getElementById("firehub-pill-text");
+  if (textEl) {
+    const badgeStr = mode === "manual" ? "✍️ Manual" : "🤖 Auto";
+    textEl.textContent = `FireHub: ${formattedStr} (${badgeStr})`;
   }
-
-  toast.innerHTML = message;
-  toast.style.opacity = "1";
-
-  setTimeout(() => {
-    if (toast) toast.style.opacity = "0";
-  }, 4000);
+  if (pill) {
+    if (shouldPause) {
+      pill.style.background = "linear-gradient(135deg, #7F1D1D 0%, #450A0A 100%)";
+      pill.style.border = "1.5px solid #EF4444";
+      pill.style.color = "#FCA5A5";
+    } else {
+      pill.style.background = "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)";
+      pill.style.border = "1.5px solid #FF5722";
+      pill.style.color = "#FFF";
+    }
+  }
 }
