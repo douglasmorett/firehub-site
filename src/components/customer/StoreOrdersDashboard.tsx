@@ -468,7 +468,17 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
               color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
             }}>
-              {order.status === "CRIANDO_IA" ? "🤖 IA criando..." : order.source === "WHATSAPP_IA" ? "🤖 IA Whats" : order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
+              {order.status === "CRIANDO_IA"
+                ? "🤖 IA criando..."
+                : order.source === "WHATSAPP_IA"
+                ? "🤖 IA Whats"
+                : order.source === "IFOOD"
+                ? `iFood #${order.ifoodReference || ""}`
+                : order.source === "JOTAJA"
+                ? `Jotajá #${order.openDeliveryReference || ""}`
+                : order.source === "PDV"
+                ? "PDV"
+                : "Online"}
             </span>
           </div>
         </div>
@@ -1754,8 +1764,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
     
     if (!searchTerm) return true;
-    const s = searchTerm.toLowerCase();
-    return o.customerName?.toLowerCase().includes(s) || o.customerPhone?.includes(s) || o.customerAddress?.toLowerCase().includes(s) || o.id.includes(s);
+    const s = searchTerm.toLowerCase().replace("#", "").trim();
+    const displayNum = String(o.dailyOrderNumber || o.ifoodReference || o.openDeliveryReference || "").toLowerCase();
+
+    return (
+      (o.customerName || "").toLowerCase().includes(s) ||
+      (o.customerPhone || "").includes(s) ||
+      (o.customerAddress || "").toLowerCase().includes(s) ||
+      o.id.toLowerCase().includes(s) ||
+      displayNum.includes(s) ||
+      (o.openDeliveryReference || "").toLowerCase().includes(s) ||
+      (o.ifoodReference || "").toLowerCase().includes(s) ||
+      (o.notes || "").toLowerCase().includes(s) ||
+      String(o.dailyOrderNumber || "").includes(s)
+    );
   });
 
   // Sequential order numbering — includes ALL orders in period (even ENCERRADO)
