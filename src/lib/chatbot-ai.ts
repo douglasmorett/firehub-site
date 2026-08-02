@@ -53,8 +53,29 @@ export async function processChatbotAI(
     clientPhoneDigits = remoteJid.split("@")[0].replace(/\D/g, "");
   }
 
-  // Buscar cardápio ao vivo da loja, pedidos recentes e nome do cliente cadastrado
-  const [products, categories, recentOrders, customerRecord] = await Promise.all([
+  // Extrai todas as sequências numéricas (3 a 12 dígitos) presentes na mensagem e no histórico recente
+  const textToScan = `${message || ""} ${history ? history.slice(-3).map((h: any) => h.text).join(" ") : ""}`;
+  const extractedNumbers = textToScan.match(/\d{3,12}/g) || [];
+
+  // Data de início do dia de hoje (UTC/Brasília) para buscar todos os pedidos ativos
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const orderOrConditions: any[] = [];
+  if (clientPhoneDigits && clientPhoneDigits.length >= 8) {
+    orderOrConditions.push({ customerPhone: { contains: clientPhoneDigits.slice(-8) } });
+  }
+
+  for (const numStr of extractedNumbers) {
+    orderOrConditions.push({ openDeliveryReference: numStr });
+    orderOrConditions.push({ ifoodReference: numStr });
+    orderOrConditions.push({ openDeliveryOrderId: { contains: numStr } });
+    orderOrConditions.push({ ifoodOrderId: { contains: numStr } });
+    orderOrConditions.push({ id: { contains: numStr } });
+  }
+
+  // Buscar cardápio ao vivo da loja, pedidos por código/telefone e nome do cliente
+  const [products, categories, searchedOrders, customerRecord] = await Promise.all([
     prisma.menuProduct.findMany({
       where: { franchiseeId: targetFranchiseeId, active: true },
       select: { id: true, name: true, description: true, price: true, category: true, isCombo: true, isBeverage: true, availableDays: true, tags: true },
@@ -65,21 +86,26 @@ export async function processChatbotAI(
       select: { name: true, emoji: true },
       orderBy: { sortOrder: "asc" },
     }),
-    clientPhoneDigits ? prisma.customerOrder.findMany({
+    orderOrConditions.length > 0 ? prisma.customerOrder.findMany({
       where: {
         franchiseeId: targetFranchiseeId,
-        customerPhone: { contains: clientPhoneDigits.slice(-8) },
+        createdAt: { gte: startOfToday },
         status: { not: "CRIANDO_IA" },
+        OR: orderOrConditions,
       },
       select: {
         id: true,
         status: true,
         totalAmount: true,
         customerName: true,
+        customerPhone: true,
         createdAt: true,
         deliveryType: true,
         ifoodReference: true,
         openDeliveryReference: true,
+        openDeliveryChannel: true,
+        cancelledBy: true,
+        notes: true,
         items: {
           select: {
             quantity: true,
@@ -88,7 +114,7 @@ export async function processChatbotAI(
         }
       },
       orderBy: { createdAt: "desc" },
-      take: 2,
+      take: 5,
     }) : Promise.resolve([]),
     clientPhoneDigits ? prisma.storeCustomer.findFirst({
       where: {
@@ -97,6 +123,48 @@ export async function processChatbotAI(
       select: { name: true }
     }) : Promise.resolve(null),
   ]);
+
+  // Se a busca por número/telefone não trouxe resultado ou a mensagem pergunta sobre status, carrega pedidos ativos de hoje da loja
+  let recentOrders: any[] = [...searchedOrders];
+  const isAskingStatus = /pedido|previa|prévia|chega|chegando|entrega|saiu|cadê|cade|demora|onde tá|onde ta|status|situação|situacao|rastrear|posição|posicao/i.test(textToScan);
+  if (recentOrders.length === 0 || isAskingStatus) {
+    const todayActive = await prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: targetFranchiseeId,
+        createdAt: { gte: startOfToday },
+        status: { in: ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA"] },
+      },
+      select: {
+        id: true,
+        status: true,
+        totalAmount: true,
+        customerName: true,
+        customerPhone: true,
+        createdAt: true,
+        deliveryType: true,
+        ifoodReference: true,
+        openDeliveryReference: true,
+        openDeliveryChannel: true,
+        cancelledBy: true,
+        notes: true,
+        items: {
+          select: {
+            quantity: true,
+            menuProduct: { select: { name: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+
+    const existingIds = new Set(recentOrders.map((o: any) => o.id));
+    for (const o of todayActive) {
+      if (!existingIds.has(o.id)) {
+        recentOrders.push(o);
+      }
+    }
+  }
 
   let rawCustomerName = "";
   if (customerRecord?.name && !customerRecord.name.includes("Cliente WhatsApp")) {
@@ -310,7 +378,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
   let wasInactivityCancelled = false;
   // Formatar pedidos recentes deste cliente
-  let recentOrdersSummary = "Nenhum pedido recente encontrado para este número.";
+  let recentOrdersSummary = "Nenhum pedido ativo ou recente encontrado no sistema da loja hoje.";
   if (Array.isArray(recentOrders) && recentOrders.length > 0) {
     const last = recentOrders[0] as any;
     if (last.status === "CANCELADO" && (last.cancelledBy === "SYSTEM_INACTIVITY" || (last.notes || "").includes("inatividade"))) {
@@ -318,17 +386,22 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     }
     recentOrdersSummary = recentOrders.map(o => {
       const statusMap: Record<string, string> = {
-        NOVO: "Recebido (Aguardando confirmação da loja)",
-        ACEITO: "Em Preparação / Cozinha 🔥",
-        EM_PREPARO: "Em Preparação / Cozinha 🔥",
+        NOVO: "Novo (Recebido no sistema e aguardando confirmação na cozinha)",
+        ACEITO: "Em Preparação na Cozinha 🔥",
+        PREPARANDO: "Em Preparação na Cozinha 🔥",
+        EM_PREPARO: "Em Preparação na Cozinha 🔥",
+        SAIU_ENTREGA: "Saiu para Entrega com Motoboy 🛵",
         SAIU_PARA_ENTREGA: "Saiu para Entrega com Motoboy 🛵",
-        ENTREGUE: "Entregue ao cliente ✅",
+        ENTREGUE: "Entregue com Sucesso ✅",
         CANCELADO: "Cancelado ❌"
       };
       const statusReadable = statusMap[o.status] || o.status;
       const itemsList = o.items.map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
-      const displayNum = (o as any).ifoodReference || (o as any).openDeliveryReference || o.id.slice(-4).toUpperCase();
-      return `- Pedido #${displayNum}: Status = "${statusReadable}" | Itens = ${itemsList} | Total = ${o.totalAmount} reais`;
+      const channel = (o as any).openDeliveryChannel || ((o as any).openDeliveryReference ? "Jotajá" : (o as any).ifoodReference ? "iFood" : "Site/WhatsApp");
+      const refNum = (o as any).openDeliveryReference || (o as any).ifoodReference || (o as any).dailyOrderNumber || o.id.slice(-4).toUpperCase();
+      const customerName = o.customerName || "Cliente";
+
+      return `- Pedido #${refNum} (${channel}) | Cliente: "${customerName}" | Tel: "${o.customerPhone || '—'}" | Status: "${statusReadable}" | Itens: ${itemsList} | Total: R$ ${o.totalAmount.toFixed(2)}`;
     }).join("\n");
   }
 
@@ -421,14 +494,15 @@ REGRAS ABSOLUTAS:
      a) O cliente solicitar o cardápio, fotos ou o link de pedido.
      b) O cliente perguntar valores, sabores, opções de lanches ou demonstrar intenção real de pedir/comprar.
      c) O cliente perguntar por promoções ou cupons ativos.
-6. REGRA ABSOLUTA DE STATUS DE PEDIDO E PROIBIÇÃO DE PEDIR TELEFONE/NOME DE QUEM JÁ ESTÁ NO WHATSAPP:
-   - PROIBIÇÃO DE PEDIR NOME OU TELEFONE: Você É ESTRITAMENTE PROIBIDA de pedir para o cliente o número de telefone, DDD ou nome completo para "procurar o pedido" ou "conferir no sistema"!
-   - POR QUE? O sistema JÁ busca o número do WhatsApp do cliente automaticamente e JÁ consulta o histórico e pedidos recentes do cliente no campo "PEDIDOS RECENTES DO CLIENTE" abaixo.
-   - Se o cliente perguntar o status do pedido ("alguma posição do meu pedido?", "cadê meu pedido?", "tá demorando"):
-     a) Consulte o campo "PEDIDOS RECENTES DO CLIENTE" abaixo. Se houver pedido recente, informe o status atual dele com simpatia.
-     b) Se o cliente disser "não recebi", "foi não" ou reclamar que o pedido ainda não chegou:
-        NUNCA peça telefone, nome ou número do pedido! Responda com carinho e empatia:
-        "Poxa, me desculpa! Vou verificar agora mesmo com a nossa equipe o que aconteceu com o seu pedido! Um instante, por favor! 😊"
+6. REGRAS DE CONSULTA E STATUS DE PEDIDO DO DIA (JOTAJA, IFOOD, SITE E WHATSAPP):
+   - Você tem acesso EM TEMPO REAL aos pedidos do dia cadastrados no sistema da loja (Jotajá, iFood, Site e WhatsApp) listados no campo "PEDIDOS RECENTES DO CLIENTE / PEDIDOS ATIVOS DO DIA" abaixo.
+   - Quando o cliente perguntar sobre o pedido ("Chega dentro da prévia?", "cadê meu pedido?", "meu pedido já saiu?", "tá demorando?", "onde tá meu pedido?", "já fiz o pedido"):
+     a) Consulte a lista de pedidos abaixo. Se encontrar um pedido correspondente (seja pelo número do WhatsApp, pelo nome do cliente ou pelo número de referência informado como 32653126, 1876 ou #142):
+        RESPONDA IMEDIATAMENTE INFORMANDO O STATUS REAL DO PEDIDO COM MUITA SIMPATIA E ALEGRIA! Exemplo: "Oi, Paulo Victor! 🥰 Localizei aqui seu pedido nº 32653126 do Jotajá (16x Esfirra de Calabresa)! Ele já está em preparação na nossa cozinha e vai sair para entrega em instantes dentro da prévia! 🛵🔥"
+     b) Se o cliente informar um número de código (ex: 32653126, 1876, #142) ou disser que fez pelo Jotajá/iFood:
+        Localize o pedido correspondente na lista abaixo e informe a posição na hora. Se houver qualquer dúvida ou se não tiver 100% de certeza do nome do cliente, pergunte com carinho: "É o pedido no nome de [Nome do Cliente] pelo Jotajá/iFood? Me confirma que eu já te passo a posição exata!"
+     c) Se o pedido estiver com status "SAIU_PARA_ENTREGA" ou "SAIU_ENTREGA":
+        Diga que o entregador já está a caminho com o pedido e peça para o cliente ficar atento ao interfone/portaria!
 7. QUANDO O CLIENTE PERGUNTAR SOBRE CUPOM DE DESCONTO / PROMOÇÕES:
    - REGRA CRÍTICA DE CUPOM: NUNCA INVENTE CÓDIGOS DE CUPOM! Você é PROIBIDA de inventar cupons que não estejam listados no campo "CUPONS VÁLIDOS CADASTRADOS" abaixo.
    - SE HOUVER CUPOM LISTADO ABAIXO: Informe o código exatamente como cadastrado e o desconto (ex: "Tenho sim! Usa o cupom ${instantCouponCode || "CUPOM"} e ganhe desconto no seu pedido! ${storeLink}").
