@@ -54,19 +54,28 @@ export async function GET(req: NextRequest) {
     // Usar corte amplo de 48 horas para NUNCA ocultar pedidos criados antes da abertura do caixa ativo!
     const safeCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
-    let where: any = {
-      status: { notIn: ["CANCELADO", "ENTREGUE"] },
-      createdAt: { gte: safeCutoff },
-      kdsStage: { not: "FINISHED" },
-    };
-
+    let storeCondition: any[] = [];
     if (userStoreIds.length > 0) {
-      where.OR = [
+      storeCondition = [
         { franchiseeId: { in: userStoreIds } },
         { franchisee: { ownerId: { in: userStoreIds } } },
         { franchiseeId: null }
       ];
     }
+
+    let where: any = {
+      status: { notIn: ["CANCELADO", "ENTREGUE"] },
+      createdAt: { gte: safeCutoff },
+      AND: [
+        storeCondition.length > 0 ? { OR: storeCondition } : {},
+        {
+          OR: [
+            { kdsStage: { not: "FINISHED" } },
+            { kdsStage: null }
+          ]
+        }
+      ]
+    };
 
     const orders = await prisma.customerOrder.findMany({
       where,
