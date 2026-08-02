@@ -21,8 +21,11 @@ export async function GET(req: NextRequest) {
       select: { id: true }
     });
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email;
+    let email: string | null = null;
+    try {
+      const session = await getServerSession(authOptions);
+      email = session?.user?.email || null;
+    } catch {}
 
     let userStoreIds: string[] = [];
 

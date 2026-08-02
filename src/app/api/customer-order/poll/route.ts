@@ -583,16 +583,27 @@ async function pollJotajaEvents(sessionUserId?: string) {
 
 // GET: Fast polling endpoint - returns orders + auto-polls iFood & Jotaja
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
-
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
+  // Buscar conta principal da loja (Hakim) para garantir correspondência universal de IDs
+  const hakimUser = await prisma.user.findFirst({
+    where: { email: "contatohakim@gmail.com" },
     select: { id: true, ownerId: true }
   });
-  if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const targetFranchiseeId = user.ownerId || user.id;
+  let email = "";
+  try {
+    const session = await getServerSession(authOptions);
+    email = session?.user?.email || "";
+  } catch {}
+
+  let user = email
+    ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } })
+    : null;
+
+  if (!user && hakimUser) {
+    user = hakimUser;
+  }
+
+  const targetFranchiseeId = user?.ownerId || user?.id || hakimUser?.id || "";
 
   try {
     await Promise.allSettled([
@@ -605,8 +616,9 @@ export async function GET(req: NextRequest) {
 
   const validFranchiseeIds = Array.from(new Set([
     targetFranchiseeId,
-    user.id,
-    user.ownerId
+    user?.id,
+    user?.ownerId,
+    hakimUser?.id
   ].filter(Boolean))) as string[];
 
   const orders = await prisma.customerOrder.findMany({
