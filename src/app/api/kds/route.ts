@@ -13,7 +13,7 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 250): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 600): Promise<T> {
   let lastErr: any;
   for (let i = 0; i <= retries; i++) {
     try {
@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
         orderBy: { openedAt: "asc" },
         take: 100,
       })
-    ).catch(() => []);
+    );
 
     // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
     const allRecentOrders = await withRetry(() =>
@@ -160,7 +160,7 @@ export async function GET(req: NextRequest) {
         select: { id: true, createdAt: true },
         orderBy: { createdAt: "asc" },
       })
-    ).catch(() => []);
+    );
 
     const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
     const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions);
