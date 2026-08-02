@@ -309,9 +309,11 @@ export async function processChatbotAI(
       } catch {}
     }
 
+    const isChannelImport = /jotaja|ifood|online/i.test(p.category || "");
     const isCombo = p.isCombo === true || /combo|oferta|kit|pack|imperia|príncip|principe|rei|sábio|sabio/i.test(p.name) || /combo|oferta/i.test(p.category || "");
-    const isPrice190 = Math.abs(p.price - 1.90) < 0.10 || p.price === 1.9 || /1[\.,]90/i.test(p.name) || /1[\.,]90/i.test(p.description || "") || /1[\.,]90/i.test(p.category || "");
-    const isPromoItem = isPrice190 || /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(p.name) || /promo|promoção|promocao/i.test(p.category || "");
+    // Desconsidera itens importados do Jotajá/iFood para a classificação de promoções de R$ 1,90
+    const isPrice190 = !isChannelImport && (Math.abs(p.price - 1.90) < 0.10 || p.price === 1.9 || /1[\.,]90/i.test(p.name) || /1[\.,]90/i.test(p.description || ""));
+    const isPromoItem = !isChannelImport && (isPrice190 || /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(p.name) || /promo|promoção|promocao/i.test(p.category || ""));
 
     // Preenche o cronograma semanal de promoções da loja
     if (isPromoItem || isPrice190) {
@@ -354,17 +356,17 @@ export async function processChatbotAI(
     .join("\n");
 
   const catalogSummary = `=== 🏷️ PROMOÇÃO DE R$ 1,90 / ANÚNCIOS META DE HOJE (${currentDayName}) ===
-${itemsAt190Today.length > 0 ? itemsAt190Today.join("\n") : (todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Esfirras Promocionais por R$ 1,90 cada! (Sabores promocionais: Carne, Calabresa, Queijo Temperado e Esfirra do Dia. Válido hoje!)")}
+${itemsAt190Today.length > 0 ? itemsAt190Today.join("\n") : (todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma esfirra de R$ 1,90 ativa hoje.")}
 
 === 📅 PROMOÇÃO E ITENS DE R$ 1,90 AMANHÃ (${tomorrowDayName}) ===
-${itemsAt190Tomorrow.length > 0 ? itemsAt190Tomorrow.join("\n") : (tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Amanhã também haverá promoção de R$ 1,90 nos sabores da casa!")}
+${itemsAt190Tomorrow.length > 0 ? itemsAt190Tomorrow.join("\n") : (tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Amanhã haverá promoção de R$ 1,90 conforme o cardápio da loja.")}
 
 === 🗓️ CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA ===
-${weeklyScheduleSummary || "- Promoção de R$ 1,90 e Esfirra do Dia ativa todos os dias na loja!"}
+${weeklyScheduleSummary || "- Promoções diárias conforme cardápio ativo da loja!"}
 (SE O CLIENTE PERGUNTAR QUAIS DIAS TEM PROMOÇÃO OU SE AMANHÃ VAI TER 1,90, CONSULTE ESTA TABELA REAL DA LOJA E RESPONDA COM TOTAL CERTEZA!)
 
 === 🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE (${currentDayName}) 🌟 ===
-${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Esfirra do Dia Promocional por R$ 1,90 cada!"}
+${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma promoção cadastrada para hoje."}
 (SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE OU QUAL A ESFIRRA DA PROMOÇÃO, RESPONDA EXATAMENTE A OPÇÃO ACIMA! É PROIBIDO MENCIONAR QUALQUER OUTRA ESFIRRA COMO SE FOSSE A PROMOÇÃO DE HOJE!)
 
 === COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
@@ -513,7 +515,7 @@ REGRAS ABSOLUTAS:
    - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
 10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO):
     - É SEVERAMENTE PROIBIDO INVENTAR OU MENCIONAR QUALQUER PRODUTO, COMBO, SABOR, REFRIGERANTE OU PREÇO QUE NÃO ESTEJA EXPLICITAMENTE CADASTRADO NO CARDÁPIO ABAIXO!
-    - NÃO INVENTE "Combo Esfiha Lovers", "Combo Família", "Refrigerante 1L" ou qualquer outro produto/combo fictício! Se um item ou tamanho não consta na lista "NOSSO CARDÁPIO COMPLETO DA LOJA" abaixo, ELE NÃO EXISTE NA LOJA E É ESTRITAMENTE PROIBIDO MENCIONÁ-LO!
+    - NUNCA INVENTE "Trio HK", "Pedido do Príncipe", "Esfirra por R$ 3,99", "3 por 9,99" ou qualquer outro produto, combo ou preço fictício! Se um item ou valor não consta na lista "NOSSO CARDÁPIO COMPLETO DA LOJA" abaixo, ELE NÃO EXISTE NA LOJA E É ESTRITAMENTE PROIBIDO MENCIONÁ-LO!
     - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
     - Cite APENAS itens/combos reais cadastrados no cardápio abaixo com o seu preço exato oficial e envie o link (${storeLink}). NUNCA invente ou chute um produto ou preço que não seja o cadastrado no banco!
@@ -547,13 +549,18 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
          - Taxa de entrega: R$ X,XX (ou Frete Grátis)
          - Valor Total a pagar: R$ X,XX
       b) NUNCA omita a taxa de entrega no resumo final do pedido!
-${aiOrderingEnabled ? `20. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPLETO E PROATIVO!):
+20. REGRA ABSOLUTA PARA MENSAGENS DE COMPROVANTE DO JOTAJA OU IFOOD:
+    - Se a mensagem do cliente contiver "SEU PEDIDO:", "Acompanhe abaixo o pedido", "Pedido nº:", "RESUMO DO PEDIDO", "jotaja.com" ou "ifood.com.br":
+    - O cliente está APENAS colando o comprovante de um pedido que ele JÁ REALIZOU pelo Jotajá ou iFood!
+    - O pedido JÁ ENTROU no sistema da cozinha da loja! É TOTALMENTE PROIBIDO CRIAR QUALQUER RASCUNHO OU SEGUNDO PEDIDO! NUNCA GERE TAG [[PEDIDO_IA:...]]!
+    - Responda apenas com simpatia: "Recebemos a confirmação do seu pedido feito pelo Jotajá/iFood com sucesso! 🚀 Ele já deu entrada na nossa cozinha e está sendo preparado!"
+${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPLETO E PROATIVO!):
     - FOCO ABSOLUTO NO PEDIDO ATUAL:
       Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta 2 esfirras", "muda pra pix", "troca o refri"):
       a) Atualize o rascunho com os itens, recálculo de valor e confirmação natural.
       b) VERIFIQUE O QUE FALTA E PERGUNTE PROATIVAMENTE NA MESMA MENSAGEM:
          - Se não sabe o NOME DO CLIENTE (quando constar "Primeiro Nome: Não identificado" ou "Cliente WhatsApp"), PERGUNTE OBRIGATORIAMENTE: "Qual o seu nome para o cadastro do pedido?"
-         - Se falta o endereço, pergunte: "Qual o endereço completo para entrega (rua, número, bairro)?"
+         - Se falta o endereço completo (Rua, Número e BAIRRO), PERGUNTE OBRIGATORIAMENTE O BAIRRO: "Qual o endereço completo para entrega (rua, número e BAIRRO)?"
          - Se falta o pagamento, pergunte: "Qual a forma de pagamento (Pix, Cartão de Crédito/Débito na entrega ou Dinheiro)?"
          - Se falta o troco (caso dinheiro), pergunte se precisa de troco para quanto.
       c) NUNCA pergunte se o cliente quer fazer "um novo pedido ou alterar o pedido anterior" enquanto ele estiver montando, alterando ou confirmando o pedido atual!
@@ -906,6 +913,20 @@ async function syncAiOrderToDatabase({
     ? (autoAccept ? "ACEITO" : (rawStatus === "ACEITO" ? "ACEITO" : "NOVO"))
     : "CRIANDO_IA";
 
+  // Se o payload ou dados forem derivados de um comprovante do Jotajá/iFood, bloqueia a criação de rascunho
+  const payloadStr = JSON.stringify(payload || {});
+  if (
+    /SEU PEDIDO:/i.test(payloadStr) ||
+    /Acompanhe abaixo o pedido/i.test(payloadStr) ||
+    /Pedido nº:/i.test(payloadStr) ||
+    /RESUMO DO PEDIDO/i.test(payloadStr) ||
+    /jotaja\.com/i.test(payloadStr) ||
+    /ifood\.com\.br/i.test(payloadStr)
+  ) {
+    console.log("[Chatbot AI Sync] 🛑 Abortando sincronização de rascunho IA pois o conteúdo é um comprovante do Jotajá/iFood.");
+    return;
+  }
+
   const orderItemsData = (payload.items || []).map((it: any) => {
     const matchedProduct = storeProducts.find(
       (p) => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim()
@@ -913,20 +934,23 @@ async function syncAiOrderToDatabase({
       (p) => p.name.toLowerCase().includes((it.name || "").toLowerCase()) || (it.name || "").toLowerCase().includes(p.name.toLowerCase())
     );
 
-    const price = it.price || matchedProduct?.price || 0;
+    // REGRA DE SEGURANÇA SUPREMA E ANTI-ALUCINAÇÃO DE PREÇOS:
+    // NUNCA usar o preço inventado pela IA no payload! Usar sempre o preço REAL do produto cadastrado no banco de dados!
+    const realPrice = matchedProduct ? matchedProduct.price : (Number(it.price) || 0);
     const quantity = Math.max(1, parseInt(it.quantity) || 1);
 
     return {
       menuProductId: matchedProduct?.id || null,
-      name: it.name || matchedProduct?.name || "Item",
+      name: matchedProduct?.name || it.name || "Item",
       quantity,
-      price,
+      price: realPrice,
     };
   });
 
   const totalItemsSum = orderItemsData.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
   const deliveryFee = Number(payload.deliveryFee || payload.deliveryTax || payload.shippingFee || 0);
-  const totalOrderAmount = Number(payload.totalAmount || (totalItemsSum + deliveryFee));
+  // Recalcula o total de forma determinística — NUNCA confiar no valor total chutado pela IA!
+  const totalOrderAmount = totalItemsSum + deliveryFee;
 
   const notesText = payload.finalized
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`
