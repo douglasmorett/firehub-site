@@ -64,17 +64,9 @@ export async function GET(req: NextRequest) {
     }
 
     let where: any = {
+      franchiseeId: { in: userStoreIds },
       status: { notIn: ["CANCELADO", "ENTREGUE"] },
       createdAt: { gte: safeCutoff },
-      AND: [
-        storeCondition.length > 0 ? { OR: storeCondition } : {},
-        {
-          OR: [
-            { kdsStage: { not: "FINISHED" } },
-            { kdsStage: null }
-          ]
-        }
-      ]
     };
 
     const orders = await prisma.customerOrder.findMany({
@@ -121,10 +113,7 @@ export async function GET(req: NextRequest) {
     // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
     const allRecentOrders = await prisma.customerOrder.findMany({
       where: {
-        OR: [
-          { franchiseeId: { in: userStoreIds } },
-          { franchisee: { ownerId: { in: userStoreIds } } }
-        ],
+        franchiseeId: { in: userStoreIds },
         createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
       },
       select: { id: true, createdAt: true, dailyOrderNumber: true } as any,

@@ -611,10 +611,7 @@ export async function GET(req: NextRequest) {
 
   const orders = await prisma.customerOrder.findMany({
     where: {
-      OR: [
-        { franchiseeId: { in: validFranchiseeIds } },
-        { franchisee: { ownerId: { in: validFranchiseeIds } } }
-      ],
+      franchiseeId: { in: validFranchiseeIds },
       status: { notIn: ["AGUARDANDO_PAGAMENTO"] }
     },
     include: {
