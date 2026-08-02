@@ -24,4 +24,4 @@ Esta extensão automatiza o tempo de entrega no **Portal do Parceiro iFood** (`p
 
 1. **Fixar no Navegador**: Clique no ícone de quebra-cabeça no canto superior direito do Chrome e fixe o ícone do **FireHub 🔥**.
 2. **Ajustar Motoboys**: Abra o Popup da extensão e ajuste a quantidade de motoboys da casa no momento (`[-]` / `[+]`).
-3. **Deixar o Portal do iFood Aberto**: Mantenha a aba do Portal do Parceiro iFood aberta. A extensão irá verificar a carga da cozinha a cada 5 minutos e aplicar o tempo ideal automaticamente!
+3. **Deixar o Portal do iFood Aberto**: Mantenha a aba do Portal do Parceiro iFood aberta. A extensão irá verificar a carga da cozinha a cada 3 minutos e aplicar o tempo ideal automaticamente!

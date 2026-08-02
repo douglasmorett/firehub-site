@@ -1,6 +1,6 @@
 /**
  * FireHub Chrome Extension — Background Service Worker
- * Mantém um alarme de 5 minutos ativo para buscar o tempo de entrega no FireHub e atualizar no iFood.
+ * Mantém um alarme de 3 minutos ativo para buscar o tempo de entrega no FireHub e atualizar no iFood.
  * Se a aba do Portal do iFood não estiver aberta, o bot a abre automaticamente no navegador!
  */
 
@@ -8,7 +8,7 @@ const ALARM_NAME = "FIREHUB_DYNAMIC_ETA_SYNC";
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("[FireHub Extension] 🚀 Instalada com sucesso!");
-  chrome.alarms.create(ALARM_NAME, { periodInMinutes: 5 });
+  chrome.alarms.create(ALARM_NAME, { periodInMinutes: 3 });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {

@@ -38,25 +38,17 @@ export async function GET(req: NextRequest) {
       ? new Date(activeSession.openedAt)
       : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // Filtro amplo para capturar todos os pedidos ativos na cozinha sem ocultar nada
+    // Usar corte amplo de 48 horas para NUNCA ocultar pedidos criados antes da abertura do caixa ativo!
+    const safeCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
     let where: any = {
       franchiseeId: targetFranchiseeId,
       status: { notIn: ["CANCELADO", "ENTREGUE"] },
-      createdAt: { gte: sessionStartCutoff },
+      createdAt: { gte: safeCutoff },
+      kdsStage: stage === "production"
+        ? { in: ["PRODUCTION", null] }
+        : { in: ["PRODUCTION", "FINISHING", null] },
     };
-
-    if (stage === "production") {
-      where.OR = [
-        { kdsStage: "PRODUCTION" },
-        { kdsStage: null },
-      ];
-    } else if (stage === "finishing") {
-      where.OR = [
-        { kdsStage: "PRODUCTION" },
-        { kdsStage: "FINISHING" },
-        { kdsStage: null },
-      ];
-    }
 
     const orders = await prisma.customerOrder.findMany({
       where,

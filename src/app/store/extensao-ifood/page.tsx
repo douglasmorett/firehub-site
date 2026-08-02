@@ -227,7 +227,7 @@ export default function ExtensaoIfoodPage() {
               </div>
             </div>
             <p style={{ fontSize: "0.88rem", color: "#475569", lineHeight: 1.5 }}>
-              O operador seleciona apenas a quantidade de motoboys na casa. O robô monitora o KDS em segundo plano e ajusta o iFood e o site a cada 5 minutos automaticamente.
+              O operador seleciona apenas a quantidade de motoboys na casa. O robô monitora o KDS em segundo plano e ajusta o iFood e o site a cada 3 minutos automaticamente.
             </p>
           </div>
 
