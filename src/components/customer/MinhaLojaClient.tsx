@@ -9,9 +9,10 @@ import StoreSettingsForm from "@/components/customer/StoreSettingsForm";
 import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
 import StoreTeamManager from "@/components/customer/StoreTeamManager";
 import StoreReviewsManager from "@/components/customer/StoreReviewsManager";
+import { StoreApiManager } from "@/components/customer/StoreApiManager";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe";
+type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api";
 
 const SECTIONS = [
   {
@@ -86,6 +87,14 @@ const SECTIONS = [
     bg: "#FEF3C7",
     title: "Avaliações & NPS",
     desc: "Feedback dos clientes, respostas e visibilidade no cardápio digital",
+  },
+  {
+    id: "api" as Section,
+    icon: <ShieldCheck size={28} />,
+    color: "#4F46E5",
+    bg: "#EEF2FF",
+    title: "API Aberta & Webhooks",
+    desc: "Chaves de API para conectar PDV/ERP e webhooks de saída em tempo real",
   },
   {
     id: "conta" as Section,
@@ -239,6 +248,16 @@ export default function MinhaLojaClient({ user }: { user: any }) {
       <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
         <BackBtn onClick={() => setSection("menu")} title="⭐ Avaliações & NPS" />
         <StoreReviewsManager initialShowReviews={user.showReviewsOnMenu} />
+      </div>
+    );
+  }
+
+  // ── Seção API Aberta & Webhooks ──────────────────────────────────────────────
+  if (section === "api") {
+    return (
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="🔌 API Aberta & Webhooks" />
+        <StoreApiManager />
       </div>
     );
   }

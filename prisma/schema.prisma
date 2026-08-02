@@ -83,6 +83,8 @@ model User {
   jotajaMerchantId  String?        // UUID da loja no Jotajá
   jotajaConnected   Boolean        @default(false) // Módulo Jotajá ativo
   showReviewsOnMenu Boolean        @default(true)  // Exibir avaliações no cardápio digital
+  apiKeys         ApiKey[]
+  webhookSubscriptions WebhookSubscription[]
   orders          Order[]
   customerOrders  CustomerOrder[]
   storeReviews    StoreReview[]
@@ -635,6 +637,37 @@ model PrintJob {
   createdAt    DateTime @default(now())
 
   @@index([franchiseeId, status])
+}
+
+// === API ABERTA & WEBHOOKS DE SAÍDA (OPEN API V1) ===
+model ApiKey {
+  id           String    @id @default(cuid())
+  franchiseeId String
+  franchisee   User      @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  name         String
+  keyPrefix    String
+  keyHash      String    @unique
+  permissions  Json?
+  active       Boolean   @default(true)
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([franchiseeId])
+}
+
+model WebhookSubscription {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  franchisee   User     @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  url          String
+  secret       String
+  events       Json
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([franchiseeId])
 }
 
 
