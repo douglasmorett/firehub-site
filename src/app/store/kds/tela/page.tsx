@@ -184,42 +184,33 @@ export default function KDSTelaPage() {
       .catch(() => {});
   }, []);
 
-  // Mapeamento sequencial de números do sistema (#1, #2, #3...) idêntico ao Dashboard da Loja
+  // Numeração PERMANENTE E IMUTÁVEL baseada no dia do calendário (America/Sao_Paulo)
+  // O pedido #195 será o 195 para sempre, independente de abrir ou fechar o caixa!
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
 
+    // 1. Se dailyOrderNumber veio da API/banco, respeita rigorosamente
     orders.forEach((o: any) => {
-      if (o.dailyOrderNumber) {
+      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
         map.set(o.id, o.dailyOrderNumber);
       }
     });
 
-    const sessionStartCutoff = cashOpenedAt
-      ? new Date(cashOpenedAt)
-      : new Date(Date.now() - 48 * 60 * 60 * 1000);
+    // 2. Calcula sequência estável agrupada pelo dia do calendário de Brasília
+    const dayCounters = new Map<string, number>();
+    const sortedOrders = [...orders].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    const sortedSessionOrders = [...orders]
-      .filter((o: any) => new Date(o.createdAt) >= sessionStartCutoff)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    sortedSessionOrders.forEach((o, i) => {
+    sortedOrders.forEach((o: any) => {
       if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
-      }
-    });
-
-    const sortedOlder = [...orders]
-      .filter((o: any) => new Date(o.createdAt) < sessionStartCutoff)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    sortedOlder.forEach((o, i) => {
-      if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
+        const dateKey = new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+        const nextSeq = (dayCounters.get(dateKey) || 0) + 1;
+        dayCounters.set(dateKey, nextSeq);
+        map.set(o.id, nextSeq);
       }
     });
 
     return map;
-  }, [orders, cashOpenedAt]);
+  }, [orders]);
 
   // Buscar todas as categorias no mount para o seletor de filtros
   useEffect(() => {

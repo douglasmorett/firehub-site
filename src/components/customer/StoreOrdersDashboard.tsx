@@ -1792,46 +1792,33 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   });
 
   // Sequential order numbering — includes ALL orders in period (even ENCERRADO)
-  // so numbers stay stable. Resets when date range / cash session changes.
-  // Sequential order numbering — tied strictly to active cash session (resets ONLY when cash is closed & opened)
+  // Numeração PERMANENTE E IMUTÁVEL baseada no dia do calendário (America/Sao_Paulo)
+  // O pedido #195 será o 195 para sempre, independente de fechar ou reabrir o caixa!
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
 
-    // 1. If dailyOrderNumber was sent by API, use it
+    // 1. Se dailyOrderNumber veio da API/banco, respeita rigorosamente
     orders.forEach((o: any) => {
-      if (o.dailyOrderNumber) {
+      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
         map.set(o.id, o.dailyOrderNumber);
       }
     });
 
-    // 2. Cutoff: data de abertura do caixa atual (se houver caixa aberto), ou janela de 48h (se não houver)
-    const sessionStartCutoff = cashOpenedAt
-      ? new Date(cashOpenedAt)
-      : new Date(Date.now() - 48 * 60 * 60 * 1000);
+    // 2. Calcula sequência estável agrupada pelo dia do calendário de Brasília
+    const dayCounters = new Map<string, number>();
+    const sortedOrders = [...orders].sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    const sortedSessionOrders = [...orders]
-      .filter((o: any) => new Date(o.createdAt) >= sessionStartCutoff)
-      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    sortedSessionOrders.forEach((o: any, i: number) => {
+    sortedOrders.forEach((o: any) => {
       if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
-      }
-    });
-
-    // 3. Fallback para pedidos anteriores à abertura do caixa atual (isolados)
-    const sortedOlder = [...orders]
-      .filter((o: any) => new Date(o.createdAt) < sessionStartCutoff)
-      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    sortedOlder.forEach((o: any, i: number) => {
-      if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
+        const dateKey = new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+        const nextSeq = (dayCounters.get(dateKey) || 0) + 1;
+        dayCounters.set(dateKey, nextSeq);
+        map.set(o.id, nextSeq);
       }
     });
 
     return map;
-  }, [orders, cashOpenedAt]);
+  }, [orders]);
 
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 

@@ -81,26 +81,34 @@ export default async function FranchiseeCustomerOrdersPage() {
         select: { id: true, name: true, phone: true },
       }),
     ]);
-    // Compute server-authoritative sequence numbers based on active cash session openedAt
-    const sessionStartCutoff = cashSessionRes?.openedAt
-      ? new Date(cashSessionRes.openedAt)
-      : new Date(Date.now() - 48 * 60 * 60 * 1000);
-
-    const sessionOrders = await prisma.customerOrder.findMany({
+    // Numeração PERMANENTE E IMUTÁVEL baseada no dia do calendário (America/Sao_Paulo)
+    // O pedido #195 será o 195 para sempre, independente de abrir ou fechar o caixa!
+    const allRecentOrders = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: targetFranchiseeId,
-        createdAt: { gte: sessionStartCutoff },
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
       },
       select: { id: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     });
 
     const dailyNumMap = new Map<string, number>();
-    sessionOrders.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
+    const dayCounters = new Map<string, number>();
+
+    allRecentOrders.forEach((o: any) => {
+      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
+        dailyNumMap.set(o.id, o.dailyOrderNumber);
+      } else {
+        const dateKey = new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+        const nextSeq = (dayCounters.get(dateKey) || 0) + 1;
+        dayCounters.set(dateKey, nextSeq);
+        dailyNumMap.set(o.id, nextSeq);
+      }
+    });
 
     orders = ordersRes.map((o: any) => ({
       ...o,
-      dailyOrderNumber: dailyNumMap.get(o.id) || null,
+      dailyOrderNumber: o.dailyOrderNumber || dailyNumMap.get(o.id) || null,
     }));
 
     motoboys = motoboysRes;

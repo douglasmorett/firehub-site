@@ -110,24 +110,33 @@ export async function GET(req: NextRequest) {
     take: 50,
   });
 
-  // Buscar todos os pedidos da sessão de caixa atual por ordem de criação
-  const sessionOrders = await prisma.customerOrder.findMany({
+  // Numeração PERMANENTE E IMUTÁVEL baseada no dia do calendário (America/Sao_Paulo)
+  const allRecentOrders = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      createdAt: { gte: sessionStartCutoff },
+      createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
     },
     select: { id: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
 
   const dailyNumMap = new Map<string, number>();
-  sessionOrders.forEach((o, i) => {
-    dailyNumMap.set(o.id, i + 1);
+  const dayCounters = new Map<string, number>();
+
+  allRecentOrders.forEach((o: any) => {
+    if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
+      dailyNumMap.set(o.id, o.dailyOrderNumber);
+    } else {
+      const dateKey = new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+      const nextSeq = (dayCounters.get(dateKey) || 0) + 1;
+      dayCounters.set(dateKey, nextSeq);
+      dailyNumMap.set(o.id, nextSeq);
+    }
   });
 
-  const ordersWithDailyNum = orders.map((o) => ({
+  const ordersWithDailyNum = orders.map((o: any) => ({
     ...o,
-    dailyOrderNumber: dailyNumMap.get(o.id) || null,
+    dailyOrderNumber: o.dailyOrderNumber || dailyNumMap.get(o.id) || null,
   }));
 
   return NextResponse.json(ordersWithDailyNum, {
