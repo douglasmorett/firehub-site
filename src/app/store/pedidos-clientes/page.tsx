@@ -48,9 +48,12 @@ export default async function FranchiseeCustomerOrdersPage() {
   let activeCashSessionOpenedAt: string | null = null;
   let motoboys: any[] = [];
   try {
-    const [ordersRes, cashSessionRes, motoboysRes] = await Promise.all([
+    const [ordersRes, cashSessionRes, motoboysRes, allRecentOrders, allCashSessions] = await Promise.all([
       prisma.customerOrder.findMany({
-        where: { franchiseeId: targetFranchiseeId },
+        where: {
+          franchiseeId: targetFranchiseeId,
+          status: { not: "CRIANDO_IA" },
+        },
         include: {
           items: {
             include: {
@@ -80,31 +83,24 @@ export default async function FranchiseeCustomerOrdersPage() {
         orderBy: { name: "asc" },
         select: { id: true, name: true, phone: true },
       }),
+      prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: targetFranchiseeId,
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.cashSession.findMany({
+        where: { franchiseeId: targetFranchiseeId },
+        select: { id: true, openedAt: true, closedAt: true },
+        orderBy: { openedAt: "asc" },
+        take: 100,
+      }),
     ]);
-    // Numeração PERMANENTE E IMUTÁVEL baseada no dia do calendário (America/Sao_Paulo)
-    // O pedido #195 será o 195 para sempre, independente de abrir ou fechar o caixa!
-    const allRecentOrders = await prisma.customerOrder.findMany({
-      where: {
-        franchiseeId: targetFranchiseeId,
-        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-      },
-      select: { id: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
-    });
 
-    const dailyNumMap = new Map<string, number>();
-    const dayCounters = new Map<string, number>();
-
-    allRecentOrders.forEach((o: any) => {
-      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
-        dailyNumMap.set(o.id, o.dailyOrderNumber);
-      } else {
-        const dateKey = new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
-        const nextSeq = (dayCounters.get(dateKey) || 0) + 1;
-        dayCounters.set(dateKey, nextSeq);
-        dailyNumMap.set(o.id, nextSeq);
-      }
-    });
+    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions);
 
     orders = ordersRes.map((o: any) => ({
       ...o,

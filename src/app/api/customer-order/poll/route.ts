@@ -667,7 +667,7 @@ export async function GET(req: NextRequest) {
     select: { openedAt: true }
   });
 
-  // Numeração PERMANENTE E IMUTÁVEL baseada no dia do calendário (America/Sao_Paulo)
+  // Numeração PERMANENTE E IMUTÁVEL baseada no Turno Operacional da Loja (subtrai 5h para o madrugadão não zerar à meia-noite)
   const allRecentOrders = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: targetFranchiseeId,
@@ -678,15 +678,17 @@ export async function GET(req: NextRequest) {
   });
 
   const dailyNumMap = new Map<string, number>();
-  const dayCounters = new Map<string, number>();
+  const shiftCounters = new Map<string, number>();
 
   allRecentOrders.forEach((o: any) => {
     if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
       dailyNumMap.set(o.id, o.dailyOrderNumber);
     } else {
-      const dateKey = new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
-      const nextSeq = (dayCounters.get(dateKey) || 0) + 1;
-      dayCounters.set(dateKey, nextSeq);
+      // Subtrai 5 horas para que o turno da madrugada (00:00 a 05:00 AM) continue no mesmo dia operacional
+      const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
+      const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+      const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
+      shiftCounters.set(shiftKey, nextSeq);
       dailyNumMap.set(o.id, nextSeq);
     }
   });
