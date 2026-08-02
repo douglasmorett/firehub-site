@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         autoAcceptOrders: false,
         storeAlertSound: "bell",
         storeOrderCount: 0,
-        planPercent: 2,
+        planPercent: 1,
         storeHours: {
           seg: { open: "09:00", close: "22:00", active: true },
           ter: { open: "09:00", close: "22:00", active: true },

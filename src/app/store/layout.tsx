@@ -63,7 +63,11 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   let pendingPayment: { amount: number; url: string | null; isOverdue: boolean; daysLeft: number } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
   const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
-  const isSpecialStore = userEmailClean === "viniciusmenezes.ofc@gmail.com";
+  const ownerPlanPercent = (storeOwner as any)?.planPercent ?? (user as any)?.planPercent;
+  const isSpecialStore =
+    userEmailClean === "viniciusmenezes.ofc@gmail.com" ||
+    userEmailClean === "contatohakim@gmail.com" ||
+    ownerPlanPercent === 0;
 
   if (isFranqueado && targetFranchiseeId && !isSpecialStore) {
     try {

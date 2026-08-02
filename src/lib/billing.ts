@@ -84,7 +84,7 @@ export async function trackSaleForBilling(franchiseeId: string) {
 
   const totalSales = agg._sum.totalAmount ?? 0;
 
-  // Aplica regra: 3%, mín R$60, máx R$400
+  // Aplica regra: 1%, mín R$50, máx R$400
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
 
   await prisma.franchiseeBillingCycle.update({
