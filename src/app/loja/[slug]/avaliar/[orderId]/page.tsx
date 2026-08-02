@@ -148,16 +148,25 @@ export default function CustomerReviewPage() {
               </div>
             )}
 
-            <a
-              href={`/loja/${slug}`}
-              style={{
-                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-                width: "100%", padding: "12px", background: "#2563EB", color: "#FFFFFF",
-                borderRadius: 12, textDecoration: "none", fontWeight: 800, fontSize: "0.95rem"
-              }}
-            >
-              <Store size={18} /> Voltar ao Cardápio Digital
-            </a>
+            {(() => {
+              const realSlug = order?.franchisee?.slug && order.franchisee.slug !== "minha-loja"
+                ? order.franchisee.slug
+                : (slug && slug !== "minha-loja" ? slug : "");
+              const menuUrl = realSlug ? `/loja/${realSlug}` : "/";
+
+              return (
+                <a
+                  href={menuUrl}
+                  style={{
+                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    width: "100%", padding: "12px", background: "#2563EB", color: "#FFFFFF",
+                    borderRadius: 12, textDecoration: "none", fontWeight: 800, fontSize: "0.95rem"
+                  }}
+                >
+                  <Store size={18} /> Voltar ao Cardápio Digital
+                </a>
+              );
+            })()}
           </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ background: "#FFFFFF", borderRadius: 20, padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)", border: "1px solid #E2E8F0" }}>

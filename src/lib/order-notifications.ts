@@ -121,7 +121,8 @@ Se tiver qualquer dúvida, basta nos responder por aqui.`;
         break;
 
       case "ENTREGUE":
-        const storeSlug = (order.franchisee as any)?.slug || "minha-loja";
+        const rawSlug = (order.franchisee as any)?.slug;
+        const storeSlug = rawSlug && rawSlug !== "minha-loja" ? rawSlug : "loja";
         const baseUrl = process.env.NEXTAUTH_URL || "https://firehubfood.com.br";
         const reviewUrl = `${baseUrl.replace(/\/$/, "")}/loja/${storeSlug}/avaliar/${order.id}`;
         message = `🥳 *Pedido Entregue com Sucesso!*
