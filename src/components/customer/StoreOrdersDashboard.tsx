@@ -672,7 +672,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             )}
 
             {/* Motoboy select / iFood Motoboy Badge */}
-            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
+            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
               isIfoodMotoboy(order) ? (
                 <select
                   disabled
@@ -690,16 +690,20 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 </select>
               ) : (
                 <select
-                  value={order.motoboyId || ""}
+                  value={order.motoboyId || (order as any).motoboy?.id || ""}
                   onChange={e => { e.stopPropagation(); onAssignMotoboy && onAssignMotoboy(order.id, e.target.value); }}
                   disabled={assigningId === order.id}
                   onClick={e => e.stopPropagation()}
                   style={{
-                    padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
-                    fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
-                    background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
-                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px"
+                    padding: "4px 8px", borderRadius: "6px",
+                    border: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "2px solid #EF4444" : (order.motoboyId ? "1.5.px solid #059669" : "1.5px solid #94A3B8"),
+                    fontSize: "0.78rem", fontWeight: 700,
+                    color: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#991B1B" : (order.motoboyId ? "#047857" : "#1E293B"),
+                    background: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#FEE2E2" : (order.motoboyId ? "#ECFDF5" : "#F8FAFC"),
+                    fontFamily: "inherit",
+                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "145px"
                   }}
+                  title={(order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "Pedido CANCELADO com Motoboy atribuído (para aviso e acerto financeiro)" : "Atribuir/Alterar Motoboy"}
                 >
                   <option value="">Motoboy</option>
                   {motoboys?.map((m: any) => (

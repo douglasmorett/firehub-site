@@ -138,7 +138,6 @@ export async function PUT(req: Request) {
       data: {
         status: "CANCELADO",
         cancelledBy: "CUSTOMER",
-        motoboyId: null,
         cancelDispute: { ...dispute, pending: false, resolved: "accepted", resolvedAt: new Date().toISOString(), ifoodResult },
       } as any,
     });
