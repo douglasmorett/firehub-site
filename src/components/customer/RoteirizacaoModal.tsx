@@ -434,15 +434,72 @@ export default function RoteirizacaoModal({
     });
   }, [deliveryOrders, createdRoutes, searchTerm, selectedOrderIds]);
 
+  // Helper para extrair e destacar o Bairro (Casas Velhas, Mariléa, Verdes Mares, etc.) e formatar endereço completo
+  const parseAddressDetails = (rawAddr: string) => {
+    if (!rawAddr || typeof rawAddr !== "string") {
+      return { neighborhood: "", fullAddress: "Endereço a confirmar" };
+    }
+
+    const fullAddress = rawAddr.trim();
+    let neighborhood = "";
+
+    // 1. Procurar por "Bairro: XXX" ou "Bairro XXX" ou "- Bairro XXX"
+    const bairroMatch = fullAddress.match(/(?:bairro|br:?)\s*([^-,]+)/i);
+    if (bairroMatch && bairroMatch[1]) {
+      neighborhood = bairroMatch[1].trim();
+    }
+
+    // 2. Se não achou com rótulo "Bairro", procurar por nomes de bairros conhecidos na região
+    if (!neighborhood) {
+      const knownNeighborhoods = [
+        "Casas Velhas", "Verdes Mares", "Mariléa", "Marilea", "Centro", "Costa Azul",
+        "Cidade Praiana", "Âncora", "Ancora", "Remanso", "Serra Mar", "Zabulão", "Zambulao",
+        "Extremoz", "Recreio", "Operários", "Operarios", "Chácara Mariléa", "Chacara Marilea",
+        "Nova Esperança", "Nova Esperanca", "Jardim Mariléa", "Jardim Marilea", "Rocha Leão",
+        "Rocha Leao", "Cantagalo", "Unamar", "Tamoios", "Jardim Esperança", "Peró", "Novo Rio das Ostras",
+        "Boca do Mato", "Balneário Remanso", "Atlântica"
+      ];
+
+      for (const bName of knownNeighborhoods) {
+        const reg = new RegExp(`\\b${bName}\\b`, "i");
+        if (reg.test(fullAddress)) {
+          neighborhood = bName;
+          break;
+        }
+      }
+    }
+
+    // 3. Se ainda não achou e o endereço tem partes divididas por "-" ou ","
+    if (!neighborhood) {
+      const parts = fullAddress.split(/\s*-\s*|\s*,\s*/);
+      if (parts.length >= 2) {
+        const filteredParts = parts.filter(p => !/rio das ostras|cabo frio|unamar|macaé|macae|rj|brasil/i.test(p.trim()));
+        if (filteredParts.length >= 2) {
+          const lastPart = filteredParts[filteredParts.length - 1].trim();
+          if (!/comp|complemento|casa|apto|bloco|sobrado|ponto|muro|portão|ref/i.test(lastPart) && lastPart.length < 35) {
+            neighborhood = lastPart;
+          }
+        }
+      }
+    }
+
+    return {
+      neighborhood,
+      fullAddress,
+    };
+  };
+
   // Clean Address for Nominatim OpenStreetMap Geocoding
   const cleanAddressForGeocoding = (rawAddress: string) => {
     let clean = rawAddress
-      .replace(/(-?\s*Comp:.*)/gi, "")
-      .replace(/(-?\s*Casa.*)/gi, "")
-      .replace(/(-?\s*Ap.*)/gi, "")
-      .replace(/(-?\s*Apto.*)/gi, "")
-      .replace(/(-?\s*Bloco.*)/gi, "")
-      .replace(/(-?\s*Fundos.*)/gi, "")
+      .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
+      .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
+      .replace(/(-?\s*Ponto de Ref(?:erencia)?:.*)/gi, "")
+      .replace(/(-?\s*Casa\s*\d+.*)/gi, "")
+      .replace(/(-?\s*Apto?\s*\d+.*)/gi, "")
+      .replace(/(-?\s*Bloco\s*\w+.*)/gi, "")
+      .replace(/(-?\s*Sobrado.*)/gi, "")
+      .replace(/(-?\s*Muro\s*\w+.*)/gi, "")
       .trim();
 
     clean = clean
@@ -473,8 +530,15 @@ export default function RoteirizacaoModal({
       const cleanedAddr = cleanAddressForGeocoding(rawAddr);
       const cacheKey = `${cleanedAddr}_${storeCity}`.toLowerCase().trim();
 
-      // Check if address is in persistent localStorage cache
-      if (localCache[cacheKey]) {
+      const orderLat = (order as any).customerLatLng?.lat || (order as any).latitude || (order as any).lat;
+      const orderLng = (order as any).customerLatLng?.lng || (order as any).longitude || (order as any).lng;
+
+      if (orderLat && orderLng && !isNaN(Number(orderLat)) && !isNaN(Number(orderLng))) {
+        if (!initialMap[order.id] || initialMap[order.id].lat !== Number(orderLat)) {
+          initialMap[order.id] = { lat: Number(orderLat), lng: Number(orderLng) };
+          initialUpdated = true;
+        }
+      } else if (localCache[cacheKey]) {
         if (!initialMap[order.id] || initialMap[order.id].lat !== localCache[cacheKey].lat) {
           initialMap[order.id] = localCache[cacheKey];
           initialUpdated = true;
@@ -1302,9 +1366,28 @@ export default function RoteirizacaoModal({
                                 </span>
                               </div>
 
-                              <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#1E293B", margin: "0 0 3px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                📍 {addrText}
-                              </p>
+                              {/* Bairro em Destaque & Endereço Completo sem cortes */}
+                              {(() => {
+                                const { neighborhood, fullAddress } = parseAddressDetails(addrText);
+                                return (
+                                  <div style={{ margin: "3px 0 5px 0" }}>
+                                    {neighborhood ? (
+                                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                        <span style={{
+                                          background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A",
+                                          padding: "2px 7px", borderRadius: "5px", fontWeight: 800, fontSize: "0.78rem"
+                                        }}>
+                                          🏘️ Bairro: {neighborhood}
+                                        </span>
+                                      </div>
+                                    ) : null}
+
+                                    <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#1E293B", margin: 0, lineHeight: 1.35, wordBreak: "break-word" }}>
+                                      📍 {fullAddress}
+                                    </p>
+                                  </div>
+                                );
+                              })()}
 
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.76rem", color: "#64748B" }}>
                                 <span>👤 {order.customerName}</span>
