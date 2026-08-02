@@ -489,6 +489,45 @@ export default function RoteirizacaoModal({
     };
   };
 
+  // Dicionário de Bairros de Rio das Ostras e Região para fallback instantâneo de GPS
+  const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
+    recreio: { lat: -22.5278, lng: -41.9392 },
+    marilea: { lat: -22.5115, lng: -41.9324 },
+    mariléa: { lat: -22.5115, lng: -41.9324 },
+    "chacara marilea": { lat: -22.5100, lng: -41.9360 },
+    "chácara mariléa": { lat: -22.5100, lng: -41.9360 },
+    "chacara marileia": { lat: -22.5100, lng: -41.9360 },
+    costazul: { lat: -22.5350, lng: -41.9280 },
+    "costa azul": { lat: -22.5350, lng: -41.9280 },
+    "ouro verde": { lat: -22.5200, lng: -41.9260 },
+    "jardim bela vista": { lat: -22.5160, lng: -41.9290 },
+    "parque sao jorge": { lat: -22.5240, lng: -41.9420 },
+    "parque são jorge": { lat: -22.5240, lng: -41.9420 },
+    "nova alianca": { lat: -22.5260, lng: -41.9500 },
+    "nova aliança": { lat: -22.5260, lng: -41.9500 },
+    "extensao do bosque": { lat: -22.5230, lng: -41.9480 },
+    "extensão do bosque": { lat: -22.5230, lng: -41.9480 },
+    "extensao novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
+    "extensão novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
+    ancora: { lat: -22.5050, lng: -41.9480 },
+    âncora: { lat: -22.5050, lng: -41.9480 },
+    "cidade praiana": { lat: -22.5400, lng: -41.9600 },
+    centro: { lat: -22.5245, lng: -41.9455 },
+    recanto: { lat: -22.5310, lng: -41.9560 },
+    "recanto rio das ostras": { lat: -22.5310, lng: -41.9560 },
+    atlantica: { lat: -22.5080, lng: -41.9250 },
+    atlântica: { lat: -22.5080, lng: -41.9250 },
+    "terra firme": { lat: -22.5120, lng: -41.9200 },
+    "enseada das gaivotas": { lat: -22.5020, lng: -41.9200 },
+    operarios: { lat: -22.5230, lng: -41.9380 },
+    operários: { lat: -22.5230, lng: -41.9380 },
+    "bairro operario": { lat: -22.5230, lng: -41.9380 },
+    "bairro operário": { lat: -22.5230, lng: -41.9380 },
+    "verdes mares": { lat: -22.5380, lng: -41.9520 },
+    "serra mar": { lat: -22.5290, lng: -41.9620 },
+    "cidade beira mar": { lat: -22.5350, lng: -41.9650 },
+  };
+
   // Clean Address for Nominatim OpenStreetMap Geocoding
   const cleanAddressForGeocoding = (rawAddress: string) => {
     let clean = rawAddress
@@ -523,15 +562,19 @@ export default function RoteirizacaoModal({
 
     const initialMap = { ...geocodedMap };
     let initialUpdated = false;
-    const toGeocode: { id: string; searchAddress: string; cleanAddr: string }[] = [];
+    const toGeocode: { id: string; idx: number; rawAddr: string; neighborhood: string; cleanedStreet: string; cacheKey: string; dictFallback?: { lat: number; lng: number } }[] = [];
 
     deliveryOrders.forEach((order, idx) => {
       const rawAddr = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`;
-      const cleanedAddr = cleanAddressForGeocoding(rawAddr);
-      const cacheKey = `${cleanedAddr}_${storeCity}`.toLowerCase().trim();
+      const { neighborhood } = parseAddressDetails(rawAddr);
+      const cleanedStreet = cleanAddressForGeocoding(rawAddr);
+      const cacheKey = `${cleanedStreet}_${neighborhood}_${storeCity}`.toLowerCase().trim();
 
       const orderLat = (order as any).customerLatLng?.lat || (order as any).latitude || (order as any).lat;
       const orderLng = (order as any).customerLatLng?.lng || (order as any).longitude || (order as any).lng;
+
+      const cleanBairroKey = neighborhood.toLowerCase().trim();
+      const dictFallback = NEIGHBORHOOD_COORDS_MAP[cleanBairroKey];
 
       if (orderLat && orderLng && !isNaN(Number(orderLat)) && !isNaN(Number(orderLng))) {
         if (!initialMap[order.id] || initialMap[order.id].lat !== Number(orderLat)) {
@@ -543,12 +586,21 @@ export default function RoteirizacaoModal({
           initialMap[order.id] = localCache[cacheKey];
           initialUpdated = true;
         }
+      } else if (dictFallback) {
+        // Se o bairro é conhecido na tabela fixa de Rio das Ostras, atribui imediatamente para a tela abrir instantânea!
+        if (!initialMap[order.id]) {
+          initialMap[order.id] = dictFallback;
+          initialUpdated = true;
+        }
       } else if (!initialMap[order.id]) {
-        // Enfileira endereço para geocodificação real no Nominatim OpenStreetMap em segundo plano
         toGeocode.push({
           id: order.id,
-          cleanAddr: cacheKey,
-          searchAddress: `${cleanedAddr}, ${storeCity}, RJ, Brasil`
+          idx,
+          rawAddr,
+          neighborhood,
+          cleanedStreet,
+          cacheKey,
+          dictFallback,
         });
       }
     });
@@ -562,7 +614,6 @@ export default function RoteirizacaoModal({
       return;
     }
 
-    // Process un-cached addresses in fast parallel batches
     let isMounted = true;
     const geocodeAddresses = async () => {
       setGeocodingLoading(true);
@@ -570,7 +621,22 @@ export default function RoteirizacaoModal({
       const updatedCache = { ...localCache };
       let hasNewCache = false;
 
-      // Process in batches of 4 for maximum speed without hitting rate limits
+      const fetchNominatim = async (query: string) => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+            { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" }, signal: AbortSignal.timeout(3500) }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.length > 0) {
+              return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+            }
+          }
+        } catch {}
+        return null;
+      };
+
       const BATCH_SIZE = 4;
       for (let i = 0; i < toGeocode.length; i += BATCH_SIZE) {
         if (!isMounted) break;
@@ -578,29 +644,50 @@ export default function RoteirizacaoModal({
 
         await Promise.all(
           batch.map(async (item) => {
-            try {
-              const res = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(item.searchAddress)}&limit=1`,
-                { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" }, signal: AbortSignal.timeout(4000) }
-              );
+            let coords: { lat: number; lng: number } | null = null;
 
-              if (res.ok) {
-                const data = await res.json();
-                if (data && data.length > 0) {
-                  const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-                  updatedMap[item.id] = coords;
-                  updatedCache[item.cleanAddr] = coords;
-                  hasNewCache = true;
-                }
+            // 1. Tentativa com Endereço Limpo + Bairro + Cidade
+            const query1 = `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+            coords = await fetchNominatim(query1);
+
+            // 2. Tentativa apenas com Nome da Rua + Bairro (sem número predial)
+            if (!coords && item.cleanedStreet.length > 5) {
+              const streetOnly = item.cleanedStreet.replace(/,\s*\d+.*/, "").replace(/\d+/g, "").trim();
+              if (streetOnly) {
+                const query2 = `${streetOnly}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+                coords = await fetchNominatim(query2);
               }
-            } catch (err) {}
+            }
+
+            // 3. Tentativa apenas pelo Bairro no Nominatim
+            if (!coords && item.neighborhood) {
+              const query3 = `${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              coords = await fetchNominatim(query3);
+            }
+
+            // 4. Fallback pelo Dicionário Estático do Bairro
+            if (!coords && item.dictFallback) {
+              coords = item.dictFallback;
+            }
+
+            // 5. Fallback Absoluto Garantido (Centro da Cidade com Jitter) — NENHUM PEDIDO FICA SEM PINO!
+            if (!coords) {
+              coords = {
+                lat: defaultCenter.lat + ((item.idx % 5) - 2) * 0.003,
+                lng: defaultCenter.lng + (Math.floor(item.idx / 5) - 2) * 0.003,
+              };
+            }
+
+            updatedMap[item.id] = coords;
+            updatedCache[item.cacheKey] = coords;
+            hasNewCache = true;
           })
         );
 
         if (isMounted) {
           setGeocodedMap({ ...updatedMap });
         }
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 150));
       }
 
       if (hasNewCache) {
