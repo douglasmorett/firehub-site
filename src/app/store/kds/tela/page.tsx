@@ -168,6 +168,13 @@ export default function KDSTelaPage() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasEnteredIds, setHasEnteredIds] = useState<Set<string>>(new Set());
 
+  // Estado para armazenar o último pedido finalizado para permitir desfazer baixa acidental
+  const [lastCompletedOrder, setLastCompletedOrder] = useState<{
+    order: Order;
+    previousStage: "production" | "finishing";
+  } | null>(null);
+  const [isUndoing, setIsUndoing] = useState(false);
+
   const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
 
   // Sync with active cash session openedAt
@@ -377,6 +384,12 @@ export default function KDSTelaPage() {
 
       const action = stage === "production" ? "finish_production" : "finish_order";
 
+      // Salva para poder desfazer a baixa caso tenha clicado por engano
+      setLastCompletedOrder({
+        order,
+        previousStage: stage === "production" ? "production" : "finishing",
+      });
+
       setExitingOrderId(order.id);
 
       // Show toast
@@ -407,10 +420,50 @@ export default function KDSTelaPage() {
     [stage, exitingOrderId, fetchOrders]
   );
 
+  // ─── Desfazer ÚLTIMA baixa ──────────────────────────────────────────────────
+
+  const undoLastCompletedOrder = useCallback(async () => {
+    if (!lastCompletedOrder || isUndoing) return;
+    setIsUndoing(true);
+
+    const targetAction = lastCompletedOrder.previousStage === "production" ? "revert_production" : "revert_finishing";
+    const restoredLabel = getOrderLabel(lastCompletedOrder.order);
+
+    try {
+      await fetch("/api/kds", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ orderId: lastCompletedOrder.order.id, action: targetAction }),
+      });
+
+      setToast({ orderId: lastCompletedOrder.order.id, label: `↩️ ${restoredLabel} Restaurado!` });
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+
+      setLastCompletedOrder(null);
+      lastJsonRef.current = "";
+      await fetchOrders();
+    } catch (err) {
+      console.error("Erro ao desfazer baixa KDS:", err);
+    } finally {
+      setIsUndoing(false);
+    }
+  }, [lastCompletedOrder, isUndoing, fetchOrders]);
+
   // ─── Keyboard support ──────────────────────────────────────────────────────
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Atalho de desfazer baixa: Backspace ou 'z' ou 'u' ou Ctrl+Z
+      if (e.key === "Backspace" || e.key === "z" || e.key === "Z" || e.key === "u" || e.key === "U" || (e.ctrlKey && e.key.toLowerCase() === "z")) {
+        if (lastCompletedOrder) {
+          e.preventDefault();
+          undoLastCompletedOrder();
+          return;
+        }
+      }
+
       // Numpad 0-9 codes: Numpad0-Numpad9, Digit0-Digit9
       let num: number | null = null;
 
@@ -442,7 +495,7 @@ export default function KDSTelaPage() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [filteredOrders, markAsPronto]);
+  }, [filteredOrders, markAsPronto, lastCompletedOrder, undoLastCompletedOrder]);
 
   // ─── Accent color for stage ─────────────────────────────────────────────────
 
@@ -533,6 +586,33 @@ export default function KDSTelaPage() {
             >
               {stage === "production" ? "Produção" : "Finalização"}
             </span>
+
+            {/* BOTÃO RETORNO / UNDO DA ÚLTIMA BAIXA */}
+            {lastCompletedOrder && (
+              <button
+                onClick={undoLastCompletedOrder}
+                disabled={isUndoing}
+                title="Clique ou pressione 'Z' / 'Backspace' para restaurar o último pedido finalizado sem querer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 16px",
+                  borderRadius: 14,
+                  background: "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
+                  color: "#FFF",
+                  fontSize: 13,
+                  fontWeight: 900,
+                  border: "none",
+                  cursor: isUndoing ? "wait" : "pointer",
+                  boxShadow: "0 0 16px rgba(245,158,11,0.5)",
+                  animation: "kds-slide-in 0.3s ease-out",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <span style={{ fontSize: 16 }}>↩️</span> Desfazer Baixa {getOrderLabel(lastCompletedOrder.order)}
+              </button>
+            )}
           </div>
           {/* ─── Filter Tabs ─── */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a2e", borderRadius: 10, padding: 4 }}>

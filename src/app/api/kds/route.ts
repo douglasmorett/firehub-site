@@ -302,5 +302,31 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: true, stage: "FINISHED" });
   }
 
+  if (action === "revert_production" || action === "undo_production") {
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: {
+        kdsStage: "PRODUCTION",
+        kdsFinishingAt: null,
+      },
+    });
+    return NextResponse.json({ success: true, stage: "PRODUCTION" });
+  }
+
+  if (action === "revert_finishing" || action === "undo_finishing") {
+    const isPickup = order.deliveryType !== "DELIVERY";
+    const updateData: any = {
+      kdsStage: "FINISHING",
+    };
+    if (isPickup && order.status === "SAIU_ENTREGA") {
+      updateData.status = "PREPARANDO";
+    }
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: updateData,
+    });
+    return NextResponse.json({ success: true, stage: "FINISHING" });
+  }
+
   return NextResponse.json({ error: "Action inválida" }, { status: 400 });
 }
