@@ -349,17 +349,18 @@ export default function KDSTelaPage() {
 
     // Filtro por categoria: mostra só itens da(s) categoria(s) selecionada(s)
     if (activeCategories.length > 0) {
+      const activeNormalized = activeCategories.map((c) => c.toLowerCase().trim());
       result = result
-        .map(order => ({
+        .map((order) => ({
           ...order,
-          items: order.items.filter(
-            (item: any) => {
-              const cat = item.menuProduct?.category || item.category || "";
-              return cat && activeCategories.includes(cat);
-            }
-          ),
+          items: order.items.filter((item: any) => {
+            const cat = (item.menuProduct?.category || item.category || "").toLowerCase().trim();
+            // Se o item não tem categoria explícita (pedidos iFood / JotaJá / WhatsApp), mantém o item visível!
+            if (!cat) return true;
+            return activeNormalized.includes(cat);
+          }),
         }))
-        .filter(order => order.items.length > 0); // ocultar pedidos sem nenhum item da categoria
+        .filter((order) => order.items.length > 0);
     }
 
     return result;
@@ -561,7 +562,20 @@ export default function KDSTelaPage() {
             ))}
           </div>
           {/* ─── Category Filter Button ─── */}
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8 }}>
+            {activeCategories.length > 0 && (
+              <button
+                onClick={() => setActiveCategories([])}
+                style={{
+                  padding: "8px 14px", borderRadius: 10, border: "1px solid #ef4444",
+                  background: "#ef444422", color: "#fca5a5", fontWeight: 700, fontSize: 13, cursor: "pointer",
+                  fontFamily: FONT, display: "flex", alignItems: "center", gap: 4, transition: "all 0.2s"
+                }}
+              >
+                ✕ Limpar Filtros ({activeCategories.length})
+              </button>
+            )}
+
             <button
               onClick={() => setShowCategoryPopup(prev => !prev)}
               style={{

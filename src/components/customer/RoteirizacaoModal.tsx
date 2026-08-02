@@ -449,15 +449,21 @@ export default function RoteirizacaoModal({
       neighborhood = bairroMatch[1].trim();
     }
 
-    // 2. Se não achou com rótulo "Bairro", procurar por nomes de bairros conhecidos na região
+    // 2. Se não achou com rótulo "Bairro", procurar por nomes de bairros conhecidos na região (ordenados dos compostos mais longos para os simples)
     if (!neighborhood) {
       const knownNeighborhoods = [
-        "Casas Velhas", "Verdes Mares", "Mariléa", "Marilea", "Centro", "Costa Azul",
-        "Cidade Praiana", "Âncora", "Ancora", "Remanso", "Serra Mar", "Zabulão", "Zambulao",
-        "Extremoz", "Recreio", "Operários", "Operarios", "Chácara Mariléa", "Chacara Marilea",
-        "Nova Esperança", "Nova Esperanca", "Jardim Mariléa", "Jardim Marilea", "Rocha Leão",
-        "Rocha Leao", "Cantagalo", "Unamar", "Tamoios", "Jardim Esperança", "Peró", "Novo Rio das Ostras",
-        "Boca do Mato", "Balneário Remanso", "Atlântica"
+        "Mariléa Chácara", "Marilea Chacara", "Chácara Mariléa", "Chacara Marilea", "Chacara Marileia",
+        "Jardim Mariléa", "Jardim Marilea", "Novo Rio das Ostras", "Extensão Novo Rio das Ostras",
+        "Extensao Novo Rio das Ostras", "Recanto Rio das Ostras", "Bairro Operário", "Bairro Operario",
+        "Parque São Jorge", "Parque Sao Jorge", "Extensão do Bosque", "Extensao do Bosque",
+        "Jardim Bela Vista", "Cidade Beira Mar", "Cidade Praiana", "Costa Azul", "Costa Azul",
+        "Serra Mar", "Verdes Mares", "Ouro Verde", "Terra Firme", "Enseada das Gaivotas",
+        "Nova Esperança", "Nova Esperanca", "Jardim Esperança", "Jardim Esperanca",
+        "Casas Velhas", "Rocha Leão", "Rocha Leao", "Balneário Remanso", "Balneario Remanso",
+        "Boca do Mato", "Jardim Atlântico", "Jardim Atlantico", "Nova Aliança", "Nova Alianca",
+        "Mariléa", "Marilea", "Centro", "Remanso", "Âncora", "Ancora", "Zabulão", "Zambulao",
+        "Extremoz", "Recreio", "Operários", "Operarios", "Cantagalo", "Unamar", "Tamoios",
+        "Peró", "Atlântica", "Atlantica", "Recanto"
       ];
 
       for (const bName of knownNeighborhoods) {
@@ -489,32 +495,34 @@ export default function RoteirizacaoModal({
     };
   };
 
-  // Dicionário de Bairros de Rio das Ostras e Região para fallback instantâneo de GPS
+  // Dicionário de Bairros de Rio das Ostras e Região com Coordenadas de Alta Precisão
   const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
-    recreio: { lat: -22.5278, lng: -41.9392 },
-    marilea: { lat: -22.5115, lng: -41.9324 },
-    mariléa: { lat: -22.5115, lng: -41.9324 },
-    "chacara marilea": { lat: -22.5100, lng: -41.9360 },
-    "chácara mariléa": { lat: -22.5100, lng: -41.9360 },
-    "chacara marileia": { lat: -22.5100, lng: -41.9360 },
-    costazul: { lat: -22.5350, lng: -41.9280 },
-    "costa azul": { lat: -22.5350, lng: -41.9280 },
-    "ouro verde": { lat: -22.5200, lng: -41.9260 },
-    "jardim bela vista": { lat: -22.5160, lng: -41.9290 },
-    "parque sao jorge": { lat: -22.5240, lng: -41.9420 },
-    "parque são jorge": { lat: -22.5240, lng: -41.9420 },
-    "nova alianca": { lat: -22.5260, lng: -41.9500 },
-    "nova aliança": { lat: -22.5260, lng: -41.9500 },
-    "extensao do bosque": { lat: -22.5230, lng: -41.9480 },
-    "extensão do bosque": { lat: -22.5230, lng: -41.9480 },
+    recreio: { lat: -22.5220, lng: -41.9280 },
+    marilea: { lat: -22.5130, lng: -41.9340 },
+    mariléa: { lat: -22.5130, lng: -41.9340 },
+    "marilea chacara": { lat: -22.5080, lng: -41.9310 },
+    "mariléa chácara": { lat: -22.5080, lng: -41.9310 },
+    "chacara marilea": { lat: -22.5080, lng: -41.9310 },
+    "chácara mariléa": { lat: -22.5080, lng: -41.9310 },
+    "chacara marileia": { lat: -22.5080, lng: -41.9310 },
+    costazul: { lat: -22.5320, lng: -41.9240 },
+    "costa azul": { lat: -22.5320, lng: -41.9240 },
+    "ouro verde": { lat: -22.5180, lng: -41.9260 },
+    "jardim bela vista": { lat: -22.5140, lng: -41.9270 },
+    "parque sao jorge": { lat: -22.5240, lng: -41.9380 },
+    "parque são jorge": { lat: -22.5240, lng: -41.9380 },
+    "nova alianca": { lat: -22.5310, lng: -41.9540 },
+    "nova aliança": { lat: -22.5310, lng: -41.9540 },
+    "extensao do bosque": { lat: -22.5280, lng: -41.9480 },
+    "extensão do bosque": { lat: -22.5280, lng: -41.9480 },
     "extensao novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
     "extensão novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
     ancora: { lat: -22.5050, lng: -41.9480 },
     âncora: { lat: -22.5050, lng: -41.9480 },
-    "cidade praiana": { lat: -22.5400, lng: -41.9600 },
+    "cidade praiana": { lat: -22.5360, lng: -41.9620 },
     centro: { lat: -22.5245, lng: -41.9455 },
-    recanto: { lat: -22.5310, lng: -41.9560 },
-    "recanto rio das ostras": { lat: -22.5310, lng: -41.9560 },
+    recanto: { lat: -22.5320, lng: -41.9560 },
+    "recanto rio das ostras": { lat: -22.5320, lng: -41.9560 },
     atlantica: { lat: -22.5030, lng: -41.9240 },
     atlântica: { lat: -22.5030, lng: -41.9240 },
     "jardim atlantico": { lat: -22.5030, lng: -41.9240 },
