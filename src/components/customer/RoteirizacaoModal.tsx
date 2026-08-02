@@ -970,7 +970,14 @@ export default function RoteirizacaoModal({
       waMsg += `\n`;
 
       routeOrders.forEach((o, idx) => {
-        const num = (o as any).dailyOrderNumber || o.orderNumber || o.displayId || o.id;
+        const num = getOrderDisplayNumber(o);
+        let orderRefStr = `#${num}`;
+        if ((o as any).ifoodReference) {
+          orderRefStr += ` (iFood #${(o as any).ifoodReference})`;
+        } else if ((o as any).openDeliveryReference) {
+          orderRefStr += ` (Jotajá #${(o as any).openDeliveryReference})`;
+        }
+
         const name = o.customerName || "Cliente";
         const addr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
         const phone = o.customerPhone ? `📞 *Tel:* ${o.customerPhone}\n` : "";
@@ -983,7 +990,7 @@ export default function RoteirizacaoModal({
           payNote = ` 💳 (Cobrar no Cartão na entrega)`;
         }
 
-        waMsg += `*${idx + 1}º Parada:* Pedido #${num}${payNote}\n👤 *Cliente:* ${name}\n📍 *Endereço:* ${addr}\n${phone}\n`;
+        waMsg += `*${idx + 1}º Parada:* Pedido ${orderRefStr}${payNote}\n👤 *Cliente:* ${name}\n📍 *Endereço:* ${addr}\n${phone}\n`;
       });
 
       waMsg += `🗺️ *Navegação Google Maps (GPS):*\n${googleMapsLink}\n\n`;

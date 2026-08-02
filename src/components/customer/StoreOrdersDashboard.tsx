@@ -1451,11 +1451,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const assignMotoboy = async (orderId: string, motoboyId: string) => {
     setAssigningId(orderId);
+    const targetOrder = orders.find((o) => o.id === orderId);
+    const seqNum = targetOrder ? (targetOrder.dailyOrderNumber ?? orderNumberMap.get(orderId)) : undefined;
+
     try {
       await fetch("/api/customer-order/assign-motoboy", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, motoboyId: motoboyId || null }),
+        body: JSON.stringify({
+          orderId,
+          motoboyId: motoboyId || null,
+          firehubOrderNumber: seqNum,
+        }),
       });
       setOrders(prev => prev.map(o =>
         o.id === orderId

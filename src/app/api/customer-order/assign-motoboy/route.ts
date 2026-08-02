@@ -1,6 +1,6 @@
 /**
  * PATCH /api/customer-order/assign-motoboy
- * Atribui ou remove um motoboy de um pedido e envia notificação no WhatsApp do entregador com link do GPS.
+ * Atribui ou remove um motoboy de um pedido e envia notificação no WhatsApp do entregador com o número do FireHub (#171).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const { orderId, motoboyId } = await req.json();
+  const { orderId, motoboyId, firehubOrderNumber } = await req.json();
   if (!orderId) return NextResponse.json({ error: "orderId obrigatório" }, { status: 400 });
 
   const order = await prisma.customerOrder.update({
@@ -32,13 +32,27 @@ export async function PATCH(req: NextRequest) {
         const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
 
         const oAny = order as any;
-        const displayNum =
-          oAny.dailyOrderNumber ||
-          oAny.ifoodReference ||
-          oAny.openDeliveryReference ||
-          oAny.orderNumber ||
-          oAny.displayId ||
-          order.id.slice(-4).toUpperCase();
+
+        // PRIORIDADE ABSOLUTA: Número do Pedido no FireHub (ex: #171)
+        let firehubSeq = firehubOrderNumber ? String(firehubOrderNumber) : oAny.dailyOrderNumber;
+        if (!firehubSeq) {
+          const startOfDay = new Date(order.createdAt);
+          startOfDay.setHours(0, 0, 0, 0);
+          const count = await prisma.customerOrder.count({
+            where: {
+              franchiseeId: order.franchiseeId,
+              createdAt: { gte: startOfDay, lte: order.createdAt },
+            },
+          });
+          firehubSeq = count || order.id.slice(-4).toUpperCase();
+        }
+
+        let displayNum = `#${firehubSeq}`;
+        if (oAny.ifoodReference) {
+          displayNum += ` (iFood #${oAny.ifoodReference})`;
+        } else if (oAny.openDeliveryReference) {
+          displayNum += ` (Jotajá #${oAny.openDeliveryReference})`;
+        }
 
         const customerName = order.customerName || "Cliente";
         const customerPhone = order.customerPhone ? `📞 *Tel:* ${order.customerPhone}\n` : "";
@@ -94,7 +108,7 @@ export async function PATCH(req: NextRequest) {
 
         let msg = `📦 *NOVO PEDIDO ATRIBUÍDO PARA ENTREGA!*\n\n`;
         msg += `🛵 *Entregador:* ${order.motoboy.name}\n`;
-        msg += `📋 *Pedido:* #${displayNum}\n`;
+        msg += `📋 *Pedido:* ${displayNum}\n`;
         msg += `👤 *Cliente:* ${customerName}\n`;
         msg += `📍 *Endereço:* ${customerAddress}\n`;
         if (customerPhone) msg += customerPhone;
