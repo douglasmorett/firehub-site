@@ -25,24 +25,29 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json([], { status: 200 });
 
     const targetFranchiseeId = user.ownerId || user.id;
+    const userStoreIds = Array.from(new Set([
+      user.id,
+      user.ownerId,
+      targetFranchiseeId
+    ].filter(Boolean))) as string[];
+
     const stage = req.nextUrl.searchParams.get("stage") || "production";
 
     // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos
     const activeSession = await prisma.cashSession.findFirst({
-      where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+      where: { franchiseeId: { in: userStoreIds }, status: "OPEN" },
       orderBy: { openedAt: "desc" },
       select: { openedAt: true }
     });
-
-    const sessionStartCutoff = activeSession?.openedAt
-      ? new Date(activeSession.openedAt)
-      : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Usar corte amplo de 48 horas para NUNCA ocultar pedidos criados antes da abertura do caixa ativo!
     const safeCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
     let where: any = {
-      franchiseeId: targetFranchiseeId,
+      OR: [
+        { franchiseeId: { in: userStoreIds } },
+        { franchisee: { ownerId: { in: userStoreIds } } }
+      ],
       status: { notIn: ["CANCELADO", "ENTREGUE"] },
       createdAt: { gte: safeCutoff },
       kdsStage: stage === "production"
@@ -94,7 +99,10 @@ export async function GET(req: NextRequest) {
     // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
     const allRecentOrders = await prisma.customerOrder.findMany({
       where: {
-        franchiseeId: targetFranchiseeId,
+        OR: [
+          { franchiseeId: { in: userStoreIds } },
+          { franchisee: { ownerId: { in: userStoreIds } } }
+        ],
         createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
       },
       select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
