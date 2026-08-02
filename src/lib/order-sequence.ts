@@ -7,27 +7,36 @@
  * 3. NENHUM fechamento ou reabertura de caixa altera os números dos pedidos já criados no passado.
  */
 
-export function buildSessionOrderNumberMap(orders: any[], cashSessions: any[] = []) {
+export function buildSessionOrderNumberMap(
+  orders: any[],
+  cashSessionsOrOpenedAt?: any[] | Date | string | null
+) {
   const map = new Map<string, number>();
-
-  // 1. Respeita dailyOrderNumber se explicitamente gravado no objeto do pedido
-  orders.forEach((o: any) => {
-    if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
-      map.set(o.id, o.dailyOrderNumber);
-    }
-  });
 
   const sortedOrders = [...orders].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
 
-  // Encontrar a sessão ATIVA atualmente aberta (status OPEN)
-  const openSession = cashSessions.find((s) => s.status === "OPEN");
-  const openSessionStart = openSession ? new Date(openSession.openedAt).getTime() : null;
+  // Determinar a data de abertura da sessão de caixa ATIVA atualmente aberta (status OPEN)
+  let openSessionStart: number | null = null;
+
+  if (cashSessionsOrOpenedAt) {
+    if (Array.isArray(cashSessionsOrOpenedAt)) {
+      const openSession = cashSessionsOrOpenedAt.find((s) => s.status === "OPEN");
+      if (openSession?.openedAt) {
+        openSessionStart = new Date(openSession.openedAt).getTime();
+      }
+    } else {
+      const parsedDate = new Date(cashSessionsOrOpenedAt).getTime();
+      if (!isNaN(parsedDate)) {
+        openSessionStart = parsedDate;
+      }
+    }
+  }
 
   // Separar pedidos em:
-  // A) Pedidos passados (criados ANTES da abertura do caixa atual) -> Mantêm sequência original contínua do turno (#1 ... #195, #200)
-  // B) Pedidos da sessão atual (criados DEPOIS da abertura do caixa atual) -> Iniciam em #1, #2, #3...
+  // A) Pedidos passados (criados ANTES da abertura do caixa atual) -> Mantêm sequência original contínua do turno
+  // B) Pedidos da sessão atual (criados DEPOIS da abertura do caixa atual) -> Iniciam em #1, #2, #3... #20
 
   const pastOrders = openSessionStart
     ? sortedOrders.filter((o) => new Date(o.createdAt).getTime() < openSessionStart)
@@ -37,24 +46,35 @@ export function buildSessionOrderNumberMap(orders: any[], cashSessions: any[] = 
     ? sortedOrders.filter((o) => new Date(o.createdAt).getTime() >= openSessionStart)
     : [];
 
-  // Mapear pedidos passados continuos (respeitando o fuso horário de Brasília / turno de 5h)
+  // 1. Mapear pedidos da sessão ATIVA primeiro (garante #1, #2, #3... #20 rigorosamente alinhados com a tela)
+  currentSessionOrders.forEach((o: any, idx: number) => {
+    map.set(o.id, idx + 1);
+  });
+
+  // 2. Mapear pedidos passados (se não estiverem no mapa, usa dailyOrderNumber ou contador do turno)
   const shiftCounters = new Map<string, number>();
   pastOrders.forEach((o: any) => {
     if (!map.has(o.id)) {
-      const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
-      const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
-      const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
-      shiftCounters.set(shiftKey, nextSeq);
-      map.set(o.id, nextSeq);
-    }
-  });
-
-  // Mapear pedidos da sessão atual a partir de #1, #2, #3...
-  currentSessionOrders.forEach((o: any, idx: number) => {
-    if (!map.has(o.id)) {
-      map.set(o.id, idx + 1);
+      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
+        map.set(o.id, o.dailyOrderNumber);
+      } else {
+        const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
+        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+        const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
+        shiftCounters.set(shiftKey, nextSeq);
+        map.set(o.id, nextSeq);
+      }
     }
   });
 
   return map;
 }
+
+export function applyUnifiedDailyOrderNumbers(orders: any[], cashSessionsOrOpenedAt?: any[] | Date | string | null) {
+  const seqMap = buildSessionOrderNumberMap(orders, cashSessionsOrOpenedAt);
+  return orders.map((o: any) => ({
+    ...o,
+    dailyOrderNumber: seqMap.get(o.id) || o.dailyOrderNumber || null,
+  }));
+}
+

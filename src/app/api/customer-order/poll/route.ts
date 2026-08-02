@@ -667,36 +667,24 @@ export async function GET(req: NextRequest) {
     select: { openedAt: true }
   });
 
-  // Numeração PERMANENTE E IMUTÁVEL baseada no Turno Operacional da Loja (subtrai 5h para o madrugadão não zerar à meia-noite)
+  // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
   const allRecentOrders = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: targetFranchiseeId,
       createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
     },
-    select: { id: true, createdAt: true },
+    select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
     orderBy: { createdAt: "asc" },
   });
 
-  const dailyNumMap = new Map<string, number>();
-  const shiftCounters = new Map<string, number>();
-
-  allRecentOrders.forEach((o: any) => {
-    if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
-      dailyNumMap.set(o.id, o.dailyOrderNumber);
-    } else {
-      // Subtrai 5 horas para que o turno da madrugada (00:00 a 05:00 AM) continue no mesmo dia operacional
-      const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
-      const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
-      const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
-      shiftCounters.set(shiftKey, nextSeq);
-      dailyNumMap.set(o.id, nextSeq);
-    }
-  });
+  const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
+  const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
 
   const ordersWithDailyNum = orders.map((o: any) => ({
     ...o,
-    dailyOrderNumber: o.dailyOrderNumber || dailyNumMap.get(o.id) || null,
+    dailyOrderNumber: dailyNumMap.get(o.id) || o.dailyOrderNumber || null,
   }));
+
 
   // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
   try {

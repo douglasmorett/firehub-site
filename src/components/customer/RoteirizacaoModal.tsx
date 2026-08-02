@@ -544,15 +544,7 @@ export default function RoteirizacaoModal({
           initialUpdated = true;
         }
       } else if (!initialMap[order.id]) {
-        // Fallback coordinates near store so pins render instantly in 0.001s
-        const idHash = (order.id || "").split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-        const offsetLat = (((idHash % 17) - 8) * 0.0015) + (idx * 0.0003);
-        const offsetLng = ((((idHash * 5) % 17) - 8) * 0.0015) - (idx * 0.0002);
-        initialMap[order.id] = {
-          lat: defaultCenter.lat + offsetLat,
-          lng: defaultCenter.lng + offsetLng
-        };
-        initialUpdated = true;
+        // Enfileira endereço para geocodificação real no Nominatim OpenStreetMap em segundo plano
         toGeocode.push({
           id: order.id,
           cleanAddr: cacheKey,
@@ -685,7 +677,7 @@ export default function RoteirizacaoModal({
     setSelectedOrderIds(optimized);
   };
 
-  // Smart Auto-Clustering Algorithm: Garante SEMPRE o pedido mais antigo na rota + busca vizinhos próximos a ele
+  // Smart Auto-Clustering Algorithm: Garante SEMPRE o pedido mais antigo/prioritário + busca pedidos no caminho (corredor) ou próximos
   const handleAutoClusterRoutes = () => {
     const unrouted = filteredPendingOrders.filter((o) => geocodedMap[o.id]);
     if (unrouted.length === 0) {
@@ -693,35 +685,60 @@ export default function RoteirizacaoModal({
       return;
     }
 
-    // 1. O pedido mais antigo pendente (ex: #7) É OBRIGATORIAMENTE a semente da rota e NÃO PODE ser deixado para trás
+    // 1. O pedido mais antigo pendente (ex: #14) É OBRIGATORIAMENTE a semente da rota
     const oldestOrder = unrouted[0];
-    const oldestCoords = geocodedMap[oldestOrder.id];
-    const cluster: string[] = [oldestOrder.id];
+    const targetCoords = geocodedMap[oldestOrder.id];
+    if (!targetCoords) return;
 
-    // 2. Busca entre os outros pedidos pendentes aqueles que estão na mesma região do pedido mais antigo (até maxDistanceKm)
+    const storeCoords = defaultCenter;
+    const distStoreToTarget = calculateHaversineKm(storeCoords.lat, storeCoords.lng, targetCoords.lat, targetCoords.lng);
+
+    // Lista de candidatos elegíveis com pontuação de menor desvio
+    const candidatesWithScore: { id: string; detourKm: number; distToTargetKm: number; score: number }[] = [];
+
     for (let i = 1; i < unrouted.length; i++) {
-      if (cluster.length >= maxOrdersPerRoute) break;
       const candidate = unrouted[i];
-      const candidateCoords = geocodedMap[candidate.id];
-      if (!candidateCoords || !oldestCoords) continue;
+      const candCoords = geocodedMap[candidate.id];
+      if (!candCoords) continue;
 
-      const isCloseToSeed = calculateHaversineKm(oldestCoords.lat, oldestCoords.lng, candidateCoords.lat, candidateCoords.lng) <= maxDistanceKm;
+      const distStoreToCand = calculateHaversineKm(storeCoords.lat, storeCoords.lng, candCoords.lat, candCoords.lng);
+      const distCandToTarget = calculateHaversineKm(candCoords.lat, candCoords.lng, targetCoords.lat, targetCoords.lng);
 
-      const isCloseToCluster = cluster.every((clusterOrderId) => {
-        const cCoords = geocodedMap[clusterOrderId];
-        if (!cCoords) return false;
-        return calculateHaversineKm(cCoords.lat, cCoords.lng, candidateCoords.lat, candidateCoords.lng) <= maxDistanceKm;
-      });
+      // Desvio de trajeto adicionado ao ir até o candidato a caminho do destino principal
+      const detourKm = distStoreToCand + distCandToTarget - distStoreToTarget;
 
-      if (isCloseToSeed && isCloseToCluster) {
-        cluster.push(candidate.id);
+      // Critério 1: Está próximo do destino final (raio até maxDistanceKm)
+      const isNearTarget = distCandToTarget <= maxDistanceKm;
+
+      // Critério 2: Está "no caminho" (corredor da loja até o destino) com desvio baixo (ex: até 1.8km ou maxDistanceKm)
+      const maxAllowedDetour = Math.min(1.8, Math.max(1.0, maxDistanceKm * 0.75));
+      const isEnRoute = detourKm <= maxAllowedDetour && distStoreToCand <= (distStoreToTarget + 1.0);
+
+      if (isNearTarget || isEnRoute) {
+        const score = (detourKm * 0.6) + (distCandToTarget * 0.4);
+        candidatesWithScore.push({
+          id: candidate.id,
+          detourKm,
+          distToTargetKm: distCandToTarget,
+          score
+        });
       }
     }
 
-    // 3. Otimiza a sequência do trajeto a partir da Loja (Loja -> Parada 1 -> Parada 2 -> Parada 3) no sentido mais eficiente
-    const optimizedCluster = optimizeRouteSequence(cluster, defaultCenter);
+    // Ordenar os candidatos pelo menor desvio / maior conveniência de percurso
+    candidatesWithScore.sort((a, b) => a.score - b.score);
+
+    const clusterIds = [oldestOrder.id];
+    for (const cand of candidatesWithScore) {
+      if (clusterIds.length >= maxOrdersPerRoute) break;
+      clusterIds.push(cand.id);
+    }
+
+    // 3. Otimiza a sequência do trajeto a partir da Loja (Loja -> Parada 1 -> Parada 2 -> Destino) no sentido mais eficiente
+    const optimizedCluster = optimizeRouteSequence(clusterIds, defaultCenter);
     setSelectedOrderIds(optimizedCluster);
   };
+
 
   // Initialize and Update Leaflet Map
   useEffect(() => {
@@ -734,11 +751,15 @@ export default function RoteirizacaoModal({
         center: [defaultCenter.lat, defaultCenter.lng],
         zoom: 13,
         zoomControl: true,
+        preferCanvas: true,
+        updateWhenZooming: false,
+        updateWhenIdle: true,
       });
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 19,
+        keepBuffer: 3,
       }).addTo(map);
 
       leafletMapRef.current = map;
@@ -1013,12 +1034,27 @@ export default function RoteirizacaoModal({
         if (found && found.phone) targetPhone = found.phone.replace(/\D/g, "");
       }
 
-      // Build Multi-stop Google Maps URL & Itinerary Text
+      // Build Multi-stop Google Maps URL utilizando a API oficial universal leve para celular
       const mapWaypoints = routeOrders.map(o => {
-        const addr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
-        return encodeURIComponent(`${addr}, ${storeCity}`);
+        const rawAddr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
+        const cleanAddr = rawAddr
+          .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
+          .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
+          .trim();
+        const cityStr = storeCity || "Rio das Ostras";
+        const fullAddr = cleanAddr.toLowerCase().includes(cityStr.toLowerCase()) ? cleanAddr : `${cleanAddr}, ${cityStr}`;
+        return encodeURIComponent(fullAddr);
       });
-      const googleMapsLink = `https://www.google.com/maps/dir/${encodeURIComponent(storeAddress || storeCity)}/${mapWaypoints.join("/")}`;
+
+      let googleMapsLink = "";
+      if (mapWaypoints.length === 1) {
+        googleMapsLink = `https://www.google.com/maps/dir/?api=1&destination=${mapWaypoints[0]}`;
+      } else {
+        const lastStop = mapWaypoints[mapWaypoints.length - 1];
+        const intermediateWaypoints = mapWaypoints.slice(0, -1).join("|");
+        googleMapsLink = `https://www.google.com/maps/dir/?api=1&destination=${lastStop}&waypoints=${intermediateWaypoints}`;
+      }
+
       const motoboyAppLink = typeof window !== "undefined" ? `${window.location.origin}/loja/${storeSlug}/motoboy` : "";
 
       let waMsg = `🚀 *NOVA ROTA DE ENTREGA DESPACHADA! (Rota #${routeNum})*\n`;
@@ -1109,11 +1145,24 @@ export default function RoteirizacaoModal({
       if (o.customerPhone) text += `📞 *Tel:* ${o.customerPhone}\n`;
       text += `------------------------------\n`;
 
-      mapsStops.push(encodeURIComponent(addr));
+      const cleanAddr = addr
+        .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
+        .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
+        .trim();
+      const cityStr = storeCity || "Rio das Ostras";
+      const fullAddr = cleanAddr.toLowerCase().includes(cityStr.toLowerCase()) ? cleanAddr : `${cleanAddr}, ${cityStr}`;
+      mapsStops.push(encodeURIComponent(fullAddr));
     });
 
     if (mapsStops.length > 0) {
-      const mapsUrl = `https://www.google.com/maps/dir/${encodeURIComponent(storeAddress || storeCity)}/${mapsStops.join("/")}`;
+      let mapsUrl = "";
+      if (mapsStops.length === 1) {
+        mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${mapsStops[0]}`;
+      } else {
+        const lastStop = mapsStops[mapsStops.length - 1];
+        const waypoints = mapsStops.slice(0, -1).join("|");
+        mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lastStop}&waypoints=${waypoints}`;
+      }
       text += `🗺️ *GPS Rota no Google Maps:*\n${mapsUrl}`;
     }
 
@@ -1369,18 +1418,28 @@ export default function RoteirizacaoModal({
                               {/* Bairro em Destaque & Endereço Completo sem cortes */}
                               {(() => {
                                 const { neighborhood, fullAddress } = parseAddressDetails(addrText);
+                                const isMapped = Boolean(geocodedMap[order.id]);
                                 return (
                                   <div style={{ margin: "3px 0 5px 0" }}>
-                                    {neighborhood ? (
-                                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
+                                      {neighborhood ? (
                                         <span style={{
                                           background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A",
                                           padding: "2px 7px", borderRadius: "5px", fontWeight: 800, fontSize: "0.78rem"
                                         }}>
                                           🏘️ Bairro: {neighborhood}
                                         </span>
-                                      </div>
-                                    ) : null}
+                                      ) : null}
+
+                                      {!isMapped && (
+                                        <span style={{
+                                          background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE",
+                                          padding: "2px 7px", borderRadius: "5px", fontWeight: 700, fontSize: "0.72rem"
+                                        }}>
+                                          📍 Localizando GPS...
+                                        </span>
+                                      )}
+                                    </div>
 
                                     <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#1E293B", margin: 0, lineHeight: 1.35, wordBreak: "break-word" }}>
                                       📍 {fullAddress}

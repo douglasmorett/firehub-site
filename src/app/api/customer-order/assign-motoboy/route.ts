@@ -111,10 +111,30 @@ export async function PATCH(req: NextRequest) {
           payText = `💳 Cartão (Levar Maquininha e cobrar na entrega)`;
         }
 
-        // Link direto do Google Maps para navegação até o cliente
-        const originEncoded = encodeURIComponent(storeAddress);
-        const destEncoded = encodeURIComponent(`${customerAddress}, ${storeCity}`);
-        const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originEncoded}&destination=${destEncoded}&travelmode=driving`;
+        // Link leve de navegação direta do Google Maps (utiliza o GPS atual do motoboy e remove textos pesados de complemento)
+        const orderLat = (order as any).customerLatLng?.lat || (order as any).latitude || (order as any).lat;
+        const orderLng = (order as any).customerLatLng?.lng || (order as any).longitude || (order as any).lng;
+
+        let googleMapsUrl = "";
+        if (orderLat && orderLng && !isNaN(Number(orderLat)) && !isNaN(Number(orderLng))) {
+          googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${orderLat},${orderLng}`;
+        } else {
+          let cleanAddr = customerAddress
+            .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
+            .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
+            .replace(/(-?\s*Ponto de Ref(?:erencia)?:.*)/gi, "")
+            .replace(/(-?\s*Casa\s*\d+.*)/gi, "")
+            .replace(/(-?\s*Apto?\s*\d+.*)/gi, "")
+            .replace(/(-?\s*Bloco\s*\w+.*)/gi, "")
+            .trim();
+
+          const cityStr = storeCity || "Rio das Ostras";
+          if (!cleanAddr.toLowerCase().includes(cityStr.toLowerCase())) {
+            cleanAddr = `${cleanAddr}, ${cityStr}`;
+          }
+
+          googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cleanAddr)}`;
+        }
 
         let msg = `📦 *NOVO PEDIDO ATRIBUÍDO PARA ENTREGA!*\n\n`;
         msg += `🛵 *Entregador:* ${order.motoboy.name}\n`;

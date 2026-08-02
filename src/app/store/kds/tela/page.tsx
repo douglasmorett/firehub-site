@@ -184,54 +184,16 @@ export default function KDSTelaPage() {
       .catch(() => {});
   }, []);
 
-  // Numeração PERMANENTE E IMUTÁVEL:
-  // - Pedidos do caixa atual (status OPEN) iniciam em #1, #2, #3... para a nova sessão.
-  // - Pedidos anteriores mantêm RIGOROSAMENTE seus números originais (Kim Sá = #195, Junior = #200).
+  // Numeração FIEL E UNIFICADA com a tela do painel e comanda
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-
-    // 1. Respeita dailyOrderNumber se veio da API/banco
     orders.forEach((o: any) => {
-      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
+      if (typeof o.dailyOrderNumber === "number" && !isNaN(o.dailyOrderNumber)) {
         map.set(o.id, o.dailyOrderNumber);
       }
     });
-
-    const sortedOrders = [...orders].sort(
-      (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    const openSessionStart = cashOpenedAt ? new Date(cashOpenedAt).getTime() : null;
-
-    const pastOrders = openSessionStart
-      ? sortedOrders.filter((o: any) => new Date(o.createdAt).getTime() < openSessionStart)
-      : sortedOrders;
-
-    const currentSessionOrders = openSessionStart
-      ? sortedOrders.filter((o: any) => new Date(o.createdAt).getTime() >= openSessionStart)
-      : [];
-
-    // Mapear pedidos passados contínuos do turno
-    const shiftCounters = new Map<string, number>();
-    pastOrders.forEach((o: any) => {
-      if (!map.has(o.id)) {
-        const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
-        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
-        const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
-        shiftCounters.set(shiftKey, nextSeq);
-        map.set(o.id, nextSeq);
-      }
-    });
-
-    // Mapear pedidos da sessão atual a partir de #1, #2, #3...
-    currentSessionOrders.forEach((o: any, idx: number) => {
-      if (!map.has(o.id)) {
-        map.set(o.id, idx + 1);
-      }
-    });
-
     return map;
-  }, [orders, cashOpenedAt]);
+  }, [orders]);
 
   // Buscar todas as categorias no mount para o seletor de filtros
   useEffect(() => {

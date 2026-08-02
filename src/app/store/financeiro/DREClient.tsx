@@ -1,15 +1,18 @@
 "use client";
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingBag,
   BarChart2, ArrowUpRight, ArrowDownRight, Download, Filter,
   Package, Truck, CreditCard, Percent, Users, Plus, Trash2, Building2
 } from "lucide-react";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { isExemptAccount } from "@/lib/billing";
 
 type BillingCycle = {
   yearMonth: string; totalSales: number; amountDue: number;
   amountOffset: number; amountPending: number; status: string;
+  isExempt?: boolean;
   asaasBoletoUrl?: string | null; asaasBoletoCode?: string | null;
 };
 
@@ -120,6 +123,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   initialFixedCosts?: FixedCost[];
   initialGoals?: Record<string, any>;
 }) {
+  const { data: session } = useSession();
+  const userEmailClean = session?.user?.email;
+
   const [preset, setPreset] = useState(1); // 7 dias default
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -136,6 +142,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       .then(d => { if (!d.error) setBillingCycle(d); })
       .catch(() => {});
   }, []);
+
+  const isExempt = isExemptAccount(userEmailClean) || (billingCycle as any)?.isExempt || (billingCycle as any)?.status === "ISENTO" || (billingCycle as any)?.status === "PAID";
 
   // ===== CUSTOS FIXOS =====
   const [fixedCosts, setFixedCosts] = useState<FixedCost[]>(initialFixedCosts);
@@ -289,7 +297,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
     const taxasPix = pixTotal * 0.005 + countPix * 0.40;
     const taxasCard = cardTotal * 0.0399;
     const taxasOperacionais = taxasPix + taxasCard;
-    const mensalidadeVal = calcPlatformFee(faturamentoTotalSemFiltro);
+    const mensalidadeVal = isExempt ? 0 : calcPlatformFee(faturamentoTotalSemFiltro);
     const receitaLiquida = Math.max(0, receitaBruta - taxasOperacionais - reembolsos);
     const saldoDisponivel = Math.max(0, pixTotal - taxasPix);
     const saldoALiberar = Math.max(0, cardTotal - taxasCard);
@@ -336,8 +344,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       .filter(o => o.deliveryType === "DELIVERY")
       .reduce((s, o) => s + (o.motoboyFee || 0), 0);
 
-    // Taxa FireHub (Pay as You Grow)
-    const taxaFireHub = calcPlatformFee(receitaBruta);
+    // Taxa FireHub (Pay as You Grow) — Zerada se a conta for isenta
+    const taxaFireHub = isExempt ? 0 : calcPlatformFee(receitaBruta);
 
     // Proporção dos custos fixos mensais no período selecionado
     // (ex: 7 dias = 7/30 dos custos fixos mensais)
@@ -446,65 +454,66 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       </div>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem" }}>
-
         {/* ===== ABA MENSALIDADE FIREHUB ===== */}
         {activeTab === "mensalidade" && (() => {
           const mensalidadeInfo = calcMensalidade(dre.receitaBruta);
-          const valFatura = mensalidadeInfo.mensalidade;
+          const valFatura = isExempt ? 0 : mensalidadeInfo.mensalidade;
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               {/* Card Principal de Fatura Atual */}
               <div style={{
                 background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
                 borderRadius: "20px", padding: "1.75rem", color: "#FFFFFF",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: "1px solid #334155"
+                boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: isExempt ? "1.5px solid #10B981" : "1px solid #334155"
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: isExempt ? 0 : "1.25rem" }}>
                   <div>
-                    <span style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      ⚠️ Cobrança Pendente · Vencimento em 10 dias
+                    <span style={{ background: isExempt ? "#DCFCE7" : "#FEF3C7", color: isExempt ? "#15803D" : "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {isExempt ? "✨ Conta VIP / Loja Oficial — Isenção Ativa" : "⚠️ Cobrança Pendente · Vencimento em 10 dias"}
                     </span>
                     <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>
-                      Mensalidade FireHub Pro
+                      {isExempt ? "Mensalidade FireHub Pro (Isento)" : "Mensalidade FireHub Pro"}
                     </h2>
                     <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
-                      Plano Oficial: 1% sobre vendas · Mínimo R$ 50,00 · Teto Máximo R$ 400,00/mês
+                      {isExempt ? "Esta conta (contatohakim@gmail.com) é isenta de cobranças de mensalidade e comissão da plataforma." : "Plano Oficial: 1% sobre vendas · Mínimo R$ 50,00 · Teto Máximo R$ 400,00/mês"}
                     </p>
                   </div>
 
-                  <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: "14px", border: "1px solid #334155" }}>
-                    <div style={{ fontSize: "0.75rem", color: "#94A3B8", fontWeight: 700 }}>VALOR DA FATURA ATUAL</div>
-                    <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#38BDF8", marginTop: 2 }}>
-                      {fmtR(valFatura)}
+                  <div style={{ textAlign: "right", background: isExempt ? "#064E3B" : "#1E293B", padding: "12px 18px", borderRadius: "14px", border: isExempt ? "1px solid #10B981" : "1px solid #334155" }}>
+                    <div style={{ fontSize: "0.75rem", color: isExempt ? "#A7F3D0" : "#94A3B8", fontWeight: 700 }}>VALOR DA FATURA ATUAL</div>
+                    <div style={{ fontSize: "1.8rem", fontWeight: 900, color: isExempt ? "#34D399" : "#38BDF8", marginTop: 2 }}>
+                      {isExempt ? "R$ 0,00 (ISENTO)" : fmtR(valFatura)}
                     </div>
                   </div>
                 </div>
 
                 {/* Botões de Ação de Pagamento */}
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", borderTop: "1px solid #334155", paddingTop: "1.25rem" }}>
-                  <button
-                    onClick={() => alert(`🔑 Código PIX de ${fmtR(valFatura)} gerado com sucesso! Cole no seu app de banco.`)}
-                    style={{
-                      background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFFFFF",
-                      border: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
-                      fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
-                      boxShadow: "0 4px 14px rgba(16, 185, 129, 0.4)", fontFamily: "inherit"
-                    }}
-                  >
-                    ⚡ Pagar Fatura Agora (PIX)
-                  </button>
-                  <button
-                    onClick={() => setShowFaturaModal(true)}
-                    style={{
-                      background: "#334155", color: "#F8FAFC", border: "1px solid #475569",
-                      padding: "12px 18px", borderRadius: "12px", fontSize: "0.88rem",
-                      fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
-                      display: "flex", alignItems: "center", gap: 6
-                    }}
-                  >
-                    📄 Detalhes da Cobrança
-                  </button>
-                </div>
+                {!isExempt && (
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", borderTop: "1px solid #334155", paddingTop: "1.25rem" }}>
+                    <button
+                      onClick={() => alert(`🔑 Código PIX de ${fmtR(valFatura)} gerado com sucesso! Cole no seu app de banco.`)}
+                      style={{
+                        background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFFFFF",
+                        border: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
+                        fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                        boxShadow: "0 4px 14px rgba(16, 185, 129, 0.4)", fontFamily: "inherit"
+                      }}
+                    >
+                      ⚡ Pagar Fatura Agora (PIX)
+                    </button>
+                    <button
+                      onClick={() => setShowFaturaModal(true)}
+                      style={{
+                        background: "#334155", color: "#F8FAFC", border: "1px solid #475569",
+                        padding: "12px 18px", borderRadius: "12px", fontSize: "0.88rem",
+                        fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+                        display: "flex", alignItems: "center", gap: 6
+                      }}
+                    >
+                      📄 Detalhes da Cobrança
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Grid com Destaques Financeiros da Mensalidade */}
