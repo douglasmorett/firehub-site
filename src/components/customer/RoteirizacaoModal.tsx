@@ -455,36 +455,41 @@ export default function RoteirizacaoModal({
     const fullAddress = rawAddr.trim();
     let neighborhood = "";
 
-    // 1. Procurar por "Bairro: XXX" ou "Bairro XXX" ou "- Bairro XXX"
-    const bairroMatch = fullAddress.match(/(?:bairro|br:?)\s*([^-,]+)/i);
-    if (bairroMatch && bairroMatch[1]) {
-      neighborhood = bairroMatch[1].trim();
+    // Lista de Bairros Conhecidos da Região (Prioridade MÁXIMA de identificação)
+    const knownNeighborhoods = [
+      "Praiamar", "Praia Âncora", "Praia Ancora", "Residencial Praia Âncora", "Village Rio das Ostras",
+      "Bosque D'Areia", "Reduto da Paz", "Colinas", "Chácara Mariléa", "Chacara Marilea", "Chacara Marileia",
+      "Jardim Mariléa", "Jardim Marilea", "Novo Rio das Ostras", "Extensão Novo Rio das Ostras",
+      "Extensao Novo Rio das Ostras", "Recanto Rio das Ostras", "Bairro Operário", "Bairro Operario",
+      "Parque São Jorge", "Parque Sao Jorge", "Extensão do Bosque", "Extensao do Bosque",
+      "Jardim Bela Vista", "Cidade Beira Mar", "Cidade Praiana", "Costa Azul", "Costazul",
+      "Serra Mar", "Verdes Mares", "Ouro Verde", "Terra Firme", "Enseada das Gaivotas",
+      "Nova Esperança", "Nova Esperanca", "Jardim Esperança", "Jardim Esperanca",
+      "Casas Velhas", "Rocha Leão", "Rocha Leao", "Balneário Remanso", "Balneario Remanso",
+      "Boca da Barra", "Boca do Mato", "Jardim Atlântico", "Jardim Atlantico", "Nova Aliança", "Nova Alianca",
+      "São Cristóvão", "São Cristovao", "Sao Cristovao", "Cantinho do Mar", "Gelson Apicelo",
+      "Jardim Campomar", "Campomar", "Bosque da Praia", "Viverde", "Cláudio Ribeiro", "Claudio Ribeiro",
+      "Mariléa", "Marilea", "Centro", "Remanso", "Âncora", "Ancora", "Zabulão", "Zambulao",
+      "Extremoz", "Recreio", "Operários", "Operarios", "Cantagalo", "Unamar", "Tamoios",
+      "Peró", "Atlântica", "Atlantica", "Recanto"
+    ];
+
+    // 1. Procurar primeiro se o endereço cita explicitamente algum bairro conhecido
+    for (const bName of knownNeighborhoods) {
+      const reg = new RegExp(`\\b${bName}\\b`, "i");
+      if (reg.test(fullAddress)) {
+        neighborhood = bName;
+        break;
+      }
     }
 
-    // 2. Se não achou com rótulo "Bairro", procurar por nomes de bairros conhecidos na região
+    // 2. Se não achou na lista conhecida, procurar por "Bairro: XXX" ou "Bairro XXX" (Evitando 'Brasil')
     if (!neighborhood) {
-      const knownNeighborhoods = [
-        "Mariléa Chácara", "Marilea Chacara", "Chácara Mariléa", "Chacara Marilea", "Chacara Marileia",
-        "Jardim Mariléa", "Jardim Marilea", "Novo Rio das Ostras", "Extensão Novo Rio das Ostras",
-        "Extensao Novo Rio das Ostras", "Recanto Rio das Ostras", "Bairro Operário", "Bairro Operario",
-        "Parque São Jorge", "Parque Sao Jorge", "Extensão do Bosque", "Extensao do Bosque",
-        "Jardim Bela Vista", "Cidade Beira Mar", "Cidade Praiana", "Costa Azul", "Costazul",
-        "Serra Mar", "Verdes Mares", "Ouro Verde", "Terra Firme", "Enseada das Gaivotas",
-        "Nova Esperança", "Nova Esperanca", "Jardim Esperança", "Jardim Esperanca",
-        "Casas Velhas", "Rocha Leão", "Rocha Leao", "Balneário Remanso", "Balneario Remanso",
-        "Boca da Barra", "Boca do Mato", "Jardim Atlântico", "Jardim Atlantico", "Nova Aliança", "Nova Alianca",
-        "São Cristóvão", "São Cristovao", "Sao Cristovao", "Cantinho do Mar", "Gelson Apicelo",
-        "Jardim Campomar", "Campomar", "Bosque da Praia", "Viverde", "Cláudio Ribeiro", "Claudio Ribeiro",
-        "Mariléa", "Marilea", "Centro", "Remanso", "Âncora", "Ancora", "Zabulão", "Zambulao",
-        "Extremoz", "Recreio", "Operários", "Operarios", "Cantagalo", "Unamar", "Tamoios",
-        "Peró", "Atlântica", "Atlantica", "Recanto"
-      ];
-
-      for (const bName of knownNeighborhoods) {
-        const reg = new RegExp(`\\b${bName}\\b`, "i");
-        if (reg.test(fullAddress)) {
-          neighborhood = bName;
-          break;
+      const bairroMatch = fullAddress.match(/(?:bairro|b\.:?)\s*([^-,]+)/i);
+      if (bairroMatch && bairroMatch[1]) {
+        const candidate = bairroMatch[1].trim();
+        if (candidate.length > 2 && candidate.toLowerCase() !== "asil" && !/brasil|rio das ostras|cabo frio|rj/i.test(candidate)) {
+          neighborhood = candidate;
         }
       }
     }
@@ -493,10 +498,10 @@ export default function RoteirizacaoModal({
     if (!neighborhood) {
       const parts = fullAddress.split(/\s*-\s*|\s*,\s*/);
       if (parts.length >= 2) {
-        const filteredParts = parts.filter(p => !/rio das ostras|cabo frio|unamar|macaé|macae|rj|brasil/i.test(p.trim()));
+        const filteredParts = parts.filter(p => !/rio das ostras|cabo frio|unamar|macaé|macae|rj|brasil|asil/i.test(p.trim()));
         if (filteredParts.length >= 2) {
           const lastPart = filteredParts[filteredParts.length - 1].trim();
-          if (!/comp|complemento|casa|apto|bloco|sobrado|ponto|muro|portão|ref/i.test(lastPart) && lastPart.length < 35) {
+          if (!/comp|complemento|casa|apto|bloco|sobrado|ponto|muro|portão|ref/i.test(lastPart) && lastPart.length < 35 && lastPart.toLowerCase() !== "asil") {
             neighborhood = lastPart;
           }
         }
@@ -513,7 +518,13 @@ export default function RoteirizacaoModal({
   const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
     costazul: { lat: -22.5205, lng: -41.9175 },
     "costa azul": { lat: -22.5205, lng: -41.9175 },
-    recreio: { lat: -22.5210, lng: -41.9260 },
+    recreio: { lat: -22.5115, lng: -41.9160 },
+    praiamar: { lat: -22.4980, lng: -41.9060 },
+    "praia ancora": { lat: -22.5010, lng: -41.9050 },
+    "praia âmcora": { lat: -22.5010, lng: -41.9050 },
+    "residencial praia ancora": { lat: -22.5010, lng: -41.9050 },
+    "residencial praia Âncora": { lat: -22.5010, lng: -41.9050 },
+    "village rio das ostras": { lat: -22.5040, lng: -41.9120 },
     marilea: { lat: -22.5130, lng: -41.9340 },
     mariléa: { lat: -22.5130, lng: -41.9340 },
     "marilea chacara": { lat: -22.5080, lng: -41.9310 },
@@ -574,6 +585,7 @@ export default function RoteirizacaoModal({
       .replace(/(-?\s*Bloco\s*\w+[^-,]*)/gi, "")
       .replace(/(-?\s*Sobrado[^-,]*)/gi, "")
       .replace(/(-?\s*Muro\s*\w+[^-,]*)/gi, "")
+      .replace(/(-?\s*Brasil[^-,]*)/gi, "")
       .replace(/\s+/g, " ")
       .trim();
 
