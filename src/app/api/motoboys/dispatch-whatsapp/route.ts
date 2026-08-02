@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     const targetFranchiseeId = user.ownerId || user.id;
     const body = await req.json();
-    const { motoboyPhone, routeText } = body;
+    const { motoboyPhone, routeText, orderIds } = body;
 
     if (!motoboyPhone || !routeText) {
       return NextResponse.json({ error: "Telefone do motoboy e texto da rota são obrigatórios." }, { status: 400 });
@@ -40,6 +40,23 @@ export async function POST(req: NextRequest) {
     let success = await sendEvolutionMessage(targetFranchiseeId, fullPhone, routeText);
     if (!success && user.id !== targetFranchiseeId) {
       success = await sendEvolutionMessage(user.id, fullPhone, routeText);
+    }
+
+    // Se vieram orderIds da rota, atualiza o status de todos para SAIU_ENTREGA e notifica cada cliente via WhatsApp
+    if (Array.isArray(orderIds) && orderIds.length > 0) {
+      try {
+        await prisma.customerOrder.updateMany({
+          where: { id: { in: orderIds }, status: { notIn: ["ENTREGUE", "CANCELADO", "CANCELED"] } },
+          data: { status: "SAIU_ENTREGA" },
+        });
+
+        const { sendOrderNotification } = await import("@/lib/order-notifications");
+        for (const orderId of orderIds) {
+          sendOrderNotification(orderId, "SAIU_ENTREGA").catch(() => {});
+        }
+      } catch (errSync) {
+        console.warn("[dispatch-whatsapp] Erro ao sincronizar status/notificações dos pedidos da rota:", errSync);
+      }
     }
 
     if (success) {

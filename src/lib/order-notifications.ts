@@ -97,7 +97,9 @@ Olá, *${order.customerName}*! O seu pedido *#${shortId}* de *${storeName}* acab
 
 📍 *Endereço:* ${order.customerAddress || "Endereço cadastrado"}
 
-Fique atento para receber seu pedido. Bom apetite! 😋`;
+Muito obrigado pela preferência! Fique atento para receber o entregador. 
+
+Bom apetite e uma ótima refeição! 😋✨`;
         break;
 
       case "PRONTO_RETIRADA":

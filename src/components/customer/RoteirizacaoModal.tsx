@@ -1003,7 +1003,8 @@ export default function RoteirizacaoModal({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               motoboyPhone: targetPhone,
-              routeText: waMsg
+              routeText: waMsg,
+              orderIds: routeOrders.map((o) => o.id),
             })
           });
         } catch (e) {
