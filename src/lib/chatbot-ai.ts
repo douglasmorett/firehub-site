@@ -414,20 +414,26 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
   let availableCouponsText = "";
   if (instantCouponEnabled && instantCouponCode) {
-    availableCouponsText += `- Cupom Instantâneo de WhatsApp Ativo: Código "${instantCouponCode}" (${instantCouponDiscount} OFF)\n`;
+    availableCouponsText += `- Cupom Instantâneo Público de WhatsApp: Código "${instantCouponCode}" (${instantCouponDiscount} OFF)\n`;
   }
 
   if (Array.isArray(user.storeCoupons) && (user.storeCoupons as any[]).length > 0) {
-    const activeCoupons = (user.storeCoupons as any[]).filter((c: any) => c.active !== false && c.code);
-      availableCouponsText += activeCoupons.map((c: any) => {
+    // FILTRO DE SEGURANÇA MÁXIMA: APENAS cupons públicos permitidos ou o cupom instantâneo (ex: HAKIM10) podem ser passados para a IA!
+    // Cupons sigilosos/estratégicos de recuperação de clientes inativos (como HAKIM15, SAUDADE10) NUNCA são expostos!
+    const activePublicCoupons = (user.storeCoupons as any[]).filter(
+      (c: any) => c.active !== false && c.code && (c.isPublic === true || c.code.toUpperCase() === (instantCouponCode || "HAKIM10").toUpperCase())
+    );
+    if (activePublicCoupons.length > 0) {
+      availableCouponsText += activePublicCoupons.map((c: any) => {
         const benefitStr = c.type === "free_shipping"
           ? "Frete Grátis / Isenção da taxa de entrega"
           : c.type === "fixed"
           ? `R$ ${c.discount} de desconto no pedido`
           : `${c.discount}% de desconto`;
         const minOrderStr = c.minOrderValue > 0 ? ` — Válido apenas para pedidos a partir de R$ ${c.minOrderValue}` : "";
-        return `- Cupom Válido do Cardápio: Código "${c.code}" (${benefitStr}${minOrderStr})`;
+        return `- Cupom Público Permitido: Código "${c.code}" (${benefitStr}${minOrderStr})`;
       }).join("\n");
+    }
   }
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -505,10 +511,11 @@ REGRAS ABSOLUTAS:
         Localize o pedido correspondente na lista abaixo e informe a posição na hora. Se houver qualquer dúvida ou se não tiver 100% de certeza do nome do cliente, pergunte com carinho: "É o pedido no nome de [Nome do Cliente] pelo Jotajá/iFood? Me confirma que eu já te passo a posição exata!"
      c) Se o pedido estiver com status "SAIU_PARA_ENTREGA" ou "SAIU_ENTREGA":
         Diga que o entregador já está a caminho com o pedido e peça para o cliente ficar atento ao interfone/portaria!
-7. QUANDO O CLIENTE PERGUNTAR SOBRE CUPOM DE DESCONTO / PROMOÇÕES:
-   - REGRA CRÍTICA DE CUPOM: NUNCA INVENTE CÓDIGOS DE CUPOM! Você é PROIBIDA de inventar cupons que não estejam listados no campo "CUPONS VÁLIDOS CADASTRADOS" abaixo.
-   - SE HOUVER CUPOM LISTADO ABAIXO: Informe o código exatamente como cadastrado e o desconto (ex: "Tenho sim! Usa o cupom ${instantCouponCode || "CUPOM"} e ganhe desconto no seu pedido! ${storeLink}").
-   - SE NÃO HOUVER NENHUM CUPOM VALIDO LISTADO ABAIXO: Você DEVE responder neste tom natural: "Poxa, infelizmente não temos cupons de desconto disponíveis no momento, mas se quiser te passo as opções do cardápio! 😊".
+7. QUANDO O CLIENTE PERGUNTAR SOBRE PROMOÇÕES OU CUPOM:
+   - REGRA MANDATÓRIA DE RESPOSTA A PROMOÇÕES: Se o cliente perguntar "tem alguma promoção?", "quais são as promoções?", "o que tem de promoção hoje?":
+     a) VOCÊ DEVE OBRIGATORIAMENTE APRESENTAR PRIMEIRO A ESFIRRA DA PROMOÇÃO DO DIA DE HOJE (ex: Se hoje for Domingo, informe a Esfirra de Queijo (Promo) por R$ 1,90!) E OS COMBOS DA LOJA! NUNCA responda apenas com cupons de desconto sem falar da esfirra da promoção do dia!
+     b) Se houver o cupom instantâneo público (${instantCouponCode || "HAKIM10"}), você pode citar APENAS esse cupom de 10% como um agrado extra.
+     c) TRAVA DE SEGURANÇA DE CUPONS SIGILOSOS: É RIGOROSAMENTE PROIBIDO divulgar ou citar cupons estratégicos de recuperação (como HAKIM15, SAUDADE10 ou qualquer outro cupom de 15% ou valor em dinheiro). Esses cupons são totalmente secretos e sigilosos! Cite no máximo o cupom público de 10% (${instantCouponCode || "HAKIM10"}).
 8. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
    - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
