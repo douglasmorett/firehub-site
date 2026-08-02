@@ -123,8 +123,8 @@ export async function PUT(req: Request) {
 
   // ── Auto-set KDS stage ──
   if (status === "ACEITO" || status === "PREPARANDO") {
-    // Voltando para preparo/produção: reseta kdsStage para PRODUCTION para reaparecer em ambos os KDS
-    if (order.kdsStage === "FINISHED" || !order.kdsStage) {
+    // Apenas atribui PRODUCTION se o pedido ainda não tiver nenhum estágio no KDS
+    if (!order.kdsStage) {
       updateData.kdsStage = "PRODUCTION";
       updateData.kdsProductionAt = new Date();
     }
