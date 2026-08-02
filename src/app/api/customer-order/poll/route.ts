@@ -6,6 +6,18 @@ import { authOptions } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+async function withRetry(operation, retries = 3, delay = 500) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await operation();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+
 // Throttle iFood polling — max once every 5s for faster order detection
 let lastIfoodPoll = 0;
 
@@ -624,7 +636,7 @@ export async function GET(req: NextRequest) {
     hakimUser?.id
   ].filter(Boolean))) as string[];
 
-  const orders = await prisma.customerOrder.findMany({
+  const orders = await withRetry(() => prisma.customerOrder.findMany({
     where: {
       franchiseeId: { in: validFranchiseeIds },
       status: { notIn: ["AGUARDANDO_PAGAMENTO"] }
@@ -673,14 +685,14 @@ export async function GET(req: NextRequest) {
   }
 
   // Buscar data de abertura do caixa ativo para calcular a sequência do dia/sessão
-  const activeSession = await prisma.cashSession.findFirst({
+  const activeSession = await withRetry(() => prisma.cashSession.findFirst({
     where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
     orderBy: { openedAt: "desc" },
     select: { openedAt: true }
   });
 
   // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
-  const allRecentOrders = await prisma.customerOrder.findMany({
+  const allRecentOrders = await withRetry(() => prisma.customerOrder.findMany({
     where: {
       franchiseeId: targetFranchiseeId,
       createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
