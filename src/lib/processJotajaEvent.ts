@@ -308,17 +308,51 @@ export async function processJotajaEvent(
           deliveryFeeValue = Math.round(calcFee * 100) / 100;
         }
       }
-      const rawScheduled = orderData.delivery?.deliveryDateTime
-        ?? orderData.delivery?.deliveryDeadline
-        ?? orderData.delivery?.estimatedDeliveryWindow?.end
-        ?? orderData.delivery?.estimatedDeliveryWindow?.start
-        ?? orderData.takeout?.takeoutDateTime
-        ?? orderData.schedule?.scheduledDatetimeEnd
-        ?? orderData.schedule?.scheduledDatetimeStart
-        ?? orderData.scheduledDatetime
-        ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
-          ? orderData.preparationStartDateTime : null);
-      const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
+      // Data de entrega / Prazo limite do JotaJá
+      const isTakeout =
+        orderData.orderType === "TAKEOUT" ||
+        Boolean(orderData.takeout) ||
+        orderData.deliveryType === "TAKEOUT" ||
+        orderData.deliveryType === "RETIRADA";
+
+      const createdMs = orderData.createdAt ? new Date(orderData.createdAt).getTime() : Date.now();
+
+      const isExplicitScheduled =
+        orderData.orderTiming === "SCHEDULED" ||
+        Boolean(orderData.schedule?.scheduledDatetimeEnd) ||
+        Boolean(orderData.schedule?.scheduledDatetimeStart) ||
+        orderData.takeout?.mode === "SCHEDULED" ||
+        orderData.delivery?.mode === "SCHEDULED";
+
+      let scheduledDatetime: Date | null = null;
+
+      if (isExplicitScheduled) {
+        const rawScheduled =
+          orderData.schedule?.scheduledDatetimeEnd ??
+          orderData.schedule?.scheduledDatetimeStart ??
+          orderData.scheduledDatetime ??
+          orderData.preparationStartDateTime;
+        if (rawScheduled) {
+          scheduledDatetime = new Date(rawScheduled);
+        }
+      } else {
+        // Pedido Imediato: Se for Retirada no local, o prazo é 40 minutos a partir da criação
+        if (isTakeout) {
+          const rawTakeoutEnd = orderData.takeout?.estimatedTakeoutWindow?.end || orderData.takeout?.takeoutDeadline;
+          if (rawTakeoutEnd && new Date(rawTakeoutEnd).getTime() > createdMs + 5 * 60000) {
+            scheduledDatetime = new Date(rawTakeoutEnd);
+          } else {
+            scheduledDatetime = new Date(createdMs + 40 * 60000); // 40 minutos para Retirada
+          }
+        } else {
+          const rawDeliveryEnd = orderData.delivery?.deliveryDeadline || orderData.delivery?.estimatedDeliveryWindow?.end;
+          if (rawDeliveryEnd && new Date(rawDeliveryEnd).getTime() > createdMs + 5 * 60000) {
+            scheduledDatetime = new Date(rawDeliveryEnd);
+          } else {
+            scheduledDatetime = new Date(createdMs + 50 * 60000); // 50 minutos para Entrega
+          }
+        }
+      }
       const deliveryDeadline = scheduledDatetime;
 
       // Pagamento

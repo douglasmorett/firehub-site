@@ -348,7 +348,22 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
 
   const isFinished = order.status === "ENTREGUE" || order.status === "CANCELADO" || order.status === "ENCERRADO";
-  const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : new Date(new Date(order.createdAt).getTime() + 45 * 60000);
+  const createdTime = new Date(order.createdAt).getTime();
+  const rawSchedTime = order.scheduledDatetime ? new Date(order.scheduledDatetime).getTime() : 0;
+  // Um agendamento verdadeiro de data futura deve ser superior ao horário de criação (+ 2 min)
+  const isRealScheduled = rawSchedTime > createdTime + 2 * 60000;
+
+  const isTakeoutOrder =
+    order.deliveryType === "RETIRADA" ||
+    order.deliveryType === "TAKEOUT" ||
+    String(order.deliveryType || "").toUpperCase().includes("RETIRADA") ||
+    String(order.notes || "").toUpperCase().includes("RETIRADA");
+
+  const defaultMinutes = isTakeoutOrder ? 40 : 45;
+
+  const deadline = isRealScheduled
+    ? new Date(order.scheduledDatetime)
+    : new Date(createdTime + defaultMinutes * 60000);
   const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
   const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
 
