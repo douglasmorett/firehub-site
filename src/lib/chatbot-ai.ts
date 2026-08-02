@@ -281,7 +281,12 @@ export async function processChatbotAI(
     DOM: [], SEG: [], TER: [], QUA: [], QUI: [], SEX: [], SAB: []
   };
 
+  const seenProductKeys = new Set<string>();
+
   products.forEach((p: any) => {
+    const rawCleanName = (p.name || "").split("|")[0].trim();
+    const uniqueKey = `${rawCleanName.toLowerCase()}_${p.price}`;
+
     const days = parseAvailableDays(p.availableDays);
     let isToday = true;
     let isTomorrow = true;
@@ -310,41 +315,47 @@ export async function processChatbotAI(
     }
 
     const isChannelImport = /jotaja|ifood|online/i.test(p.category || "");
-    const isCombo = p.isCombo === true || /combo|oferta|kit|pack|imperia|príncip|principe|rei|sábio|sabio/i.test(p.name) || /combo|oferta/i.test(p.category || "");
+    const isCombo = p.isCombo === true || /combo|oferta|kit|pack|imperia|príncip|principe|rei|sábio|sabio/i.test(rawCleanName) || /combo|oferta/i.test(p.category || "");
     // Desconsidera itens importados do Jotajá/iFood para a classificação de promoções de R$ 1,90
-    const isPrice190 = !isChannelImport && (Math.abs(p.price - 1.90) < 0.10 || p.price === 1.9 || /1[\.,]90/i.test(p.name) || /1[\.,]90/i.test(p.description || ""));
-    const isPromoItem = !isChannelImport && (isPrice190 || /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(p.name) || /promo|promoção|promocao/i.test(p.category || ""));
+    const isPrice190 = !isChannelImport && (Math.abs(p.price - 1.90) < 0.10 || p.price === 1.9 || /1[\.,]90/i.test(rawCleanName) || /1[\.,]90/i.test(p.description || ""));
+    const isPromoItem = !isChannelImport && (isPrice190 || /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(rawCleanName) || /promo|promoção|promocao/i.test(p.category || ""));
 
     // Preenche o cronograma semanal de promoções da loja
     if (isPromoItem || isPrice190) {
       const activeDays = days.length === 0 ? ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"] : days.map(d => d.toUpperCase());
       activeDays.forEach(d => {
         if (dayScheduleMap[d]) {
-          dayScheduleMap[d].push(`${p.name} (R$ ${p.price.toFixed(2)})`);
+          dayScheduleMap[d].push(`${rawCleanName} (R$ ${p.price.toFixed(2)})`);
         }
       });
     }
 
     if (isToday) {
-      const line = `- ${p.name} (${p.category}): PREÇO = R$ ${p.price.toFixed(2)}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
-      if (isPrice190) {
-        itemsAt190Today.push(line);
-      }
-      if (isPromoItem) {
-        todayPromotions.push(line);
-      }
-      if (isCombo) {
-        availableCombos.push(line);
-      } else {
-        availableSingleProducts.push(line);
+      const priceFormatted = p.price.toFixed(2).replace(".", ",");
+      const line = `- ${isCombo ? "COMBO REAL DA LOJA" : "PRODUTO"}: "${rawCleanName}" (${p.category}) ➔ PREÇO EXATO E OBRIGATÓRIO = R$ ${priceFormatted}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
+
+      if (!seenProductKeys.has(uniqueKey)) {
+        seenProductKeys.add(uniqueKey);
+
+        if (isPrice190) {
+          itemsAt190Today.push(line);
+        }
+        if (isPromoItem) {
+          todayPromotions.push(line);
+        }
+        if (isCombo) {
+          availableCombos.push(line);
+        } else {
+          availableSingleProducts.push(line);
+        }
       }
     } else {
-      const line = `- ${p.name} (${p.category}): [PROIBIDO VENDER PELO VALOR PROMOCIONAL HOJE]${dayNotice}`;
+      const line = `- "${rawCleanName}" (${p.category}): [PROIBIDO VENDER PELO VALOR PROMOCIONAL HOJE]${dayNotice}`;
       unavailableTodayProducts.push(line);
     }
 
     if (isTomorrow && (isPromoItem || isPrice190)) {
-      const line = `- ${p.name} (${p.category}): R$ ${p.price.toFixed(2)}${p.description ? ` — ${p.description}` : ""}`;
+      const line = `- "${rawCleanName}" (${p.category}): R$ ${p.price.toFixed(2)}${p.description ? ` — ${p.description}` : ""}`;
       if (isPrice190) itemsAt190Tomorrow.push(line);
       tomorrowPromotions.push(line);
     }
@@ -520,9 +531,10 @@ REGRAS ABSOLUTAS:
    - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
    - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
-10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO):
+10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO DE PREÇOS):
     - É SEVERAMENTE PROIBIDO INVENTAR OU MENCIONAR QUALQUER PRODUTO, COMBO, SABOR, REFRIGERANTE OU PREÇO QUE NÃO ESTEJA EXPLICITAMENTE CADASTRADO NO CARDÁPIO ABAIXO!
-    - NUNCA INVENTE "Trio HK", "Pedido do Príncipe", "Esfirra por R$ 3,99", "3 por 9,99" ou qualquer outro produto, combo ou preço fictício! Se um item ou valor não consta na lista "NOSSO CARDÁPIO COMPLETO DA LOJA" abaixo, ELE NÃO EXISTE NA LOJA E É ESTRITAMENTE PROIBIDO MENCIONÁ-LO!
+    - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA APÓS "PREÇO EXATO E OBRIGATÓRIO = R$"!
+    - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! Exemplo: "Monte seu Combo (10 itens Variados)" custa EXATAMENTE R$ 59,90. É PROIBIDO inventar R$ 47,85, R$ 42,89 ou qualquer outro valor!
     - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
     - Cite APENAS itens/combos reais cadastrados no cardápio abaixo com o seu preço exato oficial e envie o link (${storeLink}). NUNCA invente ou chute um produto ou preço que não seja o cadastrado no banco!
