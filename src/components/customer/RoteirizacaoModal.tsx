@@ -912,6 +912,14 @@ export default function RoteirizacaoModal({
     const L = (window as any).L;
     if (!L) return;
 
+    // Se o mapa anterior pertence a um container DOM desmontado, limpa ele primeiro
+    if (leafletMapRef.current && (leafletMapRef.current._container !== mapRef.current || !mapRef.current.contains(leafletMapRef.current._container))) {
+      try {
+        leafletMapRef.current.remove();
+      } catch {}
+      leafletMapRef.current = null;
+    }
+
     if (!leafletMapRef.current) {
       const map = L.map(mapRef.current, {
         center: [defaultCenter.lat, defaultCenter.lng],
@@ -929,6 +937,11 @@ export default function RoteirizacaoModal({
       }).addTo(map);
 
       leafletMapRef.current = map;
+      setTimeout(() => {
+        try {
+          map.invalidateSize();
+        } catch {}
+      }, 150);
     }
 
     const map = leafletMapRef.current;
@@ -1120,6 +1133,15 @@ export default function RoteirizacaoModal({
       });
     }
 
+    return () => {
+      // Limpeza completa da instância do Leaflet ao desmontar/fechar o modal
+      if (leafletMapRef.current) {
+        try {
+          leafletMapRef.current.remove();
+        } catch {}
+        leafletMapRef.current = null;
+      }
+    };
   }, [isOpen, leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, selectedOrderIds, createdRoutes, activeTab]);
 
   // Toggle order selection for forming a route
