@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 
-export type OrderNotificationType = "CREATED" | "SAIU_ENTREGA" | "PRONTO_RETIRADA" | "CANCELADO";
+export type OrderNotificationType = "CREATED" | "SAIU_ENTREGA" | "PRONTO_RETIRADA" | "CANCELADO" | "ENTREGUE";
 
 /**
  * Envia notificação automática do status do pedido para o cliente via WhatsApp (Evolution API).
@@ -116,6 +116,20 @@ Você já pode vir ao restaurante para fazer a retirada. Estamos te esperando! �
 Olá, *${order.customerName}*. Informamos que o seu pedido *#${shortId}* em *${storeName}* foi cancelado.${reasonText}
 
 Se tiver qualquer dúvida, basta nos responder por aqui.`;
+        break;
+
+      case "ENTREGUE":
+        const storeSlug = (order.franchisee as any)?.slug || "minha-loja";
+        const baseUrl = process.env.NEXTAUTH_URL || "https://firehubfood.com.br";
+        const reviewUrl = `${baseUrl.replace(/\/$/, "")}/loja/${storeSlug}/avaliar/${order.id}`;
+        message = `🥳 *Pedido Entregue com Sucesso!*
+
+Olá, *${order.customerName}*! O seu pedido *#${shortId}* de *${storeName}* foi entregue! 🛵
+
+Sua opinião é muito importante para nós! Poderia avaliar a refeição e a entrega em 5 segundos?
+👉 ${reviewUrl}
+
+Muito obrigado e bom apetite! ⭐😋`;
         break;
     }
 

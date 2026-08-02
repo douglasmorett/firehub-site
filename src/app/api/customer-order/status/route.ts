@@ -275,6 +275,8 @@ export async function PUT(req: Request) {
       }
     } else if (status === "PRONTO") {
       sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+    } else if (status === "ENTREGUE") {
+      sendOrderNotification(orderId, "ENTREGUE").catch(() => {});
     } else if (status === "CANCELADO") {
       sendOrderNotification(orderId, "CANCELADO", { cancelReason }).catch(() => {});
     }

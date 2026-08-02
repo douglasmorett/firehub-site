@@ -82,6 +82,7 @@ model User {
   jotajaClientSecret String?       // Client Secret no Jotajá
   jotajaMerchantId  String?        // UUID da loja no Jotajá
   jotajaConnected   Boolean        @default(false) // Módulo Jotajá ativo
+  showReviewsOnMenu Boolean        @default(true)  // Exibir avaliações no cardápio digital
   orders          Order[]
   customerOrders  CustomerOrder[]
   storeReviews    StoreReview[]
@@ -362,13 +363,15 @@ model StoreCustomer {
 model StoreReview {
   id           String         @id @default(cuid())
   franchiseeId String
-  customerId   String
+  customerId   String?
   orderId      String         @unique
   rating       Int
   comment      String?
+  reply        String?
+  replyAt      DateTime?
   createdAt    DateTime       @default(now())
   franchisee   User           @relation(fields: [franchiseeId], references: [id])
-  customer     StoreCustomer  @relation(fields: [customerId], references: [id])
+  customer     StoreCustomer? @relation(fields: [customerId], references: [id])
   order        CustomerOrder  @relation(fields: [orderId], references: [id])
 }
 

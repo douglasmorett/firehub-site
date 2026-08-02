@@ -3,14 +3,15 @@ import { useState, useEffect } from "react";
 import {
   Store, Clock, Truck, CreditCard, Tag, Gift, ArrowLeft,
   Settings, Image, Phone, MapPin, ChevronRight,
-  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed
+  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed, Star
 } from "lucide-react";
 import StoreSettingsForm from "@/components/customer/StoreSettingsForm";
 import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
 import StoreTeamManager from "@/components/customer/StoreTeamManager";
+import StoreReviewsManager from "@/components/customer/StoreReviewsManager";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "conta" | "equipe";
+type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe";
 
 const SECTIONS = [
   {
@@ -79,6 +80,14 @@ const SECTIONS = [
     desc: "Programa de pontos ou cashback para clientes fiéis",
   },
   {
+    id: "reviews" as Section,
+    icon: <Star size={28} />,
+    color: "#D97706",
+    bg: "#FEF3C7",
+    title: "Avaliações & NPS",
+    desc: "Feedback dos clientes, respostas e visibilidade no cardápio digital",
+  },
+  {
     id: "conta" as Section,
     icon: <User size={28} />,
     color: "#0277BD",
@@ -110,6 +119,8 @@ const HASH_TO_SECTION: Record<string, Section> = {
   coupons: "coupons",
   fidelidade: "loyalty",
   loyalty: "loyalty",
+  avaliacoes: "reviews",
+  reviews: "reviews",
   equipe: "equipe",
   conta: "conta",
 };
@@ -218,6 +229,16 @@ export default function MinhaLojaClient({ user }: { user: any }) {
       <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
         <BackBtn onClick={() => setSection("menu")} title="👥 Cadastrar Equipe & Permissões" />
         <StoreTeamManager />
+      </div>
+    );
+  }
+
+  // ── Seção Avaliações & NPS ──────────────────────────────────────────────────
+  if (section === "reviews") {
+    return (
+      <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="⭐ Avaliações & NPS" />
+        <StoreReviewsManager initialShowReviews={user.showReviewsOnMenu} />
       </div>
     );
   }
