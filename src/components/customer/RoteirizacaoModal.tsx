@@ -578,27 +578,40 @@ export default function RoteirizacaoModal({
     viverde: { lat: -22.5180, lng: -41.9520 },
   };
 
-  // Limpa Complementos / Referências mantendo rua, número e bairro intactos para a geocodificação
+  // Limpa Complementos / Referências mantendo rua, número e bairro intactos (idêntico ao Google Maps)
   const cleanAddressForGeocoding = (rawAddress: string) => {
-    let clean = rawAddress
-      .replace(/(-?\s*Comp(?:lemento)?:[^-,]*)/gi, "")
-      .replace(/(-?\s*Ref(?:erencia)?:[^-,]*)/gi, "")
-      .replace(/(-?\s*Ponto de Ref(?:erencia)?:[^-,]*)/gi, "")
-      .replace(/(-?\s*Casa\s*\d+[^-,]*)/gi, "")
-      .replace(/(-?\s*Apto?\s*\d+[^-,]*)/gi, "")
-      .replace(/(-?\s*Bloco\s*\w+[^-,]*)/gi, "")
-      .replace(/(-?\s*Sobrado[^-,]*)/gi, "")
-      .replace(/(-?\s*Muro\s*\w+[^-,]*)/gi, "")
-      .replace(/(-?\s*Brasil[^-,]*)/gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    if (!rawAddress) return "";
+    let clean = rawAddress.replace(/\s*-\s*null\s*$/gi, "").replace(/\s*-\s*undefined\s*$/gi, "").trim();
+    clean = clean.replace(/[\.,\s\-]+$/, "");
 
-    clean = clean
-      .replace(/^R\.\s*/i, "Rua ")
-      .replace(/^Av\.\s*/i, "Avenida ")
-      .replace(/^Alameda\s*/i, "Alameda ");
+    const parts = clean.split(/[-–—,]/).map(p => p.trim()).filter(Boolean);
+    const cleanParts: string[] = [];
 
-    return clean;
+    for (const part of parts) {
+      if (
+        /^(ref|referencia|referência|ponto de ref|ponto de referencia|ponto de referência|comp|complemento|ao lado|proximo|próximo|prox|apto|apt|ap|bloco|bl|qd|lote|lt|fundos|frente|casa\s*\d+)/i.test(part) ||
+        /^(ref|referencia|referência|comp|complemento)\s*:/i.test(part) ||
+        /^ao lado d/i.test(part) ||
+        /^pr[óo]ximo/i.test(part)
+      ) {
+        continue;
+      }
+
+      let fixedPart = part.replace(/\bn[ºo]?\s*(\d+)\b/gi, "$1");
+      fixedPart = fixedPart
+        .replace(/\bR\.\s*/gi, "Rua ")
+        .replace(/\bAv\.\s*/gi, "Avenida ")
+        .replace(/\bRes\.\s*/gi, "Residencial ")
+        .replace(/\bTv\.\s*/gi, "Travessa ")
+        .replace(/\bEst\.\s*/gi, "Estrada ")
+        .replace(/\bPq\.\s*/gi, "Parque ");
+
+      if (fixedPart.trim() && !/brasil|rj/i.test(fixedPart.trim())) {
+        cleanParts.push(fixedPart.trim());
+      }
+    }
+
+    return cleanParts.join(", ");
   };
 
   // Motor Inteligente de Geocodificação Automática com Filtro Anti-Mar e Cache Persistente
@@ -708,22 +721,16 @@ export default function RoteirizacaoModal({
           batch.map(async (item) => {
             let coords: { lat: number; lng: number } | null = null;
 
-            // 1. Tentativa com Endereço Limpo + Bairro + Cidade
-            const query1 = `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+            // 1. Tentativa com Endereço Limpo 100% no padrão do Google Maps (Rua, Número, Bairro, Cidade)
+            const query1 = item.cleanedStreet.toLowerCase().includes(storeCity.toLowerCase())
+              ? `${item.cleanedStreet}, RJ, Brasil`
+              : `${item.cleanedStreet}, ${storeCity}, RJ, Brasil`;
             coords = await fetchNominatim(query1);
 
-            // 2. Tentativa apenas com Nome da Rua (sem número predial/letras) + Bairro + Cidade
-            if (!coords && item.cleanedStreet.length > 3) {
-              // Limpa números e letras como 53A, 14B, nº 10, etc.
-              const streetOnly = item.cleanedStreet
-                .replace(/,\s*\d+.*$/i, "")
-                .replace(/\b\d+\s*[a-z]?\b/gi, "")
-                .replace(/n[ºo]?\s*/gi, "")
-                .trim();
-              if (streetOnly.length > 3) {
-                const query2 = `${streetOnly}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
-                coords = await fetchNominatim(query2);
-              }
+            // 2. Segunda tentativa anexando bairro se o endereço ainda for muito curto
+            if (!coords && item.neighborhood && !item.cleanedStreet.toLowerCase().includes(item.neighborhood.toLowerCase())) {
+              const query2 = `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              coords = await fetchNominatim(query2);
             }
 
             // 3. Tentativa apenas pelo Bairro no Nominatim
