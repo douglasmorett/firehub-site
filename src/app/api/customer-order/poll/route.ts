@@ -599,129 +599,134 @@ async function pollJotajaEvents(sessionUserId?: string) {
 
 // GET: Fast polling endpoint - returns orders + auto-polls iFood & Jotaja
 export async function GET(req: NextRequest) {
-  // Buscar conta principal da loja (Hakim) para garantir correspondência universal de IDs
-  const hakimUser = await prisma.user.findFirst({
-    where: { email: "contatohakim@gmail.com" },
-    select: { id: true, ownerId: true }
-  });
-
-  let email = "";
   try {
-    const session = await getServerSession(authOptions);
-    email = session?.user?.email || "";
-  } catch {}
+    // Buscar conta principal da loja (Hakim) para garantir correspondência universal de IDs
+    const hakimUser = await prisma.user.findFirst({
+      where: { email: "contatohakim@gmail.com" },
+      select: { id: true, ownerId: true }
+    });
 
-  let user = email
-    ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } })
-    : null;
+    let email = "";
+    try {
+      const session = await getServerSession(authOptions);
+      email = session?.user?.email || "";
+    } catch {}
 
-  if (!user && hakimUser) {
-    user = hakimUser;
-  }
+    let user = email
+      ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } })
+      : null;
 
-  const targetFranchiseeId = user?.ownerId || user?.id || hakimUser?.id || "";
+    if (!user && hakimUser) {
+      user = hakimUser;
+    }
 
-  try {
-    await Promise.allSettled([
-      pollIfoodEvents(targetFranchiseeId),
-      pollJotajaEvents(targetFranchiseeId),
-    ]);
-  } catch (err) {
-    console.error("[Poll] Erro no polling:", err);
-  }
+    const targetFranchiseeId = user?.ownerId || user?.id || hakimUser?.id || "";
 
-  const validFranchiseeIds = Array.from(new Set([
-    targetFranchiseeId,
-    user?.id,
-    user?.ownerId,
-    hakimUser?.id
-  ].filter(Boolean))) as string[];
+    try {
+      await Promise.allSettled([
+        pollIfoodEvents(targetFranchiseeId),
+        pollJotajaEvents(targetFranchiseeId),
+      ]);
+    } catch (err) {
+      console.error("[Poll] Erro no polling:", err);
+    }
 
-  const orders = await withRetry(() => prisma.customerOrder.findMany({
-    where: {
-      franchiseeId: { in: validFranchiseeIds },
-      status: { notIn: ["AGUARDANDO_PAGAMENTO"] }
-    },
-    include: {
-      items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
-      motoboy: { select: { id: true, name: true, phone: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 200
-  }));
+    const validFranchiseeIds = Array.from(new Set([
+      targetFranchiseeId,
+      user?.id,
+      user?.ownerId,
+      hakimUser?.id
+    ].filter(Boolean))) as string[];
 
-  // Auto-repair zero-price items in existing orders
-  for (const o of orders) {
-    const zeroItems = (o.items || []).filter((it: any) => !it.price || it.price === 0);
-    if (zeroItems.length > 0 && o.totalAmount > 0) {
-      const otherItemsSum = (o.items || []).reduce((sum: number, it: any) => sum + (it.price || 0) * (it.quantity || 1), 0);
-      const expectedSubtotal = o.totalAmount - (o.deliveryFee || 0) + (o.discountTotal || 0);
-      const diff = expectedSubtotal - otherItemsSum;
+    const orders = await withRetry(() => prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: { in: validFranchiseeIds },
+        status: { notIn: ["AGUARDANDO_PAGAMENTO"] }
+      },
+      include: {
+        items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
+        motoboy: { select: { id: true, name: true, phone: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200
+    }));
 
-      for (const zeroIt of zeroItems) {
-        let repairedPrice = 0;
-        if (zeroIt.comboSelections) {
-          try {
-            const parsed = typeof zeroIt.comboSelections === "string" ? JSON.parse(zeroIt.comboSelections) : zeroIt.comboSelections;
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
-              if (comboSum > 0) repairedPrice = comboSum;
-            }
-          } catch {}
-        }
+    // Auto-repair zero-price items in existing orders
+    for (const o of orders) {
+      const zeroItems = (o.items || []).filter((it: any) => !it.price || it.price === 0);
+      if (zeroItems.length > 0 && o.totalAmount > 0) {
+        const otherItemsSum = (o.items || []).reduce((sum: number, it: any) => sum + (it.price || 0) * (it.quantity || 1), 0);
+        const expectedSubtotal = o.totalAmount - (o.deliveryFee || 0) + (o.discountTotal || 0);
+        const diff = expectedSubtotal - otherItemsSum;
 
-        if (repairedPrice === 0 && zeroItems.length === 1 && diff > 0 && (zeroIt.quantity || 1) > 0) {
-          repairedPrice = diff / (zeroIt.quantity || 1);
-        }
+        for (const zeroIt of zeroItems) {
+          let repairedPrice = 0;
+          if (zeroIt.comboSelections) {
+            try {
+              const parsed = typeof zeroIt.comboSelections === "string" ? JSON.parse(zeroIt.comboSelections) : zeroIt.comboSelections;
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+                if (comboSum > 0) repairedPrice = comboSum;
+              }
+            } catch {}
+          }
 
-        if (repairedPrice > 0) {
-          zeroIt.price = repairedPrice;
-          prisma.customerOrderItem.update({
-            where: { id: zeroIt.id },
-            data: { price: repairedPrice }
-          }).catch(err => console.error("[AutoRepair Item Price]", err));
+          if (repairedPrice === 0 && zeroItems.length === 1 && diff > 0 && (zeroIt.quantity || 1) > 0) {
+            repairedPrice = diff / (zeroIt.quantity || 1);
+          }
+
+          if (repairedPrice > 0) {
+            zeroIt.price = repairedPrice;
+            prisma.customerOrderItem.update({
+              where: { id: zeroIt.id },
+              data: { price: repairedPrice }
+            }).catch(err => console.error("[AutoRepair Item Price]", err));
+          }
         }
       }
     }
+
+    // Buscar data de abertura do caixa ativo para calcular a sequência do dia/sessão
+    const activeSession = await withRetry(() => prisma.cashSession.findFirst({
+      where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+      orderBy: { openedAt: "desc" },
+      select: { openedAt: true }
+    }));
+
+    // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
+    const allRecentOrders = await withRetry(() => prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: targetFranchiseeId,
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      },
+      select: { id: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    }));
+
+    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
+
+    const ordersWithDailyNum = orders.map((o: any) => ({
+      ...o,
+      dailyOrderNumber: dailyNumMap.get(o.id) || o.dailyOrderNumber || null,
+    }));
+
+
+    // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
+    try {
+      const { checkAndCleanupStaleAiDrafts } = await import("@/lib/chatbot-ai");
+      checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
+    } catch {}
+
+    return NextResponse.json(ordersWithDailyNum, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
+    });
+  } catch (err: any) {
+    console.error("[Poll GET Error]:", err?.message || err);
+    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
   }
-
-  // Buscar data de abertura do caixa ativo para calcular a sequência do dia/sessão
-  const activeSession = await withRetry(() => prisma.cashSession.findFirst({
-    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { openedAt: true }
-  }));
-
-  // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
-  const allRecentOrders = await withRetry(() => prisma.customerOrder.findMany({
-    where: {
-      franchiseeId: targetFranchiseeId,
-      createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-    },
-    select: { id: true, createdAt: true, dailyOrderNumber: true } as any,
-    orderBy: { createdAt: "asc" },
-  }));
-
-  const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-  const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt);
-
-  const ordersWithDailyNum = orders.map((o: any) => ({
-    ...o,
-    dailyOrderNumber: dailyNumMap.get(o.id) || o.dailyOrderNumber || null,
-  }));
-
-
-  // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
-  try {
-    const { checkAndCleanupStaleAiDrafts } = await import("@/lib/chatbot-ai");
-    checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
-  } catch {}
-
-  return NextResponse.json(ordersWithDailyNum, {
-    headers: {
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-      "Pragma": "no-cache",
-      "Expires": "0",
-    },
-  });
 }
