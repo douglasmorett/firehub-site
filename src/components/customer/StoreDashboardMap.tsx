@@ -18,16 +18,16 @@ type Order = {
   createdAt: string;
 };
 
-// Dicionário de Bairros de Rio das Ostras e Região com Coordenadas de Alta Precisão
+// Dicionário de Bairros de Rio das Ostras e Região com Coordenadas Terrestres de Alta Precisão
 const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
-  costazul: { lat: -22.5205, lng: -41.9175 },
-  "costa azul": { lat: -22.5205, lng: -41.9175 },
-  recreio: { lat: -22.5115, lng: -41.9160 },
-  praiamar: { lat: -22.4980, lng: -41.9060 },
-  "praia ancora": { lat: -22.5010, lng: -41.9050 },
-  "praia âmcora": { lat: -22.5010, lng: -41.9050 },
-  "residencial praia ancora": { lat: -22.5010, lng: -41.9050 },
-  "village rio das ostras": { lat: -22.5040, lng: -41.9120 },
+  costazul: { lat: -22.5220, lng: -41.9250 },
+  "costa azul": { lat: -22.5220, lng: -41.9250 },
+  recreio: { lat: -22.5130, lng: -41.9240 },
+  praiamar: { lat: -22.4990, lng: -41.9120 },
+  "praia ancora": { lat: -22.5010, lng: -41.9100 },
+  "praia âmcora": { lat: -22.5010, lng: -41.9100 },
+  "residencial praia ancora": { lat: -22.5010, lng: -41.9100 },
+  "village rio das ostras": { lat: -22.5040, lng: -41.9140 },
   marilea: { lat: -22.5130, lng: -41.9340 },
   mariléa: { lat: -22.5130, lng: -41.9340 },
   "jardim marilea": { lat: -22.5130, lng: -41.9340 },
@@ -36,15 +36,15 @@ const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
   "marilea chacara": { lat: -22.5080, lng: -41.9310 },
   "chacara marilea": { lat: -22.5080, lng: -41.9310 },
   "nova cidade": { lat: -22.5210, lng: -41.9480 },
-  "ouro verde": { lat: -22.5170, lng: -41.9240 },
+  "ouro verde": { lat: -22.5170, lng: -41.9260 },
   "jardim bela vista": { lat: -22.5140, lng: -41.9270 },
   "parque sao jorge": { lat: -22.5220, lng: -41.9360 },
   "parque são jorge": { lat: -22.5220, lng: -41.9360 },
   "sao cristovao": { lat: -22.5160, lng: -41.9420 },
   "são cristóvão": { lat: -22.5160, lng: -41.9420 },
-  "cantinho do mar": { lat: -22.5310, lng: -41.9560 },
-  "nova alianca": { lat: -22.5300, lng: -41.9530 },
-  "nova aliança": { lat: -22.5300, lng: -41.9530 },
+  "cantinho do mar": { lat: -22.5310, lng: -41.9580 },
+  "nova alianca": { lat: -22.5300, lng: -41.9540 },
+  "nova aliança": { lat: -22.5300, lng: -41.9540 },
   "extensao do bosque": { lat: -22.5280, lng: -41.9480 },
   "extensão do bosque": { lat: -22.5280, lng: -41.9480 },
   "extensao novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
@@ -53,21 +53,21 @@ const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
   âncora: { lat: -22.5050, lng: -41.9480 },
   "cidade praiana": { lat: -22.5360, lng: -41.9660 },
   centro: { lat: -22.5245, lng: -41.9455 },
-  recanto: { lat: -22.5320, lng: -41.9560 },
-  atlantica: { lat: -22.5030, lng: -41.9240 },
-  atlântica: { lat: -22.5030, lng: -41.9240 },
-  "jardim atlantico": { lat: -22.5030, lng: -41.9240 },
-  "terra firme": { lat: -22.5120, lng: -41.9200 },
-  "enseada das gaivotas": { lat: -22.5020, lng: -41.9200 },
+  recanto: { lat: -22.5320, lng: -41.9580 },
+  atlantica: { lat: -22.5030, lng: -41.9260 },
+  atlântica: { lat: -22.5030, lng: -41.9260 },
+  "jardim atlantico": { lat: -22.5030, lng: -41.9260 },
+  "terra firme": { lat: -22.5120, lng: -41.9240 },
+  "enseada das gaivotas": { lat: -22.5020, lng: -41.9240 },
   operarios: { lat: -22.5230, lng: -41.9380 },
   operários: { lat: -22.5230, lng: -41.9380 },
-  "verdes mares": { lat: -22.5380, lng: -41.9520 },
+  "verdes mares": { lat: -22.5380, lng: -41.9560 },
   "serra mar": { lat: -22.5290, lng: -41.9620 },
-  "cidade beira mar": { lat: -22.5350, lng: -41.9630 },
-  "jardim campomar": { lat: -22.5320, lng: -41.9600 },
-  campomar: { lat: -22.5320, lng: -41.9600 },
+  "cidade beira mar": { lat: -22.5350, lng: -41.9650 },
+  "jardim campomar": { lat: -22.5320, lng: -41.9620 },
+  campomar: { lat: -22.5320, lng: -41.9620 },
   "gelson apicelo": { lat: -22.5150, lng: -41.9380 },
-  "boca da barra": { lat: -22.5280, lng: -41.9320 },
+  "boca da barra": { lat: -22.5270, lng: -41.9360 },
   viverde: { lat: -22.5180, lng: -41.9520 },
 };
 
@@ -107,28 +107,47 @@ const extractNeighborhood = (addr: string): string => {
   return "Outros";
 };
 
+// Trava de Continente: impede que qualquer pino caia nas águas do Oceano Atlântico
+const clampToLand = (lat: number, lng: number): { lat: number; lng: number } => {
+  let maxAllowedLng = -41.9240;
+  if (lat < -22.5320) {
+    maxAllowedLng = -41.9620; // Beira Mar / Campomar
+  } else if (lat < -22.5250) {
+    maxAllowedLng = -41.9400; // Centro / Boca da Barra
+  } else if (lat < -22.5120) {
+    maxAllowedLng = -41.9250; // Costazul / Recreio
+  } else {
+    maxAllowedLng = -41.9100; // Âncora / Praiamar
+  }
+
+  return {
+    lat,
+    lng: Math.min(lng, maxAllowedLng)
+  };
+};
+
 const getCoordsForAddress = (addr: string, orderId: string): { lat: number; lng: number } => {
-  if (!addr) return { lat: -22.5205, lng: -41.9340 };
+  if (!addr) return clampToLand(-22.5205, -41.9440);
   const lower = addr.toLowerCase();
 
   for (const key of Object.keys(NEIGHBORHOOD_COORDS_MAP)) {
     if (lower.includes(key)) {
       const base = NEIGHBORHOOD_COORDS_MAP[key];
-      // Adiciona um pequeno jitter pseudo-aleatório baseado no orderId para espalhar os pinos no mesmo bairro
       let hash = 0;
       for (let i = 0; i < orderId.length; i++) hash = (hash << 5) - hash + orderId.charCodeAt(i);
-      const latOffset = ((Math.abs(hash) % 120) - 60) * 0.0001;
-      const lngOffset = ((Math.abs(hash >> 3) % 120) - 60) * 0.0001;
-      return { lat: base.lat + latOffset, lng: base.lng + lngOffset };
+      // Espalha os pinos no bairro puxando sempre para a terra (Oeste/Norte)
+      const latOffset = ((Math.abs(hash) % 80) - 40) * 0.00008;
+      const lngOffset = -((Math.abs(hash >> 3) % 90)) * 0.00008;
+      return clampToLand(base.lat + latOffset, base.lng + lngOffset);
     }
   }
 
-  // Fallback genérico centro de Rio das Ostras com jitter
+  // Fallback genérico centro de Rio das Ostras seguro na terra
   let hash = 0;
   for (let i = 0; i < orderId.length; i++) hash = (hash << 5) - hash + orderId.charCodeAt(i);
-  const latOffset = ((Math.abs(hash) % 250) - 125) * 0.00012;
-  const lngOffset = ((Math.abs(hash >> 3) % 250) - 125) * 0.00012;
-  return { lat: -22.5205 + latOffset, lng: -41.9340 + lngOffset };
+  const latOffset = ((Math.abs(hash) % 100) - 50) * 0.00008;
+  const lngOffset = -((Math.abs(hash >> 3) % 100)) * 0.00008;
+  return clampToLand(-22.5205 + latOffset, -41.9440 + lngOffset);
 };
 
 export default function StoreDashboardMap({ orders, dateFilterLabel }: { orders: Order[]; dateFilterLabel: string }) {
