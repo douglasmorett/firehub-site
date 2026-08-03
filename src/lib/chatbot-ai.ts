@@ -447,7 +447,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     }
   }
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const apiKey = (user.chatbotConfig as any)?.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
   if (!apiKey) {
     console.error("[Chatbot AI] CRITICAL: No Gemini API key configured!");
@@ -839,9 +839,32 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       console.error("[Chatbot AI] Erro geral crítico:", geminiErr);
     }
 
-  // Último recurso absoluto — só se TUDO falhou
+  // Se o cliente tem pedido ativo de hoje no banco e a mensagem é sobre status ou se houve falha na IA:
+  if (Array.isArray(recentOrders) && recentOrders.length > 0) {
+    const activeOrder = recentOrders.find((o: any) => {
+      const st = (o.status || "").toUpperCase();
+      return st !== "CANCELADO" && st !== "ENTREGUE" && st !== "CONCLUIDO";
+    }) || recentOrders[0];
+
+    if (activeOrder) {
+      const numLabel = activeOrder.ifoodReference ? `#${activeOrder.ifoodReference}` : activeOrder.openDeliveryReference ? `#${activeOrder.openDeliveryReference}` : `#${activeOrder.id.slice(-4).toUpperCase()}`;
+      const itemsList = (activeOrder.items || []).map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
+      const itemsStr = itemsList ? ` (${itemsList})` : "";
+      const st = (activeOrder.status || "").toUpperCase();
+
+      if (st === "SAIU_ENTREGA" || st === "SAIU_PARA_ENTREGA") {
+        return { reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 🛵 Seu pedido ${numLabel}${itemsStr} já saiu para entrega e está a caminho com o motoboy! Em breve chega aí! 😋` };
+      } else if (st === "NOVO" || st === "ACEITO" || st === "PREPARANDO" || st === "EM_PREPARO") {
+        return { reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Seu pedido ${numLabel}${itemsStr} está em preparação na nossa cozinha! Ele vai sair para entrega em instantes, dentro da prévia! 🛵🔥` };
+      } else if (st === "ENTREGUE" || st === "CONCLUIDO") {
+        return { reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! ✅ Consta em nosso sistema que seu pedido ${numLabel} já foi entregue! Bom apetite!` };
+      }
+    }
+  }
+
+  // Último recurso absoluto — só se TUDO falhou e não havia nenhum pedido no banco
   return {
-    reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Tô com uma instabilidade aqui, mas já já normaliza! Enquanto isso, faz teu pedido direto pelo nosso cardápio: ${storeLink}`
+    reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Como posso te ajudar? Se quiser conferir nossos pratos e fazer seu pedido, acesse nosso cardápio digital: ${storeLink}`
   };
 }
 

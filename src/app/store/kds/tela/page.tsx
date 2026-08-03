@@ -54,17 +54,18 @@ function getNumericOrderNumber(order: Order, seqNum?: number): number {
   if (typeof order.dailyOrderNumber === "number" && !isNaN(order.dailyOrderNumber) && order.dailyOrderNumber > 0) {
     return order.dailyOrderNumber;
   }
+  const label = getOrderLabel(order);
+  const labelDigits = label.replace(/\D/g, "");
+  if (labelDigits) {
+    const num = parseInt(labelDigits, 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
   if (order.ifoodReference) {
     const num = parseInt(order.ifoodReference.replace(/\D/g, ""), 10);
     if (!isNaN(num) && num > 0) return num;
   }
   if (order.openDeliveryReference) {
     const num = parseInt(order.openDeliveryReference.replace(/\D/g, ""), 10);
-    if (!isNaN(num) && num > 0) return num;
-  }
-  const labelDigits = getOrderLabel(order).replace(/\D/g, "");
-  if (labelDigits) {
-    const num = parseInt(labelDigits, 10);
     if (!isNaN(num) && num > 0) return num;
   }
   let hash = 0;
@@ -375,12 +376,17 @@ export default function KDSTelaPage() {
 
 
 
+  const exitingOrderIdsRef = useRef<Set<string>>(new Set());
+
   // ─── Mark as pronto ─────────────────────────────────────────────────────────
 
   const markAsPronto = useCallback(
     async (order: Order) => {
       if (!stage) return;
-      if (exitingOrderIds.has(order.id)) return; // prevent double-action for this order
+      if (exitingOrderIdsRef.current.has(order.id)) return; // prevent double-action for this order
+
+      exitingOrderIdsRef.current.add(order.id);
+      setExitingOrderIds(new Set(exitingOrderIdsRef.current));
 
       const action = stage === "production" ? "finish_production" : "finish_order";
 
@@ -389,8 +395,6 @@ export default function KDSTelaPage() {
         order,
         previousStage: stage === "production" ? "production" : "finishing",
       });
-
-      setExitingOrderIds((prev) => new Set(prev).add(order.id));
 
       // Show toast
       setToast({ orderId: order.id, label: getOrderLabel(order) });
@@ -410,18 +414,15 @@ export default function KDSTelaPage() {
       } finally {
         // Remove card after exit animation & re-fetch
         setTimeout(() => {
+          exitingOrderIdsRef.current.delete(order.id);
+          setExitingOrderIds(new Set(exitingOrderIdsRef.current));
           setOrders((prev) => prev.filter((o) => o.id !== order.id));
-          setExitingOrderIds((prev) => {
-            const next = new Set(prev);
-            next.delete(order.id);
-            return next;
-          });
           lastJsonRef.current = "";
           fetchOrders();
-        }, 350);
+        }, 300);
       }
     },
-    [stage, exitingOrderIds, fetchOrders]
+    [stage, fetchOrders]
   );
 
   // ─── Desfazer ÚLTIMA baixa ──────────────────────────────────────────────────

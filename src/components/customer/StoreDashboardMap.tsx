@@ -71,19 +71,39 @@ const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
   viverde: { lat: -22.5180, lng: -41.9520 },
 };
 
+const CITY_NAME_BLACKLIST = [
+  "rio das ostras", "macaé", "macae", "cabo frio", "unamar",
+  "casimiro de abreu", "barra de são joão", "rj", "brasil", "outros", ""
+];
+
 const extractNeighborhood = (addr: string): string => {
   if (!addr) return "Outros";
   const lower = addr.toLowerCase();
+
+  // 1. Busca em nosso dicionário oficial de bairros primeiro
   for (const key of Object.keys(NEIGHBORHOOD_COORDS_MAP)) {
-    if (lower.includes(key)) {
-      return key.charAt(0).toUpperCase() + key.slice(1);
+    if (lower.includes(key) && !CITY_NAME_BLACKLIST.includes(key)) {
+      return key.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
     }
   }
-  const parts = addr.split("-");
-  if (parts.length >= 2) {
-    const candidate = parts[parts.length - 1].split(",")[0].trim();
-    if (candidate.length > 2 && candidate.length < 30) return candidate;
+
+  // 2. Limpa o endereço removendo nomes de cidade/estado antes de extrair
+  const cleanAddr = addr.replace(/rio das ostras|macaé|macae|cabo frio|unamar|casimiro de abreu|rj|brasil/gi, "").trim();
+  const parts = cleanAddr.split(/[-,\/]/).map(p => p.trim()).filter(Boolean);
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    const pLower = p.toLowerCase();
+    if (
+      p.length > 2 &&
+      p.length < 35 &&
+      !CITY_NAME_BLACKLIST.includes(pLower) &&
+      !/^(rua|av|avenida|estrada|servidao|servidão|nº|\d+|casa|apto|bloco)/i.test(p)
+    ) {
+      return p.charAt(0).toUpperCase() + p.slice(1);
+    }
   }
+
   return "Outros";
 };
 
@@ -97,8 +117,8 @@ const getCoordsForAddress = (addr: string, orderId: string): { lat: number; lng:
       // Adiciona um pequeno jitter pseudo-aleatório baseado no orderId para espalhar os pinos no mesmo bairro
       let hash = 0;
       for (let i = 0; i < orderId.length; i++) hash = (hash << 5) - hash + orderId.charCodeAt(i);
-      const latOffset = ((Math.abs(hash) % 100) - 50) * 0.00008;
-      const lngOffset = ((Math.abs(hash >> 3) % 100) - 50) * 0.00008;
+      const latOffset = ((Math.abs(hash) % 120) - 60) * 0.0001;
+      const lngOffset = ((Math.abs(hash >> 3) % 120) - 60) * 0.0001;
       return { lat: base.lat + latOffset, lng: base.lng + lngOffset };
     }
   }
@@ -106,8 +126,8 @@ const getCoordsForAddress = (addr: string, orderId: string): { lat: number; lng:
   // Fallback genérico centro de Rio das Ostras com jitter
   let hash = 0;
   for (let i = 0; i < orderId.length; i++) hash = (hash << 5) - hash + orderId.charCodeAt(i);
-  const latOffset = ((Math.abs(hash) % 200) - 100) * 0.0001;
-  const lngOffset = ((Math.abs(hash >> 3) % 200) - 100) * 0.0001;
+  const latOffset = ((Math.abs(hash) % 250) - 125) * 0.00012;
+  const lngOffset = ((Math.abs(hash >> 3) % 250) - 125) * 0.00012;
   return { lat: -22.5205 + latOffset, lng: -41.9340 + lngOffset };
 };
 
@@ -116,7 +136,7 @@ export default function StoreDashboardMap({ orders, dateFilterLabel }: { orders:
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
 
-  // Filtrar apenas pedidos válidos de entrega (excluir cancelados se preferir ou incluir com cor especial)
+  // Filtrar apenas pedidos válidos de entrega (excluir cancelados e retiradas)
   const deliveryOrders = useMemo(() => {
     return orders.filter(o => {
       if (o.status === "CANCELADO") return false;
@@ -128,23 +148,25 @@ export default function StoreDashboardMap({ orders, dateFilterLabel }: { orders:
     });
   }, [orders]);
 
-  // Estatísticas do Mapa
+  // Estatísticas do Mapa (Garantindo que a cidade jamais seja contada como Bairro nº 1)
   const stats = useMemo(() => {
     const neighborhoodCounts: Record<string, { count: number; total: number }> = {};
     let totalRevenue = 0;
 
     deliveryOrders.forEach(o => {
       const neigh = extractNeighborhood(o.customerAddress || "");
-      if (!neighborhoodCounts[neigh]) neighborhoodCounts[neigh] = { count: 0, total: 0 };
-      neighborhoodCounts[neigh].count += 1;
-      neighborhoodCounts[neigh].total += o.totalAmount;
+      if (!CITY_NAME_BLACKLIST.includes(neigh.toLowerCase()) && neigh !== "Outros") {
+        if (!neighborhoodCounts[neigh]) neighborhoodCounts[neigh] = { count: 0, total: 0 };
+        neighborhoodCounts[neigh].count += 1;
+        neighborhoodCounts[neigh].total += o.totalAmount;
+      }
       totalRevenue += o.totalAmount;
     });
 
     let topNeighborhood = "Nenhum";
     let topCount = 0;
     Object.entries(neighborhoodCounts).forEach(([neigh, data]) => {
-      if (data.count > topCount && neigh !== "Outros") {
+      if (data.count > topCount) {
         topCount = data.count;
         topNeighborhood = neigh;
       }
@@ -208,44 +230,18 @@ export default function StoreDashboardMap({ orders, dateFilterLabel }: { orders:
           const coords = getCoordsForAddress(o.customerAddress || "", o.id);
           bounds.extend([coords.lat, coords.lng]);
 
-          // Determinar cor do pino baseado no canal / status
+          // Determinar cor do pino baseado no canal
           const isIfood = (o.source || "").toUpperCase() === "IFOOD" || Boolean(o.ifoodReference);
           const isJotaja = (o.source || "").toUpperCase() === "JOTAJA" || Boolean(o.openDeliveryReference);
 
           const pinBg = isIfood ? "#EA1D2C" : isJotaja ? "#FF6C00" : "#10B981";
           const displayNum = o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : `#${o.id.slice(-4).toUpperCase()}`;
 
-          const iconHtml = `
-            <div style="
-              background: ${pinBg};
-              color: white;
-              font-weight: 800;
-              font-size: 11px;
-              padding: 4px 8px;
-              border-radius: 20px;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-              display: flex;
-              align-items: center;
-              gap: 4px;
-              border: 2px solid white;
-              white-space: nowrap;
-              transform: translate(-50%, -100%);
-            ">
-              <span style="font-size: 12px;">📍</span> ${displayNum}
-            </div>
-          `;
-
-          const customIcon = Leaflet.divIcon({
-            html: iconHtml,
-            className: "custom-map-pin",
-            iconSize: [0, 0],
-          });
-
           const popupContent = `
-            <div style="font-family: inherit; padding: 4px; min-width: 180px;">
+            <div style="font-family: system-ui, sans-serif; padding: 6px; min-width: 190px;">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                 <strong style="font-size: 14px; color: #0F172A;">${displayNum}</strong>
-                <span style="background: ${pinBg}20; color: ${pinBg}; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px;">
+                <span style="background: ${pinBg}; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 12px;">
                   ${isIfood ? "iFood" : isJotaja ? "Jotajá" : "Site"}
                 </span>
               </div>
@@ -256,25 +252,34 @@ export default function StoreDashboardMap({ orders, dateFilterLabel }: { orders:
                 🏠 ${o.customerAddress || "Endereço não informado"}
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #E2E8F0; padding-top: 6px; margin-top: 6px;">
-                <span style="font-size: 11px; font-weight: 600; color: #059669;">R$ ${o.totalAmount.toFixed(2)}</span>
-                <span style="font-size: 10px; font-weight: 700; color: #475569;">${o.status}</span>
+                <span style="font-size: 12px; font-weight: 800; color: #059669;">R$ ${o.totalAmount.toFixed(2)}</span>
+                <span style="font-size: 10px; font-weight: 700; color: #475569; background: #F1F5F9; padding: 2px 6px; border-radius: 4px;">${o.status}</span>
               </div>
             </div>
           `;
 
-          const marker = Leaflet.marker([coords.lat, coords.lng], { icon: customIcon })
+          // Usar CircleMarker super elegante (dots de densidade ultra-limpos) que não poluem o mapa
+          const circleMarker = Leaflet.circleMarker([coords.lat, coords.lng], {
+            radius: deliveryOrders.length > 80 ? 6 : 7,
+            fillColor: pinBg,
+            color: "#FFFFFF",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.85,
+          })
+            .bindTooltip(`<b>${displayNum}</b> — ${o.customerName || "Cliente"}`, { direction: "top", offset: [0, -5] })
             .bindPopup(popupContent)
             .addTo(map);
 
-          markersRef.current.push(marker);
+          markersRef.current.push(circleMarker);
         });
 
-        // Ajustar zoom para caber todos os pinos se houver mais de 1 pino
+        // Ajustar zoom para caber todos os pinos de forma equilibrada
         if (deliveryOrders.length > 0 && bounds.isValid()) {
           map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
         }
 
-        // Forçar resize após 200ms para renderizar corretamente
+        // Forçar resize após 200ms para renderizar sem cortes
         setTimeout(() => map.invalidateSize(), 200);
       } catch (err) {
         console.error("[StoreDashboardMap] Erro ao renderizar mapa:", err);
@@ -284,7 +289,6 @@ export default function StoreDashboardMap({ orders, dateFilterLabel }: { orders:
     initMap();
 
     return () => {
-      // Clean up markers
       if (markersRef.current) {
         markersRef.current.forEach(m => m.remove());
         markersRef.current = [];
