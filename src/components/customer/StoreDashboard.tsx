@@ -3,10 +3,13 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { TrendingUp, DollarSign, ShoppingCart, Users, CreditCard, Banknote, Smartphone, ArrowUpRight, ArrowDownRight, Filter, Calendar, Store as StoreIcon, ChevronDown } from "lucide-react";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
+import StoreDashboardMap from "@/components/customer/StoreDashboardMap";
 
 type Order = {
   id: string; totalAmount: number; status: string; deliveryType: string;
   paymentMethod?: string; customerName: string; customerPhone?: string;
+  customerAddress?: string; ifoodReference?: string; openDeliveryReference?: string;
+  source?: string; notes?: string;
   createdAt: string; items?: any[]; storeName?: string; storeSlug?: string;
 };
 type StoreOption = { id: string; name: string; slug: string };
@@ -329,6 +332,22 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
           </div>
         </div>
       </div>
+
+      {/* MAPA DE CALOR & DISTRIBUIÇÃO GEOGRÁFICA DE PEDIDOS POR FILTRO */}
+      <StoreDashboardMap
+        orders={filteredOrders}
+        dateFilterLabel={
+          dateFilter === "hoje"
+            ? "Hoje"
+            : dateFilter === "ontem"
+            ? "Ontem"
+            : dateFilter === "semana"
+            ? "Últimos 7 dias"
+            : dateFilter === "mes"
+            ? "Este Mês"
+            : "Período Personalizado"
+        }
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
         {/* PEDIDOS POR HORA */}
