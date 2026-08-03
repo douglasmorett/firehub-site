@@ -231,9 +231,8 @@ export default function RoteirizacaoModal({
     document.head.appendChild(script);
   }, []);
 
-  // Load Motoboys from API
+  // Load Motoboys from API (Pré-carrega em background sem atrasar a abertura)
   useEffect(() => {
-    if (!isOpen) return;
     const fetchMotoboys = async () => {
       try {
         const res = await fetch("/api/motoboys");
@@ -246,6 +245,17 @@ export default function RoteirizacaoModal({
       }
     };
     fetchMotoboys();
+  }, []);
+
+  // Forçar resize do mapa instantaneamente ao abrir a modal pré-carregada
+  useEffect(() => {
+    if (isOpen && leafletMapRef.current) {
+      setTimeout(() => {
+        try {
+          leafletMapRef.current?.invalidateSize();
+        } catch {}
+      }, 100);
+    }
   }, [isOpen]);
 
   // Load saved routes and config from localStorage
@@ -1366,12 +1376,10 @@ export default function RoteirizacaoModal({
     saveRoutes(updated);
   };
 
-  if (!isOpen) return null;
-
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15, 23, 42, 0.75)",
-      backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center",
+      backdropFilter: "blur(4px)", display: isOpen ? "flex" : "none", alignItems: "center", justifyContent: "center",
       padding: "1rem"
     }}>
       <div style={{

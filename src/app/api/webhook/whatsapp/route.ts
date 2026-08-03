@@ -177,12 +177,12 @@ async function handleIncomingMessage(body: any, instance: string) {
   const shortId = instance.replace(/^firehub_/, "");
   let user = await prisma.user.findFirst({
     where: { id: { endsWith: shortId } },
-    select: { id: true, ownerId: true, chatbotConfig: true },
+    select: { id: true, ownerId: true, chatbotConfig: true, slug: true },
   });
 
   if (!user) {
     user = await prisma.user.findFirst({
-      select: { id: true, ownerId: true, chatbotConfig: true },
+      select: { id: true, ownerId: true, chatbotConfig: true, slug: true },
     });
   }
 
@@ -472,21 +472,22 @@ async function handleIncomingMessage(body: any, instance: string) {
   // Se o Gemini travar, não podemos deixar o webhook pendurado — a Evolution API
   // desiste e para de enviar mensagens para o nosso endpoint.
   let aiResponse: { reply: string } | null = null;
+  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "https://firehubfood.com.br";
+  const storeLink = (user.chatbotConfig as any)?.externalMenuUrl || defaultStoreLink;
+
   try {
     aiResponse = await withTimeout(
-      processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData),
-      25000 // 25 segundos máximo (10s modelo 1 + 6s modelo 2 + 6s modelo 3 + margem)
+      processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName),
+      25000 // 25 segundos máximo
     );
   } catch (aiErr: any) {
     console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro na IA para ${remoteJid}:`, aiErr?.message || aiErr);
-    // Fallback: resposta genérica para o cliente não ficar sem resposta
-    aiResponse = { reply: "Oii! 😊 Estou com uma instabilidade momentânea. Pode repetir sua mensagem em alguns segundos? Obrigado pela paciência!" };
+    aiResponse = { reply: `Oi! 😊 Te ajudo sim! Como posso te atender hoje? Se quiser conferir nosso cardápio completo e fazer seu pedido, acesse: ${storeLink}` };
   }
 
-  // Se o timeout estourou (15s), aiResponse será null — envia resposta de fallback
   if (!aiResponse) {
     console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Timeout de 15s para ${remoteJid}. Enviando fallback.`);
-    aiResponse = { reply: "Oii! 😊 Estou processando sua mensagem. Em instantes te respondo, pode aguardar?" };
+    aiResponse = { reply: `Oi! 😊 Te ajudo sim! Como posso te atender hoje? Se quiser conferir nosso cardápio completo e fazer seu pedido, acesse: ${storeLink}` };
   }
   
   if (aiResponse?.reply) {

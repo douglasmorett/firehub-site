@@ -19,7 +19,8 @@ export async function processChatbotAI(
   message: string,
   history: any[] = [],
   remoteJid?: string,
-  audioData?: { base64: string; mimeType: string }
+  audioData?: { base64: string; mimeType: string },
+  pushName?: string
 ) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -124,52 +125,19 @@ export async function processChatbotAI(
     }) : Promise.resolve(null),
   ]);
 
-  // Se a busca por número/telefone não trouxe resultado ou a mensagem pergunta sobre status, carrega pedidos ativos de hoje da loja
-  let recentOrders: any[] = [...searchedOrders];
-  const isAskingStatus = /pedido|previa|prévia|chega|chegando|entrega|saiu|cadê|cade|demora|onde tá|onde ta|status|situação|situacao|rastrear|posição|posicao/i.test(textToScan);
-  if (recentOrders.length === 0 || isAskingStatus) {
-    const todayActive = await prisma.customerOrder.findMany({
-      where: {
-        franchiseeId: targetFranchiseeId,
-        createdAt: { gte: startOfToday },
-        status: { in: ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA"] },
-      },
-      select: {
-        id: true,
-        status: true,
-        totalAmount: true,
-        customerName: true,
-        customerPhone: true,
-        createdAt: true,
-        deliveryType: true,
-        ifoodReference: true,
-        openDeliveryReference: true,
-        openDeliveryChannel: true,
-        cancelledBy: true,
-        notes: true,
-        items: {
-          select: {
-            quantity: true,
-            menuProduct: { select: { name: true } }
-          }
-        }
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-
-    const existingIds = new Set(recentOrders.map((o: any) => o.id));
-    for (const o of todayActive) {
-      if (!existingIds.has(o.id)) {
-        recentOrders.push(o);
-      }
-    }
-  }
+  // Filtrar APENAS os pedidos que pertencem EXCLUSIVAMENTE a este cliente/telefone ou aos códigos digitados por ele
+  let recentOrders: any[] = searchedOrders.filter((o: any) => {
+    if (!clientPhoneDigits) return true;
+    const orderPhone = (o.customerPhone || "").replace(/\D/g, "");
+    if (orderPhone && orderPhone.includes(clientPhoneDigits.slice(-8))) return true;
+    if (extractedNumbers.some((num: string) => o.ifoodReference === num || o.openDeliveryReference === num || o.id.includes(num))) return true;
+    return false;
+  });
 
   let rawCustomerName = "";
-  if (customerRecord?.name && !customerRecord.name.includes("Cliente WhatsApp")) {
+  if (customerRecord?.name && !/cliente|whatsapp|ifood/i.test(customerRecord.name)) {
     rawCustomerName = customerRecord.name;
-  } else if (Array.isArray(recentOrders) && recentOrders.length > 0 && (recentOrders[0] as any).customerName && !(recentOrders[0] as any).customerName.includes("Cliente iFood")) {
+  } else if (Array.isArray(recentOrders) && recentOrders.length > 0 && (recentOrders[0] as any).customerName && !/cliente|whatsapp|ifood/i.test((recentOrders[0] as any).customerName)) {
     rawCustomerName = (recentOrders[0] as any).customerName;
   }
 
@@ -619,8 +587,12 @@ ${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS
 
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
-- Primeiro Nome: ${customerFirstName || "Não identificado"}
+- Primeiro Nome: ${customerFirstName || "NÃO INFORMADO"}
 - Telefone: ${clientPhoneDigits || "Não informado"}
+
+REGRAS CRÍTICAS DE NOME E IDENTIFICAÇÃO DO CLIENTE:
+1. ${customerFirstName ? `O nome CONFIRMADO deste cliente no banco da loja é "${customerFirstName}". Cumprimente-o com simpatia pelo nome!` : `O nome deste cliente NÃO FOI INFORMADO e NÃO CONSTA no cadastro. Você está RIGOROSAMENTE PROIBIDO de inventar, supor ou usar qualquer nome! Cumprimente SEMPRE usando apenas "Oi!", "Olá!", "Boa noite!", "Tudo bem?". NUNCA chame por nenhum nome se ele não estiver confirmado!`}
+2. PROIBIÇÃO ABSOLUTA DE ATRIBUIR PEDIDOS DE OUTROS: Se o cliente veio de um anúncio (ex: "Olá! Posso ter mais informações sobre isso?"), pergunta "quero fazer pedido" ou se não possui pedido cadastrado no seu número de telefone hoje, NUNCA diga que ele tem um pedido em preparação ou em entrega! Acolha a pessoa com simpatia, ofereça ajuda e ENVIE O LINK DO CARDÁPIO DIGITAL DA LOJA: ${storeLink}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
