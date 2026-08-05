@@ -321,7 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Escutar alterações do armazenamento local (disparado pelo Bridge em tempo real)
+  // Escutar alterações do armazenamento local (disparado pelo Bridge/Background em tempo real)
   if (typeof chrome !== "undefined" && chrome.storage) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === "local") {
@@ -345,7 +345,17 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         }
         if (changes.lastSyncTime) {
-          lastSyncTextEl.textContent = `⚡ Ao vivo às ${changes.lastSyncTime.newValue}`;
+          const t = changes.lastSyncTime.newValue;
+          lastSyncTextEl.textContent = `⚡ Ao vivo às ${t}`;
+          // Atualizar badge do FireHub Site (bridge ativo)
+          firehubSyncStatus.textContent = `🟢 ${t}`;
+          firehubSyncStatus.style.color = "#34D399";
+        }
+        // Atualizar badge do Portal iFood
+        if (changes.ifoodLastApply) {
+          const t = changes.ifoodLastApply.newValue;
+          ifoodSyncStatus.textContent = `🟢 ${t}`;
+          ifoodSyncStatus.style.color = "#34D399";
         }
       }
     });

@@ -377,7 +377,8 @@ async function clickSalvar(targetMinutes, actualMax = null) {
     }
 
     lastAppliedETA = targetMinutes;
-    chrome.storage.local.set({ lastAppliedETA: targetMinutes });
+    const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    chrome.storage.local.set({ lastAppliedETA: targetMinutes, ifoodLastApply: nowStr });
   } else {
     console.warn("[FireHub] ⚠️ Botão 'Salvar' não encontrado na página");
     updatePillStatus(`⚠️ ${displayVal} min (Salvar não achado)`, true);

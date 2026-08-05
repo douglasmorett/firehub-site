@@ -128,23 +128,48 @@ async function calculateAndApply(count) {
       };
 
       const tabs = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
+      console.log(`[FireHub] 📤 Despachando pro iFood: ${recommendedMinutes} min | Tabs encontradas: ${tabs.length}`);
+
       if (tabs && tabs.length > 0) {
         for (const tab of tabs) {
           if (tab.id) {
-            chrome.tabs.sendMessage(tab.id, payload).catch(() => {});
+            try {
+              await chrome.tabs.sendMessage(tab.id, payload);
+              console.log(`[FireHub] ✅ Mensagem enviada pra tab ${tab.id} (${tab.url?.substring(0, 50)})`);
+            } catch (err) {
+              console.warn(`[FireHub] ⚠️ Falha ao enviar pra tab ${tab.id}: ${err.message}. Reinjetando content script...`);
+              // Reinjetar o content script e tentar de novo
+              try {
+                await chrome.scripting.executeScript({
+                  target: { tabId: tab.id },
+                  files: ["scripts/content.js"]
+                });
+                // Esperar o script carregar
+                await new Promise(r => setTimeout(r, 2000));
+                await chrome.tabs.sendMessage(tab.id, payload);
+                console.log(`[FireHub] ✅ Mensagem enviada após reinjeção na tab ${tab.id}`);
+              } catch (e2) {
+                console.error(`[FireHub] ❌ Falha total na tab ${tab.id}: ${e2.message}`);
+              }
+            }
           }
         }
       } else {
         // Se a aba do iFood não está aberta, abrir automaticamente
-        console.log("[FireHub] 🚀 Abrindo Portal iFood automaticamente...");
-        chrome.tabs.create({ url: "https://portal.ifood.com.br/", active: false }, (newTab) => {
+        console.log("[FireHub] 🚀 Nenhuma aba iFood aberta. Abrindo Portal iFood...");
+        chrome.tabs.create({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience", active: false }, (newTab) => {
           if (newTab && newTab.id) {
+            // Esperar página carregar + content script injetar
             setTimeout(() => {
-              chrome.tabs.sendMessage(newTab.id, payload).catch(() => {});
-            }, 6000);
+              chrome.tabs.sendMessage(newTab.id, payload).catch((e) => {
+                console.warn(`[FireHub] ⚠️ Falha ao enviar pra nova tab: ${e.message}`);
+              });
+            }, 8000);
           }
         });
       }
+    } else {
+      console.log(`[FireHub] ⏸️ Sync desativado, apenas salvando valores.`);
     }
 
   } catch (err) {
