@@ -18,20 +18,31 @@ import { authOptions } from "@/lib/auth";
  *  - Até 4*M ped: 78 min
  *  - Acima de 4*M ped: ALERTA DE CRÍTICO ➔ Fechar a loja por 40 min!
  */
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-store-token",
+};
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 export async function GET(req: NextRequest) {
   try {
     let franchiseeId: string | null = null;
     let storeName = "FIREHUB";
 
     const session = await getServerSession(authOptions);
+    let sessionUser: any = null;
     if (session && (session.user as any)?.id) {
-      franchiseeId = (session.user as any).ownerId || (session.user as any).id;
-      storeName = (session.user as any).storeName || "FIREHUB";
+      sessionUser = session.user;
     }
 
     const urlToken = req.nextUrl.searchParams.get("token") || req.headers.get("x-store-token");
-    if (!franchiseeId && urlToken) {
-      const user = await prisma.user.findFirst({
+    let tokenUser: any = null;
+    if (urlToken) {
+      tokenUser = await prisma.user.findFirst({
         where: {
           OR: [
             { id: urlToken },
@@ -39,65 +50,129 @@ export async function GET(req: NextRequest) {
             { email: urlToken.toLowerCase().trim() },
           ],
         },
-        select: { id: true, name: true },
+        select: { id: true, name: true, ownerId: true, email: true },
       });
-      if (user) {
-        franchiseeId = user.id;
-        storeName = user.name || "FIREHUB";
-      }
     }
 
-    if (!franchiseeId) {
-      const defaultUser = await prisma.user.findFirst({
-        where: { email: "contatohakim@gmail.com" },
-        select: { id: true, name: true },
-      });
-      if (defaultUser) {
-        franchiseeId = defaultUser.id;
-        storeName = defaultUser.name || "FIREHUB";
-      }
-    }
+    const hakimUser = await prisma.user.findFirst({
+      where: { email: "contatohakim@gmail.com" },
+      select: { id: true, ownerId: true, name: true },
+    });
 
-    if (!franchiseeId) {
+    const targetUser = tokenUser || sessionUser || hakimUser;
+    if (!targetUser) {
       return NextResponse.json({ error: "Loja não identificada" }, { status: 401 });
     }
 
+    storeName = targetUser.name || "FIREHUB";
+
+    // Busca todos os IDs válidos de usuários e funcionários da franquia/loja
+    const allStoreUsers = await prisma.user.findMany({
+      where: {
+        OR: [
+          { email: "contatohakim@gmail.com" },
+          { id: targetUser.id },
+          { ownerId: targetUser.id },
+          { ownerId: targetUser.ownerId || "none" },
+          { id: targetUser.ownerId || "none" },
+        ]
+      },
+      select: { id: true }
+    });
+
+    const validFranchiseeIds = Array.from(new Set([
+      ...allStoreUsers.map(u => u.id),
+      targetUser.id,
+      targetUser.ownerId,
+      sessionUser?.id,
+      sessionUser?.ownerId,
+      tokenUser?.id,
+      tokenUser?.ownerId,
+      hakimUser?.id,
+      hakimUser?.ownerId,
+    ].filter(Boolean))) as string[];
+
     const mode = req.nextUrl.searchParams.get("mode") || "auto";
 
-    // ── MODO MANUAL (Override direto) ──
+    // ── CONTABILIZAÇÃO: ABA 'EM PRODUÇÃO' DA TELA DE PEDIDOS ──
+    // Deve ser IDÊNTICO ao filtro do dashboard StoreOrdersDashboard.tsx linha 1889:
+    // ACEITO || PREPARANDO || (deliveryType === "DELIVERY" && status === "PRONTO")
+    const ordersInProduction = await prisma.customerOrder.count({
+      where: {
+        franchiseeId: { in: validFranchiseeIds },
+        OR: [
+          { status: "ACEITO" },
+          { status: "PREPARANDO" },
+          { status: "PRONTO", deliveryType: "DELIVERY" },
+        ],
+      },
+    });
+
+    // ── MODO MANUAL (Regras de Métricas Personalizadas) ──
     if (mode === "manual") {
+      const rawRules = req.nextUrl.searchParams.get("rules");
+      let rules: { maxOrders: number; minutes: number; pause?: boolean }[] = [];
+
+      if (rawRules) {
+        try {
+          rules = JSON.parse(rawRules);
+        } catch (e) {
+          console.warn("[Dynamic ETA] Erro ao parsear regras manuais:", e);
+        }
+      }
+
+      if (Array.isArray(rules) && rules.length > 0) {
+        // Ordena regras por limite de pedidos crescente
+        rules.sort((a, b) => (a.maxOrders || 0) - (b.maxOrders || 0));
+
+        // Encontra a regra correspondente para a quantidade atual de pedidos
+        const matchedRule = rules.find((r) => ordersInProduction <= r.maxOrders) || rules[rules.length - 1];
+
+        const recommendedMinutes = matchedRule ? matchedRule.minutes : 58;
+        const shouldPauseStore = matchedRule ? !!matchedRule.pause : false;
+        const etaRangeFormatted = shouldPauseStore ? "⚠️ PAUSAR LOJA" : `${recommendedMinutes} min`;
+        const matchedRuleLabel = matchedRule
+          ? `Métrica Manual: Até ${matchedRule.maxOrders} ped. ➔ ${recommendedMinutes} min`
+          : `Métrica Manual (${recommendedMinutes} min)`;
+
+        return NextResponse.json({
+          success: true,
+          mode: "manual",
+          franchiseeId: targetUser.id,
+          storeName,
+          ordersInProduction,
+          activeMotoboys: null,
+          recommendedMinutes,
+          etaRangeFormatted,
+          shouldPauseStore,
+          pauseMinutes: shouldPauseStore ? 40 : 0,
+          matchedRuleLabel,
+          appliedRule: matchedRule,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      // Fallback para parâmetro manual legados simples
       const manualOrders = parseInt(req.nextUrl.searchParams.get("orders") || "10", 10);
       const manualMinutes = parseInt(req.nextUrl.searchParams.get("minutes") || "58", 10);
 
       return NextResponse.json({
         success: true,
         mode: "manual",
-        franchiseeId,
+        franchiseeId: targetUser.id,
         storeName,
-        ordersInProduction: manualOrders,
+        ordersInProduction,
         activeMotoboys: null,
         recommendedMinutes: manualMinutes,
         etaRangeFormatted: `${manualMinutes} min`,
         shouldPauseStore: false,
         pauseMinutes: 0,
-        matchedRuleLabel: `Modo Manual (${manualOrders} ped. ➔ ${manualMinutes} min)`,
+        matchedRuleLabel: `Modo Manual Fixo (${manualOrders} ped. ➔ ${manualMinutes} min)`,
         updatedAt: new Date().toISOString(),
       });
     }
 
-    // ── MODO AUTOMÁTICO (Tabela Oficial Hakim) ──
-    const activeStatusFilter = { in: ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "RECEBIDO", "CONFIRMADO", "PENDENTE"] };
-    const ordersInProduction = await prisma.customerOrder.count({
-      where: {
-        franchiseeId,
-        status: activeStatusFilter,
-        OR: [
-          { kdsStage: "PRODUCTION" },
-          { kdsStage: null },
-        ],
-      },
-    });
-
+    // ── MODO AUTOMÁTICO (Tabela Oficial Hakim — Baseada na aba 'Em Produção') ──
     const queryMotoboys = req.nextUrl.searchParams.get("motoboys");
     let activeMotoboys = queryMotoboys ? parseInt(queryMotoboys, 10) : 2;
     if (isNaN(activeMotoboys) || activeMotoboys < 1) activeMotoboys = 1;
@@ -142,7 +217,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       mode: "auto",
-      franchiseeId,
+      franchiseeId: targetUser.id,
       storeName,
       ordersInProduction,
       activeMotoboys,

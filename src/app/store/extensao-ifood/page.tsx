@@ -17,10 +17,26 @@ import {
   Bot,
   Layers,
   HelpCircle,
+  Copy,
+  ExternalLink,
+  Check
 } from "lucide-react";
 
 export default function ExtensaoIfoodPage() {
   const [selectedMotoboys, setSelectedMotoboys] = useState<number>(3);
+  const [copiedExtensionsUrl, setCopiedExtensionsUrl] = useState(false);
+
+  const handleOpenExtensionsPage = () => {
+    const extensionsUrl = "chrome://extensions";
+    try {
+      navigator.clipboard.writeText(extensionsUrl);
+    } catch {}
+    setCopiedExtensionsUrl(true);
+    setTimeout(() => setCopiedExtensionsUrl(false), 4000);
+
+    // Tenta abrir janela/aba com chrome://extensions
+    window.open("chrome://extensions", "_blank");
+  };
 
   // Tabela Hakim por motoboys
   const getHakimRanges = (m: number) => ({
@@ -53,7 +69,7 @@ export default function ExtensaoIfoodPage() {
       <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "2rem 1.5rem" }}>
 
         {/* HERO SECTION */}
-        <div style={{ background: "#FFF", borderRadius: 24, padding: "2.5rem", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(0,0,0,0.05)", marginBottom: "2rem", display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: "2rem", alignItems: "center" }}>
+        <div style={{ background: "#FFF", borderRadius: 24, padding: "2.5rem", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(0,0,0,0.05)", marginBottom: "2rem", display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "2rem", alignItems: "center" }}>
           <div>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: "0.75rem", fontWeight: 900, padding: "4px 12px", borderRadius: 20, marginBottom: 12 }}>
               <Sparkles size={14} /> INOVAÇÃO EXCLUSIVA FIREHUB
@@ -69,39 +85,65 @@ export default function ExtensaoIfoodPage() {
               <strong style={{ color: "#E8360C" }}>Focamos em inovar para você NUNCA MAIS se preocupar com esse problema!</strong> A primeira tecnologia que lê a carga real da sua cozinha e ajusta o iFood e seu site nos bastidores!
             </p>
 
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <a
-                href="/api/download/extension"
-                download="firehub-ifood-extension.zip"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "14px 28px",
-                  borderRadius: 14,
-                  background: "linear-gradient(135deg, #E8360C 0%, #FF5722 100%)",
-                  color: "#FFF",
-                  fontWeight: 900,
-                  fontSize: "1.05rem",
-                  textDecoration: "none",
-                  boxShadow: "0 6px 20px rgba(232, 54, 12, 0.4)",
-                }}
-              >
-                <Download size={20} /> Baixar Extensão Grátis (.ZIP)
-              </a>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={handleOpenExtensionsPage}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "14px 24px",
+                    borderRadius: 14,
+                    background: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
+                    color: "#FFF",
+                    fontWeight: 900,
+                    fontSize: "1.02rem",
+                    border: "none",
+                    cursor: "pointer",
+                    boxShadow: "0 6px 20px rgba(37, 99, 235, 0.4)",
+                  }}
+                >
+                  <Puzzle size={20} />
+                  {copiedExtensionsUrl ? "Copiado! Cole chrome://extensions na barra do Chrome" : "Ir para Aba de Extensões do Chrome"}
+                </button>
 
-              <span style={{ fontSize: "0.78rem", color: "#64748B", fontWeight: 700 }}>
-                ⚡ Instalação em menos de 1 minuto
-              </span>
+                <a
+                  href="/api/download/extension"
+                  download="firehub-ifood-extension.zip"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "14px 20px",
+                    borderRadius: 14,
+                    background: "#F8FAFC",
+                    border: "1.5px solid #CBD5E1",
+                    color: "#334155",
+                    fontWeight: 800,
+                    fontSize: "0.92rem",
+                    textDecoration: "none",
+                  }}
+                >
+                  <Download size={18} /> Baixar (.ZIP)
+                </a>
+              </div>
+
+              {copiedExtensionsUrl && (
+                <div style={{ background: "#EFF6FF", border: "1px solid #93C5FD", borderRadius: 10, padding: "10px 14px", fontSize: "0.82rem", color: "#1E4ED8", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                  <Check size={16} /> <span>Endereço <b>chrome://extensions</b> copiado! Cole na barra de endereço do seu navegador Chrome para acessar diretamente a tela de extensões.</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Banner Hero Image */}
-          <div style={{ borderRadius: 20, overflow: "hidden", border: "1px solid #E2E8F0", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", background: "#FFF" }}>
+          {/* Banner Hero Image - Imagem Completa de Alta Resolução Sem Cortes */}
+          <div style={{ borderRadius: 20, overflow: "hidden", border: "1px solid #E2E8F0", boxShadow: "0 8px 24px rgba(0,0,0,0.08)", background: "#FFF", padding: "8px" }}>
             <img
               src="/images/ifood_eta_banner.jpg"
               alt="FireHub iFood Dynamic ETA"
-              style={{ width: "100%", height: "auto", display: "block" }}
+              style={{ width: "100%", height: "auto", maxHeight: "380px", objectFit: "contain", borderRadius: 14, display: "block" }}
             />
           </div>
         </div>
@@ -267,13 +309,24 @@ export default function ExtensaoIfoodPage() {
             </div>
 
             <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: "#E8360C", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: "#2563EB", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
                 2
               </div>
-              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Abra as Extensões</h4>
-              <p style={{ fontSize: "0.82rem", color: "#64748B", lineHeight: 1.4, margin: 0 }}>
-                Abra uma nova aba no Chrome, acesse <code style={{ background: "#E2E8F0", padding: "2px 6px", borderRadius: 4, color: "#2563EB" }}>chrome://extensions</code> e ative o <b>"Modo do desenvolvedor"</b> no canto superior direito.
+              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Abra a Tela de Extensões</h4>
+              <p style={{ fontSize: "0.82rem", color: "#64748B", lineHeight: 1.4, margin: "0 0 10px" }}>
+                Cole <code style={{ background: "#DBEAFE", padding: "2px 6px", borderRadius: 4, color: "#1D4ED8", fontWeight: 800 }}>chrome://extensions</code> na barra do Chrome e ative o <b>"Modo do desenvolvedor"</b> no canto superior direito.
               </p>
+              <button
+                type="button"
+                onClick={handleOpenExtensionsPage}
+                style={{
+                  background: "#EFF6FF", border: "1px solid #93C5FD", color: "#1D4ED8",
+                  padding: "5px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 800,
+                  cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4
+                }}
+              >
+                <Copy size={13} /> {copiedExtensionsUrl ? "Copiado!" : "Copiar chrome://extensions"}
+              </button>
             </div>
 
             <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0" }}>

@@ -300,7 +300,7 @@ const DashboardColumn = memo(function DashboardColumn({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           {headerExtra}
-          <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
+          <span id={columnId === "col-preparo" ? "firehub-em-producao-count-badge" : undefined} data-column-count={count} style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.75rem" }}>
@@ -1877,17 +1877,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
   const sortByOrderNumberAsc = (a: any, b: any) => {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+    if (timeA !== timeB) return timeA - timeB;
     const numA = a.dailyOrderNumber ?? orderNumberMap.get(a.id) ?? 0;
     const numB = b.dailyOrderNumber ?? orderNumberMap.get(b.id) ?? 0;
-    if (numA !== numB) return numA - numB;
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    return numA - numB;
   };
 
   const novos = filteredOrders.filter(o => (o.status === "NOVO" || o.status === "CRIANDO_IA") && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
-  const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO").sort(sortByOrderNumberAsc);
-  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
+  const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
+  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
   const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberAsc);
+
+  // Transmite em tempo real a quantidade de pedidos em produção para a extensão Chrome do FireHub
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.postMessage({
+        type: "FIREHUB_EM_PRODUCAO_COUNT",
+        count: preparo.length
+      }, "*");
+    }
+  }, [preparo.length]);
 
   // Resumo de vendas
   const allInRange = orders.filter(o => { const d = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt); return d >= fromDate && d <= toDate; });

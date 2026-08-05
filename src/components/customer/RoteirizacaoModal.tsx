@@ -95,6 +95,7 @@ interface RouteItem {
   routeNumber: number | string;
   motoboyName: string;
   motoboyPhone?: string;
+  motoboyId?: string;
   color: string;
   orders: CustomerOrder[];
   createdAt: string;
@@ -310,13 +311,54 @@ export default function RoteirizacaoModal({
     } catch (e) {}
   };
 
-  // Save routes to localStorage
+  // Save routes to API & localStorage
   const saveRoutes = (routes: RouteItem[]) => {
     setCreatedRoutes(routes);
     try {
       localStorage.setItem("firehub_created_routes", JSON.stringify(routes));
     } catch (e) {}
   };
+
+  // Buscar rotas sincronizadas no banco de dados (multi-dispositivo)
+  const fetchStoreRoutes = async () => {
+    try {
+      const res = await fetch("/api/store/routes");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.routes)) {
+          const dbRoutes: RouteItem[] = data.routes.map((r: any) => ({
+            id: r.id,
+            routeNumber: r.routeNumber,
+            motoboyName: r.motoboy?.name || "Aguardando Motoboy",
+            motoboyPhone: r.motoboy?.phone || "",
+            motoboyId: r.motoboyId || null,
+            color: r.color || "#3B82F6",
+            orders: (r.orders || []).map((o: any) => ({
+              id: o.id,
+              dailyOrderNumber: o.dailyOrderNumber,
+              customerName: o.customerName || "Cliente",
+              customerPhone: o.customerPhone,
+              address: o.customerAddress,
+              status: o.status,
+              totalAmount: o.totalAmount,
+            })),
+            createdAt: new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            status: r.status === "DISPATCHED" ? "🚀 Despachada" : "⏳ Aguardando Despacho",
+          }));
+          setCreatedRoutes(dbRoutes);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao buscar rotas da API:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchStoreRoutes();
+    const interval = setInterval(fetchStoreRoutes, 4000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   // Helper base de pedidos de entrega elegíveis (sem filtro da cozinha)
   const baseDeliveryOrders = useMemo(() => {
@@ -626,7 +668,7 @@ export default function RoteirizacaoModal({
 
   // Motor Inteligente de Geocodificação Automática com Filtro Anti-Mar e Cache Persistente
   useEffect(() => {
-    if (!isOpen || deliveryOrders.length === 0) return;
+    if (deliveryOrders.length === 0) return;
 
     // Carregar cache local de geocodificação
     let localCache: Record<string, { lat: number; lng: number }> = {};
@@ -915,20 +957,29 @@ export default function RoteirizacaoModal({
     setSelectedOrderIds(optimizedCluster);
   };
 
-
-  // Initialize and Update Leaflet Map
-  useEffect(() => {
-    if (!isOpen || !leafletLoaded || !mapRef.current) return;
+  // Helper para centralizar manualmente a visão do mapa sob demanda do usuário
+  const handleFitAllBounds = () => {
+    if (!leafletMapRef.current) return;
     const L = (window as any).L;
     if (!L) return;
 
-    // Se o mapa anterior pertence a um container DOM desmontado, limpa ele primeiro
-    if (leafletMapRef.current && (leafletMapRef.current._container !== mapRef.current || !mapRef.current.contains(leafletMapRef.current._container))) {
-      try {
-        leafletMapRef.current.remove();
-      } catch {}
-      leafletMapRef.current = null;
+    const points: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
+    deliveryOrders.forEach((o) => {
+      const coords = geocodedMap[o.id];
+      if (coords) points.push([coords.lat, coords.lng]);
+    });
+
+    if (points.length > 0) {
+      const bounds = L.latLngBounds(points);
+      leafletMapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
     }
+  };
+
+  // 1. Inicializa o Mapa Leaflet uma única vez (Pré-carregado em background)
+  useEffect(() => {
+    if (!leafletLoaded || !mapRef.current) return;
+    const L = (window as any).L;
+    if (!L) return;
 
     if (!leafletMapRef.current) {
       const map = L.map(mapRef.current, {
@@ -943,16 +994,41 @@ export default function RoteirizacaoModal({
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 19,
-        keepBuffer: 3,
+        keepBuffer: 5,
       }).addTo(map);
 
       leafletMapRef.current = map;
-      setTimeout(() => {
-        try {
-          map.invalidateSize();
-        } catch {}
-      }, 150);
     }
+
+    return () => {
+      // Limpa a instância APENAS se o componente for completamente desmontado da página
+      if (leafletMapRef.current) {
+        try {
+          leafletMapRef.current.remove();
+        } catch {}
+        leafletMapRef.current = null;
+      }
+    };
+  }, [leafletLoaded, defaultCenter]);
+
+  // 2. Reajusta dimensões do container do mapa instantaneamente ao abrir o modal
+  useEffect(() => {
+    if (isOpen && leafletMapRef.current) {
+      const t1 = setTimeout(() => {
+        try { leafletMapRef.current?.invalidateSize(); } catch {}
+      }, 50);
+      const t2 = setTimeout(() => {
+        try { leafletMapRef.current?.invalidateSize(); } catch {}
+      }, 200);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    }
+  }, [isOpen]);
+
+  // 3. Desenha Pinos, Motoboys e Rotas reusando o mapa existente (SEM resetar o zoom do usuário)
+  useEffect(() => {
+    if (!leafletLoaded || !leafletMapRef.current) return;
+    const L = (window as any).L;
+    if (!L) return;
 
     const map = leafletMapRef.current;
 
@@ -1123,7 +1199,7 @@ export default function RoteirizacaoModal({
       }
     }
 
-    // 4. Draw Polylines for Existing Created Routes
+    // 5. Draw Polylines for Existing Created Routes
     if (activeTab === "ROTAS") {
       createdRoutes.forEach(route => {
         const points: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
@@ -1142,17 +1218,7 @@ export default function RoteirizacaoModal({
         }
       });
     }
-
-    return () => {
-      // Limpeza completa da instância do Leaflet ao desmontar/fechar o modal
-      if (leafletMapRef.current) {
-        try {
-          leafletMapRef.current.remove();
-        } catch {}
-        leafletMapRef.current = null;
-      }
-    };
-  }, [isOpen, leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, selectedOrderIds, createdRoutes, activeTab]);
+  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, storeAddress, storeCity]);
 
   // Toggle order selection for forming a route
   const toggleOrderSelection = (id: string) => {
@@ -1171,144 +1237,136 @@ export default function RoteirizacaoModal({
     setShowDispatchModal(true);
   };
 
-  // Confirm Dispatch & Create Route
-  const handleConfirmDispatch = async () => {
+  // Criar Rota no Banco de Dados (Com ou Sem Motoboy)
+  const handleCreateRouteToDB = async (motoboyIdToAssign?: string) => {
     if (selectedOrderIds.length === 0) return;
+    setIsDispatching(true);
 
-    let motoboyName = customMotoboyName.trim();
-    let motoboyId = selectedMotoboyId;
+    try {
+      const color = ROUTE_COLORS[createdRoutes.length % ROUTE_COLORS.length];
+      const res = await fetch("/api/store/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderIds: selectedOrderIds,
+          motoboyId: motoboyIdToAssign || selectedMotoboyId || null,
+          color,
+        }),
+      });
 
-    if (selectedMotoboyId) {
-      const found = motoboys.find(m => m.id === selectedMotoboyId);
-      if (found) {
-        motoboyName = found.name;
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(errData.error || "Erro ao criar rota no servidor");
+        return;
       }
-    }
 
-    if (!motoboyName) {
-      alert("Por favor, selecione ou informe o nome do motoboy!");
+      await fetchStoreRoutes();
+      setSelectedOrderIds([]);
+      setShowDispatchModal(false);
+      setSelectedMotoboyId("");
+      setCustomMotoboyName("");
+      setActiveTab("ROTAS");
+
+      if (onRefreshOrders) onRefreshOrders();
+    } catch (err: any) {
+      console.error("Erro ao criar rota no banco:", err);
+      alert("Erro ao criar rota: " + (err?.message || err));
+    } finally {
+      setIsDispatching(false);
+    }
+  };
+
+  // Despachar Rota Existente (Move pedidos para SAIU_ENTREGA e notifica WhatsApp)
+  const handleDispatchExistingRoute = async (routeId: string, assignedMotoboyId?: string) => {
+    const finalMbId = assignedMotoboyId || selectedMotoboyId;
+    if (!finalMbId) {
+      alert("Por favor, selecione o motoboy para despachar a rota!");
       return;
     }
 
     setIsDispatching(true);
 
     try {
-      const routeOrders = selectedOrderIds
-        .map(id => deliveryOrders.find(o => o.id === id))
-        .filter(Boolean) as CustomerOrder[];
+      const res = await fetch("/api/store/routes/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          routeId,
+          motoboyId: finalMbId,
+        }),
+      });
 
-      for (const order of routeOrders) {
-        if (onUpdateOrderStatus) {
-          await onUpdateOrderStatus(order.id, "OUT_FOR_DELIVERY", motoboyId || undefined);
-        } else if (motoboyId) {
-          await fetch("/api/customer-order/assign-motoboy", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderId: order.id, motoboyId })
-          });
-        }
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(errData.error || "Erro ao despachar rota");
+        return;
       }
 
-      const routeNum = Math.floor(1000 + Math.random() * 9000);
+      await fetchStoreRoutes();
+      if (onRefreshOrders) onRefreshOrders();
+      alert("🚀 Rota despachada com sucesso! Pedidos movidos para 'Saiu para Entrega'.");
+    } catch (err: any) {
+      console.error("Erro ao despachar rota:", err);
+      alert("Erro ao despachar rota: " + (err?.message || err));
+    } finally {
+      setIsDispatching(false);
+    }
+  };
+
+  // Confirm Dispatch & Create/Dispatch Route from Modal
+  const handleConfirmDispatch = async () => {
+    if (selectedOrderIds.length === 0) return;
+
+    if (!selectedMotoboyId && !customMotoboyName.trim()) {
+      // Se não escolheu motoboy, cria a rota como "Aguardando Motoboy" no banco!
+      await handleCreateRouteToDB();
+      return;
+    }
+
+    // Se escolheu motoboy, cria a rota e despacha imediatamente!
+    let motoboyId = selectedMotoboyId;
+    if (!motoboyId && customMotoboyName.trim()) {
+      // Se digitou nome de motoboy customizado, cria o motoboy se necessário
+      try {
+        const mbRes = await fetch("/api/motoboys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: customMotoboyName.trim(),
+            phone: customMotoboyPhone.trim(),
+          }),
+        });
+        if (mbRes.ok) {
+          const newMb = await mbRes.json();
+          motoboyId = newMb.id;
+        }
+      } catch (e) {}
+    }
+
+    try {
+      // 1. Cria a rota no banco
       const color = ROUTE_COLORS[createdRoutes.length % ROUTE_COLORS.length];
-
-      const newRoute: RouteItem = {
-        id: `ROUTE-${Date.now()}`,
-        routeNumber: routeNum,
-        motoboyName,
-        color,
-        orders: routeOrders,
-        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: "Sem a localização ativa"
-      };
-
-      const updated = [newRoute, ...createdRoutes];
-      saveRoutes(updated);
-
-      // Automatic WhatsApp Dispatch to Motoboy
-      let targetPhone = customMotoboyPhone.trim().replace(/\D/g, "");
-      if (selectedMotoboyId) {
-        const found = motoboys.find(m => m.id === selectedMotoboyId);
-        if (found && found.phone) targetPhone = found.phone.replace(/\D/g, "");
-      }
-
-      // Build Multi-stop Google Maps URL utilizando a API oficial universal leve para celular
-      const mapWaypoints = routeOrders.map(o => {
-        const rawAddr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
-        const cleanAddr = rawAddr
-          .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
-          .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
-          .trim();
-        const cityStr = storeCity || "Rio das Ostras";
-        const fullAddr = cleanAddr.toLowerCase().includes(cityStr.toLowerCase()) ? cleanAddr : `${cleanAddr}, ${cityStr}`;
-        return encodeURIComponent(fullAddr);
+      const createRes = await fetch("/api/store/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderIds: selectedOrderIds,
+          motoboyId: motoboyId || null,
+          color,
+        }),
       });
 
-      let googleMapsLink = "";
-      if (mapWaypoints.length === 1) {
-        googleMapsLink = `https://www.google.com/maps/dir/?api=1&destination=${mapWaypoints[0]}`;
-      } else {
-        const lastStop = mapWaypoints[mapWaypoints.length - 1];
-        const intermediateWaypoints = mapWaypoints.slice(0, -1).join("|");
-        googleMapsLink = `https://www.google.com/maps/dir/?api=1&destination=${lastStop}&waypoints=${intermediateWaypoints}`;
+      if (!createRes.ok) {
+        const errData = await createRes.json();
+        alert(errData.error || "Erro ao criar rota");
+        return;
       }
 
-      const motoboyAppLink = typeof window !== "undefined" ? `${window.location.origin}/loja/${storeSlug}/motoboy` : "";
+      const { route } = await createRes.json();
 
-      let waMsg = `🚀 *NOVA ROTA DE ENTREGA DESPACHADA! (Rota #${routeNum})*\n`;
-      waMsg += `🛵 *Entregador:* ${motoboyName}\n`;
-      waMsg += `📦 *Total de Pedidos:* ${routeOrders.length}\n`;
-
-      if (routePaymentSummary.totalChangeToCarry > 0) {
-        waMsg += `💵 *Troco Total a Levar no Caixa:* R$ ${routePaymentSummary.totalChangeToCarry.toFixed(2)}\n`;
-      }
-      if (routePaymentSummary.needsCardMachine) {
-        waMsg += `💳 *Levar Maquininha de Cartão:* SIM (Cobrar na Entrega)\n`;
-      }
-      waMsg += `\n`;
-
-      routeOrders.forEach((o, idx) => {
-        const num = getOrderDisplayNumber(o);
-        let orderRefStr = `#${num}`;
-        if ((o as any).ifoodReference) {
-          orderRefStr += ` (iFood #${(o as any).ifoodReference})`;
-        } else if ((o as any).openDeliveryReference) {
-          orderRefStr += ` (Jotajá #${(o as any).openDeliveryReference})`;
-        }
-
-        const name = o.customerName || "Cliente";
-        const addr = (o as any).customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`;
-        const phone = o.customerPhone ? `📞 *Tel:* ${o.customerPhone}\n` : "";
-
-        const pInfo = getOrderPaymentInfo(o);
-        let payNote = "";
-        if (pInfo.isCash && pInfo.changeNeeded > 0) {
-          payNote = ` 💵 (Dinheiro - levar R$ ${pInfo.changeNeeded.toFixed(2)} de troco)`;
-        } else if (pInfo.isCardOnDelivery) {
-          payNote = ` 💳 (Cobrar no Cartão na entrega)`;
-        }
-
-        waMsg += `*${idx + 1}º Parada:* Pedido ${orderRefStr}${payNote}\n👤 *Cliente:* ${name}\n📍 *Endereço:* ${addr}\n${phone}\n`;
-      });
-
-      waMsg += `🗺️ *Navegação Google Maps (GPS):*\n${googleMapsLink}\n\n`;
-      if (motoboyAppLink) waMsg += `📲 *Seu App de Entregador:* ${motoboyAppLink}\n`;
-
-      if (sendWhatsAppToMotoboy && targetPhone) {
-        try {
-          await fetch("/api/motoboys/dispatch-whatsapp", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              motoboyPhone: targetPhone,
-              routeText: waMsg,
-              orderIds: routeOrders.map((o) => o.id),
-            })
-          });
-        } catch (e) {
-          console.warn("Falha no disparo via API, abrindo fallback do WhatsApp Web:", e);
-          window.open(`https://wa.me/55${targetPhone}?text=${encodeURIComponent(waMsg)}`, "_blank");
-        }
+      // 2. Se informou motoboy, despacha a rota imediatamente
+      if (motoboyId && route?.id) {
+        await handleDispatchExistingRoute(route.id, motoboyId);
       }
 
       setSelectedOrderIds([]);
@@ -1316,9 +1374,7 @@ export default function RoteirizacaoModal({
       setCustomMotoboyName("");
       setSelectedMotoboyId("");
       setActiveTab("ROTAS");
-
       if (onRefreshOrders) onRefreshOrders();
-
     } catch (err) {
       console.error("Erro ao criar rota:", err);
       alert("Erro ao despachar rota. Tente novamente!");
@@ -1369,11 +1425,16 @@ export default function RoteirizacaoModal({
     setTimeout(() => setCopiedRouteId(null), 3000);
   };
 
-  // Delete Route
-  const handleDeleteRoute = (routeId: string) => {
-    if (!confirm("Deseja realmente cancelar esta rota?")) return;
-    const updated = createdRoutes.filter(r => r.id !== routeId);
-    saveRoutes(updated);
+  // Delete Route (Remove do Banco de Dados)
+  const handleDeleteRoute = async (routeId: string) => {
+    if (!confirm("Deseja realmente desfazer/excluir esta rota? OS pedidos voltarão para pendentes.")) return;
+    try {
+      await fetch(`/api/store/routes?routeId=${encodeURIComponent(routeId)}`, { method: "DELETE" });
+      await fetchStoreRoutes();
+      if (onRefreshOrders) onRefreshOrders();
+    } catch (e) {
+      console.error("Erro ao deletar rota:", e);
+    }
   };
 
   return (
@@ -1679,69 +1740,128 @@ export default function RoteirizacaoModal({
                     <p style={{ fontSize: "0.78rem" }}>Selecione os pedidos pendentes no mapa e clique em Criar Rota!</p>
                   </div>
                 ) : (
-                  createdRoutes.map(route => (
-                    <div
-                      key={route.id}
-                      style={{
-                        border: "1px solid #E2E8F0", background: "#FFFFFF",
-                        borderRadius: "12px", padding: "0.85rem", marginBottom: "0.75rem",
-                        boxShadow: "0 2px 6px rgba(0,0,0,0.03)"
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          {/* Route Color Marker */}
-                          <div style={{
-                            width: "16px", height: "16px", borderRadius: "50%",
-                            background: route.color, border: "2px solid #fff",
-                            boxShadow: "0 0 0 1px #CBD5E1"
-                          }} />
-                          <span style={{ fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>
-                            ROTA #{route.routeNumber}
+                  createdRoutes.map(route => {
+                    const isDispatched = route.status?.includes("Despachada") || route.status === "DISPATCHED";
+                    return (
+                      <div
+                        key={route.id}
+                        style={{
+                          border: isDispatched ? "1.5px solid #BBF7D0" : "1.5px solid #FED7AA",
+                          background: isDispatched ? "#F0FDF4" : "#FFFBEB",
+                          borderRadius: "12px", padding: "0.85rem", marginBottom: "0.75rem",
+                          boxShadow: "0 2px 6px rgba(0,0,0,0.03)"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {/* Route Color Marker */}
+                            <div style={{
+                              width: "16px", height: "16px", borderRadius: "50%",
+                              background: route.color, border: "2px solid #fff",
+                              boxShadow: "0 0 0 1px #CBD5E1"
+                            }} />
+                            <span style={{ fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>
+                              {route.routeNumber}
+                            </span>
+                          </div>
+
+                          <span style={{
+                            fontSize: "0.74rem",
+                            color: isDispatched ? "#15803D" : "#D97706",
+                            fontWeight: 900,
+                            background: isDispatched ? "#DCFCE7" : "#FEF3C7",
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            border: isDispatched ? "1px solid #86EFAC" : "1px solid #FDE68A",
+                          }}>
+                            {route.status || (isDispatched ? "🚀 Despachada" : "⏳ Aguardando Despacho")}
                           </span>
                         </div>
 
-                        <span style={{ fontSize: "0.72rem", color: "#EF4444", fontWeight: 700 }}>
-                          {route.status || "Sem localização ativa"}
-                        </span>
+                        <div style={{ fontSize: "0.8rem", color: "#475569", marginBottom: "0.75rem" }}>
+                          <p style={{ margin: "0 0 4px 0", fontWeight: 700 }}>📦 {route.orders.length} {route.orders.length > 1 ? "Pedidos" : "Pedido"}: {route.orders.map(o => getOrderDisplayNumber(o)).join(", ")}</p>
+                          <p style={{ margin: "0 0 8px 0" }}>🛵 Entregador: <b>{route.motoboyName || "Aguardando Seleção"}</b></p>
+
+                          {/* Se ainda não foi despachada, permite selecionar motoboy na hora */}
+                          {!isDispatched && (
+                            <div style={{ marginTop: "6px", marginBottom: "8px" }}>
+                              <select
+                                defaultValue={route.motoboyId || ""}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val) {
+                                    handleDispatchExistingRoute(route.id, val);
+                                  }
+                                }}
+                                style={{
+                                  width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1",
+                                  fontSize: "0.8rem", fontWeight: 700, background: "#FFFFFF"
+                                }}
+                              >
+                                <option value="">-- Selecione o Motoboy para Despachar --</option>
+                                {motoboys.map(m => (
+                                  <option key={m.id} value={m.id}>🛵 {m.name} {m.phone ? `(${m.phone})` : ""}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          {!isDispatched && (
+                            <button
+                              onClick={() => {
+                                const mbId = route.motoboyId || selectedMotoboyId;
+                                if (!mbId) {
+                                  alert("Selecione o motoboy para despachar a rota!");
+                                  return;
+                                }
+                                handleDispatchExistingRoute(route.id, mbId);
+                              }}
+                              disabled={isDispatching}
+                              style={{
+                                flex: 2, padding: "8px", border: "none",
+                                borderRadius: "8px", background: "linear-gradient(135deg, #16A34A, #15803D)",
+                                color: "#FFFFFF", fontWeight: 900, fontSize: "0.82rem", cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                                boxShadow: "0 2px 8px rgba(22,163,74,0.3)"
+                              }}
+                            >
+                              <Navigation size={14} /> 🚀 Despachar Rota
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => handleCopyRouteText(route)}
+                            style={{
+                              flex: 1, padding: "8px", border: "1.5px solid #2563EB",
+                              borderRadius: "8px", background: copiedRouteId === route.id ? "#DCFCE7" : "#FFFFFF",
+                              color: copiedRouteId === route.id ? "#15803D" : "#2563EB",
+                              fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center", gap: 4
+                            }}
+                          >
+                            {copiedRouteId === route.id ? <Check size={14} /> : <Copy size={14} />}
+                            {copiedRouteId === route.id ? "COPIADO!" : "COPIAR"}
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteRoute(route.id)}
+                            style={{
+                              padding: "8px 10px", border: "1px solid #CBD5E1",
+                              borderRadius: "8px", background: "#F8FAFC", color: "#64748B",
+                              cursor: "pointer"
+                            }}
+                            title="Desfazer/Excluir rota"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
                       </div>
-
-                      <div style={{ fontSize: "0.8rem", color: "#475569", marginBottom: "0.75rem" }}>
-                        <p style={{ margin: "0 0 2px 0", fontWeight: 700 }}>📦 {route.orders.length} {route.orders.length > 1 ? "Pedidos" : "Pedido"}</p>
-                        <p style={{ margin: 0 }}>🛵 Entregador: <b>{route.motoboyName}</b></p>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        <button
-                          onClick={() => handleCopyRouteText(route)}
-                          style={{
-                            flex: 1, padding: "7px", border: "1.5px solid #2563EB",
-                            borderRadius: "8px", background: copiedRouteId === route.id ? "#DCFCE7" : "#FFFFFF",
-                            color: copiedRouteId === route.id ? "#15803D" : "#2563EB",
-                            fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
-                            display: "flex", alignItems: "center", justifyContent: "center", gap: 4
-                          }}
-                        >
-                          {copiedRouteId === route.id ? <Check size={14} /> : <Copy size={14} />}
-                          {copiedRouteId === route.id ? "COPIADO!" : "COPIAR ROTA"}
-                        </button>
-
-                        <button
-                          onClick={() => handleDeleteRoute(route.id)}
-                          style={{
-                            padding: "7px 10px", border: "1px solid #CBD5E1",
-                            borderRadius: "8px", background: "#F8FAFC", color: "#64748B",
-                            cursor: "pointer"
-                          }}
-                          title="Excluir rota"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -1751,6 +1871,27 @@ export default function RoteirizacaoModal({
           {/* ─── RIGHT MAP PANEL (FULL FLEX) ─── */}
           <div style={{ flex: 1, height: "100%", position: "relative" }}>
             <div ref={mapRef} style={{ width: "100%", height: "100%", zIndex: 1 }} />
+
+            {/* FLOATING MAP CONTROLS (TOP RIGHT) */}
+            <div style={{
+              position: "absolute", top: "16px", right: "16px", zIndex: 999,
+              display: "flex", gap: "8px"
+            }}>
+              <button
+                type="button"
+                onClick={handleFitAllBounds}
+                style={{
+                  background: "#FFFFFF", color: "#0F172A", border: "1.5px solid #CBD5E1",
+                  borderRadius: "8px", padding: "8px 12px", fontSize: "0.82rem", fontWeight: 800,
+                  cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                  display: "flex", alignItems: "center", gap: "6px"
+                }}
+                title="Centralizar visão em todos os pinos de entrega"
+              >
+                <Navigation size={15} style={{ transform: "rotate(45deg)", color: "#2563EB" }} />
+                Centralizar Visão
+              </button>
+            </div>
 
             {/* ─── FLOATING ROUTE SELECTION ACTION BAR (OVER MAP BOTTOM) ─── */}
             {selectedOrderIds.length > 0 && (

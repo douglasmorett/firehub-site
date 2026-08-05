@@ -39,42 +39,50 @@ async function processBackgroundCampaign(userId: string, targetFranchiseeId: str
         failedCount++;
       }
 
-      // Atualiza progresso no banco a cada 5 envios ou no último item para o cliente ver o progresso ao vivo no painel
-      if (i % 5 === 0 || i === allTargetPhones.length - 1) {
-        try {
-          const freshUser = await prisma.user.findUnique({ where: { id: userId }, select: { chatbotConfig: true } });
-          if (freshUser) {
-            const config = (freshUser.chatbotConfig as any) || {};
-            const history = Array.isArray(config.campaignHistory) ? config.campaignHistory : [];
-            const isDone = i === allTargetPhones.length - 1;
+      // Atualiza progresso no banco a cada envio para o lojista acompanhar ao vivo
+      try {
+        const freshUser = await prisma.user.findUnique({ where: { id: userId }, select: { chatbotConfig: true } });
+        if (freshUser) {
+          const config = (freshUser.chatbotConfig as any) || {};
+          const history = Array.isArray(config.campaignHistory) ? config.campaignHistory : [];
+          const isDone = i === allTargetPhones.length - 1;
 
-            const updatedHistory = history.map((c: any) => {
-              if (c.id === campaignId) {
-                const viewed = Math.round(sentSuccessCount * 0.76);
-                return {
-                  ...c,
-                  sentCount: sentSuccessCount,
-                  failedCount,
-                  viewedCount: viewed,
-                  status: isDone ? "COMPLETED" : "DISPARANDO",
-                };
-              }
-              return c;
-            });
+          const updatedHistory = history.map((c: any) => {
+            if (c.id === campaignId) {
+              const viewed = Math.round(sentSuccessCount * 0.76);
+              return {
+                ...c,
+                sentCount: sentSuccessCount,
+                failedCount,
+                viewedCount: viewed,
+                status: isDone ? "COMPLETED" : "DISPARANDO",
+              };
+            }
+            return c;
+          });
 
-            await prisma.user.update({
-              where: { id: userId },
-              data: { chatbotConfig: { ...config, campaignHistory: updatedHistory } },
-            });
-          }
-        } catch (dbErr) {
-          console.error("[Background Campaign DB Update Error]:", dbErr);
+          await prisma.user.update({
+            where: { id: userId },
+            data: { chatbotConfig: { ...config, campaignHistory: updatedHistory } },
+          });
         }
+      } catch (dbErr) {
+        console.error("[Background Campaign DB Update Error]:", dbErr);
       }
 
-      // Delay seguro anti-ban de 800ms entre mensagens
+      // 🛡️ PROTOCOLO RIGOROSO ANTI-BAN DO WHATSAPP
       if (i < allTargetPhones.length - 1) {
-        await new Promise((r) => setTimeout(r, 800));
+        // A cada 10 mensagens enviadas, força uma pausa de descanso em lote de 45 a 75 segundos
+        if ((i + 1) % 10 === 0) {
+          const batchRest = Math.floor(Math.random() * (75000 - 45000 + 1)) + 45000;
+          console.log(`[Anti-Ban Guard] 🛑 Pausa de descanso em lote (${i + 1} msgs enviadas). Aguardando ${(batchRest / 1000).toFixed(0)}s...`);
+          await new Promise((r) => setTimeout(r, batchRest));
+        } else {
+          // Delay humano aleatório entre 12s e 28s por mensagem
+          const randomDelay = Math.floor(Math.random() * (28000 - 12000 + 1)) + 12000;
+          console.log(`[Anti-Ban Guard] ⏱️ Próxima mensagem em ${(randomDelay / 1000).toFixed(1)}s...`);
+          await new Promise((r) => setTimeout(r, randomDelay));
+        }
       }
     }
   } catch (err: any) {

@@ -37,6 +37,8 @@ interface Order {
   createdAt: string;
   updatedAt: string;
   dailyOrderNumber?: number | null;
+  isRoutePriority?: boolean;
+  routeSchedule?: { routeNumber: string } | null;
   items: OrderItem[];
 }
 
@@ -287,24 +289,18 @@ export default function KDSTelaPage() {
         setIsReconnecting(true);
         return;
       }
-      const text = await res.text();
+      const data: Order[] = await res.json();
       setIsReconnecting(false);
-      if (text !== lastJsonRef.current) {
-        lastJsonRef.current = text;
-        try {
-          const data: Order[] = JSON.parse(text);
-          setOrders(data);
-          // Track newly entered IDs for animation
-          setHasEnteredIds((prev) => {
-            const next = new Set(prev);
-            data.forEach((o) => next.add(o.id));
-            return next;
-          });
-        } catch {
-          // malformed JSON
-        }
+      if (Array.isArray(data)) {
+        setOrders(data);
+        setHasEnteredIds((prev) => {
+          const next = new Set(prev);
+          data.forEach((o) => next.add(o.id));
+          return next;
+        });
       }
-    } catch {
+    } catch (err) {
+      console.error("[KDS] Erro ao buscar pedidos:", err);
       setIsReconnecting(true);
     }
   }, [stage]);
@@ -315,17 +311,30 @@ export default function KDSTelaPage() {
     let cancelled = false;
 
     const poll = async () => {
-      await fetchOrders();
-      if (!cancelled) {
-        pollTimerRef.current = setTimeout(poll, 1000);
+      try {
+        await fetchOrders();
+      } catch (err) {
+        console.error("[KDS] Polling error:", err);
+      } finally {
+        if (!cancelled) {
+          pollTimerRef.current = setTimeout(poll, 1500);
+        }
       }
     };
 
     poll();
 
+    // Backup timer indestructible: garante polling a cada 3s caso o timeout morra por qualquer motivo
+    const backupInterval = setInterval(() => {
+      if (!cancelled) {
+        fetchOrders();
+      }
+    }, 3000);
+
     return () => {
       cancelled = true;
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      clearInterval(backupInterval);
     };
   }, [stage, fetchOrders]);
 
@@ -1055,6 +1064,33 @@ function OrderCard({
             zIndex: 5,
           }}
         />
+      )}
+
+      {/* 🚨 BANNER DE PRIORIDADE PARA ROTA NO KDS */}
+      {(order.isRoutePriority || order.routeSchedule?.routeNumber) && (
+        <div
+          style={{
+            width: "100%",
+            padding: "6px 12px",
+            borderRadius: 10,
+            background: "linear-gradient(135deg, #DC2626 0%, #991B1B 100%)",
+            color: "#FFFFFF",
+            fontSize: 14,
+            fontWeight: 900,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            letterSpacing: "0.5px",
+            boxShadow: "0 0 16px rgba(220, 38, 38, 0.6)",
+            border: "1px solid #FCA5A5",
+            animation: "kds-pulse-empty 2s ease-in-out infinite",
+          }}
+        >
+          <span>⚡ PRIORIDADE PARA ROTA</span>
+          <span style={{ fontSize: 12, opacity: 0.9 }}>
+            {order.routeSchedule?.routeNumber || "ROTA A CAMINHO"}
+          </span>
+        </div>
       )}
 
       {/* ─── Top row: Position, Order number, Source, Delivery type ─── */}

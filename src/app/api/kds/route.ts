@@ -115,6 +115,13 @@ export async function GET(req: NextRequest) {
           notes: true,
           ifoodReference: true,
           openDeliveryReference: true,
+          isRoutePriority: true,
+          routeId: true,
+          routeSchedule: {
+            select: {
+              routeNumber: true,
+            },
+          },
           kdsStage: true,
           kdsStationId: true,
           kdsProductionAt: true,
@@ -136,7 +143,10 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: [
+          { isRoutePriority: "desc" },
+          { createdAt: "asc" },
+        ],
         take: 100,
       })
     ).catch(() => []);

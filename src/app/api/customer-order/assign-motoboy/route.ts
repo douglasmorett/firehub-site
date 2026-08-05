@@ -15,18 +15,10 @@ export async function PATCH(req: NextRequest) {
   const { orderId, motoboyId, firehubOrderNumber } = await req.json();
   if (!orderId) return NextResponse.json({ error: "orderId obrigatório" }, { status: 400 });
 
-  const existingOrder = await prisma.customerOrder.findUnique({
-    where: { id: orderId },
-    select: { status: true },
-  });
-
-  const shouldUpdateStatus = motoboyId && existingOrder && !["ENTREGUE", "CANCELADO", "CANCELED"].includes(existingOrder.status);
-
   const order = await prisma.customerOrder.update({
     where: { id: orderId },
     data: {
       motoboyId: motoboyId || null,
-      status: shouldUpdateStatus ? "SAIU_ENTREGA" : undefined,
     },
     include: {
       motoboy: true,
@@ -146,14 +138,6 @@ export async function PATCH(req: NextRequest) {
         msg += `🗺️ *Navegação Google Maps:* ${googleMapsUrl}`;
 
         await sendEvolutionMessage(order.franchiseeId, fullPhone, msg);
-      }
-
-      // Disparar notificação no WhatsApp do CLIENTE avisando que o pedido saiu para entrega
-      try {
-        const { sendOrderNotification } = await import("@/lib/order-notifications");
-        sendOrderNotification(order.id, "SAIU_ENTREGA").catch(() => {});
-      } catch (errCust) {
-        console.warn("[assign-motoboy] Erro ao notificar cliente via WhatsApp:", errCust);
       }
     } catch (err) {
       console.error("[assign-motoboy] Erro ao enviar notificação no WhatsApp do motoboy:", err);

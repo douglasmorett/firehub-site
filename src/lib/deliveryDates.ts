@@ -31,33 +31,40 @@ export async function getNextDeliveryInfo(city: string | null): Promise<{ limitS
   const hour = now.getHours();
 
   // Calcula todas as próximas rotas disponíveis
-  const upcomingDeliveries = schedules.map(schedule => {
-    let limitDay = (schedule.deliveryDay - 2 + 7) % 7;
-    const limitHour = 16;
+  const upcomingDeliveries = schedules
+    .filter(schedule => typeof schedule.deliveryDay === "number")
+    .map(schedule => {
+      const dDay = schedule.deliveryDay as number;
+      let limitDay = (dDay - 2 + 7) % 7;
+      const limitHour = 16;
 
-    let limitDate = new Date(now);
-    
-    if (day > limitDay || (day === limitDay && hour >= limitHour)) {
-      limitDate = getNextDayOfWeek(now, limitDay, true);
-    } else {
-      limitDate = getNextDayOfWeek(now, limitDay, false);
-      if (day === limitDay) {
-        limitDate = new Date(now);
+      let limitDate = new Date(now);
+      
+      if (day > limitDay || (day === limitDay && hour >= limitHour)) {
+        limitDate = getNextDayOfWeek(now, limitDay, true);
+      } else {
+        limitDate = getNextDayOfWeek(now, limitDay, false);
+        if (day === limitDay) {
+          limitDate = new Date(now);
+        }
       }
-    }
-    
-    limitDate.setHours(limitHour, 0, 0, 0);
+      
+      limitDate.setHours(limitHour, 0, 0, 0);
 
-    const deliveryDate = getNextDayOfWeek(limitDate, schedule.deliveryDay, limitDay === schedule.deliveryDay);
+      const deliveryDate = getNextDayOfWeek(limitDate, dDay, limitDay === dDay);
 
-    return {
-      limitDay,
-      limitHour,
-      deliveryDay: schedule.deliveryDay,
-      limitDate,
-      deliveryDate
-    };
-  });
+      return {
+        limitDay,
+        limitHour,
+        deliveryDay: dDay,
+        limitDate,
+        deliveryDate
+      };
+    });
+
+  if (upcomingDeliveries.length === 0) {
+    return { limitStr: "Rota não disponível", deliveryStr: "A definir" };
+  }
 
   upcomingDeliveries.sort((a, b) => a.deliveryDate.getTime() - b.deliveryDate.getTime());
   

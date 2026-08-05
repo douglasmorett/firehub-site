@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "FireHub — iFood Dynamic ETA & Automação",
   "version": "1.0.0",
-  "description": "Automação inteligente do tempo de entrega no Portal do Parceiro iFood com base na quantidade de pedidos em produção no KDS FireHub e motoboys na casa.",
+  "description": "Automação inteligente do tempo de entrega no Portal iFood com base no KDS FireHub e motoboys disponíveis.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -25,8 +25,12 @@
   "host_permissions": [
     "https://portal.ifood.com.br/*",
     "https://*.ifood.com.br/*",
+    "https://*.firehubfood.com.br/*",
     "https://*.firehub.com.br/*",
+    "https://*.hakimriodasostras.com.br/*",
+    "https://*.vercel.app/*",
     "http://localhost:3000/*",
+    "http://localhost:3001/*",
     "http://localhost/*"
   ],
   "background": {
@@ -40,6 +44,21 @@
       ],
       "js": [
         "scripts/content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.firehubfood.com.br/*",
+        "https://*.firehub.com.br/*",
+        "https://*.hakimriodasostras.com.br/*",
+        "https://*.vercel.app/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "scripts/firehub-bridge.js"
       ],
       "run_at": "document_idle"
     }

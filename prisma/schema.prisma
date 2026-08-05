@@ -92,6 +92,7 @@ model User {
   menuProducts    MenuProduct[]
   stockItems      StockItem[]
   menuCategories  MenuCategory[]
+  routeSchedules  RouteSchedule[]
 
   @@index([ifoodMerchantId])
 }
@@ -154,9 +155,23 @@ model OrderItem {
 }
 
 model RouteSchedule {
-  id          String @id @default(cuid())
-  cityName    String
-  deliveryDay Int
+  id           String          @id @default(cuid())
+  cityName     String?
+  deliveryDay  Int?
+  franchiseeId String?
+  routeNumber  String          @default("1")
+  motoboyId    String?
+  status       String          @default("PENDING") // PENDING | DISPATCHED | CANCELLED
+  color        String?         @default("#3B82F6")
+  dispatchedAt DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  franchisee   User?           @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  motoboy      Motoboy?        @relation(fields: [motoboyId], references: [id], onDelete: SetNull)
+  orders       CustomerOrder[]
+
+  @@index([franchiseeId])
+  @@index([franchiseeId, status])
 }
 
 model Payable {
@@ -317,6 +332,10 @@ model CustomerOrder {
   openDeliveryOrderId     String?   @unique   // ID do pedido no Open Delivery (idempotência)
   openDeliveryReference   String?             // Número de exibição do pedido (#1234)
   openDeliveryChannel     String?             // Canal de origem: "JOTAJA"
+  // === ROTEIRIZAÇÃO ===
+  routeId          String?
+  isRoutePriority  Boolean             @default(false) // Destaque PRIORIDADE PARA ROTA no KDS
+  routeSchedule    RouteSchedule?      @relation(fields: [routeId], references: [id], onDelete: SetNull)
   // === KDS (Kitchen Display System) ===
   kdsStage          String?             // "PRODUCTION" | "FINISHING" | null
   kdsStationId      Int?                // Estação que pegou o pedido (1, 2, etc.)
@@ -334,6 +353,7 @@ model CustomerOrder {
   @@index([franchiseeId, status])
   @@index([franchiseeId, createdAt])
   @@index([motoboyId])
+  @@index([routeId])
 }
 
 
@@ -454,6 +474,7 @@ model Motoboy {
   notes            String?
   franchisee       User            @relation(fields: [franchiseeId], references: [id])
   orders           CustomerOrder[]
+  routeSchedules   RouteSchedule[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
