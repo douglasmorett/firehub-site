@@ -93,11 +93,13 @@ async function handleETAUpdate(targetMinutes) {
     await sleep(1500);
     await applyETAOnSettingsPage(targetMinutes);
   } else {
-    // Salvar ETA pendente e navegar para a página de configurações
-    console.log("[FireHub] 🚀 Navegando para Configurações de Entrega...");
-    updatePillStatus("🚀 Indo para Config...", false);
+    // NÃO redirecionar esta aba! Pedir ao background pra abrir/encontrar a aba certa
+    console.log("[FireHub] 📌 Não estamos na tela de configurações. Delegando ao background...");
     chrome.storage.local.set({ pendingETA: targetMinutes });
-    window.location.href = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
+    chrome.runtime.sendMessage({
+      action: "OPEN_DELIVERY_SETTINGS",
+      targetMinutes: targetMinutes
+    }).catch(() => {});
   }
 }
 

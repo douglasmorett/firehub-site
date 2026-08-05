@@ -178,22 +178,28 @@ export async function GET(req: NextRequest) {
     if (isNaN(activeMotoboys) || activeMotoboys < 1) activeMotoboys = 1;
 
     // Cálculo exato pela fórmula da Planilha Hakim:
+    // Limite 28m = 1 * motoboys (1 pedido por motoboy)
     // Limite 38m = 2 * motoboys
     // Limite 58m = 3 * motoboys
     // Limite 78m = 4 * motoboys
     // Estourou (> 4 * motoboys) ➔ Fechar loja por 40 min
 
+    const max28 = 1 * activeMotoboys;
     const max38 = 2 * activeMotoboys;
     const max58 = 3 * activeMotoboys;
     const max78 = 4 * activeMotoboys;
 
-    let recommendedMinutes = 38;
-    let etaRangeFormatted = "38 min";
+    let recommendedMinutes = 28;
+    let etaRangeFormatted = "28 min";
     let shouldPauseStore = false;
     let pauseMinutes = 0;
     let matchedRuleLabel = "";
 
-    if (ordersInProduction <= max38) {
+    if (ordersInProduction <= max28) {
+      recommendedMinutes = 28;
+      etaRangeFormatted = "28 min";
+      matchedRuleLabel = `Até ${max28} ped. (28 min)`;
+    } else if (ordersInProduction <= max38) {
       recommendedMinutes = 38;
       etaRangeFormatted = "38 min";
       matchedRuleLabel = `Até ${max38} ped. (38 min)`;

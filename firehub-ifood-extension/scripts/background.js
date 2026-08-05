@@ -53,6 +53,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     calculateAndApply(msg.count);
     sendResponse({ success: true });
   }
+
+  if (msg && msg.action === "OPEN_DELIVERY_SETTINGS") {
+    // Encontrar aba de configurações de entrega já aberta, ou abrir uma nova
+    const settingsUrl = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
+    chrome.tabs.query({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience*" }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        // Já tem aba aberta → focar nela
+        console.log(`[FireHub] 📌 Aba de configurações já existe (tab ${tabs[0].id}), focando...`);
+        chrome.tabs.update(tabs[0].id, { active: false }); // Não focar, só recarregar
+        chrome.tabs.reload(tabs[0].id);
+      } else {
+        // Abrir nova aba em background (sem tirar o foco do user)
+        console.log("[FireHub] 🚀 Abrindo aba de configurações de entrega em background...");
+        chrome.tabs.create({ url: settingsUrl, active: false });
+      }
+    });
+    sendResponse({ success: true });
+  }
 });
 
 // ── FUNÇÃO CENTRAL: Calcula ETA e aplica ──
@@ -82,12 +100,16 @@ async function calculateAndApply(count) {
       }
     } else {
       // ── MODO AUTOMÁTICO: Tabela Hakim ──
-      // 38m = ≤ 2*M | 58m = ≤ 3*M | 78m = ≤ 4*M | > 4*M → PAUSAR
+      // 28m = ≤ 1*M | 38m = ≤ 2*M | 58m = ≤ 3*M | 78m = ≤ 4*M | > 4*M → PAUSAR
+      const max28 = 1 * motoboys;
       const max38 = 2 * motoboys;
       const max58 = 3 * motoboys;
       const max78 = 4 * motoboys;
 
-      if (count <= max38) {
+      if (count <= max28) {
+        recommendedMinutes = 28;
+        etaRangeFormatted = "28 min";
+      } else if (count <= max38) {
         recommendedMinutes = 38;
         etaRangeFormatted = "38 min";
       } else if (count <= max58) {
