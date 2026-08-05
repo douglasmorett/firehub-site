@@ -236,34 +236,37 @@ function findTimeInputs() {
     if (rawVal.includes(",") || rawVal.includes(".")) return false;
 
     const numVal = parseInt(rawVal);
-    if (isNaN(numVal) || numVal < 10 || numVal > 500) return false;
+    if (isNaN(numVal) || numVal < 5 || numVal > 500) return false;
 
-    // Verificar se "min" aparece nas proximidades (irmão ou pai)
-    // Mas NÃO se "R$" aparece (isso seria um input de taxa)
-    const container = input.closest("tr, [class*='row'], [class*='Row']") || input.parentElement?.parentElement || input.parentElement;
-    if (!container) return false;
-
-    const containerText = container.textContent || "";
-    
-    // Se o container contém "min" e NÃO é predominantemente sobre preço
-    if (containerText.includes("min")) {
-      // Verificar se este input específico está na coluna de tempo (não taxa)
-      // Checar se há "R$" ANTES deste input no mesmo nível
-      const prevSibling = input.previousElementSibling;
-      if (prevSibling && (prevSibling.textContent || "").includes("R$")) return false;
-      
-      return true;
+    // Estratégia 1: Verificar se "min" aparece como irmão direto ou próximo
+    let next = input.nextElementSibling;
+    while (next) {
+      const txt = (next.textContent || "").trim().toLowerCase();
+      if (txt === "min" || txt.includes("min")) return true;
+      if (txt.includes("r$") || txt.includes("taxa")) return false;
+      next = next.nextElementSibling;
     }
 
-    // Fallback: checar irmão seguinte direto
-    let next = input.nextElementSibling;
-    if (next && (next.textContent || "").trim().toLowerCase().includes("min")) return true;
-
-    // Checar pai e irmão do pai
+    // Estratégia 2: Subir pro pai e procurar "min" por perto
     const parent = input.parentElement;
     if (parent) {
+      const parentText = parent.textContent || "";
+      if (parentText.includes("min") && !parentText.includes("R$")) return true;
+      
       const parentNext = parent.nextElementSibling;
       if (parentNext && (parentNext.textContent || "").trim().toLowerCase().includes("min")) return true;
+    }
+
+    // Estratégia 3: Container mais amplo (tr, row)
+    const container = input.closest("tr, [class*='row'], [class*='Row']") || input.parentElement?.parentElement;
+    if (container) {
+      const containerText = container.textContent || "";
+      if (containerText.includes("min") && !containerText.includes("R$")) {
+        // Verificar se este input NÃO está na coluna de taxa
+        const prevSibling = input.previousElementSibling;
+        if (prevSibling && (prevSibling.textContent || "").includes("R$")) return false;
+        return true;
+      }
     }
 
     return false;
@@ -271,17 +274,29 @@ function findTimeInputs() {
 }
 
 function findAdjustButton(isIncrease) {
-  const buttons = Array.from(document.querySelectorAll("button"));
+  // PRIORIDADE 1: Usar aria-label (mais estável no iFood)
+  if (isIncrease) {
+    const ariaBtn = document.querySelector('button[aria-label="add 5 min"]');
+    if (ariaBtn) {
+      console.log("[FireHub] ✅ Botão +5 encontrado via aria-label");
+      return ariaBtn;
+    }
+  } else {
+    const ariaBtn = document.querySelector('button[aria-label="subtract 5 min"]');
+    if (ariaBtn) {
+      console.log("[FireHub] ✅ Botão -5 encontrado via aria-label");
+      return ariaBtn;
+    }
+  }
 
+  // PRIORIDADE 2: Fallback por texto
+  const buttons = Array.from(document.querySelectorAll("button"));
   return buttons.find(btn => {
     const text = btn.textContent.trim();
-    // Precisa conter "5" e "min"
     if (!text.includes("5") || !text.toLowerCase().includes("min")) return false;
-
     if (isIncrease) {
       return text.includes("+");
     } else {
-      // O iFood usa — (em dash), – (en dash) ou - (hyphen)
       return text.includes("-") || text.includes("–") || text.includes("—");
     }
   });
