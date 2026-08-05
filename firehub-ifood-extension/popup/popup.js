@@ -280,18 +280,44 @@ document.addEventListener("DOMContentLoaded", () => {
   toggleAutoSync.addEventListener("change", async () => {
     const isOn = toggleAutoSync.checked;
     updateToggleVisual(toggleAutoSync, toggleSlider, toggleDot, isOn);
-    chrome.storage.local.set({ autoSyncEnabled: isOn });
+
     if (isOn) {
+      // Desativar manual se ativar automático
+      toggleManualSync.checked = false;
+      updateToggleVisual(toggleManualSync, toggleManualSlider, toggleManualDot, false);
+      chrome.storage.local.set({ autoSyncEnabled: true, manualSyncEnabled: false });
+      // Trocar para aba automático
+      activeMode = "auto";
+      tabAutoBtn.classList.add("active");
+      tabManualBtn.classList.remove("active");
+      tabAutoContent.classList.add("active");
+      tabManualContent.classList.remove("active");
+      saveState();
       await fetchData(true);
+    } else {
+      chrome.storage.local.set({ autoSyncEnabled: false });
     }
   });
 
   toggleManualSync.addEventListener("change", async () => {
     const isOn = toggleManualSync.checked;
     updateToggleVisual(toggleManualSync, toggleManualSlider, toggleManualDot, isOn);
-    chrome.storage.local.set({ manualSyncEnabled: isOn });
+
     if (isOn) {
+      // Desativar automático se ativar manual
+      toggleAutoSync.checked = false;
+      updateToggleVisual(toggleAutoSync, toggleSlider, toggleDot, false);
+      chrome.storage.local.set({ manualSyncEnabled: true, autoSyncEnabled: false });
+      // Trocar para aba manual
+      activeMode = "manual";
+      tabManualBtn.classList.add("active");
+      tabAutoBtn.classList.remove("active");
+      tabManualContent.classList.add("active");
+      tabAutoContent.classList.remove("active");
+      saveState();
       await fetchData(true);
+    } else {
+      chrome.storage.local.set({ manualSyncEnabled: false });
     }
   });
 

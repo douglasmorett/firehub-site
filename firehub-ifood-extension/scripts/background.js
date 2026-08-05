@@ -27,6 +27,23 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// ── RECALCULAR QUANDO MOTOBOYS, MODO OU TOGGLE MUDAM ──
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+
+  const triggerKeys = ["motoboysCount", "activeMode", "manualRules", "autoSyncEnabled", "manualSyncEnabled"];
+  const changed = triggerKeys.some(key => key in changes);
+
+  if (changed) {
+    // Pegar a contagem mais recente (bridge ou storage)
+    chrome.storage.local.get(["ordersInProduction"], (store) => {
+      const count = bridgeCount > 0 ? bridgeCount : (store.ordersInProduction || 0);
+      console.log(`[FireHub] 🔄 Config mudou → Recalculando com ${count} pedidos...`);
+      calculateAndApply(count);
+    });
+  }
+});
+
 // ── RECEPTOR EM TEMPO REAL (FIREHUB WEB BRIDGE) ──
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.action === "FIREHUB_LIVE_COUNT") {
