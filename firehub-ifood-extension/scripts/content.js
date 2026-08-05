@@ -345,34 +345,61 @@ async function clickOperacaoAtualTab() {
 }
 
 async function clickSalvar(targetMinutes, actualMax = null) {
-  const salvarBtn = findButtonByText("Salvar");
   const displayVal = actualMax || targetMinutes;
 
-  if (salvarBtn) {
-    // Verificar se o botão está habilitado
-    if (salvarBtn.disabled) {
-      console.warn("[FireHub] ⚠️ Botão Salvar está desabilitado. Pode já estar salvo.");
-      updatePillStatus(`⚠️ ${displayVal} min (Salvar desabilitado)`, false);
-      return;
+  // Esperar o React habilitar o botão (até 4 tentativas com 1s cada)
+  let salvarBtn = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const allButtons = Array.from(document.querySelectorAll("button"));
+    const candidates = allButtons.filter(btn => {
+      const text = (btn.textContent || "").trim();
+      return text === "Salvar" || text.toLowerCase() === "salvar";
+    });
+
+    console.log(`[FireHub] 🔍 Tentativa ${attempt + 1}/4 - Encontrei ${candidates.length} botões "Salvar"`);
+
+    // Preferir o que NÃO está disabled
+    const enabledBtn = candidates.find(btn => !btn.disabled);
+    if (enabledBtn) {
+      salvarBtn = enabledBtn;
+      break;
     }
 
+    // Se só tem disabled, guardar pra forçar clique
+    if (candidates.length > 0) {
+      salvarBtn = candidates[0];
+    }
+
+    await sleep(1000);
+  }
+
+  if (salvarBtn) {
+    salvarBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+    await sleep(500);
+
+    // Forçar enable se tiver disabled
+    if (salvarBtn.disabled) {
+      console.log("[FireHub] ⚡ Forçando enable no Salvar...");
+      salvarBtn.disabled = false;
+      salvarBtn.removeAttribute("disabled");
+    }
+
+    console.log("[FireHub] 🖱️ Clicando em Salvar!");
     salvarBtn.click();
 
-    // Após clicar em Salvar, esperar e re-ler para confirmação final
     await sleep(2500);
 
-    // Re-ler inputs após o save para garantir
+    // Verificar resultado
     const postSaveInputs = findTimeInputs();
     const postSaveValues = postSaveInputs.map(i => parseInt(i.value) || 0).filter(v => v > 0);
     const postSaveMax = postSaveValues.length > 0 ? Math.max(...postSaveValues) : actualMax || targetMinutes;
-
     const matchOk = Math.abs(targetMinutes - postSaveMax) < 3;
 
     if (matchOk) {
-      console.log(`[FireHub] ✅✅ SALVO E CONFIRMADO! Valor final: ${postSaveMax} min (alvo: ${targetMinutes})`);
+      console.log(`[FireHub] ✅✅ SALVO! Final: ${postSaveMax} min (alvo: ${targetMinutes})`);
       updatePillStatus(`✅ ${postSaveMax} min SALVO!`, false);
     } else {
-      console.log(`[FireHub] ⚠️ Salvo, mas valor final (${postSaveMax}) difere do alvo (${targetMinutes})`);
+      console.log(`[FireHub] ⚠️ Salvo, final (${postSaveMax}) difere do alvo (${targetMinutes})`);
       updatePillStatus(`⚠️ Salvo ${postSaveMax} min (alvo era ${targetMinutes})`, true);
     }
 
@@ -380,7 +407,7 @@ async function clickSalvar(targetMinutes, actualMax = null) {
     const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     chrome.storage.local.set({ lastAppliedETA: targetMinutes, ifoodLastApply: nowStr });
   } else {
-    console.warn("[FireHub] ⚠️ Botão 'Salvar' não encontrado na página");
+    console.warn("[FireHub] ❌ Botão 'Salvar' não encontrado!");
     updatePillStatus(`⚠️ ${displayVal} min (Salvar não achado)`, true);
   }
 }
