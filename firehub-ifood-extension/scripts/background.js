@@ -149,45 +149,41 @@ async function calculateAndApply(count) {
         shouldPause: shouldPauseStore,
       };
 
-      const tabs = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
-      console.log(`[FireHub] 📤 Despachando pro iFood: ${recommendedMinutes} min | Tabs encontradas: ${tabs.length}`);
+      // IMPORTANTE: Enviar APENAS pra aba de Configurações de Entrega
+      // NÃO enviar pro Gestor de Pedidos ou outras páginas do iFood
+      const settingsTabs = await chrome.tabs.query({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience*" });
+      console.log(`[FireHub] 📤 Despachando ${recommendedMinutes} min | Abas de Config: ${settingsTabs.length}`);
 
-      if (tabs && tabs.length > 0) {
-        for (const tab of tabs) {
+      if (settingsTabs.length > 0) {
+        // Enviar só pra aba de configurações
+        for (const tab of settingsTabs) {
           if (tab.id) {
             try {
               await chrome.tabs.sendMessage(tab.id, payload);
-              console.log(`[FireHub] ✅ Mensagem enviada pra tab ${tab.id} (${tab.url?.substring(0, 50)})`);
+              console.log(`[FireHub] ✅ Enviado pra tab ${tab.id}`);
             } catch (err) {
-              console.warn(`[FireHub] ⚠️ Falha ao enviar pra tab ${tab.id}: ${err.message}. Reinjetando content script...`);
-              // Reinjetar o content script e tentar de novo
+              console.warn(`[FireHub] ⚠️ Falha tab ${tab.id}: ${err.message}. Reinjetando...`);
               try {
                 await chrome.scripting.executeScript({
                   target: { tabId: tab.id },
                   files: ["scripts/content.js"]
                 });
-                // Esperar o script carregar
                 await new Promise(r => setTimeout(r, 2000));
                 await chrome.tabs.sendMessage(tab.id, payload);
-                console.log(`[FireHub] ✅ Mensagem enviada após reinjeção na tab ${tab.id}`);
+                console.log(`[FireHub] ✅ Enviado após reinjeção`);
               } catch (e2) {
-                console.error(`[FireHub] ❌ Falha total na tab ${tab.id}: ${e2.message}`);
+                console.error(`[FireHub] ❌ Falha total: ${e2.message}`);
               }
             }
           }
         }
       } else {
-        // Se a aba do iFood não está aberta, abrir automaticamente
-        console.log("[FireHub] 🚀 Nenhuma aba iFood aberta. Abrindo Portal iFood...");
-        chrome.tabs.create({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience", active: false }, (newTab) => {
-          if (newTab && newTab.id) {
-            // Esperar página carregar + content script injetar
-            setTimeout(() => {
-              chrome.tabs.sendMessage(newTab.id, payload).catch((e) => {
-                console.warn(`[FireHub] ⚠️ Falha ao enviar pra nova tab: ${e.message}`);
-              });
-            }, 8000);
-          }
+        // Nenhuma aba de configurações aberta → abrir em background
+        console.log("[FireHub] 🚀 Abrindo Config de Entrega em background...");
+        chrome.storage.local.set({ pendingETA: recommendedMinutes });
+        chrome.tabs.create({
+          url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience",
+          active: false
         });
       }
     } else {
