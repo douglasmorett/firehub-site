@@ -44,15 +44,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return;
     }
 
-    // Só aplica se o ETA mudou em relação ao último aplicado
-    if (lastAppliedETA === targetMin) {
-      console.log(`[FireHub] ✅ ETA ${targetMin} min já foi aplicado. Nenhuma ação necessária.`);
-      sendResponse({ success: true, applied: false, reason: "already_applied" });
-      return;
-    }
-
+    // Sempre tenta aplicar — a função applyETAOnSettingsPage já verifica os valores reais
     handleETAUpdate(targetMin);
     sendResponse({ success: true, applied: true });
+  }
+
+  if (request.action === "RESET_APPLIED_ETA") {
+    lastAppliedETA = null;
+    console.log("[FireHub] 🔄 lastAppliedETA resetado!");
+    sendResponse({ success: true });
   }
 });
 
@@ -68,15 +68,28 @@ function isOnDeliverySettingsPage() {
 
 // ── FLUXO PRINCIPAL ──
 
+let lastApplyTime = 0;
+
 async function handleETAUpdate(targetMinutes) {
   if (isApplying) {
     console.log("[FireHub] ⏳ Já está aplicando, ignorando esta requisição.");
     return;
   }
 
+  const now = Date.now();
+  const targetChanged = lastAppliedETA !== targetMinutes;
+  const cooldownPassed = (now - lastApplyTime) > 60000; // 60s cooldown
+
+  // Só aplica se: o alvo mudou OU já passou 60s desde a última aplicação
+  if (!targetChanged && !cooldownPassed) {
+    return; // Silencioso — não spammar log
+  }
+
+  lastApplyTime = now;
+
   if (isOnDeliverySettingsPage()) {
     // Já estamos na página de configurações → aplicar diretamente
-    console.log("[FireHub] 📍 Já está na tela de Configurações de Entrega. Aplicando...");
+    console.log(`[FireHub] 📍 Aplicando ${targetMinutes} min no iFood...`);
     await sleep(1500);
     await applyETAOnSettingsPage(targetMinutes);
   } else {
