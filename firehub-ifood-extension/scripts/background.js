@@ -1,10 +1,20 @@
 /**
  * FireHub Chrome Extension — Background Service Worker
- * Mantém um alarme de 3 minutos ativo para buscar o tempo de entrega no FireHub e atualizar no iFood.
- * Se a aba do Portal do iFood não estiver aberta, o bot a abre automaticamente no navegador!
+ * 
+ * FONTE DE VERDADE para a contagem de pedidos:
+ * 1. PRIMÁRIO: Bridge (lê o DOM do FireHub em tempo real, a cada 1s)
+ * 2. FALLBACK: API do servidor (só quando o bridge não está ativo)
+ * 
+ * Fluxo:
+ * Bridge → handleLiveCountUpdate() → calculateAndApply() → Salva no storage + Envia pro iFood
+ * Alarme (1min) → Se bridge inativo, chama API → calculateAndApply()
  */
 
 const ALARM_NAME = "FIREHUB_DYNAMIC_ETA_SYNC";
+
+// ── ESTADO DO BRIDGE ──
+let bridgeLastUpdate = 0;
+let bridgeCount = 0;
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("[FireHub Extension] 🚀 Instalada com sucesso!");
@@ -20,23 +30,32 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // ── RECEPTOR EM TEMPO REAL (FIREHUB WEB BRIDGE) ──
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.action === "FIREHUB_LIVE_COUNT") {
-    console.log(`[FireHub Real-Time] ⚡ Atualização ao vivo: ${msg.count} pedidos em produção`);
-    handleLiveCountUpdate(msg.count);
+    bridgeLastUpdate = Date.now();
+    bridgeCount = msg.count;
+    console.log(`[FireHub Bridge] ⚡ Contagem ao vivo: ${msg.count} pedidos em produção`);
+    calculateAndApply(msg.count);
     sendResponse({ success: true });
   }
 });
 
-async function handleLiveCountUpdate(count) {
+// ── FUNÇÃO CENTRAL: Calcula ETA e aplica ──
+async function calculateAndApply(count) {
   try {
-    const store = await chrome.storage.local.get(["motoboysCount", "activeMode", "manualRules"]);
+    const store = await chrome.storage.local.get([
+      "motoboysCount", "activeMode", "manualRules",
+      "autoSyncEnabled", "manualSyncEnabled"
+    ]);
+
     const motoboys = store.motoboysCount || 2;
     const mode = store.activeMode || "auto";
+    const syncEnabled = store.autoSyncEnabled || store.manualSyncEnabled;
 
     let recommendedMinutes = 38;
     let etaRangeFormatted = "38 min";
     let shouldPauseStore = false;
 
     if (mode === "manual" && Array.isArray(store.manualRules) && store.manualRules.length > 0) {
+      // ── MODO MANUAL: Usar regras personalizadas ──
       const sorted = [...store.manualRules].sort((a, b) => (a.maxOrders || 0) - (b.maxOrders || 0));
       const matched = sorted.find(r => count <= r.maxOrders) || sorted[sorted.length - 1];
       if (matched) {
@@ -45,6 +64,8 @@ async function handleLiveCountUpdate(count) {
         etaRangeFormatted = shouldPauseStore ? "⚠️ PAUSAR LOJA" : `${recommendedMinutes} min`;
       }
     } else {
+      // ── MODO AUTOMÁTICO: Tabela Hakim ──
+      // 38m = ≤ 2*M | 58m = ≤ 3*M | 78m = ≤ 4*M | > 4*M → PAUSAR
       const max38 = 2 * motoboys;
       const max58 = 3 * motoboys;
       const max78 = 4 * motoboys;
@@ -67,6 +88,7 @@ async function handleLiveCountUpdate(count) {
 
     const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
+    // Salvar no storage (popup lê daqui)
     await chrome.storage.local.set({
       ordersInProduction: count,
       lastEtaFormatted: etaRangeFormatted,
@@ -75,44 +97,65 @@ async function handleLiveCountUpdate(count) {
       shouldPauseStore,
     });
 
-    const payload = {
-      action: "SET_DELIVERY_TIME",
-      minMinutes: recommendedMinutes,
-      maxMinutes: recommendedMinutes,
-      formatted: etaRangeFormatted,
-      mode,
-      shouldPause: shouldPauseStore,
-    };
+    console.log(`[FireHub] 📊 ${count} ped. | ${motoboys} motoboys | ${mode} → ${etaRangeFormatted}`);
 
-    const syncStore = await chrome.storage.local.get(["autoSyncEnabled", "manualSyncEnabled"]);
-    const syncEnabled = syncStore.autoSyncEnabled || syncStore.manualSyncEnabled;
-    if (!syncEnabled) {
-      console.log("[FireHub] Sync desativado, apenas atualizando valores.");
-      return;
-    }
+    // ── DESPACHAR PRO IFOOD SE SYNC ATIVO ──
+    if (syncEnabled) {
+      const payload = {
+        action: "SET_DELIVERY_TIME",
+        minMinutes: recommendedMinutes,
+        maxMinutes: recommendedMinutes,
+        formatted: etaRangeFormatted,
+        mode,
+        shouldPause: shouldPauseStore,
+      };
 
-    const tabs = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
-    if (tabs && tabs.length > 0) {
-      for (const tab of tabs) {
-        if (tab.id) {
-          chrome.tabs.sendMessage(tab.id, payload).catch(() => {});
+      const tabs = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
+      if (tabs && tabs.length > 0) {
+        for (const tab of tabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, payload).catch(() => {});
+          }
         }
+      } else {
+        // Se a aba do iFood não está aberta, abrir automaticamente
+        console.log("[FireHub] 🚀 Abrindo Portal iFood automaticamente...");
+        chrome.tabs.create({ url: "https://portal.ifood.com.br/", active: false }, (newTab) => {
+          if (newTab && newTab.id) {
+            setTimeout(() => {
+              chrome.tabs.sendMessage(newTab.id, payload).catch(() => {});
+            }, 6000);
+          }
+        });
       }
     }
+
   } catch (err) {
-    console.warn("[FireHub Live Sync Error]", err);
+    console.warn("[FireHub calculateAndApply Error]", err);
   }
 }
 
+// ── ALARME: FALLBACK QUANDO O BRIDGE NÃO ESTÁ ATIVO ──
 async function runSyncProcess() {
   try {
+    // Se o bridge atualizou nos últimos 30 segundos, usa a contagem dele
+    const bridgeIsActive = (Date.now() - bridgeLastUpdate) < 30000;
+
+    if (bridgeIsActive) {
+      console.log(`[FireHub Alarm] Bridge ativo (${bridgeCount} ped.), usando contagem do bridge.`);
+      await calculateAndApply(bridgeCount);
+      return;
+    }
+
+    // Bridge inativo → chamar API do servidor como fallback
+    console.log("[FireHub Alarm] Bridge inativo, buscando contagem da API...");
+
     const store = await chrome.storage.local.get(["serverUrl", "motoboysCount", "activeMode", "manualRules", "authToken"]);
-    const savedUrl = store.serverUrl;
     const motoboys = store.motoboysCount || 2;
     const mode = store.activeMode || "auto";
 
-    const candidates = savedUrl
-      ? [savedUrl, "http://localhost:3001", "http://localhost:3000", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br"]
+    const candidates = store.serverUrl
+      ? [store.serverUrl, "http://localhost:3001", "http://localhost:3000", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br"]
       : ["http://localhost:3001", "http://localhost:3000", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br"];
 
     const uniqueUrls = Array.from(new Set(candidates.map(u => u.replace(/\/$/, ""))));
@@ -146,55 +189,10 @@ async function runSyncProcess() {
     }
 
     if (data && data.success) {
-      console.log(`[FireHub Alarm] Em Produção=${data.ordersInProduction} | Mode=${mode} ➔ ETA: ${data.etaRangeFormatted}`);
-
-      await chrome.storage.local.set({
-        lastEtaFormatted: data.etaRangeFormatted,
-        recommendedMinutes: data.recommendedMinutes || 38,
-        lastSyncTime: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-        ordersInProduction: data.ordersInProduction,
-        shouldPauseStore: !!data.shouldPauseStore,
-      });
-
-      const payload = {
-        action: "SET_DELIVERY_TIME",
-        minMinutes: data.recommendedMinutes || 38,
-        maxMinutes: data.recommendedMinutes || 38,
-        formatted: data.etaRangeFormatted,
-        mode,
-        shouldPause: !!data.shouldPauseStore,
-      };
-
-      // Verificar se o sync está ativado
-      const syncStore2 = await chrome.storage.local.get(["autoSyncEnabled", "manualSyncEnabled"]);
-      const syncEnabled2 = syncStore2.autoSyncEnabled || syncStore2.manualSyncEnabled;
-      if (!syncEnabled2) {
-        console.log("[FireHub Alarm] Sync desativado, apenas atualizando valores.");
-        return;
-      }
-
-      // 1. Verificar se a aba do Portal do iFood já está aberta
-      const tabs = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
-
-      if (tabs && tabs.length > 0) {
-        // Envia comando para a aba existente
-        for (const tab of tabs) {
-          if (tab.id) {
-            chrome.tabs.sendMessage(tab.id, payload).catch(() => {});
-          }
-        }
-      } else {
-        // 2. Se a aba NÃO estiver aberta, o bot abre automaticamente!
-        console.log("[FireHub Bot] 🚀 Aba do Portal iFood não encontrada. Abrindo automaticamente...");
-        chrome.tabs.create({ url: "https://portal.ifood.com.br/", active: false }, (newTab) => {
-          if (newTab && newTab.id) {
-            setTimeout(() => {
-              chrome.tabs.sendMessage(newTab.id, payload).catch(() => {});
-            }, 6000);
-          }
-        });
-      }
+      console.log(`[FireHub Alarm API] Em Produção=${data.ordersInProduction} | ${mode} → ${data.etaRangeFormatted}`);
+      await calculateAndApply(data.ordersInProduction);
     }
+
   } catch (err) {
     console.error("[FireHub Alarm Error]", err);
   }
