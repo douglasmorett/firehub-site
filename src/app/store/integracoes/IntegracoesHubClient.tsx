@@ -974,23 +974,10 @@ export default function IntegracoesHubClient({
                 <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                   <button
                     onClick={() => setOpenModal(null)}
-                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #009EE3, #0072B1)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
                   >
-                    Fechar
+                    Entendido
                   </button>
-                  <a
-                    href="/api/mp-connect"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      padding: "10px 18px", borderRadius: "10px", border: "none",
-                      background: "linear-gradient(135deg, #009EE3, #0072B1)",
-                      color: "#fff", fontWeight: 800, fontSize: "0.85rem",
-                      textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px"
-                    }}
-                  >
-                    <ExternalLink size={14} /> Conectar Mercado Pago
-                  </a>
                 </div>
               </div>
             )}
