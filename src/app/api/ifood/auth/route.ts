@@ -102,46 +102,94 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const { authorizationCode } = await req.json();
-  if (!authorizationCode) return NextResponse.json({ error: "authorizationCode obrigatório" }, { status: 400 });
+  const body = await req.json();
+  const rawCode = (body.authorizationCode || body.merchantId || "").trim();
+  if (!rawCode) return NextResponse.json({ error: "Código de autorização obrigatório" }, { status: 400 });
+
+  // Se o usuário digitou diretamente um Merchant UUID (formato 8-4-4-4-12)
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCode);
+  if (isUuid && session.user?.email) {
+    await prisma.user.update({
+      where: { email: session.user.email },
+      data: {
+        ifoodConnected: true,
+        ifoodMerchantId: rawCode,
+      },
+    });
+    return NextResponse.json({
+      success: true,
+      merchantId: rawCode,
+      message: "Merchant ID salvo com sucesso!",
+    });
+  }
 
   const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || "cabc4064-8d01-4bb0-bb5b-ed93963f9a7a";
   const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED || "2k28s9uil03gobzo6p3gkojim4ffsw9ttu3031veoxm1irbiz53vbzrd50n8wqnywrbvfsurzalevhv4ank4jrrm9wr4xhfcahv";
 
-  if (!clientId || !clientSecret) {
-    return NextResponse.json({ error: "Credenciais iFood não configuradas" }, { status: 500 });
-  }
-
-  // Buscar verifier salvo no banco para a conta do lojista (se gerado via userCode)
   const user = session.user?.email ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;
   const verifier = user?.ifoodAuthVerifier;
 
-  const params: Record<string, string> = {
-    grantType: "authorization_code",
-    clientId,
-    clientSecret,
-    authorizationCode,
-  };
-
-  if (verifier) {
-    params.authorizationCodeVerifier = verifier;
-  }
-
-  // Troca o authorization code por um access token com scope de merchant
-  const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+  // Tentativa 1: Com verifier (Fluxo Distribuído UserCode)
+  let res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(params),
+    body: new URLSearchParams({
+      grantType: "authorization_code",
+      clientId,
+      clientSecret,
+      authorizationCode: rawCode,
+      ...(verifier ? { authorizationCodeVerifier: verifier } : {}),
+    }),
   });
 
-  const data = await res.json();
-  if (!res.ok) {
-    return NextResponse.json({ error: `iFood ${res.status}`, details: data }, { status: res.status });
+  let data = await res.json();
+
+  // Tentativa 2: Sem verifier (caso seja fluxo centralizado/direto)
+  if (!res.ok && verifier) {
+    res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grantType: "authorization_code",
+        clientId,
+        clientSecret,
+        authorizationCode: rawCode,
+      }),
+    });
+    if (res.ok) {
+      data = await res.json();
+    }
   }
 
-  const merchantId = data.merchantId || data.merchant?.id;
+  if (!res.ok) {
+    const errorMsg = data?.error?.message || data?.error || `iFood ${res.status}`;
+    console.error("[iFood Auth] Token Exchange Error:", data);
+    return NextResponse.json({
+      error: `Erro de autorização iFood: ${errorMsg}`,
+      details: data,
+      hint: "Certifique-se de ter clicado em '1. Conectar e Autorizar no Portal iFood' e colado o código gerado na janela 'Aplicativo Autorizado' dentro de 60 segundos.",
+    }, { status: res.status });
+  }
 
-  // Salva o token e dados de autorização no banco — nunca expor ao client
+  // Obter merchantId do iFood usando o accessToken obtido
+  let merchantId = data.merchantId || data.merchant?.id;
+  if (!merchantId && data.accessToken) {
+    try {
+      const mRes = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants`, {
+        headers: { Authorization: `Bearer ${data.accessToken}` },
+      });
+      if (mRes.ok) {
+        const mData = await mRes.json();
+        if (Array.isArray(mData) && mData.length > 0) {
+          merchantId = mData[0].id;
+        }
+      }
+    } catch (e: any) {
+      console.warn("[iFood Auth] Erro ao buscar lista de merchants:", e?.message);
+    }
+  }
+
+  // Salvar token e merchantId no banco
   if (session.user?.email) {
     await prisma.user.update({
       where: { email: session.user.email },
@@ -156,9 +204,8 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    success:      true,
+    success: true,
     merchantId,
-    message:      "Autorização concluída! MerchantId salvo automaticamente.",
-    instruction:  "A conexão com o iFood foi configurada. Você já pode gerenciar pedidos.",
+    message: "Autorização concluída! Loja conectada com sucesso.",
   });
 }
