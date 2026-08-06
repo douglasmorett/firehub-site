@@ -97,7 +97,14 @@ model User {
   menuCategories  MenuCategory[]
   routeSchedules  RouteSchedule[]
 
+  // === MULTI-LOJAS ===
+  accountGroupId    String?          // ID do grupo (= ID do User master/primeira loja)
+  accountGroup      User?            @relation("AccountGroup", fields: [accountGroupId], references: [id])
+  linkedStores      User[]           @relation("AccountGroup")
+  isPrimaryStore    Boolean          @default(true)  // true = loja principal da conta
+
   @@index([ifoodMerchantId])
+  @@index([accountGroupId])
 }
 
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
+import StoreSelector from "./StoreSelector";
 
 const NAV_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
@@ -589,7 +590,8 @@ export default function StoreTopNav({
             </Link>
           )}
 
-          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+          {/* ── SELETOR MULTI-LOJAS ── */}
+          <StoreSelector />          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             <TogglePill
               label="Caixa" isOn={cashOpen}
               onClick={() => cashOpen ? setShowCloseModal(true) : setShowOpenModal(true)}
