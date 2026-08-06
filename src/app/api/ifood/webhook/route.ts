@@ -104,11 +104,14 @@ export async function GET(req: NextRequest) {
   const dataText = await res.text();
   const data = dataText ? JSON.parse(dataText) : [];
 
-  const franchisee = await prisma.user.findFirst({
-    where: { email: "contatohakim@gmail.com" }
-  }) || await prisma.user.findFirst({
-    where: { ifoodMerchantId: merchantId } as any,
-  });
+  let franchisee = merchantId
+    ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
+    : null;
+  if (!franchisee) {
+    franchisee = await prisma.user.findFirst({
+      where: { email: "contatohakim@gmail.com" }
+    });
+  }
   
   if (!franchisee) {
     return NextResponse.json({ events: [], error: `Nenhum franqueado encontrado para merchantId: ${merchantId}` });
@@ -159,11 +162,14 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     const { getIfoodToken } = await import("@/lib/ifood-api");
     const token = await getIfoodToken();
 
-    let franchisee = await prisma.user.findFirst({
-      where: { email: "contatohakim@gmail.com" }
-    }) || (merchantId ? await prisma.user.findFirst({
-      where: { ifoodMerchantId: merchantId } as any,
-    }) : null);
+    let franchisee = merchantId 
+      ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
+      : null;
+    if (!franchisee) {
+      franchisee = await prisma.user.findFirst({
+        where: { email: "contatohakim@gmail.com" }
+      });
+    }
 
     if (!franchisee && franchiseeIdOverride) {
       franchisee = await prisma.user.findUnique({ where: { id: franchiseeIdOverride } });

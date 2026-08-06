@@ -160,11 +160,14 @@ export async function GET(req: NextRequest) {
               );
               if (cancelOrderRes.ok) {
                 const cancelOrderData = await cancelOrderRes.json();
-                const cancelFranchisee = await prisma.user.findFirst({
-                  where: { email: "contatohakim@gmail.com" }
-                }) || await prisma.user.findFirst({
-                  where: { ifoodMerchantId: merchantId } as any,
-                });
+                let cancelFranchisee = merchantId
+                  ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
+                  : null;
+                if (!cancelFranchisee) {
+                  cancelFranchisee = await prisma.user.findFirst({
+                    where: { email: "contatohakim@gmail.com" }
+                  });
+                }
 
                 if (cancelFranchisee) {
                   const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
@@ -292,11 +295,14 @@ export async function GET(req: NextRequest) {
           const orderData = await orderRes.json();
 
           const eventMerchantId = merchantId || orderData.merchant?.id;
-          const eventFranchisee = await prisma.user.findFirst({
-            where: { email: "contatohakim@gmail.com" }
-          }) || await prisma.user.findFirst({
-            where: { ifoodMerchantId: eventMerchantId } as any,
-          });
+          let eventFranchisee = eventMerchantId
+            ? await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId } as any })
+            : null;
+          if (!eventFranchisee) {
+            eventFranchisee = await prisma.user.findFirst({
+              where: { email: "contatohakim@gmail.com" }
+            });
+          }
           if (!eventFranchisee) {
             log.push(`  ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
             continue;

@@ -73,6 +73,9 @@ model User {
   // === IFOOD INTEGRATION ===
   ifoodMerchantId       String?        // UUID da loja no iFood
   ifoodAccessToken      String?        @db.Text  // Bearer token (OAuth iFood Merchant API)
+  ifoodRefreshToken     String?        @db.Text
+  ifoodTokenExpiresAt   DateTime?
+  ifoodAuthVerifier     String?
   ifoodClientId         String?        // Client ID do app cadastrado no iFood Developer
   ifoodConnected        Boolean        @default(false) // Módulo iFood ativo
   ifoodWidgetId         String?        // ID do widget iFood (chat integrado — do Portal do Parceiro)

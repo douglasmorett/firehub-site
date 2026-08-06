@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 const AUTH_BASE = "https://merchant-api.ifood.com.br/authentication/v1.0";
 
@@ -50,6 +51,13 @@ export async function POST() {
         },
         { status: res.status }
       );
+    }
+
+    if (data.authorizationCodeVerifier) {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { ifoodAuthVerifier: data.authorizationCodeVerifier },
+      });
     }
 
     return NextResponse.json({

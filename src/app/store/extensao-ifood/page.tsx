@@ -40,6 +40,7 @@ export default function ExtensaoIfoodPage() {
 
   // Tabela Hakim por motoboys
   const getHakimRanges = (m: number) => ({
+    max28: m * 1,
     max38: m * 2,
     max58: m * 3,
     max78: m * 4,
