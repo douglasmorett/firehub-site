@@ -21,10 +21,10 @@ export async function POST() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const clientId = process.env.IFOOD_CLIENT_ID;
+  const clientId = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || process.env.IFOOD_CLIENT_ID;
 
   if (!clientId) {
-    return NextResponse.json({ error: "IFOOD_CLIENT_ID não configurado" }, { status: 500 });
+    return NextResponse.json({ error: "IFOOD_CLIENT_ID_DISTRIBUTED não configurado" }, { status: 500 });
   }
 
   try {
@@ -63,6 +63,7 @@ export async function POST() {
     return NextResponse.json({
       success:  true,
       userCode: data.userCode,
+      verificationUrl: data.verificationUrlComplete || data.verificationUrl || `https://portal.ifood.com.br/apps/code?code=${data.userCode}`,
       verifier: data.authorizationCodeVerifier,
       expiresIn: data.expiresIn,
     });

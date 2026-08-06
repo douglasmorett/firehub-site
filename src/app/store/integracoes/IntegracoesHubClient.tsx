@@ -224,7 +224,11 @@ export default function IntegracoesHubClient({
       const res = await fetch("/api/ifood/auth/code", { method: "POST" });
       const data = await res.json();
       if (res.ok && data.userCode) {
-        setUserCodeData({ userCode: data.userCode, verificationUrl: "https://portal.ifood.com.br/apps/code" });
+        const targetUrl = data.verificationUrl || `https://portal.ifood.com.br/apps/code?code=${data.userCode}`;
+        setUserCodeData({ userCode: data.userCode, verificationUrl: targetUrl });
+        try { navigator.clipboard.writeText(data.userCode); } catch {}
+        showToast("📋 Código copiado! Redirecionando para o iFood...", "#10B981");
+        window.open(targetUrl, "_blank");
       } else {
         showToast(data.error || "Erro ao gerar código iFood", "#EF4444");
       }
@@ -829,7 +833,8 @@ export default function IntegracoesHubClient({
                   /* Opções de Conexão com 1-Clique */
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
                     <button
-                      onClick={handleConnectIfoodOAuth}
+                      onClick={handleGenerateUserCode}
+                      disabled={loadingUserCode}
                       style={{
                         width: "100%", padding: "14px", borderRadius: 14,
                         border: "none", background: "linear-gradient(135deg, #EA580C 0%, #C2410C 100%)",
@@ -837,9 +842,14 @@ export default function IntegracoesHubClient({
                         cursor: "pointer", fontFamily: "inherit",
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                         boxShadow: "0 4px 14px rgba(234, 88, 12, 0.35)",
+                        opacity: loadingUserCode ? 0.7 : 1,
                       }}
                     >
-                      <Zap size={18} /> Conectar Nova Loja com 1 Clique (Autorização iFood)
+                      {loadingUserCode ? (
+                        <><Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> Gerando código iFood...</>
+                      ) : (
+                        <><Zap size={18} /> Conectar Nova Loja com 1 Clique (Portal iFood)</>
+                      )}
                     </button>
 
                     <div style={{ display: "flex", gap: "10px" }}>
