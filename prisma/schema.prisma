@@ -85,6 +85,11 @@ model User {
   jotajaClientSecret String?       // Client Secret no Jotajá
   jotajaMerchantId  String?        // UUID da loja no Jotajá
   jotajaConnected   Boolean        @default(false) // Módulo Jotajá ativo
+  // === 99FOOD INTEGRATION ===
+  food99MerchantId  String?        // ID da loja no 99Food
+  food99AppId       String?        // App ID no 99Food / OpenDelivery
+  food99SecretKey   String?        // Secret Key no 99Food
+  food99Connected   Boolean        @default(false) // Módulo 99Food ativo
   showReviewsOnMenu Boolean        @default(true)  // Exibir avaliações no cardápio digital
   apiKeys         ApiKey[]
   webhookSubscriptions WebhookSubscription[]

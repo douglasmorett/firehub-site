@@ -36,6 +36,14 @@ export default function IntegracoesHubClient({
   const [jjLoading, setJjLoading] = useState(true);
   const [jjSaving, setJjSaving] = useState(false);
 
+  // 99Food state
+  const [food99MerchantId, setFood99MerchantId] = useState("");
+  const [food99AppId, setFood99AppId] = useState("");
+  const [food99SecretKey, setFood99SecretKey] = useState("");
+  const [food99Connected, setFood99Connected] = useState(false);
+  const [food99Loading, setFood99Loading] = useState(true);
+  const [food99Saving, setFood99Saving] = useState(false);
+
   // iFood multi-integration state
   const [ifMerchant, setIfMerchant] = useState(ifoodMerchantId || "");
   const [ifWidget, setIfWidget] = useState(ifoodWidgetId || "");
@@ -55,19 +63,34 @@ export default function IntegracoesHubClient({
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Carregar dados da integração JotaJá
   useEffect(() => {
     fetch("/api/store/integracoes/jotaja")
-      .then(r => r.json())
-      .then(d => {
-        if (d.ok) {
-          setJjClientId(d.clientId || "");
-          setJjClientSecret(d.clientSecret || "");
-          setJjMerchantId(d.merchantId || "");
-          setJjConnected(d.connected || false);
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok) {
+          setJjClientId(data.clientId || "");
+          setJjClientSecret(data.clientSecret || "");
+          setJjMerchantId(data.merchantId || "");
+          setJjConnected(!!data.connected);
         }
       })
       .catch(() => {})
       .finally(() => setJjLoading(false));
+
+    // Carregar dados da integração 99Food
+    fetch("/api/store/integracoes/99food")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok) {
+          setFood99MerchantId(data.merchantId || "");
+          setFood99AppId(data.appId || "");
+          setFood99SecretKey(data.secretKey || "");
+          setFood99Connected(!!data.connected);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFood99Loading(false));
 
     fetch("/api/chatbot/config")
       .then(r => r.json())
@@ -90,21 +113,51 @@ export default function IntegracoesHubClient({
           clientId: jjClientId,
           clientSecret: jjClientSecret,
           merchantId: jjMerchantId,
-          connected: true
-        })
+          connected: true,
+        }),
       });
+
       const data = await res.json();
-      if (data.ok) {
+      if (res.ok && data.ok) {
         setJjConnected(true);
-        showToast("✅ Integração JotaJá salva e ativada com sucesso!", "#10B981");
+        showToast("✅ Integração JotaJá salva e ativada!", "#10B981");
         setOpenModal(null);
       } else {
-        showToast("⚠️ " + (data.error || "Erro ao salvar credenciais JotaJá"), "#EF4444");
+        showToast(`⚠️ ${data.error || "Erro ao salvar JotaJá"}`, "#EF4444");
       }
     } catch {
       showToast("⚠️ Erro de conexão ao salvar JotaJá", "#EF4444");
     } finally {
       setJjSaving(false);
+    }
+  };
+
+  const handleSave99Food = async () => {
+    setFood99Saving(true);
+    try {
+      const res = await fetch("/api/store/integracoes/99food", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchantId: food99MerchantId,
+          appId: food99AppId,
+          secretKey: food99SecretKey,
+          connected: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setFood99Connected(true);
+        showToast("✅ Integração 99Food salva e ativada!", "#10B981");
+        setOpenModal(null);
+      } else {
+        showToast(`⚠️ ${data.error || "Erro ao salvar 99Food"}`, "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão ao salvar 99Food", "#EF4444");
+    } finally {
+      setFood99Saving(false);
     }
   };
 
@@ -262,7 +315,7 @@ export default function IntegracoesHubClient({
       subtitle: "Integração Open Delivery",
       icon: "🟡",
       gradient: "linear-gradient(135deg, #F59E0B, #D97706)",
-      badge: { text: "⚡ Em Breve", bg: "#FFFBEB", color: "#B45309", border: "#FDE68A" },
+      badge: food99Connected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Integração direta com o 99Food para captura e gerenciamento automático de pedidos.",
     },
   ];
@@ -809,26 +862,107 @@ export default function IntegracoesHubClient({
                   </div>
                   <div>
                     <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>99Food Delivery</h2>
-                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração Open Delivery</span>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração Open Delivery / Webhook 99Food</span>
                   </div>
                 </div>
 
-                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
-                  <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#B45309" }}>
-                    ⚡ Integração em Fase Final de Desenvolvimento
+                {food99Connected ? (
+                  <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status da Conexão:</div>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>
+                      🟢 Módulo 99Food Conectado e Ativo
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#B45309" }}>Status da Conexão:</div>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>
+                      ⚪ Integração Não Ativa — Preencha as credenciais abaixo
+                    </div>
+                  </div>
+                )}
 
-                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "24px" }}>
-                  A integração oficial com o 99Food via protocolo OpenDelivery permitirá receber e despachar pedidos diretamente no FireHub. Em breve estará disponível para ativação!
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
+                  Insira o <strong>Merchant ID</strong> e credenciais da sua loja cadastrada no Portal 99Food / Open Delivery para capturar e despachar pedidos automaticamente.
                 </p>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Store size={14} color="#D97706" /> Merchant ID / Store ID (99Food)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 99f_store_88231"
+                      value={food99MerchantId}
+                      onChange={(e) => setFood99MerchantId(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Key size={14} color="#D97706" /> App ID (99Food / OpenDelivery)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Cole o App ID fornecido pelo 99Food..."
+                      value={food99AppId}
+                      onChange={(e) => setFood99AppId(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <ShieldCheck size={14} color="#D97706" /> App Secret / Token de Acesso
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••••••••••••••••••"
+                      value={food99SecretKey}
+                      onChange={(e) => setFood99SecretKey(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      🔗 URL do Webhook (Cole no Portal do Parceiro 99Food)
+                    </label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <input
+                        type="text"
+                        readOnly
+                        value="https://firehubfood.com.br/api/99food/webhook"
+                        style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.82rem", fontFamily: "monospace", background: "#F8FAFC", color: "#475569" }}
+                      />
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText("https://firehubfood.com.br/api/99food/webhook");
+                          showToast("📋 URL do Webhook copiada!", "#10B981");
+                        }}
+                        style={{ padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", background: "#fff", color: "#334155", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
                 <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                   <button
                     onClick={() => setOpenModal(null)}
                     style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
                   >
-                    Entendido
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSave99Food}
+                    disabled={food99Saving}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(245,158,11,0.3)", opacity: food99Saving ? 0.7 : 1 }}
+                  >
+                    <Save size={16} /> {food99Saving ? "Salvando..." : "Salvar & Ativar Integração 99Food"}
                   </button>
                 </div>
               </div>
