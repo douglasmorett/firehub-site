@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown, Plus, Store as StoreIcon, LayoutGrid } from "lucide-react";
+import NewStoreModal from "./NewStoreModal";
 
 interface StoreInfo {
   id: string;
@@ -17,6 +18,7 @@ export default function StoreSelector() {
   const [activeStoreId, setActiveStoreId] = useState<string>("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showNewStoreModal, setShowNewStoreModal] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   // Carregar lojas do grupo
@@ -76,7 +78,7 @@ export default function StoreSelector() {
     );
   }
 
-  return (
+  const selectorUI = (
     <div ref={ref} style={{ position: "relative" }}>
       <button
         onClick={() => setOpen(v => !v)}
@@ -171,7 +173,7 @@ export default function StoreSelector() {
           <button
             onClick={() => {
               setOpen(false);
-              window.location.href = "/store/minha-loja?newStore=1";
+              setShowNewStoreModal(true);
             }}
             style={{
               display: "flex", alignItems: "center", gap: 8, width: "100%",
@@ -187,5 +189,12 @@ export default function StoreSelector() {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {selectorUI}
+      <NewStoreModal open={showNewStoreModal} onClose={() => setShowNewStoreModal(false)} />
+    </>
   );
 }

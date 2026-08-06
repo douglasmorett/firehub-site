@@ -110,7 +110,22 @@ export async function trackSaleForBilling(franchiseeId: string) {
   const totalSales = agg._sum.totalAmount ?? 0;
 
   // Aplica regra: 1%, mín R$50, máx R$400 (zerado para lojas isentas)
-  const amountDue = isExempt ? 0 : calcMensalidade(totalSales).mensalidade;
+  const baseDue = isExempt ? 0 : calcMensalidade(totalSales).mensalidade;
+
+  // +R$50 por integração iFood adicional no grupo
+  let ifoodExtraCharge = 0;
+  if (!isExempt && user) {
+    const masterId = (user as any).accountGroupId || franchiseeId;
+    const ifoodCount = await prisma.user.count({
+      where: {
+        OR: [{ id: masterId }, { accountGroupId: masterId }],
+        ifoodConnected: true,
+      },
+    });
+    ifoodExtraCharge = Math.max(0, ifoodCount - 1) * 50;
+  }
+
+  const amountDue = baseDue + ifoodExtraCharge;
   const amountPending = isExempt ? 0 : amountDue;
 
   await prisma.franchiseeBillingCycle.update({
@@ -124,7 +139,7 @@ export async function trackSaleForBilling(franchiseeId: string) {
   });
 
   console.log(
-    `[Billing] ${franchiseeId} (${user?.email}) ${yearMonth} | Vendas=${totalSales.toFixed(2)} Devido=${amountDue.toFixed(2)} Isento=${isExempt}`
+    `[Billing] ${franchiseeId} (${user?.email}) ${yearMonth} | Vendas=${totalSales.toFixed(2)} Base=${baseDue.toFixed(2)} iFood+=${ifoodExtraCharge} Total=${amountDue.toFixed(2)} Isento=${isExempt}`
   );
 }
 
@@ -158,7 +173,22 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   });
 
   const totalSales = agg._sum.totalAmount ?? 0;
-  const amountDue = isSpecialStore ? 0 : calcMensalidade(totalSales).mensalidade;
+  const baseDue = isSpecialStore ? 0 : calcMensalidade(totalSales).mensalidade;
+
+  // +R$50 por integração iFood adicional no grupo
+  let ifoodExtraCharge = 0;
+  if (!isSpecialStore) {
+    const masterId = cycle.franchisee?.accountGroupId || franchiseeId;
+    const ifoodCount = await prisma.user.count({
+      where: {
+        OR: [{ id: masterId }, { accountGroupId: masterId }],
+        ifoodConnected: true,
+      },
+    });
+    ifoodExtraCharge = Math.max(0, ifoodCount - 1) * 50;
+  }
+
+  const amountDue = baseDue + ifoodExtraCharge;
   const amountPending = isSpecialStore ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
 
   // Nada a cobrar ou loja isenta
@@ -209,6 +239,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       // Vencimento: dia 5 do próximo mês
       const due = new Date(y, m, 5).toISOString().split("T")[0];
 
+      const chargeDescription = ifoodExtraCharge > 0
+        ? `FireHub ${yearMonth} — Mensalidade R$${baseDue.toFixed(2)} + iFood Extra R$${ifoodExtraCharge.toFixed(2)}`
+        : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$50 · máx R$400)`;
+
       const pr = await fetch(`${BASE}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json", access_token: asaasKey },
@@ -217,7 +251,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
           billingType: "BOLETO",
           value: amountPending,
           dueDate: due,
-          description: `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$50 · máx R$400)`,
+          description: chargeDescription,
           externalReference: `billing:${cycle.id}`,
         }),
       });
@@ -245,7 +279,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     },
   });
 
-  return { charged: true, amountPending, asaasBoletoUrl, message: "Boleto gerado com valor pendente." };
+  return { charged: true, amountPending, ifoodExtraCharge, asaasBoletoUrl, message: "Boleto gerado com valor pendente." };
 }
 
 /**
