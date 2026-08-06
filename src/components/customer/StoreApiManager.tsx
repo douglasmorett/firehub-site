@@ -222,7 +222,7 @@ export function StoreApiManager() {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <input
                 type="text"
-                placeholder="Nome da chave (ex: PDV Caixa Balcão, Sistema Saipos)"
+                placeholder="Nome da chave (ex: PDV Caixa Balcão, Sistema Externo)"
                 value={keyName}
                 onChange={(e) => setKeyName(e.target.value)}
                 required

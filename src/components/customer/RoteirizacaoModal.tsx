@@ -2118,7 +2118,7 @@ export default function RoteirizacaoModal({
               ⚙️ Configurações da Roteirização
             </h3>
             <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.25rem" }}>
-              Escolha e configure as regras de agrupamento de pedidos estilo Saipos.
+              Escolha e configure as regras de agrupamento de pedidos.
             </p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>

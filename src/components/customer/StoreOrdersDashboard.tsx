@@ -3357,7 +3357,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 background: "#EFF6FF", color: "#1D4ED8",
                 boxShadow: "0 2px 6px rgba(37,99,235,0.15)"
               }}
-              title="Abrir Módulo de Roteirização e Mapa de Entregas Estilo Saipos"
+              title="Abrir Módulo de Roteirização e Mapa de Entregas"
             >
               <MapPin size={14} /> 🗺️ Roteirização
             </button>
