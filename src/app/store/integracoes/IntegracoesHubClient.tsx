@@ -54,6 +54,8 @@ export default function IntegracoesHubClient({
   const [newIfMerchantId, setNewIfMerchantId] = useState("");
   const [newIfWidgetId, setNewIfWidgetId] = useState("");
   const [ifAdding, setIfAdding] = useState(false);
+  const [userCodeData, setUserCodeData] = useState<{ userCode: string; verificationUrl?: string } | null>(null);
+  const [loadingUserCode, setLoadingUserCode] = useState(false);
   const [showAddIfoodForm, setShowAddIfoodForm] = useState(false);
 
   // Toast alert
@@ -208,6 +210,30 @@ export default function IntegracoesHubClient({
       .catch(() => {})
       .finally(() => setIfoodLoading(false));
   }, []);
+
+  const handleConnectIfoodOAuth = () => {
+    const clientId = "cabc4064-8d01-4bb0-bb5b-ed93963f9a7a";
+    const redirectUri = encodeURIComponent("https://firehubfood.com.br/api/ifood/auth/callback");
+    const authUrl = `https://developer.ifood.com.br/oauth/userAuthorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}`;
+    window.open(authUrl, "_blank");
+  };
+
+  const handleGenerateUserCode = async () => {
+    setLoadingUserCode(true);
+    try {
+      const res = await fetch("/api/ifood/auth/code", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.userCode) {
+        setUserCodeData({ userCode: data.userCode, verificationUrl: "https://portal.ifood.com.br/apps/code" });
+      } else {
+        showToast(data.error || "Erro ao gerar código iFood", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao conectar com o iFood", "#EF4444");
+    } finally {
+      setLoadingUserCode(false);
+    }
+  };
 
   const handleAddIfoodIntegration = async () => {
     if (!newIfLabel.trim() || !newIfMerchantId.trim()) {
@@ -800,19 +826,77 @@ export default function IntegracoesHubClient({
                     </div>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setShowAddIfoodForm(true)}
-                    style={{
-                      width: "100%", padding: "12px", borderRadius: 12,
-                      border: "2px dashed #CBD5E1", background: "#F8FAFC",
-                      color: "#475569", fontWeight: 700, fontSize: "0.85rem",
-                      cursor: "pointer", fontFamily: "inherit",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                      marginBottom: 16,
-                    }}
-                  >
-                    <Plus size={16} color="#16A34A" /> Adicionar Nova Integração iFood
-                  </button>
+                  /* Opções de Conexão com 1-Clique */
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                    <button
+                      onClick={handleConnectIfoodOAuth}
+                      style={{
+                        width: "100%", padding: "14px", borderRadius: 14,
+                        border: "none", background: "linear-gradient(135deg, #EA580C 0%, #C2410C 100%)",
+                        color: "#fff", fontWeight: 800, fontSize: "0.9rem",
+                        cursor: "pointer", fontFamily: "inherit",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        boxShadow: "0 4px 14px rgba(234, 88, 12, 0.35)",
+                      }}
+                    >
+                      <Zap size={18} /> Conectar Nova Loja com 1 Clique (Autorização iFood)
+                    </button>
+
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        onClick={handleGenerateUserCode}
+                        disabled={loadingUserCode}
+                        style={{
+                          flex: 1, padding: "10px", borderRadius: 12,
+                          border: "1.5px solid #FDBA74", background: "#FFF7ED",
+                          color: "#C2410C", fontWeight: 700, fontSize: "0.82rem",
+                          cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        }}
+                      >
+                        {loadingUserCode ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Key size={14} />}
+                        Gerar Código de Conexão (User Code)
+                      </button>
+
+                      <button
+                        onClick={() => setShowAddIfoodForm(!showAddIfoodForm)}
+                        style={{
+                          padding: "10px 14px", borderRadius: 12,
+                          border: "1.5px solid #CBD5E1", background: "#fff",
+                          color: "#475569", fontWeight: 700, fontSize: "0.82rem",
+                          cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", gap: 6,
+                        }}
+                      >
+                        <Plus size={14} /> Digitar ID Manual
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Exibição do UserCode se gerado */}
+                {userCodeData && (
+                  <div style={{ padding: "16px", borderRadius: 14, background: "#FEF3C7", border: "1.5px solid #FCD34D", marginBottom: "16px", textAlign: "center" }}>
+                    <div style={{ fontSize: "0.8rem", color: "#92400E", fontWeight: 700 }}>Código de Conexão Gerado:</div>
+                    <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#EA580C", letterSpacing: "2px", margin: "6px 0", fontFamily: "monospace" }}>
+                      {userCodeData.userCode}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#78350F", marginBottom: "12px" }}>
+                      Copie o código acima e digite no Portal do Parceiro iFood:
+                    </div>
+                    <a
+                      href="https://portal.ifood.com.br/apps/code"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "8px 16px", borderRadius: 10, background: "#EA580C",
+                        color: "#fff", textDecoration: "none", fontWeight: 800, fontSize: "0.82rem"
+                      }}
+                    >
+                      <ExternalLink size={14} /> Abrir Portal do Parceiro iFood &rarr;
+                    </a>
+                  </div>
                 )}
 
                 {/* Info de cobrança */}
