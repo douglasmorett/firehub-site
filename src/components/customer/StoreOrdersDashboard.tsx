@@ -1326,16 +1326,33 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, [cancelConfirmId]);
 
   // Auto-accept logic (apenas para pedidos recentes do dia/turno atual criados há menos de 6 horas)
+  const autoAcceptedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!autoAccept) return;
     const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
     const novos = orders.filter(o => {
       if (o.status !== "NOVO") return false;
+      if (autoAcceptedIdsRef.current.has(o.id)) return false; // Já aceito nesta sessão
       const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : Date.now();
       return orderTime >= sixHoursAgo;
     });
+    if (novos.length === 0) return;
+    // Aceitar todos de uma vez, sem loop de refresh
     novos.forEach(o => {
-      updateStatus(o.id, "ACEITO");
+      autoAcceptedIdsRef.current.add(o.id);
+      // Atualizar estado local imediatamente
+      setOrders(prev => prev.map(p => p.id === o.id ? { ...p, status: "ACEITO" } : p));
+      // Disparar API sem router.refresh()
+      fetch("/api/customer-order/status", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: o.id, status: "ACEITO" }),
+      }).then(res => {
+        if (res.ok && printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
+          markAutoPrinted(o);
+          handlePrint(o, "cozinha");
+        }
+      }).catch(() => {});
     });
   }, [orders, autoAccept]);
 
