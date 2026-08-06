@@ -215,8 +215,8 @@ async function runSyncProcess() {
     const mode = store.activeMode || "auto";
 
     const candidates = store.serverUrl
-      ? [store.serverUrl, "http://localhost:3001", "http://localhost:3000", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br"]
-      : ["http://localhost:3001", "http://localhost:3000", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br"];
+      ? [store.serverUrl, "https://firehubfood.com.br", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br", "http://localhost:3001", "http://localhost:3000"]
+      : ["https://firehubfood.com.br", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br", "http://localhost:3001", "http://localhost:3000"];
 
     const uniqueUrls = Array.from(new Set(candidates.map(u => u.replace(/\/$/, ""))));
 
