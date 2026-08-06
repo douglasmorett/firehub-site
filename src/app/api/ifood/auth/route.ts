@@ -105,23 +105,33 @@ export async function POST(req: NextRequest) {
   const { authorizationCode } = await req.json();
   if (!authorizationCode) return NextResponse.json({ error: "authorizationCode obrigatório" }, { status: 400 });
 
-  const clientId     = process.env.IFOOD_CLIENT_ID;
-  const clientSecret = process.env.IFOOD_CLIENT_SECRET;
+  const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || process.env.IFOOD_CLIENT_ID;
+  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED || process.env.IFOOD_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     return NextResponse.json({ error: "Credenciais iFood não configuradas" }, { status: 500 });
+  }
+
+  // Buscar verifier salvo no banco para a conta do lojista (se gerado via userCode)
+  const user = session.user?.email ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;
+  const verifier = user?.ifoodAuthVerifier;
+
+  const params: Record<string, string> = {
+    grantType: "authorization_code",
+    clientId,
+    clientSecret,
+    authorizationCode,
+  };
+
+  if (verifier) {
+    params.authorizationCodeVerifier = verifier;
   }
 
   // Troca o authorization code por um access token com scope de merchant
   const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grantType:         "authorization_code",
-      clientId,
-      clientSecret,
-      authorizationCode,
-    }),
+    body: new URLSearchParams(params),
   });
 
   const data = await res.json();
@@ -131,14 +141,16 @@ export async function POST(req: NextRequest) {
 
   const merchantId = data.merchantId || data.merchant?.id;
 
-  // Salva o token no banco — nunca expor ao client
+  // Salva o token e dados de autorização no banco — nunca expor ao client
   if (session.user?.email) {
     await prisma.user.update({
       where: { email: session.user.email },
       data: {
         ifoodConnected: true,
-        ifoodMerchantId: merchantId,
+        ifoodMerchantId: merchantId || user?.ifoodMerchantId,
         ifoodAccessToken: data.accessToken,
+        ifoodRefreshToken: data.refreshToken || null,
+        ifoodTokenExpiresAt: data.expiresIn ? new Date(Date.now() + data.expiresIn * 1000) : null,
       },
     });
   }

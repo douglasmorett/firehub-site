@@ -24,7 +24,25 @@ import {
 
 export default function ExtensaoIfoodPage() {
   const [selectedMotoboys, setSelectedMotoboys] = useState<number>(3);
-  const [copiedExtensionsUrl, setCopiedExtensionsUrl] = useState(false);
+  const [userCodeData, setUserCodeData] = useState<{ userCode: string; verifier: string } | null>(null);
+  const [loadingCode, setLoadingCode] = useState(false);
+
+  const handleConnectIfoodDirect = async () => {
+    setLoadingCode(true);
+    try {
+      const res = await fetch("/api/ifood/auth/code", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.userCode) {
+        setUserCodeData({ userCode: data.userCode, verifier: data.verifier });
+      } else {
+        alert(data.error || "Não foi possível gerar o código. Verifique se sua loja está logada.");
+      }
+    } catch (e: any) {
+      alert("Erro ao conectar com o iFood: " + e.message);
+    } finally {
+      setLoadingCode(false);
+    }
+  };
 
   const handleOpenExtensionsPage = () => {
     const extensionsUrl = "chrome://extensions";
@@ -90,24 +108,45 @@ export default function ExtensaoIfoodPage() {
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                 <button
                   type="button"
-                  onClick={handleOpenExtensionsPage}
+                  onClick={handleConnectIfoodDirect}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 10,
                     padding: "14px 24px",
                     borderRadius: 14,
-                    background: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
+                    background: "linear-gradient(135deg, #EA1D2C 0%, #B91C1C 100%)",
                     color: "#FFF",
                     fontWeight: 900,
                     fontSize: "1.02rem",
                     border: "none",
                     cursor: "pointer",
-                    boxShadow: "0 6px 20px rgba(37, 99, 235, 0.4)",
+                    boxShadow: "0 6px 20px rgba(234, 29, 44, 0.4)",
                   }}
                 >
-                  <Puzzle size={20} />
-                  {copiedExtensionsUrl ? "Copiado! Cole chrome://extensions na barra do Chrome" : "Ir para Aba de Extensões do Chrome"}
+                  <Zap size={20} />
+                  {loadingCode ? "Gerando Código..." : "Conectar iFood via API Oficial (1-Clique)"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenExtensionsPage}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "14px 20px",
+                    borderRadius: 14,
+                    background: "#F8FAFC",
+                    border: "1.5px solid #CBD5E1",
+                    color: "#334155",
+                    fontWeight: 800,
+                    fontSize: "0.92rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Puzzle size={18} />
+                  Extensão Chrome
                 </button>
 
                 <a
@@ -130,6 +169,32 @@ export default function ExtensaoIfoodPage() {
                   <Download size={18} /> Baixar (.ZIP)
                 </a>
               </div>
+
+              {userCodeData && (
+                <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 16, padding: "1.25rem", marginTop: 8 }}>
+                  <div style={{ fontSize: "0.9rem", fontWeight: 900, color: "#991B1B", marginBottom: 6 }}>
+                    🔑 SEU CÓDIGO DE AUTORIZAÇÃO IFOOD:
+                  </div>
+                  <div style={{ fontSize: "2rem", fontWeight: 900, letterSpacing: 4, color: "#EA1D2C", background: "#FFF", padding: "8px 16px", borderRadius: 10, textAlign: "center", border: "1px solid #FECACA", display: "inline-block", margin: "4px 0" }}>
+                    {userCodeData.userCode}
+                  </div>
+                  <p style={{ fontSize: "0.85rem", color: "#7F1D1D", margin: "8px 0 12px", lineHeight: 1.4 }}>
+                    1. Acesse <b>portal.ifood.com.br/apps/code</b> <br />
+                    2. Digite o código acima para autorizar o FireHub na sua loja. <br />
+                    3. Assim que autorizar, a conexão fica ativa automaticamente!
+                  </p>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <a
+                      href="https://portal.ifood.com.br/apps/code"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ background: "#EA1D2C", color: "#FFF", padding: "8px 16px", borderRadius: 8, fontWeight: 800, fontSize: "0.85rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
+                    >
+                      <ExternalLink size={14} /> Abrir Portal iFood para Autorizar
+                    </a>
+                  </div>
+                </div>
+              )}
 
               {copiedExtensionsUrl && (
                 <div style={{ background: "#EFF6FF", border: "1px solid #93C5FD", borderRadius: 10, padding: "10px 14px", fontSize: "0.82rem", color: "#1E4ED8", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
