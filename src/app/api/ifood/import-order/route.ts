@@ -6,8 +6,7 @@ import { prisma } from "@/lib/prisma";
 /**
  * POST /api/ifood/import-order
  * Importa manualmente um pedido do iFood que não foi capturado pelo poll.
- * Body: { orderId: string } (ID completo do pedido no iFood, ex: uuid)
- * Ou: { reference: string } (referência curta, ex: "4322")
+ * Body: { orderId: string } ou { reference: string }
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -38,11 +37,9 @@ export async function POST(req: NextRequest) {
     const franchiseeId = user.ownerId || user.id;
     const merchantId = user.ifoodMerchantId;
 
-    // Se temos reference mas não orderId, listar pedidos recentes e buscar
     let actualOrderId = orderId;
 
     if (!actualOrderId && reference && merchantId) {
-      // Buscar pedidos recentes do merchant
       const ordersRes = await fetch(
         `https://merchant-api.ifood.com.br/order/v1.0/orders?merchantId=${merchantId}&sort=NEWEST`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -68,16 +65,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, log, error: "Pedido não encontrado na API iFood" });
     }
 
-    // Verificar se já existe no sistema
+    // Verificar se já existe
     const existing = await prisma.customerOrder.findFirst({
-      where: { ifoodOrderId: actualOrderId } as any,
+      where: { ifoodOrderId: actualOrderId },
     });
     if (existing) {
       log.push(`⚠️ Pedido já existe no sistema (ID: ${existing.id})`);
       return NextResponse.json({ ok: true, log, message: "Pedido já existe no sistema", orderId: existing.id });
     }
 
-    // Buscar detalhes completos do pedido
+    // Detalhes completos
     const orderRes = await fetch(
       `https://merchant-api.ifood.com.br/order/v1.0/orders/${actualOrderId}`,
       { headers: { Authorization: `Bearer ${token}` } }
@@ -91,7 +88,6 @@ export async function POST(req: NextRequest) {
     const orderData = await orderRes.json();
     log.push(`✅ Detalhes obtidos: ${orderData.displayId || actualOrderId}`);
 
-    // Import order items
     const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
     const items = (orderData.items ?? []).map((i: any) => {
       const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
@@ -111,19 +107,19 @@ export async function POST(req: NextRequest) {
         comboSelections: comboSels,
         menuProduct: {
           connectOrCreate: {
-            where: { franchiseeId_name: { franchiseeId, name: i.name || "Item iFood" } },
+            where: { id: i.id || "dummy_id" },
             create: {
               name: i.name || "Item iFood",
               price: itemUnitPrice,
+              description: "",
+              category: "iFood",
               franchiseeId,
-              origin: "IFOOD",
             },
           },
         },
       };
     });
 
-    // Parse customer, delivery info
     const customer = orderData.customer || {};
     const delivery = orderData.delivery || {};
     const address = delivery.deliveryAddress || customer.address || {};
@@ -134,7 +130,6 @@ export async function POST(req: NextRequest) {
     const totalAmount = orderData.totalPrice ?? orderData.total?.orderAmount ?? 
       orderData.orderAmount ?? 0;
 
-    // Payments
     const payments = orderData.payments?.methods || orderData.payments || [];
     const pmLabel = payments[0]?.method || payments[0]?.type || "iFood";
     const payMethod = pmLabel.toUpperCase().includes("PIX") ? "Pix (iFood Pago Online)"
@@ -143,34 +138,39 @@ export async function POST(req: NextRequest) {
       : pmLabel.toUpperCase().includes("CASH") || pmLabel.toUpperCase().includes("DINHEIRO") ? "Dinheiro"
       : `${pmLabel} (iFood Pago Online)`;
 
-    // Discounts
     const benefits = orderData.benefits || [];
-    const discountRestaurant = benefits
+    const discountMerchant = benefits
       .filter((b: any) => b.sponsorshipValues?.some?.((s: any) => s.name === "MERCHANT"))
       .reduce((s: number, b: any) => s + (b.value || 0), 0);
     const discountIfood = benefits
       .filter((b: any) => b.sponsorshipValues?.some?.((s: any) => s.name === "IFOOD"))
       .reduce((s: number, b: any) => s + (b.value || 0), 0);
 
-    // Delivery logistics
     const logistics = orderData.logistics || {};
-    const deliveryBy = logistics.deliveryBy || (delivery.mode === "DELIVERY" ? "MERCHANT" : "MERCHANT");
+    const deliveryBy = logistics.deliveryBy || "MERCHANT";
 
-    const newOrder = await prisma.customerOrder.create({
+    const formattedAddress = [
+      address.streetName,
+      address.streetNumber,
+      address.neighborhood || address.district,
+      address.city,
+    ].filter(Boolean).join(", ") || address.formattedAddress || "";
+
+    const newOrder = await (prisma.customerOrder as any).create({
       data: {
         franchiseeId,
         customerName: customer.name || "Cliente iFood",
         customerPhone: customer.phone?.number || customer.phone || "",
-        status: "confirmed",
+        customerAddress: formattedAddress,
+        status: "ACEITO",
         paymentMethod: payMethod,
         totalAmount,
         deliveryFee: typeof deliveryFee === "number" ? deliveryFee : 0,
-        deliveryNeighborhood: address.neighborhood || address.district || "",
-        observations: orderData.extraInfo || "",
-        origin: "IFOOD",
+        notes: orderData.extraInfo || "",
+        source: "IFOOD",
         ifoodOrderId: actualOrderId,
         ifoodReference: orderData.displayId || reference || "",
-        discountRestaurant,
+        discountMerchant,
         discountIfood,
         deliveryBy,
         items: { create: items },
