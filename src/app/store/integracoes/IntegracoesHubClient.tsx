@@ -851,8 +851,6 @@ export default function IntegracoesHubClient({
                   </button>
                 </div>
               </div>
-            )}
-
             {/* 🟡 MODAL: 99FOOD */}
             {openModal === "99food" && (
               <div>
@@ -862,7 +860,7 @@ export default function IntegracoesHubClient({
                   </div>
                   <div>
                     <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>99Food Delivery</h2>
-                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração Open Delivery / Webhook 99Food</span>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Plataforma Aberta (API Oficial 99Food)</span>
                   </div>
                 </div>
 
@@ -883,7 +881,7 @@ export default function IntegracoesHubClient({
                 )}
 
                 <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
-                  Insira o <strong>Merchant ID</strong> e credenciais da sua loja cadastrada no Portal 99Food / Open Delivery para capturar e despachar pedidos automaticamente.
+                  Insira o <strong>Store ID</strong> e credenciais obtidas no Portal do Desenvolvedor 99Food para capturar e gerenciar pedidos automaticamente no FireHub.
                 </p>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
