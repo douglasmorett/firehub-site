@@ -296,7 +296,7 @@ export async function GET(req: NextRequest) {
 
           const eventMerchantId = merchantId || orderData.merchant?.id;
           let eventFranchisee = eventMerchantId
-            ? await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId } as any })
+            ? await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId, role: "FRANCHISEE" } as any })
             : null;
           if (!eventFranchisee) {
             eventFranchisee = await prisma.user.findFirst({
