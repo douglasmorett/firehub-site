@@ -105,8 +105,8 @@ export async function POST(req: NextRequest) {
   const { authorizationCode } = await req.json();
   if (!authorizationCode) return NextResponse.json({ error: "authorizationCode obrigatório" }, { status: 400 });
 
-  const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || process.env.IFOOD_CLIENT_ID;
-  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED || process.env.IFOOD_CLIENT_SECRET;
+  const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || "cabc4064-8d01-4bb0-bb5b-ed93963f9a7a";
+  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED || "2k28s9uil03gobzo6p3gkojim4ffsw9ttu3031veoxm1irbiz53vbzrd50n8wqnywrbvfsurzalevhv4ank4jrrm9wr4xhfcahv";
 
   if (!clientId || !clientSecret) {
     return NextResponse.json({ error: "Credenciais iFood não configuradas" }, { status: 500 });

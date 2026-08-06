@@ -21,7 +21,7 @@ export async function POST() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const clientId = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || process.env.IFOOD_CLIENT_ID;
+  const clientId = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || "cabc4064-8d01-4bb0-bb5b-ed93963f9a7a";
 
   if (!clientId) {
     return NextResponse.json({ error: "IFOOD_CLIENT_ID_DISTRIBUTED não configurado" }, { status: 500 });
