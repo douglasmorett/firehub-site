@@ -57,6 +57,8 @@ export default function IntegracoesHubClient({
   const [userCodeData, setUserCodeData] = useState<{ userCode: string; verificationUrl?: string } | null>(null);
   const [loadingUserCode, setLoadingUserCode] = useState(false);
   const [showAddIfoodForm, setShowAddIfoodForm] = useState(false);
+  const [authCodeInput, setAuthCodeInput] = useState("");
+  const [connectingAuthCode, setConnectingAuthCode] = useState(false);
 
   // Toast alert
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
@@ -236,6 +238,34 @@ export default function IntegracoesHubClient({
       showToast("Erro ao conectar com o iFood", "#EF4444");
     } finally {
       setLoadingUserCode(false);
+    }
+  };
+
+  const handleLinkAuthorizationCode = async () => {
+    if (!authCodeInput.trim()) {
+      showToast("⚠️ Digite o código de autorização gerado no iFood", "#EF4444");
+      return;
+    }
+    setConnectingAuthCode(true);
+    try {
+      const res = await fetch("/api/ifood/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authorizationCode: authCodeInput.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast("🎉 Loja iFood vinculada com sucesso!", "#10B981");
+        setIfMerchant(data.merchantId || "");
+        setOpenModal(null);
+        window.location.reload();
+      } else {
+        showToast(data.error || "Código de autorização inválido ou expirado", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao conectar com o iFood", "#EF4444");
+    } finally {
+      setConnectingAuthCode(false);
     }
   };
 
@@ -895,7 +925,7 @@ export default function IntegracoesHubClient({
                       Copie o código acima e digite no Portal do Parceiro iFood:
                     </div>
                     <a
-                      href="https://portal.ifood.com.br/apps/code"
+                      href={userCodeData.verificationUrl || `https://portal.ifood.com.br/apps/code?c=${userCodeData.userCode}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -908,6 +938,49 @@ export default function IntegracoesHubClient({
                     </a>
                   </div>
                 )}
+
+                {/* Campo para colar o Código de Autorização retornado pelo iFood */}
+                <div style={{ padding: "16px", borderRadius: 14, background: "#F0FDF4", border: "1.5px solid #86EFAC", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#166534", marginBottom: 4 }}>
+                    🔑 Cole o Código de Autorização do iFood (ex: {userCodeData?.userCode || "TMFG-KNLN"}):
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#15803D", marginBottom: 10 }}>
+                    Cole abaixo o código exibido na janela <strong>"Aplicativo Autorizado"</strong> do iFood para concluir a vinculação.
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="Ex: TMFG-KNLN"
+                      value={authCodeInput}
+                      onChange={e => setAuthCodeInput(e.target.value.toUpperCase())}
+                      style={{
+                        flex: 1, padding: "10px 14px", borderRadius: 10,
+                        border: "1.5px solid #86EFAC", fontSize: "0.95rem",
+                        fontWeight: 800, fontFamily: "monospace", letterSpacing: "1px",
+                        outline: "none", textTransform: "uppercase"
+                      }}
+                    />
+                    <button
+                      onClick={handleLinkAuthorizationCode}
+                      disabled={connectingAuthCode}
+                      style={{
+                        padding: "10px 18px", borderRadius: 10, border: "none",
+                        background: "linear-gradient(135deg, #16A34A, #15803D)",
+                        color: "#fff", fontWeight: 800, fontSize: "0.85rem",
+                        cursor: "pointer", fontFamily: "inherit",
+                        display: "flex", alignItems: "center", gap: 6,
+                        opacity: connectingAuthCode ? 0.7 : 1,
+                        whiteSpace: "nowrap"
+                      }}
+                    >
+                      {connectingAuthCode ? (
+                        <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Vinculando...</>
+                      ) : (
+                        <><CheckCircle2 size={16} /> Concluir Vinculação</>
+                      )}
+                    </button>
+                  </div>
+                </div>
 
                 {/* Info de cobrança */}
                 <div style={{ padding: "12px 14px", borderRadius: 12, background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.5, marginBottom: 16 }}>
