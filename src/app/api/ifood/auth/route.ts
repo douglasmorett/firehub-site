@@ -189,14 +189,54 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Salvar token e merchantId no banco
-  if (session.user?.email) {
+  // Salvar token e merchantId no banco (tanto no User quanto na tabela IfoodIntegration)
+  if (session.user?.email && merchantId) {
+    const userId = user?.id;
+
+    if (userId) {
+      // Se já existia um merchantId anterior diferente na conta, preservar na tabela de integrações
+      if (user?.ifoodMerchantId && user.ifoodMerchantId !== merchantId) {
+        try {
+          await prisma.ifoodIntegration.upsert({
+            where: { userId_merchantId: { userId, merchantId: user.ifoodMerchantId } },
+            create: {
+              userId,
+              label: "Loja Principal",
+              merchantId: user.ifoodMerchantId,
+              connected: true,
+              active: true,
+            },
+            update: { connected: true, active: true },
+          });
+        } catch (e: any) {
+          console.warn("[iFood Auth] Aviso ao salvar integração principal anterior:", e?.message);
+        }
+      }
+
+      // Adicionar/atualizar a nova loja na tabela de integrações
+      try {
+        await prisma.ifoodIntegration.upsert({
+          where: { userId_merchantId: { userId, merchantId } },
+          create: {
+            userId,
+            label: `Loja iFood (${merchantId.slice(0, 6)})`,
+            merchantId,
+            connected: true,
+            active: true,
+          },
+          update: { connected: true, active: true },
+        });
+      } catch (e: any) {
+        console.warn("[iFood Auth] Aviso ao salvar nova integração:", e?.message);
+      }
+    }
+
     await prisma.user.update({
       where: { email: session.user.email },
       data: {
         ifoodConnected: true,
-        ifoodMerchantId: merchantId || user?.ifoodMerchantId,
-        ifoodAccessToken: data.accessToken,
+        ifoodMerchantId: merchantId,
+        ifoodAccessToken: data.accessToken || user?.ifoodAccessToken,
         ifoodRefreshToken: data.refreshToken || null,
         ifoodTokenExpiresAt: data.expiresIn ? new Date(Date.now() + data.expiresIn * 1000) : null,
       },

@@ -9,6 +9,7 @@ export default function IntegracoesHubClient({
   userEmail,
   facebookPixelId: initialFacebookPixelId,
   pagarmeRecipientId,
+  mpConnected,
 }: {
   ifoodMerchantId?: string;
   ifoodClientId?: string;
@@ -16,6 +17,7 @@ export default function IntegracoesHubClient({
   userEmail: string;
   facebookPixelId?: string;
   pagarmeRecipientId?: string;
+  mpConnected?: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
   const [openModal, setOpenModal] = useState<"pixel" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | null>(null);
@@ -376,12 +378,12 @@ export default function IntegracoesHubClient({
     {
       id: "pagarme" as const,
       category: "payments",
-      title: "Pagar.me / Cartão & PIX",
-      subtitle: "Pagamentos Online no Site",
-      icon: "💳",
-      gradient: "linear-gradient(135deg, #6366F1, #4F46E5)",
-      badge: pagarmeRecipientId ? { text: "🟢 Recebimento Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "🟢 PIX / Cartão Ativos", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" },
-      description: "Processamento seguro de PIX instantâneo e Cartão de Crédito com repasse para sua loja.",
+      title: "Mercado Pago / Mercado Livre",
+      subtitle: "PIX Instantâneo & Cartão Online",
+      icon: "💙",
+      gradient: "linear-gradient(135deg, #009EE3, #0072B1)",
+      badge: mpConnected || pagarmeRecipientId ? { text: "🟢 Mercado Pago Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "🟢 PIX / Cartão Ativos", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" },
+      description: "Processamento seguro de PIX instantâneo e Cartão de Crédito via Mercado Pago / Mercado Livre com repasse para sua conta.",
     },
     {
       id: "99food" as const,
@@ -945,28 +947,28 @@ export default function IntegracoesHubClient({
               </div>
             )}
 
-            {/* 💳 MODAL: PAGAR.ME */}
+            {/* 💳 MODAL: MERCADO PAGO */}
             {openModal === "pagarme" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #6366F1, #4F46E5)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
-                    💳
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #009EE3, #0072B1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    💙
                   </div>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Pagar.me / Cartão & PIX Online</h2>
-                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Processamento seguro de pagamento online</span>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Mercado Pago / Mercado Livre</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Processamento de Pagamento Online no Cardápio</span>
                   </div>
                 </div>
 
                 <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
-                  <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status do Recebimento:</div>
+                  <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status da Integração:</div>
                   <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>
-                    🟢 Recebimento PIX e Cartão de Crédito Ativos no Cardápio
+                    🟢 Recebimento PIX Instantâneo e Cartão de Crédito Ativos no Cardápio
                   </div>
                 </div>
 
                 <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "24px" }}>
-                  Os pagamentos efetuados via PIX instantâneo e Cartão de Crédito no cardápio online do seu restaurante são processados de forma automática com repasse direto para a sua conta.
+                  Os pagamentos efetuados pelos seus clientes via PIX instantâneo e Cartão de Crédito no cardápio online do FireHub são processados com total segurança através do <strong>Mercado Pago / Mercado Livre</strong> com repasse direto para a sua conta.
                 </p>
 
                 <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
@@ -976,6 +978,19 @@ export default function IntegracoesHubClient({
                   >
                     Fechar
                   </button>
+                  <a
+                    href="/api/mp-connect"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      padding: "10px 18px", borderRadius: "10px", border: "none",
+                      background: "linear-gradient(135deg, #009EE3, #0072B1)",
+                      color: "#fff", fontWeight: 800, fontSize: "0.85rem",
+                      textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px"
+                    }}
+                  >
+                    <ExternalLink size={14} /> Conectar Mercado Pago
+                  </a>
                 </div>
               </div>
             )}

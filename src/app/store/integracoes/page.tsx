@@ -21,6 +21,8 @@ export default async function IntegracoesPage() {
       facebookPixelId: true,
       metaPixelId: true,
       pagarmeRecipientId: true,
+      mpAccessToken: true,
+      mpSellerId: true,
     },
   });
 
@@ -32,6 +34,7 @@ export default async function IntegracoesPage() {
       ifoodWidgetId={user?.ifoodWidgetId || undefined}
       facebookPixelId={user?.facebookPixelId || user?.metaPixelId || ""}
       pagarmeRecipientId={user?.pagarmeRecipientId || undefined}
+      mpConnected={!!(user?.mpAccessToken || user?.mpSellerId)}
     />
   );
 }
