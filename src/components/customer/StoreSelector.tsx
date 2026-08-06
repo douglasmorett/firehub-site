@@ -63,20 +63,7 @@ export default function StoreSelector() {
   // Não renderizar se carregando ou sem lojas
   if (loading || stores.length === 0) return null;
 
-  // Se só 1 loja, mostrar apenas o nome sem dropdown
-  if (stores.length === 1) {
-    return (
-      <div style={{
-        display: "inline-flex", alignItems: "center", gap: 6,
-        padding: "5px 12px", borderRadius: 10,
-        background: "rgba(255,255,255,0.12)", color: "#fff",
-        fontSize: "0.78rem", fontWeight: 700,
-      }}>
-        <StoreIcon size={13} />
-        {stores[0].storeName || "Minha Loja"}
-      </div>
-    );
-  }
+  // Mesmo com 1 loja, mostra dropdown para poder cadastrar nova
 
   const selectorUI = (
     <div ref={ref} style={{ position: "relative" }}>
