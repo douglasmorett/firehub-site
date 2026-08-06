@@ -776,8 +776,8 @@ export default function IntegracoesHubClient({
                       </div>
                     )}
 
-                    {/* Integrações do novo modelo */}
-                    {ifoodIntegrations.map((integ, idx) => (
+                    {/* Integrações adicionais (do modelo multi-loja IfoodIntegration) */}
+                    {ifoodIntegrations.filter(i => i.merchantId !== ifMerchant).map((integ, idx) => (
                       <div key={integ.id} style={{
                         padding: "14px 16px", borderRadius: 14,
                         border: integ.active ? "1.5px solid #BBF7D0" : "1.5px solid #E2E8F0",
@@ -788,15 +788,14 @@ export default function IntegracoesHubClient({
                           {integ.active ? <CheckCircle2 size={18} color="#16A34A" /> : <X size={18} color="#94A3B8" />}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{integ.label}</div>
+                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{integ.label || `Loja iFood (${integ.merchantId.slice(0, 6)})`}</div>
                           <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>{integ.merchantId}</div>
                         </div>
                         <span style={{
                           fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
-                          background: idx === 0 && !ifMerchant ? "#DCFCE7" : "#FEF3C7",
-                          color: idx === 0 && !ifMerchant ? "#15803D" : "#92400E",
+                          background: "#FEF3C7", color: "#92400E",
                         }}>
-                          {idx === 0 && !ifMerchant ? "🟢 Inclusa" : "💰 +R$50/mês"}
+                          💰 +R$50/mês
                         </span>
                         <button
                           onClick={() => handleRemoveIfoodIntegration(integ.id)}
