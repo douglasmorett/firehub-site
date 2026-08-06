@@ -115,14 +115,13 @@ export async function trackSaleForBilling(franchiseeId: string) {
   // +R$50 por integração iFood adicional no grupo
   let ifoodExtraCharge = 0;
   if (!isExempt && user) {
-    const masterId = (user as any).accountGroupId || franchiseeId;
-    const ifoodCount = await prisma.user.count({
-      where: {
-        OR: [{ id: masterId }, { accountGroupId: masterId }],
-        ifoodConnected: true,
-      },
+    // Contar integrações iFood na tabela IfoodIntegration + legado User.ifoodConnected
+    const ifoodIntegCount = await prisma.ifoodIntegration.count({
+      where: { userId: franchiseeId, active: true },
     });
-    ifoodExtraCharge = Math.max(0, ifoodCount - 1) * 50;
+    const legacyIfood = (user as any).ifoodConnected ? 1 : 0;
+    const totalIfood = Math.max(ifoodIntegCount, legacyIfood);
+    ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
   }
 
   const amountDue = baseDue + ifoodExtraCharge;
@@ -175,17 +174,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const totalSales = agg._sum.totalAmount ?? 0;
   const baseDue = isSpecialStore ? 0 : calcMensalidade(totalSales).mensalidade;
 
-  // +R$50 por integração iFood adicional no grupo
   let ifoodExtraCharge = 0;
   if (!isSpecialStore) {
-    const masterId = cycle.franchisee?.accountGroupId || franchiseeId;
-    const ifoodCount = await prisma.user.count({
-      where: {
-        OR: [{ id: masterId }, { accountGroupId: masterId }],
-        ifoodConnected: true,
-      },
+    const ifoodIntegCount = await prisma.ifoodIntegration.count({
+      where: { userId: franchiseeId, active: true },
     });
-    ifoodExtraCharge = Math.max(0, ifoodCount - 1) * 50;
+    const legacyIfood = cycle.franchisee?.ifoodConnected ? 1 : 0;
+    const totalIfood = Math.max(ifoodIntegCount, legacyIfood);
+    ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
   }
 
   const amountDue = baseDue + ifoodExtraCharge;

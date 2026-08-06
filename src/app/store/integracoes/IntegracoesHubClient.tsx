@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw, X, ArrowRight, Activity, CreditCard, Radio } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw, X, ArrowRight, Activity, CreditCard, Radio, Plus, Trash2, Loader2 } from "lucide-react";
 
 export default function IntegracoesHubClient({
   ifoodMerchantId,
@@ -36,10 +36,17 @@ export default function IntegracoesHubClient({
   const [jjLoading, setJjLoading] = useState(true);
   const [jjSaving, setJjSaving] = useState(false);
 
-  // iFood state
+  // iFood multi-integration state
   const [ifMerchant, setIfMerchant] = useState(ifoodMerchantId || "");
   const [ifWidget, setIfWidget] = useState(ifoodWidgetId || "");
   const [ifSaving, setIfSaving] = useState(false);
+  const [ifoodIntegrations, setIfoodIntegrations] = useState<{id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[]>([]);
+  const [ifoodLoading, setIfoodLoading] = useState(true);
+  const [newIfLabel, setNewIfLabel] = useState("");
+  const [newIfMerchantId, setNewIfMerchantId] = useState("");
+  const [newIfWidgetId, setNewIfWidgetId] = useState("");
+  const [ifAdding, setIfAdding] = useState(false);
+  const [showAddIfoodForm, setShowAddIfoodForm] = useState(false);
 
   // Toast alert
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
@@ -125,6 +132,53 @@ export default function IntegracoesHubClient({
     }
   };
 
+  // Carregar integrações iFood
+  useEffect(() => {
+    fetch("/api/ifood/integration/list")
+      .then(r => r.json())
+      .then(d => { if (d.integrations) setIfoodIntegrations(d.integrations); })
+      .catch(() => {})
+      .finally(() => setIfoodLoading(false));
+  }, []);
+
+  const handleAddIfoodIntegration = async () => {
+    if (!newIfLabel.trim() || !newIfMerchantId.trim()) {
+      showToast("⚠️ Nome e Merchant ID são obrigatórios", "#EF4444");
+      return;
+    }
+    setIfAdding(true);
+    try {
+      const res = await fetch("/api/ifood/integration/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: newIfLabel, merchantId: newIfMerchantId, widgetId: newIfWidgetId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(data.billingNotice || "✅ Integração iFood adicionada!", "#10B981");
+        setIfoodIntegrations(prev => [...prev, data.integration]);
+        setNewIfLabel(""); setNewIfMerchantId(""); setNewIfWidgetId("");
+        setShowAddIfoodForm(false);
+      } else {
+        showToast(`⚠️ ${data.error || "Erro ao adicionar"}`, "#EF4444");
+      }
+    } catch { showToast("⚠️ Erro de conexão", "#EF4444"); }
+    finally { setIfAdding(false); }
+  };
+
+  const handleRemoveIfoodIntegration = async (id: string) => {
+    if (!confirm("Tem certeza que deseja remover esta integração iFood?")) return;
+    try {
+      const res = await fetch(`/api/ifood/integration/delete?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setIfoodIntegrations(prev => prev.filter(i => i.id !== id));
+        showToast("✅ Integração removida", "#10B981");
+      } else {
+        showToast("⚠️ Erro ao remover", "#EF4444");
+      }
+    } catch { showToast("⚠️ Erro de conexão", "#EF4444"); }
+  };
+
   const handleSavePixel = async () => {
     setPixelSaving(true);
     try {
@@ -188,8 +242,8 @@ export default function IntegracoesHubClient({
       subtitle: "Loja Oficial iFood",
       icon: "🔴",
       gradient: "linear-gradient(135deg, #EA580C, #C2410C)",
-      badge: ifMerchant ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
-      description: "Receba pedidos do iFood automaticamente e despache entregas pelo nosso sistema.",
+      badge: (ifoodIntegrations.length > 0 || ifMerchant) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Gerencie suas integrações iFood. Conecte múltiplas lojas e acompanhe o status.",
     },
     {
       id: "pagarme" as const,
@@ -557,58 +611,157 @@ export default function IntegracoesHubClient({
                     🔴
                   </div>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>iFood Merchant API</h2>
-                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração de pedidos e loja oficial iFood</span>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Integrações iFood</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Gerencie suas lojas iFood conectadas</span>
                   </div>
                 </div>
 
-                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
-                  Conecte a sua loja do iFood via Código de Autorização para aceitar pedidos, despachar entregas e sincronizar status automaticamente.
-                </p>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
-                  <div>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Store size={14} color="#EA580C" /> Merchant ID (iFood)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Ex: 6a5fb96d-68bd-46af-ada4-456a9a160787"
-                      value={ifMerchant}
-                      onChange={e => setIfMerchant(e.target.value)}
-                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                    />
+                {/* Lista de integrações existentes */}
+                {ifoodLoading ? (
+                  <div style={{ padding: "2rem", textAlign: "center", color: "#64748B" }}>
+                    <Loader2 size={24} style={{ animation: "spin 1s linear infinite" }} /> Carregando...
                   </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                    {ifoodIntegrations.length === 0 && !ifMerchant && (
+                      <div style={{ padding: "1.5rem", textAlign: "center", background: "#F8FAFC", borderRadius: 12, color: "#64748B", fontSize: "0.85rem" }}>
+                        Nenhuma integração iFood cadastrada ainda.
+                      </div>
+                    )}
 
-                  <div>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      💬 Widget ID (Chat iFood)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Cole o ID do widget do Portal iFood..."
-                      value={ifWidget}
-                      onChange={e => setIfWidget(e.target.value)}
-                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                    />
+                    {/* Integração legada (do campo User.ifoodMerchantId) */}
+                    {ifMerchant && (
+                      <div style={{
+                        padding: "14px 16px", borderRadius: 14, border: "1.5px solid #BBF7D0",
+                        background: "#F0FDF4", display: "flex", alignItems: "center", gap: 12,
+                      }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <CheckCircle2 size={18} color="#16A34A" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>Integração Principal</div>
+                          <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>{ifMerchant}</div>
+                        </div>
+                        <span style={{ fontSize: "0.7rem", background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Inclusa no plano</span>
+                      </div>
+                    )}
+
+                    {/* Integrações do novo modelo */}
+                    {ifoodIntegrations.map((integ, idx) => (
+                      <div key={integ.id} style={{
+                        padding: "14px 16px", borderRadius: 14,
+                        border: integ.active ? "1.5px solid #BBF7D0" : "1.5px solid #E2E8F0",
+                        background: integ.active ? "#F0FDF4" : "#F8FAFC",
+                        display: "flex", alignItems: "center", gap: 12,
+                      }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: integ.active ? "#DCFCE7" : "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {integ.active ? <CheckCircle2 size={18} color="#16A34A" /> : <X size={18} color="#94A3B8" />}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{integ.label}</div>
+                          <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>{integ.merchantId}</div>
+                        </div>
+                        <span style={{
+                          fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
+                          background: idx === 0 && !ifMerchant ? "#DCFCE7" : "#FEF3C7",
+                          color: idx === 0 && !ifMerchant ? "#15803D" : "#92400E",
+                        }}>
+                          {idx === 0 && !ifMerchant ? "🟢 Inclusa" : "💰 +R$50/mês"}
+                        </span>
+                        <button
+                          onClick={() => handleRemoveIfoodIntegration(integ.id)}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "#EF4444" }}
+                          title="Remover integração"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
+                )}
+
+                {/* Formulário para adicionar nova integração */}
+                {showAddIfoodForm ? (
+                  <div style={{ padding: "16px", borderRadius: 14, border: "1.5px dashed #CBD5E1", background: "#F8FAFC", marginBottom: "16px" }}>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#334155", marginBottom: 12 }}>Nova Integração iFood</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: 3, display: "block" }}>Nome da Loja iFood *</label>
+                        <input
+                          type="text" placeholder="Ex: Hakim Praia, Loja Shopping..."
+                          value={newIfLabel} onChange={e => setNewIfLabel(e.target.value)}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit", outline: "none" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: 3, display: "block" }}>Merchant ID (iFood) *</label>
+                        <input
+                          type="text" placeholder="Ex: 6a5fb96d-68bd-46af-ada4-456a9a160787"
+                          value={newIfMerchantId} onChange={e => setNewIfMerchantId(e.target.value)}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: 3, display: "block" }}>Widget ID (Chat) — opcional</label>
+                        <input
+                          type="text" placeholder="Cole o ID do widget..."
+                          value={newIfWidgetId} onChange={e => setNewIfWidgetId(e.target.value)}
+                          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Aviso de cobrança */}
+                    {(ifoodIntegrations.length > 0 || ifMerchant) && (
+                      <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "#FFF7ED", border: "1px solid #FDBA74", fontSize: "0.78rem", color: "#92400E" }}>
+                        💰 <strong>+R$50,00/mês</strong> — Cada integração iFood adicional é cobrada R$50,00 por mês na sua fatura.
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                      <button
+                        onClick={() => setShowAddIfoodForm(false)}
+                        style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}
+                      >Cancelar</button>
+                      <button
+                        onClick={handleAddIfoodIntegration} disabled={ifAdding}
+                        style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", opacity: ifAdding ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                      >
+                        {ifAdding ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Adicionando...</> : <><Plus size={14} /> Adicionar</>}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowAddIfoodForm(true)}
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: 12,
+                      border: "2px dashed #CBD5E1", background: "#F8FAFC",
+                      color: "#475569", fontWeight: 700, fontSize: "0.85rem",
+                      cursor: "pointer", fontFamily: "inherit",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <Plus size={16} color="#16A34A" /> Adicionar Nova Integração iFood
+                  </button>
+                )}
+
+                {/* Info de cobrança */}
+                <div style={{ padding: "12px 14px", borderRadius: 12, background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.5, marginBottom: 16 }}>
+                  ℹ️ A <strong>1ª integração iFood é gratuita</strong> e já está inclusa no seu plano FireHub.
+                  Cada integração adicional custa <strong>+R$50,00/mês</strong> na sua fatura mensal.
                 </div>
 
                 <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                   <button
-                    onClick={() => setOpenModal(null)}
-                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                    onClick={() => { setOpenModal(null); setShowAddIfoodForm(false); }}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit" }}
                   >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleSaveIfood}
-                    disabled={ifSaving}
-                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(234,88,12,0.3)", opacity: ifSaving ? 0.7 : 1 }}
-                  >
-                    <Save size={16} /> {ifSaving ? "Salvando..." : "Salvar Configurações iFood"}
+                    Fechar
                   </button>
                 </div>
+                <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
               </div>
             )}
 

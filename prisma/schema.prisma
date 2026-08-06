@@ -103,8 +103,33 @@ model User {
   linkedStores      User[]           @relation("AccountGroup")
   isPrimaryStore    Boolean          @default(true)  // true = loja principal da conta
 
+  // === MULTI IFOOD ===
+  ifoodIntegrations IfoodIntegration[]
+
   @@index([ifoodMerchantId])
   @@index([accountGroupId])
+}
+
+model IfoodIntegration {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label           String    // Nome amigável: "Hakim Centro iFood"
+  merchantId      String    // UUID do merchant no iFood
+  accessToken     String?   @db.Text
+  refreshToken    String?   @db.Text
+  tokenExpiresAt  DateTime?
+  clientId        String?   // Client ID (app distribuído)
+  clientSecret    String?   // Client Secret (app distribuído)
+  authVerifier    String?
+  widgetId        String?
+  connected       Boolean   @default(false)
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, merchantId])
+  @@index([merchantId])
 }
 
 
