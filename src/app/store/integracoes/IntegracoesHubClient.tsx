@@ -224,7 +224,7 @@ export default function IntegracoesHubClient({
       const res = await fetch("/api/ifood/auth/code", { method: "POST" });
       const data = await res.json();
       if (res.ok && data.userCode) {
-        const targetUrl = data.verificationUrl || `https://portal.ifood.com.br/apps/code?code=${data.userCode}`;
+        const targetUrl = data.verificationUrl || `https://portal.ifood.com.br/apps/code?c=${data.userCode}`;
         setUserCodeData({ userCode: data.userCode, verificationUrl: targetUrl });
         try { navigator.clipboard.writeText(data.userCode); } catch {}
         showToast("📋 Código copiado! Redirecionando para o iFood...", "#10B981");

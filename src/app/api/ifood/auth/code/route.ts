@@ -54,16 +54,22 @@ export async function POST() {
     }
 
     if (data.authorizationCodeVerifier && session.user?.email) {
-      await prisma.user.update({
-        where: { email: session.user.email },
-        data: { ifoodAuthVerifier: data.authorizationCodeVerifier },
-      });
+      try {
+        await prisma.user.update({
+          where: { email: session.user.email },
+          data: { ifoodAuthVerifier: data.authorizationCodeVerifier },
+        });
+      } catch (e: any) {
+        console.warn("[iFood userCode] aviso ao salvar verifier:", e?.message);
+      }
     }
+
+    const verificationUrl = data.verificationUrlComplete || data.verificationUrl || `https://portal.ifood.com.br/apps/code?c=${data.userCode}`;
 
     return NextResponse.json({
       success:  true,
       userCode: data.userCode,
-      verificationUrl: data.verificationUrlComplete || data.verificationUrl || `https://portal.ifood.com.br/apps/code?code=${data.userCode}`,
+      verificationUrl,
       verifier: data.authorizationCodeVerifier,
       expiresIn: data.expiresIn,
     });
