@@ -26,6 +26,7 @@ export default function ExtensaoIfoodPage() {
   const [selectedMotoboys, setSelectedMotoboys] = useState<number>(3);
   const [userCodeData, setUserCodeData] = useState<{ userCode: string; verifier: string } | null>(null);
   const [loadingCode, setLoadingCode] = useState(false);
+  const [copiedExtensionsUrl, setCopiedExtensionsUrl] = useState(false);
 
   const handleConnectIfoodDirect = async () => {
     setLoadingCode(true);

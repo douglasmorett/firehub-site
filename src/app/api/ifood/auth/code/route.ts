@@ -53,9 +53,9 @@ export async function POST() {
       );
     }
 
-    if (data.authorizationCodeVerifier) {
+    if (data.authorizationCodeVerifier && session.user?.email) {
       await prisma.user.update({
-        where: { id: session.user.id },
+        where: { email: session.user.email },
         data: { ifoodAuthVerifier: data.authorizationCodeVerifier },
       });
     }
