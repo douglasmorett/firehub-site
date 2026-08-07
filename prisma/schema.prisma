@@ -111,6 +111,11 @@ model User {
   // === MULTI IFOOD ===
   ifoodIntegrations IfoodIntegration[]
 
+  // === CONTA FUNCIONÁRIO (FIADO) ===
+  employeeAccountEnabled Boolean @default(false)
+  storeEmployees        StoreEmployee[]
+  employeePayments       EmployeePayment[]
+
   @@index([ifoodMerchantId])
   @@index([accountGroupId])
 }
@@ -383,6 +388,11 @@ model CustomerOrder {
   kdsFinishingAt    DateTime?           // Quando entrou em finalização
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
+  // === CONTA FUNCIONÁRIO (FIADO) ===
+  employeeId        String?
+  employeeName      String?
+  employee          StoreEmployee?      @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
   franchisee       User                @relation(fields: [franchiseeId], references: [id])
   customer         StoreCustomer?      @relation(fields: [customerId], references: [id])
   motoboy          Motoboy?            @relation(fields: [motoboyId], references: [id])
@@ -394,6 +404,40 @@ model CustomerOrder {
   @@index([franchiseeId, createdAt])
   @@index([motoboyId])
   @@index([routeId])
+  @@index([employeeId])
+}
+
+model StoreEmployee {
+  id            String            @id @default(cuid())
+  franchiseeId  String
+  franchisee    User              @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  name          String
+  role          String?           // Cargo / Função (ex: Atendente, Cozinheiro)
+  phone         String?
+  cpf           String?
+  creditLimit   Float?            // Limite de crédito opcional
+  active        Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  orders        CustomerOrder[]
+  payments      EmployeePayment[]
+
+  @@index([franchiseeId])
+}
+
+model EmployeePayment {
+  id            String        @id @default(cuid())
+  franchiseeId  String
+  franchisee    User          @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      StoreEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  amount        Float         // Valor do abatimento (ex: R$ 300,00)
+  notes         String?       // Observação opcional
+  createdAt     DateTime      @default(now())
+
+  @@index([employeeId])
+  @@index([franchiseeId])
 }
 
 

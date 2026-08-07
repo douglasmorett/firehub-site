@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
   { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "IA" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
+  { href: "/store/funcionarios", label: "Funcionários", icon: Users },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },
 ];
 

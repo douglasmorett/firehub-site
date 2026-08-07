@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const data = await req.json();
-  const { customerName, customerPhone, customerAddress, deliveryType, paymentMethod, notes, totalAmount, deliveryFee, items } = data;
+  const { customerName, customerPhone, customerAddress, deliveryType, paymentMethod, notes, totalAmount, deliveryFee, items, employeeId, employeeName } = data;
 
   if (!items || items.length === 0) return NextResponse.json({ error: "Nenhum item informado" }, { status: 400 });
 
@@ -20,11 +20,13 @@ export async function POST(req: Request) {
   const order = await prisma.customerOrder.create({
     data: {
       franchiseeId: targetFranchiseeId,
-      customerName: customerName || "Balcão",
+      customerName: customerName || (employeeName ? `Func. ${employeeName}` : "Balcão"),
       customerPhone: customerPhone || "00000000000",
       customerAddress: customerAddress || "",
       deliveryType: deliveryType || "RETIRADA",
       paymentMethod: paymentMethod || "Dinheiro",
+      employeeId: employeeId || null,
+      employeeName: employeeName || null,
       notes: notes || "",
       totalAmount: totalAmount || 0,
       deliveryFee: deliveryFee || 0,
