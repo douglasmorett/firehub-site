@@ -267,9 +267,17 @@ model MenuProduct {
   category        String              @default("Lanches")
   active          Boolean             @default(true)
   isCombo         Boolean             @default(false)
-  isBeverage      Boolean             @default(false)  // Marcar item como Bebida para destaque com seta ---> BEBIDA na comanda
+  isBeverage      Boolean             @default(false)
   comboConfig     Json?
   fiscalBreakdown Json?               // Engenharia de Cardápio Fiscal: [{ name, price, category, ncm }]
+  // === DADOS TRIBUTÁRIOS FISCAIS DO PRODUTO ===
+  ncm             String?             // ex: 1604.20.90
+  cest            String?             // ex: 28.062.00
+  cfop            String?             @default("5102") // ex: 5102
+  origem          String?             @default("0")    // 0 = Nacional
+  csosn           String?             @default("102")  // ex: 102 (Simples Nacional)
+  pis             String?             @default("49")   // ex: 49
+  cofins          String?             @default("49")   // ex: 49
   // Canais de venda
   activePDV       Boolean             @default(true)   // Disponível no PDV (atendente)
   activeDelivery  Boolean             @default(true)   // Disponível no Delivery online
