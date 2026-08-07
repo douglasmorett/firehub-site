@@ -66,6 +66,11 @@ export async function GET(req: NextRequest) {
 
     storeName = targetUser.name || "FIREHUB";
 
+    // Verificar loja ativa selecionada (via cookie ou query storeId)
+    const cookieStore = req.cookies.get("firehub_active_store")?.value;
+    const queryStoreId = req.nextUrl.searchParams.get("storeId");
+    const activeStoreId = queryStoreId || cookieStore;
+
     // Busca todos os IDs válidos de usuários e funcionários da franquia/loja
     const allStoreUsers = await prisma.user.findMany({
       where: {
@@ -80,7 +85,7 @@ export async function GET(req: NextRequest) {
       select: { id: true }
     });
 
-    const validFranchiseeIds = Array.from(new Set([
+    let validFranchiseeIds = Array.from(new Set([
       ...allStoreUsers.map(u => u.id),
       targetUser.id,
       targetUser.ownerId,
@@ -91,6 +96,11 @@ export async function GET(req: NextRequest) {
       hakimUser?.id,
       hakimUser?.ownerId,
     ].filter(Boolean))) as string[];
+
+    // Se uma loja específica estiver selecionada, filtrar apenas os pedidos daquela loja
+    if (activeStoreId && activeStoreId !== "all") {
+      validFranchiseeIds = [activeStoreId];
+    }
 
     const mode = req.nextUrl.searchParams.get("mode") || "auto";
 
