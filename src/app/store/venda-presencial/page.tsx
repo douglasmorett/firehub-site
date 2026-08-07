@@ -201,11 +201,17 @@ export default function VendaPresencialPage() {
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", display: "grid", gridTemplateColumns: "1fr 380px", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
       <style>{`
+        #floating-contact-widget, .fcw-container, .fcw-backdrop, #contact-widget-fab,
         #hubspot-messages-iframe-container, iframe[src*="chat"], .crisp-client, div[class*="chat"], #chat-widget-container, div[class*="widget"], div[id*="chat"] {
           display: none !important;
           pointer-events: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
         }
-        button[data-btn="finalizar"], button[data-btn="finalizar"] * {
+        button[data-btn="finalizar"] {
+          position: relative !important;
+          z-index: 9999999 !important;
+          pointer-events: auto !important;
           cursor: pointer !important;
         }
         button[data-btn="finalizar"] * {
