@@ -581,12 +581,14 @@ export default function LoyaltyConfigForm({
             </div>
 
             {/* VIP Tiers Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
               {/* Bronze */}
               <div style={{ background: "#FFF7ED", border: "1.5px solid #FFEDD5", borderRadius: 12, padding: "14px" }}>
                 <strong style={{ color: "#C2410C", fontSize: "0.9rem", display: "block" }}>🥉 Nível Bronze</strong>
-                <span style={{ fontSize: "0.75rem", color: "#64748B", display: "block", marginBottom: 10 }}>Clientes Novos ou Ocasionais</span>
-                <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Base (%)</label>
+                <span style={{ fontSize: "0.75rem", color: "#64748B", display: "block", marginBottom: 10 }}>
+                  Gasto mensal até {fmt(config.silverMinSpend)}
+                </span>
+                <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Bronze (%)</label>
                 <input
                   type="number"
                   step="0.5"
@@ -599,14 +601,17 @@ export default function LoyaltyConfigForm({
               {/* Prata */}
               <div style={{ background: "#F1F5F9", border: "1.5px solid #CBD5E1", borderRadius: 12, padding: "14px" }}>
                 <strong style={{ color: "#475569", fontSize: "0.9rem", display: "block" }}>🥈 Nível Prata</strong>
+                <span style={{ fontSize: "0.75rem", color: "#64748B", display: "block", marginBottom: 6 }}>
+                  De {fmt(config.silverMinSpend)} até {fmt(config.goldMinSpend)}/mês
+                </span>
                 <div style={{ marginBottom: 8 }}>
-                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Gasto Mensal Mínimo (R$)</label>
+                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Gasto Mínimo Prata (R$)</label>
                   <input
                     type="number"
                     step="10"
                     value={config.silverMinSpend}
                     onChange={e => update("silverMinSpend", parseFloat(e.target.value) || 0)}
-                    style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, marginTop: 2 }}
+                    style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 700, marginTop: 2 }}
                   />
                 </div>
                 <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Prata (%)</label>
@@ -622,14 +627,17 @@ export default function LoyaltyConfigForm({
               {/* Ouro */}
               <div style={{ background: "#FEF3C7", border: "1.5px solid #FCD34D", borderRadius: 12, padding: "14px" }}>
                 <strong style={{ color: "#92400E", fontSize: "0.9rem", display: "block" }}>🥇 Nível Ouro / VIP</strong>
+                <span style={{ fontSize: "0.75rem", color: "#78350F", display: "block", marginBottom: 6 }}>
+                  Gasto mensal acima de {fmt(config.goldMinSpend)}
+                </span>
                 <div style={{ marginBottom: 8 }}>
-                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#78350F" }}>Gasto Mensal Mínimo (R$)</label>
+                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#78350F" }}>Gasto Mínimo VIP (R$)</label>
                   <input
                     type="number"
                     step="10"
                     value={config.goldMinSpend}
                     onChange={e => update("goldMinSpend", parseFloat(e.target.value) || 0)}
-                    style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, marginTop: 2 }}
+                    style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 700, marginTop: 2 }}
                   />
                 </div>
                 <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#78350F" }}>Cashback VIP (%)</label>
