@@ -45,6 +45,7 @@ export async function PUT(req: Request) {
     "city",              // Cidade / Estado (ex: Rio de Janeiro - RJ)
     "storeTimezone",     // Fuso Horário (ex: America/Sao_Paulo)
     "repasseConfig",     // Configurações de Repasse Automático (Brendi Flow)
+    "deliveryConfig",    // Configurações de Entrega / Frete Grátis
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
   }

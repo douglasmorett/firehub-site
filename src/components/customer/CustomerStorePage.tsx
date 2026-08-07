@@ -158,13 +158,20 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     grouped[cat].push(p);
   });
 
+  const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const isFreeShippingByMin = Boolean(
+    delivConfig.freeShippingActive &&
+    delivConfig.freeShippingMinValue &&
+    cartTotal >= Number(delivConfig.freeShippingMinValue)
+  );
+  const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingByMin) ? deliveryFee : 0;
   const discount = couponApplied
     ? (couponApplied.isFreeShipping
-        ? (deliveryType === "DELIVERY" ? deliveryFee : 0)
+        ? (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0)
         : couponApplied.discount)
     : 0;
-  const finalTotal = Math.max(0, cartTotal - discount + (deliveryType === "DELIVERY" ? deliveryFee : 0));
+  const finalTotal = Math.max(0, cartTotal - discount + (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0));
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   const addToCart = (product: MenuProduct, cs?: any) => {
@@ -372,6 +379,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           franchiseeSlug: franchisee.slug, customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? customerAddress : null,
           deliveryType, paymentMethod, notes,
+          deliveryFee: deliveryFee || 0,
           couponCode: couponApplied?.code || null,
           items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null }))
         })
@@ -572,11 +580,31 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                       ))}
                     </select>
                     {!deliveryAvailable && customerNeighborhood && <p style={{ color: "#EF4444", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>❌ Bairro fora da área de entrega</p>}
-                    {deliveryAvailable && deliveryFee > 0 && <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>🛵 Taxa de entrega: R$ {deliveryFee.toFixed(2)}</p>}
+                    {deliveryAvailable && deliveryFee > 0 && (
+                      <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>
+                        🛵 Taxa de entrega: {isFreeShippingByMin ? (
+                          <>
+                            <s style={{ color: "#94A3B8", marginRight: 4 }}>R$ {deliveryFee.toFixed(2)}</s>
+                            <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
+                          </>
+                        ) : (
+                          `R$ ${deliveryFee.toFixed(2)}`
+                        )}
+                      </p>
+                    )}
                   </div>
                 )}
                 {franchisee.deliveryZoneType === "RADIUS" && deliveryFee > 0 && (
-                  <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>🛵 Taxa de entrega: R$ {deliveryFee.toFixed(2)}</p>
+                  <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>
+                    🛵 Taxa de entrega: {isFreeShippingByMin ? (
+                      <>
+                        <s style={{ color: "#94A3B8", marginRight: 4 }}>R$ {deliveryFee.toFixed(2)}</s>
+                        <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
+                      </>
+                    ) : (
+                      `R$ ${deliveryFee.toFixed(2)}`
+                    )}
+                  </p>
                 )}
               </div>
             )}
@@ -597,7 +625,19 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                   <span>{couponApplied.isFreeShipping ? `Frete Grátis (-R$ ${discount.toFixed(2)})` : `-R$ ${discount.toFixed(2)}`}</span>
                 </div>
               )}
-              {deliveryType === "DELIVERY" && deliveryFee > 0 && <div className="checkout-summary-item" style={{ color: "#E67E22" }}><span>🛵 Taxa de Entrega</span><span>R$ {deliveryFee.toFixed(2)}</span></div>}
+              {deliveryType === "DELIVERY" && deliveryFee > 0 && (
+                <div className="checkout-summary-item" style={{ color: isFreeShippingByMin ? "#16A34A" : "#E67E22" }}>
+                  <span>🛵 Taxa de Entrega</span>
+                  {isFreeShippingByMin ? (
+                    <span>
+                      <s style={{ color: "#94A3B8", marginRight: 6 }}>R$ {deliveryFee.toFixed(2)}</s>
+                      <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
+                    </span>
+                  ) : (
+                    <span>R$ {deliveryFee.toFixed(2)}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

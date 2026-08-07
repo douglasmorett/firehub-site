@@ -2,7 +2,7 @@
 import DeliveryZoneMap from "@/components/customer/DeliveryZoneMap";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle, ShieldCheck, Truck } from "lucide-react";
 
 const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 // Padrão 18h-23h — foco em delivery de jantar, igual Brendi
@@ -140,8 +140,13 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   // Delivery zones
   const [deliveryZoneType, setDeliveryZoneType] = useState<string>(user.deliveryZoneType || "");
   const [deliveryZones, setDeliveryZones] = useState<any[]>(user.deliveryZones || []);
-  const [newNeighborhood, setNewNeighborhood] = useState("");
-  const [newNeighborhoodFee, setNewNeighborhoodFee] = useState("");
+
+  // Frete grátis por valor mínimo
+  const initialDelivConfig = (user as any).deliveryConfig || {};
+  const [freeShippingActive, setFreeShippingActive] = useState<boolean>(Boolean(initialDelivConfig.freeShippingActive));
+  const [freeShippingMinValue, setFreeShippingMinValue] = useState<string>(initialDelivConfig.freeShippingMinValue ? String(initialDelivConfig.freeShippingMinValue) : "60.00");
+  const [savingFreeShipping, setSavingFreeShipping] = useState(false);
+  const [dirtyFreeShipping, setDirtyFreeShipping] = useState(false);
 
   // Helper: salvar campos específicos
   const saveFields = async (fields: Record<string, any>) => {
@@ -828,9 +833,79 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <SectionSaveBtn dirty={dirtyPayment} saving={savingPayment} onSave={savePayment} label="Salvar Formas de Pagamento" />
       </div>}
 
-      {/* ===== DELIVERY ZONES - MAP ===== */}
-      {show("delivery") && <div style={{ marginTop: "1.5rem" }}>
-        <DeliveryZoneMap
+      {/* ===== DELIVERY ZONES - MAP & FRETE GRÁTIS ===== */}
+      {show("delivery") && (
+        <div style={{ marginTop: "1.5rem" }}>
+          {/* Card: Frete Grátis por Valor Mínimo */}
+          <div className="card mb-4" style={{ background: "#fff", border: "1.5px solid #BBF7D0", borderRadius: 16, padding: "1.25rem", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Truck size={22} color="#16A34A" />
+                <div>
+                  <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1rem", color: "#15803D" }}>🚚 Frete Grátis por Valor Mínimo</h3>
+                  <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Ofereça entrega grátis automaticamente para pedidos acima de um determinado valor</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFreeShippingActive(v => !v);
+                  setDirtyFreeShipping(true);
+                }}
+                style={{ background: "none", border: "none", cursor: "pointer" }}
+              >
+                {freeShippingActive ? <ToggleRight size={32} color="#16A34A" /> : <ToggleLeft size={32} color="#CBD5E1" />}
+              </button>
+            </div>
+
+            {freeShippingActive && (
+              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "12px", marginTop: "10px" }}>
+                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#166534", display: "block", marginBottom: "6px" }}>
+                  Valor mínimo do pedido para Frete Grátis (R$) *
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: "1rem", fontWeight: 800, color: "#15803D" }}>R$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={freeShippingMinValue}
+                    onChange={e => {
+                      setFreeShippingMinValue(e.target.value);
+                      setDirtyFreeShipping(true);
+                    }}
+                    placeholder="60.00"
+                    style={{ width: 140, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #16A34A", fontSize: "1rem", fontWeight: 800, color: "#0F172A", outline: "none" }}
+                  />
+                </div>
+                <p style={{ fontSize: "0.76rem", color: "#166534", margin: "8px 0 0", lineHeight: 1.4 }}>
+                  💡 Exemplo: Com R$ {Number(freeShippingMinValue || 0).toFixed(2).replace(".", ",")}, qualquer pedido em que o valor dos produtos atingir ou ultrapassar essa quantia terá a entrega gratuita para o cliente. A taxa de entrega original continuará visível na notinha com o aviso <strong>(Frete Grátis)</strong>.
+                </p>
+              </div>
+            )}
+
+            <SectionSaveBtn
+              dirty={dirtyFreeShipping}
+              saving={savingFreeShipping}
+              onSave={async () => {
+                setSavingFreeShipping(true);
+                try {
+                  await saveFields({
+                    deliveryConfig: {
+                      freeShippingActive,
+                      freeShippingMinValue: parseFloat(freeShippingMinValue) || 0,
+                    },
+                  });
+                  setDirtyFreeShipping(false);
+                } finally {
+                  setSavingFreeShipping(false);
+                }
+              }}
+              label="Salvar Regra de Frete Grátis"
+            />
+          </div>
+
+          <DeliveryZoneMap
           initialAddress={storeAddress}
           initialLatLng={(user.storeLatLng as any) || null}
           initialZones={(user.deliveryZones as any) || []}
@@ -858,7 +933,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             router.refresh();
           }}
         />
-      </div>}
+        </div>
+      )}
 
       {/* Salvar Tudo — só mostra quando modo "all" (sem aba específica) */}
       {tab === "all" && (

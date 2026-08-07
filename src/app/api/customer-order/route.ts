@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       where: { slug: franchiseeSlug },
       select: {
         id: true, storeName: true, storeOpen: true, storePause: true,
-        autoAcceptOrders: true, storeCoupons: true
+        autoAcceptOrders: true, storeCoupons: true, deliveryConfig: true
       }
     });
     if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       where: { id: { in: productIds }, active: true }
     });
 
-    // Calcular total
+    // Calcular total dos produtos
     let totalAmount = 0;
     const orderItems = items.map((item: any) => {
       const product = menuProducts.find(p => p.id === item.menuProductId);
@@ -60,8 +60,24 @@ export async function POST(req: Request) {
       return { menuProductId: product.id, quantity: item.quantity, price: product.price, comboSelections: item.comboSelections || null };
     });
 
-    // Taxa de entrega
-    const fee = deliveryType === "DELIVERY" ? (deliveryFee || 0) : 0;
+    // Regra de Frete Grátis por valor mínimo da loja
+    const delivConfig = (franchisee.deliveryConfig as any) || {};
+    const isFreeShippingMin = Boolean(
+      deliveryType === "DELIVERY" &&
+      delivConfig.freeShippingActive &&
+      delivConfig.freeShippingMinValue &&
+      totalAmount >= Number(delivConfig.freeShippingMinValue)
+    );
+
+    // Taxa de entrega base informada
+    const originalFee = deliveryType === "DELIVERY" ? (deliveryFee || 0) : 0;
+    let fee = originalFee;
+    let freeShippingNote = "";
+
+    if (isFreeShippingMin) {
+      fee = 0; // Isenta a taxa cobrada
+      freeShippingNote = ` [Frete Grátis (Pedido >= R$ ${Number(delivConfig.freeShippingMinValue).toFixed(2).replace('.', ',')}) — Taxa ref: R$ ${originalFee.toFixed(2).replace('.', ',')}]`;
+    }
 
     // Aplicar cupom de desconto
     let discount = 0;
@@ -76,6 +92,7 @@ export async function POST(req: Request) {
         } else {
           if (coupon.type === "free_shipping") {
             discount = fee;
+            fee = 0;
           } else if (coupon.type === "fixed") {
             discount = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 0);
           } else if (coupon.type === "percent") {
@@ -91,12 +108,18 @@ export async function POST(req: Request) {
     }
 
     const finalTotal = Math.max(0, totalAmount - discount + fee);
+    let orderNotes = notes || "";
+    if (couponCode && discount > 0) {
+      orderNotes = `[Cupom: ${couponCode.trim().toUpperCase()}] ${orderNotes}`.trim();
+    }
+    if (freeShippingNote) {
+      orderNotes = `${orderNotes} ${freeShippingNote}`.trim();
+    }
+    const finalNotes = orderNotes || null;
 
     const pmUpper = (paymentMethod || "").toUpperCase().trim();
     const isOnlinePayment = pmUpper.includes("ONLINE") || pmUpper === "PIX" || pmUpper === "PIX_ONLINE" || pmUpper === "CREDITO_ONLINE" || pmUpper === "DEBITO_ONLINE";
 
-    // Se o pagamento for ONLINE (Pix / Cartão Online), o pedido fica travado em AGUARDANDO_PAGAMENTO
-    // e NÃO entra na cozinha (kdsStage: null) até que o pagamento seja 100% verificado e aprovado!
     const initialStatus = isOnlinePayment
       ? "AGUARDANDO_PAGAMENTO"
       : franchisee.autoAcceptOrders
@@ -105,13 +128,6 @@ export async function POST(req: Request) {
 
     const initialKdsStage = isOnlinePayment ? null : "PRODUCTION";
     const initialKdsProductionAt = isOnlinePayment ? null : new Date();
-
-    // Se cupom válido foi aplicado, registra na observação para rastreio de marketing
-    let finalNotes = notes || null;
-    if (couponCode && discount > 0) {
-      const couponTag = `[Cupom: ${couponCode.trim().toUpperCase()}]`;
-      finalNotes = finalNotes ? `${couponTag} ${finalNotes}` : couponTag;
-    }
 
     // Criar pedido
     const order = await prisma.customerOrder.create({

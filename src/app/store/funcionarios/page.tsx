@@ -385,7 +385,7 @@ export default function FuncionariosPage() {
         {/* Filtro de datas */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Filter size={15} color="#64748B" />
-          {(["today", "week", "month", "all"] as const).map((mode) => (
+          {(["today", "week", "month", "all", "custom"] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setDateRange(mode)}
@@ -400,9 +400,28 @@ export default function FuncionariosPage() {
                 color: dateRange === mode ? "#fff" : "#64748B",
               }}
             >
-              {mode === "today" ? "Hoje" : mode === "week" ? "7 Dias" : mode === "month" ? "Este Mês" : "Tudo"}
+              {mode === "today" ? "Hoje" : mode === "week" ? "7 Dias" : mode === "month" ? "Este Mês" : mode === "all" ? "Tudo" : "📅 Personalizado"}
             </button>
           ))}
+
+          {dateRange === "custom" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FEF2F2", padding: "4px 8px", borderRadius: 8, border: "1px solid #FECACA" }}>
+              <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#991B1B" }}>De:</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
+              />
+              <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#991B1B" }}>Até:</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
+              />
+            </div>
+          )}
         </div>
 
         <button
