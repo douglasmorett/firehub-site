@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   FileText, ShieldCheck, Check, AlertTriangle, Search, Plus, Trash2,
   DollarSign, RefreshCw, Layers, Edit3, Settings, CheckCircle2, ChevronRight,
-  Info, Sparkles, Receipt, Filter, ArrowUpRight
+  Info, Sparkles, Receipt, Filter, ArrowUpRight, Calendar, Download, Printer, Copy, ExternalLink, Eye
 } from "lucide-react";
 
 type FiscalConfig = {
@@ -39,12 +39,26 @@ type FiscalOrder = {
   id: string;
   dailyOrderNumber?: number | string | null;
   customerName: string;
+  customerCpfCnpj?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   paymentMethod: string;
   totalAmount: number;
+  deliveryFee?: number;
   createdAt: string;
   fiscalStatus?: string | null;
-  fiscalInfo?: any;
-  items: any[];
+  fiscalInfo?: {
+    nfceNumber: string;
+    serie: string;
+    nfceKey: string;
+    protocol: string;
+    emittedAt: string;
+    ambiente: string;
+    impostosAproximados: number;
+    xmlUrl: string;
+    pdfUrl: string;
+    items: any[];
+  };
 };
 
 const PAYMENT_METHOD_OPTIONS = [
@@ -58,11 +72,12 @@ const PAYMENT_METHOD_OPTIONS = [
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
 export default function StoreFiscalPage() {
-  const [activeTab, setActiveTab] = useState<"config" | "combos" | "invoices">("combos");
+  const [activeTab, setActiveTab] = useState<"invoices" | "combos" | "config">("invoices");
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [storeName, setStoreName] = useState("");
   const [cpfCnpj, setCpfCnpj] = useState("");
+  const [copiedKey, setCopiedKey] = useState(false);
 
   const [fiscalConfig, setFiscalConfig] = useState<FiscalConfig>({
     enabled: false,
@@ -81,17 +96,27 @@ export default function StoreFiscalPage() {
   const [fiscalItemsDraft, setFiscalItemsDraft] = useState<FiscalItem[]>([]);
   const [savingComboFiscal, setSavingComboFiscal] = useState(false);
 
-  // Invoices data
+  // Invoices data & Filters
   const [orders, setOrders] = useState<FiscalOrder[]>([]);
   const [searchInvoice, setSearchInvoice] = useState("");
   const [selectedInvoiceModal, setSelectedInvoiceModal] = useState<FiscalOrder | null>(null);
+
+  // Date Filter State
+  const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all" | "custom">("month");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("ALL");
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState<string>("ALL");
 
   // Load initial data
   useEffect(() => {
     fetchFiscalData();
     fetchCombos();
-    fetchInvoices();
   }, []);
+
+  useEffect(() => {
+    fetchInvoices();
+  }, [dateRange, fromDate, toDate, filterStatus, filterPaymentMethod]);
 
   const fetchFiscalData = async () => {
     try {
@@ -125,7 +150,35 @@ export default function StoreFiscalPage() {
 
   const fetchInvoices = async () => {
     try {
-      const res = await fetch("/api/store/fiscal/invoices");
+      let url = "/api/store/fiscal/invoices?";
+      const params = new URLSearchParams();
+
+      if (dateRange === "today") {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, "0");
+        const dd = String(now.getDate()).padStart(2, "0");
+        params.append("fromDate", `${yyyy}-${mm}-${dd}`);
+        params.append("toDate", `${yyyy}-${mm}-${dd}`);
+      } else if (dateRange === "week") {
+        const now = new Date();
+        const past7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        params.append("fromDate", past7.toISOString().split("T")[0]);
+        params.append("toDate", now.toISOString().split("T")[0]);
+      } else if (dateRange === "month") {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        params.append("fromDate", firstDay.toISOString().split("T")[0]);
+        params.append("toDate", now.toISOString().split("T")[0]);
+      } else if (dateRange === "custom" && fromDate && toDate) {
+        params.append("fromDate", fromDate);
+        params.append("toDate", toDate);
+      }
+
+      if (filterStatus !== "ALL") params.append("status", filterStatus);
+      if (filterPaymentMethod !== "ALL") params.append("paymentMethod", filterPaymentMethod);
+
+      const res = await fetch(url + params.toString());
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);
@@ -169,7 +222,6 @@ export default function StoreFiscalPage() {
     if (combo.fiscalBreakdown && combo.fiscalBreakdown.length > 0) {
       setFiscalItemsDraft(combo.fiscalBreakdown);
     } else {
-      // Auto-gerar rascunho com base nos grupos ou itens do combo se existirem
       const draft: FiscalItem[] = [];
       if (combo.comboGroups && combo.comboGroups.length > 0) {
         let remainingPrice = combo.price;
@@ -190,7 +242,6 @@ export default function StoreFiscalPage() {
           });
         });
       } else {
-        // Fallback: 2 itens padronizados (Bebida ST + Lanche/Prato)
         const bevPrice = Number((combo.price * 0.35).toFixed(2));
         const foodPrice = Number((combo.price - bevPrice).toFixed(2));
         draft.push(
@@ -225,12 +276,39 @@ export default function StoreFiscalPage() {
     }
   };
 
+  // Filtered Invoices in memory for instant text search
+  const filteredOrders = useMemo(() => {
+    if (!searchInvoice.trim()) return orders;
+    const term = searchInvoice.trim().toLowerCase();
+    return orders.filter(
+      o =>
+        o.customerName.toLowerCase().includes(term) ||
+        String(o.dailyOrderNumber).includes(term) ||
+        o.id.toLowerCase().includes(term) ||
+        (o.fiscalInfo?.nfceNumber && o.fiscalInfo.nfceNumber.includes(term)) ||
+        (o.fiscalInfo?.nfceKey && o.fiscalInfo.nfceKey.includes(term))
+    );
+  }, [orders, searchInvoice]);
+
+  const periodStats = useMemo(() => {
+    const totalAmount = filteredOrders.reduce((s, o) => s + o.totalAmount, 0);
+    const totalImpostos = filteredOrders.reduce((s, o) => s + (o.fiscalInfo?.impostosAproximados || 0), 0);
+    const totalEmitted = filteredOrders.filter(o => o.fiscalStatus === "EMITTED").length;
+    return { totalAmount, totalImpostos, totalEmitted, totalCount: filteredOrders.length };
+  }, [filteredOrders]);
+
   const draftTotalSum = fiscalItemsDraft.reduce((s, i) => s + (Number(i.price) || 0), 0);
   const comboPriceDiff = editingCombo ? Number((draftTotalSum - editingCombo.price).toFixed(2)) : 0;
   const isDraftValid = Math.abs(comboPriceDiff) < 0.02;
 
   const filteredCombos = combos.filter(c => c.name.toLowerCase().includes(searchCombo.toLowerCase()));
   const configuredCombosCount = combos.filter(c => c.fiscalBreakdown && c.fiscalBreakdown.length > 0).length;
+
+  const handleCopyKey = (key: string) => {
+    navigator.clipboard.writeText(key);
+    setCopiedKey(true);
+    setTimeout(() => setCopiedKey(false), 2000);
+  };
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "inherit" }}>
@@ -254,7 +332,7 @@ export default function StoreFiscalPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <Receipt size={28} color="#38BDF8" />
             <h1 style={{ margin: 0, fontSize: "1.5rem", fontWeight: 900, letterSpacing: "-0.5px" }}>
-              Módulo Fiscal & Engenharia Tributária
+              Notas Fiscais Geradas & Engenharia Tributária
             </h1>
             <span
               style={{
@@ -270,7 +348,7 @@ export default function StoreFiscalPage() {
             </span>
           </div>
           <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
-            Gerencie a emissão de notas fiscais (NFC-e / NF-e) e configure a discriminação de valores nos combos para redução tributária legal.
+            Consulte todas as notas fiscais emitidas (NFC-e), acompanhe chaves de acesso SEFAZ e gerencie a engenharia tributária de combos.
           </p>
         </div>
 
@@ -326,44 +404,63 @@ export default function StoreFiscalPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 24 }}>
         <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Combos com Engenharia</span>
-            <Layers size={18} color="#0284C7" />
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>Notas Emitidas (Período)</span>
+            <Receipt size={18} color="#0284C7" />
           </div>
           <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A" }}>
-            {configuredCombosCount} <span style={{ fontSize: "0.9rem", color: "#64748B", fontWeight: 500 }}>/ {combos.length}</span>
+            {periodStats.totalEmitted} <span style={{ fontSize: "0.9rem", color: "#64748B", fontWeight: 500 }}>/ {periodStats.totalCount} nfs</span>
           </div>
           <div style={{ fontSize: "0.75rem", color: "#0284C7", marginTop: 4, fontWeight: 600 }}>
-            {combos.length > 0 ? `${Math.round((configuredCombosCount / combos.length) * 100)}% configurados` : "Nenhum combo cadastrado"}
+            {periodStats.totalCount > 0 ? `${Math.round((periodStats.totalEmitted / periodStats.totalCount) * 100)}% autorizadas` : "Nenhum pedido"}
           </div>
         </div>
 
         <div style={{ background: "#fff", border: "1.5px solid #BBF7D0", borderRadius: 16, padding: "16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>Formas com Emissão Auto</span>
-            <ShieldCheck size={18} color="#16A34A" />
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>Faturamento em Notas</span>
+            <DollarSign size={18} color="#16A34A" />
           </div>
           <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#15803D" }}>
-            {fiscalConfig.autoEmitPaymentMethods?.length || 0}
+            {fmt(periodStats.totalAmount)}
           </div>
           <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: 4, fontWeight: 600 }}>
-            Formas de pagamento configuradas
+            Volume fiscal do período selecionado
           </div>
         </div>
 
         <div style={{ background: "linear-gradient(135deg, #EFF6FF, #DBEAFE)", border: "1.5px solid #BFDBFE", borderRadius: 16, padding: "16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase" }}>Economia Estimada PIS/COFINS</span>
+            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#1E40AF", textTransform: "uppercase" }}>Tributos Estimados (IBPT)</span>
             <Sparkles size={18} color="#2563EB" />
           </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#1E3A8A" }}>Até 30%</div>
+          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#1E3A8A" }}>{fmt(periodStats.totalImpostos)}</div>
           <div style={{ fontSize: "0.75rem", color: "#1E40AF", marginTop: 4, fontWeight: 600 }}>
-            Redução tributária via monofásicos em combos
+            Lei da Transparência Fiscal (~13,45%)
           </div>
         </div>
       </div>
 
       {/* Tabs Bar */}
       <div style={{ display: "flex", borderBottom: "2px solid #E2E8F0", marginBottom: 24, gap: 8 }}>
+        <button
+          onClick={() => setActiveTab("invoices")}
+          style={{
+            padding: "10px 18px",
+            border: "none",
+            background: "none",
+            fontSize: "0.9rem",
+            fontWeight: activeTab === "invoices" ? 800 : 600,
+            color: activeTab === "invoices" ? "#EA1D2C" : "#64748B",
+            borderBottom: activeTab === "invoices" ? "3px solid #EA1D2C" : "3px solid transparent",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Receipt size={18} /> 📄 Notas Fiscais Geradas
+        </button>
+
         <button
           onClick={() => setActiveTab("combos")}
           style={{
@@ -401,28 +498,193 @@ export default function StoreFiscalPage() {
         >
           <Settings size={18} /> Configurações & Regras de Emissão
         </button>
-
-        <button
-          onClick={() => setActiveTab("invoices")}
-          style={{
-            padding: "10px 18px",
-            border: "none",
-            background: "none",
-            fontSize: "0.9rem",
-            fontWeight: activeTab === "invoices" ? 800 : 600,
-            color: activeTab === "invoices" ? "#EA1D2C" : "#64748B",
-            borderBottom: activeTab === "invoices" ? "3px solid #EA1D2C" : "3px solid transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <Receipt size={18} /> Notas Emitidas / Pedidos Fiscais
-        </button>
       </div>
 
-      {/* TAB 1: ENGENHARIA DE CARDÁPIO FISCAL */}
+      {/* TAB 1: NOTAS FISCAIS GERADAS (PERÍODO & DETALHES) */}
+      {activeTab === "invoices" && (
+        <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.25rem" }}>
+          {/* Controls Bar: Date Period & Filters */}
+          <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 14, padding: "12px 16px", marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+              {/* Date range presets */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <Filter size={15} color="#64748B" />
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginRight: 4 }}>Período:</span>
+                {(["today", "week", "month", "all", "custom"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setDateRange(mode)}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 8,
+                      border: "none",
+                      fontSize: "0.78rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      background: dateRange === mode ? "#EA1D2C" : "#E2E8F0",
+                      color: dateRange === mode ? "#fff" : "#475569",
+                    }}
+                  >
+                    {mode === "today" ? "Hoje" : mode === "week" ? "7 Dias" : mode === "month" ? "Este Mês" : mode === "all" ? "Tudo" : "📅 Personalizado"}
+                  </button>
+                ))}
+
+                {dateRange === "custom" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FEF2F2", padding: "4px 8px", borderRadius: 8, border: "1px solid #FECACA" }}>
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#991B1B" }}>De:</span>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
+                    />
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#991B1B" }}>Até:</span>
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                      style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Status and Payment Filters */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <select
+                  value={filterStatus}
+                  onChange={e => setFilterStatus(e.target.value)}
+                  style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.78rem", fontWeight: 600, outline: "none", cursor: "pointer" }}
+                >
+                  <option value="ALL">Status: Todos</option>
+                  <option value="EMITTED">🟢 Autorizadas</option>
+                  <option value="PENDING">⏳ Pendentes</option>
+                </select>
+
+                <select
+                  value={filterPaymentMethod}
+                  onChange={e => setFilterPaymentMethod(e.target.value)}
+                  style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.78rem", fontWeight: 600, outline: "none", cursor: "pointer" }}
+                >
+                  <option value="ALL">Pagamento: Todos</option>
+                  <option value="PIX">⚡ PIX</option>
+                  <option value="DINHEIRO">💵 Dinheiro</option>
+                  <option value="CREDITO">💳 Cartão de Crédito</option>
+                  <option value="DEBITO">💳 Cartão de Débito</option>
+                  <option value="VOUCHER">🎟️ Voucher</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div style={{ marginTop: 10, position: "relative" }}>
+              <Search size={15} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
+              <input
+                value={searchInvoice}
+                onChange={e => setSearchInvoice(e.target.value)}
+                placeholder="Buscar por nº da nota, chave SEFAZ, pedido ou nome do cliente..."
+                style={{
+                  width: "100%",
+                  padding: "7px 12px 7px 32px",
+                  borderRadius: 8,
+                  border: "1.5px solid #CBD5E1",
+                  fontSize: "0.82rem",
+                  outline: "none",
+                  background: "#fff",
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Table of Invoices */}
+          {filteredOrders.length === 0 ? (
+            <div style={{ padding: "3rem", textAlign: "center", color: "#94A3B8" }}>
+              <Receipt size={40} style={{ margin: "0 auto 12px" }} />
+              <p style={{ margin: 0, fontWeight: 700 }}>Nenhuma nota fiscal encontrada para os filtros selecionados.</p>
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                <thead>
+                  <tr style={{ background: "#F8FAFC", textTransform: "uppercase", fontSize: "0.72rem", color: "#64748B" }}>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Nota Fiscal (NFC-e)</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Pedido Vinculado</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Data / Hora</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Cliente</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Forma Pgto</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right", borderBottom: "2px solid #E2E8F0" }}>Valor Fiscal</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center", borderBottom: "2px solid #E2E8F0" }}>Status SEFAZ</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center", borderBottom: "2px solid #E2E8F0" }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOrders.map(order => {
+                    const createdDate = new Date(order.createdAt);
+                    const dateStr = createdDate.toLocaleDateString("pt-BR") + " " + createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                    return (
+                      <tr key={order.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                        <td style={{ padding: "10px 12px" }}>
+                          <strong style={{ color: "#0F172A", display: "block" }}>NFC-e nº {order.fiscalInfo?.nfceNumber}</strong>
+                          <span style={{ fontSize: "0.7rem", color: "#64748B" }}>Série {order.fiscalInfo?.serie || "1"}</span>
+                        </td>
+                        <td style={{ padding: "10px 12px", fontWeight: 800, color: "#EA1D2C" }}>
+                          #{order.dailyOrderNumber || order.id.slice(-5)}
+                        </td>
+                        <td style={{ padding: "10px 12px", color: "#64748B", fontSize: "0.78rem" }}>{dateStr}</td>
+                        <td style={{ padding: "10px 12px", color: "#334155" }}>
+                          <strong style={{ display: "block" }}>{order.customerName}</strong>
+                          <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{order.customerCpfCnpj || "Consumidor"}</span>
+                        </td>
+                        <td style={{ padding: "10px 12px", color: "#475569", fontWeight: 600 }}>{order.paymentMethod}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 900, color: "#15803D" }}>
+                          {fmt(order.totalAmount)}
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          <span
+                            style={{
+                              fontSize: "0.72rem",
+                              fontWeight: 700,
+                              padding: "3px 8px",
+                              borderRadius: 6,
+                              background: order.fiscalStatus === "EMITTED" ? "#DCFCE7" : "#FFF7ED",
+                              color: order.fiscalStatus === "EMITTED" ? "#15803D" : "#C2410C",
+                            }}
+                          >
+                            {order.fiscalStatus === "EMITTED" ? "🟢 Autorizada SEFAZ" : "⏳ Processando"}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          <button
+                            onClick={() => setSelectedInvoiceModal(order)}
+                            style={{
+                              padding: "5px 12px",
+                              borderRadius: 8,
+                              border: "1.5px solid #EA1D2C",
+                              background: "#FEF2F2",
+                              color: "#EA1D2C",
+                              fontSize: "0.75rem",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            <Eye size={13} /> Ver Nota 🔍
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: ENGENHARIA DE CARDÁPIO FISCAL */}
       {activeTab === "combos" && (
         <div>
           {/* Card de Explicação */}
@@ -570,7 +832,7 @@ export default function StoreFiscalPage() {
         </div>
       )}
 
-      {/* TAB 2: CONFIGURAÇÕES & REGRAS DE EMISSÃO */}
+      {/* TAB 3: CONFIGURAÇÕES & REGRAS DE EMISSÃO */}
       {activeTab === "config" && (
         <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem" }}>
           <h2 style={{ margin: "0 0 6px", fontSize: "1.1rem", fontWeight: 800, color: "#0F172A" }}>
@@ -693,85 +955,6 @@ export default function StoreFiscalPage() {
           >
             {savingConfig ? "Salvando..." : "Salvar Configurações Fiscais"}
           </button>
-        </div>
-      )}
-
-      {/* TAB 3: NOTAS EMITIDAS */}
-      {activeTab === "invoices" && (
-        <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.25rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#0F172A" }}>
-              Histórico de Pedidos & Emissão Fiscal
-            </h2>
-            <span style={{ fontSize: "0.8rem", color: "#64748B" }}>Total: {orders.length} pedidos</span>
-          </div>
-
-          {orders.length === 0 ? (
-            <div style={{ padding: "3rem", textAlign: "center", color: "#94A3B8" }}>
-              <Receipt size={40} style={{ margin: "0 auto 12px" }} />
-              <p style={{ margin: 0, fontWeight: 700 }}>Nenhum pedido fiscal registrado até o momento.</p>
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
-                <thead>
-                  <tr style={{ background: "#F8FAFC", textTransform: "uppercase", fontSize: "0.72rem", color: "#64748B" }}>
-                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Pedido</th>
-                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Cliente</th>
-                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #E2E8F0" }}>Pagamento</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right", borderBottom: "2px solid #E2E8F0" }}>Valor Total</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center", borderBottom: "2px solid #E2E8F0" }}>Status Fiscal</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center", borderBottom: "2px solid #E2E8F0" }}>Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map(order => (
-                    <tr key={order.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 800, color: "#0F172A" }}>
-                        #{order.dailyOrderNumber || order.id.slice(-5)}
-                      </td>
-                      <td style={{ padding: "10px 12px", color: "#334155" }}>{order.customerName}</td>
-                      <td style={{ padding: "10px 12px", color: "#64748B" }}>{order.paymentMethod || "Padrão"}</td>
-                      <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: "#0F172A" }}>
-                        {fmt(order.totalAmount)}
-                      </td>
-                      <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                        <span
-                          style={{
-                            fontSize: "0.72rem",
-                            fontWeight: 700,
-                            padding: "3px 8px",
-                            borderRadius: 6,
-                            background: order.fiscalStatus === "EMITTED" ? "#DCFCE7" : "#FFF7ED",
-                            color: order.fiscalStatus === "EMITTED" ? "#15803D" : "#C2410C",
-                          }}
-                        >
-                          {order.fiscalStatus === "EMITTED" ? "🟢 NF Emitida" : "⏳ Pronta p/ Emissão"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                        <button
-                          onClick={() => setSelectedInvoiceModal(order)}
-                          style={{
-                            padding: "4px 10px",
-                            borderRadius: 6,
-                            border: "1px solid #CBD5E1",
-                            background: "#fff",
-                            fontSize: "0.75rem",
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          Espelho Fiscal 🔍
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       )}
 
@@ -989,13 +1172,13 @@ export default function StoreFiscalPage() {
         </div>
       )}
 
-      {/* MODAL: ESPELHO FISCAL DO PEDIDO */}
+      {/* MODAL COMPLETO: ESPELHO FISCAL DANFE NFC-E DO PEDIDO */}
       {selectedInvoiceModal && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.6)",
+            background: "rgba(0,0,0,0.65)",
             zIndex: 1000,
             display: "flex",
             alignItems: "center",
@@ -1010,49 +1193,97 @@ export default function StoreFiscalPage() {
               borderRadius: 20,
               padding: "1.5rem",
               width: "100%",
-              maxWidth: 520,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+              maxWidth: 580,
+              maxHeight: "92vh",
+              overflowY: "auto",
+              boxShadow: "0 25px 70px rgba(0,0,0,0.35)",
               position: "relative",
             }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 900 }}>
-                Espelho Fiscal — Pedido #{selectedInvoiceModal.dailyOrderNumber || selectedInvoiceModal.id.slice(-5)}
-              </h3>
-              <button onClick={() => setSelectedInvoiceModal(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem" }}>
+            {/* Header DANFE */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, borderBottom: "2px solid #0F172A", paddingBottom: 10 }}>
+              <div>
+                <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>DOCUMENTO AUXILIAR DA NFC-E</span>
+                <h2 style={{ margin: "2px 0 0", fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>
+                  DANFE NFC-e nº {selectedInvoiceModal.fiscalInfo?.nfceNumber}
+                </h2>
+                <span style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 700 }}>
+                  Pedido Vinculado #{selectedInvoiceModal.dailyOrderNumber || selectedInvoiceModal.id.slice(-5)}
+                </span>
+              </div>
+              <button onClick={() => setSelectedInvoiceModal(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem", fontWeight: 800 }}>
                 ✕
               </button>
             </div>
 
-            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: "12px", marginBottom: 16, fontSize: "0.82rem" }}>
-              <p style={{ margin: "0 0 4px" }}><strong>Cliente:</strong> {selectedInvoiceModal.customerName}</p>
-              <p style={{ margin: "0 0 4px" }}><strong>Pagamento:</strong> {selectedInvoiceModal.paymentMethod}</p>
-              <p style={{ margin: 0 }}><strong>Total:</strong> {fmt(selectedInvoiceModal.totalAmount)}</p>
+            {/* Emitente & Chave SEFAZ Box */}
+            <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "12px", marginBottom: 14, fontSize: "0.8rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <div>
+                  <strong style={{ display: "block", color: "#0F172A", fontSize: "0.88rem" }}>{storeName || "RESTAURANTE / LOJA"}</strong>
+                  <span style={{ color: "#64748B" }}>CNPJ: {cpfCnpj || fiscalConfig.cnpj || "00.000.000/0001-00"} • IE: {fiscalConfig.ie || "Isento"}</span>
+                </div>
+                <span style={{ fontSize: "0.7rem", fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: "#DCFCE7", color: "#15803D", height: "fit-content" }}>
+                  AUTORIZADA SEFAZ
+                </span>
+              </div>
+
+              <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
+                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#64748B", display: "block" }}>CHAVE DE ACESSO (44 DÍGITOS)</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                  <code style={{ fontSize: "0.72rem", color: "#0F172A", fontWeight: 700, wordBreak: "break-all" }}>
+                    {selectedInvoiceModal.fiscalInfo?.nfceKey}
+                  </code>
+                  <button
+                    onClick={() => handleCopyKey(selectedInvoiceModal.fiscalInfo?.nfceKey || "")}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}
+                    title="Copiar Chave de Acesso"
+                  >
+                    <Copy size={15} color={copiedKey ? "#16A34A" : "#64748B"} />
+                  </button>
+                </div>
+                {copiedKey && <span style={{ fontSize: "0.68rem", color: "#16A34A", fontWeight: 700 }}>Copiado!</span>}
+              </div>
             </div>
 
+            {/* Protocolo & Cliente */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14, fontSize: "0.78rem" }}>
+              <div style={{ background: "#F1F5F9", padding: "8px 10px", borderRadius: 8 }}>
+                <span style={{ color: "#64748B", display: "block", fontSize: "0.7rem", fontWeight: 700 }}>PROTOCOLO DE AUTORIZAÇÃO</span>
+                <strong style={{ color: "#0F172A" }}>{selectedInvoiceModal.fiscalInfo?.protocol}</strong>
+              </div>
+              <div style={{ background: "#F1F5F9", padding: "8px 10px", borderRadius: 8 }}>
+                <span style={{ color: "#64748B", display: "block", fontSize: "0.7rem", fontWeight: 700 }}>CLIENTE / CONSUMIDOR</span>
+                <strong style={{ color: "#0F172A" }}>{selectedInvoiceModal.customerName}</strong>
+              </div>
+            </div>
+
+            {/* Itens Discriminados Fiscalmente */}
             <h4 style={{ margin: "0 0 8px", fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>
-              Itens Discriminados na Emissão da Nota
+              Itens do Documento Fiscal (NFC-e)
             </h4>
 
-            <div style={{ background: "#FFF", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px", marginBottom: 16, fontSize: "0.8rem" }}>
-              {selectedInvoiceModal.items.map((item, idx) => {
-                const p = item.menuProduct;
-                const hasBreakdown = p?.fiscalBreakdown && p.fiscalBreakdown.length > 0;
+            <div style={{ background: "#FFF", border: "1.5px solid #CBD5E1", borderRadius: 12, padding: "12px", marginBottom: 14, fontSize: "0.8rem" }}>
+              {selectedInvoiceModal.fiscalInfo?.items.map((item: any, idx: number) => {
+                const hasBreakdown = item.fiscalBreakdown && item.fiscalBreakdown.length > 0;
                 return (
-                  <div key={idx} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < selectedInvoiceModal.items.length - 1 ? "1px dashed #E2E8F0" : "none" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
-                      <span>{item.quantity}x {p?.name || item.name}</span>
-                      <span>{fmt(item.price * item.quantity)}</span>
+                  <div key={idx} style={{ marginBottom: 10, paddingBottom: 8, borderBottom: idx < selectedInvoiceModal.fiscalInfo!.items.length - 1 ? "1px dashed #E2E8F0" : "none" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: "#0F172A" }}>
+                      <span>{item.quantity}x {item.name}</span>
+                      <span>{fmt(item.totalPrice)}</span>
                     </div>
 
                     {hasBreakdown && (
-                      <div style={{ background: "#F0FDF4", borderRadius: 6, padding: "6px 8px", marginTop: 4, fontSize: "0.75rem", color: "#166534" }}>
-                        <span style={{ fontWeight: 700, display: "block", marginBottom: 2 }}>⚡ Itens discriminados via Engenharia Fiscal:</span>
-                        {p.fiscalBreakdown.map((fItem: any, fIdx: number) => (
-                          <div key={fIdx} style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "8px 10px", marginTop: 6, fontSize: "0.75rem", color: "#166534" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <Sparkles size={13} color="#16A34A" />
+                          <strong style={{ color: "#15803D" }}>Itens discriminados via Engenharia Fiscal de Combo:</strong>
+                        </div>
+                        {item.fiscalBreakdown.map((fItem: any, fIdx: number) => (
+                          <div key={fIdx} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
                             <span>• {fItem.name} ({fItem.category})</span>
-                            <span>{fmt(fItem.price)}</span>
+                            <strong>{fmt(fItem.price)}</strong>
                           </div>
                         ))}
                       </div>
@@ -1062,23 +1293,72 @@ export default function StoreFiscalPage() {
               })}
             </div>
 
-            <button
-              onClick={() => setSelectedInvoiceModal(null)}
-              style={{
-                width: "100%",
-                padding: "10px",
-                borderRadius: 10,
-                border: "none",
-                background: "#0F172A",
-                color: "#fff",
-                fontWeight: 800,
-                fontSize: "0.85rem",
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
-              Fechar Espelho Fiscal
-            </button>
+            {/* Totais & IBPT */}
+            <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "12px", marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: "0.85rem" }}>
+                <span>Subtotal dos Produtos:</span>
+                <strong>{fmt(selectedInvoiceModal.totalAmount - (selectedInvoiceModal.deliveryFee || 0))}</strong>
+              </div>
+              {selectedInvoiceModal.deliveryFee ? (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: "0.85rem" }}>
+                  <span>Taxa de Entrega:</span>
+                  <strong>{fmt(selectedInvoiceModal.deliveryFee)}</strong>
+                </div>
+              ) : null}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.1rem", fontWeight: 900, color: "#15803D", paddingTop: 6, borderTop: "1.5px solid #CBD5E1" }}>
+                <span>VALOR TOTAL DA NOTA:</span>
+                <span>{fmt(selectedInvoiceModal.totalAmount)}</span>
+              </div>
+              <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 6, textAlign: "right" }}>
+                Tributos Aproximados (IBPT Lei 12.741/2012): <strong>{fmt(selectedInvoiceModal.fiscalInfo?.impostosAproximados || 0)}</strong>
+              </div>
+            </div>
+
+            {/* Actions: Download XML / Print */}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => alert(`Download do XML da NFC-e nº ${selectedInvoiceModal.fiscalInfo?.nfceNumber} iniciado!`)}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: "1.5px solid #CBD5E1",
+                  background: "#fff",
+                  fontWeight: 800,
+                  fontSize: "0.82rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  fontFamily: "inherit",
+                }}
+              >
+                <Download size={14} /> Download XML
+              </button>
+
+              <button
+                onClick={() => window.print()}
+                style={{
+                  flex: 1.5,
+                  padding: "10px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#0F172A",
+                  color: "#fff",
+                  fontWeight: 900,
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  fontFamily: "inherit",
+                }}
+              >
+                <Printer size={15} /> Imprimir DANFE NFC-e
+              </button>
+            </div>
           </div>
         </div>
       )}
