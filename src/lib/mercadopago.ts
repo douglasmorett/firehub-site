@@ -17,14 +17,15 @@ export interface MpPaymentResult {
 }
 
 export async function createMpCardPayment(params: {
-  amount:       number;
-  orderId:      string;
-  cardToken:    string;
-  installments: number;
-  payerEmail:   string;
-  payerCpf?:    string;
-  mpSellerId?:  string;
-  description:  string;
+  amount:          number;
+  orderId:         string;
+  cardToken:       string;
+  paymentMethodId?: string;
+  installments:    number;
+  payerEmail:      string;
+  payerCpf?:       string;
+  mpSellerId?:     string;
+  description:     string;
 }): Promise<MpPaymentResult> {
   const client = new MercadoPagoConfig({ accessToken: ACCESS_TOKEN });
   const payment = new Payment(client);
@@ -36,7 +37,7 @@ export async function createMpCardPayment(params: {
     token:              params.cardToken,
     description:        params.description,
     installments:       params.installments,
-    payment_method_id:  "master",
+    payment_method_id:  params.paymentMethodId || "master",
     payer: {
       email:        params.payerEmail,
       identification: params.payerCpf

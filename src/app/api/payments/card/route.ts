@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Muitas tentativas. Aguarde 1 minuto." }, { status: 429 });
     }
 
-    const { orderId, cardToken, installments = 1, payerEmail, payerCpf } = await req.json();
+    const { orderId, cardToken, paymentMethodId, installments = 1, payerEmail, payerCpf } = await req.json();
     if (!orderId || !cardToken) {
       return NextResponse.json({ error: "orderId e cardToken são obrigatórios" }, { status: 400 });
     }
@@ -36,13 +36,14 @@ export async function POST(req: NextRequest) {
     const description = `Pedido #${order.id.slice(-6).toUpperCase()} — ${storeName}`;
 
     const result = await createMpCardPayment({
-      amount:       order.totalAmount,
-      orderId:      order.id,
+      amount:          order.totalAmount,
+      orderId:         order.id,
       cardToken,
-      installments: Number(installments),
-      payerEmail:   payerEmail || order.customerPhone + "@firehub.com.br",
+      paymentMethodId: paymentMethodId || undefined,
+      installments:    Number(installments),
+      payerEmail:      payerEmail || order.customerPhone + "@firehub.com.br",
       payerCpf,
-      mpSellerId:   order.franchisee.mpSellerId || undefined,
+      mpSellerId:      order.franchisee.mpSellerId || undefined,
       description,
     });
 
