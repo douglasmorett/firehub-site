@@ -10,8 +10,10 @@ console.log("[FireHub Extension Bridge] ⚡ Conectado ao painel do FireHub em te
 
 let lastEmProducaoCount = -1;
 let lastSentTime = 0;
+let consecutiveFailures = 0;
 
 function notifyCount(count, source) {
+  consecutiveFailures = 0;
   const now = Date.now();
   const changed = count !== lastEmProducaoCount;
   const heartbeatDue = (now - lastSentTime) > 10000; // Heartbeat a cada 10s

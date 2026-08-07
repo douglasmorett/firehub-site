@@ -55,16 +55,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg && msg.action === "OPEN_DELIVERY_SETTINGS") {
-    // Encontrar aba de configurações de entrega já aberta, ou abrir uma nova
     const settingsUrl = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
     chrome.tabs.query({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience*" }, (tabs) => {
       if (tabs && tabs.length > 0) {
-        // Já tem aba aberta → focar nela
-        console.log(`[FireHub] 📌 Aba de configurações já existe (tab ${tabs[0].id}), focando...`);
-        chrome.tabs.update(tabs[0].id, { active: false }); // Não focar, só recarregar
-        chrome.tabs.reload(tabs[0].id);
+        console.log(`[FireHub] 📌 Aba de configurações já existe (tab ${tabs[0].id}), reaproveitando...`);
       } else {
-        // Abrir nova aba em background (sem tirar o foco do user)
         console.log("[FireHub] 🚀 Abrindo aba de configurações de entrega em background...");
         chrome.tabs.create({ url: settingsUrl, active: false });
       }
