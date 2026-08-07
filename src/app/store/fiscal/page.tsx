@@ -53,7 +53,6 @@ const PAYMENT_METHOD_OPTIONS = [
   { key: "CREDIT_CARD", label: "💳 Cartão de Crédito", desc: "Crédito presencial ou online" },
   { key: "DEBIT_CARD", label: "💳 Cartão de Débito", desc: "Débito maquininha presencial" },
   { key: "VOUCHER", label: "🎟️ Voucher / Refeição", desc: "VR, VA, Alelo, Sodexo, Ticket" },
-  { key: "EMPLOYEE_ACCOUNT", label: "👤 Conta Funcionário", desc: "Vendas fiadas em conta de colaboradores" },
 ];
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
