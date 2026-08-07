@@ -16,7 +16,7 @@ type Preview = {
 // ─── Tab: Importar por link iFood ─────────────────────────────────────────────
 function IfoodApiTab() {
   const [ifoodUrl, setIfoodUrl] = useState("");
-  const [step, setStep] = useState<"idle" | "preview" | "importing" | "done" | "error" | "not_ready">("idle");
+  const [step, setStep] = useState<"idle" | "preview" | "importing" | "done" | "error" | "not_ready" | "not_connected">("idle");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<{ imported: number; skipped: number; message: string } | null>(null);
   const [error, setError] = useState("");
@@ -32,6 +32,7 @@ function IfoodApiTab() {
         body: JSON.stringify({ ifoodUrl, mode: "preview" }),
       });
       const d = await r.json();
+      if (d.notConnected || d.error === "not_connected") { setStep("not_connected"); return; }
       if (r.status === 503 && d.apiNotReady) { setStep("not_ready"); return; }
       if (!r.ok) { setError(d.error || "Erro ao buscar cardápio"); setStep("error"); return; }
       setPreview(d);
@@ -52,6 +53,7 @@ function IfoodApiTab() {
       });
 
       const d = await r.json();
+      if (d.notConnected || d.error === "not_connected") { setStep("not_connected"); return; }
       if (!r.ok) { setError(d.error || "Erro ao importar"); setStep("error"); return; }
       setResult(d); setStep("done");
     } catch { setError("Erro de conexão."); setStep("error"); }
@@ -63,6 +65,28 @@ function IfoodApiTab() {
   }
 
   const filtered = preview?.products.filter(p => selectedCats.has(p.category)) ?? [];
+
+  if (step === "not_connected") {
+    return (
+      <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "1.25rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <AlertCircle size={18} color="#EA1D2C" />
+          <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#991B1B" }}>Integração iFood Necessária</span>
+        </div>
+        <p style={{ fontSize: "0.85rem", color: "#7F1D1D", margin: "0 0 14px", lineHeight: 1.6 }}>
+          É necessário ativar sua integração com a conta iFood que você quer puxar o cardápio antes.
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer" }}>
+            ← Voltar
+          </button>
+          <a href="/store/integracoes" style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#EA1D2C", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            🔗 Integrar Conta iFood
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   if (step === "not_ready") {
     return (
