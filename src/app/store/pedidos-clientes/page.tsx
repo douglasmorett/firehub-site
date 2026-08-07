@@ -113,7 +113,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       }),
       prisma.cashSession.findMany({
         where: { franchiseeId: { in: franchiseeIds } },
-        select: { id: true, openedAt: true, closedAt: true },
+        select: { id: true, openedAt: true, closedAt: true, status: true },
         orderBy: { openedAt: "asc" },
         take: 100,
       }),
