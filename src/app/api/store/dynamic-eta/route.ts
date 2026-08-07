@@ -105,11 +105,13 @@ export async function GET(req: NextRequest) {
     const mode = req.nextUrl.searchParams.get("mode") || "auto";
 
     // ── CONTABILIZAÇÃO: ABA 'EM PRODUÇÃO' DA TELA DE PEDIDOS ──
-    // Deve ser IDÊNTICO ao filtro do dashboard StoreOrdersDashboard.tsx linha 1889:
-    // ACEITO || PREPARANDO || (deliveryType === "DELIVERY" && status === "PRONTO")
+    // Deve ser IDÊNTICO ao filtro do dashboard StoreOrdersDashboard.tsx:
+    // Apenas pedidos recentes das últimas 18h em status ACEITO, PREPARANDO ou PRONTO (DELIVERY)
+    const eighteenHoursAgo = new Date(Date.now() - 18 * 60 * 60 * 1000);
     const ordersInProduction = await prisma.customerOrder.count({
       where: {
         franchiseeId: { in: validFranchiseeIds },
+        createdAt: { gte: eighteenHoursAgo },
         OR: [
           { status: "ACEITO" },
           { status: "PREPARANDO" },
