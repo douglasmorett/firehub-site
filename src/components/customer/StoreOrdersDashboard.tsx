@@ -1908,18 +1908,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberAsc);
 
-  // Contagem REAL em produção (SEM filtro de data) — fonte de verdade para a extensão Chrome
-  const allPreparo = orders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO"));
-
   // Transmite em tempo real a quantidade de pedidos em produção para a extensão Chrome do FireHub
   useEffect(() => {
     if (typeof window !== "undefined") {
       window.postMessage({
         type: "FIREHUB_EM_PRODUCAO_COUNT",
-        count: allPreparo.length
+        count: preparo.length
       }, "*");
     }
-  }, [allPreparo.length]);
+  }, [preparo.length]);
 
   // Resumo de vendas
   const allInRange = orders.filter(o => { const d = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt); return d >= fromDate && d <= toDate; });
