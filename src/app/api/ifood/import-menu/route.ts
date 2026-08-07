@@ -34,47 +34,78 @@ async function getIfoodToken(): Promise<string | null> {
 }
 
 // ─── Busca catálogo via Merchant API ─────────────────────────────────────────
-async function fetchCatalogViaAPI(merchantId: string): Promise<{
+async function fetchCatalogViaAPI(merchantId: string, userAccessToken?: string | null): Promise<{
   restaurantName: string;
   products: Array<{ name: string; description: string; price: number; category: string; imageUrl: string | null }>;
 } | null> {
-  const token = await getIfoodToken();
+  const token = userAccessToken || (await getIfoodToken());
   if (!token) return null;
 
   try {
-    // Busca categorias
-    const catRes = await fetch(
-      `https://merchant-api.ifood.com.br/catalog/v1.0/merchants/${merchantId}/categories`,
-      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
-    );
-    if (!catRes.ok) return null;
-    const categories: any[] = await catRes.json();
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
-    // Busca produtos
-    const prodRes = await fetch(
-      `https://merchant-api.ifood.com.br/catalog/v1.0/merchants/${merchantId}/products`,
-      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
-    );
-    if (!prodRes.ok) return null;
-    const products: any[] = await prodRes.json();
+    // 1. Tentar estrutura oficial iFood Catalog v1.0 (/catalogs -> /categories -> /items)
+    const catalogsRes = await fetch(`https://merchant-api.ifood.com.br/catalog/v1.0/merchants/${merchantId}/catalogs`, { headers });
 
-    // Mapeia categoria pelo id
-    const catMap: Record<string, string> = {};
-    for (const cat of categories) {
-      catMap[cat.id || cat.externalCode] = cat.name || "Cardápio";
+    if (catalogsRes.ok) {
+      const catalogs: any[] = await catalogsRes.json();
+      const catalogId = catalogs?.[0]?.id;
+
+      if (catalogId) {
+        const catRes = await fetch(`https://merchant-api.ifood.com.br/catalog/v1.0/merchants/${merchantId}/catalogs/${catalogId}/categories`, { headers });
+        const itemsRes = await fetch(`https://merchant-api.ifood.com.br/catalog/v1.0/merchants/${merchantId}/catalogs/${catalogId}/items`, { headers });
+
+        if (catRes.ok && itemsRes.ok) {
+          const categories: any[] = await catRes.json();
+          const items: any[] = await itemsRes.json();
+
+          const catMap: Record<string, string> = {};
+          for (const cat of categories) {
+            catMap[cat.id] = cat.name || "Cardápio";
+          }
+
+          const normalized = (Array.isArray(items) ? items : []).map((i: any) => ({
+            name: i.name || i.description || "",
+            description: i.description || i.details || "",
+            price: typeof i.price === "object" ? (i.price.value || 0) / 100 : (typeof i.price === "number" ? i.price : parseFloat(i.price) || 0),
+            category: catMap[i.categoryId] || i.categoryName || "Cardápio",
+            imageUrl: i.imagePath || i.imageUrl || i.logoUrl || null,
+          })).filter((p: any) => p.name);
+
+          if (normalized.length > 0) {
+            return { restaurantName: "Cardápio iFood", products: normalized };
+          }
+        }
+      }
     }
 
-    const normalized = (Array.isArray(products) ? products : []).map((p: any) => ({
-      name: p.name || p.description || "",
-      description: p.details || p.serving || "",
-      price: typeof p.price === "object"
-        ? (p.price.value || 0) / 100
-        : (typeof p.price === "number" ? p.price / 100 : parseFloat(p.price) || 0),
-      category: catMap[p.categoryId || p.categoryCode] || p.categoryName || "Cardápio",
-      imageUrl: p.logoUrl || p.imageUrl || null,
-    })).filter((p: any) => p.name);
+    // 2. Fallback direto para endpoints legados (/categories & /products)
+    const catRes = await fetch(`https://merchant-api.ifood.com.br/catalog/v1.0/merchants/${merchantId}/categories`, { headers });
+    const prodRes = await fetch(`https://merchant-api.ifood.com.br/catalog/v1.0/merchants/${merchantId}/products`, { headers });
 
-    return { restaurantName: "Cardápio iFood", products: normalized };
+    if (catRes.ok && prodRes.ok) {
+      const categories: any[] = await catRes.json();
+      const products: any[] = await prodRes.json();
+
+      const catMap: Record<string, string> = {};
+      for (const cat of categories) {
+        catMap[cat.id || cat.externalCode] = cat.name || "Cardápio";
+      }
+
+      const normalized = (Array.isArray(products) ? products : []).map((p: any) => ({
+        name: p.name || p.description || "",
+        description: p.details || p.serving || "",
+        price: typeof p.price === "object"
+          ? (p.price.value || 0) / 100
+          : (typeof p.price === "number" ? (p.price > 500 ? p.price / 100 : p.price) : parseFloat(p.price) || 0),
+        category: catMap[p.categoryId || p.categoryCode] || p.categoryName || "Cardápio",
+        imageUrl: p.logoUrl || p.imageUrl || null,
+      })).filter((p: any) => p.name);
+
+      return { restaurantName: "Cardápio iFood", products: normalized };
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -88,22 +119,26 @@ export async function POST(req: NextRequest) {
   const franchiseeId = (session.user as any).id;
   const { ifoodUrl, mode = "preview", categories } = await req.json();
 
+  const dbUser = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { ifoodMerchantId: true, ifoodAccessToken: true },
+  });
 
-  // Extrai merchant ID da URL ou usa o armazenado nas variáveis de ambiente
+  // Extrai merchant ID da URL, do corpo ou do usuário logado no banco
   const uuidFromUrl = ifoodUrl
     ? (ifoodUrl.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)?.[1] || null)
     : null;
-  const merchantId = uuidFromUrl || process.env.IFOOD_MERCHANT_UUID || null;
+  const merchantId = uuidFromUrl || dbUser?.ifoodMerchantId || process.env.IFOOD_MERCHANT_UUID || null;
 
   if (!merchantId) {
     return NextResponse.json({
-      error: "Não foi possível identificar o restaurante. Cole o link completo do iFood (com o UUID no final).",
+      error: "Não foi possível identificar a loja no iFood. Conecte sua loja iFood primeiro em Integrações.",
     }, { status: 400 });
   }
 
   try {
-    // Tenta via Merchant API (funciona quando app está homologado)
-    const catalogResult = await fetchCatalogViaAPI(merchantId);
+    // Tenta via Merchant API (usando o token do lojista ou credencial distribuída)
+    const catalogResult = await fetchCatalogViaAPI(merchantId, dbUser?.ifoodAccessToken);
 
     if (!catalogResult) {
       // App ainda não homologado — orienta para importação via planilha
