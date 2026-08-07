@@ -62,11 +62,11 @@ const DEFAULT_LOYALTY: LoyaltyConfig = {
   birthdayMinOrder: 40,
 
   vipActive: false,
-  bronzeCashback: 3,
+  bronzeCashback: 1,
   silverMinSpend: 150,
-  silverCashback: 7,
+  silverCashback: 2,
   goldMinSpend: 350,
-  goldCashback: 12,
+  goldCashback: 3,
 };
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -589,6 +589,7 @@ export default function LoyaltyConfigForm({
                 <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Base (%)</label>
                 <input
                   type="number"
+                  step="0.5"
                   value={config.bronzeCashback}
                   onChange={e => update("bronzeCashback", parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: 800, marginTop: 2 }}
@@ -598,10 +599,20 @@ export default function LoyaltyConfigForm({
               {/* Prata */}
               <div style={{ background: "#F1F5F9", border: "1.5px solid #CBD5E1", borderRadius: 12, padding: "14px" }}>
                 <strong style={{ color: "#475569", fontSize: "0.9rem", display: "block" }}>🥈 Nível Prata</strong>
-                <span style={{ fontSize: "0.75rem", color: "#64748B", display: "block", marginBottom: 10 }}>Gasto mensal &gt; {fmt(config.silverMinSpend)}</span>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Gasto Mensal Mínimo (R$)</label>
+                  <input
+                    type="number"
+                    step="10"
+                    value={config.silverMinSpend}
+                    onChange={e => update("silverMinSpend", parseFloat(e.target.value) || 0)}
+                    style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, marginTop: 2 }}
+                  />
+                </div>
                 <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Prata (%)</label>
                 <input
                   type="number"
+                  step="0.5"
                   value={config.silverCashback}
                   onChange={e => update("silverCashback", parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: 800, marginTop: 2 }}
@@ -611,10 +622,20 @@ export default function LoyaltyConfigForm({
               {/* Ouro */}
               <div style={{ background: "#FEF3C7", border: "1.5px solid #FCD34D", borderRadius: 12, padding: "14px" }}>
                 <strong style={{ color: "#92400E", fontSize: "0.9rem", display: "block" }}>🥇 Nível Ouro / VIP</strong>
-                <span style={{ fontSize: "0.75rem", color: "#78350F", display: "block", marginBottom: 10 }}>Gasto mensal &gt; {fmt(config.goldMinSpend)}</span>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#78350F" }}>Gasto Mensal Mínimo (R$)</label>
+                  <input
+                    type="number"
+                    step="10"
+                    value={config.goldMinSpend}
+                    onChange={e => update("goldMinSpend", parseFloat(e.target.value) || 0)}
+                    style={{ width: "100%", padding: "4px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, marginTop: 2 }}
+                  />
+                </div>
                 <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#78350F" }}>Cashback VIP (%)</label>
                 <input
                   type="number"
+                  step="0.5"
                   value={config.goldCashback}
                   onChange={e => update("goldCashback", parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: 800, marginTop: 2 }}
