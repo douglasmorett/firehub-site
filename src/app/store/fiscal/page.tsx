@@ -213,6 +213,33 @@ export default function StoreFiscalPage() {
     }
   };
 
+  const handleSaveProductTax = async () => {
+    if (!editingProduct) return;
+    try {
+      const res = await fetch("/api/store/fiscal/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: editingProduct.id,
+          ncm: editingProduct.ncm,
+          cest: editingProduct.cest,
+          cfop: editingProduct.cfop,
+          origem: editingProduct.origem,
+          csosn: editingProduct.csosn,
+          pis: editingProduct.pis,
+          cofins: editingProduct.cofins,
+        }),
+      });
+      if (res.ok) {
+        alert(`Tributação do produto ${editingProduct.name} salva com sucesso! ⚡`);
+        setEditingProduct(null);
+        fetchProducts();
+      }
+    } catch {
+      alert("Erro ao salvar produto.");
+    }
+  };
+
   const handleEmitSingle = async (andPrint = false) => {
     if (!selectedOrderForEmit) return;
     setEmitting(true);
@@ -998,6 +1025,59 @@ export default function StoreFiscalPage() {
               <button onClick={() => window.print()} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: "#0F172A", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                 🖨️ Imprimir DANFE
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 4: EDITAR DADOS TRIBUTÁRIOS DO PRODUTO (NCM, CEST, CFOP, CSOSN) ── */}
+      {editingProduct && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setEditingProduct(null)}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 500, padding: "1.25rem", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, borderBottom: "1px solid #E2E8F0", paddingBottom: 8 }}>
+              <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#1E293B" }}>Tributação do Produto</h2>
+              <button onClick={() => setEditingProduct(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem" }}>✕</button>
+            </div>
+
+            <p style={{ margin: "0 0 14px", fontSize: "0.85rem", fontWeight: 700, color: "#7E22CE" }}>
+              {editingProduct.name} ({editingProduct.category}) — {fmt(editingProduct.price)}
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block" }}>NCM *</label>
+                <input value={editingProduct.ncm || ""} onChange={e => setEditingProduct({ ...editingProduct, ncm: e.target.value })} placeholder="Ex: 2106.90.90" style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", marginTop: 2 }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block" }}>CEST</label>
+                <input value={editingProduct.cest || ""} onChange={e => setEditingProduct({ ...editingProduct, cest: e.target.value })} placeholder="Ex: 28.062.00" style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", marginTop: 2 }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block" }}>CFOP *</label>
+                <input value={editingProduct.cfop || "5102"} onChange={e => setEditingProduct({ ...editingProduct, cfop: e.target.value })} style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", marginTop: 2 }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block" }}>CSOSN / CST *</label>
+                <input value={editingProduct.csosn || "102"} onChange={e => setEditingProduct({ ...editingProduct, csosn: e.target.value })} style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", marginTop: 2 }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block" }}>CST PIS</label>
+                <input value={editingProduct.pis || "49"} onChange={e => setEditingProduct({ ...editingProduct, pis: e.target.value })} style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", marginTop: 2 }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block" }}>CST COFINS</label>
+                <input value={editingProduct.cofins || "49"} onChange={e => setEditingProduct({ ...editingProduct, cofins: e.target.value })} style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", marginTop: 2 }} />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditingProduct(null)} style={{ padding: "8px 14px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              <button onClick={handleSaveProductTax} style={{ padding: "8px 18px", borderRadius: 6, border: "none", background: "#7E22CE", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>Salvar Tributação</button>
             </div>
           </div>
         </div>
