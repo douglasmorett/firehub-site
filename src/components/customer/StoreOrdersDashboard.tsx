@@ -1843,12 +1843,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   });
 
   // Numeração PERMANENTE E IMUTÁVEL:
-  // - Pedidos do caixa atual (status OPEN) iniciam em #1, #2, #3... para a nova sessão.
-  // - Pedidos anteriores mantêm RIGOROSAMENTE seus números originais (Kim Sá = #195, Junior = #200).
-  const orderNumberMap = useMemo(() => {
-    const map = new Map<string, number>();
+  // Uma vez atribuído um número (ex: #97), ele é bloqueado e NUNCA muda ou pisca para outro valor.
+  const persistentOrderNumMapRef = useRef<Map<string, number>>(new Map());
 
-    // 1. Respeita dailyOrderNumber se veio da API/banco
+  const orderNumberMap = useMemo(() => {
+    const map = persistentOrderNumMapRef.current;
+
+    // 1. Respeita dailyOrderNumber se veio da API/banco e fixa no mapa permanente
     orders.forEach((o: any) => {
       if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
         map.set(o.id, o.dailyOrderNumber);

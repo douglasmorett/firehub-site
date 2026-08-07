@@ -708,7 +708,7 @@ export async function GET(req: NextRequest) {
 
     const ordersWithDailyNum = orders.map((o: any) => ({
       ...o,
-      dailyOrderNumber: dailyNumMap.get(o.id) || o.dailyOrderNumber || null,
+      dailyOrderNumber: o.dailyOrderNumber || dailyNumMap.get(o.id) || null,
     }));
 
 
