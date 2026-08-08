@@ -362,6 +362,11 @@ export default function KDSTelaPage() {
 
     let cancelled = false;
 
+    // Wake Lock para impedir que Smart TVs e Tablets durmam ou desativem os timers da tela
+    if (typeof window !== "undefined" && "wakeLock" in navigator) {
+      (navigator as any).wakeLock?.request("screen").catch(() => {});
+    }
+
     const poll = async () => {
       try {
         await fetchOrders();
@@ -369,19 +374,19 @@ export default function KDSTelaPage() {
         console.error("[KDS] Polling error:", err);
       } finally {
         if (!cancelled) {
-          pollTimerRef.current = setTimeout(poll, 1500);
+          pollTimerRef.current = setTimeout(poll, 1000); // 1.0 segundo cravado
         }
       }
     };
 
     poll();
 
-    // Backup timer indestructible: garante polling a cada 3s caso o timeout morra por qualquer motivo
+    // Backup timer indestrutível: garante polling em tempo real a cada 1.0s cravado
     const backupInterval = setInterval(() => {
       if (!cancelled) {
         fetchOrders();
       }
-    }, 3000);
+    }, 1000);
 
     return () => {
       cancelled = true;
