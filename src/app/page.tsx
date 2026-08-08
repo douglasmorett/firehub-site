@@ -331,6 +331,61 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SEÇÃO ENGENHARIA DE CARDÁPIO E MÓDULO FISCAL */}
+      <section className="sec" style={{ background: "#090D16", color: "#FFF", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ position: "absolute", top: -100, right: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(16,185,129,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-fiscal">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-fiscal { grid-template-columns: 0.95fr 1.05fr !important; }
+              }
+            `}</style>
+
+            <div style={{ order: 1 }}>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(16,185,129,0.3)", boxShadow: "0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(16,185,129,0.15)", background: "#000" }}>
+                <img
+                  src="/images/engenharia_fiscal_ui.jpg"
+                  alt="FireHub Engenharia Fiscal e Imposto Reduzido"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ order: 2 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", color: "#34D399", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                🧾 ENGENHARIA DE CARDÁPIO & FISCAL INTELIGENTE
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                A mesma estratégia dos <span style={{ color: "#10B981" }}>gigantes do Fast Food</span> para pagar menos imposto
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Reduza seus impostos <strong>100% dentro da lei, sem sonegar nada</strong>. Nossa tecnologia exclusiva de engenharia fiscal de cardápio permite que você configure o valor exato de cada item dentro dos seus combos para sair detalhado na nota fiscal, maximizando a isenção de PIS e COFINS Monofásico.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="fiscal-features-grid">
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🍔 Decomposição de Combos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Defina o preço individual de bebidas e acompanhamentos isentos na nota fiscal</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⚖️ 100% Legal e Auditado</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Aproveite brechas fiscais legítimas utilizadas pelas maiores redes do mundo</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>📉 Redução de PIS / COFINS</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Economize até 35% nos impostos sobre vendas de bebidas e sobremesas</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⚡ Emissão de NFe Automática</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Emitida direto no fechamento do pedido sem intervenção manual</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* COMO FUNCIONA */}
       <section className="sec sec-alt" id="como-funciona">
         <div className="w">
