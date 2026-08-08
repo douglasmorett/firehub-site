@@ -46,6 +46,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       ifoodWidgetId: true,
       mpSellerId: true,
       showReviewsOnMenu: true,
+      allowScheduledOrders: true,
     }
   });
 

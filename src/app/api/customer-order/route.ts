@@ -24,10 +24,15 @@ export async function POST(req: Request) {
       where: { slug: franchiseeSlug },
       select: {
         id: true, storeName: true, storeOpen: true, storePause: true,
-        autoAcceptOrders: true, storeCoupons: true, deliveryConfig: true
+        autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true
       }
     });
     if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
+
+    // Validar se agendamento está desativado
+    if ((body.scheduledDatetime || body.scheduledDate || body.isScheduled) && franchisee.allowScheduledOrders === false) {
+      return NextResponse.json({ error: "Esta loja não está aceitando pedidos agendados no momento." }, { status: 400 });
+    }
 
     // Verificar se loja está operando
     if (franchisee.storeOpen === false) {

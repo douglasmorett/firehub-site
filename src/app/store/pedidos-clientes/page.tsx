@@ -36,6 +36,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       storeLogo: true,
       storeLatLng: true,
       storeTimezone: true,
+      allowScheduledOrders: true,
     },
   }).catch((err) => {
     console.error("[PedidosClientes] Erro ao buscar usuário:", err);

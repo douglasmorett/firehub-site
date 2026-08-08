@@ -1007,6 +1007,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
     return 1;
   });
+  const [allowScheduledOrders, setAllowScheduledOrders] = useState<boolean>(() => {
+    return (user as any)?.allowScheduledOrders ?? true;
+  });
+
+  const toggleAllowScheduledOrders = async (newValue: boolean) => {
+    setAllowScheduledOrders(newValue);
+    try {
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowScheduledOrders: newValue }),
+      });
+      if (res.ok) {
+        showToast(newValue ? "🟢 Agendamentos ATIVADOS no site próprio!" : "🔴 Agendamentos DESATIVADOS no site próprio!", newValue ? "#10B981" : "#EF4444");
+      } else {
+        setAllowScheduledOrders(!newValue);
+        showToast("❌ Falha ao atualizar configuração de agendamentos", "#EF4444");
+      }
+    } catch {
+      setAllowScheduledOrders(!newValue);
+      showToast("❌ Erro de conexão ao salvar", "#EF4444");
+    }
+  };
   const [scheduleLeadInput, setScheduleLeadInput] = useState("");
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
@@ -3060,6 +3083,48 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <p style={{ fontSize: "0.78rem", color: "#64748B", margin: 0 }}>{scheduledOrders.length} pedido{scheduledOrders.length !== 1 ? "s" : ""} agendado{scheduledOrders.length !== 1 ? "s" : ""} para os próximos dias</p>
               </div>
               <button onClick={() => setShowAgendamentos(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Bloco de Ativar / Desativar Agendamentos */}
+            <div style={{ marginBottom: "16px", padding: "14px 16px", background: allowScheduledOrders ? "#F0FDF4" : "#FEF2F2", borderRadius: "14px", border: `1.5px solid ${allowScheduledOrders ? "#BBF7D0" : "#FECACA"}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "0.9rem", color: allowScheduledOrders ? "#166534" : "#991B1B", display: "flex", alignItems: "center", gap: "6px" }}>
+                  {allowScheduledOrders ? "🟢 Aceitar Agendamentos no Site" : "🔴 Agendamentos Desativados"}
+                </div>
+                <div style={{ fontSize: "0.76rem", color: allowScheduledOrders ? "#15803D" : "#B91C1C", marginTop: "2px" }}>
+                  {allowScheduledOrders ? "Clientes podem escolher data/horário para agendar no seu site próprio." : "Seu site próprio aceitará apenas pedidos para entrega imediata."}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleAllowScheduledOrders(!allowScheduledOrders)}
+                style={{
+                  position: "relative",
+                  width: "52px",
+                  height: "28px",
+                  borderRadius: "20px",
+                  background: allowScheduledOrders ? "#22C55E" : "#CBD5E1",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.25s ease",
+                  flexShrink: 0,
+                  boxShadow: "inset 0 2px 4px rgba(0,0,0,0.1)",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "3px",
+                    left: allowScheduledOrders ? "27px" : "3px",
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "50%",
+                    background: "#fff",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                    transition: "all 0.25s ease",
+                  }}
+                />
+              </button>
             </div>
 
             {/* Configuração de antecedência */}

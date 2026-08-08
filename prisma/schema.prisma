@@ -43,6 +43,7 @@ model User {
   pagarmeRecipientId String?      // ID do destinatário no Pagar.me (split por restaurante)
   facebookPixelId String?         // ID do Pixel do Facebook/Meta Ads
   autoAcceptOrders Boolean        @default(false) // Auto-aceitar pedidos online
+  allowScheduledOrders Boolean     @default(true)  // Permitir agendamento de pedidos no site próprio
   storeAlertSound  String?        @default("bell") // Som de alerta: bell | chime | beep | none
   storeTimezone    String?        @default("America/Sao_Paulo") // Fuso horário regional do restaurante
   storeLoyalty    Json?           // { type: cashback|points, rate: 2, active: true }
