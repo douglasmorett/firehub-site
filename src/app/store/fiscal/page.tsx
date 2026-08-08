@@ -121,6 +121,8 @@ export default function StoreFiscalPage() {
   const [editingProduct, setEditingProduct] = useState<FiscalProduct | null>(null);
   const [editingCombo, setEditingCombo] = useState<FiscalProduct | null>(null);
   const [fiscalItemsDraft, setFiscalItemsDraft] = useState<any[]>([]);
+  const [comboDetails, setComboDetails] = useState<any>(null);
+  const [savingCombo, setSavingCombo] = useState(false);
 
   // Invoices state & Filters
   const [orders, setOrders] = useState<FiscalOrder[]>([]);
@@ -180,6 +182,44 @@ export default function StoreFiscalPage() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const fetchComboDetails = async (comboId: string) => {
+    try {
+      const res = await fetch("/api/store/fiscal/combos");
+      if (res.ok) {
+        const data = await res.json();
+        const found = (data.combos || []).find((c: any) => c.id === comboId);
+        if (found) setComboDetails(found);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveComboFiscal = async () => {
+    if (!editingCombo) return;
+    setSavingCombo(true);
+    try {
+      const res = await fetch(`/api/store/fiscal/combos/${editingCombo.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fiscalBreakdown: fiscalItemsDraft }),
+      });
+      if (res.ok) {
+        alert(`Engenharia fiscal do combo "${editingCombo.name}" salva com sucesso! ✅`);
+        setEditingCombo(null);
+        setComboDetails(null);
+        fetchProducts();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Erro ao salvar.");
+      }
+    } catch {
+      alert("Erro de conexão.");
+    } finally {
+      setSavingCombo(false);
     }
   };
 
@@ -655,7 +695,7 @@ export default function StoreFiscalPage() {
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "6px 0 12px" }}>
                       {combo.fiscalBreakdown ? "🟢 Engenharia Discriminada Ativa" : "⚪ Valor Único Padrão"}
                     </p>
-                    <button onClick={() => { setEditingCombo(combo); setFiscalItemsDraft(combo.fiscalBreakdown || []); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #7E22CE", background: "#F3E8FF", color: "#7E22CE", fontWeight: 700, cursor: "pointer" }}>
+                    <button onClick={() => { setEditingCombo(combo); setFiscalItemsDraft(combo.fiscalBreakdown || []); fetchComboDetails(combo.id); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #7E22CE", background: "#F3E8FF", color: "#7E22CE", fontWeight: 700, cursor: "pointer" }}>
                       Configurar Engenharia Fiscal
                     </button>
                   </div>
@@ -1078,6 +1118,266 @@ export default function StoreFiscalPage() {
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button onClick={() => setEditingProduct(null)} style={{ padding: "8px 14px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
               <button onClick={handleSaveProductTax} style={{ padding: "8px 18px", borderRadius: 6, border: "none", background: "#7E22CE", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>Salvar Tributação</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 5: ENGENHARIA FISCAL DO COMBO ── */}
+      {editingCombo && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => { setEditingCombo(null); setComboDetails(null); }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 700, maxHeight: "90vh", overflow: "auto", padding: "1.5rem", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "2px solid #7E22CE", paddingBottom: 10 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#1E293B" }}>🔧 Engenharia Fiscal do Combo</h2>
+                <p style={{ margin: "4px 0 0", fontSize: "0.82rem", color: "#64748B" }}>Configure como cada item sai na nota fiscal</p>
+              </div>
+              <button onClick={() => { setEditingCombo(null); setComboDetails(null); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
+            </div>
+
+            {/* Combo info */}
+            <div style={{ background: "#F3E8FF", border: "1px solid #D8B4FE", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "1rem", color: "#581C87" }}>{editingCombo.name}</div>
+                <div style={{ fontSize: "0.78rem", color: "#7E22CE" }}>Preço do combo para o cliente</div>
+              </div>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#16A34A" }}>{fmt(editingCombo.price)}</div>
+            </div>
+
+            {/* Groups from comboDetails */}
+            {comboDetails?.comboGroups?.length > 0 ? (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#334155" }}>📦 Grupos do Combo</h3>
+                  <button
+                    onClick={() => {
+                      // Auto-popular fiscalItemsDraft a partir dos comboGroups
+                      const items: any[] = [];
+                      for (const group of comboDetails.comboGroups) {
+                        const basePrice = group.maxQty > 0 ? editingCombo.price / group.maxQty : editingCombo.price;
+                        for (const gi of group.items) {
+                          const addPrice = gi.additionalPrice || 0;
+                          items.push({
+                            name: gi.menuProduct?.name || gi.name || "Item",
+                            price: parseFloat((basePrice + addPrice).toFixed(2)),
+                            basePrice: parseFloat(basePrice.toFixed(2)),
+                            additionalPrice: addPrice,
+                            category: gi.menuProduct?.category || editingCombo.category || "Lanches",
+                            ncm: gi.menuProduct?.ncm || editingCombo.ncm || "2106.90.90",
+                            cfop: editingCombo.cfop || "5102",
+                            csosn: editingCombo.csosn || "102",
+                            groupTitle: group.title,
+                            groupMaxQty: group.maxQty,
+                          });
+                        }
+                      }
+                      setFiscalItemsDraft(items);
+                    }}
+                    style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #7E22CE", background: "#F3E8FF", color: "#7E22CE", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                  >
+                    <Sparkles size={13} /> Auto-preencher itens fiscais
+                  </button>
+                </div>
+
+                {comboDetails.comboGroups.map((group: any) => {
+                  const basePrice = group.maxQty > 0 ? editingCombo.price / group.maxQty : editingCombo.price;
+                  return (
+                    <div key={group.id} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 14px", marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#334155" }}>{group.title}</span>
+                        <span style={{ fontSize: "0.72rem", color: "#64748B", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>Qtd: {group.maxQty} · Base: {fmt(basePrice)}/un</span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {group.items.map((gi: any) => {
+                          const addPrice = gi.additionalPrice || 0;
+                          const fiscalPrice = basePrice + addPrice;
+                          return (
+                            <div key={gi.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "#fff", borderRadius: 6, fontSize: "0.82rem" }}>
+                              <span style={{ color: "#334155" }}>{gi.menuProduct?.name || "Item"}</span>
+                              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                {addPrice > 0 && <span style={{ color: "#EA580C", fontWeight: 600, fontSize: "0.72rem" }}>+{fmt(addPrice)}</span>}
+                                <span style={{ fontWeight: 800, color: "#16A34A" }}>{fmt(fiscalPrice)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 10, padding: "1.5rem", textAlign: "center", marginBottom: 16, color: "#64748B", fontSize: "0.85rem" }}>
+                <RefreshCw size={20} style={{ margin: "0 auto 8px", animation: comboDetails === null ? "spin 1s linear infinite" : "none" }} />
+                {comboDetails === null ? "Carregando grupos do combo..." : "Nenhum grupo encontrado. Cadastre os itens do combo no cardápio primeiro."}
+              </div>
+            )}
+
+            {/* ── Itens fiscais configurados ── */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#334155" }}>📋 Itens na Nota Fiscal</h3>
+                <button
+                  onClick={() => setFiscalItemsDraft([...fiscalItemsDraft, { name: "", price: 0, category: editingCombo.category || "Lanches", ncm: editingCombo.ncm || "2106.90.90", cfop: "5102", csosn: "102" }])}
+                  style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <Plus size={12} /> Adicionar item
+                </button>
+              </div>
+
+              {fiscalItemsDraft.length === 0 ? (
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "1rem", textAlign: "center", fontSize: "0.82rem", color: "#92400E" }}>
+                  ⚠️ Nenhum item fiscal configurado. Clique em "Auto-preencher" acima para gerar automaticamente a partir dos grupos do combo.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {fiscalItemsDraft.map((item: any, idx: number) => (
+                    <div key={idx} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 600 }}>
+                          {item.groupTitle ? `${item.groupTitle}` : `Item ${idx + 1}`}
+                        </span>
+                        <button onClick={() => setFiscalItemsDraft(fiscalItemsDraft.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", padding: 2 }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8, marginBottom: 6 }}>
+                        <div>
+                          <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#475569" }}>Nome na NF</label>
+                          <input
+                            value={item.name}
+                            onChange={e => {
+                              const updated = [...fiscalItemsDraft];
+                              updated[idx] = { ...updated[idx], name: e.target.value };
+                              setFiscalItemsDraft(updated);
+                            }}
+                            style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#475569" }}>Preço NF (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={item.price}
+                            onChange={e => {
+                              const updated = [...fiscalItemsDraft];
+                              updated[idx] = { ...updated[idx], price: parseFloat(e.target.value) || 0 };
+                              setFiscalItemsDraft(updated);
+                            }}
+                            style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#475569" }}>NCM</label>
+                          <input
+                            value={item.ncm || ""}
+                            onChange={e => {
+                              const updated = [...fiscalItemsDraft];
+                              updated[idx] = { ...updated[idx], ncm: e.target.value };
+                              setFiscalItemsDraft(updated);
+                            }}
+                            placeholder="2106.90.90"
+                            style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                        <div>
+                          <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#475569" }}>Categoria</label>
+                          <input
+                            value={item.category || ""}
+                            onChange={e => {
+                              const updated = [...fiscalItemsDraft];
+                              updated[idx] = { ...updated[idx], category: e.target.value };
+                              setFiscalItemsDraft(updated);
+                            }}
+                            style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#475569" }}>CFOP</label>
+                          <input
+                            value={item.cfop || "5102"}
+                            onChange={e => {
+                              const updated = [...fiscalItemsDraft];
+                              updated[idx] = { ...updated[idx], cfop: e.target.value };
+                              setFiscalItemsDraft(updated);
+                            }}
+                            style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.68rem", fontWeight: 700, color: "#475569" }}>CSOSN</label>
+                          <input
+                            value={item.csosn || "102"}
+                            onChange={e => {
+                              const updated = [...fiscalItemsDraft];
+                              updated[idx] = { ...updated[idx], csosn: e.target.value };
+                              setFiscalItemsDraft(updated);
+                            }}
+                            style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", boxSizing: "border-box" }}
+                          />
+                        </div>
+                      </div>
+                      {item.additionalPrice > 0 && (
+                        <div style={{ marginTop: 6, fontSize: "0.72rem", color: "#EA580C", fontWeight: 600 }}>
+                          ⚠️ Inclui acréscimo de {fmt(item.additionalPrice)} (base {fmt(item.basePrice || 0)} + extra {fmt(item.additionalPrice)})
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Validação / Resumo ── */}
+            {fiscalItemsDraft.length > 0 && (() => {
+              const totalFiscal = fiscalItemsDraft.reduce((s: number, it: any) => s + (it.price || 0), 0);
+              const diff = totalFiscal - editingCombo.price;
+              const isValid = Math.abs(diff) < 0.02; // tolerância de centavos
+              return (
+                <div style={{ background: isValid ? "#F0FDF4" : "#FEF2F2", border: `1px solid ${isValid ? "#BBF7D0" : "#FECACA"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: isValid ? "#166534" : "#991B1B" }}>
+                      {isValid ? "✅ Valores batendo!" : "⚠️ Valores divergentes!"}
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: "0.82rem" }}>
+                    <div>
+                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Preço combo (cliente)</div>
+                      <div style={{ fontWeight: 800, color: "#334155" }}>{fmt(editingCombo.price)}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Total itens NF ({fiscalItemsDraft.length} itens)</div>
+                      <div style={{ fontWeight: 800, color: totalFiscal === editingCombo.price ? "#16A34A" : "#EF4444" }}>{fmt(totalFiscal)}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Diferença</div>
+                      <div style={{ fontWeight: 800, color: isValid ? "#16A34A" : "#EF4444" }}>{diff > 0 ? "+" : ""}{fmt(diff)}</div>
+                    </div>
+                  </div>
+                  {!isValid && (
+                    <p style={{ margin: "8px 0 0", fontSize: "0.75rem", color: "#991B1B", lineHeight: 1.4 }}>
+                      ⚠️ <strong>Atenção:</strong> A soma dos itens fiscais está diferente do preço base do combo. Isso é normal quando o combo tem itens com acréscimo — o valor final na NF irá refletir a escolha real do cliente. Certifique-se que o preço base por item está correto.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => { setEditingCombo(null); setComboDetails(null); }} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              {fiscalItemsDraft.length > 0 && (
+                <button onClick={() => { setFiscalItemsDraft([]); }} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#EF4444", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer" }}>
+                  <Trash2 size={14} style={{ marginRight: 4 }} /> Limpar tudo
+                </button>
+              )}
+              <button onClick={handleSaveComboFiscal} disabled={savingCombo || fiscalItemsDraft.length === 0} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: fiscalItemsDraft.length === 0 ? "#CBD5E1" : "#7E22CE", color: "#fff", fontSize: "0.85rem", fontWeight: 700, cursor: fiscalItemsDraft.length === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                {savingCombo ? <><RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> Salvando...</> : <><CheckCircle2 size={14} /> Salvar engenharia fiscal</>}
+              </button>
             </div>
           </div>
         </div>

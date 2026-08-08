@@ -74,6 +74,33 @@ export async function GET(req: NextRequest) {
           },
         });
 
+        // Vincular taxa de gestão ao ciclo de faturamento mensal
+        if (newFeeAccrued > (campaign.feeAccrued ?? 0)) {
+          const feeToAdd = newFeeAccrued - (campaign.feeAccrued ?? 0);
+          const now = new Date();
+          const cycleMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          try {
+            // Tenta incrementar no ciclo existente
+            const existing = await (prisma as any).franchiseeBillingCycle.findFirst({
+              where: { userId: campaign.franchiseeId, month: cycleMonth },
+            });
+            if (existing) {
+              await (prisma as any).franchiseeBillingCycle.update({
+                where: { id: existing.id },
+                data: { metaAdsFee: (existing.metaAdsFee ?? 0) + feeToAdd },
+              });
+            } else {
+              await (prisma as any).franchiseeBillingCycle.create({
+                data: { userId: campaign.franchiseeId, month: cycleMonth, metaAdsFee: feeToAdd },
+              });
+            }
+            log.push(`  💸 +R$${feeToAdd.toFixed(2)} taxa adicionada ao ciclo ${cycleMonth}`);
+          } catch (billingErr: any) {
+            log.push(`  ⚠️ Billing: ${billingErr.message}`);
+          }
+        }
+
+
         log.push(`✅ ${campaign.id}: spend=R$${newSpend.toFixed(2)}, fee=R$${newFeeAccrued.toFixed(2)}`);
         synced++;
       } catch (err: any) {

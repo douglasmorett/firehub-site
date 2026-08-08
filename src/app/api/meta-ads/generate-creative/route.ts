@@ -15,13 +15,19 @@ export async function POST(req: NextRequest) {
   const user = await prisma.user.findUnique({ where: { id: franchiseeId } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  // Buscar produtos top do cardápio
-  const products = await (prisma as any).menuProduct.findMany({
+  // Buscar produtos do cardápio e ordenar
+  const allProducts = await (prisma as any).menuProduct.findMany({
     where: { franchiseeId, active: true },
-    orderBy: { name: "asc" },
-    take: 10,
     select: { name: true, price: true, category: true, imageUrl: true },
   });
+
+  allProducts.sort((a: any, b: any) => {
+    if (a.imageUrl && !b.imageUrl) return -1;
+    if (!a.imageUrl && b.imageUrl) return 1;
+    return (b.price || 0) - (a.price || 0);
+  });
+
+  const products = allProducts.slice(0, 6);
 
   const storeName = user.storeName ?? user.name ?? "Restaurante";
   const city = user.city ?? "";
@@ -36,17 +42,19 @@ export async function POST(req: NextRequest) {
     try {
       const prompt = `Você é um copywriter especialista em anúncios de delivery de comida para Facebook/Instagram.
 
-Gere um anúncio para o restaurante "${storeName}"${city ? ` em ${city}` : ""}.
-Produtos do cardápio: ${productNames || "diversos pratos"}
+Gere um texto de anúncio focado em delivery local para o restaurante "${storeName}"${city ? ` em ${city}` : ""}.
+Produtos em destaque: ${productNames || "diversos pratos deliciosos"}
 
-Regras:
-- Texto principal: máximo 2 linhas, use emoji, seja direto e apetitoso
-- Descrição: máximo 1 linha, mencione entrega rápida e facilidade de pedir
-- Foque em gerar desejo e urgência
-- Use linguagem informal brasileira
+Regras estritas:
+- Mencione o nome do restaurante ("${storeName}").
+- Destaque que é delivery com entrega rápida na região.
+- Crie um senso de urgência (ex: "Bateu a fome?", "Não perca tempo", "Peça agora").
+- Use emojis estrategicamente, sem excessos.
+- Texto principal (adCopy): curto e impactante, no máximo 3 linhas.
+- Descrição (adDescription): super curta, no máximo 1 linha para a área de botão/CTA.
 
-Responda EXATAMENTE neste formato JSON (sem markdown):
-{"adCopy": "texto principal do anúncio", "adDescription": "descrição curta"}`;
+Responda EXATAMENTE neste formato JSON (sem markdown, apenas o JSON puro):
+{"adCopy": "texto principal aqui", "adDescription": "descrição curta aqui"}`;
 
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
