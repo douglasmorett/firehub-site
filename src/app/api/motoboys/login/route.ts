@@ -30,16 +30,27 @@ export async function POST(req: NextRequest) {
 
     const cleanPhone = phone.replace(/\D/g, "");
 
-    // Busca motoboy estritamente vinculado a esta loja
-    const motoboy = await prisma.motoboy.findFirst({
+    // Busca todos os motoboys ativos desta loja para comparação robusta
+    const motoboys = await prisma.motoboy.findMany({
       where: {
         franchiseeId: storeUser.id,
         active: true,
-        OR: [
-          ...(cleanPhone ? [{ phone: { contains: cleanPhone } }] : []),
-          { name: { contains: phone, mode: "insensitive" } }
-        ]
       }
+    });
+
+    // Filtra no JS para ignorar caracteres especiais como () - e espaços salvos no banco
+    const motoboy = motoboys.find(m => {
+      // Busca por nome exato ou parcial
+      if (m.name.toLowerCase().includes(phone.toLowerCase())) return true;
+      
+      // Busca por telefone limpo (só números)
+      if (m.phone && cleanPhone) {
+        const dbPhoneClean = m.phone.replace(/\D/g, "");
+        if (dbPhoneClean === cleanPhone || dbPhoneClean.includes(cleanPhone)) {
+          return true;
+        }
+      }
+      return false;
     });
 
     if (!motoboy) {
