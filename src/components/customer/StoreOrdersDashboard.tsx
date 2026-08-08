@@ -1875,7 +1875,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     pastOrders.forEach((o: any) => {
       if (!map.has(o.id)) {
         const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
-        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+        const tz = user?.storeTimezone || "America/Sao_Paulo";
+        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: tz }).split(",")[0];
         const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
         shiftCounters.set(shiftKey, nextSeq);
         map.set(o.id, nextSeq);

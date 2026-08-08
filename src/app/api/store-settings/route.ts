@@ -57,11 +57,12 @@ export async function PUT(req: Request) {
   const updatedUser = await prisma.user.update({ where: { id: currentUser.id }, data });
 
   // ── Sincronizar cidade e dados da loja para todos os funcionários da equipe ──
-  if (data.city !== undefined || data.storeName !== undefined || data.cpfCnpj !== undefined) {
+  if (data.city !== undefined || data.storeName !== undefined || data.cpfCnpj !== undefined || data.storeTimezone !== undefined) {
     const staffUpdates: any = {};
     if (data.city !== undefined) staffUpdates.city = data.city;
     if (data.storeName !== undefined) staffUpdates.storeName = data.storeName;
     if (data.cpfCnpj !== undefined) staffUpdates.cpfCnpj = data.cpfCnpj;
+    if (data.storeTimezone !== undefined) staffUpdates.storeTimezone = data.storeTimezone;
 
     await prisma.user.updateMany({
       where: { ownerId: currentUser.id },

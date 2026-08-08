@@ -279,27 +279,38 @@ export default function KDSTelaPage() {
 
   const fetchOrders = useCallback(async () => {
     if (!stage) return;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout prevents stalled requests
     try {
       const res = await fetch(`/api/kds?stage=${stage}&t=${Date.now()}`, { 
         credentials: "include",
         cache: "no-store",
-        headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
+        headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" },
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
+      
       if (!res.ok) {
         setIsReconnecting(true);
         return;
       }
       const data: Order[] = await res.json();
       setIsReconnecting(false);
+      
       if (Array.isArray(data)) {
-        setOrders(data);
-        setHasEnteredIds((prev) => {
-          const next = new Set(prev);
-          data.forEach((o) => next.add(o.id));
-          return next;
-        });
+        const newDataStr = JSON.stringify(data);
+        if (newDataStr !== lastJsonRef.current) {
+          lastJsonRef.current = newDataStr;
+          setOrders(data);
+          setHasEnteredIds((prev) => {
+            const next = new Set(prev);
+            data.forEach((o) => next.add(o.id));
+            return next;
+          });
+        }
       }
     } catch (err) {
+      clearTimeout(timeoutId);
       console.error("[KDS] Erro ao buscar pedidos:", err);
       setIsReconnecting(true);
     }
@@ -424,7 +435,11 @@ export default function KDSTelaPage() {
           setToast({ orderId: order.id, label: `❌ Erro: ${errData.error || "Falha ao dar baixa"}` });
           if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
           toastTimerRef.current = setTimeout(() => setToast(null), 4000);
-          return; // Aborta a remoção do card!
+          
+          // Aborta a remoção do card e limpa a trava para permitir tentar novamente
+          exitingOrderIdsRef.current.delete(order.id);
+          setExitingOrderIds(new Set(exitingOrderIdsRef.current));
+          return; 
         }
 
         // Se sucesso, remove o card da tela
@@ -438,6 +453,9 @@ export default function KDSTelaPage() {
 
       } catch (err) {
         setToast({ orderId: order.id, label: "❌ Erro de conexão ao dar baixa" });
+        // Limpa a trava para permitir tentar novamente
+        exitingOrderIdsRef.current.delete(order.id);
+        setExitingOrderIds(new Set(exitingOrderIdsRef.current));
       }
     },
     [stage, fetchOrders]

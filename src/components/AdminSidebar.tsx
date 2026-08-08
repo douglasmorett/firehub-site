@@ -86,71 +86,71 @@ export default async function AdminSidebar() {
           <p style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, padding: "8px 12px 4px", margin: 0 }}>Operação</p>
 
           {can("dashboard") && (
-            <Link href="/admin" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <LayoutDashboard size={18} style={{ marginRight: "10px" }} /> Dashboard
-            </Link>
+            </a>
           )}
           {can("orders") && (
-            <Link href="/admin/orders" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin/orders" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <ShoppingCart size={18} style={{ marginRight: "10px" }} /> Pedidos
-            </Link>
+            </a>
           )}
           {(role === "ADMIN" || isFranchisee) && (
-            <Link href="/admin/cardapio" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin/cardapio" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <UtensilsCrossed size={18} style={{ marginRight: "10px" }} /> Cardápio Digital
-            </Link>
+            </a>
           )}
           {(role === "ADMIN" || isFranchisee) && (
-            <Link href="/admin/motoboys" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin/motoboys" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <Bike size={18} style={{ marginRight: "10px" }} /> Motoboys
-            </Link>
+            </a>
           )}
 
           {/* ===== GESTÃO ===== */}
           <p style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, padding: "12px 12px 4px", margin: 0 }}>Gestão</p>
 
           {can("invoices") && (
-            <Link href="/admin/invoices" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin/invoices" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <Receipt size={18} style={{ marginRight: "10px" }} /> Notas de Compras
-            </Link>
+            </a>
           )}
           {can("products") && (
-            <Link href="/admin/products" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin/products" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <Package size={18} style={{ marginRight: "10px" }} /> Produtos
-            </Link>
+            </a>
           )}
           {can("products") && (
-            <Link href="/admin/labels" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin/labels" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <Tag size={18} style={{ marginRight: "10px" }} /> Validação / Etiquetas
-            </Link>
+            </a>
           )}
 
           {/* ===== FINANCEIRO ===== */}
           <p style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, padding: "12px 12px 4px", margin: 0 }}>Financeiro</p>
 
           {(can("finance") || can("payables")) && (
-            <Link href="/admin/finance" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+            <a href="/admin/finance" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
               <DollarSign size={18} style={{ marginRight: "10px" }} /> Contas a Pagar
-            </Link>
+            </a>
           )}
           {role === "ADMIN" && (
-            <Link href="/admin/gestao-financeira" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", borderLeft: "3px solid #DC2626", background: "rgba(220,38,38,0.06)" }}>
+            <a href="/admin/gestao-financeira" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", borderLeft: "3px solid #DC2626", background: "rgba(220,38,38,0.06)" }}>
               <BarChart3 size={18} style={{ marginRight: "10px", color: "#DC2626" }} /> Gestão Financeira
-            </Link>
+            </a>
           )}
 
           {/* ===== FERRAMENTAS ===== */}
           <p style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, padding: "12px 12px 4px", margin: 0 }}>Ferramentas</p>
 
           {(role === "ADMIN" || isFranchisee) && (
-            <Link href="/admin/checklist" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "linear-gradient(135deg, rgba(234,179,8,0.08), rgba(249,115,22,0.08))", borderLeft: "3px solid #F59E0B" }}>
+            <a href="/admin/checklist" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "linear-gradient(135deg, rgba(234,179,8,0.08), rgba(249,115,22,0.08))", borderLeft: "3px solid #F59E0B" }}>
               <ClipboardCheck size={18} style={{ marginRight: "10px", color: "#F59E0B" }} /> Checklist IA
-            </Link>
+            </a>
           )}
           {role === "ADMIN" && (
-            <Link href="/admin/ai-chat" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1))", borderLeft: "3px solid #667eea" }}>
+            <a href="/admin/ai-chat" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1))", borderLeft: "3px solid #667eea" }}>
               <Sparkles size={18} style={{ marginRight: "10px", color: "#667eea" }} /> FireHub IA
-            </Link>
+            </a>
           )}
 
           {/* ===== ADMIN ===== */}
@@ -158,18 +158,18 @@ export default async function AdminSidebar() {
             <>
               <p style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, padding: "12px 12px 4px", margin: 0 }}>Administração</p>
 
-              <Link href="/admin/franchisees" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+              <a href="/admin/franchisees" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
                 <Users size={18} style={{ marginRight: "10px" }} /> Clientes
-              </Link>
-              <Link href="/admin/equipe" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+              </a>
+              <a href="/admin/equipe" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
                 <UserCog size={18} style={{ marginRight: "10px" }} /> Equipe / Acessos
-              </Link>
-              <Link href="/admin/routes" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
+              </a>
+              <a href="/admin/routes" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
                 <Truck size={18} style={{ marginRight: "10px" }} /> Logística / Rotas
-              </Link>
-              <Link href="/admin/lojistas" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "rgba(220,38,38,0.06)", borderLeft: "3px solid #DC2626" }}>
+              </a>
+              <a href="/admin/lojistas" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "rgba(220,38,38,0.06)", borderLeft: "3px solid #DC2626" }}>
                 <Store size={18} style={{ marginRight: "10px", color: "#DC2626" }} /> Painel de Lojistas
-              </Link>
+              </a>
             </>
           )}
         </nav>

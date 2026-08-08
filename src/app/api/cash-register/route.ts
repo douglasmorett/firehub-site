@@ -59,6 +59,12 @@ export async function GET(req: NextRequest) {
   if (!session || (session.user as any).role !== "ADMIN")
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
+  const currentUser = await prisma.user.findUnique({
+    where: { email: session.user.email! },
+    select: { storeTimezone: true }
+  });
+  const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
+
   const mode = req.nextUrl.searchParams.get("mode") || "current";
 
   if (mode === "current") {
@@ -105,8 +111,8 @@ export async function GET(req: NextRequest) {
   }
 
   if (mode === "today") {
-    // Usar timezone de Brasília para calcular início do dia corretamente
-    const nowBR = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    // Usar timezone da loja para calcular início do dia corretamente
+    const nowBR = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
     const start = new Date(nowBR);
     start.setHours(0, 0, 0, 0);
     // Converter de volta para UTC para query no banco
@@ -159,6 +165,12 @@ export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).role !== "ADMIN")
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const currentUser = await prisma.user.findUnique({
+    where: { email: session.user.email! },
+    select: { storeTimezone: true, storePhone: true, name: true, storeName: true }
+  });
+  const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
 
   const { registerId, entries, justification } = await req.json();
 
@@ -216,13 +228,10 @@ export async function PUT(req: NextRequest) {
   });
 
   // Buscar telefone do admin para WhatsApp
-  const admin = await prisma.user.findFirst({
-    where: { email: session.user?.email! },
-    select: { storePhone: true, name: true, storeName: true },
-  });
+  const admin = currentUser;
 
   // Montar mensagem WhatsApp
-  const now     = new Date().toLocaleString("pt-BR");
+  const now     = new Date().toLocaleString("pt-BR", { timeZone: tz });
   const diff    = discrepancy >= 0 ? `+${fmt(discrepancy)}` : fmt(discrepancy);
   const diffEmoji = Math.abs(discrepancy) <= 0.5 ? "✅" : (discrepancy > 0 ? "🟡 Sobra" : "🔴 Falta");
 

@@ -9,7 +9,8 @@
 
 export function buildSessionOrderNumberMap(
   orders: any[],
-  cashSessionsOrOpenedAt?: any[] | Date | string | null
+  cashSessionsOrOpenedAt?: any[] | Date | string | null,
+  timeZone: string = "America/Sao_Paulo"
 ) {
   const map = new Map<string, number>();
 
@@ -59,7 +60,7 @@ export function buildSessionOrderNumberMap(
         map.set(o.id, o.dailyOrderNumber);
       } else {
         const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
-        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0];
+        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone }).split(",")[0];
         const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
         shiftCounters.set(shiftKey, nextSeq);
         map.set(o.id, nextSeq);
@@ -70,8 +71,12 @@ export function buildSessionOrderNumberMap(
   return map;
 }
 
-export function applyUnifiedDailyOrderNumbers(orders: any[], cashSessionsOrOpenedAt?: any[] | Date | string | null) {
-  const seqMap = buildSessionOrderNumberMap(orders, cashSessionsOrOpenedAt);
+export function applyUnifiedDailyOrderNumbers(
+  orders: any[],
+  cashSessionsOrOpenedAt?: any[] | Date | string | null,
+  timeZone: string = "America/Sao_Paulo"
+) {
+  const seqMap = buildSessionOrderNumberMap(orders, cashSessionsOrOpenedAt, timeZone);
   return orders.map((o: any) => ({
     ...o,
     dailyOrderNumber: seqMap.get(o.id) || o.dailyOrderNumber || null,

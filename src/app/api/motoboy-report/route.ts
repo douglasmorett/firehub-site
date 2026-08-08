@@ -2,16 +2,17 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, toLocalISODate } from "@/lib/timezone";
 
 // GET /api/motoboy-report?motoboyId=xxx&from=2026-05-01&to=2026-05-31
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  // Segurança e otimização: buscar apenas o id do usuário (evita carregar tokens e dados sensíveis)
+  // Segurança e otimização: buscar apenas o id do usuário e timezone
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, ownerId: true }
+    select: { id: true, ownerId: true, storeTimezone: true }
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
@@ -23,25 +24,20 @@ export async function GET(req: Request) {
   const to = url.searchParams.get("to");
   const calcMode = url.searchParams.get("calcMode") || "all"; // "all" | "fee_only"
 
-  // Determinar período exato respeitando fuso horário do Brasil (America/Sao_Paulo UTC-3)
+  const tz = user.storeTimezone || "America/Sao_Paulo";
+
+  // Determinar período exato respeitando fuso horário do restaurante
   let fromDate: Date;
   let toDate: Date;
 
   if (from) {
-    // Ex: "2026-08-01" -> inicio do dia em Brasília (00:00:00 BRT = 03:00:00 UTC)
-    fromDate = new Date(`${from}T03:00:00.000Z`);
+    fromDate = getStartOfDayUTC(from, tz);
   } else {
-    // Início do mês atual em Brasília (00:00:00 BRT = 03:00:00 UTC)
-    const nowSp = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-    const yyyy = nowSp.getFullYear();
-    const mm = String(nowSp.getMonth() + 1).padStart(2, "0");
-    fromDate = new Date(`${yyyy}-${mm}-01T03:00:00.000Z`);
+    fromDate = getStartOfMonthUTC(new Date(), tz);
   }
 
   if (to) {
-    // Ex: "2026-08-01" -> fim do dia em Brasília (23:59:59.999 BRT = 2026-08-02T02:59:59.999Z UTC)
-    const [y, m, d] = to.split("-").map(Number);
-    toDate = new Date(Date.UTC(y, m - 1, d + 1, 2, 59, 59, 999));
+    toDate = getEndOfDayUTC(to, tz);
   } else {
     toDate = new Date();
   }
@@ -99,9 +95,9 @@ export async function GET(req: Request) {
     const totalDeliveries = orders.length;
     const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
 
-    // Calcular dias únicos trabalhados em fuso horário do Brasil (America/Sao_Paulo)
+    // Calcular dias únicos trabalhados no fuso horário do restaurante
     const uniqueDays = orders.length > 0
-      ? new Set(orders.map((o) => new Date(o.createdAt).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }).split(",")[0])).size
+      ? new Set(orders.map((o) => toLocalISODate(new Date(o.createdAt), tz))).size
       : 0;
 
     // Soma das taxas dos pedidos
@@ -233,8 +229,8 @@ export async function GET(req: Request) {
     period: {
       from: fromDate.toISOString(),
       to: toDate.toISOString(),
-      fromFormatted: fromDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
-      toFormatted: toDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+      fromFormatted: fromDate.toLocaleDateString("pt-BR", { timeZone: tz }),
+      toFormatted: toDate.toLocaleDateString("pt-BR", { timeZone: tz }),
     },
     report,
   });

@@ -82,14 +82,15 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
  * O franqueado vê imediatamente quanto deve no painel financeiro.
  */
 export async function trackSaleForBilling(franchiseeId: string) {
-  const yearMonth = getCurrentYearMonth();
-
-  await ensureCycle(franchiseeId, yearMonth);
-
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true },
+    select: { email: true, planPercent: true, storeTimezone: true },
   });
+
+  const tz = user?.storeTimezone || "America/Sao_Paulo";
+  const yearMonth = getCurrentYearMonth(0, tz);
+
+  await ensureCycle(franchiseeId, yearMonth);
 
   const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
 
@@ -285,11 +286,12 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 export async function getCurrentCycleView(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true },
+    select: { email: true, planPercent: true, storeTimezone: true },
   });
 
   const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
-  const yearMonth = getCurrentYearMonth();
+  const tz = user?.storeTimezone || "America/Sao_Paulo";
+  const yearMonth = getCurrentYearMonth(0, tz);
 
   const cycle = await prisma.franchiseeBillingCycle.findUnique({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },

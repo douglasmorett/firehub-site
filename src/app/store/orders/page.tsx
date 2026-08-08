@@ -13,10 +13,12 @@ export default async function StoreOrdersPage() {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, role: true, name: true, email: true, cpfCnpj: true },
+    select: { id: true, role: true, name: true, email: true, cpfCnpj: true, storeTimezone: true },
   });
   if (!user) redirect("/login");
   if (user.role !== "ADMIN" && user.role !== "FRANCHISEE" && user.role !== "STAFF") redirect("/store");
+
+  const tz = user.storeTimezone || "America/Sao_Paulo";
 
   const orders = await prisma.order.findMany({
     where: { userId: user.id },
@@ -116,12 +118,12 @@ export default async function StoreOrdersPage() {
                     <div style={{ color: "#94A3B8", fontSize: "0.75rem", marginTop: 2 }}>
                       {new Date(order.createdAt).toLocaleDateString("pt-BR", {
                         day: "2-digit", month: "long", year: "numeric",
-                        timeZone: "America/Sao_Paulo"
+                        timeZone: tz
                       })}
                       {" · "}
                       {new Date(order.createdAt).toLocaleTimeString("pt-BR", {
                         hour: "2-digit", minute: "2-digit",
-                        timeZone: "America/Sao_Paulo"
+                        timeZone: tz
                       })}
                     </div>
                   </div>

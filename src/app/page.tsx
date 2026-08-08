@@ -221,6 +221,116 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SEÇÃO CHATBOT HUMANIZADO */}
+      <section className="sec" style={{ background: "linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%)", padding: "5rem 0", position: "relative", overflow: "hidden" }}>
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid { grid-template-columns: 0.9fr 1.1fr !important; }
+                .responsive-grid > div:first-child { order: 2; }
+                .responsive-grid > div:last-child { order: 1; }
+              }
+            `}</style>
+            <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 20px 40px rgba(0,0,0,0.1)", background: "#FFF" }}>
+              <img
+                src="/images/chatbot_ui.jpg"
+                alt="FireHub Chatbot Humanizado"
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
+            
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(37,211,102,0.15)", border: "1px solid rgba(37,211,102,0.4)", color: "#16A34A", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                💬 CHATBOT WHATSAPP HUMANIZADO
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#0F172A", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Chega de robôs que irritam o seu cliente
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#475569", lineHeight: 1.6, margin: "0 0 24px" }}>
+                O robô de atendimento do FireHub é diferente de tudo o que você já viu. Ele <strong style={{ color: "#0F172A" }}>escuta áudios</strong> e entende naturalmente o que o cliente quer, montando o pedido direto na conversa sem forçar seu cliente a sair do WhatsApp para abrir links confusos.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="features-grid">
+                <style>{`
+                  @media (max-width: 600px) {
+                    .features-grid { grid-template-columns: 1fr !important; }
+                  }
+                `}</style>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>🎙️ Entende Áudios</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Compreende perfeitamente pedidos e instruções enviadas por voz</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>🛍️ Monta Pedidos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Adiciona itens ao carrinho sem que o cliente abra links do cardápio</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>❤️ Atendimento Empático</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Uma conversa natural, como se fosse o seu melhor atendente humano</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>🚀 Aumenta Vendas</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Zera desistências de quem odeia lidar com sistemas e sites complexos</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO ROTEIRIZADOR */}
+      <section className="sec" style={{ background: "#020617", color: "#FFF", padding: "5rem 0", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", bottom: -100, left: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-2">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-2 { grid-template-columns: 1.1fr 0.9fr !important; }
+              }
+            `}</style>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(59,130,246,0.2)", border: "1px solid rgba(59,130,246,0.5)", color: "#60A5FA", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                🗺️ LOGÍSTICA INTELIGENTE
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Roteirizador que coloca o seu restaurante em <span style={{ color: "#3B82F6" }}>outro nível</span>
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Não jogue dinheiro fora com entregas desorganizadas. Nosso sistema de roteirização inteligente permite acompanhar os motoboys e criar rotas perfeitas, garantindo que os pedidos saiam juntos e cheguem na temperatura ideal.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="features-grid">
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🗺️ Rotas Otimizadas</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Agrupa pedidos próximos automaticamente para um único motoboy</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🛵 Controle Total</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Saiba exatamente quem está disponível na loja e quem está na rua</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⏱️ Previsão Exata</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Reduza atrasos em horários de pico despachando no momento certo</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>💰 Economia de Taxas</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Aproveite melhor sua equipe e evite idas e vindas desnecessárias</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.8)", background: "#000" }}>
+              <img
+                src="/images/roteirizador_ui.jpg"
+                alt="FireHub Roteirizador"
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* COMO FUNCIONA */}
       <section className="sec sec-alt" id="como-funciona">
         <div className="w">

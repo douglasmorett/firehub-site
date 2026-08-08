@@ -35,6 +35,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       storeDeliveryOnly: true,
       storeLogo: true,
       storeLatLng: true,
+      storeTimezone: true,
     },
   }).catch((err) => {
     console.error("[PedidosClientes] Erro ao buscar usuário:", err);
@@ -120,7 +121,8 @@ export default async function FranchiseeCustomerOrdersPage() {
     ]);
 
     const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions);
+    const tz = (user as any)?.storeTimezone || "America/Sao_Paulo";
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions, tz);
 
     orders = ordersRes.map((o: any) => ({
       ...o,

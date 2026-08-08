@@ -12,32 +12,32 @@ const PERIODS = [
   { label: "Personalizado", value: "custom" },
 ];
 
-function getBrasilDateString(d: Date = new Date()): string {
-  const spDate = new Date(d.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+function getBrasilDateString(d: Date = new Date(), tz = "America/Sao_Paulo"): string {
+  const spDate = new Date(d.toLocaleString("en-US", { timeZone: tz }));
   const yyyy = spDate.getFullYear();
   const mm = String(spDate.getMonth() + 1).padStart(2, "0");
   const dd = String(spDate.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function getRange(period: string) {
+function getRange(period: string, tz = "America/Sao_Paulo") {
   const now = new Date();
-  if (period === "today") return { from: getBrasilDateString(now), to: getBrasilDateString(now) };
+  if (period === "today") return { from: getBrasilDateString(now, tz), to: getBrasilDateString(now, tz) };
   if (period === "week") {
-    const spNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const spNow = new Date(now.toLocaleString("en-US", { timeZone: tz }));
     const start = new Date(spNow);
     start.setDate(spNow.getDate() - spNow.getDay());
-    return { from: getBrasilDateString(start), to: getBrasilDateString(now) };
+    return { from: getBrasilDateString(start, tz), to: getBrasilDateString(now, tz) };
   }
   if (period === "month") {
-    const spNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const spNow = new Date(now.toLocaleString("en-US", { timeZone: tz }));
     const start = new Date(spNow.getFullYear(), spNow.getMonth(), 1);
-    return { from: getBrasilDateString(start), to: getBrasilDateString(now) };
+    return { from: getBrasilDateString(start, tz), to: getBrasilDateString(now, tz) };
   }
   return null;
 }
 
-export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
+export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: Motoboy[], storeTimezone?: string }) {
   const [period, setPeriod] = useState("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -51,7 +51,8 @@ export default function MotoboyReport({ motoboys }: { motoboys: Motoboy[] }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const range = period === "custom" ? { from: customFrom, to: customTo } : getRange(period);
+    const tz = storeTimezone || "America/Sao_Paulo";
+    const range = period === "custom" ? { from: customFrom, to: customTo } : getRange(period, tz);
     if (!range?.from || !range?.to) { setLoading(false); return; }
 
     const params = new URLSearchParams({ from: range.from, to: range.to, calcMode });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 
 // Valida assinatura HMAC do iFood (segurança)
@@ -81,8 +82,6 @@ export async function POST(req: NextRequest) {
 // Polling de eventos (alternativa/backup ao webhook)
 export async function GET(req: NextRequest) {
   const { getIfoodToken } = await import("@/lib/ifood-api");
-  const merchantId = process.env.IFOOD_MERCHANT_UUID;
-  if (!merchantId) return NextResponse.json({ error: "IFOOD_MERCHANT_UUID não configurado" }, { status: 500 });
 
   let token: string;
   try {
@@ -104,17 +103,9 @@ export async function GET(req: NextRequest) {
   const dataText = await res.text();
   const data = dataText ? JSON.parse(dataText) : [];
 
-  let franchisee = merchantId
-    ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
-    : null;
-  
-  if (!franchisee) {
-    return NextResponse.json({ events: [], error: `Nenhum franqueado encontrado para merchantId: ${merchantId}` });
-  }
-
   for (const event of data ?? []) {
     try {
-      await processIfoodEvent(event, franchisee.id);
+      await processIfoodEvent(event);
     } catch (err) {
       console.error("[iFood Polling] Erro ao processar evento:", event?.id, err);
     }
@@ -385,9 +376,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
       // 🖨️ AUTO-PRINT: Enfileira na Fila de Impressão na Nuvem para impressão automática imediata!
       try {
-        const startOfTodayBrazil = new Date(new Date().toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo" }) + "T00:00:00-03:00");
+        const tz = franchisee.storeTimezone || "America/Sao_Paulo";
+        const startOfTodayStore = getStartOfDayUTC(toLocalISODate(new Date(), tz), tz);
         const countToday = await prisma.customerOrder.count({
-          where: { franchiseeId: franchisee.id, createdAt: { gte: startOfTodayBrazil } }
+          where: { franchiseeId: franchisee.id, createdAt: { gte: startOfTodayStore } }
         });
 
         const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");

@@ -96,11 +96,6 @@ export async function jotajaMutate(
   });
 }
 
-/** merchantId principal (UUID) do Jotajá */
-export function getJotajaMerchantId(): string {
-  const id = process.env.JOTAJA_MERCHANT_ID || "22238";
-  return id;
-}
 
 /** Obtém o merchantId do Jotajá para o usuário logado */
 export async function getJotajaMerchantIdForUser(email: string): Promise<string> {

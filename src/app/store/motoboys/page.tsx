@@ -26,7 +26,7 @@ export default async function MotoboysPage() {
       <p className="text-muted" style={{ marginBottom: "1.5rem" }}>
         Cadastre seus entregadores, configure pagamentos e gere relatórios de comissão.
       </p>
-      <MotoboyDashboard initialMotoboys={motoboys} />
+      <MotoboyDashboard initialMotoboys={motoboys} storeTimezone={user.storeTimezone || undefined} />
     </div>
   );
 }

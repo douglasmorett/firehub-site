@@ -583,13 +583,13 @@ export default function StoreTopNav({
               </div>
             </div>
           ) : (
-            <Link href="/store" style={{ display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
+            <a href="/store" style={{ display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
               <img src="/firehub-flame.png" alt="FireHub" style={{ width:30, height:30, borderRadius:7, objectFit:"cover" }} />
               <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1 }}>
                 <span style={{ color:"#fff", fontWeight:900, fontSize:"0.95rem" }}>Fire<span style={{ color:"#FF6B35" }}>Hub</span></span>
                 <span style={{ color:"rgba(255,255,255,0.65)", fontWeight:500, fontSize:"0.55rem", letterSpacing:"0.5px", textTransform:"uppercase" }}>Sistema de Pedidos</span>
               </div>
-            </Link>
+            </a>
           )}
 
           {/* ── SELETOR MULTI-LOJAS ── */}
@@ -679,10 +679,10 @@ export default function StoreTopNav({
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
             return (
-              <Link key={item.href} href={item.href} style={{ display:"flex", alignItems:"center", gap:5, padding:"0.65rem 0.8rem", fontSize:"0.8rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
+              <a key={item.href} href={item.href} style={{ display:"flex", alignItems:"center", gap:5, padding:"0.65rem 0.8rem", fontSize:"0.8rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
                 <Icon size={14} /> {item.label}
                 {item.highlight && <span style={{ width:7, height:7, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
-              </Link>
+              </a>
             );
           })}
         </div>

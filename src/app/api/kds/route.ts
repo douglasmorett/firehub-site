@@ -35,10 +35,14 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     let userStoreIds: string[] = [];
+    let user: any = null;
 
     if (email) {
-      const user = await withRetry(() =>
-        prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } })
+      user = await withRetry(() =>
+        prisma.user.findUnique({
+          where: { email },
+          select: { id: true, ownerId: true, isFranqueadoHakim: true, storeTimezone: true },
+        })
       ).catch(() => null);
 
       if (user) {
@@ -164,7 +168,8 @@ export async function GET(req: NextRequest) {
     );
 
     const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions);
+    const tz = user?.storeTimezone || "America/Sao_Paulo";
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions, tz);
 
     const ordersWithDailyNum = orders.map((o: any) => ({
       ...o,

@@ -124,20 +124,13 @@ export async function processJotajaEvent(
         : null;
 
       if (!franchisee) {
-        const merchantId = process.env.JOTAJA_MERCHANT_ID || "22238";
-        const eventMerchantId = merchantId || orderData.merchant?.id;
-        franchisee = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { jotajaMerchantId: eventMerchantId },
-              { jotajaConnected: true },
-              { email: "contatohakim@gmail.com" },
-              { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } }
-            ]
-          } as any,
-        });
+        const eventMerchantId = orderData.merchant?.id;
+        if (eventMerchantId) {
+          franchisee = await prisma.user.findFirst({
+            where: { jotajaMerchantId: eventMerchantId } as any,
+          });
+        }
       }
-      if (!franchisee) franchisee = await prisma.user.findFirst();
       if (!franchisee) {
         return { action: "error", orderId, message: `Nenhum usuário encontrado para associar ao pedido` };
       }

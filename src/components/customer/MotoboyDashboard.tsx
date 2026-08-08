@@ -3,7 +3,7 @@ import { useState } from "react";
 import MotoboyManager from "./MotoboyManager";
 import MotoboyReport from "./MotoboyReport";
 
-export default function MotoboyDashboard({ initialMotoboys }: { initialMotoboys: any[] }) {
+export default function MotoboyDashboard({ initialMotoboys, storeTimezone }: { initialMotoboys: any[], storeTimezone?: string }) {
   const [tab, setTab] = useState<"cadastro" | "relatorio">("cadastro");
   const [motoboys, setMotoboys] = useState(initialMotoboys);
 
@@ -30,7 +30,7 @@ export default function MotoboyDashboard({ initialMotoboys }: { initialMotoboys:
         <MotoboyManager initialMotoboys={motoboys} />
       )}
       {tab === "relatorio" && (
-        <MotoboyReport motoboys={motoboys} />
+        <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} />
       )}
     </div>
   );

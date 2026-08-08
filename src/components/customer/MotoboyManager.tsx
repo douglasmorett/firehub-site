@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Plus, Edit2, Trash2, Bike, Check, X, Phone, DollarSign } from "lucide-react";
+import { Plus, Edit2, Trash2, Bike, Check, X, Phone, DollarSign, Search } from "lucide-react";
 
 type Motoboy = {
   id: string; name: string; phone?: string; password?: string; active: boolean;
@@ -24,6 +24,12 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const filteredMotoboys = motoboys.filter(mb => 
+    mb.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (mb.phone && mb.phone.includes(searchTerm))
+  );
 
   const openNew = () => { setEditing(empty()); setEditingId(null); };
   const openEdit = (mb: Motoboy) => { setEditing({ ...mb }); setEditingId(mb.id); };
@@ -136,6 +142,22 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
         {!editing && <button onClick={openNew} className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}><Plus size={15} style={{ marginRight: 6 }} />Novo Motoboy</button>}
       </div>
 
+      {/* Busca */}
+      {motoboys.length > 0 && !editing && (
+        <div style={{ position: "relative", marginBottom: 16 }}>
+          <Search size={18} color="#94A3B8" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+          <input 
+            type="text" 
+            placeholder="Buscar por nome ou telefone..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ width: "100%", padding: "12px 14px 12px 40px", borderRadius: 12, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: "0.95rem", outline: "none", transition: "border 0.2s" }}
+            onFocus={(e) => e.target.style.border = "1px solid #3B82F6"}
+            onBlur={(e) => e.target.style.border = "1px solid #E2E8F0"}
+          />
+        </div>
+      )}
+
       {/* New Motoboy Form at top if editingId is null */}
       {editing && editingId === null && renderForm()}
 
@@ -148,7 +170,12 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {motoboys.map(mb => {
+        {filteredMotoboys.length === 0 && motoboys.length > 0 && (
+          <div style={{ textAlign: "center", padding: "2rem", color: "#64748B", fontSize: "0.9rem" }}>
+            Nenhum motoboy encontrado para "{searchTerm}".
+          </div>
+        )}
+        {filteredMotoboys.map(mb => {
           if (editingId === mb.id) {
             return <div key={mb.id}>{renderForm()}</div>;
           }

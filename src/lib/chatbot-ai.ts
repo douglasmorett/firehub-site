@@ -172,13 +172,15 @@ export async function processChatbotAI(
     SAB: "Sábado",
   };
 
-  // ── FIX CRÍTICO DE TIMEZONE (BRASÍLIA / UTC-3) ──
-  // No Vercel, new Date() roda em UTC (ex: 22h50 no BR já é 01h50 de sexta em UTC).
-  // Precisamos forçar a data atual para o fuso 'America/Sao_Paulo'.
+  // ── FIX CRÍTICO DE TIMEZONE DA LOJA ──
+  // No Vercel, new Date() roda em UTC.
+  // Precisamos forçar a data atual para o fuso horário da loja (ou Brasília padrão).
+  const tz = user.storeTimezone || "America/Sao_Paulo";
+  
   const getBrazilDayCode = (offsetDays = 0): { code: string; name: string } => {
     const now = new Date();
     if (offsetDays !== 0) now.setDate(now.getDate() + offsetDays);
-    const brDayStr = now.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Sao_Paulo" });
+    const brDayStr = now.toLocaleDateString("en-US", { weekday: "short", timeZone: tz });
     const EN_TO_BR: Record<string, string> = {
       Sun: "DOM", Mon: "SEG", Tue: "TER", Wed: "QUA", Thu: "QUI", Fri: "SEX", Sat: "SAB"
     };

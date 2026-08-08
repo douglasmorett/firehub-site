@@ -24,9 +24,8 @@ export async function GET(req: NextRequest) {
   const log: string[] = [];
 
   try {
-    const { jotajaFetch, jotajaMutate, getJotajaMerchantId } = await import("@/lib/jotaja-api");
-    const merchantId = getJotajaMerchantId();
-    log.push(`ℹ️ Polling para MerchantId: ${merchantId}`);
+    const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+    log.push(`ℹ️ Polling para eventos globais Jotajá`);
 
     // Poll events from Jotajá via Open Delivery
     let res: Response;

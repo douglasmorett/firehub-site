@@ -41,11 +41,12 @@ export async function GET(req: Request) {
     let franchiseeId = "";
     const user = await prisma.user.findUnique({
       where: { email: emailLower },
-      select: { id: true, city: true }
+      select: { id: true, city: true, storeTimezone: true }
     });
     if (user) {
       franchiseeId = user.id;
     }
+    const tz = user?.storeTimezone || "America/Sao_Paulo";
 
     // Se admin e não for hakim, usa o ID do hakim se ele existir para testar
     let userCity = user?.city || null;
@@ -153,7 +154,7 @@ export async function GET(req: Request) {
 
     const formatDateSP = (d: Date) => {
       return d.toLocaleDateString("pt-BR", {
-        timeZone: "America/Sao_Paulo",
+        timeZone: tz,
         day: "2-digit",
         month: "2-digit",
         year: "numeric"
@@ -161,7 +162,7 @@ export async function GET(req: Request) {
     };
     const formatTimeSP = (d: Date) => {
       return d.toLocaleTimeString("pt-BR", {
-        timeZone: "America/Sao_Paulo",
+        timeZone: tz,
         hour: "2-digit",
         minute: "2-digit"
       });

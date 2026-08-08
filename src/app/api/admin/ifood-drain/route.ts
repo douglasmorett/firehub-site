@@ -19,16 +19,16 @@ export async function GET(req: NextRequest) {
 
   try {
     const { getIfoodToken } = await import("@/lib/ifood-api");
-    const merchantId = process.env.IFOOD_MERCHANT_UUID || "5bfb7d90-b184-4b95-a2bc-ae61db896cb0";
 
     // Find franchisee
     const franchisee = await prisma.user.findFirst({
       where: { email: { contains: "hakim", mode: "insensitive" } },
-      select: { id: true, storeName: true },
+      select: { id: true, storeName: true, ifoodMerchantId: true },
     });
-    if (!franchisee) {
-      return NextResponse.json({ error: "Franchisee not found" }, { status: 404 });
+    if (!franchisee?.ifoodMerchantId) {
+      return NextResponse.json({ error: "Franchisee or ifoodMerchantId not found" }, { status: 404 });
     }
+    const merchantId = franchisee.ifoodMerchantId;
     log.push(`👤 Franchisee: ${franchisee.storeName} (${franchisee.id})`);
 
     // Get token
