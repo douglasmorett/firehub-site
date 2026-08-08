@@ -52,7 +52,7 @@ const COMPARE = [
   ["Leitura de notas por IA 🏆", true, false, false],
   ["Estoque automático 🏆", true, false, false],
   ["CMV automático 🏆", true, false, false],
-  ["Integração iFood / Rappi", true, true, false],
+  ["Integração iFood / 99Food", true, true, false],
 ];
 
 // Preço = 1% do faturamento, mín R$50, máx R$400
