@@ -120,22 +120,53 @@ function timerGlow(totalSeconds: number): string {
   return "none";
 }
 
-function parseComboSelections(raw: string | null, parentQuantity: number = 1): { name: string; quantity: number }[] {
+function parseComboSelections(raw: any, parentQuantity: number = 1): { name: string; quantity: number }[] {
   if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((item: any) => ({
-          name: item.name || item.productName || item.label || "",
-          quantity: (item.quantity || 1) * (parentQuantity || 1),
-        }))
-        .filter((item: any) => item.name);
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = raw.split(/[\n|;]/).map(s => s.trim()).filter(Boolean);
     }
-    return [];
-  } catch {
-    return [];
   }
+
+  if (Array.isArray(parsed)) {
+    const list: { name: string; quantity: number }[] = [];
+    for (const item of parsed) {
+      if (typeof item === "string") {
+        const match = item.match(/^(\d+)x?\s*(.+)$/i);
+        if (match) {
+          list.push({
+            name: match[2].trim(),
+            quantity: parseInt(match[1], 10) * (parentQuantity || 1),
+          });
+        } else if (item.trim()) {
+          list.push({
+            name: item.trim(),
+            quantity: 1 * (parentQuantity || 1),
+          });
+        }
+      } else if (item && typeof item === "object") {
+        const rawName = String(item.name || item.productName || item.label || item.description || "");
+        const qty = Number(item.quantity || item.qty || 1);
+        const match = rawName.match(/^(\d+)x?\s*(.+)$/i);
+        if (match) {
+          list.push({
+            name: match[2].trim(),
+            quantity: parseInt(match[1], 10) * (parentQuantity || 1),
+          });
+        } else if (rawName.trim()) {
+          list.push({
+            name: rawName.trim(),
+            quantity: qty * (parentQuantity || 1),
+          });
+        }
+      }
+    }
+    return list;
+  }
+  return [];
 }
 
 // ─── Font stack ─────────────────────────────────────────────────────────────────
