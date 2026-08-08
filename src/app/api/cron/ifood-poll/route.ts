@@ -163,11 +163,6 @@ export async function GET(req: NextRequest) {
                 let cancelFranchisee = merchantId
                   ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
                   : null;
-                if (!cancelFranchisee) {
-                  cancelFranchisee = await prisma.user.findFirst({
-                    where: { email: "contatohakim@gmail.com" }
-                  });
-                }
 
                 if (cancelFranchisee) {
                   const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
@@ -298,11 +293,7 @@ export async function GET(req: NextRequest) {
           let eventFranchisee = eventMerchantId
             ? await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId, role: "FRANCHISEE" } as any })
             : null;
-          if (!eventFranchisee) {
-            eventFranchisee = await prisma.user.findFirst({
-              where: { email: "contatohakim@gmail.com" }
-            });
-          }
+
           if (!eventFranchisee) {
             log.push(`  ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
             continue;

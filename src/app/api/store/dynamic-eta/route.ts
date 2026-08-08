@@ -54,12 +54,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const hakimUser = await prisma.user.findFirst({
-      where: { email: "contatohakim@gmail.com" },
-      select: { id: true, ownerId: true, name: true },
-    });
+    const hakimUser = null; // Removing Hakim fallback completely to enforce tenant isolation
 
-    const targetUser = tokenUser || sessionUser || hakimUser;
+    const targetUser = tokenUser || sessionUser;
     if (!targetUser) {
       return NextResponse.json({ error: "Loja não identificada" }, { status: 401 });
     }
@@ -75,7 +72,6 @@ export async function GET(req: NextRequest) {
     const allStoreUsers = await prisma.user.findMany({
       where: {
         OR: [
-          { email: "contatohakim@gmail.com" },
           { id: targetUser.id },
           { ownerId: targetUser.id },
           { ownerId: targetUser.ownerId || "none" },
@@ -93,8 +89,6 @@ export async function GET(req: NextRequest) {
       sessionUser?.ownerId,
       tokenUser?.id,
       tokenUser?.ownerId,
-      hakimUser?.id,
-      hakimUser?.ownerId,
     ].filter(Boolean))) as string[];
 
     // Se uma loja específica estiver selecionada, filtrar apenas os pedidos daquela loja
