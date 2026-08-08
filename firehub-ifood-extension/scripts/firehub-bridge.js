@@ -2,8 +2,9 @@
  * FireHub Chrome Extension — Bridge Content Script
  * Injetado nas páginas do FireHub (firehubfood.com.br / firehub.com.br / localhost)
  * 
- * FONTE PRIMÁRIA DE VERDADE: Lê o contador exato da coluna 'Em Produção' 
- * a cada 2 segundos e envia pro background em tempo real.
+ * Funcionalidades:
+ * 1. Lê o contador exato da coluna 'Em Produção' a cada 2 segundos e envia pro background em tempo real.
+ * 2. Exibe alerta elegante na tela do FireHub quando o portal do iFood for desconectado, com botão de reconexão direta (sem criar abas duplicadas).
  */
 
 console.log("[FireHub Extension Bridge] ⚡ Conectado ao painel do FireHub em tempo real!");
@@ -16,9 +17,8 @@ function notifyCount(count, source) {
   consecutiveFailures = 0;
   const now = Date.now();
   const changed = count !== lastEmProducaoCount;
-  const heartbeatDue = (now - lastSentTime) > 10000; // Heartbeat a cada 10s
+  const heartbeatDue = (now - lastSentTime) > 10000;
 
-  // Enviar se mudou OU se passou 10s (heartbeat)
   if (!changed && !heartbeatDue) return;
 
   if (changed) {
@@ -37,6 +37,64 @@ function notifyCount(count, source) {
   }
 }
 
+// Escuta notificações do background (ex: iFood desconectado)
+if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg && msg.action === "IFOOD_DISCONNECTED_ALERT") {
+      showIfoodDisconnectedBanner(msg.reason || "Sessão do portal iFood expirada");
+    }
+    if (msg && msg.action === "IFOOD_CONNECTED_ALERT") {
+      removeIfoodDisconnectedBanner();
+    }
+  });
+}
+
+// ── BANNER DE ALERTA DE DESCONEXÃO NO FIREHUB ──
+function showIfoodDisconnectedBanner(reasonText) {
+  if (document.getElementById("firehub-ifood-disconnect-alert")) return;
+
+  const alertContainer = document.createElement("div");
+  alertContainer.id = "firehub-ifood-disconnect-alert";
+  alertContainer.style.cssText = `
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 999999;
+    background: #FEF2F2; border: 2px solid #EF4444; color: #991B1B;
+    padding: 12px 20px; border-radius: 16px; box-shadow: 0 10px 30px rgba(239,68,68,0.25);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 14px;
+    max-width: 90vw; animation: firehubSlideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  `;
+
+  alertContainer.innerHTML = `
+    <span style="font-size: 18px;">⚠️</span>
+    <div>
+      <div style="font-size: 14px; font-weight: 900; color: #7F1D1D;">O Portal iFood foi desconectado!</div>
+      <div style="font-size: 12px; font-weight: 600; color: #991B1B;">${reasonText}. Faça login para manter o ajuste automático ativo.</div>
+    </div>
+    <button id="firehub-reconnect-ifood-btn" style="
+      background: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px;
+      border-radius: 10px; font-weight: 900; font-size: 12px; cursor: pointer;
+      box-shadow: 0 4px 12px rgba(239,68,68,0.3); transition: all 0.2s;
+    ">🔑 Reconectar no iFood</button>
+  `;
+
+  document.body.appendChild(alertContainer);
+
+  const btn = document.getElementById("firehub-reconnect-ifood-btn");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({ action: "FOCUS_OR_OPEN_IFOOD" }).catch(() => {});
+      }
+      removeIfoodDisconnectedBanner();
+    });
+  }
+}
+
+function removeIfoodDisconnectedBanner() {
+  const el = document.getElementById("firehub-ifood-disconnect-alert");
+  if (el) el.remove();
+}
+
 // 1. Escuta eventos postMessage emitidos pelo Dashboard de Pedidos
 window.addEventListener("message", (event) => {
   if (event.data && event.data.type === "FIREHUB_EM_PRODUCAO_COUNT") {
@@ -47,7 +105,6 @@ window.addEventListener("message", (event) => {
 
 // 2. Leitura do DOM a cada 2 segundos
 function readCountFromDOM() {
-  // Prioridade 1: Badge com ID específico
   const badgeEl = document.getElementById("firehub-em-producao-count-badge");
   if (badgeEl && badgeEl.textContent) {
     const countNum = parseInt(badgeEl.textContent.trim(), 10);
@@ -57,7 +114,6 @@ function readCountFromDOM() {
     }
   }
 
-  // Prioridade 2: Coluna col-preparo
   const preparoCol = document.querySelector('[data-droppable="col-preparo"]');
   if (preparoCol) {
     const badge = preparoCol.querySelector("span[data-column-count]");
@@ -70,11 +126,9 @@ function readCountFromDOM() {
     }
   }
 
-  // Prioridade 3: Procurar pelo texto "Em Produção" e ler o badge ao lado
   const allHeaders = document.querySelectorAll("h2, h3, span, div");
   for (const el of allHeaders) {
     if ((el.textContent || "").trim() === "Em Produção") {
-      // Procurar badge numérico próximo (irmão ou filho do pai)
       const parent = el.parentElement;
       if (parent) {
         const badges = parent.querySelectorAll("span");
@@ -91,23 +145,14 @@ function readCountFromDOM() {
   }
 
   consecutiveFailures++;
-  if (consecutiveFailures > 10) {
-    // Se não acha o badge há 20 segundos, pode ser que não tem pedidos
-    console.log("[FireHub Bridge] ⚠️ Badge não encontrado — pode não ter pedidos em produção");
-    // Não notificar 0 automaticamente pois pode ser erro de DOM
-  }
 }
 
-// Verificar a cada 2 segundos
 setInterval(readCountFromDOM, 2000);
-// Primeira leitura imediata
 setTimeout(readCountFromDOM, 500);
 
-// 3. MutationObserver para reagir instantaneamente a mudanças no badge
 function observeBadge() {
   const badgeEl = document.getElementById("firehub-em-producao-count-badge");
   if (!badgeEl) {
-    // Tentar de novo em 3s
     setTimeout(observeBadge, 3000);
     return;
   }
@@ -123,5 +168,4 @@ function observeBadge() {
   console.log("[FireHub Bridge] 👁️ MutationObserver ativo no badge Em Produção!");
 }
 
-// Iniciar observer quando a página carregar
 setTimeout(observeBadge, 2000);

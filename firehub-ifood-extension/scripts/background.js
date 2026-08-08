@@ -5,9 +5,10 @@
  * 1. PRIMÁRIO: Bridge (lê o DOM do FireHub em tempo real, a cada 1s)
  * 2. FALLBACK: API do servidor (só quando o bridge não está ativo)
  * 
- * Fluxo:
- * Bridge → handleLiveCountUpdate() → calculateAndApply() → Salva no storage + Envia pro iFood
- * Alarme (1min) → Se bridge inativo, chama API → calculateAndApply()
+ * Prevenção de Abas Duplicadas:
+ * - Nunca abre múltiplas abas do iFood.
+ * - Reutiliza a mesma aba existente.
+ * - Detecta desconexão do iFood e alerta o lojista no FireHub sem ficar abrindo abas.
  */
 
 const ALARM_NAME = "FIREHUB_DYNAMIC_ETA_SYNC";
@@ -35,7 +36,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const changed = triggerKeys.some(key => key in changes);
 
   if (changed) {
-    // Pegar a contagem mais recente (bridge ou storage)
     chrome.storage.local.get(["ordersInProduction"], (store) => {
       const count = bridgeCount > 0 ? bridgeCount : (store.ordersInProduction || 0);
       console.log(`[FireHub] 🔄 Config mudou → Recalculando com ${count} pedidos...`);
@@ -44,7 +44,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-// ── RECEPTOR EM TEMPO REAL (FIREHUB WEB BRIDGE) ──
+// ── RECEPTOR DE MENSAGENS DO BRIDGE E DO CONTENT SCRIPT ──
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.action === "FIREHUB_LIVE_COUNT") {
     bridgeLastUpdate = Date.now();
@@ -54,27 +54,97 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
-  if (msg && msg.action === "OPEN_DELIVERY_SETTINGS") {
-    const settingsUrl = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
-    chrome.tabs.query({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience*" }, (tabs) => {
-      if (tabs && tabs.length > 0) {
-        console.log(`[FireHub] 📌 Aba de configurações já existe (tab ${tabs[0].id}), reaproveitando...`);
-      } else {
-        console.log("[FireHub] 🚀 Abrindo aba de configurações de entrega em background...");
-        chrome.tabs.create({ url: settingsUrl, active: false });
-      }
-    });
+  if (msg && msg.action === "IFOOD_SESSION_DISCONNECTED") {
+    console.warn("[FireHub] 🔴 Notificação de iFood Desconectado recebida!");
+    chrome.storage.local.set({ ifoodDisconnected: true, ifoodDisconnectedTime: new Date().toLocaleTimeString("pt-BR") });
+    notifyBridgeTabs({ action: "IFOOD_DISCONNECTED_ALERT", reason: msg.reason || "Sessão expirada" });
     sendResponse({ success: true });
   }
+
+  if (msg && msg.action === "IFOOD_SESSION_CONNECTED") {
+    console.log("[FireHub] 🟢 iFood Conectado!");
+    chrome.storage.local.set({ ifoodDisconnected: false });
+    notifyBridgeTabs({ action: "IFOOD_CONNECTED_ALERT" });
+    sendResponse({ success: true });
+  }
+
+  if (msg && msg.action === "OPEN_DELIVERY_SETTINGS" || msg.action === "FOCUS_OR_OPEN_IFOOD") {
+    handleFocusOrOpenIfood(sendResponse);
+    return true; // async sendResponse
+  }
 });
+
+// Envia mensagem para abas do FireHub ativas
+async function notifyBridgeTabs(payload) {
+  try {
+    const bridgeTabs = await chrome.tabs.query({
+      url: [
+        "https://firehubfood.com.br/*",
+        "https://*.firehubfood.com.br/*",
+        "https://firehub.com.br/*",
+        "https://*.firehub.com.br/*",
+        "https://hakimriodasostras.com.br/*",
+        "https://*.hakimriodasostras.com.br/*",
+        "http://localhost:3001/*",
+        "http://localhost:3000/*"
+      ]
+    });
+    for (const tab of bridgeTabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, payload).catch(() => {});
+      }
+    }
+  } catch (e) {}
+}
+
+// ── REAPROVEITAMENTO E FOCO DE ABA DO IFOOD (Evita abas duplicadas) ──
+async function handleFocusOrOpenIfood(sendResponse) {
+  const settingsUrl = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
+  const portalBaseUrl = "https://portal.ifood.com.br/";
+
+  // 1. Procura se já existe a aba exata de configurações de entrega
+  const settingsTabs = await chrome.tabs.query({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience*" });
+  if (settingsTabs.length > 0 && settingsTabs[0].id) {
+    console.log(`[FireHub] 📌 Focando na aba de configurações existente (tab ${settingsTabs[0].id})...`);
+    await chrome.tabs.update(settingsTabs[0].id, { active: true });
+    if (settingsTabs[0].windowId) {
+      await chrome.windows.update(settingsTabs[0].windowId, { focused: true });
+    }
+    if (sendResponse) sendResponse({ success: true, tabId: settingsTabs[0].id });
+    return;
+  }
+
+  // 2. Se não tem a de configurações, procura QUALQUER aba do iFood
+  const anyIfoodTabs = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
+  if (anyIfoodTabs.length > 0 && anyIfoodTabs[0].id) {
+    console.log(`[FireHub] 📌 Direcionando aba iFood existente para configurações (tab ${anyIfoodTabs[0].id})...`);
+    await chrome.tabs.update(anyIfoodTabs[0].id, { url: settingsUrl, active: true });
+    if (anyIfoodTabs[0].windowId) {
+      await chrome.windows.update(anyIfoodTabs[0].windowId, { focused: true });
+    }
+    if (sendResponse) sendResponse({ success: true, tabId: anyIfoodTabs[0].id });
+    return;
+  }
+
+  // 3. Se não tem nenhuma aba aberta, abre APENAS 1 aba
+  console.log("[FireHub] 🚀 Abrindo 1 única aba do portal iFood...");
+  const newTab = await chrome.tabs.create({ url: settingsUrl, active: true });
+  if (sendResponse) sendResponse({ success: true, tabId: newTab.id });
+}
 
 // ── FUNÇÃO CENTRAL: Calcula ETA e aplica ──
 async function calculateAndApply(count) {
   try {
     const store = await chrome.storage.local.get([
       "motoboysCount", "activeMode", "manualRules",
-      "autoSyncEnabled", "manualSyncEnabled"
+      "autoSyncEnabled", "manualSyncEnabled", "ifoodDisconnected"
     ]);
+
+    // Se o iFood foi marcado como desconectado, avisa os logs e não fica tentando se o estado for permanente
+    if (store.ifoodDisconnected) {
+      console.log("[FireHub] ⚠️ iFood está desconectado. Aguardando o lojista reconectar...");
+      notifyBridgeTabs({ action: "IFOOD_DISCONNECTED_ALERT", reason: "Sessão do portal iFood encerrada" });
+    }
 
     const motoboys = store.motoboysCount || 2;
     const mode = store.activeMode || "auto";
@@ -85,7 +155,6 @@ async function calculateAndApply(count) {
     let shouldPauseStore = false;
 
     if (mode === "manual" && Array.isArray(store.manualRules) && store.manualRules.length > 0) {
-      // ── MODO MANUAL: Usar regras personalizadas ──
       const sorted = [...store.manualRules].sort((a, b) => (a.maxOrders || 0) - (b.maxOrders || 0));
       const matched = sorted.find(r => count <= r.maxOrders) || sorted[sorted.length - 1];
       if (matched) {
@@ -94,8 +163,6 @@ async function calculateAndApply(count) {
         etaRangeFormatted = shouldPauseStore ? "⚠️ PAUSAR LOJA" : `${recommendedMinutes} min`;
       }
     } else {
-      // ── MODO AUTOMÁTICO: Tabela Hakim ──
-      // 28m = ≤ 1*M | 38m = ≤ 2*M | 58m = ≤ 3*M | 78m = ≤ 4*M | > 4*M → PAUSAR
       const max28 = 1 * motoboys;
       const max38 = 2 * motoboys;
       const max58 = 3 * motoboys;
@@ -122,7 +189,6 @@ async function calculateAndApply(count) {
 
     const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-    // Salvar no storage (popup lê daqui)
     await chrome.storage.local.set({
       ordersInProduction: count,
       lastEtaFormatted: etaRangeFormatted,
@@ -144,18 +210,15 @@ async function calculateAndApply(count) {
         shouldPause: shouldPauseStore,
       };
 
-      // IMPORTANTE: Enviar APENAS pra aba de Configurações de Entrega
-      // NÃO enviar pro Gestor de Pedidos ou outras páginas do iFood
       const settingsTabs = await chrome.tabs.query({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience*" });
       console.log(`[FireHub] 📤 Despachando ${recommendedMinutes} min | Abas de Config: ${settingsTabs.length}`);
 
       if (settingsTabs.length > 0) {
-        // Enviar só pra aba de configurações
         for (const tab of settingsTabs) {
           if (tab.id) {
             try {
               await chrome.tabs.sendMessage(tab.id, payload);
-              console.log(`[FireHub] ✅ Enviado pra tab ${tab.id}`);
+              console.log(`[FireHub] ✅ Enviado para a aba em segundo plano (tab ${tab.id})`);
             } catch (err) {
               console.warn(`[FireHub] ⚠️ Falha tab ${tab.id}: ${err.message}. Reinjetando...`);
               try {
@@ -163,26 +226,29 @@ async function calculateAndApply(count) {
                   target: { tabId: tab.id },
                   files: ["scripts/content.js"]
                 });
-                await new Promise(r => setTimeout(r, 2000));
+                await new Promise(r => setTimeout(r, 1500));
                 await chrome.tabs.sendMessage(tab.id, payload);
-                console.log(`[FireHub] ✅ Enviado após reinjeção`);
-              } catch (e2) {
-                console.error(`[FireHub] ❌ Falha total: ${e2.message}`);
-              }
+              } catch (e2) {}
             }
           }
         }
       } else {
-        // Nenhuma aba de configurações aberta → abrir em background
-        console.log("[FireHub] 🚀 Abrindo Config de Entrega em background...");
-        chrome.storage.local.set({ pendingETA: recommendedMinutes });
-        chrome.tabs.create({
-          url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience",
-          active: false
-        });
+        // Se NENHUMA aba de configurações está aberta:
+        // Verifica se iFood não está marcado como desconectado ANTES de abrir
+        if (!store.ifoodDisconnected) {
+          const anyIfood = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
+          if (anyIfood.length === 0) {
+            console.log("[FireHub] 🚀 Nenhuma aba do iFood aberta. Criando 1 única aba em segundo plano...");
+            chrome.storage.local.set({ pendingETA: recommendedMinutes });
+            chrome.tabs.create({
+              url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience",
+              active: false
+            });
+          } else {
+            console.log(`[FireHub] 📌 Aba iFood já existe (tab ${anyIfood[0].id}). Não criando aba duplicada.`);
+          }
+        }
       }
-    } else {
-      console.log(`[FireHub] ⏸️ Sync desativado, apenas salvando valores.`);
     }
 
   } catch (err) {
@@ -193,7 +259,6 @@ async function calculateAndApply(count) {
 // ── ALARME: FALLBACK QUANDO O BRIDGE NÃO ESTÁ ATIVO ──
 async function runSyncProcess() {
   try {
-    // Se o bridge atualizou nos últimos 30 segundos, usa a contagem dele
     const bridgeIsActive = (Date.now() - bridgeLastUpdate) < 30000;
 
     if (bridgeIsActive) {
@@ -202,7 +267,6 @@ async function runSyncProcess() {
       return;
     }
 
-    // Bridge inativo → chamar API do servidor como fallback
     console.log("[FireHub Alarm] Bridge inativo, buscando contagem da API...");
 
     const store = await chrome.storage.local.get(["serverUrl", "motoboysCount", "activeMode", "manualRules", "authToken"]);

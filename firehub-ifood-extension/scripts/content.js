@@ -3,8 +3,8 @@
  * 
  * Funcionalidades:
  * 1. Exibe pílula flutuante no canto da tela com status do ETA
- * 2. AUTOMATICAMENTE navega para Configurações de Entrega e ajusta o prazo
- *    usando os botões "+ 5 min" / "- 5 min" e clicando em "Salvar"
+ * 2. AUTOMATICAMENTE ajusta o prazo em segundo plano usando os botões "+ 5 min" / "- 5 min" e "Salvar"
+ * 3. Detecta quando a sessão do iFood é encerrada/desconectada e notifica o FireHub para exibir o aviso sem abrir abas duplicadas.
  */
 
 console.log("[FireHub Extension] 🍕 Script carregado no Portal do Parceiro iFood!");
@@ -15,36 +15,64 @@ let isApplying = false;
 
 // ── INICIALIZAÇÃO ──
 createFloatingCornerPill();
+checkDisconnectionStatus();
+
+// Verificar se a sessão expirou
+function checkDisconnectionStatus() {
+  const href = window.location.href.toLowerCase();
+  const isLoginPage = href.includes("login") || href.includes("auth") || href.includes("signin");
+  const hasPasswordInput = !!document.querySelector('input[type="password"], input[name="email"]');
+  const bodyText = (document.body ? document.body.innerText : "").toLowerCase();
+  const hasDisconnectText = bodyText.includes("fazer login") || bodyText.includes("sessão expirou") || bodyText.includes("entre com sua conta");
+
+  if ((isLoginPage || (hasPasswordInput && hasDisconnectText)) && !isOnDeliverySettingsPage()) {
+    console.warn("[FireHub] ⚠️ iFood Desconectado / Tela de Login detectada!");
+    chrome.storage.local.set({ ifoodDisconnected: true });
+    chrome.runtime.sendMessage({ action: "IFOOD_SESSION_DISCONNECTED", reason: "Sessão expirada no Portal iFood" }).catch(() => {});
+    updatePillStatus("🔴 iFood Desconectado - Faça Login!", true);
+    return true;
+  } else if (isOnDeliverySettingsPage()) {
+    chrome.storage.local.set({ ifoodDisconnected: false });
+    chrome.runtime.sendMessage({ action: "IFOOD_SESSION_CONNECTED" }).catch(() => {});
+  }
+  return false;
+}
 
 // Ao carregar a página, verificar se existe um ETA pendente para aplicar
 chrome.storage.local.get(["pendingETA", "lastAppliedETA"], (store) => {
   lastAppliedETA = store.lastAppliedETA || null;
 
   if (store.pendingETA && isOnDeliverySettingsPage()) {
-    console.log(`[FireHub] 🎯 ETA pendente encontrado: ${store.pendingETA} min. Aplicando em 4s...`);
+    console.log(`[FireHub] 🎯 ETA pendente encontrado: ${store.pendingETA} min. Aplicando em 3s...`);
     setTimeout(() => {
       applyETAOnSettingsPage(store.pendingETA);
       chrome.storage.local.remove(["pendingETA"]);
-    }, 4000);
+    }, 3000);
   }
 });
+
+// Monitorar navegação na página para pegar logout
+setInterval(checkDisconnectionStatus, 8000);
 
 // ── RECEPTOR DE MENSAGENS ──
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "SET_DELIVERY_TIME") {
+    if (checkDisconnectionStatus()) {
+      sendResponse({ success: false, reason: "disconnected" });
+      return;
+    }
+
     const targetMin = request.minMinutes || 38;
     console.log(`[FireHub Auto-ETA] ⏱️ Recebido: ${request.formatted} (${targetMin} min) | Modo: ${request.mode}`);
 
     updateFloatingPill(request.formatted, request.mode, request.shouldPause);
 
-    // Não aplica se deve pausar a loja
     if (request.shouldPause) {
       console.log("[FireHub] ⚠️ shouldPause=true → Não aplicando, só exibindo alerta.");
       sendResponse({ success: true, applied: false, reason: "shouldPause" });
       return;
     }
 
-    // Sempre tenta aplicar — a função applyETAOnSettingsPage já verifica os valores reais
     handleETAUpdate(targetMin);
     sendResponse({ success: true, applied: true });
   }
@@ -80,21 +108,19 @@ async function handleETAUpdate(targetMinutes) {
   const targetChanged = lastAppliedETA !== targetMinutes;
   const cooldownPassed = (now - lastApplyTime) > 60000; // 60s cooldown
 
-  // Só aplica se: o alvo mudou OU já passou 60s desde a última aplicação
   if (!targetChanged && !cooldownPassed) {
-    return; // Silencioso — não spammar log
+    return;
   }
 
   lastApplyTime = now;
 
   if (isOnDeliverySettingsPage()) {
-    // Já estamos na página de configurações → aplicar diretamente
-    console.log(`[FireHub] 📍 Aplicando ${targetMinutes} min no iFood...`);
-    await sleep(1500);
+    console.log(`[FireHub] 📍 Aplicando ${targetMinutes} min no iFood em segundo plano...`);
+    await sleep(1000);
     await applyETAOnSettingsPage(targetMinutes);
   } else {
-    // NÃO redirecionar esta aba! Pedir ao background pra abrir/encontrar a aba certa
-    console.log("[FireHub] 📌 Não estamos na tela de configurações. Delegando ao background...");
+    // NÃO redirecionar esta aba se for gestor de pedidos! Sollicita ao background
+    console.log("[FireHub] 📌 Não estamos na tela de configurações. Solicitando ao background...");
     chrome.storage.local.set({ pendingETA: targetMinutes });
     chrome.runtime.sendMessage({
       action: "OPEN_DELIVERY_SETTINGS",
@@ -115,15 +141,13 @@ async function applyETAOnSettingsPage(targetMinutes) {
 
     // 1. Garantir que estamos na aba "Operação atual"
     await clickOperacaoAtualTab();
-    await sleep(2000);
+    await sleep(1500);
 
     // 2. Encontrar os inputs de tempo
     let timeInputs = findTimeInputs();
 
-    // Se não encontrou, esperar e tentar de novo
     if (timeInputs.length === 0) {
-      console.log("[FireHub] ⏳ Inputs não encontrados, aguardando 3s...");
-      await sleep(3000);
+      await sleep(2500);
       timeInputs = findTimeInputs();
     }
 
@@ -140,7 +164,6 @@ async function applyETAOnSettingsPage(targetMinutes) {
     console.log(`[FireHub] 📊 Tempos atuais: [${currentValues.join(", ")}] | Máximo: ${currentMax} min`);
 
     if (currentMax === 0) {
-      console.warn("[FireHub] ❌ Valores atuais não legíveis");
       updatePillStatus("❌ Valores não legíveis", true);
       return;
     }
@@ -167,66 +190,15 @@ async function applyETAOnSettingsPage(targetMinutes) {
     if (adjustBtn) {
       for (let i = 0; i < clicksNeeded; i++) {
         adjustBtn.click();
-        console.log(`[FireHub] 🖱️ Clique ${i + 1}/${clicksNeeded}`);
-        await sleep(350);
+        await sleep(300);
       }
 
-      await sleep(1200);
+      await sleep(1000);
 
-      // ── 6. VERIFICAÇÃO: Ler de novo e confirmar que bateu ──
-      let verified = false;
-      for (let tentativa = 0; tentativa < 3; tentativa++) {
-        const checkInputs = findTimeInputs();
-        const checkValues = checkInputs.map(i => parseInt(i.value) || 0).filter(v => v > 0);
-        const checkMax = checkValues.length > 0 ? Math.max(...checkValues) : 0;
-
-        console.log(`[FireHub] 🔍 Verificação ${tentativa + 1}/3: Tempos agora = [${checkValues.join(", ")}] | Max = ${checkMax} | Alvo = ${targetMinutes}`);
-
-        const diff = targetMinutes - checkMax;
-
-        if (Math.abs(diff) < 3) {
-          // ✅ Valor correto!
-          console.log(`[FireHub] ✅ CONFIRMADO: Max ${checkMax} min ≈ Alvo ${targetMinutes} min`);
-          updatePillStatus(`✅ Confirmado: ${checkMax} min`, false);
-          verified = true;
-          break;
-        }
-
-        // Não bateu — corrigir com cliques adicionais
-        const correctionClicks = Math.max(1, Math.round(Math.abs(diff) / 5));
-        const correctionBtn = findAdjustButton(diff > 0);
-
-        if (correctionBtn && correctionClicks > 0) {
-          console.log(`[FireHub] 🔄 Corrigindo: ${diff > 0 ? "+" : ""}${diff} min → ${correctionClicks} clique(s) extra`);
-          for (let c = 0; c < correctionClicks; c++) {
-            correctionBtn.click();
-            await sleep(350);
-          }
-          await sleep(800);
-        } else {
-          console.warn("[FireHub] ⚠️ Botão de correção não encontrado");
-          break;
-        }
-      }
-
-      // Leitura final para log e confirmação no pill
-      const finalInputs = findTimeInputs();
-      const finalValues = finalInputs.map(i => parseInt(i.value) || 0).filter(v => v > 0);
-      const finalMax = finalValues.length > 0 ? Math.max(...finalValues) : 0;
-      const finalMin = finalValues.length > 0 ? Math.min(...finalValues) : 0;
-
-      console.log(`[FireHub] 📊 VALORES FINAIS: [${finalValues.join(", ")}] | Min: ${finalMin} | Max: ${finalMax} | Alvo era: ${targetMinutes}`);
-
-      if (!verified && Math.abs(targetMinutes - finalMax) >= 3) {
-        console.warn(`[FireHub] ⚠️ Não conseguiu atingir o alvo exato. Final: ${finalMax}, Alvo: ${targetMinutes}`);
-        updatePillStatus(`⚠️ Ficou em ${finalMax} min (alvo: ${targetMinutes})`, true);
-      }
-
-      // 7. Clicar em "Salvar" (mesmo que não tenha atingido exato, salva o mais próximo)
-      await clickSalvar(targetMinutes, finalMax);
+      // 6. Clicar em "Salvar"
+      await clickSalvar(targetMinutes, currentMax);
 
     } else {
-      // FALLBACK: Editar inputs diretamente com React-compatible setter
       console.log("[FireHub] ⚠️ Botões +/- 5 min não encontrados. Editando inputs diretamente...");
       await directInputEdit(timeInputs, targetMinutes, currentMax);
     }
@@ -246,14 +218,11 @@ function findTimeInputs() {
 
   return allInputs.filter(input => {
     const rawVal = (input.value || "").trim();
-    
-    // Inputs de taxa têm vírgula (4,99) ou ponto (4.99) — excluir
     if (rawVal.includes(",") || rawVal.includes(".")) return false;
 
     const numVal = parseInt(rawVal);
     if (isNaN(numVal) || numVal < 5 || numVal > 500) return false;
 
-    // Estratégia 1: Verificar se "min" aparece como irmão direto ou próximo
     let next = input.nextElementSibling;
     while (next) {
       const txt = (next.textContent || "").trim().toLowerCase();
@@ -262,7 +231,6 @@ function findTimeInputs() {
       next = next.nextElementSibling;
     }
 
-    // Estratégia 2: Subir pro pai e procurar "min" por perto
     const parent = input.parentElement;
     if (parent) {
       const parentText = parent.textContent || "";
@@ -272,12 +240,10 @@ function findTimeInputs() {
       if (parentNext && (parentNext.textContent || "").trim().toLowerCase().includes("min")) return true;
     }
 
-    // Estratégia 3: Container mais amplo (tr, row)
     const container = input.closest("tr, [class*='row'], [class*='Row']") || input.parentElement?.parentElement;
     if (container) {
       const containerText = container.textContent || "";
       if (containerText.includes("min") && !containerText.includes("R$")) {
-        // Verificar se este input NÃO está na coluna de taxa
         const prevSibling = input.previousElementSibling;
         if (prevSibling && (prevSibling.textContent || "").includes("R$")) return false;
         return true;
@@ -289,22 +255,14 @@ function findTimeInputs() {
 }
 
 function findAdjustButton(isIncrease) {
-  // PRIORIDADE 1: Usar aria-label (mais estável no iFood)
   if (isIncrease) {
     const ariaBtn = document.querySelector('button[aria-label="add 5 min"]');
-    if (ariaBtn) {
-      console.log("[FireHub] ✅ Botão +5 encontrado via aria-label");
-      return ariaBtn;
-    }
+    if (ariaBtn) return ariaBtn;
   } else {
     const ariaBtn = document.querySelector('button[aria-label="subtract 5 min"]');
-    if (ariaBtn) {
-      console.log("[FireHub] ✅ Botão -5 encontrado via aria-label");
-      return ariaBtn;
-    }
+    if (ariaBtn) return ariaBtn;
   }
 
-  // PRIORIDADE 2: Fallback por texto
   const buttons = Array.from(document.querySelectorAll("button"));
   return buttons.find(btn => {
     const text = btn.textContent.trim();
@@ -317,16 +275,7 @@ function findAdjustButton(isIncrease) {
   });
 }
 
-function findButtonByText(searchText) {
-  const buttons = Array.from(document.querySelectorAll("button"));
-  return buttons.find(btn => {
-    const text = btn.textContent.trim().toLowerCase();
-    return text === searchText.toLowerCase() || text.includes(searchText.toLowerCase());
-  });
-}
-
 async function clickOperacaoAtualTab() {
-  // Tentar clicar na aba "Operação atual" se existir e não estiver ativa
   const tabs = Array.from(document.querySelectorAll("button, a, [role='tab'], span"));
   const opTab = tabs.find(el => {
     const txt = (el.textContent || "").trim().toLowerCase();
@@ -339,9 +288,8 @@ async function clickOperacaoAtualTab() {
       (opTab.style && opTab.style.borderBottom);
 
     if (!isActive) {
-      console.log("[FireHub] 📌 Clicando na aba 'Operação atual'...");
       opTab.click();
-      await sleep(1500);
+      await sleep(1000);
     }
   }
 }
@@ -349,7 +297,6 @@ async function clickOperacaoAtualTab() {
 async function clickSalvar(targetMinutes, actualMax = null) {
   const displayVal = actualMax || targetMinutes;
 
-  // Esperar o React habilitar o botão (até 4 tentativas com 1s cada)
   let salvarBtn = null;
   for (let attempt = 0; attempt < 4; attempt++) {
     const allButtons = Array.from(document.querySelectorAll("button"));
@@ -358,63 +305,45 @@ async function clickSalvar(targetMinutes, actualMax = null) {
       return text === "Salvar" || text.toLowerCase() === "salvar";
     });
 
-    console.log(`[FireHub] 🔍 Tentativa ${attempt + 1}/4 - Encontrei ${candidates.length} botões "Salvar"`);
-
-    // Preferir o que NÃO está disabled
     const enabledBtn = candidates.find(btn => !btn.disabled);
     if (enabledBtn) {
       salvarBtn = enabledBtn;
       break;
     }
-
-    // Se só tem disabled, guardar pra forçar clique
     if (candidates.length > 0) {
       salvarBtn = candidates[0];
     }
-
-    await sleep(1000);
+    await sleep(800);
   }
 
   if (salvarBtn) {
-    salvarBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-    await sleep(500);
+    if (!document.hidden) {
+      salvarBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      await sleep(300);
+    }
 
-    // Forçar enable se tiver disabled
     if (salvarBtn.disabled) {
-      console.log("[FireHub] ⚡ Forçando enable no Salvar...");
       salvarBtn.disabled = false;
       salvarBtn.removeAttribute("disabled");
     }
 
-    console.log("[FireHub] 🖱️ Clicando em Salvar!");
     salvarBtn.click();
+    await sleep(2000);
 
-    await sleep(2500);
-
-    // Verificar resultado
     const postSaveInputs = findTimeInputs();
     const postSaveValues = postSaveInputs.map(i => parseInt(i.value) || 0).filter(v => v > 0);
     const postSaveMax = postSaveValues.length > 0 ? Math.max(...postSaveValues) : actualMax || targetMinutes;
-    const matchOk = Math.abs(targetMinutes - postSaveMax) < 3;
 
-    if (matchOk) {
-      console.log(`[FireHub] ✅✅ SALVO! Final: ${postSaveMax} min (alvo: ${targetMinutes})`);
-      updatePillStatus(`✅ ${postSaveMax} min SALVO!`, false);
-    } else {
-      console.log(`[FireHub] ⚠️ Salvo, final (${postSaveMax}) difere do alvo (${targetMinutes})`);
-      updatePillStatus(`⚠️ Salvo ${postSaveMax} min (alvo era ${targetMinutes})`, true);
-    }
+    console.log(`[FireHub] ✅ SALVO! Final: ${postSaveMax} min (alvo: ${targetMinutes})`);
+    updatePillStatus(`✅ ${postSaveMax} min SALVO!`, false);
 
     lastAppliedETA = targetMinutes;
     const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     chrome.storage.local.set({ lastAppliedETA: targetMinutes, ifoodLastApply: nowStr });
   } else {
-    console.warn("[FireHub] ❌ Botão 'Salvar' não encontrado!");
     updatePillStatus(`⚠️ ${displayVal} min (Salvar não achado)`, true);
   }
 }
-
-// ── FALLBACK: EDIÇÃO DIRETA DOS INPUTS ──
 
 async function directInputEdit(timeInputs, targetMinutes, currentMax) {
   const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
@@ -429,20 +358,17 @@ async function directInputEdit(timeInputs, targetMinutes, currentMax) {
 
     const newVal = Math.max(10, currentVal + delta);
 
-    // React-compatible value update
     input.focus();
-    await sleep(100);
+    await sleep(50);
     nativeInputValueSetter.call(input, String(newVal));
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
     input.blur();
-    input.dispatchEvent(new Event("blur", { bubbles: true }));
 
-    console.log(`[FireHub] ✏️ Input: ${currentVal} → ${newVal}`);
-    await sleep(300);
+    await sleep(200);
   }
 
-  await sleep(1000);
+  await sleep(800);
   await clickSalvar(targetMinutes);
 }
 
@@ -523,7 +449,6 @@ function updatePillStatus(statusText, isError = false) {
     } else {
       pill.style.border = "1.5px solid #22C55E";
     }
-    // Voltar ao normal após 8 segundos
     setTimeout(() => {
       if (pill) {
         pill.style.border = "1.5px solid #FF5722";
