@@ -517,45 +517,16 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.5rem", fontSize: "0.82rem", color: "#991B1B", lineHeight: 1.6 }}>
         🔴 <strong>Taxa de gestão:</strong> R$ 50/semana pelo serviço de criação, otimização e monitoramento. <strong>Ativou = cobra</strong>, independente do retorno em vendas.
       </div>
-      <button onClick={() => setStep("commitment")} style={{ width: "100%", background: "#EF4444", color: "#fff", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+      <button onClick={() => connected ? (handleGenerateCopy(), setStep("creative")) : setStep("connect")} style={{ width: "100%", background: "#EF4444", color: "#fff", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
         Confirmar R$ {investment}/semana <ChevronRight size={18} />
       </button>
     </div>
   );
-
-  /* ═══════ COMMITMENT ═══════ */
-  if (step === "commitment") return (
-    <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 1rem 4rem" }}>
-      <Banner />
-      <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
-      <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-        <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>🚀</div>
-        <h2 style={{ fontSize: "1.6rem", fontWeight: 900, marginBottom: "0.5rem" }}>Quase lá!</h2>
-        <p style={{ color: "#6B7280" }}>Leia com atenção antes de ativar.</p>
-      </div>
-      <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
-        <label style={{ display: "flex", gap: "0.75rem", cursor: "pointer" }}>
-          <div onClick={() => setAgreed(!agreed)} style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? "#EF4444" : "#D1D5DB"}`, background: agreed ? "#EF4444" : "#fff", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", marginTop: 2 }}>
-            {agreed && <Check size={13} color="#fff" />}
-          </div>
-          <span style={{ fontSize: "0.9rem", lineHeight: 1.6 }}>Entendo que a taxa de <strong>R$50/semana</strong> é pelo <strong>serviço de gestão</strong>, não por resultados. O retorno (ROAS) depende da qualidade do meu produto, atendimento e mercado local. Os primeiros dias são de aprendizado — recomendo usar por pelo menos <strong>30 dias</strong> antes de avaliar.</span>
-        </label>
-      </div>
-      <div style={{ background: "#FEF9C3", border: "1px solid #FDE68A", borderRadius: 12, padding: "0.85rem 1rem", fontSize: "0.82rem", color: "#92400E", marginBottom: "1.5rem" }}>
-        💡 A IA precisa de alguns dias para otimizar seus anúncios. Os melhores resultados aparecem na 2ª e 3ª semana.
-      </div>
-      <button onClick={() => connected ? (handleGenerateCopy(), setStep("creative")) : setStep("connect")} disabled={!agreed}
-        style={{ width: "100%", background: agreed ? "#EF4444" : "#E5E7EB", color: agreed ? "#fff" : "#9CA3AF", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: agreed ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
-        {connected ? "Configurar meu anúncio →" : "Conectar meu Facebook →"}
-      </button>
-    </div>
-  );
-
   /* ═══════ CONNECT ═══════ */
   if (step === "connect") return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 1rem 4rem" }}>
       <Banner />
-      <button onClick={() => setStep("commitment")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
+      <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
       <h2 style={{ fontSize: "1.4rem", fontWeight: 900, marginBottom: "0.25rem" }}>Conectar Facebook</h2>
       <p style={{ color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}>Conecte sua página do Facebook para que a IA crie os anúncios na <strong>sua conta</strong>.</p>
       <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem" }}>
