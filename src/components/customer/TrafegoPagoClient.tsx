@@ -150,7 +150,11 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const handleConnectFacebook = () => {
     const state = btoa(JSON.stringify({ franchiseeId: user.id, investment }));
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || "4084810071817607";
-    const redirectUri = encodeURIComponent(window.location.origin + "/api/meta-ads/callback");
+    const redirectUri = encodeURIComponent(
+      window.location.hostname === "localhost"
+        ? "http://localhost:3000/api/meta-ads/callback"
+        : "https://www.firehubfood.com.br/api/meta-ads/callback"
+    );
     const scope = "ads_management,ads_read,pages_show_list,pages_read_engagement,business_management";
     window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=code`;
   };
