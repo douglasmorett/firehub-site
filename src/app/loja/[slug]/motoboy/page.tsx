@@ -147,19 +147,31 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         return;
       }
 
+      const motoboyId = data.motoboy?.id || data.motoboyId;
+      const motoboyName = data.motoboy?.name || data.motoboyName;
+      const storeId = data.store?.id || data.storeId;
+      const storeName = data.store?.name || data.storeName;
+      const storeAddress = data.store?.storeAddress || data.storeAddress || data.store?.city || "";
+
+      if (!motoboyId || !storeId) {
+        setLoginError(data.error || "Dados do motoboy/loja não encontrados.");
+        return;
+      }
+
       const sessObj = {
-        motoboyId: data.motoboy.id,
-        motoboyName: data.motoboy.name,
-        storeId: data.store.id,
-        storeName: data.store.name,
-        storeAddress: data.store.storeAddress || data.store.city
+        motoboyId,
+        motoboyName,
+        storeId,
+        storeName,
+        storeAddress
       };
 
       setSession(sessObj);
       localStorage.setItem(`firehub_motoboy_session_${slug}`, JSON.stringify(sessObj));
 
     } catch (err: any) {
-      setLoginError("Erro ao conectar ao servidor.");
+      console.error("Login motoboy erro:", err);
+      setLoginError(err?.message || "Erro ao conectar ao servidor.");
     } finally {
       setLoadingLogin(false);
     }

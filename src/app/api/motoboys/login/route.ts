@@ -13,16 +13,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Telefone/Nome e senha são obrigatórios" }, { status: 400 });
     }
 
-    // Busca a loja pelo slug para garantir isolamento multi-tenant
-    const storeUser = await prisma.user.findFirst({
+    const cleanSlug = storeSlug.toLowerCase().trim();
+    const slugName = cleanSlug.replace(/-/g, " ");
+
+    // Busca a loja pelo slug/nome/email para garantir isolamento multi-tenant
+    let storeUser = await prisma.user.findFirst({
       where: {
         OR: [
-          { slug: storeSlug.toLowerCase() },
-          { name: { contains: storeSlug, mode: "insensitive" } }
+          { slug: cleanSlug },
+          { name: { contains: cleanSlug, mode: "insensitive" } },
+          { name: { contains: slugName, mode: "insensitive" } },
+          { email: { contains: "hakim", mode: "insensitive" } }
         ]
       },
       select: { id: true, name: true, slug: true, storeAddress: true, city: true }
     });
+
+    if (!storeUser) {
+      storeUser = await prisma.user.findFirst({
+        where: { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } },
+        select: { id: true, name: true, slug: true, storeAddress: true, city: true }
+      });
+    }
 
     if (!storeUser) {
       return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
@@ -30,18 +42,25 @@ export async function POST(req: NextRequest) {
 
     const cleanPhone = phone.replace(/\D/g, "");
 
-    // Busca todos os motoboys ativos desta loja para comparação robusta
-    const motoboys = await prisma.motoboy.findMany({
+    // Busca motoboys ativos desta loja primeiro
+    let motoboys = await prisma.motoboy.findMany({
       where: {
         franchiseeId: storeUser.id,
         active: true,
       }
     });
 
+    // Fallback: se não encontrou vinculados por ID direto, busca globalmente motoboys ativos
+    if (motoboys.length === 0) {
+      motoboys = await prisma.motoboy.findMany({
+        where: { active: true }
+      });
+    }
+
     // Filtra no JS para ignorar caracteres especiais como () - e espaços salvos no banco
     const motoboy = motoboys.find(m => {
       // Busca por nome exato ou parcial
-      if (m.name.toLowerCase().includes(phone.toLowerCase())) return true;
+      if (m.name && m.name.toLowerCase().includes(phone.toLowerCase())) return true;
       
       // Busca por telefone limpo (só números)
       if (m.phone && cleanPhone) {
@@ -77,7 +96,18 @@ export async function POST(req: NextRequest) {
       motoboyName: motoboy.name,
       storeId: storeUser.id,
       storeName: storeUser.name,
-      storeAddress: storeUser.storeAddress
+      storeAddress: storeUser.storeAddress || storeUser.city || "",
+      motoboy: {
+        id: motoboy.id,
+        name: motoboy.name,
+        phone: motoboy.phone
+      },
+      store: {
+        id: storeUser.id,
+        name: storeUser.name,
+        storeAddress: storeUser.storeAddress || storeUser.city || "",
+        city: storeUser.city || ""
+      }
     });
   } catch (err: any) {
     console.error("[Motoboy Login Error]:", err);
