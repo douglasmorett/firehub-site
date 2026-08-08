@@ -269,41 +269,40 @@ export async function PUT(req: NextRequest) {
       data: updateData,
     });
 
-    // 🚀 Sincronizar com o iFood (readyToPickup): acelera a vinda do motoboy parceiro do iFood e notifica o cliente
-    if (order.ifoodOrderId) {
-      try {
-        const { getIfoodToken } = await import("@/lib/ifood-api");
-        const token = await getIfoodToken();
-        const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-        const readyRes = await fetch(`https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/readyToPickup`, {
-          method: "POST",
-          headers,
-        });
-        console.log(`[KDS iFood Sync] readyToPickup ${order.ifoodOrderId}: ${readyRes.status}`);
-      } catch (errIfood) {
-        console.warn("[KDS iFood Sync Error]:", errIfood);
+    // 🚀 Sincronizar com iFood, Jotajá e WhatsApp de forma assíncrona (não-bloqueante para resposta instantânea no KDS)
+    (async () => {
+      if (order.ifoodOrderId) {
+        try {
+          const { getIfoodToken } = await import("@/lib/ifood-api");
+          const token = await getIfoodToken();
+          const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+          await fetch(`https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/readyToPickup`, {
+            method: "POST",
+            headers,
+          });
+        } catch (errIfood) {
+          console.warn("[KDS iFood Sync Error]:", errIfood);
+        }
       }
-    }
 
-    // Sincronizar com o Jotajá / OpenDelivery
-    if (order.openDeliveryOrderId) {
-      try {
-        const { jotajaFetch } = await import("@/lib/jotaja-api");
-        await jotajaFetch(`/v1/orders/${order.openDeliveryOrderId}/readyToPickup`, { method: "POST" });
-      } catch (errOd) {
-        console.warn("[KDS Jotajá Sync Error]:", errOd);
+      if (order.openDeliveryOrderId) {
+        try {
+          const { jotajaFetch } = await import("@/lib/jotaja-api");
+          await jotajaFetch(`/v1/orders/${order.openDeliveryOrderId}/readyToPickup`, { method: "POST" });
+        } catch (errOd) {
+          console.warn("[KDS Jotajá Sync Error]:", errOd);
+        }
       }
-    }
 
-    // Notificação WhatsApp automática ao dar pronto para retirada no KDS
-    if (isPickup) {
-      try {
-        const { sendOrderNotification } = await import("@/lib/order-notifications");
-        sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
-      } catch (errWp) {
-        console.warn("[KDS API] Erro ao disparar notificação WhatsApp:", errWp);
+      if (isPickup) {
+        try {
+          const { sendOrderNotification } = await import("@/lib/order-notifications");
+          sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+        } catch (errWp) {
+          console.warn("[KDS API] Erro ao disparar notificação WhatsApp:", errWp);
+        }
       }
-    }
+    })();
 
     return NextResponse.json({ success: true, stage: "FINISHED" });
   }

@@ -298,13 +298,23 @@ export default function KDSTelaPage() {
       setIsReconnecting(false);
       
       if (Array.isArray(data)) {
-        const newDataStr = JSON.stringify(data);
+        // Limpa da trava de concluídos qualquer ID que o servidor já confirmou que sumiu da lista do banco
+        const serverIds = new Set(data.map((o) => o.id));
+        completedOrderIdsRef.current.forEach((id) => {
+          if (!serverIds.has(id)) {
+            completedOrderIdsRef.current.delete(id);
+          }
+        });
+
+        // Filtra os pedidos baixados localmente para garantir que o card nunca ressuscite na Smart TV
+        const validOrders = data.filter((o) => !completedOrderIdsRef.current.has(o.id));
+        const newDataStr = JSON.stringify(validOrders);
         if (newDataStr !== lastJsonRef.current) {
           lastJsonRef.current = newDataStr;
-          setOrders(data);
+          setOrders(validOrders);
           setHasEnteredIds((prev) => {
             const next = new Set(prev);
-            data.forEach((o) => next.add(o.id));
+            validOrders.forEach((o) => next.add(o.id));
             return next;
           });
         }
@@ -397,14 +407,16 @@ export default function KDSTelaPage() {
 
 
   const exitingOrderIdsRef = useRef<Set<string>>(new Set());
+  const completedOrderIdsRef = useRef<Set<string>>(new Set());
 
   // ─── Mark as pronto ─────────────────────────────────────────────────────────
 
   const markAsPronto = useCallback(
     async (order: Order) => {
       if (!stage) return;
-      if (exitingOrderIdsRef.current.has(order.id)) return; // prevent double-action for this order
+      if (exitingOrderIdsRef.current.has(order.id) || completedOrderIdsRef.current.has(order.id)) return; // prevent double-action for this order
 
+      completedOrderIdsRef.current.add(order.id);
       exitingOrderIdsRef.current.add(order.id);
       setExitingOrderIds(new Set(exitingOrderIdsRef.current));
 
@@ -437,6 +449,7 @@ export default function KDSTelaPage() {
           toastTimerRef.current = setTimeout(() => setToast(null), 4000);
           
           // Aborta a remoção do card e limpa a trava para permitir tentar novamente
+          completedOrderIdsRef.current.delete(order.id);
           exitingOrderIdsRef.current.delete(order.id);
           setExitingOrderIds(new Set(exitingOrderIdsRef.current));
           return; 
@@ -454,6 +467,7 @@ export default function KDSTelaPage() {
       } catch (err) {
         setToast({ orderId: order.id, label: "❌ Erro de conexão ao dar baixa" });
         // Limpa a trava para permitir tentar novamente
+        completedOrderIdsRef.current.delete(order.id);
         exitingOrderIdsRef.current.delete(order.id);
         setExitingOrderIds(new Set(exitingOrderIdsRef.current));
       }
@@ -471,6 +485,7 @@ export default function KDSTelaPage() {
     const restoredLabel = getOrderLabel(lastCompletedOrder.order);
 
     try {
+      completedOrderIdsRef.current.delete(lastCompletedOrder.order.id);
       await fetch("/api/kds", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
