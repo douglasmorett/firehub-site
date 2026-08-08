@@ -12,17 +12,11 @@ async function getValidFranchiseeIds(userId: string) {
     select: { id: true, ownerId: true, email: true },
   });
 
-  const hakimUser = await prisma.user.findFirst({
-    where: { email: "contatohakim@gmail.com" },
-    select: { id: true, ownerId: true },
-  });
-
-  const targetId = user?.ownerId || user?.id || hakimUser?.id || "";
+  const targetId = user?.ownerId || user?.id || "";
 
   const allStoreUsers = await prisma.user.findMany({
     where: {
       OR: [
-        { email: "contatohakim@gmail.com" },
         { id: targetId },
         { ownerId: targetId },
       ],
@@ -36,7 +30,6 @@ async function getValidFranchiseeIds(userId: string) {
       targetId,
       user?.id,
       user?.ownerId,
-      hakimUser?.id,
     ].filter(Boolean))
   ) as string[];
 }

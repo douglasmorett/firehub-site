@@ -28,22 +28,13 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 600): P
 
 export async function GET(req: NextRequest) {
   try {
-    // Buscar conta principal da loja (Hakim) com retentativa automatica
-    const hakimUser = await withRetry(() =>
-      prisma.user.findFirst({
-        where: { email: "contatohakim@gmail.com" },
-        select: { id: true },
-      })
-    ).catch(() => null);
-
     let email: string | null = null;
     try {
       const session = await getServerSession(authOptions);
       email = session?.user?.email || null;
     } catch {}
 
-    const defaultHakimId = hakimUser?.id || "cm6x65p660000uj48x4s1y881";
-    let userStoreIds: string[] = [defaultHakimId];
+    let userStoreIds: string[] = [];
 
     if (email) {
       const user = await withRetry(() =>

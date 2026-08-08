@@ -37,10 +37,8 @@ async function pollIfoodEvents(sessionUserId?: string) {
       const u = await prisma.user.findUnique({ where: { id: sessionUserId }, select: { ifoodMerchantId: true } });
       if (u?.ifoodMerchantId) merchantId = u.ifoodMerchantId;
     }
-    if (!merchantId) {
-      const u = await prisma.user.findFirst({ where: { email: "contatohakim@gmail.com" }, select: { ifoodMerchantId: true } });
-      merchantId = u?.ifoodMerchantId || "5bfb7d90-b184-4b95-a2bc-ae61db896cb0";
-    }
+    
+    if (!merchantId) return; // Se a loja não tem integração com iFood, aborta em vez de puxar do Hakim
 
     const token = await getIfoodToken();
 
@@ -600,12 +598,6 @@ async function pollJotajaEvents(sessionUserId?: string) {
 // GET: Fast polling endpoint - returns orders + auto-polls iFood & Jotaja
 export async function GET(req: NextRequest) {
   try {
-    // Buscar conta principal da loja (Hakim) para garantir correspondência universal de IDs
-    const hakimUser = await prisma.user.findFirst({
-      where: { email: "contatohakim@gmail.com" },
-      select: { id: true, ownerId: true }
-    });
-
     let email = "";
     try {
       const session = await getServerSession(authOptions);
@@ -616,11 +608,11 @@ export async function GET(req: NextRequest) {
       ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } })
       : null;
 
-    if (!user && hakimUser) {
-      user = hakimUser;
+    if (!user) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const targetFranchiseeId = user?.ownerId || user?.id || hakimUser?.id || "";
+    const targetFranchiseeId = user.ownerId || user.id;
 
     try {
       await Promise.allSettled([
@@ -633,9 +625,8 @@ export async function GET(req: NextRequest) {
 
     const validFranchiseeIds = Array.from(new Set([
       targetFranchiseeId,
-      user?.id,
-      user?.ownerId,
-      hakimUser?.id
+      user.id,
+      user.ownerId
     ].filter(Boolean))) as string[];
 
     const orders = await withRetry(() => prisma.customerOrder.findMany({
