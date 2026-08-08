@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   const currentUser = await prisma.user.findUnique({
-    where: { email: session.user.email! },
+    where: { email: session.user?.email! },
     select: { storeTimezone: true }
   });
   const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
