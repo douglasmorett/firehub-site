@@ -386,6 +386,61 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SEÇÃO FINANCEIRO INTELIGENTE COM IA */}
+      <section className="sec" style={{ background: "#060911", color: "#FFF", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ position: "absolute", bottom: -100, left: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(236,72,153,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-finance-ai">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-finance-ai { grid-template-columns: 1.05fr 0.95fr !important; }
+              }
+            `}</style>
+
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.4)", color: "#F472B6", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                📸 CONTROLE FINANCEIRO & LEITURA COM IA
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Tire foto de um boleto e a <span style={{ color: "#EC4899" }}>IA lança tudo sozinha</span>
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Diga adeus à digitação manual de notas fiscais e boletos de fornecedores. Com a nossa tecnologia de inteligência artificial baseada no Gemini, basta apontar a câmera do celular para a conta ou boleto: o sistema lê o fornecedor, valor, código de barras e data de vencimento e cadastra tudo no seu Contas a Pagar em segundos.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="finance-ai-features-grid">
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>📷 Leitura Instantânea</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Foto da conta extrai nome do recebedor, valor e vencimento em milissegundos</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>📊 Contas a Pagar & Compras</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Organização automatizada do fluxo de caixa e notas fiscais de entrada</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⚡ Código de Barras Automático</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Copia a linha digitável direto pro app do seu banco sem erro de digitação</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🔔 Alerta de Vencimentos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Nunca mais pague juros por atraso em contas de fornecedores</div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(236,72,153,0.3)", boxShadow: "0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(236,72,153,0.15)", background: "#000" }}>
+                <img
+                  src="/images/financeiro_ia_ui.jpg"
+                  alt="FireHub Leitura de Boletos e Contas com IA"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* COMO FUNCIONA */}
       <section className="sec sec-alt" id="como-funciona">
         <div className="w">

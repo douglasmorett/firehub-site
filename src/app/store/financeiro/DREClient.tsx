@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { isExemptAccount } from "@/lib/billing";
+import FinanceForm from "@/components/FinanceForm";
 
 type BillingCycle = {
   yearMonth: string; totalSales: number; amountDue: number;
@@ -130,7 +131,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
-  const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos">("mensalidade");
+  const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos" | "contasapagar">("mensalidade");
   const [showAllSemCusto, setShowAllSemCusto] = useState(false);
   const [showFaturaModal, setShowFaturaModal] = useState(false);
 
@@ -389,7 +390,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
     return Object.entries(g).sort((a, b) => b[1].total - a[1].total);
   }, [allInRange]);
 
-  const tabStyle = (tab: string) => ({
+
+  const tabStyle = (tab: typeof activeTab) => ({
     padding: "8px 20px", borderRadius: "10px", border: "none", cursor: "pointer",
     fontWeight: 700, fontSize: "0.85rem", fontFamily: "inherit",
     background: activeTab === tab ? "#0F172A" : "transparent",
@@ -439,6 +441,16 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <button style={tabStyle("relatorio")} onClick={() => setActiveTab("relatorio")}>Relatório</button>
             <button style={tabStyle("configuracoes")} onClick={() => setActiveTab("configuracoes")}>Configurações</button>
             <button style={tabStyle("dre")} onClick={() => setActiveTab("dre")}>📊 DRE Geral</button>
+            <button
+              style={{
+                ...tabStyle("contasapagar"),
+                background: activeTab === "contasapagar" ? "#DB2777" : "transparent",
+                color: activeTab === "contasapagar" ? "#fff" : "#64748B",
+              }}
+              onClick={() => setActiveTab("contasapagar")}
+            >
+              🤖 Contas a Pagar (IA)
+            </button>
             <button
               style={{
                 ...tabStyle("custosfix"),
@@ -1154,8 +1166,27 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               </div>
             </div>
           )}
-
           {savedFC && <div style={{ marginTop: 12, textAlign: "center", color: "#16A34A", fontWeight: 700 }}>✅ Custos salvos!</div>}
+        </div>
+      )}
+
+      {/* ===== ABA CONTAS A PAGAR & LEITURA COM IA ===== */}
+      {activeTab === "contasapagar" && (
+        <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem" }}>
+          <div style={{ background: "#fff", borderRadius: "20px", border: "1px solid #E2E8F0", padding: "24px", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
+            <div style={{ marginBottom: "1.5rem" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FDF2F8", border: "1px solid #FBCFE8", color: "#DB2777", fontSize: "0.75rem", fontWeight: 800, padding: "4px 12px", borderRadius: 20, marginBottom: 8 }}>
+                ✨ LEITURA AUTOMÁTICA VIA GEMINI IA
+              </div>
+              <h2 style={{ fontSize: "1.35rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>
+                Gestão Inteligente de Contas a Pagar & Notas de Compras
+              </h2>
+              <p style={{ fontSize: "0.85rem", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
+                Tire foto do boleto ou nota fiscal de fornecedor com a câmera do celular ou suba um arquivo. A IA do Gemini lê instantaneamente o fornecedor, valor total, código de barras e data de vencimento.
+              </p>
+            </div>
+            <FinanceForm category="BUSINESS" />
+          </div>
         </div>
       )}
 
@@ -1316,15 +1347,6 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       )}
 
       </div>
-
-      <style>{`
-        @media (max-width: 768px) {
-          div[style*="grid-template-columns"] { grid-template-columns: 1fr 1fr !important; }
-        }
-        @media (max-width: 480px) {
-          div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
-        }
-      `}</style>
     </div>
   );
 }
