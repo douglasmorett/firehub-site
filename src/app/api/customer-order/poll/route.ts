@@ -541,7 +541,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
 async function pollJotajaEvents(sessionUserId?: string) {
   const now = Date.now();
-  if (now - lastJotajaPoll < 5_000) return;
+  if (now - lastJotajaPoll < 2_000) return;
 
   lastJotajaPoll = now;
 
