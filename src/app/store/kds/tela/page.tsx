@@ -412,16 +412,22 @@ export default function KDSTelaPage() {
 
       // API call
       try {
-        await fetch("/api/kds", {
+        const res = await fetch("/api/kds", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ orderId: order.id, action }),
         });
-      } catch {
-        // will be picked up on next poll
-      } finally {
-        // Remove card after exit animation & re-fetch
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          setToast({ orderId: order.id, label: `❌ Erro: ${errData.error || "Falha ao dar baixa"}` });
+          if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+          toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+          return; // Aborta a remoção do card!
+        }
+
+        // Se sucesso, remove o card da tela
         setTimeout(() => {
           exitingOrderIdsRef.current.delete(order.id);
           setExitingOrderIds(new Set(exitingOrderIdsRef.current));
@@ -429,6 +435,9 @@ export default function KDSTelaPage() {
           lastJsonRef.current = "";
           fetchOrders();
         }, 300);
+
+      } catch (err) {
+        setToast({ orderId: order.id, label: "❌ Erro de conexão ao dar baixa" });
       }
     },
     [stage, fetchOrders]
