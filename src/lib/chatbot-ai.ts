@@ -31,6 +31,7 @@ export async function processChatbotAI(
       storePhone: true,
       storeAddress: true,
       storeLatLng: true,
+      storeTimezone: true,
       city: true,
       slug: true,
       storeHours: true,

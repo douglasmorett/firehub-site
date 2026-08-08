@@ -38,10 +38,10 @@ export function isExemptAccount(email?: string | null): boolean {
   return exemptList.includes(clean);
 }
 
-export function getCurrentYearMonth(offset = 0): string {
-  // Sempre usa fuso horário do Brasil (UTC-3) para garantir que
-  // o fechamento do mês acontece à meia-noite de Brasília, não UTC.
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+export function getCurrentYearMonth(offset = 0, timezone = "America/Sao_Paulo"): string {
+  // Usa o fuso horário da loja (ou Brasília) para garantir que
+  // o fechamento do mês acontece à meia-noite local, não UTC.
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: timezone }));
   now.setMonth(now.getMonth() + offset);
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
