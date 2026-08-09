@@ -156,15 +156,15 @@ async function calculateAndApply(count) {
       "autoSyncEnabled", "manualSyncEnabled", "ifoodDisconnected"
     ]);
 
-    // Se o iFood foi marcado como desconectado, avisa os logs e não fica tentando se o estado for permanente
-    if (store.ifoodDisconnected) {
-      console.log("[FireHub] ⚠️ iFood está desconectado. Aguardando o lojista reconectar...");
-      notifyBridgeTabs({ action: "IFOOD_DISCONNECTED_ALERT", reason: "Sessão do portal iFood encerrada" });
-    }
+    const syncEnabled = !!(store.autoSyncEnabled || store.manualSyncEnabled);
 
-    const motoboys = store.motoboysCount || 2;
-    const mode = store.activeMode || "auto";
-    const syncEnabled = store.autoSyncEnabled || store.manualSyncEnabled;
+    // Apenas envia o alerta de desconexão se a sincronização (auto ou manual) estiver ATIVA e o iFood estiver desconectado
+    if (store.ifoodDisconnected && syncEnabled) {
+      console.log("[FireHub] ⚠️ iFood está desconectado e sync ativo. Avisando o lojista...");
+      notifyBridgeTabs({ action: "IFOOD_DISCONNECTED_ALERT", reason: "Sessão do portal iFood encerrada" });
+    } else if (!store.ifoodDisconnected) {
+      notifyBridgeTabs({ action: "IFOOD_CONNECTED_ALERT" });
+    }
 
     let recommendedMinutes = 38;
     let etaRangeFormatted = "38 min";

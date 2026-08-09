@@ -20,18 +20,20 @@ checkDisconnectionStatus();
 // Verificar se a sessão expirou
 function checkDisconnectionStatus() {
   const href = window.location.href.toLowerCase();
-  const isLoginPage = href.includes("login") || href.includes("auth") || href.includes("signin");
-  const hasPasswordInput = !!document.querySelector('input[type="password"], input[name="email"]');
+  const isLoginPage = href.includes("/login") || href.includes("/auth") || href.includes("/signin") || href.includes("login.ifood.com.br");
+  const passwordInput = document.querySelector('input[type="password"]');
   const bodyText = (document.body ? document.body.innerText : "").toLowerCase();
   const hasDisconnectText = bodyText.includes("fazer login") || bodyText.includes("sessão expirou") || bodyText.includes("entre com sua conta");
 
-  if ((isLoginPage || (hasPasswordInput && hasDisconnectText)) && !isOnDeliverySettingsPage()) {
+  // Apenas considera DESCONECTADO se estiver explicitamente em uma tela de login com formulário
+  if (isLoginPage || (passwordInput && hasDisconnectText)) {
     console.warn("[FireHub] ⚠️ iFood Desconectado / Tela de Login detectada!");
     chrome.storage.local.set({ ifoodDisconnected: true });
     chrome.runtime.sendMessage({ action: "IFOOD_SESSION_DISCONNECTED", reason: "Sessão expirada no Portal iFood" }).catch(() => {});
     updatePillStatus("🔴 iFood Desconectado - Faça Login!", true);
     return true;
-  } else if (isOnDeliverySettingsPage()) {
+  } else {
+    // Se está navegando no portal do iFood e NÃO é tela de login, o iFood está CONECTADO!
     chrome.storage.local.set({ ifoodDisconnected: false });
     chrome.runtime.sendMessage({ action: "IFOOD_SESSION_CONNECTED" }).catch(() => {});
   }
@@ -372,7 +374,107 @@ async function directInputEdit(timeInputs, targetMinutes, currentMax) {
   await clickSalvar(targetMinutes);
 }
 
-// ── PÍLULA FLUTUANTE ──
+// ── PÍLULA FLUTUANTE ARRASTÁVEL ──
+
+function makePillDraggable(pill, storageKey = "firehubPillPos") {
+  let isDragging = false;
+  let hasMoved = false;
+  let startX = 0, startY = 0;
+  let initialLeft = 0, initialTop = 0;
+
+  const applyPos = (pos) => {
+    if (pos && typeof pos.left === "number" && typeof pos.top === "number") {
+      const maxLeft = Math.max(10, window.innerWidth - (pill.offsetWidth || 180) - 10);
+      const maxTop = Math.max(10, window.innerHeight - (pill.offsetHeight || 36) - 10);
+      const left = Math.max(10, Math.min(maxLeft, pos.left));
+      const top = Math.max(10, Math.min(maxTop, pos.top));
+      pill.style.left = `${left}px`;
+      pill.style.top = `${top}px`;
+      pill.style.bottom = "auto";
+      pill.style.right = "auto";
+    }
+  };
+
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get([storageKey], (res) => {
+      if (res && res[storageKey]) applyPos(res[storageKey]);
+    });
+  } else {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) applyPos(JSON.parse(saved));
+    } catch (e) {}
+  }
+
+  const startDrag = (e) => {
+    if (e.type === "mousedown" && e.button !== 0) return;
+    isDragging = true;
+    hasMoved = false;
+
+    const clientX = e.type.startsWith("touch") ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.startsWith("touch") ? e.touches[0].clientY : e.clientY;
+    startX = clientX;
+    startY = clientY;
+
+    const rect = pill.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+
+    pill.style.cursor = "grabbing";
+    pill.style.bottom = "auto";
+    pill.style.right = "auto";
+    pill.style.left = `${initialLeft}px`;
+    pill.style.top = `${initialTop}px`;
+    pill.style.transition = "none";
+  };
+
+  const doDrag = (e) => {
+    if (!isDragging) return;
+    const clientX = e.type.startsWith("touch") ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.startsWith("touch") ? e.touches[0].clientY : e.clientY;
+
+    const deltaX = clientX - startX;
+    const deltaY = clientY - startY;
+
+    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+      hasMoved = true;
+    }
+
+    const width = pill.offsetWidth || 180;
+    const height = pill.offsetHeight || 36;
+    const newLeft = Math.max(10, Math.min(window.innerWidth - width - 10, initialLeft + deltaX));
+    const newTop = Math.max(10, Math.min(window.innerHeight - height - 10, initialTop + deltaY));
+
+    pill.style.left = `${newLeft}px`;
+    pill.style.top = `${newTop}px`;
+  };
+
+  const stopDrag = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    pill.style.cursor = "grab";
+    pill.style.transition = "background 0.3s, border 0.3s, box-shadow 0.3s";
+
+    if (hasMoved) {
+      const rect = pill.getBoundingClientRect();
+      const pos = { left: rect.left, top: rect.top };
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ [storageKey]: pos });
+      }
+      try { localStorage.setItem(storageKey, JSON.stringify(pos)); } catch (e) {}
+    }
+  };
+
+  pill.addEventListener("mousedown", startDrag);
+  window.addEventListener("mousemove", doDrag);
+  window.addEventListener("mouseup", stopDrag);
+
+  pill.addEventListener("touchstart", startDrag, { passive: true });
+  window.addEventListener("touchmove", doDrag, { passive: true });
+  window.addEventListener("touchend", stopDrag);
+
+  return () => hasMoved;
+}
 
 function createFloatingCornerPill() {
   if (document.getElementById("firehub-corner-pill")) return;
@@ -383,11 +485,11 @@ function createFloatingCornerPill() {
     position: fixed; bottom: 20px; right: 20px; z-index: 999999;
     background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
     color: #FFF; border: 1.5px solid #FF5722; border-radius: 20px;
-    padding: 6px 14px; box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    padding: 6px 14px; box-shadow: 0 8px 25px rgba(0,0,0,0.35);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 12px; font-weight: 800;
     display: flex; align-items: center; gap: 8px;
-    cursor: pointer; user-select: none; transition: all 0.3s;
+    cursor: grab; user-select: none; transition: background 0.3s, border 0.3s;
   `;
 
   pill.innerHTML = `
@@ -396,8 +498,11 @@ function createFloatingCornerPill() {
     <span id="firehub-pill-toggle" style="background: #334155; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; margin-left: 4px;">—</span>
   `;
 
+  const getMoved = makePillDraggable(pill);
+
   let isCollapsed = false;
   pill.addEventListener("click", () => {
+    if (getMoved()) return; // Se arrastou, não alterna colapso
     isCollapsed = !isCollapsed;
     const textEl = document.getElementById("firehub-pill-text");
     const toggleEl = document.getElementById("firehub-pill-toggle");
