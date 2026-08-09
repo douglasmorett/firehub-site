@@ -14,8 +14,15 @@ export async function GET(
 
   const { id: employeeId } = await params;
 
-  const employee = await prisma.storeEmployee.findUnique({
-    where: { id: employeeId },
+  const user = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    select: { id: true, ownerId: true },
+  });
+  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const targetFranchiseeId = user.ownerId || user.id;
+
+  const employee = await prisma.storeEmployee.findFirst({
+    where: { id: employeeId, franchiseeId: targetFranchiseeId },
   });
 
   if (!employee) {

@@ -59,17 +59,20 @@ export async function GET(req: NextRequest) {
   if (!session || (session.user as any).role !== "ADMIN")
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
+  const userEmail = session.user?.email!;
   const currentUser = await prisma.user.findUnique({
-    where: { email: session.user?.email! },
-    select: { storeTimezone: true }
+    where: { email: userEmail },
+    select: { id: true, ownerId: true, storeTimezone: true }
   });
-  const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
+  if (!currentUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const targetFranchiseeId = currentUser.ownerId || currentUser.id;
 
-  const mode = req.nextUrl.searchParams.get("mode") || "current";
+  const url = new URL(req.url);
+  const mode = url.searchParams.get("mode") || "current";
 
   if (mode === "current") {
     const open = await prisma.cashRegister.findFirst({
-      where: { status: "OPEN" },
+      where: { openedBy: userEmail, status: "OPEN" },
       include: { entries: true },
       orderBy: { openedAt: "desc" },
     });
@@ -79,13 +82,14 @@ export async function GET(req: NextRequest) {
   if (mode === "preview") {
     // Retorna valores esperados por método para o caixa aberto atual
     const open = await prisma.cashRegister.findFirst({
-      where: { status: "OPEN" },
+      where: { openedBy: userEmail, status: "OPEN" },
       orderBy: { openedAt: "desc" },
     });
     if (!open) return NextResponse.json({ error: "Nenhum caixa aberto" }, { status: 404 });
 
     const orders = await prisma.customerOrder.findMany({
       where: {
+        ...(targetFranchiseeId && { franchiseeId: targetFranchiseeId }),
         status: { in: ["ENTREGUE", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA"] },
         createdAt: { gte: open.openedAt }
       },
@@ -111,6 +115,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (mode === "today") {
+    const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
     // Usar timezone da loja para calcular início do dia corretamente
     const nowBR = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
     const start = new Date(nowBR);
