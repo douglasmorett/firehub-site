@@ -682,14 +682,14 @@ export default function StoreTopNav({
 
       {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
       {!isCompras && (
-      <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.5rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
-        <div style={{ maxWidth:"1400px", margin:"0 auto", display:"flex", alignItems:"stretch", gap:"2px", overflowX:"auto", scrollbarWidth:"none" }}>
+      <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.35rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
+        <div style={{ maxWidth:"100%", margin:"0 auto", display:"flex", alignItems:"stretch", gap:"1px", overflowX:"auto", scrollbarWidth:"none" }}>
           {menuItems.map(item => {
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
             return (
-              <a key={item.href} href={item.href} style={{ display:"flex", alignItems:"center", gap:4, padding:"0.6rem 0.65rem", fontSize:"0.78rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
-                <Icon size={14} /> {item.label}
+              <a key={item.href} href={item.href} className="store-nav-link" style={{ display:"flex", alignItems:"center", gap:3, padding:"0.5rem 0.38rem", fontSize:"0.73rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
+                <Icon size={13} /> {item.label}
                 {item.highlight && <span style={{ width:6, height:6, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
               </a>
             );
@@ -700,6 +700,9 @@ export default function StoreTopNav({
 
       <style>{`
         @media (max-width: 520px) { .nav-user-label { display: none !important; } .nav-view-store { display: none !important; } }
+        @media (max-width: 1400px) {
+          .store-nav-link { padding: 0.48rem 0.32rem !important; font-size: 0.71rem !important; gap: 2px !important; }
+        }
       `}</style>
     </>
   );
