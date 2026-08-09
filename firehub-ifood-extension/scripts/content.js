@@ -166,25 +166,25 @@ async function applyETAOnSettingsPage(targetMinutes) {
       return;
     }
 
-    // 3. Ler o valor máximo atual
+    // 3. Ler o valor base (primeiro input de 0.5km)
     const currentValues = timeInputs.map(i => parseInt(i.value) || 0).filter(v => v > 0);
-    const currentMax = Math.max(...currentValues);
+    const currentBaseVal = currentValues.length > 0 ? currentValues[0] : 0;
 
-    console.log(`[FireHub] 📊 Tempos atuais: [${currentValues.join(", ")}] | Máximo: ${currentMax} min`);
+    console.log(`[FireHub] 📊 Tempos atuais: [${currentValues.join(", ")}] | Base (0.5km): ${currentBaseVal} min`);
 
-    if (currentMax === 0) {
+    if (currentBaseVal === 0 && currentValues.length === 0) {
       updatePillStatus("❌ Valores não legíveis", true);
       return;
     }
 
-    // 4. Calcular diferença
-    const delta = targetMinutes - currentMax;
+    // 4. Calcular diferença em relação ao valor base
+    const delta = targetMinutes - currentBaseVal;
 
     if (Math.abs(delta) < 3) {
-      console.log(`[FireHub] ✅ Prazo já está em ${currentMax} min (alvo: ${targetMinutes}). OK!`);
+      console.log(`[FireHub] ✅ Prazo já está em ${currentBaseVal} min (alvo: ${targetMinutes}). OK!`);
       lastAppliedETA = targetMinutes;
-      chrome.storage.local.set({ lastAppliedETA: targetMinutes });
-      updatePillStatus(`✅ ${currentMax} min (OK)`, false);
+      chrome.storage.local.set({ lastAppliedETA: targetMinutes, lastEtaFormatted: `${targetMinutes} min` });
+      updatePillStatus(`✅ ${targetMinutes} min (OK)`, false);
       return;
     }
 
@@ -205,11 +205,11 @@ async function applyETAOnSettingsPage(targetMinutes) {
       await sleep(1000);
 
       // 6. Clicar em "Salvar"
-      await clickSalvar(targetMinutes, currentMax);
+      await clickSalvar(targetMinutes, currentBaseVal);
 
     } else {
       console.log("[FireHub] ⚠️ Botões +/- 5 min não encontrados. Editando inputs diretamente...");
-      await directInputEdit(timeInputs, targetMinutes, currentMax);
+      await directInputEdit(timeInputs, targetMinutes, currentBaseVal);
     }
 
   } catch (err) {
@@ -304,7 +304,7 @@ async function clickOperacaoAtualTab() {
 }
 
 async function clickSalvar(targetMinutes, actualMax = null) {
-  const displayVal = actualMax || targetMinutes;
+  const displayVal = targetMinutes;
 
   let salvarBtn = null;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -341,16 +341,16 @@ async function clickSalvar(targetMinutes, actualMax = null) {
 
     const postSaveInputs = findTimeInputs();
     const postSaveValues = postSaveInputs.map(i => parseInt(i.value) || 0).filter(v => v > 0);
-    const postSaveMax = postSaveValues.length > 0 ? Math.max(...postSaveValues) : actualMax || targetMinutes;
+    const postSaveBase = postSaveValues.length > 0 ? postSaveValues[0] : targetMinutes;
 
-    console.log(`[FireHub] ✅ SALVO! Final: ${postSaveMax} min (alvo: ${targetMinutes})`);
-    updatePillStatus(`✅ ${postSaveMax} min SALVO!`, false);
+    console.log(`[FireHub] ✅ SALVO! Base: ${postSaveBase} min (alvo: ${targetMinutes})`);
+    updatePillStatus(`✔️ ${targetMinutes} min SALVO!`, false);
 
     lastAppliedETA = targetMinutes;
     const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    chrome.storage.local.set({ lastAppliedETA: targetMinutes, ifoodLastApply: nowStr });
+    chrome.storage.local.set({ lastAppliedETA: targetMinutes, lastEtaFormatted: `${targetMinutes} min`, ifoodLastApply: nowStr });
   } else {
-    updatePillStatus(`⚠️ ${displayVal} min (Salvar não achado)`, true);
+    updatePillStatus(`⚠️ ${targetMinutes} min (Salvar não achado)`, true);
   }
 }
 
