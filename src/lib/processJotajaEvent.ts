@@ -444,6 +444,7 @@ export async function processJotajaEvent(
           totalAmount: total,
           deliveryFee: deliveryFeeValue,
           status: initialStatus,
+          kdsStage: "PRODUCTION",
           createdAt: new Date(), // Garante que novos pedidos puxados entram no FINAL da fila como o próximo número sequencial
           items: {
             create: items,

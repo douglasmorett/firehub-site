@@ -87,6 +87,7 @@ export async function GET(req: NextRequest) {
     } else if (stage === "production") {
       where.OR = [
         { kdsStage: "PRODUCTION" },
+        { kdsStage: "PENDING" },
         { kdsStage: null },
       ];
     } else if (stage !== "all") {
