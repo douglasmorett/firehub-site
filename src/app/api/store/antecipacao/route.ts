@@ -106,7 +106,11 @@ export async function GET(req: Request) {
       }
     });
 
-    // Consolidar contagens por sabor base
+    // Consolidar contagens por PRODUTO INDIVIDUAL (X-Burger, X-Bacon, Esfirras, Pizzas, Bebidas, etc.)
+    const productQtyDay1: Record<string, number> = {};
+    const productQtyDay2: Record<string, number> = {};
+
+    // Consolidar contagens por sabor/massa base
     const qtyDay1: Record<string, number> = {
       carne: 0,
       calabresa: 0,
@@ -119,7 +123,9 @@ export async function GET(req: Request) {
 
     ordersDay1.forEach(order => {
       order.items.forEach(item => {
-        const name = item.menuProduct?.name || "Outros";
+        const name = item.menuProduct?.name || (item as any).name || "Outros";
+        productQtyDay1[name] = (productQtyDay1[name] || 0) + item.quantity;
+
         const base = classifyProduct(name);
         if (base !== "outros") {
           qtyDay1[base] = (qtyDay1[base] || 0) + item.quantity;
@@ -129,7 +135,9 @@ export async function GET(req: Request) {
 
     ordersDay2.forEach(order => {
       order.items.forEach(item => {
-        const name = item.menuProduct?.name || "Outros";
+        const name = item.menuProduct?.name || (item as any).name || "Outros";
+        productQtyDay2[name] = (productQtyDay2[name] || 0) + item.quantity;
+
         const base = classifyProduct(name);
         if (base !== "outros") {
           qtyDay2[base] = (qtyDay2[base] || 0) + item.quantity;
@@ -137,7 +145,23 @@ export async function GET(req: Request) {
       });
     });
 
-    // Calcular médias
+    // Calcular médias de produtos do cardápio (ordenados do mais vendido para o menos vendido)
+    const allProductNames = Array.from(new Set([...Object.keys(productQtyDay1), ...Object.keys(productQtyDay2)]));
+    const productAverages = allProductNames.map(name => {
+      const q1 = productQtyDay1[name] || 0;
+      const q2 = productQtyDay2[name] || 0;
+      const avg = (q1 + q2) / 2;
+      const baseSuggested = isHoliday ? avg * 1.30 : avg;
+      return {
+        name,
+        qtyDay1: q1,
+        qtyDay2: q2,
+        average: avg,
+        suggested: Math.ceil(baseSuggested)
+      };
+    }).sort((a, b) => b.suggested - a.suggested || b.average - a.average);
+
+    // Calcular médias de insumos base
     const averages = Object.keys(qtyDay1).map(key => {
       const q1 = qtyDay1[key];
       const q2 = qtyDay2[key];
@@ -174,6 +198,7 @@ export async function GET(req: Request) {
       labelDay2: `${formatDateSP(start2)} (${formatTimeSP(start2)} - ${formatTimeSP(end2)})`,
       isHoliday,
       holidayName: holidayName || null,
+      productAverages,
       averages,
       ordersDay1: ordersDay1.map(o => ({
         id: o.id,
