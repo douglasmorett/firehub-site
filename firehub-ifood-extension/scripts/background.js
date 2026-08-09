@@ -68,9 +68,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
-  if (msg && msg.action === "OPEN_DELIVERY_SETTINGS" || msg.action === "FOCUS_OR_OPEN_IFOOD") {
-    handleFocusOrOpenIfood(sendResponse);
-    return true; // async sendResponse
+  if (msg && msg.action === "OPEN_DELIVERY_SETTINGS") {
+    handleFocusOrOpenIfood(sendResponse, false); // false = não rouba foco (background sync)
+    return true; 
+  }
+  
+  if (msg && msg.action === "FOCUS_OR_OPEN_IFOOD") {
+    handleFocusOrOpenIfood(sendResponse, true); // true = rouba foco (clique manual do lojista)
+    return true; 
   }
 });
 
@@ -98,26 +103,37 @@ async function notifyBridgeTabs(payload) {
 }
 
 // ── REAPROVEITAMENTO E FOCO DE ABA DO IFOOD (Evita abas duplicadas) ──
-async function handleFocusOrOpenIfood(sendResponse) {
+async function handleFocusOrOpenIfood(sendResponse, forceFocus = true) {
   const settingsUrl = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
-  const portalBaseUrl = "https://portal.ifood.com.br/";
 
   // 1. Procura se já existe a aba exata de configurações de entrega
-  const settingsTabs = await chrome.tabs.query({ url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience*" });
+  const settingsTabs = await chrome.tabs.query({ url: settingsUrl + "*" });
   if (settingsTabs.length > 0 && settingsTabs[0].id) {
-    console.log(`[FireHub] 📌 Focando na aba de configurações existente (tab ${settingsTabs[0].id})...`);
-    await chrome.tabs.update(settingsTabs[0].id, { active: true });
-    if (settingsTabs[0].windowId) {
-      await chrome.windows.update(settingsTabs[0].windowId, { focused: true });
+    if (forceFocus) {
+      console.log(`[FireHub] 📌 Focando na aba de configurações existente (tab ${settingsTabs[0].id})...`);
+      await chrome.tabs.update(settingsTabs[0].id, { active: true });
+      if (settingsTabs[0].windowId) {
+        await chrome.windows.update(settingsTabs[0].windowId, { focused: true });
+      }
+    } else {
+      console.log(`[FireHub] 📌 Aba de config já existe. Apenas despachando comando sem roubar foco.`);
     }
     if (sendResponse) sendResponse({ success: true, tabId: settingsTabs[0].id });
     return;
   }
 
-  // 2. Se não tem a de configurações, procura QUALQUER aba do iFood
+  // 2. Se NÃO tem a aba de configurações, mas é um processo automático (background sync)
+  if (!forceFocus) {
+    console.log("[FireHub] 🚀 Criando aba de configurações em segundo plano (silencioso)...");
+    const newTab = await chrome.tabs.create({ url: settingsUrl, active: false });
+    if (sendResponse) sendResponse({ success: true, tabId: newTab.id });
+    return;
+  }
+
+  // 3. Se NÃO tem a aba de configurações e é um CLIQUE MANUAL DO USUÁRIO (forceFocus)
   const anyIfoodTabs = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
   if (anyIfoodTabs.length > 0 && anyIfoodTabs[0].id) {
-    console.log(`[FireHub] 📌 Direcionando aba iFood existente para configurações (tab ${anyIfoodTabs[0].id})...`);
+    console.log(`[FireHub] 📌 Direcionando aba iFood existente para configurações...`);
     await chrome.tabs.update(anyIfoodTabs[0].id, { url: settingsUrl, active: true });
     if (anyIfoodTabs[0].windowId) {
       await chrome.windows.update(anyIfoodTabs[0].windowId, { focused: true });
@@ -126,8 +142,8 @@ async function handleFocusOrOpenIfood(sendResponse) {
     return;
   }
 
-  // 3. Se não tem nenhuma aba aberta, abre APENAS 1 aba
-  console.log("[FireHub] 🚀 Abrindo 1 única aba do portal iFood...");
+  // 4. Se não tem nenhuma aba aberta e foi clique manual
+  console.log("[FireHub] 🚀 Abrindo aba do portal iFood ativa...");
   const newTab = await chrome.tabs.create({ url: settingsUrl, active: true });
   if (sendResponse) sendResponse({ success: true, tabId: newTab.id });
 }
@@ -234,19 +250,18 @@ async function calculateAndApply(count) {
         }
       } else {
         // Se NENHUMA aba de configurações está aberta:
-        // Verifica se iFood não está marcado como desconectado ANTES de abrir
         if (!store.ifoodDisconnected) {
           const anyIfood = await chrome.tabs.query({ url: "https://*.ifood.com.br/*" });
           if (anyIfood.length === 0) {
             console.log("[FireHub] 🚀 Nenhuma aba do iFood aberta. Criando 1 única aba em segundo plano...");
-            chrome.storage.local.set({ pendingETA: recommendedMinutes });
-            chrome.tabs.create({
-              url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience",
-              active: false
-            });
           } else {
-            console.log(`[FireHub] 📌 Aba iFood já existe (tab ${anyIfood[0].id}). Não criando aba duplicada.`);
+            console.log(`[FireHub] 📌 Aba iFood (Gestor) existe, mas a de Configs não. Criando aba de Config em 2º plano para não roubar foco.`);
           }
+          chrome.storage.local.set({ pendingETA: recommendedMinutes });
+          chrome.tabs.create({
+            url: "https://portal.ifood.com.br/merchant-delivery-core-portal-experience",
+            active: false // <--- Cria em background sem roubar o foco!
+          });
         }
       }
     }
