@@ -31,9 +31,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (password.length < 6) {
+    if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
       return NextResponse.json(
-        { error: "A senha deve ter no mínimo 6 caracteres." },
+        { error: "A senha deve ter no mínimo 8 caracteres e conter letras e números." },
         { status: 400, headers: getCorsHeaders(req) }
       );
     }
@@ -92,8 +92,8 @@ export async function POST(req: NextRequest) {
       slug = `${baseSlug}-${attempt}`;
     }
 
-    // Hash da senha
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash da senha com alto nível de segurança (rounds: 12)
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Criar usuário com role FRANCHISEE (dono de restaurante)
     const user = await prisma.user.create({

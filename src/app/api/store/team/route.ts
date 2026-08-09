@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Já existe uma conta cadastrada com este e-mail" }, { status: 400 });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
     
     // Por padrão, se não passarem permissões específicas, ativa TUDO (como o dono)
     const permsList = Array.isArray(permissions) && permissions.length > 0 
@@ -170,7 +170,7 @@ export async function PUT(req: NextRequest) {
     }
 
     if (password && password.trim().length >= 4) {
-      updateData.password = await bcrypt.hash(password.trim(), 10);
+      updateData.password = await bcrypt.hash(password.trim(), 12);
     }
 
     const updated = await prisma.user.update({
