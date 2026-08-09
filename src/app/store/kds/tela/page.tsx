@@ -814,34 +814,42 @@ export default function KDSTelaPage() {
               {stage === "production" ? "Produção" : "Finalização"}
             </span>
 
-            {/* BOTÃO RETORNO / UNDO DA ÚLTIMA BAIXA */}
-            {lastCompletedOrder && (
-              <button
-                onClick={undoLastCompletedOrder}
-                disabled={isUndoing}
-                title="Clique ou pressione 'Z' / 'Backspace' para restaurar o último pedido finalizado sem querer"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 16px",
-                  borderRadius: 14,
-                  background:
-                    "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)",
-                  color: "#FFF",
-                  fontSize: 13,
-                  fontWeight: 900,
-                  border: "none",
-                  cursor: isUndoing ? "wait" : "pointer",
-                  boxShadow: "0 0 16px rgba(245,158,11,0.5)",
-                  animation: "kds-slide-in 0.3s ease-out",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                <span style={{ fontSize: 16 }}>↩️</span> Desfazer Baixa{" "}
-                {getOrderLabel(lastCompletedOrder.order)}
-              </button>
-            )}
+            {/* BOTÃO RETORNO / UNDO DA ÚLTIMA BAIXA (SEMPRE VISÍVEL NO HEADER) */}
+            <button
+              type="button"
+              onClick={undoLastCompletedOrder}
+              disabled={isUndoing || !lastCompletedOrder}
+              title="Clique ou pressione 'Z' / 'Backspace' para restaurar o último pedido finalizado"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 16px",
+                borderRadius: 14,
+                background: lastCompletedOrder
+                  ? "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)"
+                  : "rgba(255, 255, 255, 0.07)",
+                color: lastCompletedOrder ? "#FFF" : "rgba(255, 255, 255, 0.4)",
+                fontSize: 13,
+                fontWeight: 900,
+                border: lastCompletedOrder
+                  ? "none"
+                  : "1px solid rgba(255, 255, 255, 0.12)",
+                cursor: !lastCompletedOrder || isUndoing ? "not-allowed" : "pointer",
+                boxShadow: lastCompletedOrder
+                  ? "0 0 16px rgba(245,158,11,0.5)"
+                  : "none",
+                opacity: !lastCompletedOrder ? 0.7 : 1,
+                transition: "all 0.3s ease",
+              }}
+            >
+              <span style={{ fontSize: 16 }}>↩️</span>{" "}
+              {lastCompletedOrder
+                ? `Desfazer Baixa ${getOrderLabel(lastCompletedOrder.order)}`
+                : "Desfazer Última Baixa"}
+            </button>
+
+
           </div>
           {/* ─── Filter Tabs ─── */}
           <div
