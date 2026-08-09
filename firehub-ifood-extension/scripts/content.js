@@ -496,7 +496,7 @@ function createFloatingCornerPill() {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 12px; font-weight: 800;
     display: flex; align-items: center; gap: 8px;
-    cursor: grab; user-select: none; transition: background 0.3s, border 0.3s;
+    cursor: grab; user-select: none; touch-action: none; transition: background 0.3s, border 0.3s;
   `;
 
   pill.innerHTML = `
