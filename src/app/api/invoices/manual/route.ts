@@ -27,8 +27,15 @@ export async function POST(req: NextRequest) {
       ? `${description} — Fornecedor: ${supplier}`
       : description;
 
+    const dbUser = await prisma.user.findUnique({
+      where: { email: session.user?.email || "" },
+      select: { id: true, ownerId: true }
+    });
+    const targetFranchiseeId = dbUser?.ownerId || dbUser?.id || null;
+
     const invoice = await prisma.purchaseInvoice.create({
       data: {
+        franchiseeId:   targetFranchiseeId,
         description:    fullDescription,
         imageUrl:       "",
         aiValue:        parseFloat(value),

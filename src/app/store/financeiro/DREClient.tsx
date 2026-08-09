@@ -9,6 +9,7 @@ import {
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { isExemptAccount } from "@/lib/billing";
 import FinanceForm from "@/components/FinanceForm";
+import InvoicesClient from "@/components/InvoicesClient";
 
 type BillingCycle = {
   yearMonth: string; totalSales: number; amountDue: number;
@@ -131,7 +132,17 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
-  const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos" | "contasapagar">("mensalidade");
+  const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos" | "contasapagar" | "notascompras">("mensalidade");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab && ["mensalidade", "extrato", "relatorio", "configuracoes", "dre", "custosfix", "pagamentos", "contasapagar", "notascompras"].includes(tab)) {
+        setActiveTab(tab as any);
+      }
+    }
+  }, []);
   const [showAllSemCusto, setShowAllSemCusto] = useState(false);
   const [showFaturaModal, setShowFaturaModal] = useState(false);
 
@@ -450,6 +461,16 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               onClick={() => setActiveTab("contasapagar")}
             >
               🤖 Contas a Pagar (IA)
+            </button>
+            <button
+              style={{
+                ...tabStyle("notascompras"),
+                background: activeTab === "notascompras" ? "#2563EB" : "transparent",
+                color: activeTab === "notascompras" ? "#fff" : "#64748B",
+              }}
+              onClick={() => setActiveTab("notascompras")}
+            >
+              🧾 Notas de Compras
             </button>
             <button
               style={{
@@ -1179,14 +1200,21 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 ✨ LEITURA AUTOMÁTICA VIA GEMINI IA
               </div>
               <h2 style={{ fontSize: "1.35rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>
-                Gestão Inteligente de Contas a Pagar & Notas de Compras
+                Gestão Inteligente de Contas a Pagar
               </h2>
               <p style={{ fontSize: "0.85rem", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
-                Tire foto do boleto ou nota fiscal de fornecedor com a câmera do celular ou suba um arquivo. A IA do Gemini lê instantaneamente o fornecedor, valor total, código de barras e data de vencimento.
+                Tire foto do boleto ou conta de fornecedor com a câmera do celular ou suba um arquivo. A IA do Gemini lê instantaneamente o fornecedor, valor total, código de barras e data de vencimento.
               </p>
             </div>
             <FinanceForm category="BUSINESS" />
           </div>
+        </div>
+      )}
+
+      {/* ===== ABA NOTAS DE COMPRAS ===== */}
+      {activeTab === "notascompras" && (
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1rem 0" }}>
+          <InvoicesClient role={(session?.user as any)?.role || "FRANCHISEE"} canSeePersonal={false} />
         </div>
       )}
 

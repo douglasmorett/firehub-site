@@ -223,35 +223,123 @@ model RouteSchedule {
 }
 
 model Payable {
-  id           String    @id @default(cuid())
+  id                 String            @id @default(cuid())
+  franchiseeId       String?
+  supplierName       String
+  barcode            String?
+  receivedDate       DateTime
+  dueDate            DateTime
+  value              Float
+  status             String            @default("PENDING")
+  category           String            @default("BUSINESS")
+  paidDate           DateTime?
+  paymentType        String?           @default("BOLETO")
+  pixKey             String?
+  pixKeyName         String?
+  pixKeyType         String?
+  creditCardId       String?
+  recurringPayableId String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  creditCard         CreditCard?       @relation(fields: [creditCardId], references: [id])
+  recurringPayable   RecurringPayable? @relation(fields: [recurringPayableId], references: [id], onDelete: SetNull)
+
+  @@index([franchiseeId])
+  @@index([franchiseeId, status])
+}
+
+model RecurringPayable {
+  id           String      @id @default(cuid())
+  franchiseeId String?
   supplierName String
-  barcode      String?
-  receivedDate DateTime
-  dueDate      DateTime
   value        Float
-  status       String    @default("PENDING")
-  category     String    @default("BUSINESS")
-  paidDate     DateTime?
-  paymentType  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  category     String      @default("BUSINESS")
+  paymentType  String      @default("BOLETO")
+  dueDateDay   Int
+  barcode      String?
+  pixKey       String?
+  pixKeyName   String?
+  pixKeyType   String?
+  creditCardId String?
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  creditCard   CreditCard? @relation(fields: [creditCardId], references: [id])
+  payables     Payable[]
+
+  @@index([franchiseeId])
+}
+
+model CreditCard {
+  id                String             @id @default(cuid())
+  franchiseeId      String?
+  name              String
+  lastDigits        String?
+  bankName          String?
+  limit             Float?
+  closingDay        Int?
+  dueDay            Int?
+  bestPurchaseDay   Int?
+  pixKey            String?
+  pixKeyType        String?            @default("CPF")
+  active            Boolean            @default(true)
+  color             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  payables          Payable[]
+  recurringPayables RecurringPayable[]
+
+  @@index([franchiseeId])
 }
 
 model PurchaseInvoice {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
+  franchiseeId    String?
   description     String
   imageUrl        String
   aiValue         Float?
   aiCategory      String?
-  aiRawText       String?  @db.Text
+  aiRawText       String?   @db.Text
   invoiceDate     DateTime?
-  status          String   @default("PENDING")
-  category        String   @default("BUSINESS")
+  status          String    @default("PENDING")
+  category        String    @default("BUSINESS")
   rejectionReason String?
-  source          String   @default("ai")   // "ai" | "manual"
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  source          String    @default("ai")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   uploadedBy      String
+
+  @@index([franchiseeId])
+}
+
+model KitchenItem {
+  id            String   @id @default(cuid())
+  franchiseeId  String?
+  name          String
+  shelfLifeDays Int      @default(1)
+  ingredients   String?
+  allergens     String?
+  preparation   String?
+  weightStr     String?  @default("N/A")
+  energy        String?  @default("0")
+  carbs         String?  @default("0")
+  sugars        String?  @default("0")
+  addedSugars   String?  @default("0")
+  proteins      String?  @default("0")
+  fatTotal      String?  @default("0")
+  fatSat        String?  @default("0")
+  sodium        String?  @default("0")
+  highSugar     Boolean  @default(false)
+  highSodium    Boolean  @default(false)
+  highFat       Boolean  @default(false)
+  transgenic    Boolean  @default(false)
+  customCnpj    String?
+  customAddress String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([franchiseeId])
 }
 
 // ========== SISTEMA DE PEDIDOS DO CLIENTE FINAL ==========

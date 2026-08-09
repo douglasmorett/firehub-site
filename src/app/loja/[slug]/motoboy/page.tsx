@@ -17,6 +17,7 @@ import {
   PackageCheck,
   ChevronRight
 } from "lucide-react";
+import { getBeveragesFromOrder } from "@/lib/beverage";
 
 export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -181,6 +182,21 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const handleLogout = () => {
     setSession(null);
     localStorage.removeItem(`firehub_motoboy_session_${slug}`);
+  };
+
+  // Beverage Confirmation Modal State
+  const [beverageModalOrder, setBeverageModalOrder] = useState<any | null>(null);
+  const [beveragesList, setBeveragesList] = useState<{ name: string; quantity: number }[]>([]);
+
+  // Initiate Delivery Flow (Checks for Beverages)
+  const handleInitiateDelivery = (order: any) => {
+    const bevList = getBeveragesFromOrder(order);
+    if (bevList && bevList.length > 0) {
+      setBeveragesList(bevList);
+      setBeverageModalOrder(order);
+    } else {
+      handleMarkDelivered(order.id);
+    }
   };
 
   // Mark Order as Delivered
@@ -567,7 +583,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
                 {/* Confirm Delivery Button */}
                 <button
-                  onClick={() => handleMarkDelivered(order.id)}
+                  onClick={() => handleInitiateDelivery(order)}
                   disabled={updatingOrderId === order.id}
                   style={{
                     width: "100%", padding: "12px", background: "#16A34A", color: "#FFFFFF",
@@ -660,6 +676,92 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Bebidas */}
+      {beverageModalOrder && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", zIndex: 10000
+        }}>
+          <div style={{
+            background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "400px",
+            padding: "1.5rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)", textAlign: "center",
+            boxSizing: "border-box"
+          }}>
+            <div style={{
+              width: "60px", height: "60px", borderRadius: "50%", background: "#EFF6FF",
+              color: "#2563EB", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              marginBottom: "1rem", fontSize: "2.2rem", boxShadow: "0 4px 12px rgba(37,99,235,0.2)"
+            }}>
+              🥤
+            </div>
+
+            <h3 style={{ fontSize: "1.25rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px 0" }}>
+              Atenção às Bebidas!
+            </h3>
+
+            <p style={{ fontSize: "0.85rem", color: "#64748B", margin: "0 0 1rem 0" }}>
+              Este pedido contém as seguintes bebidas:
+            </p>
+
+            <div style={{
+              background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: "12px",
+              padding: "0.75rem 1rem", marginBottom: "1.25rem", textAlign: "left",
+              maxHeight: "180px", overflowY: "auto"
+            }}>
+              {beveragesList.map((bev, i) => (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  fontSize: "0.92rem", fontWeight: 800, color: "#0F172A", padding: "6px 0",
+                  borderBottom: i < beveragesList.length - 1 ? "1px dashed #CBD5E1" : "none"
+                }}>
+                  <span>🥤 {bev.name}</span>
+                  <span style={{
+                    background: "#2563EB", color: "#FFFFFF", padding: "2px 8px",
+                    borderRadius: "6px", fontSize: "0.8rem", fontWeight: 900, marginLeft: "8px"
+                  }}>
+                    {bev.quantity}x
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <p style={{ fontSize: "0.95rem", fontWeight: 900, color: "#1E293B", marginBottom: "1.25rem" }}>
+              Você entregou essas bebidas para o cliente?
+            </p>
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button
+                type="button"
+                onClick={() => setBeverageModalOrder(null)}
+                style={{
+                  flex: 1, padding: "12px", background: "#F1F5F9", color: "#475569",
+                  border: "none", borderRadius: "12px", fontWeight: 800, cursor: "pointer", fontSize: "0.9rem"
+                }}
+              >
+                Voltar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const targetId = beverageModalOrder.id;
+                  setBeverageModalOrder(null);
+                  handleMarkDelivered(targetId);
+                }}
+                style={{
+                  flex: 1.5, padding: "12px", background: "#16A34A", color: "#FFFFFF",
+                  border: "none", borderRadius: "12px", fontWeight: 900, cursor: "pointer",
+                  fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 6, boxShadow: "0 4px 14px rgba(22,163,74,0.4)"
+                }}
+              >
+                <CheckCircle2 size={18} /> Entreguei
+              </button>
+            </div>
           </div>
         </div>
       )}

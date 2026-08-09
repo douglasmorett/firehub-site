@@ -36,6 +36,13 @@ export async function GET(req: NextRequest) {
           }
         ]
       },
+      include: {
+        items: {
+          include: {
+            menuProduct: true
+          }
+        }
+      },
       orderBy: { createdAt: "desc" },
       take: 100
     });

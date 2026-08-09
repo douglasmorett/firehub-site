@@ -68,7 +68,7 @@ function showIfoodDisconnectedBanner(reasonText) {
     <span style="font-size: 18px;">⚠️</span>
     <div>
       <div style="font-size: 14px; font-weight: 900; color: #7F1D1D;">O Portal iFood foi desconectado!</div>
-      <div style="font-size: 12px; font-weight: 600; color: #991B1B;">${reasonText}. Faça login para manter o ajuste automático ativo.</div>
+      <div style="font-size: 12px; font-weight: 600; color: #991B1B;">A sua extensão de mudança de prazo automático não está conseguindo ativar porque o portal iFood deslogou. Por favor, abra novamente seu portal iFood em Entregas para continuar ajustando o prazo automático.</div>
     </div>
     <button id="firehub-reconnect-ifood-btn" style="
       background: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px;

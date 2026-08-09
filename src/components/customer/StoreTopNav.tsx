@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2 } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
 import StoreSelector from "./StoreSelector";
 
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "NOVO" },
   { href: "/store/estoque", label: "Estoque", icon: Package },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
+  { href: "/store/etiquetas", label: "Validação & Etiquetas", icon: Tag, badge: "NOVO" },
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "IA" },
@@ -674,15 +675,15 @@ export default function StoreTopNav({
 
       {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
       {!isCompras && (
-      <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.75rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
-        <div style={{ maxWidth:"1400px", margin:"0 auto", display:"flex", alignItems:"stretch", gap:0, overflowX:"auto", scrollbarWidth:"none" }}>
+      <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.5rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
+        <div style={{ maxWidth:"1400px", margin:"0 auto", display:"flex", alignItems:"stretch", gap:"2px", overflowX:"auto", scrollbarWidth:"none" }}>
           {menuItems.map(item => {
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
             return (
-              <a key={item.href} href={item.href} style={{ display:"flex", alignItems:"center", gap:5, padding:"0.65rem 0.8rem", fontSize:"0.8rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
+              <a key={item.href} href={item.href} style={{ display:"flex", alignItems:"center", gap:4, padding:"0.6rem 0.65rem", fontSize:"0.78rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
                 <Icon size={14} /> {item.label}
-                {item.highlight && <span style={{ width:7, height:7, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
+                {item.highlight && <span style={{ width:6, height:6, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
               </a>
             );
           })}

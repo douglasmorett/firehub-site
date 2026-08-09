@@ -52,3 +52,57 @@ export function isBeverageItem(item: any, customKeywords?: string | string[]): b
   }
   return false;
 }
+
+export function getBeveragesFromOrder(order: any, customKeywords?: string | string[]): { name: string; quantity: number }[] {
+  if (!order) return [];
+  const beverages: { name: string; quantity: number }[] = [];
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  for (const item of items) {
+    const qty = item.quantity || 1;
+    const name = item.name || item.menuProduct?.name || "";
+
+    if (isBeverageItem(item, customKeywords)) {
+      if (name) {
+        beverages.push({ name, quantity: qty });
+      }
+    }
+
+    if (item.comboSelections) {
+      try {
+        const comboSels = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+        if (Array.isArray(comboSels)) {
+          for (const sel of comboSels) {
+            const selName = sel.name || sel.productName || sel.title;
+            if (selName && isBeverageName(selName, customKeywords)) {
+              const selQty = (sel.quantity || 1) * qty;
+              beverages.push({ name: selName, quantity: selQty });
+            }
+            if (Array.isArray(sel.extras)) {
+              for (const ext of sel.extras) {
+                const extName = typeof ext === "string" ? ext : ext?.name;
+                if (extName && isBeverageName(extName, customKeywords)) {
+                  beverages.push({ name: extName, quantity: qty });
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // Also check notes for keywords if items array was empty or didn't capture beverages
+  if (beverages.length === 0 && order.notes) {
+    const notesStr = String(order.notes);
+    const lines = notesStr.split(/[\n,;|]+/);
+    for (const line of lines) {
+      const cleanLine = line.trim();
+      if (cleanLine && isBeverageName(cleanLine, customKeywords)) {
+        beverages.push({ name: cleanLine, quantity: 1 });
+      }
+    }
+  }
+
+  return beverages;
+}
