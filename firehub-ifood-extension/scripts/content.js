@@ -103,14 +103,15 @@ function dispatchSyntheticClick(element) {
   if (!element) return;
   try { element.focus(); } catch (e) {}
   try {
+    if (typeof element.click === "function") {
+      element.click();
+      return;
+    }
+  } catch (e) {}
+  try {
     element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
     element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  } catch (e) {}
-  try {
-    if (typeof element.click === "function") {
-      element.click();
-    }
   } catch (e) {}
 }
 
@@ -213,8 +214,24 @@ async function applyETAOnSettingsPage(targetMinutes) {
 
     if (adjustBtn) {
       for (let i = 0; i < clicksNeeded; i++) {
+        // Checar o valor live atual antes de cada clique para evitar ultrapassar o alvo
+        const liveInputs = findTimeInputs();
+        if (liveInputs.length > 0) {
+          const liveVal = parseInt(liveInputs[0].value) || 0;
+          if (liveVal > 0) {
+            if (isIncrease && liveVal >= targetMinutes) {
+              console.log(`[FireHub] 🛑 Alvo alcançado: ${liveVal} min (meta: ${targetMinutes})`);
+              break;
+            }
+            if (!isIncrease && liveVal <= targetMinutes) {
+              console.log(`[FireHub] 🛑 Alvo alcançado: ${liveVal} min (meta: ${targetMinutes})`);
+              break;
+            }
+          }
+        }
+
         dispatchSyntheticClick(adjustBtn);
-        await sleep(300);
+        await sleep(350);
       }
 
       await sleep(1000);
