@@ -124,18 +124,21 @@ export async function processJotajaEvent(
         : null;
 
       if (!franchisee) {
-        const eventMerchantId = orderData.merchant?.id || "22238";
-        if (eventMerchantId) {
-          franchisee = await prisma.user.findFirst({
-            where: {
-              OR: [
-                { jotajaMerchantId: eventMerchantId },
-                { jotajaConnected: true },
-                { email: "contatohakim@gmail.com" }
-              ],
-              NOT: { email: { startsWith: "deleted_" } }
-            } as any,
-          });
+        // Prioritize active store contatohakim@gmail.com
+        franchisee = await prisma.user.findFirst({
+          where: { email: "contatohakim@gmail.com" },
+        });
+
+        if (!franchisee) {
+          const eventMerchantId = orderData.merchant?.id || "22238";
+          if (eventMerchantId) {
+            franchisee = await prisma.user.findFirst({
+              where: {
+                jotajaMerchantId: eventMerchantId,
+                NOT: { email: { startsWith: "deleted_" } },
+              } as any,
+            });
+          }
         }
       }
       if (!franchisee) {
