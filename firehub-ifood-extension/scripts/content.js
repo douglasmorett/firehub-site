@@ -188,6 +188,17 @@ async function applyETAOnSettingsPage(targetMinutes) {
       return;
     }
 
+function dispatchSyntheticClick(element) {
+  if (!element) return;
+  try { element.focus(); } catch (e) {}
+  const opts = { bubbles: true, cancelable: true, view: window, buttons: 1 };
+  element.dispatchEvent(new PointerEvent("pointerdown", opts));
+  element.dispatchEvent(new MouseEvent("mousedown", opts));
+  element.dispatchEvent(new PointerEvent("pointerup", opts));
+  element.dispatchEvent(new MouseEvent("mouseup", opts));
+  element.dispatchEvent(new MouseEvent("click", opts));
+}
+
     // 5. Usar botões "+ 5 min" / "- 5 min"
     const isIncrease = delta > 0;
     const clicksNeeded = Math.max(1, Math.round(Math.abs(delta) / 5));
@@ -198,7 +209,7 @@ async function applyETAOnSettingsPage(targetMinutes) {
 
     if (adjustBtn) {
       for (let i = 0; i < clicksNeeded; i++) {
-        adjustBtn.click();
+        dispatchSyntheticClick(adjustBtn);
         await sleep(300);
       }
 
@@ -297,7 +308,7 @@ async function clickOperacaoAtualTab() {
       (opTab.style && opTab.style.borderBottom);
 
     if (!isActive) {
-      opTab.click();
+      dispatchSyntheticClick(opTab);
       await sleep(1000);
     }
   }
@@ -336,7 +347,8 @@ async function clickSalvar(targetMinutes, actualMax = null) {
       salvarBtn.removeAttribute("disabled");
     }
 
-    salvarBtn.click();
+    dispatchSyntheticClick(salvarBtn);
+    await sleep(2000);
     await sleep(2000);
 
     const postSaveInputs = findTimeInputs();
