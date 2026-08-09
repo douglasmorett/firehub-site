@@ -253,10 +253,25 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
     return `${String(endH).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  // Filtrar produtos por termo de busca
-  const filteredProducts = (data?.productAverages || []).filter((p: any) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const isGenericName = (nameStr: string) => {
+    if (!nameStr) return true;
+    const n = nameStr.trim().toLowerCase();
+    return (
+      n === "item de integração" ||
+      n === "item de integracao" ||
+      n === "outros" ||
+      n === "item sem nome" ||
+      n.startsWith("pedido ifood") ||
+      n.startsWith("pedido 99food") ||
+      n.startsWith("pedido jotaja") ||
+      n.startsWith("item #")
+    );
+  };
+
+  // Filtrar produtos válidos do cardápio por termo de busca
+  const filteredProducts = (data?.productAverages || [])
+    .filter((p: any) => p.name && !isGenericName(p.name))
+    .filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className="antecipacao-container">
@@ -417,139 +432,68 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
             </div>
           )}
 
-          {/* SUB-TABS & SEARCH FILTER */}
+          {/* SEARCH FILTER & SECTION TITLE */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button
-                onClick={() => setViewTab("products")}
-                style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: viewTab === "products" ? "#FF4D00" : "#E2E8F0", color: viewTab === "products" ? "#FFF" : "#475569", fontWeight: 800, cursor: "pointer", fontSize: "0.9rem" }}
-              >
-                🍔 Produtos do Cardápio ({data?.productAverages?.length || 0})
-              </button>
-              <button
-                onClick={() => setViewTab("bases")}
-                style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: viewTab === "bases" ? "#FF4D00" : "#E2E8F0", color: viewTab === "bases" ? "#FFF" : "#475569", fontWeight: 800, cursor: "pointer", fontSize: "0.9rem" }}
-              >
-                🥩 Insumos & Massas ({data?.averages?.length || 0})
-              </button>
+            <div className="section-title" style={{ margin: 0 }}>
+              <h2 style={{ margin: 0 }}>Previsão por Produto do Cardápio ({filteredProducts.length})</h2>
+              <span className="subtitle">Produtos ordenados do maior para o menor volume de vendas</span>
             </div>
 
-            {viewTab === "products" && (
-              <input
-                type="text"
-                placeholder="🔍 Buscar produto (ex: X-Bacon, Esfirra)..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                style={{ padding: "8px 14px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.9rem", minWidth: "260px" }}
-              />
-            )}
+            <input
+              type="text"
+              placeholder="🔍 Buscar produto no cardápio..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              style={{ padding: "8px 14px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.9rem", minWidth: "260px" }}
+            />
           </div>
 
-          {/* VIEW TAB 1: PRODUCTS RANKING (DESCENTE: MAIS VENDIDO PARA O MENOS VENDIDO) */}
-          {viewTab === "products" && (
-            <>
-              <div className="section-title">
-                <h2>Previsão por Produto do Cardápio</h2>
-                <span className="subtitle">Produtos ordenados do maior para o menor volume de vendas</span>
-              </div>
-
-              {filteredProducts.length === 0 ? (
-                <div className="empty-history" style={{ padding: "2rem", background: "#FFF", borderRadius: "1rem", border: "1px solid #E2E8F0", textAlign: "center" }}>
-                  <Info size={32} style={{ color: "#94A3B8", marginBottom: "8px" }} />
-                  <p style={{ margin: 0, fontWeight: 700, color: "#64748B" }}>Nenhum produto com vendas registradas nesta janela de horário.</p>
-                  <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>Tente aumentar a quantidade de horas ou selecionar outro horário.</span>
-                </div>
-              ) : (
-                <div className="cards-grid">
-                  {filteredProducts.map((item: any, index: number) => {
-                    const hasDemand = item.suggested > 0;
-                    return (
-                      <div key={item.name} className={`prediction-card ${hasDemand ? "active-demand" : ""}`}>
-                        <div className="card-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span style={{ background: index === 0 ? "linear-gradient(135deg, #F59E0B, #D97706)" : index === 1 ? "linear-gradient(135deg, #94A3B8, #64748B)" : index === 2 ? "linear-gradient(135deg, #B45309, #78350F)" : "#334155", color: "#FFF", padding: "2px 8px", borderRadius: "6px", fontWeight: 900, fontSize: "0.75rem" }}>
-                              #{index + 1}
-                            </span>
-                            <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0, color: "#0F172A", lineHeight: 1.3 }}>{item.name}</h3>
-                          </div>
-                        </div>
-
-                        <div className="card-body" style={{ marginTop: "12px" }}>
-                          <div className="suggested-box">
-                            <span className="suggested-number">{item.suggested}</span>
-                            <span className="suggested-label">deixar pronto</span>
-                          </div>
-
-                          <div className="details-box">
-                            <div className="detail-row">
-                              <span>7 dias atrás:</span>
-                              <strong>{item.qtyDay1} un.</strong>
-                            </div>
-                            <div className="detail-row">
-                              <span>14 dias atrás:</span>
-                              <strong>{item.qtyDay2} un.</strong>
-                            </div>
-                            <div className="detail-row divider">
-                              <span>Média real:</span>
-                              <span>{item.average.toFixed(1)} un.</span>
-                            </div>
-                          </div>
-                        </div>
+          {filteredProducts.length === 0 ? (
+            <div className="empty-history" style={{ padding: "2rem", background: "#FFF", borderRadius: "1rem", border: "1px solid #E2E8F0", textAlign: "center" }}>
+              <Info size={32} style={{ color: "#94A3B8", marginBottom: "8px" }} />
+              <p style={{ margin: 0, fontWeight: 700, color: "#64748B" }}>Nenhum produto com vendas registradas nesta janela de horário.</p>
+              <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>Tente aumentar a quantidade de horas ou selecionar outro horário.</span>
+            </div>
+          ) : (
+            <div className="cards-grid">
+              {filteredProducts.map((item: any, index: number) => {
+                const hasDemand = item.suggested > 0;
+                return (
+                  <div key={item.name} className={`prediction-card ${hasDemand ? "active-demand" : ""}`}>
+                    <div className="card-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ background: index === 0 ? "linear-gradient(135deg, #F59E0B, #D97706)" : index === 1 ? "linear-gradient(135deg, #94A3B8, #64748B)" : index === 2 ? "linear-gradient(135deg, #B45309, #78350F)" : "#334155", color: "#FFF", padding: "2px 8px", borderRadius: "6px", fontWeight: 900, fontSize: "0.75rem" }}>
+                          #{index + 1}
+                        </span>
+                        <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0, color: "#0F172A", lineHeight: 1.3 }}>{item.name}</h3>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
+                    </div>
 
-          {/* VIEW TAB 2: INSUMOS BASE */}
-          {viewTab === "bases" && (
-            <>
-              <div className="section-title">
-                <h2>Previsão por Insumos & Massas Base</h2>
-                <span className="subtitle">Volume acumulado de ingredientes de preparo</span>
-              </div>
-
-              <div className="cards-grid">
-                {data?.averages?.map((item: any) => {
-                  const hasDemand = item.suggested > 0;
-                  return (
-                    <div key={item.base} className={`prediction-card ${hasDemand ? "active-demand" : ""}`}>
-                      <div className="card-header">
-                        <span className="card-emoji">{BASE_FLAVOR_EMOJIS[item.base] || "🥟"}</span>
-                        <div>
-                          <h3>{BASE_FLAVOR_LABELS[item.base] || item.base}</h3>
-                          <p className="card-desc">{BASE_FLAVOR_DESCS[item.base] || ""}</p>
-                        </div>
+                    <div className="card-body" style={{ marginTop: "12px" }}>
+                      <div className="suggested-box">
+                        <span className="suggested-number">{item.suggested}</span>
+                        <span className="suggested-label">deixar pronto</span>
                       </div>
 
-                      <div className="card-body">
-                        <div className="suggested-box">
-                          <span className="suggested-number">{item.suggested}</span>
-                          <span className="suggested-label">deixar pronto</span>
+                      <div className="details-box">
+                        <div className="detail-row">
+                          <span>7 dias atrás:</span>
+                          <strong>{item.qtyDay1} un.</strong>
                         </div>
-
-                        <div className="details-box">
-                          <div className="detail-row">
-                            <span>7 dias atrás:</span>
-                            <strong>{item.qtyDay1} un.</strong>
-                          </div>
-                          <div className="detail-row">
-                            <span>14 dias atrás:</span>
-                            <strong>{item.qtyDay2} un.</strong>
-                          </div>
-                          <div className="detail-row divider">
-                            <span>Média real:</span>
-                            <span>{item.average.toFixed(1)} un.</span>
-                          </div>
+                        <div className="detail-row">
+                          <span>14 dias atrás:</span>
+                          <strong>{item.qtyDay2} un.</strong>
+                        </div>
+                        <div className="detail-row divider">
+                          <span>Média real:</span>
+                          <span>{item.average.toFixed(1)} un.</span>
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </>
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           {/* DETAILED HISTORICAL SALES */}

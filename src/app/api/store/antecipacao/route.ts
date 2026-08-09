@@ -121,10 +121,27 @@ export async function GET(req: Request) {
     };
     const qtyDay2 = { ...qtyDay1 };
 
+    const isGenericName = (nameStr: string) => {
+      if (!nameStr) return true;
+      const n = nameStr.trim().toLowerCase();
+      return (
+        n === "item de integração" ||
+        n === "item de integracao" ||
+        n === "outros" ||
+        n === "item sem nome" ||
+        n.startsWith("pedido ifood") ||
+        n.startsWith("pedido 99food") ||
+        n.startsWith("pedido jotaja") ||
+        n.startsWith("item #")
+      );
+    };
+
     ordersDay1.forEach(order => {
       order.items.forEach(item => {
-        const name = item.menuProduct?.name || (item as any).name || "Outros";
-        productQtyDay1[name] = (productQtyDay1[name] || 0) + item.quantity;
+        const name = item.menuProduct?.name || (item as any).name || "";
+        if (name && !isGenericName(name)) {
+          productQtyDay1[name] = (productQtyDay1[name] || 0) + item.quantity;
+        }
 
         const base = classifyProduct(name);
         if (base !== "outros") {
@@ -135,8 +152,10 @@ export async function GET(req: Request) {
 
     ordersDay2.forEach(order => {
       order.items.forEach(item => {
-        const name = item.menuProduct?.name || (item as any).name || "Outros";
-        productQtyDay2[name] = (productQtyDay2[name] || 0) + item.quantity;
+        const name = item.menuProduct?.name || (item as any).name || "";
+        if (name && !isGenericName(name)) {
+          productQtyDay2[name] = (productQtyDay2[name] || 0) + item.quantity;
+        }
 
         const base = classifyProduct(name);
         if (base !== "outros") {
