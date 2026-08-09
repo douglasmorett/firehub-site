@@ -59,6 +59,27 @@ const DEFAULT_SHIFTS: Shift[] = [
 ];
 
 export default function AntecipacaoClient({ userName, storeName }: AntecipacaoClientProps) {
+  // Estados do Dispositivo/Computador
+  const [deviceTime, setDeviceTime] = useState<string>("");
+  const [deviceDayName, setDeviceDayName] = useState<string>("");
+  const [deviceDayOfWeek, setDeviceDayOfWeek] = useState<number>(0);
+
+  // Estados dos Turnos
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
+
+  // Estados do Formulário de Turno
+  const [newShiftName, setNewShiftName] = useState<string>("");
+  const [newShiftStart, setNewShiftStart] = useState<string>("18:00");
+  const [newShiftEnd, setNewShiftEnd] = useState<string>("22:00");
+
+  // Estados dos Dados e Cálculo
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"day1" | "day2">("day1");
+
   // Modo de antecipação: "hours" (Antecipar N Horas) ou "shift" (Turnos predefinidos)
   const [antecipacaoMode, setAntecipacaoMode] = useState<"hours" | "shift">("hours");
   const [startHour, setStartHour] = useState<string>("18:00");
