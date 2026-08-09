@@ -20,20 +20,27 @@ checkDisconnectionStatus();
 // Verificar se a sessão expirou
 function checkDisconnectionStatus() {
   const href = window.location.href.toLowerCase();
-  const isLoginPage = href.includes("/login") || href.includes("/auth") || href.includes("/signin") || href.includes("login.ifood.com.br");
+
+  // NUNCA considerar desconectado durante redirects internos de OAuth ou requisições de autorização
+  if (href.includes("openid-connect") || href.includes("callback") || href.includes("response_type=")) {
+    return false;
+  }
+
   const passwordInput = document.querySelector('input[type="password"]');
   const bodyText = (document.body ? document.body.innerText : "").toLowerCase();
   const hasDisconnectText = bodyText.includes("fazer login") || bodyText.includes("sessão expirou") || bodyText.includes("entre com sua conta");
 
-  // Apenas considera DESCONECTADO se estiver explicitamente em uma tela de login com formulário
-  if (isLoginPage || (passwordInput && hasDisconnectText)) {
+  // Apenas considera DESCONECTADO se houver um campo de senha visível na tela de login
+  const isExplicitlyLoggedOut = !!(passwordInput && (hasDisconnectText || href.includes("login.ifood.com.br")));
+
+  if (isExplicitlyLoggedOut) {
     console.warn("[FireHub] ⚠️ iFood Desconectado / Tela de Login detectada!");
     chrome.storage.local.set({ ifoodDisconnected: true });
     chrome.runtime.sendMessage({ action: "IFOOD_SESSION_DISCONNECTED", reason: "Sessão expirada no Portal iFood" }).catch(() => {});
     updatePillStatus("🔴 iFood Desconectado - Faça Login!", true);
     return true;
   } else {
-    // Se está navegando no portal do iFood e NÃO é tela de login, o iFood está CONECTADO!
+    // Se está navegando no portal do iFood e NÃO tem formulário de senha, o iFood está CONECTADO!
     chrome.storage.local.set({ ifoodDisconnected: false });
     chrome.runtime.sendMessage({ action: "IFOOD_SESSION_CONNECTED" }).catch(() => {});
   }
