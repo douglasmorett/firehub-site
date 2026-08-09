@@ -151,17 +151,11 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
                 O <strong>FireCheck</strong> é a nossa solução parceira definitiva de checklists auditados com foto obrigatória em tempo real, controle de ponto por reconhecimento facial por IA e assistente inteligente no WhatsApp.
               </p>
               <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                <a
-                  href="#planos-firecheck"
-                  style={{ background: "#FF4D00", color: "#FFF", padding: "12px 24px", borderRadius: "12px", fontWeight: 800, fontSize: "0.9rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: "0 10px 20px rgba(255,77,0,0.3)" }}
-                >
-                  Ver Pacotes & Assinar no Cakto <ArrowRight size={16} />
-                </a>
                 <button
                   onClick={() => setActiveTab("app")}
-                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.2)", color: "#FFF", padding: "12px 20px", borderRadius: "12px", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}
+                  style={{ background: "#FF4D00", color: "#FFF", padding: "12px 28px", borderRadius: "12px", fontWeight: 800, fontSize: "0.95rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 10, border: "none", boxShadow: "0 10px 20px rgba(255,77,0,0.35)", transition: "transform 0.15s ease" }}
                 >
-                  Já tenho conta (Entrar) <ExternalLink size={16} />
+                  Acessar FireCheck (Entrar) <ExternalLink size={18} />
                 </button>
               </div>
             </div>
@@ -338,7 +332,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
               🌐 Conectado ao <strong>FireCheck Web</strong> ({user.email})
             </div>
             <a
-              href="https://firecheck-eight.vercel.app/login"
+              href="https://www.firecheckapp.com.br/login"
               target="_blank"
               rel="noreferrer"
               style={{ color: "#3B82F6", fontWeight: 700, fontSize: "0.82rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
@@ -355,7 +349,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
               </div>
             )}
             <iframe
-              src="https://firecheck-eight.vercel.app/login"
+              src="https://www.firecheckapp.com.br/login"
               style={{ width: "100%", height: "100%", border: "none" }}
               onLoad={() => setIframeLoaded(true)}
               title="FireCheck App"
