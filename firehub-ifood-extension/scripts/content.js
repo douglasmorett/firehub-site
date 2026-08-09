@@ -204,45 +204,46 @@ async function applyETAOnSettingsPage(targetMinutes) {
       return;
     }
 
-    // 5. Usar botões "+ 5 min" / "- 5 min"
-    const isIncrease = delta > 0;
-    const clicksNeeded = Math.max(1, Math.round(Math.abs(delta) / 5));
+    // 5. Ajustar iterativamente usando os botões "+ 5 min" / "- 5 min" até atingir o tempo alvo exato
+    let attempts = 0;
+    const MAX_ATTEMPTS = 25;
+    let finalBaseVal = currentBaseVal;
 
-    console.log(`[FireHub] 🔧 Delta: ${delta > 0 ? "+" : ""}${delta} min → ${clicksNeeded} cliques em "${isIncrease ? "+ 5 min" : "- 5 min"}"`);
+    while (attempts < MAX_ATTEMPTS) {
+      const liveInputs = findTimeInputs();
+      const liveVal = liveInputs.length > 0 ? (parseInt(liveInputs[0].value) || 0) : 0;
+      
+      if (liveVal > 0) {
+        finalBaseVal = liveVal;
+        const diff = targetMinutes - liveVal;
 
-    const adjustBtn = findAdjustButton(isIncrease);
-
-    if (adjustBtn) {
-      for (let i = 0; i < clicksNeeded; i++) {
-        // Checar o valor live atual antes de cada clique para evitar ultrapassar o alvo
-        const liveInputs = findTimeInputs();
-        if (liveInputs.length > 0) {
-          const liveVal = parseInt(liveInputs[0].value) || 0;
-          if (liveVal > 0) {
-            if (isIncrease && liveVal >= targetMinutes) {
-              console.log(`[FireHub] 🛑 Alvo alcançado: ${liveVal} min (meta: ${targetMinutes})`);
-              break;
-            }
-            if (!isIncrease && liveVal <= targetMinutes) {
-              console.log(`[FireHub] 🛑 Alvo alcançado: ${liveVal} min (meta: ${targetMinutes})`);
-              break;
-            }
-          }
+        if (Math.abs(diff) <= 2) {
+          console.log(`[FireHub] 🎯 Alvo atingido com precisão: ${liveVal} min (meta: ${targetMinutes})`);
+          break;
         }
 
-        dispatchSyntheticClick(adjustBtn);
-        await sleep(350);
+        const isIncrease = diff > 0;
+        const btn = findAdjustButton(isIncrease);
+        if (!btn) {
+          console.warn("[FireHub] ⚠️ Botão de ajuste +/- 5 min não encontrado!");
+          break;
+        }
+
+        console.log(`[FireHub] 🔧 Clique ${attempts + 1}: Atual = ${liveVal} min | Meta = ${targetMinutes} min | Clicando em "${isIncrease ? '+ 5 min' : '- 5 min'}"`);
+        dispatchSyntheticClick(btn);
+      } else {
+        console.warn("[FireHub] ⚠️ Não foi possível ler o valor live do input.");
+        break;
       }
 
-      await sleep(1000);
-
-      // 6. Clicar em "Salvar"
-      await clickSalvar(targetMinutes, currentBaseVal);
-
-    } else {
-      console.log("[FireHub] ⚠️ Botões +/- 5 min não encontrados. Editando inputs diretamente...");
-      await directInputEdit(timeInputs, targetMinutes, currentBaseVal);
+      attempts++;
+      await sleep(450);
     }
+
+    await sleep(800);
+
+    // 6. Clicar em "Salvar"
+    await clickSalvar(targetMinutes, finalBaseVal);
 
   } catch (err) {
     console.error("[FireHub] ❌ Erro ao aplicar ETA:", err);
