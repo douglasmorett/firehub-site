@@ -99,6 +99,21 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function dispatchSyntheticClick(element) {
+  if (!element) return;
+  try { element.focus(); } catch (e) {}
+  try {
+    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  } catch (e) {}
+  try {
+    if (typeof element.click === "function") {
+      element.click();
+    }
+  } catch (e) {}
+}
+
 function isOnDeliverySettingsPage() {
   return window.location.href.includes("merchant-delivery-core-portal-experience");
 }
@@ -187,17 +202,6 @@ async function applyETAOnSettingsPage(targetMinutes) {
       updatePillStatus(`✅ ${targetMinutes} min (OK)`, false);
       return;
     }
-
-function dispatchSyntheticClick(element) {
-  if (!element) return;
-  try { element.focus(); } catch (e) {}
-  const opts = { bubbles: true, cancelable: true, view: window, buttons: 1 };
-  element.dispatchEvent(new PointerEvent("pointerdown", opts));
-  element.dispatchEvent(new MouseEvent("mousedown", opts));
-  element.dispatchEvent(new PointerEvent("pointerup", opts));
-  element.dispatchEvent(new MouseEvent("mouseup", opts));
-  element.dispatchEvent(new MouseEvent("click", opts));
-}
 
     // 5. Usar botões "+ 5 min" / "- 5 min"
     const isIncrease = delta > 0;
