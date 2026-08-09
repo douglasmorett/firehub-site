@@ -28,6 +28,14 @@ function notifyCount(count, source) {
   lastEmProducaoCount = count;
   lastSentTime = now;
 
+  // Atualiza a pílula local imediatamente com a contagem atual do DOM!
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(["lastEtaFormatted", "activeMode", "shouldPauseStore"], (res) => {
+      const etaStr = (res && res.lastEtaFormatted) ? res.lastEtaFormatted : "38 min";
+      updateFloatingPill(etaStr, count, res?.activeMode || "auto", !!res?.shouldPauseStore);
+    });
+  }
+
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
     chrome.runtime.sendMessage({
       action: "FIREHUB_LIVE_COUNT",
@@ -226,6 +234,9 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
     }
     if (msg && msg.action === "IFOOD_CONNECTED_ALERT") {
       removeIfoodDisconnectedBanner();
+    }
+    if (msg && msg.action === "ETA_UPDATED") {
+      updateFloatingPill(msg.formatted, msg.ordersInProduction, msg.mode, msg.shouldPause);
     }
   });
 }
