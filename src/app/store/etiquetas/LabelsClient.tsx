@@ -8,7 +8,7 @@ import { Printer, Settings, AlertTriangle, Save, Plus, Trash2, Store, Sparkles }
 export default function LabelsClient({ products, kitchenItems, storeAddress, storeCnpj, storeName, storeLogo }: { products: any[], kitchenItems: any[], storeAddress: string, storeCnpj: string, storeName: string, storeLogo: string }) {
   const [selectedProductId, setSelectedProductId] = useState("");
   const [mode, setMode] = useState<"print" | "config">("print");
-  const [items, setItems] = useState<any[]>([...products.map(p => ({ ...p, isKitchenItem: false })), ...kitchenItems.map(ki => ({ ...ki, isKitchenItem: true }))]);
+  const [items, setItems] = useState<any[]>(kitchenItems.map(ki => ({ ...ki, isKitchenItem: true })));
   
   // Modal Novo Item
   const [showNewItemModal, setShowNewItemModal] = useState(false);
@@ -358,26 +358,19 @@ ${printArea.innerHTML}
 
         <div style={{ background: "#FFF", padding: "20px", borderRadius: "16px", border: "1px solid #E2E8F0", marginBottom: "1.5rem" }}>
           <div>
-            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: "bold", marginBottom: "6px" }}>Selecione o Produto</label>
+            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: "bold", marginBottom: "6px" }}>Selecione o Insumo / Item de Cozinha</label>
             <div style={{ display: "flex", gap: "10px" }}>
               <select 
                 value={selectedProductId} 
                 onChange={e => setSelectedProductId(e.target.value)}
                 style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#F8FAFC", fontSize: "0.95rem", flex: 1 }}
               >
-                <option value="">-- Escolha um produto --</option>
-                <optgroup label="Itens de Cozinha (Internos)">
-                  {items.filter(p => p.isKitchenItem).map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="Produtos do Cardápio">
-                  {items.filter(p => !p.isKitchenItem).map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </optgroup>
+                <option value="">-- Escolha um insumo para validar --</option>
+                {items.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
               </select>
-              {selectedProduct?.isKitchenItem && (
+              {selectedProduct && (
                 <button 
                   onClick={() => handleDeleteItem(selectedProductId)}
                   title="Excluir item de cozinha"
@@ -387,6 +380,11 @@ ${printArea.innerHTML}
                 </button>
               )}
             </div>
+            {items.length === 0 && (
+              <div style={{ marginTop: "12px", padding: "12px 16px", borderRadius: "10px", background: "#EFF6FF", border: "1px solid #BFDBFE", color: "#1E40AF", fontSize: "0.88rem" }}>
+                ℹ️ Nenhum insumo cadastrado ainda. Clique no botão <strong>"+ Novo Item de Cozinha"</strong> acima para cadastrar os insumos da sua cozinha (ex: Massas, Molhos, Queijo Fatiado, Carnes, etc.).
+              </div>
+            )}
           </div>
         </div>
 
