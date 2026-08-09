@@ -39,8 +39,8 @@ export default function StoreTopNav({
 }: {
   userName: string; userCity: string; userSlug?: string | null;
   showCompras: boolean; isAdmin?: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
-  showAntecipacao?: boolean;
 }) {
+  const pathname = usePathname();
   const baseItems = [...NAV_ITEMS];
   if (showAntecipacao) {
     const finIdx = baseItems.findIndex(i => i.href === "/store/financeiro");
