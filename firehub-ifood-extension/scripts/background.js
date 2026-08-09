@@ -222,6 +222,7 @@ async function calculateAndApply(count) {
         minMinutes: recommendedMinutes,
         maxMinutes: recommendedMinutes,
         formatted: etaRangeFormatted,
+        ordersInProduction: count,
         mode,
         shouldPause: shouldPauseStore,
       };

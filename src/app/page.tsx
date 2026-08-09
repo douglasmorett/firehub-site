@@ -331,6 +331,61 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SEÇÃO MÓDULO DE VALIDADE & ETIQUETAS (FIRECHECK) */}
+      <section className="sec" style={{ background: "linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%)", color: "#431407", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(234,88,12,0.15)" }}>
+        <div style={{ position: "absolute", top: -100, right: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(234,88,12,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-validade">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-validade { grid-template-columns: 0.95fr 1.05fr !important; }
+              }
+            `}</style>
+
+            <div style={{ order: 1 }}>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1.5px solid rgba(234,88,12,0.25)", boxShadow: "0 25px 50px rgba(234,88,12,0.12)", background: "#FFF" }}>
+                <img
+                  src="/images/etiquetas_validade_ui.jpg"
+                  alt="FireHub Módulo de Validade e Impressão de Etiquetas de Cozinha"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ order: 2 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(234,88,12,0.15)", border: "1px solid rgba(234,88,12,0.4)", color: "#C2410C", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                🏷️ MÓDULO DE VALIDADE & ETIQUETAS INCLUSO
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#431407", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Chega de ficar pagando caro por módulo para ter sua <span style={{ color: "#EA580C" }}>impressora de etiquetas e validade</span>
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#7C2D12", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Cliente do <strong>FireCheck / FireHub</strong> tem essa funcionalidade por nossa conta, <strong>sem pagar nada a mais por isso!</strong> Cadastre insumos internos da sua cozinha, imprima etiquetas com QR Code, lote e data de manipulação de acordo com a ANVISA e garanta 0% de desperdício sem gastar com licenças abusivas de outros sistemas.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="validade-features-grid">
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>🏷️ Impressão em 1 Clique</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Etiquetas prontas para insumos fracionados, molhos, carnes e massas</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>🛡️ Conformidade ANVISA</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Zero risco de autuações da Vigilância Sanitária no seu estabelecimento</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>💰 100% Grátis e Incluso</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Sem cobrar mensalidade extra por módulo de etiquetas de validade</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>♻️ Redução de Desperdício</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Alerta visual de validade de insumos para evitar descarte de estoque</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* SEÇÃO ENGENHARIA DE CARDÁPIO E MÓDULO FISCAL */}
       <section className="sec" style={{ background: "#090D16", color: "#FFF", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div style={{ position: "absolute", top: -100, right: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(16,185,129,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
@@ -387,7 +442,7 @@ export default function Home() {
       </section>
 
       {/* SEÇÃO FINANCEIRO INTELIGENTE COM IA */}
-      <section className="sec" style={{ background: "#060911", color: "#FFF", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      <section className="sec" style={{ background: "linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 100%)", color: "#831843", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(236,72,153,0.15)" }}>
         <div style={{ position: "absolute", bottom: -100, left: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(236,72,153,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
         <div className="w">
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-finance-ai">
@@ -398,38 +453,38 @@ export default function Home() {
             `}</style>
 
             <div>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.4)", color: "#F472B6", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.4)", color: "#DB2777", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
                 📸 CONTROLE FINANCEIRO & LEITURA COM IA
               </div>
-              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
-                Tire foto de um boleto e a <span style={{ color: "#EC4899" }}>IA lança tudo sozinha</span>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#831843", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Tire foto de um boleto e a <span style={{ color: "#DB2777" }}>IA lança tudo sozinha</span>
               </h2>
-              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+              <p style={{ fontSize: "1.05rem", color: "#9F1239", lineHeight: 1.6, margin: "0 0 24px" }}>
                 Diga adeus à digitação manual de notas fiscais e boletos de fornecedores. Com a nossa tecnologia de inteligência artificial baseada no Gemini, basta apontar a câmera do celular para a conta ou boleto: o sistema lê o fornecedor, valor, código de barras e data de vencimento e cadastra tudo no seu Contas a Pagar em segundos.
               </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="finance-ai-features-grid">
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
-                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>📷 Leitura Instantânea</div>
-                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Foto da conta extrai nome do recebedor, valor e vencimento em milissegundos</div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>📷 Leitura Instantânea</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Foto da conta extrai nome do recebedor, valor e vencimento em milissegundos</div>
                 </div>
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
-                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>📊 Contas a Pagar & Compras</div>
-                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Organização automatizada do fluxo de caixa e notas fiscais de entrada</div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>📊 Contas a Pagar & Compras</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Organização automatizada do fluxo de caixa e notas fiscais de entrada</div>
                 </div>
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
-                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⚡ Código de Barras Automático</div>
-                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Copia a linha digitável direto pro app do seu banco sem erro de digitação</div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>⚡ Código de Barras Automático</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Copia a linha digitável direto pro app do seu banco sem erro de digitação</div>
                 </div>
-                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(236,72,153,0.2)", borderRadius: 14, padding: "14px 16px" }}>
-                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🔔 Alerta de Vencimentos</div>
-                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Nunca mais pague juros por atraso em contas de fornecedores</div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>🔔 Alerta de Vencimentos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Nunca mais pague juros por atraso em contas de fornecedores</div>
                 </div>
               </div>
             </div>
 
             <div>
-              <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(236,72,153,0.3)", boxShadow: "0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(236,72,153,0.15)", background: "#000" }}>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1.5px solid rgba(236,72,153,0.25)", boxShadow: "0 25px 50px rgba(236,72,153,0.12)", background: "#FFF" }}>
                 <img
                   src="/images/financeiro_ia_ui.jpg"
                   alt="FireHub Leitura de Boletos e Contas com IA"

@@ -74,7 +74,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const targetMin = request.minMinutes || 38;
     console.log(`[FireHub Auto-ETA] ⏱️ Recebido: ${request.formatted} (${targetMin} min) | Modo: ${request.mode}`);
 
-    updateFloatingPill(request.formatted, request.mode, request.shouldPause);
+    updateFloatingPill(request.formatted, request.ordersInProduction, request.mode, request.shouldPause);
 
     if (request.shouldPause) {
       console.log("[FireHub] ⚠️ shouldPause=true → Não aplicando, só exibindo alerta.");
@@ -561,13 +561,14 @@ function createFloatingCornerPill() {
   document.body.appendChild(pill);
 }
 
-function updateFloatingPill(formattedStr, mode = "auto", shouldPause = false) {
+function updateFloatingPill(formattedStr, count = null, mode = "auto", shouldPause = false) {
   const pill = document.getElementById("firehub-corner-pill");
   const textEl = document.getElementById("firehub-pill-text");
 
   if (textEl) {
     const badgeStr = mode === "manual" ? "✍️ Manual" : "🤖 Auto";
-    textEl.textContent = `FireHub: ${formattedStr} (${badgeStr})`;
+    const countStr = typeof count === "number" ? ` · ${count} ped.` : "";
+    textEl.textContent = `FireHub: ${formattedStr}${countStr} (${badgeStr})`;
   }
 
   if (pill) {

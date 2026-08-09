@@ -184,13 +184,14 @@ function createFloatingCornerPill() {
   refreshPillData();
 }
 
-function updateFloatingPill(formattedStr, mode = "auto", shouldPause = false) {
+function updateFloatingPill(formattedStr, count = null, mode = "auto", shouldPause = false) {
   const pill = document.getElementById("firehub-corner-pill");
   const textEl = document.getElementById("firehub-pill-text");
 
   if (textEl) {
     const badgeStr = mode === "manual" ? "✍️ Manual" : "🤖 Auto";
-    textEl.textContent = `FireHub: ${formattedStr} (${badgeStr})`;
+    const countStr = typeof count === "number" ? ` · ${count} ped.` : "";
+    textEl.textContent = `FireHub: ${formattedStr}${countStr} (${badgeStr})`;
   }
 
   if (pill) {
@@ -208,9 +209,10 @@ function updateFloatingPill(formattedStr, mode = "auto", shouldPause = false) {
 
 function refreshPillData() {
   if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(["lastEtaFormatted", "activeMode", "shouldPauseStore"], (res) => {
+    chrome.storage.local.get(["lastEtaFormatted", "ordersInProduction", "activeMode", "shouldPauseStore"], (res) => {
       if (res && res.lastEtaFormatted) {
-        updateFloatingPill(res.lastEtaFormatted, res.activeMode || "auto", !!res.shouldPauseStore);
+        const count = typeof res.ordersInProduction === "number" ? res.ordersInProduction : null;
+        updateFloatingPill(res.lastEtaFormatted, count, res.activeMode || "auto", !!res.shouldPauseStore);
       }
     });
   }
