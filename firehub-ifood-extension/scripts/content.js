@@ -559,6 +559,7 @@ function createFloatingCornerPill() {
   });
 
   document.body.appendChild(pill);
+  refreshPillData();
 }
 
 function updateFloatingPill(formattedStr, count = null, mode = "auto", shouldPause = false) {
@@ -582,6 +583,23 @@ function updateFloatingPill(formattedStr, count = null, mode = "auto", shouldPau
       pill.style.color = "#FFF";
     }
   }
+}
+
+function refreshPillData() {
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(["lastEtaFormatted", "ordersInProduction", "activeMode", "shouldPauseStore"], (res) => {
+      if (res && res.lastEtaFormatted) {
+        const count = typeof res.ordersInProduction === "number" ? res.ordersInProduction : null;
+        updateFloatingPill(res.lastEtaFormatted, count, res.activeMode || "auto", !!res.shouldPauseStore);
+      }
+    });
+  }
+}
+
+if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local") refreshPillData();
+  });
 }
 
 function updatePillStatus(statusText, isError = false) {

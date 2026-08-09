@@ -303,7 +303,7 @@ window.addEventListener("message", (event) => {
   }
 });
 
-// 2. Leitura do DOM a cada 2 segundos
+// 2. Leitura do DOM a cada 2 segundos (estrita e precisa)
 function readCountFromDOM() {
   const badgeEl = document.getElementById("firehub-em-producao-count-badge");
   if (badgeEl && badgeEl.textContent) {
@@ -316,35 +316,16 @@ function readCountFromDOM() {
 
   const preparoCol = document.querySelector('[data-droppable="col-preparo"]');
   if (preparoCol) {
-    const badge = preparoCol.querySelector("span[data-column-count]");
-    if (badge && /^\d+$/.test(badge.textContent?.trim() || "")) {
-      const count = parseInt(badge.textContent.trim(), 10);
-      if (!isNaN(count)) {
-        notifyCount(count, "col-preparo");
+    const badge = preparoCol.querySelector("[data-column-count]");
+    if (badge) {
+      const attrVal = badge.getAttribute("data-column-count");
+      const countNum = parseInt(attrVal || badge.textContent.trim(), 10);
+      if (!isNaN(countNum)) {
+        notifyCount(countNum, "col-preparo");
         return;
       }
     }
   }
-
-  const allHeaders = document.querySelectorAll("h2, h3, span, div");
-  for (const el of allHeaders) {
-    if ((el.textContent || "").trim() === "Em Produção") {
-      const parent = el.parentElement;
-      if (parent) {
-        const badges = parent.querySelectorAll("span");
-        for (const b of badges) {
-          const txt = (b.textContent || "").trim();
-          if (/^\d+$/.test(txt)) {
-            const count = parseInt(txt, 10);
-            notifyCount(count, "header_scan");
-            return;
-          }
-        }
-      }
-    }
-  }
-
-  consecutiveFailures++;
 }
 
 setInterval(readCountFromDOM, 2000);

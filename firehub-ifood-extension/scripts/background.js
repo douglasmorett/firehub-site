@@ -215,6 +215,14 @@ async function calculateAndApply(count) {
 
     console.log(`[FireHub] 📊 ${count} ped. | ${motoboys} motoboys | ${mode} → ${etaRangeFormatted}`);
 
+    notifyBridgeTabs({
+      action: "ETA_UPDATED",
+      formatted: etaRangeFormatted,
+      ordersInProduction: count,
+      mode,
+      shouldPause: shouldPauseStore
+    });
+
     // ── DESPACHAR PRO IFOOD SE SYNC ATIVO ──
     if (syncEnabled) {
       const payload = {
