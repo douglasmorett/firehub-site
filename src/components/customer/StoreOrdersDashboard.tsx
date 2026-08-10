@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
+import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 
@@ -130,13 +131,11 @@ const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount
   if (item?.price && item.price > 0) return item.price;
 
   if (item?.comboSelections) {
-    try {
-      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
-        if (comboSum > 0) return comboSum;
-      }
-    } catch {}
+    const parsed = safeParseCombo(item.comboSelections);
+    if (parsed.length > 0) {
+      const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+      if (comboSum > 0) return comboSum;
+    }
   }
 
   const otherItemsSum = (allItems || []).reduce((sum: number, it: any) => {
@@ -800,14 +799,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
           <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
             {order.items?.map((item: any) => {
-              const comboSels = (() => {
-                if (!item.comboSelections) return [];
-                try {
-                  const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-                  if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-                  return [];
-                } catch { return []; }
-              })();
+              const comboSels = parseComboSelections(item.comboSelections, item.quantity);
               const nameParts = (item.menuProduct?.name || "Item").split(" | ");
               const mainName = nameParts[0];
               const extras = nameParts.slice(1);
@@ -2369,14 +2361,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 <div style={{ marginBottom: "14px" }}>
                   {order.items?.map((item: any) => {
-                    const comboSels = (() => {
-                      if (!item.comboSelections) return [];
-                      try {
-                        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-                        if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-                        return [];
-                      } catch { return []; }
-                    })();
+                    const comboSels = parseComboSelections(item.comboSelections, item.quantity);
                     const nameParts = (item.menuProduct?.name || item.name || "Item").split(" | ");
                     const mainName = nameParts[0].trim();
                     const extras = nameParts.slice(1);

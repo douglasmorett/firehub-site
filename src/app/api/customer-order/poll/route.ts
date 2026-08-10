@@ -664,7 +664,7 @@ export async function GET(req: NextRequest) {
           let repairedPrice = 0;
           if (zeroIt.comboSelections) {
             try {
-              const parsed = typeof zeroIt.comboSelections === "string" ? JSON.parse(zeroIt.comboSelections) : zeroIt.comboSelections;
+              const parsed = typeof zeroIt.comboSelections === "string" ? JSON.parse(zeroIt.comboSelections) : (Array.isArray(zeroIt.comboSelections) ? zeroIt.comboSelections : []);
               if (Array.isArray(parsed) && parsed.length > 0) {
                 const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
                 if (comboSum > 0) repairedPrice = comboSum;

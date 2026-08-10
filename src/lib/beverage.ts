@@ -5,6 +5,8 @@
  * Suporta palavras-chave padrão + palavras-chave personalizadas da loja.
  */
 
+import { safeParseCombo } from "@/lib/parse-combo";
+
 export function cleanAscii(str: string): string {
   if (!str) return "";
   return String(str)
@@ -44,7 +46,7 @@ export function isBeverageItem(item: any, customKeywords?: string | string[]): b
 
   if (item.comboSelections) {
     try {
-      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+      const parsed = safeParseCombo(item.comboSelections);
       if (Array.isArray(parsed) && parsed.some((s: any) => isBeverageName(s.name, customKeywords))) {
         return true;
       }
@@ -70,7 +72,7 @@ export function getBeveragesFromOrder(order: any, customKeywords?: string | stri
 
     if (item.comboSelections) {
       try {
-        const comboSels = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+        const comboSels = safeParseCombo(item.comboSelections);
         if (Array.isArray(comboSels)) {
           for (const sel of comboSels) {
             const selName = sel.name || sel.productName || sel.title;

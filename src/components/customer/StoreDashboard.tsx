@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { TrendingUp, DollarSign, ShoppingCart, Users, CreditCard, Banknote, Smartphone, ArrowUpRight, ArrowDownRight, Filter, Calendar, Store as StoreIcon } from "lucide-react";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import StoreDashboardMap from "@/components/customer/StoreDashboardMap";
+import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 
 type Order = {
   id: string; totalAmount: number; status: string; deliveryType: string;
@@ -176,10 +177,9 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
         let name = item.name || item.menuProduct?.name || "";
         if (!name || name === "Item de Integração" || name === "Produto excluído" || name === "—") {
           if (item.comboSelections) {
-            try {
-              const cs = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-              name = cs?.name || cs?.title || cs?.productName || cs?.itemTitle || "";
-            } catch {}
+              const cs = safeParseCombo(item.comboSelections);
+              const first: any = Array.isArray(cs) ? cs[0] : cs;
+              name = first?.name || first?.title || first?.productName || first?.itemTitle || "";
           }
         }
         if (!name) name = "Item (Integração)";
