@@ -2,49 +2,78 @@
  * /src/lib/jotaja-api.ts
  * Helper centralizado para autenticação e chamadas à API do Jotajá via Open Delivery.
  * Análogo ao ifood-api.ts — OAuth2 client_credentials + wrappers autenticados.
+ *
+ * MULTI-TENANT: Cada loja tem seu próprio token OAuth e credenciais.
+ * O cache é por storeId, evitando cruzamento entre lojas.
  */
 
 import { prisma } from "./prisma";
 
 const JOTAJA_BASE = process.env.JOTAJA_BASE_URL || "https://api.jotaja.com/openDelivery";
 
-// Cache de token em memória (válido por ~1h)
-let _token: string | null = null;
-let _tokenExp = 0;
+// Cache de token PER-STORE (chave = storeUserId ou "global")
+const _tokenCache = new Map<string, { token: string; exp: number; clientId: string }>();
 
-/** Obtém (ou reutiliza) o Bearer token via client_credentials */
-export async function getJotajaToken(userEmail?: string): Promise<string> {
-  if (_token && Date.now() < _tokenExp) return _token;
+interface JotajaCredentials {
+  clientId: string;
+  clientSecret: string;
+  cacheKey: string;
+}
 
-  let clientId = process.env.JOTAJA_CLIENT_ID || "92c66502-57ce-4563-a9e3-0df07dda5a38";
-  let clientSecret = process.env.JOTAJA_CLIENT_SECRET || "bf6798ba-5abe-43b8-a5d7-adca54643492";
+/**
+ * Resolve as credenciais Jotajá para uma loja específica.
+ * Se storeUserId for fornecido, busca credenciais do banco para aquela loja.
+ * Caso contrário, usa variáveis de ambiente como fallback.
+ */
+async function resolveCredentials(storeUserId?: string): Promise<JotajaCredentials> {
+  const envClientId = process.env.JOTAJA_CLIENT_ID || "";
+  const envClientSecret = process.env.JOTAJA_CLIENT_SECRET || "";
 
-  // Tenta obter credenciais dinâmicas do usuário no banco se disponíveis
-  try {
-    const u = await prisma.user.findFirst({
-      where: {
-        OR: [
-          userEmail ? { email: userEmail } : undefined,
-          { email: "contatohakim@gmail.com" },
-          { jotajaConnected: true }
-        ].filter(Boolean) as any,
-        NOT: { jotajaClientId: null }
-      },
-      select: { jotajaClientId: true, jotajaClientSecret: true }
-    });
-    if (u?.jotajaClientId && u?.jotajaClientSecret) {
-      clientId = u.jotajaClientId;
-      clientSecret = u.jotajaClientSecret;
-    }
-  } catch (e) {}
+  if (storeUserId) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: storeUserId },
+        select: { jotajaClientId: true, jotajaClientSecret: true },
+      });
+      if (user?.jotajaClientId && user?.jotajaClientSecret) {
+        return {
+          clientId: user.jotajaClientId,
+          clientSecret: user.jotajaClientSecret,
+          cacheKey: `store_${storeUserId}`,
+        };
+      }
+    } catch {}
+  }
+
+  // Fallback para env vars (usado quando nenhuma loja específica é informada)
+  return {
+    clientId: envClientId,
+    clientSecret: envClientSecret,
+    cacheKey: envClientId ? `env_${envClientId}` : "global",
+  };
+}
+
+/** Obtém (ou reutiliza) o Bearer token via client_credentials, com cache per-store */
+export async function getJotajaToken(storeUserId?: string): Promise<string> {
+  const creds = await resolveCredentials(storeUserId);
+
+  // Verificar cache PER-STORE
+  const cached = _tokenCache.get(creds.cacheKey);
+  if (cached && Date.now() < cached.exp && cached.clientId === creds.clientId) {
+    return cached.token;
+  }
+
+  if (!creds.clientId || !creds.clientSecret) {
+    throw new Error("Jotajá: credenciais não configuradas para esta loja");
+  }
 
   const res = await fetch(`${JOTAJA_BASE}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "client_credentials",
-      client_id: clientId,
-      client_secret: clientSecret,
+      client_id: creds.clientId,
+      client_secret: creds.clientSecret,
     }),
   });
 
@@ -54,17 +83,21 @@ export async function getJotajaToken(userEmail?: string): Promise<string> {
   }
 
   const data   = await res.json();
-  _token       = data.access_token ?? data.accessToken;
-  _tokenExp    = Date.now() + ((data.expires_in ?? data.expiresIn ?? 3600) - 60) * 1000;
-  return _token!;
+  const token  = data.access_token ?? data.accessToken;
+  const expMs  = Date.now() + ((data.expires_in ?? data.expiresIn ?? 3600) - 60) * 1000;
+
+  _tokenCache.set(creds.cacheKey, { token, exp: expMs, clientId: creds.clientId });
+
+  return token;
 }
 
-/** Wrapper autenticado para LEITURAS (GET) */
+/** Wrapper autenticado para LEITURAS (GET) — per-store */
 export async function jotajaFetch(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  storeUserId?: string
 ): Promise<Response> {
-  const token = await getJotajaToken();
+  const token = await getJotajaToken(storeUserId);
   return fetch(`${JOTAJA_BASE}${path}`, {
     ...options,
     headers: {
@@ -77,14 +110,15 @@ export async function jotajaFetch(
 }
 
 /**
- * Wrapper para ESCRITAS reais (POST/PUT/DELETE).
+ * Wrapper para ESCRITAS reais (POST/PUT/DELETE) — per-store.
  * Mesma autenticação, sem headers especiais de homologação.
  */
 export async function jotajaMutate(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  storeUserId?: string
 ): Promise<Response> {
-  const token = await getJotajaToken();
+  const token = await getJotajaToken(storeUserId);
   return fetch(`${JOTAJA_BASE}${path}`, {
     ...options,
     headers: {

@@ -22,8 +22,7 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 3, delay = 50
 // Throttle iFood polling — max once every 5s for faster order detection
 let lastIfoodPoll = 0;
 
-// Throttle Jotajá polling — max once every 5s
-let lastJotajaPoll = 0;
+
 
 async function pollIfoodEvents(sessionUserId?: string) {
   const now = Date.now();
@@ -539,17 +538,23 @@ async function pollIfoodEvents(sessionUserId?: string) {
   }
 }
 
-async function pollJotajaEvents(sessionUserId?: string) {
-  const now = Date.now();
-  if (now - lastJotajaPoll < 2_000) return;
+// Throttle Jotajá polling PER-STORE — evita cruzamento entre lojas
+const lastJotajaPollMap = new Map<string, number>();
 
-  lastJotajaPoll = now;
+async function pollJotajaEvents(sessionUserId?: string) {
+  const storeKey = sessionUserId || "global";
+  const now = Date.now();
+  const lastPoll = lastJotajaPollMap.get(storeKey) || 0;
+  if (now - lastPoll < 2_000) return;
+
+  lastJotajaPollMap.set(storeKey, now);
 
   try {
     const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
     const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
 
-    const res = await jotajaFetch("/v1/events:polling", { method: "GET" }).catch(err => {
+    // Usar credenciais da loja do usuário logado
+    const res = await jotajaFetch("/v1/events:polling", { method: "GET" }, sessionUserId).catch(err => {
       console.warn("[Jotaja Poll] Erro de rede no polling:", err.message);
       return null;
     });
@@ -567,7 +572,12 @@ async function pollJotajaEvents(sessionUserId?: string) {
 
     const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     for (const event of events) {
-      const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate, sessionUserId);
+      const result = await processJotajaEvent(
+        event,
+        (path: string, opts?: RequestInit) => jotajaFetch(path, opts, sessionUserId),
+        (path: string, opts?: RequestInit) => jotajaMutate(path, opts, sessionUserId),
+        sessionUserId
+      );
       const eid = event.eventId || event.id;
       if (result.action !== "error" && eid) {
         processedEvents.push({
@@ -587,7 +597,7 @@ async function pollJotajaEvents(sessionUserId?: string) {
       await jotajaMutate("/v1/events/acknowledgment", {
         method: "POST",
         body: JSON.stringify(processedEvents),
-      });
+      }, sessionUserId);
       console.log(`[Jotaja Poll] ${processedEvents.length}/${events.length} eventos acknowledged`);
     }
   } catch (err) {

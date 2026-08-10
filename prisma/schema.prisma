@@ -120,6 +120,7 @@ model User {
   employeePayments       EmployeePayment[]
 
   @@index([ifoodMerchantId])
+  @@index([jotajaMerchantId])
   @@index([accountGroupId])
 }
 

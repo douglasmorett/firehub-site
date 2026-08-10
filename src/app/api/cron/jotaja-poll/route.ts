@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
+import { prisma } from "@/lib/prisma";
 
 /**
  * GET /api/cron/jotaja-poll
  * Vercel Cron Job — runs every minute to poll Jotajá (Open Delivery) events.
- * Ensures orders are never missed, even when no dashboard is open.
+ * MULTI-TENANT: Itera sobre TODAS as lojas com jotajaConnected=true e faz
+ * polling individual com as credenciais de cada uma.
  * Protected by CRON_SECRET.
  */
 export const dynamic = "force-dynamic";
@@ -24,80 +26,143 @@ export async function GET(req: NextRequest) {
   const log: string[] = [];
 
   try {
-    const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
-    log.push(`ℹ️ Polling para eventos globais Jotajá`);
+    // ── MULTI-TENANT: Buscar todas as lojas ativas com Jotajá ──────────
+    const stores = await prisma.user.findMany({
+      where: {
+        jotajaConnected: true,
+        NOT: [
+          { jotajaClientId: null },
+          { jotajaClientSecret: null },
+          { email: { startsWith: "deleted_" } },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
+        storeName: true,
+        ownerId: true,
+        jotajaMerchantId: true,
+      },
+    });
 
-    // Poll events from Jotajá via Open Delivery
-    let res: Response;
-    try {
-      res = await jotajaFetch("/v1/events:polling");
-      log.push("✅ Polling realizado");
-    } catch (err: any) {
-      log.push(`❌ Polling falhou: ${err.message}`);
-      return NextResponse.json({ ok: false, log });
+    // Fallback: se nenhuma loja tem credenciais no banco, usar env vars
+    // (compatibilidade com configuração atual onde credenciais estão no .env)
+    const envClientId = process.env.JOTAJA_CLIENT_ID;
+    const envClientSecret = process.env.JOTAJA_CLIENT_SECRET;
+
+    if (stores.length === 0 && envClientId && envClientSecret) {
+      // Buscar a primeira loja com jotajaConnected = true (sem credenciais no banco)
+      const fallbackStore = await prisma.user.findFirst({
+        where: { jotajaConnected: true, NOT: { email: { startsWith: "deleted_" } } },
+        select: { id: true, email: true, storeName: true, ownerId: true, jotajaMerchantId: true },
+      });
+      if (fallbackStore) {
+        stores.push(fallbackStore as any);
+        log.push(`⚠️ Usando credenciais ENV para ${fallbackStore.storeName || fallbackStore.email} (sem clientId no banco)`);
+      }
     }
 
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "");
-      log.push(`❌ events:polling falhou: ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
-      return NextResponse.json({ ok: false, log });
-    }
-
-    const eventsText = await res.text();
-    const events = eventsText ? JSON.parse(eventsText) : [];
-    log.push(`📥 ${events.length} evento(s) recebido(s)`);
-
-    if (!events || events.length === 0) {
+    if (stores.length === 0) {
+      log.push("ℹ️ Nenhuma loja com Jotajá ativo encontrada");
       return NextResponse.json({ ok: true, events: 0, log, durationMs: Date.now() - startTime });
     }
 
-    // Process events using shared lib
-    const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
-    let created = 0, updated = 0, disputes = 0, cancelled = 0;
+    log.push(`ℹ️ ${stores.length} loja(s) ativa(s) com Jotajá`);
 
-    for (const event of events) {
-      const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
-      log.push(`  ${result.action === "error" ? "❌" : result.action === "created" ? "✅" : "🔄"} ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
+    let totalCreated = 0, totalUpdated = 0, totalDisputes = 0, totalCancelled = 0;
+    let totalEvents = 0, totalAcknowledged = 0;
 
-      // Acknowledge ALL events (except errors) to clear the queue
-      // Collect event data for acknowledgment (requires id + orderId + eventType)
-      const eid = event.eventId || event.id;
-      if (result.action !== "error" && eid) {
-        processedEventIds.push({
-          id: eid,
-          orderId: event.orderId || "",
-          eventType: event.eventType || event.fullCode || event.code || "",
-        });
-      }
-      if (result.action === "created")   created++;
-      if (result.action === "updated")   updated++;
-      if (result.action === "dispute")   disputes++;
-      if (result.action === "cancelled") cancelled++;
-    }
+    // ── Polling PER-STORE ──────────────────────────────────────────────
+    for (const store of stores) {
+      const storeId = store.ownerId || store.id;
+      const storeName = store.storeName || store.email;
 
-    // Acknowledge processed events — format: [{id, orderId, eventType}]
-    if (processedEventIds.length > 0) {
       try {
-        const ackRes = await jotajaMutate("/v1/events/acknowledgment", {
-          method: "POST",
-          body: JSON.stringify(processedEventIds),
-        });
-        if (ackRes.ok) {
-          log.push(`✅ ${processedEventIds.length} eventos acknowledged`);
-        } else {
-          const ackBody = await ackRes.text().catch(() => "");
-          log.push(`⚠️ Acknowledge ${ackRes.status}: ${ackBody.slice(0, 200)}`);
+        const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+
+        // Autenticar com as credenciais DESTA loja
+        let res: Response;
+        try {
+          res = await jotajaFetch("/v1/events:polling", { method: "GET" }, storeId);
+        } catch (err: any) {
+          log.push(`❌ [${storeName}] Polling falhou: ${err.message}`);
+          continue;
         }
-      } catch (ackErr: any) {
-        log.push(`⚠️ Acknowledge falhou: ${ackErr.message}`);
+
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => "");
+          log.push(`❌ [${storeName}] events:polling: ${res.status} — ${errBody.slice(0, 200)}`);
+          continue;
+        }
+
+        const eventsText = await res.text();
+        const events = eventsText ? JSON.parse(eventsText) : [];
+
+        if (!events || events.length === 0) {
+          log.push(`✅ [${storeName}] 0 eventos`);
+          continue;
+        }
+
+        totalEvents += events.length;
+        log.push(`📥 [${storeName}] ${events.length} evento(s)`);
+
+        // Process events for THIS store
+        const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
+
+        for (const event of events) {
+          const result = await processJotajaEvent(event, 
+            (path: string, opts?: RequestInit) => jotajaFetch(path, opts, storeId),
+            (path: string, opts?: RequestInit) => jotajaMutate(path, opts, storeId),
+            storeId
+          );
+          log.push(`  ${result.action === "error" ? "❌" : result.action === "created" ? "✅" : "🔄"} ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
+
+          const eid = event.eventId || event.id;
+          if (result.action !== "error" && eid) {
+            processedEventIds.push({
+              id: eid,
+              orderId: event.orderId || "",
+              eventType: event.eventType || event.fullCode || event.code || "",
+            });
+          }
+          if (result.action === "created")   totalCreated++;
+          if (result.action === "updated")   totalUpdated++;
+          if (result.action === "dispute")   totalDisputes++;
+          if (result.action === "cancelled") totalCancelled++;
+        }
+
+        // Acknowledge processed events for THIS store
+        if (processedEventIds.length > 0) {
+          try {
+            const ackRes = await jotajaMutate("/v1/events/acknowledgment", {
+              method: "POST",
+              body: JSON.stringify(processedEventIds),
+            }, storeId);
+            if (ackRes.ok) {
+              log.push(`✅ [${storeName}] ${processedEventIds.length} acknowledged`);
+              totalAcknowledged += processedEventIds.length;
+            } else {
+              const ackBody = await ackRes.text().catch(() => "");
+              log.push(`⚠️ [${storeName}] Acknowledge ${ackRes.status}: ${ackBody.slice(0, 200)}`);
+            }
+          } catch (ackErr: any) {
+            log.push(`⚠️ [${storeName}] Acknowledge falhou: ${ackErr.message}`);
+          }
+        }
+      } catch (storeErr: any) {
+        log.push(`❌ [${storeName}] Erro geral: ${storeErr.message}`);
       }
     }
 
     return NextResponse.json({
       ok: true,
-      events: events.length,
-      created, updated, disputes, cancelled,
-      acknowledged: processedEventIds.length,
+      stores: stores.length,
+      events: totalEvents,
+      created: totalCreated,
+      updated: totalUpdated,
+      disputes: totalDisputes,
+      cancelled: totalCancelled,
+      acknowledged: totalAcknowledged,
       durationMs: Date.now() - startTime,
       log,
     });

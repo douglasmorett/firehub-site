@@ -118,31 +118,26 @@ export async function processJotajaEvent(
       }
       const orderData = await orderRes.json();
 
-      // Resolve franqueado com fallbacks resilientes
+      // Resolve franqueado — MULTI-TENANT: resolução estrita por merchantId, sem fallbacks hardcoded
       let franchisee = targetFranchiseeId
         ? await prisma.user.findUnique({ where: { id: targetFranchiseeId } })
         : null;
 
       if (!franchisee) {
-        // Prioritize active store contatohakim@gmail.com
-        franchisee = await prisma.user.findFirst({
-          where: { email: "contatohakim@gmail.com" },
-        });
-
-        if (!franchisee) {
-          const eventMerchantId = orderData.merchant?.id || "22238";
-          if (eventMerchantId) {
-            franchisee = await prisma.user.findFirst({
-              where: {
-                jotajaMerchantId: eventMerchantId,
-                NOT: { email: { startsWith: "deleted_" } },
-              } as any,
-            });
-          }
+        // Resolver pelo merchantId do evento — cada loja tem seu merchantId único
+        const eventMerchantId = orderData.merchant?.id;
+        if (eventMerchantId) {
+          franchisee = await prisma.user.findFirst({
+            where: {
+              jotajaMerchantId: eventMerchantId,
+              jotajaConnected: true,
+              NOT: { email: { startsWith: "deleted_" } },
+            } as any,
+          });
         }
       }
       if (!franchisee) {
-        return { action: "error", orderId, message: `Nenhum usuário encontrado para associar ao pedido` };
+        return { action: "error", orderId, message: `Nenhuma loja com merchantId correspondente (merchant: ${orderData.merchant?.id || "N/A"})` };
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
