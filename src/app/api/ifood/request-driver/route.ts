@@ -1,7 +1,7 @@
 /**
  * /api/ifood/request-driver
  * 
- * iFood Entrega Fácil / Motoboy iFood (Sob Demanda)
+ * iFood Entrega Fácil / Motoboy iFood
  * 
  * GET    — Consulta cotação de frete + tempo estimado para motoboy iFood
  * POST   — Solicita motoboy parceiro do iFood (Despacho / Request Driver)
@@ -69,11 +69,11 @@ export async function GET(req: NextRequest) {
           const data = await res.json();
           const options = Array.isArray(data) ? data : data?.availabilities ?? [data];
           const bestOption = options[0];
-          if (bestOption) {
+          if (bestOption && (bestOption.price || bestOption.fee)) {
             return NextResponse.json({
               available: true,
               quoteId: bestOption.id ?? bestOption.quoteId ?? null,
-              price: bestOption.price ?? bestOption.fee ?? bestOption.totalPrice ?? (order.deliveryFee || 9.99),
+              price: bestOption.price ?? bestOption.fee ?? bestOption.totalPrice,
               estimatedMinutes: bestOption.estimatedMinutes ?? bestOption.estimatedDeliveryTime ?? bestOption.eta ?? 15,
               description: "Entrega individual Sob Demanda",
             });
@@ -83,14 +83,10 @@ export async function GET(req: NextRequest) {
         console.warn("[iFood Driver] erro no fetch shipping API:", e?.message);
       }
 
-      // Fallback gracioso com valor da taxa do pedido ou R$ 9,99 (padrão iFood Sob Demanda)
-      const calculatedFee = (order.deliveryFee && order.deliveryFee > 0) ? order.deliveryFee : 9.99;
+      // Se a API de cotação do iFood recusar (ex: 403 por falta do escopo de Logística On-Demand na homologação)
       return NextResponse.json({
-        available: true,
-        quoteId: `quote-${order.id.slice(-6)}`,
-        price: calculatedFee,
-        estimatedMinutes: 15,
-        description: "Entrega individual Sob Demanda",
+        available: false,
+        error: "A cotação de frete em tempo real (Sob Demanda) depende do módulo de Logística On-Demand da API do iFood. Para ver o valor exato (ex: R$ 9,99) e chamar, utilize o Gestor de Pedidos oficial do iFood.",
       });
     }
 
@@ -102,23 +98,57 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const calculatedFee = (order.deliveryFee && order.deliveryFee > 0) ? order.deliveryFee : 11.90;
+    // Tenta cotação via API de entregas próprias
+    try {
+      const quotePayload = {
+        merchantId,
+        externalOrderId: order.id,
+        orderValue: order.totalAmount,
+        customer: {
+          name: order.customerName || "Cliente",
+          phone: (order.customerPhone || "").replace(/\D/g, ""),
+        },
+        deliveryAddress: {
+          rawAddress: order.customerAddress || "",
+        },
+      };
+
+      const res = await fetch(`${IFOOD_BASE}/delivery/v1.0/deliveries/quote`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${userToken || devToken}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(quotePayload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.price || data.fee || data.deliveryFee) {
+          return NextResponse.json({
+            available: true,
+            quoteId: data.id ?? data.quoteId ?? null,
+            price: data.price ?? data.fee ?? data.deliveryFee,
+            estimatedMinutes: data.estimatedMinutes ?? data.deliveryEta ?? 20,
+            description: "iFood Entrega Fácil",
+          });
+        }
+      }
+    } catch (e: any) {
+      console.warn("[iFood Entrega Fácil] erro quote:", e?.message);
+    }
+
     return NextResponse.json({
-      available: true,
-      quoteId: `quote-${order.id.slice(-6)}`,
-      price: calculatedFee,
-      estimatedMinutes: 20,
-      description: "iFood Entrega Fácil (Sob Demanda)",
+      available: false,
+      error: "O módulo de Cotação de Frete do iFood Entrega Fácil não está ativo nesta aplicação de homologação. Verifique o valor diretamente no Gestor iFood.",
     });
   } catch (err: any) {
     console.error("[iFood Driver] Exceção na cotação:", err.message);
     return NextResponse.json({
-      available: true,
-      quoteId: `quote-${order.id.slice(-6)}`,
-      price: 9.99,
-      estimatedMinutes: 15,
-      description: "Entrega individual Sob Demanda",
-    });
+      available: false,
+      error: "Não foi possível obter a cotação oficial do iFood no momento.",
+    }, { status: 500 });
   }
 }
 
@@ -156,13 +186,11 @@ export async function POST(req: NextRequest) {
     const token = userToken || devToken;
 
     if (order.ifoodOrderId) {
-      // Executa o despacho de entrega sob demanda no iFood (retorna 202 Accepted)
       let res = await fetch(`${IFOOD_BASE}/order/v1.0/orders/${order.ifoodOrderId}/dispatch`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       });
 
-      // Fallback para endpoint de requestDriver
       if (!res.ok) {
         res = await fetch(`${IFOOD_BASE}/shipping/v1.0/orders/${order.ifoodOrderId}/requestDriver`, {
           method: "POST",
@@ -171,7 +199,6 @@ export async function POST(req: NextRequest) {
         });
       }
     } else {
-      // Pedido Próprio da Loja — iFood Entrega Fácil
       await fetch(`${IFOOD_BASE}/delivery/v1.0/deliveries`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -179,7 +206,6 @@ export async function POST(req: NextRequest) {
       }).catch(() => null);
     }
 
-    // Atualiza status no banco
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
@@ -229,7 +255,6 @@ export async function DELETE(req: NextRequest) {
       headers: { Authorization: `Bearer ${devToken}`, "Content-Type": "application/json" },
     });
 
-    // Limpa campos do driver no banco
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
