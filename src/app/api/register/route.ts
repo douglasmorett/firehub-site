@@ -104,6 +104,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Calcula o prazo de trial: 30 dias se tiver embaixador, senão 15 dias
+    const trialDays = ambassadorId ? 30 : 15;
+    const trialEndsAt = new Date();
+    trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
+
     // Criar usuário com role FRANCHISEE (dono de restaurante)
     const user = await prisma.user.create({
       data: {
@@ -117,6 +122,7 @@ export async function POST(req: NextRequest) {
         cpfCnpj: cnpjClean,
         slug,
         ambassadorId,
+        trialEndsAt,
         ...(repasseConfig && Object.keys(repasseConfig).length > 0 ? { repasseConfig } : {}),
         permissions: "",
         isFranqueadoHakim: false,

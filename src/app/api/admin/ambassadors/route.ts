@@ -35,10 +35,17 @@ export async function POST(req: NextRequest) {
 
   try {
     const data = await req.json();
-    const { name, email, phone, code, commissionPercent, asaasWalletId, pixKey } = data;
+    let { name, email, phone, code, commissionPercent, asaasWalletId, pixKey } = data;
 
-    if (!name || !email || !code) {
-      return NextResponse.json({ error: "Nome, e-mail e código são obrigatórios" }, { status: 400 });
+    if (!name || !email) {
+      return NextResponse.json({ error: "Nome e e-mail são obrigatórios" }, { status: 400 });
+    }
+
+    // Auto-generate code if not provided
+    if (!code) {
+      const base = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+      const rand = Math.floor(1000 + Math.random() * 9000);
+      code = `${base}${rand}`;
     }
 
     // Verifica se já existe email ou code

@@ -191,14 +191,10 @@ export default function AmbassadorsTab() {
             </h3>
             
             <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "12px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: 4 }}>Nome</label>
                   <input required value={name} onChange={e=>setName(e.target.value)} style={{ width: "100%", padding: "8px 12px", border: "1px solid #CBD5E1", borderRadius: "6px" }} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: 4 }}>Código de Indicação</label>
-                  <input required value={code} onChange={e=>setCode(e.target.value)} placeholder="ex: hakim20" style={{ width: "100%", padding: "8px 12px", border: "1px solid #CBD5E1", borderRadius: "6px" }} />
                 </div>
               </div>
 
