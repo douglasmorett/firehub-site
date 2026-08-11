@@ -422,7 +422,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
   if (!apiKey) {
     console.error("[Chatbot AI] CRITICAL: No Gemini API key configured!");
-    return { reply: `Olá! 😊 No momento estou com uma instabilidade técnica. Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}` };
+    return { reply: `Oi! 😊 Como posso te atender hoje? Se quiser conferir nosso cardápio completo e fazer seu pedido, acesse: ${storeLink}` };
   }
 
   // Geocodificação e verificação de raio no mapa em tempo real
