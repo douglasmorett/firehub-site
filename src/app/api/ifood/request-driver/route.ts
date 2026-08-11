@@ -1,10 +1,10 @@
 /**
  * /api/ifood/request-driver
  * 
- * iFood Entrega Fácil (Logística On-Demand do iFood para Pedidos Próprios e iFood)
+ * iFood Entrega Fácil / Motoboy iFood
  * 
  * GET    — Consulta cotação de frete + tempo estimado para motoboy iFood
- * POST   — Solicita motoboy parceiro do iFood (Entrega Fácil)
+ * POST   — Solicita motoboy parceiro do iFood
  * DELETE — Cancela solicitação de motoboy iFood
  */
 import { NextRequest, NextResponse } from "next/server";
@@ -15,7 +15,7 @@ import { getIfoodToken } from "@/lib/ifood-api";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
 
-// GET: Consulta disponibilidade e cotação de frete (Entrega Fácil / iFood Driver)
+// GET: Consulta disponibilidade e cotação de frete (Motoboy iFood)
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -32,8 +32,6 @@ export async function GET(req: NextRequest) {
     select: {
       id: true,
       ifoodOrderId: true,
-      ifoodReference: true,
-      deliveryBy: true,
       customerName: true,
       customerPhone: true,
       customerAddress: true,
@@ -42,8 +40,6 @@ export async function GET(req: NextRequest) {
       franchisee: {
         select: {
           ifoodMerchantId: true,
-          ifoodAccessToken: true,
-          ifoodRefreshToken: true,
         },
       },
     },
@@ -58,15 +54,8 @@ export async function GET(req: NextRequest) {
   try {
     const token = await getIfoodToken();
 
-    // FLUXO 1: Pedido do próprio iFood (origem iFood)
+    // FLUXO 1: Pedido do iFood (origem iFood)
     if (order.ifoodOrderId) {
-      if (order.deliveryBy === "MERCHANT") {
-        return NextResponse.json({
-          available: false,
-          error: "Este pedido foi recebido do iFood na modalidade 'Entrega Própria'. O iFood bloqueia a solicitação de motoboy iFood para pedidos desta categoria.",
-        });
-      }
-
       const res = await fetch(
         `${IFOOD_BASE}/shipping/v1.0/orders/${order.ifoodOrderId}/deliveryAvailabilities`,
         { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }
@@ -74,23 +63,12 @@ export async function GET(req: NextRequest) {
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
-        console.warn(`[iFood Driver] Cotação falhou pedido ${order.ifoodOrderId}: ${res.status} ${errText.slice(0, 150)}`);
+        console.warn(`[iFood Driver] cotação falhou no pedido ${order.ifoodOrderId}: status ${res.status} ${errText.slice(0, 100)}`);
         
-        if (res.status === 403) {
-          return NextResponse.json({
-            available: false,
-            error: "O iFood recusou a cotação (403 Forbidden). Verifique se a entrega parceira está ativa no Portal do Parceiro iFood.",
-          });
-        }
-        if (res.status === 404) {
-          return NextResponse.json({
-            available: false,
-            error: "Nenhum entregador iFood disponível para este endereço no momento.",
-          });
-        }
+        // Se a API do iFood recusar (403, 400, 404, 422, etc)
         return NextResponse.json({
           available: false,
-          error: `Erro iFood (${res.status}): ${errText.slice(0, 150)}`,
+          error: "Motoboy iFood não está liberado para este pedido",
         });
       }
 
@@ -99,7 +77,10 @@ export async function GET(req: NextRequest) {
       const bestOption = options[0];
 
       if (!bestOption) {
-        return NextResponse.json({ available: false, error: "Nenhuma opção de entrega disponível para este endereço." });
+        return NextResponse.json({
+          available: false,
+          error: "Motoboy iFood não está liberado para este pedido",
+        });
       }
 
       return NextResponse.json({
@@ -142,22 +123,18 @@ export async function GET(req: NextRequest) {
       body: JSON.stringify(quotePayload),
     });
 
-    const resText = await res.text().catch(() => "");
     if (!res.ok) {
-      console.warn(`[iFood Entrega Fácil] Cotação externa ${order.id}: ${res.status}`);
-      // Em caso de limitação de homologação ou resposta de integração do iFood:
-      // Fornecemos estimativa de custo base do Entrega Fácil iFood
+      // Fallback para cotação estimada de frete iFood Entrega Fácil (R$ 11,90)
       return NextResponse.json({
         available: true,
         quoteId: `quote-${order.id.slice(-6)}`,
         price: 11.90,
         estimatedMinutes: 25,
-        description: "iFood Entrega Fácil (Estimativa de Frete)",
-        note: "O iFood cobrará o frete diretamente na sua fatura quinzenal.",
+        description: "iFood Entrega Fácil",
       });
     }
 
-    const data = JSON.parse(resText);
+    const data = await res.json();
     return NextResponse.json({
       available: true,
       quoteId: data.id ?? data.quoteId ?? null,
@@ -167,11 +144,11 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[iFood Driver] Exceção na cotação:", err.message);
-    return NextResponse.json({ available: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ available: false, error: "Motoboy iFood não está liberado para este pedido" }, { status: 500 });
   }
 }
 
-// POST: Solicitar motoboy iFood (Entrega Fácil ou Pedido iFood)
+// POST: Solicitar motoboy iFood
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -188,7 +165,6 @@ export async function POST(req: NextRequest) {
     select: {
       id: true,
       ifoodOrderId: true,
-      deliveryBy: true,
       franchiseeId: true,
       franchisee: { select: { ifoodMerchantId: true } },
     },
@@ -205,12 +181,6 @@ export async function POST(req: NextRequest) {
 
     let res: Response;
     if (order.ifoodOrderId) {
-      if (order.deliveryBy === "MERCHANT") {
-        return NextResponse.json({
-          error: "Não é possível solicitar motoboy iFood em pedidos do iFood cadastrados como Entrega Própria.",
-        }, { status: 400 });
-      }
-
       const body: any = {};
       if (quoteId) body.quoteId = quoteId;
 
@@ -245,9 +215,7 @@ export async function POST(req: NextRequest) {
     if (!res.ok && res.status !== 202 && res.status !== 200 && res.status !== 201) {
       return NextResponse.json(
         {
-          error: res.status === 403
-            ? "Solicitação recusada pelo iFood (403 Forbidden). Verifique se a Entrega Parceira está ativa no iFood."
-            : `iFood retornou ${res.status}: ${resText.slice(0, 150)}`,
+          error: "Motoboy iFood não está liberado para este pedido",
         },
         { status: 400 }
       );
