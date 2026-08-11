@@ -103,6 +103,39 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // 4. Acumular taxa de Totem nos ciclos ativos (R$100/mês por totem ativo)
+    const allActiveTotemStores = await prisma.totemLicense.groupBy({
+      by: ["franchiseeId"],
+      where: { active: true },
+      _count: { id: true },
+    });
+
+    for (const store of allActiveTotemStores) {
+      try {
+        const totemFee = store._count.id * 100; // R$ 100/totem/mês
+        await prisma.franchiseeBillingCycle.upsert({
+          where: {
+            franchiseeId_yearMonth: {
+              franchiseeId: store.franchiseeId,
+              yearMonth: currentMonth,
+            },
+          },
+          create: {
+            franchiseeId: store.franchiseeId,
+            yearMonth: currentMonth,
+            totemFee,
+            status: "OPEN",
+          },
+          update: {
+            totemFee, // Substitui (não incrementa) — recalcula cada vez
+          },
+        });
+        log.push(`📲 Totem ${store.franchiseeId}: ${store._count.id} totens = R$${totemFee}`);
+      } catch (err: any) {
+        log.push(`⚠️ Totem fee ${store.franchiseeId}: ${err.message}`);
+      }
+    }
+
     return NextResponse.json({ ok: true, closed, blocked, log });
   } catch (err: any) {
     log.push(`❌ Erro geral: ${err.message}`);

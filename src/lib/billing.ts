@@ -125,7 +125,16 @@ export async function trackSaleForBilling(franchiseeId: string) {
     ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
   }
 
-  const amountDue = baseDue + ifoodExtraCharge;
+  // +R$100 por totem ativo
+  let totemCharge = 0;
+  if (!isExempt) {
+    const activeTotemCount = await prisma.totemLicense.count({
+      where: { franchiseeId, active: true },
+    });
+    totemCharge = activeTotemCount * 100;
+  }
+
+  const amountDue = baseDue + ifoodExtraCharge + totemCharge;
   const amountPending = isExempt ? 0 : amountDue;
 
   await prisma.franchiseeBillingCycle.update({
@@ -134,12 +143,13 @@ export async function trackSaleForBilling(franchiseeId: string) {
       totalSales,
       amountDue,
       amountPending,
+      totemFee: totemCharge,
       status: isExempt ? "PAID" : "OPEN",
     },
   });
 
   console.log(
-    `[Billing] ${franchiseeId} (${user?.email}) ${yearMonth} | Vendas=${totalSales.toFixed(2)} Base=${baseDue.toFixed(2)} iFood+=${ifoodExtraCharge} Total=${amountDue.toFixed(2)} Isento=${isExempt}`
+    `[Billing] ${franchiseeId} (${user?.email}) ${yearMonth} | Vendas=${totalSales.toFixed(2)} Base=${baseDue.toFixed(2)} iFood+=${ifoodExtraCharge} Totem+=${totemCharge} Total=${amountDue.toFixed(2)} Isento=${isExempt}`
   );
 }
 
@@ -185,7 +195,16 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
   }
 
-  const amountDue = baseDue + ifoodExtraCharge;
+  // +R$100 por totem ativo
+  let totemCharge = 0;
+  if (!isSpecialStore) {
+    const activeTotemCount = await prisma.totemLicense.count({
+      where: { franchiseeId, active: true },
+    });
+    totemCharge = activeTotemCount * 100;
+  }
+
+  const amountDue = baseDue + ifoodExtraCharge + totemCharge;
   const amountPending = isSpecialStore ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
 
   // Nada a cobrar ou loja isenta

@@ -119,6 +119,11 @@ model User {
   storeEmployees        StoreEmployee[]
   employeePayments       EmployeePayment[]
 
+  // === TOTEM DE AUTOATENDIMENTO ===
+  totemEnabled        Boolean   @default(false) // Módulo Totem ativo
+  totemConfig         Json?     // { theme, welcomeMessage, inactivityTimeout, requireCustomerName }
+  totemLicenses       TotemLicense[]
+
   @@index([ifoodMerchantId])
   @@index([jotajaMerchantId])
   @@index([accountGroupId])
@@ -497,6 +502,9 @@ model CustomerOrder {
   employeeName      String?
   employee          StoreEmployee?      @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
+  // === TOTEM ===
+  totemLicenseId    String?   // ID do totem que gerou o pedido
+
   franchisee       User                @relation(fields: [franchiseeId], references: [id])
   customer         StoreCustomer?      @relation(fields: [customerId], references: [id])
   motoboy          Motoboy?            @relation(fields: [motoboyId], references: [id])
@@ -542,6 +550,26 @@ model EmployeePayment {
 
   @@index([employeeId])
   @@index([franchiseeId])
+}
+
+// ========== TOTEM DE AUTOATENDIMENTO ==========
+model TotemLicense {
+  id                String    @id @default(cuid())
+  franchiseeId      String
+  franchisee        User      @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  label             String    // Nome amigável: "Totem 1 - Entrada"
+  token             String    @unique  // JWT token único da licença
+  deviceFingerprint String?   @unique  // Hash do fingerprint do navegador
+  active            Boolean   @default(true)
+  lastHeartbeat     DateTime? // Último ping do totem
+  lastIp            String?   // IP do último heartbeat
+  userAgent         String?   // User agent do dispositivo
+  monthlyPrice      Float     @default(100) // R$ 100/mês
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([franchiseeId])
+  @@index([token])
 }
 
 
@@ -725,6 +753,7 @@ model FranchiseeBillingCycle {
   // Vencimento e taxas adicionais
   dueDate          DateTime?                 // Data limite de pagamento (closedAt + 10 dias)
   metaAdsFee       Float     @default(0)     // Taxa tráfego pago acumulada no mês (R$50/semana)
+  totemFee         Float     @default(0)     // Taxa de totens ativos no mês (R$ 100 × N)
   // Status do ciclo
   status           String    @default("OPEN")
   // OPEN       = mês em andamento, abatendo em tempo real
