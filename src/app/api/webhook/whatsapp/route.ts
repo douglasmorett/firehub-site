@@ -177,12 +177,12 @@ async function handleIncomingMessage(body: any, instance: string) {
   const shortId = instance.replace(/^firehub_/, "");
   let user = await prisma.user.findFirst({
     where: { id: { endsWith: shortId } },
-    select: { id: true, ownerId: true, chatbotConfig: true, slug: true },
+    select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
   });
 
   if (!user) {
     user = await prisma.user.findFirst({
-      select: { id: true, ownerId: true, chatbotConfig: true, slug: true },
+      select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
     });
   }
 
@@ -479,6 +479,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     ? `Olá! 😊 No momento estou com uma instabilidade técnica por aqui. Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}`
     : `Olá! 😊 No momento estou com uma instabilidade técnica por aqui. Por favor, tente novamente em instantes!`;
 
+  let aiResponse: any = null;
   try {
     aiResponse = await withTimeout(
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName),

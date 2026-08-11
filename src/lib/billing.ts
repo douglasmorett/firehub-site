@@ -84,7 +84,7 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 export async function trackSaleForBilling(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true, storeTimezone: true },
+    select: { email: true, planPercent: true, storeTimezone: true, isFranqueadoHakim: true },
   });
 
   const tz = user?.storeTimezone || "America/Sao_Paulo";
@@ -92,7 +92,7 @@ export async function trackSaleForBilling(franchiseeId: string) {
 
   await ensureCycle(franchiseeId, yearMonth);
 
-  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
+  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0 || user?.isFranqueadoHakim === true || user?.email?.toLowerCase() === "contatohakim@gmail.com";
 
   const [y, m] = yearMonth.split("-").map(Number);
   const monthStart = new Date(y, m - 1, 1);
@@ -109,13 +109,6 @@ export async function trackSaleForBilling(franchiseeId: string) {
 
   const totalSales = agg._sum.totalAmount ?? 0;
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
-
-  const user = await prisma.user.findUnique({
-    where: { id: franchiseeId },
-    select: { isFranqueadoHakim: true, email: true },
-  });
-
-  const isExempt = user?.isFranqueadoHakim === true || user?.email?.toLowerCase() === "contatohakim@gmail.com";
   const pendingVal = isExempt ? 0 : amountDue;
 
   await prisma.franchiseeBillingCycle.update({
@@ -141,7 +134,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   if (!cycle) throw new Error(`Ciclo ${yearMonth} não encontrado para ${franchiseeId}`);
   if (cycle.status !== "OPEN" && cycle.status !== "PAID") return { charged: false, message: `Ciclo já está ${cycle.status}` };
 
-  const isSpecialStore = isExemptAccount(cycle.franchisee?.email) || cycle.franchisee?.planPercent === 0;
+  const userEmailClean = cycle.franchisee?.email?.toLowerCase().replace(/\s+/g, "");
+  const isSpecialStore = isExemptAccount(cycle.franchisee?.email) || cycle.franchisee?.planPercent === 0 || cycle.franchisee?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";
 
   // Recalcula valores finais (pedidos confirmados do mês)
   const [y, m] = yearMonth.split("-").map(Number);
@@ -159,7 +153,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 
   const totalSales = agg._sum.totalAmount ?? 0;
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
-  const amountPending = cycle.franchisee.isFranqueadoHakim ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
+  const amountPending = isSpecialStore ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
 
   let ifoodExtraCharge = 0;
   if (!isSpecialStore) {
@@ -170,7 +164,6 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     const totalIfood = Math.max(ifoodIntegCount, legacyIfood);
     ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
   }
-  const isSpecialStore = bypassEmails.includes(userEmailClean ?? "") || cycle.franchisee.isFranqueadoHakim === true;
 
   // Nada a cobrar ou loja isenta
   if (amountPending < 1 || totalSales === 0 || isSpecialStore) {
@@ -221,7 +214,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       const due = new Date(y, m, 5).toISOString().split("T")[0];
 
       const chargeDescription = ifoodExtraCharge > 0
-        ? `FireHub ${yearMonth} — Mensalidade R$${baseDue.toFixed(2)} + iFood Extra R$${ifoodExtraCharge.toFixed(2)}`
+        ? `FireHub ${yearMonth} — Mensalidade R$${amountDue.toFixed(2)} + iFood Extra R$${ifoodExtraCharge.toFixed(2)}`
         : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$50 · máx R$400)`;
 
       const pr = await fetch(`${BASE}/payments`, {

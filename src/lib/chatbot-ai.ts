@@ -27,6 +27,8 @@ export async function processChatbotAI(
     select: {
       id: true,
       ownerId: true,
+      email: true,
+      isFranqueadoHakim: true,
       storeName: true,
       storePhone: true,
       storeAddress: true,
@@ -147,6 +149,7 @@ export async function processChatbotAI(
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
   const personality = chatbotConfig.personality || "SIMPATICO";
+  const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.customInstructions || "").trim();
   const isHakimStore = (user.email || "").toLowerCase().includes("hakim") || (user as any).isFranqueadoHakim === true;
   const agentName = (chatbotConfig.agentName || (isHakimStore ? "Hakim" : "Atendente")).trim();
   const storeName = user.storeName || "Nossa Loja";

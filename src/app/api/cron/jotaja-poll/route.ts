@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
 import { prisma } from "@/lib/prisma";
+import { jotajaFetch, jotajaMutate } from "@/lib/jotaja-api";
 
 /**
  * GET /api/cron/jotaja-poll
@@ -201,9 +202,12 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      events: events.length,
-      created, updated, disputes, cancelled,
-      acknowledged: processedEventIds.length,
+      events: totalEvents,
+      created: totalCreated,
+      updated: totalUpdated,
+      disputes: totalDisputes,
+      cancelled: totalCancelled,
+      acknowledged: totalAcknowledged,
       reconciled,
       durationMs: Date.now() - startTime,
       log,
