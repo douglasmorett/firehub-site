@@ -471,9 +471,13 @@ async function handleIncomingMessage(body: any, instance: string) {
   // ── Chamada da IA com TIMEOUT de 15 segundos ──
   // Se o Gemini travar, não podemos deixar o webhook pendurado — a Evolution API
   // desiste e para de enviar mensagens para o nosso endpoint.
-  let aiResponse: { reply: string } | null = null;
-  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "https://firehubfood.com.br";
-  const storeLink = (user.chatbotConfig as any)?.externalMenuUrl || defaultStoreLink;
+  const isHakimStore = (user.email || "").toLowerCase().includes("hakim") || user.isFranqueadoHakim === true;
+  const customMenuUrl = ((user.chatbotConfig as any)?.externalMenuUrl || "").trim();
+  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : (isHakimStore ? "https://www.hakimriodasostras.com.br" : "");
+  const storeLink = customMenuUrl || defaultStoreLink;
+  const fallbackReply = storeLink
+    ? `Olá! 😊 No momento estou com uma instabilidade técnica por aqui. Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}`
+    : `Olá! 😊 No momento estou com uma instabilidade técnica por aqui. Por favor, tente novamente em instantes!`;
 
   try {
     aiResponse = await withTimeout(
@@ -482,12 +486,12 @@ async function handleIncomingMessage(body: any, instance: string) {
     );
   } catch (aiErr: any) {
     console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro na IA para ${remoteJid}:`, aiErr?.message || aiErr);
-    aiResponse = { reply: `Oi! 😊 Te ajudo sim! Como posso te atender hoje? Se quiser conferir nosso cardápio completo e fazer seu pedido, acesse: ${storeLink}` };
+    aiResponse = { reply: fallbackReply };
   }
 
   if (!aiResponse) {
-    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Timeout de 15s para ${remoteJid}. Enviando fallback.`);
-    aiResponse = { reply: `Oi! 😊 Te ajudo sim! Como posso te atender hoje? Se quiser conferir nosso cardápio completo e fazer seu pedido, acesse: ${storeLink}` };
+    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Timeout de 25s para ${remoteJid}. Enviando fallback.`);
+    aiResponse = { reply: fallbackReply };
   }
   
   if (aiResponse?.reply) {

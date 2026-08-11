@@ -147,11 +147,13 @@ export async function processChatbotAI(
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
   const personality = chatbotConfig.personality || "SIMPATICO";
-  const customPrompt = (chatbotConfig.customPrompt || "").trim();
-  const agentName = (chatbotConfig.agentName || "Hakim").trim();
+  const isHakimStore = (user.email || "").toLowerCase().includes("hakim") || (user as any).isFranqueadoHakim === true;
+  const agentName = (chatbotConfig.agentName || (isHakimStore ? "Hakim" : "Atendente")).trim();
   const storeName = user.storeName || "Nossa Loja";
-  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "https://firehubfood.com.br";
-  const storeLink = (chatbotConfig.externalMenuUrl || "").trim() || defaultStoreLink;
+  const customMenuUrl = (chatbotConfig.externalMenuUrl || "").trim();
+  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : (isHakimStore ? "https://www.hakimriodasostras.com.br" : "");
+  const storeLink = customMenuUrl || defaultStoreLink;
+  const storeLinkMsg = storeLink ? ` Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}` : "";
 
   const personalityMap: Record<string, string> = {
     SIMPATICO: "muito simpático, acolhedor e fofo. Use carinho, emojis (😊, 🥰, 🍕) e demonstre felicidade.",
@@ -422,7 +424,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
   if (!apiKey) {
     console.error("[Chatbot AI] CRITICAL: No Gemini API key configured!");
-    return { reply: `Oi! 😊 Como posso te atender hoje? Se quiser conferir nosso cardápio completo e fazer seu pedido, acesse: ${storeLink}` };
+    return { reply: `Olá! 😊 No momento estou com uma instabilidade técnica.${storeLinkMsg}` };
   }
 
   // Geocodificação e verificação de raio no mapa em tempo real
@@ -839,7 +841,9 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 
   // Último recurso absoluto — só se TUDO falhou e não havia nenhum pedido no banco
   return {
-    reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Como posso te ajudar? Se quiser conferir nossos pratos e fazer seu pedido, acesse nosso cardápio digital: ${storeLink}`
+    reply: storeLink
+      ? `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Como posso te ajudar? Se quiser conferir nossos pratos e fazer seu pedido, acesse nosso cardápio digital: ${storeLink}`
+      : `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 No momento estou com uma instabilidade técnica por aqui. Por favor, tente novamente em instantes!`
   };
 }
 
