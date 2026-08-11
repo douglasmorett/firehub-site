@@ -95,6 +95,8 @@ model User {
   food99SecretKey   String?        // Secret Key no 99Food
   food99Connected   Boolean        @default(false) // Módulo 99Food ativo
   showReviewsOnMenu Boolean        @default(true)  // Exibir avaliações no cardápio digital
+  ambassadorId    String?        // ID do embaixador que indicou esta loja
+  ambassador      Ambassador?    @relation("AmbassadorStores", fields: [ambassadorId], references: [id], onDelete: SetNull)
   apiKeys         ApiKey[]
   webhookSubscriptions WebhookSubscription[]
   orders          Order[]
@@ -876,6 +878,22 @@ model PrintJob {
   createdAt    DateTime @default(now())
 
   @@index([franchiseeId, status])
+}
+
+// === MÓDULO DE EMBAIXADORES / AFILIADOS ===
+model Ambassador {
+  id                String     @id @default(cuid())
+  name              String
+  email             String     @unique
+  phone             String?
+  code              String     @unique // ex: "marcos" -> ?ref=marcos
+  commissionPercent Float      @default(20) // % de comissão recorrente (ex: 20%)
+  asaasWalletId     String?    // ID da conta/carteira no Asaas para Split
+  pixKey            String?    // Referência opcional
+  active            Boolean    @default(true)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  referredStores    User[]     @relation("AmbassadorStores")
 }
 
 // === API ABERTA & WEBHOOKS DE SAÍDA (OPEN API V1) ===

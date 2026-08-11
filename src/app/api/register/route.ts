@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, password, phone, storeName, cnpj, cpf, city, repasseConfig } = await req.json();
+    const { name, email, password, phone, storeName, cnpj, cpf, city, repasseConfig, refCode } = await req.json();
 
     // Validações básicas
     if (!name || !email || !password) {
@@ -95,6 +95,15 @@ export async function POST(req: NextRequest) {
     // Hash da senha com alto nível de segurança (rounds: 12)
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Buscar embaixador por refCode (se existir)
+    let ambassadorId = null;
+    if (refCode) {
+      const amb = await prisma.ambassador.findUnique({ where: { code: String(refCode).toLowerCase().trim() } });
+      if (amb && amb.active) {
+        ambassadorId = amb.id;
+      }
+    }
+
     // Criar usuário com role FRANCHISEE (dono de restaurante)
     const user = await prisma.user.create({
       data: {
@@ -107,6 +116,7 @@ export async function POST(req: NextRequest) {
         city: city || null,
         cpfCnpj: cnpjClean,
         slug,
+        ambassadorId,
         ...(repasseConfig && Object.keys(repasseConfig).length > 0 ? { repasseConfig } : {}),
         permissions: "",
         isFranqueadoHakim: false,

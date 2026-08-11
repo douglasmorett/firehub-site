@@ -128,7 +128,7 @@ export async function trackSaleForBilling(franchiseeId: string) {
 export async function closeBillingCycle(franchiseeId: string, yearMonth: string) {
   const cycle = await prisma.franchiseeBillingCycle.findUnique({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
-    include: { franchisee: true },
+    include: { franchisee: { include: { ambassador: true } } },
   });
 
   if (!cycle) throw new Error(`Ciclo ${yearMonth} não encontrado para ${franchiseeId}`);
@@ -217,17 +217,28 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         ? `FireHub ${yearMonth} — Mensalidade R$${amountDue.toFixed(2)} + iFood Extra R$${ifoodExtraCharge.toFixed(2)}`
         : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$50 · máx R$400)`;
 
+      const payload: any = {
+        customer: customerId,
+        billingType: "BOLETO",
+        value: amountPending,
+        dueDate: due,
+        description: chargeDescription,
+        externalReference: `billing:${cycle.id}`,
+      };
+
+      if (cycle.franchisee?.ambassador?.active && cycle.franchisee?.ambassador?.asaasWalletId) {
+        payload.split = [
+          {
+            walletId: cycle.franchisee.ambassador.asaasWalletId,
+            percentualValue: cycle.franchisee.ambassador.commissionPercent,
+          }
+        ];
+      }
+
       const pr = await fetch(`${BASE}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json", access_token: asaasKey },
-        body: JSON.stringify({
-          customer: customerId,
-          billingType: "BOLETO",
-          value: amountPending,
-          dueDate: due,
-          description: chargeDescription,
-          externalReference: `billing:${cycle.id}`,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (pr.ok) {

@@ -123,15 +123,21 @@ export default function CadastroPage() {
     setStep(5);
   }
 
-  async function createAccount(repasseData?: any) {
+    async function createAccount(repasseData?: any) {
     setLoading(true);
     setError("");
     try {
       const storeName = cnpjData?.nome_fantasia || cnpjData?.razao_social || empresa;
+      let refCode = null;
+      if (typeof window !== "undefined") {
+        const urlParams = new URLSearchParams(window.location.search);
+        refCode = urlParams.get("ref") || urlParams.get("codigo") || null;
+      }
+      
       const body: any = {
         name: nome, email, password: senha, phone: whatsapp.replace(/\D/g, ""),
         cnpj: cnpjData?.cnpj, cpf: cpf.replace(/\D/g, ""),
-        storeName, city: cnpjData?.municipio,
+        storeName, city: cnpjData?.municipio, refCode
       };
       if (repasseData) body.repasseConfig = repasseData;
 
