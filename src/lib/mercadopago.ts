@@ -3,7 +3,11 @@
  */
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
-const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || "";
+const ACCESS_TOKEN =
+  process.env.MP_ACCESS_TOKEN ||
+  process.env.MERCADO_PAGO_ACCESS_TOKEN ||
+  process.env.MERCADOPAGO_ACCESS_TOKEN ||
+  "";
 const FIREHUB_CARD_FEE_PCT = 1.0; // 1% de margem
 
 export interface MpPaymentResult {
@@ -13,14 +17,15 @@ export interface MpPaymentResult {
 }
 
 export async function createMpCardPayment(params: {
-  amount:       number;
-  orderId:      string;
-  cardToken:    string;
-  installments: number;
-  payerEmail:   string;
-  payerCpf?:    string;
-  mpSellerId?:  string;
-  description:  string;
+  amount:          number;
+  orderId:         string;
+  cardToken:       string;
+  paymentMethodId?: string;
+  installments:    number;
+  payerEmail:      string;
+  payerCpf?:       string;
+  mpSellerId?:     string;
+  description:     string;
 }): Promise<MpPaymentResult> {
   const client = new MercadoPagoConfig({ accessToken: ACCESS_TOKEN });
   const payment = new Payment(client);
@@ -32,7 +37,7 @@ export async function createMpCardPayment(params: {
     token:              params.cardToken,
     description:        params.description,
     installments:       params.installments,
-    payment_method_id:  "master",
+    payment_method_id:  params.paymentMethodId || "master",
     payer: {
       email:        params.payerEmail,
       identification: params.payerCpf
@@ -70,6 +75,28 @@ export async function checkMpPaymentStatus(paymentId: string): Promise<{
     failed: status === "rejected" || status === "cancelled",
     status,
   };
+}
+
+export async function refundMpPayment(paymentId: string, customToken?: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const token = customToken || ACCESS_TOKEN;
+    const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}/refunds`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.error("[MP Refund] Error:", data);
+      return { success: false, error: data.message || "Falha ao estornar via MP" };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error("[MP Refund] Exception:", err.message);
+    return { success: false, error: err.message };
+  }
 }
 
 export function getMpOnboardingUrl(restaurantId: string): string {

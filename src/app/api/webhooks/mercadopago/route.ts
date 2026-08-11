@@ -81,21 +81,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (paid) {
-      // Atômico: só atualiza se ainda não foi pago (evita race com polling)
-      const result = await prisma.customerOrder.updateMany({
-        where: { id: order.id, paymentPaidAt: null },
-        data: {
-          paymentPaidAt:   new Date(),
-          status:          "CONFIRMADO",
-          pagarmeStatus:   "approved",
-          gatewayProvider: "mercadopago",
-        },
-      });
-      if (result.count > 0) {
-        console.log(`[MP Webhook] Pedido ${order.id} marcado como PAGO ✅`);
-      } else {
-        console.log(`[MP Webhook] Pedido ${order.id} já estava pago (race condition prevenida)`);
-      }
+      const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
+      await confirmOrderPayment(order.id);
+      console.log(`[MP Webhook] Pedido ${order.id} confirmado e despachado pro KDS / Impressora / WhatsApp ✅`);
     } else if (failed) {
       await prisma.customerOrder.update({
         where: { id: order.id },

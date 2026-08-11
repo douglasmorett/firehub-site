@@ -14,37 +14,35 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const franchiseeId = (session.user as any).id;
 
+  const appId = process.env.META_APP_ID || "4084810071817607";
   // Indica se a integração Meta ainda não foi configurada no Vercel
-  if (!process.env.META_APP_ID) {
-    return NextResponse.json({ campaign: null, needsSetup: true });
+  if (!appId) {
+    return NextResponse.json({ campaigns: [], needsSetup: true });
   }
 
-  const campaign = await prisma.metaAdsCampaign.findFirst({
+  // Verifica se o Facebook está conectado
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { metaFbAccessToken: true, metaAdAccountId: true, metaFbPageId: true, metaAdsEnabled: true },
+  });
+
+  const campaigns = await prisma.metaAdsCampaign.findMany({
     where: { franchiseeId },
     orderBy: { createdAt: "desc" },
   });
 
-  if (!campaign) return NextResponse.json({ campaign: null });
-
-  // Busca métricas atualizadas se a campanha está ativa
-  let metrics = {
-    spend: campaign.spend,
-    impressions: campaign.impressions,
-    clicks: campaign.clicks,
-    ordersGenerated: campaign.ordersGenerated,
-  };
-
-  if (campaign.status === "ACTIVE" && campaign.metaCampaignId) {
-    const user = await prisma.user.findUnique({ where: { id: franchiseeId } });
-    if (user?.metaFbAccessToken) {
+  // Busca métricas atualizadas para campanhas ativas
+  for (const campaign of campaigns) {
+    if (campaign.status === "ACTIVE" && campaign.metaCampaignId && user?.metaFbAccessToken) {
       try {
         const live = await getCampaignInsights(campaign.metaCampaignId, user.metaFbAccessToken);
-        metrics = {
+        const metrics = {
           spend: (live as any).spend,
           impressions: (live as any).impressions,
           clicks: (live as any).clicks,
           ordersGenerated: (live as any).ordersGenerated ?? (live as any).orders ?? 0,
         };
+        Object.assign(campaign, metrics);
         await prisma.metaAdsCampaign.update({
           where: { id: campaign.id },
           data: { ...metrics, updatedAt: new Date() } as any,
@@ -53,7 +51,12 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ campaign: { ...campaign, ...metrics } });
+  return NextResponse.json({
+    campaigns,
+    connected: Boolean(user?.metaFbAccessToken),
+    hasAdAccount: Boolean(user?.metaAdAccountId),
+    hasPage: Boolean(user?.metaFbPageId),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -63,6 +66,13 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { weeklyBudget = 100, radiusKm = 3, adCopy, adImageUrl } = body;
+
+  if (weeklyBudget < 70) {
+    return NextResponse.json(
+      { error: "O investimento mínimo é R$ 70/semana (R$ 10/dia — mínimo do Meta)." },
+      { status: 400 }
+    );
+  }
 
   // Busca dados do franqueado
   const user = await prisma.user.findUnique({ where: { id: franchiseeId } });
@@ -75,34 +85,42 @@ export async function POST(req: NextRequest) {
   const lat = (user.storeLatLng as any)?.lat ?? -23.55;
   const lng = (user.storeLatLng as any)?.lng ?? -46.63;
 
-  // Cria campanha no Meta
-  const meta = await createMetaCampaign({
-    adAccountId: user.metaAdAccountId,
-    accessToken: user.metaFbAccessToken,
-    storeName: user.storeName ?? user.name,
-    storeSlug: user.slug ?? "",
-    storeAddress: user.storeAddress ?? "",
-    lat, lng, radiusKm,
-    weeklyBudgetBRL: weeklyBudget,
-    adCopy: adCopy ?? `🍔 Peça agora em ${user.storeName ?? user.name}! Entrega rápida, cardápio completo. Clique e aproveite!`,
-    adImageUrl: adImageUrl ?? user.storeBanner ?? user.storeLogo ?? "",
-    pageId: user.metaFbPageId ?? "",
-  });
+  try {
+    // Cria campanha no Meta
+    const meta = await createMetaCampaign({
+      adAccountId: user.metaAdAccountId,
+      accessToken: user.metaFbAccessToken,
+      storeName: user.storeName ?? user.name,
+      storeSlug: user.slug ?? "",
+      storeAddress: user.storeAddress ?? "",
+      lat, lng, radiusKm,
+      weeklyBudgetBRL: weeklyBudget,
+      adCopy: adCopy ?? `🍔 Peça agora em ${user.storeName ?? user.name}! Entrega rápida, cardápio completo. Clique e aproveite!`,
+      adImageUrl: adImageUrl ?? user.storeBanner ?? user.storeLogo ?? "",
+      pageId: user.metaFbPageId ?? "",
+    });
 
-  // Salva no banco
-  const campaign = await prisma.metaAdsCampaign.create({
-    data: {
-      franchiseeId,
-      ...meta,
-      weeklyBudget,
-      radiusKm,
-      adCopy,
-      adImageUrl,
-      status: "ACTIVE",
-    },
-  });
+    // Salva no banco
+    const campaign = await prisma.metaAdsCampaign.create({
+      data: {
+        franchiseeId,
+        ...meta,
+        weeklyBudget,
+        radiusKm,
+        adCopy,
+        adImageUrl,
+        status: "ACTIVE",
+      },
+    });
 
-  return NextResponse.json({ campaign });
+    return NextResponse.json({ campaign });
+  } catch (err: any) {
+    console.error("[MetaAds] Erro ao criar campanha:", err.message);
+    return NextResponse.json(
+      { error: `Erro ao criar campanha: ${err.message}` },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PUT(req: NextRequest) {
@@ -110,12 +128,14 @@ export async function PUT(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const franchiseeId = (session.user as any).id;
 
-  const { action, weeklyBudget } = await req.json(); // action: "pause" | "resume" | "update_budget"
+  const { action, weeklyBudget, campaignId } = await req.json(); // action: "pause" | "resume" | "update_budget"
 
-  const campaign = await prisma.metaAdsCampaign.findFirst({
-    where: { franchiseeId },
-    orderBy: { createdAt: "desc" },
-  });
+  const campaign = campaignId
+    ? await prisma.metaAdsCampaign.findFirst({ where: { id: campaignId, franchiseeId } })
+    : await prisma.metaAdsCampaign.findFirst({
+        where: { franchiseeId },
+        orderBy: { createdAt: "desc" },
+      });
   if (!campaign) return NextResponse.json({ error: "Campanha não encontrada" }, { status: 404 });
 
   const user = await prisma.user.findUnique({ where: { id: franchiseeId } });

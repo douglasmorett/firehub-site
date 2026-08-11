@@ -80,7 +80,16 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"day1" | "day2">("day1");
 
-  // Relógio do computador
+  // Modo de antecipação: "hours" (Antecipar N Horas) ou "shift" (Turnos predefinidos)
+  const [antecipacaoMode, setAntecipacaoMode] = useState<"hours" | "shift">("hours");
+  const [startHour, setStartHour] = useState<string>("18:00");
+  const [durationHours, setDurationHours] = useState<number>(2);
+
+  // Sub-aba de visualização: "products" (Produtos do Cardápio) ou "bases" (Insumos Base)
+  const [viewTab, setViewTab] = useState<"products" | "bases">("products");
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
+  // Relógio do computador & hora inicial padrão
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -90,7 +99,12 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
       setDeviceDayOfWeek(now.getDay());
     };
     updateTime();
-    const interval = setInterval(updateTime, 30000); // atualiza a cada 30 segundos
+
+    // Define hora inicial padrão arredondada para a hora atual
+    const currentH = new Date().getHours();
+    setStartHour(`${String(currentH).padStart(2, "0")}:00`);
+
+    const interval = setInterval(updateTime, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -107,7 +121,6 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
     }
     setShifts(loadedShifts);
 
-    // Auto-selecionar turno baseado na hora atual do computador
     const now = new Date();
     const currentHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     
@@ -116,7 +129,6 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
       if (startTime <= endTime) {
         return currentHM >= startTime && currentHM <= endTime;
       } else {
-        // Turno da madrugada (ex: 22:00 às 02:00)
         return currentHM >= startTime || currentHM <= endTime;
       }
     });
@@ -126,7 +138,6 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
 
   // Buscar dados de cálculo do backend
   const fetchData = async () => {
-    if (!selectedShift) return;
     setLoading(true);
     setError(null);
     try {
@@ -137,15 +148,27 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
       const day = String(now.getDate()).padStart(2, "0");
       const clientDateStr = `${year}-${month}-${day}`;
 
-      // Datas históricas: 7 e 14 dias atrás
       const d1 = new Date(now);
       d1.setDate(now.getDate() - 7);
       
       const d2 = new Date(now);
       d2.setDate(now.getDate() - 14);
 
-      const [startH, startM] = selectedShift.startTime.split(":").map(Number);
-      const [endH, endM] = selectedShift.endTime.split(":").map(Number);
+      let startHM = "18:00";
+      let endHM = "20:00";
+
+      if (antecipacaoMode === "hours") {
+        startHM = startHour || "18:00";
+        const [h, m] = startHM.split(":").map(Number);
+        const endH = (h + Number(durationHours)) % 24;
+        endHM = `${String(endH).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      } else if (selectedShift) {
+        startHM = selectedShift.startTime;
+        endHM = selectedShift.endTime;
+      }
+
+      const [startH, startM] = startHM.split(":").map(Number);
+      const [endH, endM] = endHM.split(":").map(Number);
 
       const start1 = new Date(d1);
       start1.setHours(startH, startM, 0, 0);
@@ -188,7 +211,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
 
   useEffect(() => {
     fetchData();
-  }, [selectedShift, deviceDayOfWeek]);
+  }, [antecipacaoMode, startHour, durationHours, selectedShift, deviceDayOfWeek]);
 
   // Cadastrar Turno
   const handleAddShift = (e: React.FormEvent) => {
@@ -206,7 +229,6 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
     setShifts(updated);
     localStorage.setItem("firehub_antecipacao_shifts", JSON.stringify(updated));
 
-    // Reset formulário
     setNewShiftName("");
     setNewShiftStart("18:00");
     setNewShiftEnd("22:00");
@@ -218,11 +240,38 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
     setShifts(updated);
     localStorage.setItem("firehub_antecipacao_shifts", JSON.stringify(updated));
     
-    // Se o turno deletado era o selecionado, seleciona outro
     if (selectedShift?.id === id) {
       setSelectedShift(updated[0] || null);
     }
   };
+
+  // Calcular o horário de fim da antecipação por horas
+  const calcEndHourString = () => {
+    if (!startHour) return "20:00";
+    const [h, m] = startHour.split(":").map(Number);
+    const endH = (h + Number(durationHours)) % 24;
+    return `${String(endH).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+
+  const isGenericName = (nameStr: string) => {
+    if (!nameStr) return true;
+    const n = nameStr.trim().toLowerCase();
+    return (
+      n === "item de integração" ||
+      n === "item de integracao" ||
+      n === "outros" ||
+      n === "item sem nome" ||
+      n.startsWith("pedido ifood") ||
+      n.startsWith("pedido 99food") ||
+      n.startsWith("pedido jotaja") ||
+      n.startsWith("item #")
+    );
+  };
+
+  // Filtrar produtos válidos do cardápio por termo de busca
+  const filteredProducts = (data?.productAverages || [])
+    .filter((p: any) => p.name && !isGenericName(p.name))
+    .filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className="antecipacao-container">
@@ -234,7 +283,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
             <span className="badge">🔮 MÓDULO EXCLUSIVO</span>
             <h1>Antecipação de Produção</h1>
             <p>
-              Previsão de vendas para <strong>{storeName}</strong> baseado nos hábitos dos clientes das últimas duas semanas.
+              Previsão Inteligente de Demandas para <strong>{storeName}</strong> baseado no histórico das últimas duas semanas.
             </p>
           </div>
           <div className="header-device-time">
@@ -244,53 +293,124 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         </div>
       </div>
 
-      {/* SHIFT SELECTION & CONFIG BAR */}
-      <div className="control-card">
-        <div className="control-header">
-          <h2><Clock size={18} /> Selecione o Turno de Trabalho</h2>
-          <button className="btn-config-shifts" onClick={() => setShowConfigModal(true)}>
-            <Settings size={15} /> Cadastrar Turnos
-          </button>
-        </div>
-
-        {shifts.length === 0 ? (
-          <div className="no-shifts-alert">
-            <Info size={16} />
-            <span>Nenhum turno cadastrado. Clique em "Cadastrar Turnos" para configurar.</span>
-          </div>
-        ) : (
-          <div className="shifts-list-grid">
-            {shifts.map(shift => {
-              const active = selectedShift?.id === shift.id;
-              return (
-                <button
-                  key={shift.id}
-                  onClick={() => setSelectedShift(shift)}
-                  className={`shift-badge-btn ${active ? "active" : ""}`}
-                >
-                  <span className="shift-name">{shift.name}</span>
-                  <span className="shift-hours">{shift.startTime} às {shift.endTime}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {selectedShift && (
-          <div className="control-helper">
-            <Info size={14} />
-            <span>
-              Análise focada no turno <strong>{selectedShift.name} ({selectedShift.startTime} às {selectedShift.endTime})</strong> nas últimas duas <strong>{deviceDayName}s</strong>.
+      {/* EXPLANATORY BANNER REQUESTED BY USER */}
+      <div style={{ background: "linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)", border: "1.5px solid #93C5FD", borderRadius: "1rem", padding: "1.25rem 1.5rem", marginBottom: "1.5rem", color: "#1E3A8A", boxShadow: "0 4px 12px rgba(37, 99, 235, 0.08)" }}>
+        <div style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
+          <Info size={24} style={{ color: "#2563EB", flexShrink: 0, marginTop: "2px" }} />
+          <div>
+            <h3 style={{ margin: "0 0 6px 0", fontSize: "1rem", fontWeight: 850, color: "#1E40AF" }}>💡 Como funciona a Antecipação de Produção:</h3>
+            <p style={{ margin: "0 0 8px 0", fontSize: "0.93rem", lineHeight: 1.55, color: "#1E3A8A" }}>
+              Este módulo é feito para que você possa <strong>preparar o lanche do seu cliente antes mesmo dele ser pedido</strong>. Fazemos uma média das últimas duas semanas (no mesmo dia da semana e no horário configurado) e te damos, no horário definido, quanto sai de cada produto do seu cardápio, <strong>ordenado do mais vendido para o menos vendido</strong>, seguindo o padrão dos seus clientes.
+            </p>
+            <span style={{ fontSize: "0.83rem", color: "#3B82F6", fontStyle: "italic", display: "block" }}>
+              ⚠️ <em>Lembrando que é uma média explicativa para auxiliar na previsibilidade da sua cozinha: a demanda real pode variar conforme o dia da semana, feriado, clima e comportamento do cliente. É uma ferramenta de apoio.</em>
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* ANTECIPATION CONFIGURATION & TIME CONTROLS */}
+      <div className="control-card">
+        <div className="control-header" style={{ marginBottom: "1rem" }}>
+          <h2><Clock size={18} /> Configurar Tempo de Antecipação</h2>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={() => setAntecipacaoMode("hours")}
+              style={{ padding: "8px 14px", borderRadius: "8px", border: antecipacaoMode === "hours" ? "2px solid #FF4D00" : "1px solid #CBD5E1", background: antecipacaoMode === "hours" ? "#FFF2EC" : "#FFF", color: antecipacaoMode === "hours" ? "#FF4D00" : "#475569", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            >
+              ⏱️ Por Horas (Personalizado)
+            </button>
+            <button
+              onClick={() => setAntecipacaoMode("shift")}
+              style={{ padding: "8px 14px", borderRadius: "8px", border: antecipacaoMode === "shift" ? "2px solid #FF4D00" : "1px solid #CBD5E1", background: antecipacaoMode === "shift" ? "#FFF2EC" : "#FFF", color: antecipacaoMode === "shift" ? "#FF4D00" : "#475569", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            >
+              📅 Por Turno de Trabalho
+            </button>
+          </div>
+        </div>
+
+        {antecipacaoMode === "hours" ? (
+          <div style={{ background: "#F8FAFC", padding: "1.25rem", borderRadius: "0.85rem", border: "1px solid #E2E8F0" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "center" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#475569", marginBottom: "6px" }}>Horário de Início</label>
+                <input
+                  type="time"
+                  value={startHour}
+                  onChange={e => setStartHour(e.target.value)}
+                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.95rem", fontWeight: 700, background: "#FFF" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#475569", marginBottom: "6px" }}>Quantas Horas Deseja Antecipar?</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {[1, 2, 3, 4].map(h => (
+                    <button
+                      key={h}
+                      onClick={() => setDurationHours(h)}
+                      style={{ padding: "8px 16px", borderRadius: "8px", border: durationHours === h ? "2px solid #FF4D00" : "1px solid #CBD5E1", background: durationHours === h ? "#FF4D00" : "#FFF", color: durationHours === h ? "#FFF" : "#0F172A", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem" }}
+                    >
+                      {h} {h === 1 ? "Hora" : "Horas"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginLeft: "auto", background: "#FFF", padding: "10px 16px", borderRadius: "10px", border: "1.5px solid #FF4D00", textAlign: "right" }}>
+                <span style={{ display: "block", fontSize: "0.75rem", color: "#64748B", fontWeight: 700, textTransform: "uppercase" }}>Janela de Produção Calculada</span>
+                <strong style={{ fontSize: "1.1rem", color: "#FF4D00" }}>{startHour} às {calcEndHourString()}</strong>
+                <span style={{ display: "block", fontSize: "0.75rem", color: "#475569" }}>({durationHours} {durationHours === 1 ? "hora" : "horas"} de antecipação)</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <span style={{ fontSize: "0.85rem", color: "#64748B" }}>Escolha o turno desejado para analisar o volume total de vendas:</span>
+              <button className="btn-config-shifts" onClick={() => setShowConfigModal(true)}>
+                <Settings size={15} /> Cadastrar / Editar Turnos
+              </button>
+            </div>
+
+            {shifts.length === 0 ? (
+              <div className="no-shifts-alert">
+                <Info size={16} />
+                <span>Nenhum turno cadastrado. Clique em "Cadastrar Turnos" para configurar.</span>
+              </div>
+            ) : (
+              <div className="shifts-list-grid">
+                {shifts.map(shift => {
+                  const active = selectedShift?.id === shift.id;
+                  return (
+                    <button
+                      key={shift.id}
+                      onClick={() => setSelectedShift(shift)}
+                      className={`shift-badge-btn ${active ? "active" : ""}`}
+                    >
+                      <span className="shift-name">{shift.name}</span>
+                      <span className="shift-hours">{shift.startTime} às {shift.endTime}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
+
+        <div className="control-helper" style={{ marginTop: "1rem" }}>
+          <Info size={14} />
+          <span>
+            Analisando vendas do período <strong>{antecipacaoMode === "hours" ? `${startHour} às ${calcEndHourString()}` : selectedShift ? `${selectedShift.name} (${selectedShift.startTime} às ${selectedShift.endTime})` : ""}</strong> nas últimas duas <strong>{deviceDayName}s</strong>.
+          </span>
+        </div>
       </div>
 
       {/* LOADING & ERROR STATES */}
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>
-          <p>Analisando histórico de vendas e calculando médias para o turno...</p>
+          <p>Analisando histórico real de pedidos e calculando a estimativa de antecipação...</p>
         </div>
       ) : error ? (
         <div className="error-state">
@@ -312,50 +432,69 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
             </div>
           )}
 
-          {/* PREDICTION CARDS */}
-          <div className="section-title">
-            <h2>Média Calculada & Sugestão de Preparo</h2>
-            <span className="subtitle">Valores sugeridos arredondados para cima</span>
+          {/* SEARCH FILTER & SECTION TITLE */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
+            <div className="section-title" style={{ margin: 0 }}>
+              <h2 style={{ margin: 0 }}>Previsão por Produto do Cardápio ({filteredProducts.length})</h2>
+              <span className="subtitle">Produtos ordenados do maior para o menor volume de vendas</span>
+            </div>
+
+            <input
+              type="text"
+              placeholder="🔍 Buscar produto no cardápio..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              style={{ padding: "8px 14px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.9rem", minWidth: "260px" }}
+            />
           </div>
 
-          <div className="cards-grid">
-            {data?.averages?.map((item: any) => {
-              const hasDemand = item.suggested > 0;
-              return (
-                <div key={item.base} className={`prediction-card ${hasDemand ? "active-demand" : ""}`}>
-                  <div className="card-header">
-                    <span className="card-emoji">{BASE_FLAVOR_EMOJIS[item.base] || "🥟"}</span>
-                    <div>
-                      <h3>{BASE_FLAVOR_LABELS[item.base] || item.base}</h3>
-                      <p className="card-desc">{BASE_FLAVOR_DESCS[item.base] || ""}</p>
+          {filteredProducts.length === 0 ? (
+            <div className="empty-history" style={{ padding: "2rem", background: "#FFF", borderRadius: "1rem", border: "1px solid #E2E8F0", textAlign: "center" }}>
+              <Info size={32} style={{ color: "#94A3B8", marginBottom: "8px" }} />
+              <p style={{ margin: 0, fontWeight: 700, color: "#64748B" }}>Nenhum produto com vendas registradas nesta janela de horário.</p>
+              <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>Tente aumentar a quantidade de horas ou selecionar outro horário.</span>
+            </div>
+          ) : (
+            <div className="cards-grid">
+              {filteredProducts.map((item: any, index: number) => {
+                const hasDemand = item.suggested > 0;
+                return (
+                  <div key={item.name} className={`prediction-card ${hasDemand ? "active-demand" : ""}`}>
+                    <div className="card-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ background: index === 0 ? "linear-gradient(135deg, #F59E0B, #D97706)" : index === 1 ? "linear-gradient(135deg, #94A3B8, #64748B)" : index === 2 ? "linear-gradient(135deg, #B45309, #78350F)" : "#334155", color: "#FFF", padding: "2px 8px", borderRadius: "6px", fontWeight: 900, fontSize: "0.75rem" }}>
+                          #{index + 1}
+                        </span>
+                        <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0, color: "#0F172A", lineHeight: 1.3 }}>{item.name}</h3>
+                      </div>
+                    </div>
+
+                    <div className="card-body" style={{ marginTop: "12px" }}>
+                      <div className="suggested-box">
+                        <span className="suggested-number">{item.suggested}</span>
+                        <span className="suggested-label">deixar pronto</span>
+                      </div>
+
+                      <div className="details-box">
+                        <div className="detail-row">
+                          <span>7 dias atrás:</span>
+                          <strong>{item.qtyDay1} un.</strong>
+                        </div>
+                        <div className="detail-row">
+                          <span>14 dias atrás:</span>
+                          <strong>{item.qtyDay2} un.</strong>
+                        </div>
+                        <div className="detail-row divider">
+                          <span>Média real:</span>
+                          <span>{item.average.toFixed(1)} un.</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="card-body">
-                    <div className="suggested-box">
-                      <span className="suggested-number">{item.suggested}</span>
-                      <span className="suggested-label">deixar pronto</span>
-                    </div>
-
-                    <div className="details-box">
-                      <div className="detail-row">
-                        <span>7 dias atrás:</span>
-                        <strong>{item.qtyDay1} un.</strong>
-                      </div>
-                      <div className="detail-row">
-                        <span>14 dias atrás:</span>
-                        <strong>{item.qtyDay2} un.</strong>
-                      </div>
-                      <div className="detail-row divider">
-                        <span>Média real:</span>
-                        <span>{item.average.toFixed(1)} un.</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* DETAILED HISTORICAL SALES */}
           <div className="history-section">

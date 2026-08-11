@@ -109,7 +109,8 @@ ${invoices.map(inv => `• ${inv.description} | R$ ${(inv.aiValue || 0).toFixed(
 ═══ ROTAS DE ENTREGA ═══
 ${routes.map(r => {
   const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  return `• ${r.cityName} — ${dias[r.deliveryDay] || r.deliveryDay}`;
+  const dayStr = typeof r.deliveryDay === "number" ? dias[r.deliveryDay] : "";
+  return `• ${r.cityName || r.routeNumber} — ${dayStr || r.deliveryDay || ""}`;
 }).join("\n") || "Nenhuma rota configurada."}
 `;
 

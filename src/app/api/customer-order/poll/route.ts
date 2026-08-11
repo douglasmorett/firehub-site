@@ -3,11 +3,26 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+async function withRetry<T>(operation: () => Promise<T>, retries = 3, delay = 500): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await operation();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error("Operation failed after retries");
+}
+
+
 // Throttle iFood polling — max once every 5s for faster order detection
 let lastIfoodPoll = 0;
 
-// Throttle Jotajá polling — max once every 5s
-let lastJotajaPoll = 0;
+
 
 async function pollIfoodEvents(sessionUserId?: string) {
   const now = Date.now();
@@ -17,10 +32,12 @@ async function pollIfoodEvents(sessionUserId?: string) {
   try {
     const { getIfoodToken } = await import("@/lib/ifood-api");
     let merchantId = process.env.IFOOD_MERCHANT_UUID;
-    if (!merchantId && sessionUserId) {
+    if (sessionUserId) {
       const u = await prisma.user.findUnique({ where: { id: sessionUserId }, select: { ifoodMerchantId: true } });
-      merchantId = u?.ifoodMerchantId || undefined;
+      if (u?.ifoodMerchantId) merchantId = u.ifoodMerchantId;
     }
+    
+    if (!merchantId) return; // Se a loja não tem integração com iFood, aborta em vez de puxar do Hakim
 
     const token = await getIfoodToken();
 
@@ -68,16 +85,32 @@ async function pollIfoodEvents(sessionUserId?: string) {
         // Handle cancellation or due date change REQUEST (negotiation) — don't cancel yet, let merchant decide
         if (isDispute) {
           const meta = event.metadata || {};
-          const actionType = (meta.action || meta.handshakeType || event.fullCode || "").toUpperCase();
-          const isDueDateChange = actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC";
+          const actionType = (meta.action || meta.handshakeType || meta.type || event.fullCode || "").toUpperCase();
+          const rawReason = meta.message || meta.cancelCodeDescription || meta.subCodeDescription || meta.reason || meta.description || "";
+          
+          let disputeType = "CANCELLATION";
+          if (actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC") {
+            disputeType = "DUE_DATE_CHANGE";
+          } else if (actionType.includes("RESEND") || actionType.includes("REPLACEMENT") || actionType.includes("REENVIO") || /reenvio|reenviar|repor|substituir/i.test(rawReason)) {
+            disputeType = "RESEND_ITEMS";
+          } else if (actionType.includes("REFUND") || /reembolso|reembolsar/i.test(rawReason)) {
+            disputeType = "REFUND_ITEMS";
+          }
+
+          const finalReason = rawReason || (
+            disputeType === "DUE_DATE_CHANGE" ? "O pedido está atrasado. Quero uma nova previsão de entrega." :
+            disputeType === "RESEND_ITEMS" ? "Cliente prefere o reenvio de itens pra resolver o problema." :
+            disputeType === "REFUND_ITEMS" ? "Cliente solicitou reembolso de item." :
+            "Cliente solicitou cancelamento do pedido pelo iFood."
+          );
 
           const disputeData = {
             pending: true,
             disputeId: meta.disputeId || "",
-            type: isDueDateChange ? "DUE_DATE_CHANGE" : "CANCELLATION",
-            reason: meta.message || meta.cancelCodeDescription || (isDueDateChange ? "O pedido está atrasado. Quero uma nova previsão de entrega." : "Cliente solicitou cancelamento"),
+            type: disputeType,
+            reason: finalReason,
             customerName: meta.customerName || "",
-            handshakeType: meta.handshakeType || "",
+            handshakeType: meta.handshakeType || actionType,
             expiresAt: meta.expiresAt || "",
             requestedAt: meta.createdAt || new Date().toISOString(),
           };
@@ -366,11 +399,19 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   const formatted = addr.formattedAddress || "";
                   const neighborhood = addr.neighborhood || "";
                   const city = addr.city || "";
+                  const complement = addr.complement || addr.streetNameComplement || "";
+                  const reference = addr.reference || addr.streetNameReference || orderData.delivery?.observations || orderData.customer?.customerNote || "";
                   const parts: string[] = [];
                   if (formatted) {
                     parts.push(formatted);
                   } else if (addr.streetName) {
                     parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
+                  }
+                  if (complement && !parts.some(p => p.toLowerCase().includes(complement.toLowerCase()))) {
+                    parts.push(`Comp: ${complement}`);
+                  }
+                  if (reference && !parts.some(p => p.toLowerCase().includes(reference.toLowerCase()))) {
+                    parts.push(`Ref: ${reference}`);
                   }
                   if (neighborhood && (!parts[0] || !parts[0].toLowerCase().includes(neighborhood.toLowerCase()))) {
                     parts.push(neighborhood);
@@ -419,6 +460,29 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 if (isConcluded) {
                   updateData.ifoodDriverStatus = "CONCLUDED";
                 }
+
+                // === Sincronizar prazo de entrega do iFood ===
+                try {
+                  const detailRes = await fetch(
+                    `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+                    { headers: { Authorization: `Bearer ${token}` } }
+                  );
+                  if (detailRes.ok) {
+                    const detailData = await detailRes.json();
+                    const updatedDeadline = detailData.delivery?.deliveryDateTime
+                      ?? detailData.delivery?.estimatedDeliveryWindow?.end
+                      ?? detailData.delivery?.estimatedDeliveryWindow?.start
+                      ?? detailData.takeout?.takeoutDateTime
+                      ?? detailData.takeout?.estimatedTakeoutWindow?.end;
+                    if (updatedDeadline) {
+                      updateData.scheduledDatetime = new Date(updatedDeadline);
+                      console.log(`[iFood Poll] ⏱️ Prazo atualizado: ${orderId} → ${updatedDeadline}`);
+                    }
+                  }
+                } catch (deadlineErr: any) {
+                  console.warn(`[iFood Poll] ⚠️ Falha ao sincronizar prazo de ${orderId}: ${deadlineErr?.message}`);
+                }
+
                 await (prisma.customerOrder as any).updateMany({
                   where: { ifoodOrderId: orderId } as any,
                   data: updateData,
@@ -474,17 +538,23 @@ async function pollIfoodEvents(sessionUserId?: string) {
   }
 }
 
-async function pollJotajaEvents(sessionUserId?: string) {
-  const now = Date.now();
-  if (now - lastJotajaPoll < 5_000) return;
+// Throttle Jotajá polling PER-STORE — evita cruzamento entre lojas
+const lastJotajaPollMap = new Map<string, number>();
 
-  lastJotajaPoll = now;
+async function pollJotajaEvents(sessionUserId?: string) {
+  const storeKey = sessionUserId || "global";
+  const now = Date.now();
+  const lastPoll = lastJotajaPollMap.get(storeKey) || 0;
+  if (now - lastPoll < 2_000) return;
+
+  lastJotajaPollMap.set(storeKey, now);
 
   try {
     const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
     const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
 
-    const res = await jotajaFetch("/v1/events:polling", { method: "GET" }).catch(err => {
+    // Usar credenciais da loja do usuário logado
+    const res = await jotajaFetch("/v1/events:polling", { method: "GET" }, sessionUserId).catch(err => {
       console.warn("[Jotaja Poll] Erro de rede no polling:", err.message);
       return null;
     });
@@ -502,7 +572,12 @@ async function pollJotajaEvents(sessionUserId?: string) {
 
     const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     for (const event of events) {
-      const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate, sessionUserId);
+      const result = await processJotajaEvent(
+        event,
+        (path: string, opts?: RequestInit) => jotajaFetch(path, opts, sessionUserId),
+        (path: string, opts?: RequestInit) => jotajaMutate(path, opts, sessionUserId),
+        sessionUserId
+      );
       const eid = event.eventId || event.id;
       if (result.action !== "error" && eid) {
         processedEvents.push({
@@ -522,7 +597,7 @@ async function pollJotajaEvents(sessionUserId?: string) {
       await jotajaMutate("/v1/events/acknowledgment", {
         method: "POST",
         body: JSON.stringify(processedEvents),
-      });
+      }, sessionUserId);
       console.log(`[Jotaja Poll] ${processedEvents.length}/${events.length} eventos acknowledged`);
     }
   } catch (err) {
@@ -532,109 +607,128 @@ async function pollJotajaEvents(sessionUserId?: string) {
 
 // GET: Fast polling endpoint - returns orders + auto-polls iFood & Jotaja
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
-
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, ownerId: true }
-  });
-  if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-  const targetFranchiseeId = user.ownerId || user.id;
-
   try {
-    await Promise.allSettled([
-      pollIfoodEvents(targetFranchiseeId),
-      pollJotajaEvents(targetFranchiseeId),
-    ]);
-  } catch (err) {
-    console.error("[Poll] Erro no polling:", err);
-  }
+    let email = "";
+    try {
+      const session = await getServerSession(authOptions);
+      email = session?.user?.email || "";
+    } catch {}
 
-  const validFranchiseeIds = Array.from(new Set([
-    targetFranchiseeId,
-    user.id,
-    user.ownerId
-  ].filter(Boolean))) as string[];
+    let user = email
+      ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, storeTimezone: true } })
+      : null;
 
-  const orders = await prisma.customerOrder.findMany({
-    where: {
-      OR: [
-        { franchiseeId: { in: validFranchiseeIds } },
-        { franchisee: { ownerId: { in: validFranchiseeIds } } }
-      ]
-    },
-    include: {
-      items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
-      motoboy: { select: { id: true, name: true, phone: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 200
-  });
+    if (!user) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
 
-  // Auto-repair zero-price items in existing orders
-  for (const o of orders) {
-    const zeroItems = (o.items || []).filter((it: any) => !it.price || it.price === 0);
-    if (zeroItems.length > 0 && o.totalAmount > 0) {
-      const otherItemsSum = (o.items || []).reduce((sum: number, it: any) => sum + (it.price || 0) * (it.quantity || 1), 0);
-      const expectedSubtotal = o.totalAmount - (o.deliveryFee || 0) + (o.discountTotal || 0);
-      const diff = expectedSubtotal - otherItemsSum;
+    const targetFranchiseeId = user.ownerId || user.id;
 
-      for (const zeroIt of zeroItems) {
-        let repairedPrice = 0;
-        if (zeroIt.comboSelections) {
-          try {
-            const parsed = typeof zeroIt.comboSelections === "string" ? JSON.parse(zeroIt.comboSelections) : zeroIt.comboSelections;
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
-              if (comboSum > 0) repairedPrice = comboSum;
-            }
-          } catch {}
-        }
+    try {
+      await Promise.allSettled([
+        pollIfoodEvents(targetFranchiseeId),
+        pollJotajaEvents(targetFranchiseeId),
+      ]);
+    } catch (err) {
+      console.error("[Poll] Erro no polling:", err);
+    }
 
-        if (repairedPrice === 0 && zeroItems.length === 1 && diff > 0 && (zeroIt.quantity || 1) > 0) {
-          repairedPrice = diff / (zeroIt.quantity || 1);
-        }
+    const validFranchiseeIds = Array.from(new Set([
+      targetFranchiseeId,
+      user.id,
+      user.ownerId
+    ].filter(Boolean))) as string[];
 
-        if (repairedPrice > 0) {
-          zeroIt.price = repairedPrice;
-          prisma.customerOrderItem.update({
-            where: { id: zeroIt.id },
-            data: { price: repairedPrice }
-          }).catch(err => console.error("[AutoRepair Item Price]", err));
+    const orders = await withRetry(() => prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: { in: validFranchiseeIds },
+        status: { notIn: ["AGUARDANDO_PAGAMENTO"] }
+      },
+      include: {
+        items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
+        motoboy: { select: { id: true, name: true, phone: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200
+    }));
+
+    // Auto-repair zero-price items in existing orders
+    for (const o of orders) {
+      const zeroItems = (o.items || []).filter((it: any) => !it.price || it.price === 0);
+      if (zeroItems.length > 0 && o.totalAmount > 0) {
+        const otherItemsSum = (o.items || []).reduce((sum: number, it: any) => sum + (it.price || 0) * (it.quantity || 1), 0);
+        const expectedSubtotal = o.totalAmount - (o.deliveryFee || 0) + (o.discountTotal || 0);
+        const diff = expectedSubtotal - otherItemsSum;
+
+        for (const zeroIt of zeroItems) {
+          let repairedPrice = 0;
+          if (zeroIt.comboSelections) {
+            try {
+              const parsed = typeof zeroIt.comboSelections === "string" ? JSON.parse(zeroIt.comboSelections) : (Array.isArray(zeroIt.comboSelections) ? zeroIt.comboSelections : []);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+                if (comboSum > 0) repairedPrice = comboSum;
+              }
+            } catch {}
+          }
+
+          if (repairedPrice === 0 && zeroItems.length === 1 && diff > 0 && (zeroIt.quantity || 1) > 0) {
+            repairedPrice = diff / (zeroIt.quantity || 1);
+          }
+
+          if (repairedPrice > 0) {
+            zeroIt.price = repairedPrice;
+            prisma.customerOrderItem.update({
+              where: { id: zeroIt.id },
+              data: { price: repairedPrice }
+            }).catch(err => console.error("[AutoRepair Item Price]", err));
+          }
         }
       }
     }
+
+    // Buscar data de abertura do caixa ativo para calcular a sequência do dia/sessão
+    const activeSession = await withRetry(() => prisma.cashSession.findFirst({
+      where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
+      orderBy: { openedAt: "desc" },
+      select: { openedAt: true }
+    }));
+
+    // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
+    const allRecentOrders = await withRetry(() => prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: targetFranchiseeId,
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      },
+      select: { id: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    }));
+
+    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
+    const tz = user?.storeTimezone || "America/Sao_Paulo";
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt, tz);
+
+    const ordersWithDailyNum = orders.map((o: any) => ({
+      ...o,
+      dailyOrderNumber: o.dailyOrderNumber || dailyNumMap.get(o.id) || null,
+    }));
+
+
+    // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
+    try {
+      const { checkAndCleanupStaleAiDrafts } = await import("@/lib/chatbot-ai");
+      checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
+    } catch {}
+
+    return NextResponse.json(ordersWithDailyNum, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      },
+    });
+  } catch (err: any) {
+    console.error("[Poll GET Error]:", err?.message || err);
+    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
   }
-
-  // Buscar data de abertura do caixa ativo para calcular a sequência do dia/sessão
-  const activeSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { openedAt: true }
-  });
-
-  const sessionStartCutoff = activeSession?.openedAt
-    ? new Date(activeSession.openedAt)
-    : new Date(Date.now() - 48 * 60 * 60 * 1000);
-
-  const sessionOrders = await prisma.customerOrder.findMany({
-    where: {
-      franchiseeId: targetFranchiseeId,
-      createdAt: { gte: sessionStartCutoff },
-    },
-    select: { id: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const dailyNumMap = new Map<string, number>();
-  sessionOrders.forEach((o, i) => dailyNumMap.set(o.id, i + 1));
-
-  const ordersWithDailyNum = orders.map((o) => ({
-    ...o,
-    dailyOrderNumber: dailyNumMap.get(o.id) || null,
-  }));
-
-  return NextResponse.json(ordersWithDailyNum);
 }

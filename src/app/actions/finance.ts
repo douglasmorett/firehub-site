@@ -17,20 +17,13 @@ export async function createPayable(data: {
   if (!session) {
     return { error: "Sessão expirada. Faça login novamente." };
   }
-  
-  const role = (session.user as any)?.role;
-  const permissions = (session.user as any)?.permissions || "";
-  
-  // Admin ou usuário com permissão "finance" ou "payables"
-  const hasAccess = role === "ADMIN" || 
-    permissions.split(",").includes("finance") || 
-    permissions.split(",").includes("payables");
-    
-  if (!hasAccess) {
-    return { error: "Sem permissão para registrar contas. Contate o administrador." };
-  }
 
-  // Validações
+  const dbUser = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true }
+  });
+  const targetFranchiseeId = dbUser?.ownerId || dbUser?.id || null;
+
   if (!data.supplierName || data.supplierName.trim() === "") {
     return { error: "Nome do fornecedor é obrigatório." };
   }
@@ -43,24 +36,13 @@ export async function createPayable(data: {
     return { error: "Data de vencimento é obrigatória." };
   }
 
-  // Se receivedDate não foi informada, usa a data atual
-  const receivedDate = data.receivedDate 
-    ? new Date(data.receivedDate) 
-    : new Date();
-
+  const receivedDate = data.receivedDate ? new Date(data.receivedDate) : new Date();
   const dueDate = new Date(data.dueDate);
-
-  if (isNaN(receivedDate.getTime())) {
-    return { error: "Data de recebimento inválida." };
-  }
-
-  if (isNaN(dueDate.getTime())) {
-    return { error: "Data de vencimento inválida." };
-  }
 
   try {
     await prisma.payable.create({
       data: {
+        franchiseeId: targetFranchiseeId,
         supplierName: data.supplierName.trim(),
         barcode: data.barcode?.trim() || null,
         receivedDate,
@@ -71,7 +53,7 @@ export async function createPayable(data: {
       }
     });
 
-    revalidatePath("/admin/finance");
+    revalidatePath("/store/financeiro");
     return { success: true };
   } catch (err: any) {
     console.error("Erro ao criar payable:", err);
@@ -81,7 +63,7 @@ export async function createPayable(data: {
 
 export async function markPayableAsPaid(id: string) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any)?.role !== "ADMIN") throw new Error("Não autorizado");
+  if (!session) throw new Error("Não autorizado");
 
   await prisma.payable.update({
     where: { id },
@@ -91,13 +73,89 @@ export async function markPayableAsPaid(id: string) {
     }
   });
 
-  revalidatePath("/admin/finance");
+  revalidatePath("/store/financeiro");
 }
 
 export async function deletePayable(id: string) {
   const session = await getServerSession(authOptions);
-  if (!session || (session.user as any)?.role !== "ADMIN") throw new Error("Não autorizado");
+  if (!session) throw new Error("Não autorizado");
 
   await prisma.payable.delete({ where: { id } });
-  revalidatePath("/admin/finance");
+  revalidatePath("/store/financeiro");
+}
+
+export async function createRecurringPayable(data: {
+  supplierName: string;
+  value: number;
+  category: string;
+  paymentType: string;
+  dueDateDay: number;
+  barcode?: string;
+}) {
+  const session = await getServerSession(authOptions);
+  if (!session) return { error: "Não autorizado" };
+
+  const dbUser = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true }
+  });
+  const targetFranchiseeId = dbUser?.ownerId || dbUser?.id || null;
+
+  try {
+    const newRecurring = await prisma.recurringPayable.create({
+      data: {
+        franchiseeId: targetFranchiseeId,
+        supplierName: data.supplierName.trim(),
+        value: data.value,
+        category: data.category || "BUSINESS",
+        paymentType: data.paymentType || "BOLETO",
+        dueDateDay: Number(data.dueDateDay),
+        barcode: data.barcode?.trim() || null,
+        active: true
+      }
+    });
+
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const cappedDay = Math.min(Number(data.dueDateDay), lastDay);
+    const dueDate = new Date(currentYear, currentMonth, cappedDay, 12, 0, 0);
+
+    await prisma.payable.create({
+      data: {
+        franchiseeId: targetFranchiseeId,
+        supplierName: newRecurring.supplierName,
+        barcode: newRecurring.barcode,
+        paymentType: newRecurring.paymentType,
+        receivedDate: new Date(),
+        dueDate,
+        value: newRecurring.value,
+        status: "PENDING",
+        category: newRecurring.category,
+        recurringPayableId: newRecurring.id
+      }
+    });
+
+    revalidatePath("/store/financeiro");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+export async function deleteRecurringPayable(id: string) {
+  const session = await getServerSession(authOptions);
+  if (!session) return { error: "Não autorizado" };
+  await prisma.recurringPayable.delete({ where: { id } });
+  revalidatePath("/store/financeiro");
+  return { success: true };
+}
+
+export async function toggleRecurringPayableActive(id: string, active: boolean) {
+  const session = await getServerSession(authOptions);
+  if (!session) return { error: "Não autorizado" };
+  await prisma.recurringPayable.update({ where: { id }, data: { active } });
+  revalidatePath("/store/financeiro");
+  return { success: true };
 }

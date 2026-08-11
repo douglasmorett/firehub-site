@@ -54,14 +54,32 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         paymentMethod: o.paymentMethod || undefined,
         customerName: o.customerName,
         customerPhone: o.customerPhone,
+        customerAddress: o.customerAddress || undefined,
+        ifoodReference: o.ifoodReference || undefined,
+        openDeliveryReference: o.openDeliveryReference || undefined,
+        source: o.source || undefined,
+        notes: o.notes || undefined,
         createdAt: o.createdAt.toISOString(),
         storeName: (o as any).franchisee?.name || "—",
         storeSlug: (o as any).franchisee?.slug || "",
-        items: o.items.map(i => ({
-          id: i.id, quantity: i.quantity, price: i.price,
-          cost: i.menuProduct?.cost || null,
-          menuProduct: { name: i.menuProduct?.name || "Produto excluído" }
-        }))
+        items: o.items.map(i => {
+          let itemName = i.menuProduct?.name || "";
+          if (!itemName || itemName === "Item de Integração" || itemName === "Produto excluído") {
+            if (i.comboSelections) {
+              try {
+                const cs = typeof i.comboSelections === "string" ? JSON.parse(i.comboSelections) : i.comboSelections;
+                itemName = cs?.name || cs?.title || cs?.productName || cs?.itemTitle || "";
+              } catch {}
+            }
+          }
+          if (!itemName) itemName = "Item (Integração)";
+          return {
+            id: i.id, quantity: i.quantity, price: i.price,
+            name: itemName,
+            cost: i.menuProduct?.cost || null,
+            menuProduct: { name: itemName }
+          };
+        })
       }));
 
       const storeList = [
@@ -132,12 +150,30 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
       paymentMethod: o.paymentMethod || undefined,
       customerName: o.customerName,
       customerPhone: o.customerPhone,
+      customerAddress: o.customerAddress || undefined,
+      ifoodReference: o.ifoodReference || undefined,
+      openDeliveryReference: o.openDeliveryReference || undefined,
+      source: o.source || undefined,
+      notes: o.notes || undefined,
       createdAt: o.createdAt.toISOString(),
-      items: o.items.map(i => ({
-        id: i.id, quantity: i.quantity, price: i.price,
-        cost: i.menuProduct?.cost || null,
-        menuProduct: { name: i.menuProduct?.name || "Produto excluído" }
-      }))
+      items: o.items.map(i => {
+        let itemName = i.menuProduct?.name || "";
+        if (!itemName || itemName === "Item de Integração" || itemName === "Produto excluído") {
+          if (i.comboSelections) {
+            try {
+              const cs = typeof i.comboSelections === "string" ? JSON.parse(i.comboSelections) : i.comboSelections;
+              itemName = cs?.name || cs?.title || cs?.productName || cs?.itemTitle || "";
+            } catch {}
+          }
+        }
+        if (!itemName) itemName = "Item (Integração)";
+        return {
+          id: i.id, quantity: i.quantity, price: i.price,
+          name: itemName,
+          cost: i.menuProduct?.cost || null,
+          menuProduct: { name: itemName }
+        };
+      })
     }));
 
     return (

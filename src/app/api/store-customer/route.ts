@@ -27,7 +27,9 @@ export async function POST(req: Request) {
     const existing = await prisma.storeCustomer.findUnique({ where: { phone: cleanPhone } });
     if (existing) return NextResponse.json({ error: "Este telefone já possui uma conta. Faça login." }, { status: 409 });
 
-    const hashedPw = await bcrypt.hash(password, 10);
+    if (password.length < 6) return NextResponse.json({ error: "A senha deve ter no mínimo 6 caracteres." }, { status: 400 });
+
+    const hashedPw = await bcrypt.hash(password, 12);
     const customer = await prisma.storeCustomer.create({
       data: { name, phone: cleanPhone, password: hashedPw, address: address || null }
     });

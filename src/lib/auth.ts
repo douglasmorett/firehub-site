@@ -47,13 +47,17 @@ export const authOptions: NextAuthOptions = {
 
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
+        const emailInput = credentials.email.trim();
+
+        const user = await prisma.user.findFirst({
+          where: {
+            email: { equals: emailInput, mode: "insensitive" }
+          }
         });
 
         if (!user) return null;
 
-        const passwordMatch = await bcrypt.compare(credentials.password, user.password);
+        const passwordMatch = await bcrypt.compare(credentials.password.trim(), user.password);
         if (!passwordMatch) return null;
 
         return {
@@ -90,6 +94,18 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
+    maxAge: 7 * 24 * 60 * 60, // 7 dias
+  },
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === "production" ? `__Secure-next-auth.session-token` : `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
   },
   secret: process.env.NEXTAUTH_SECRET!,
 };

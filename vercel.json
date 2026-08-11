@@ -1,4 +1,5 @@
 {
+  "framework": "nextjs",
   "crons": [
     {
       "path": "/api/cron/ifood-poll",
@@ -10,7 +11,16 @@
     },
     {
       "path": "/api/cron/gateway-keepalive",
-      "schedule": "*/14 * * * *"
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/billing-close",
+      "schedule": "0 3 1 * *"
+    },
+    {
+      "path": "/api/cron/meta-ads-sync",
+      "schedule": "0 6 * * *"
     }
   ]
 }
+

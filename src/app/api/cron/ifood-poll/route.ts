@@ -29,12 +29,6 @@ export async function GET(req: NextRequest) {
 
   try {
     const { getIfoodToken } = await import("@/lib/ifood-api");
-    const merchantId = process.env.IFOOD_MERCHANT_UUID;
-    
-    if (!merchantId) {
-      log.push("❌ IFOOD_MERCHANT_UUID não configurado");
-      return NextResponse.json({ ok: false, log });
-    }
 
     // Get token
     let token: string;
@@ -90,16 +84,32 @@ export async function GET(req: NextRequest) {
         // Handle cancellation or due date change REQUEST (negotiation)
         if (isDispute) {
           const meta = event.metadata || {};
-          const actionType = (meta.action || meta.handshakeType || event.fullCode || "").toUpperCase();
-          const isDueDateChange = actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC";
+          const actionType = (meta.action || meta.handshakeType || meta.type || event.fullCode || "").toUpperCase();
+          const rawReason = meta.message || meta.cancelCodeDescription || meta.subCodeDescription || meta.reason || meta.description || "";
+          
+          let disputeType = "CANCELLATION";
+          if (actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC") {
+            disputeType = "DUE_DATE_CHANGE";
+          } else if (actionType.includes("RESEND") || actionType.includes("REPLACEMENT") || actionType.includes("REENVIO") || /reenvio|reenviar|repor|substituir/i.test(rawReason)) {
+            disputeType = "RESEND_ITEMS";
+          } else if (actionType.includes("REFUND") || /reembolso|reembolsar/i.test(rawReason)) {
+            disputeType = "REFUND_ITEMS";
+          }
+
+          const finalReason = rawReason || (
+            disputeType === "DUE_DATE_CHANGE" ? "O pedido está atrasado. Quero uma nova previsão de entrega." :
+            disputeType === "RESEND_ITEMS" ? "Cliente prefere o reenvio de itens pra resolver o problema." :
+            disputeType === "REFUND_ITEMS" ? "Cliente solicitou reembolso de item." :
+            "Cliente solicitou cancelamento do pedido pelo iFood."
+          );
 
           const disputeData = {
             pending: true,
             disputeId: meta.disputeId || "",
-            type: isDueDateChange ? "DUE_DATE_CHANGE" : "CANCELLATION",
-            reason: meta.message || meta.cancelCodeDescription || (isDueDateChange ? "O pedido está atrasado. Quero uma nova previsão de entrega." : "Cliente solicitou cancelamento"),
+            type: disputeType,
+            reason: finalReason,
             customerName: meta.customerName || "",
-            handshakeType: meta.handshakeType || "",
+            handshakeType: meta.handshakeType || actionType,
             expiresAt: meta.expiresAt || "",
             requestedAt: meta.createdAt || new Date().toISOString(),
           };
@@ -121,17 +131,130 @@ export async function GET(req: NextRequest) {
         if (isCancelled) {
           const existingOrder: any = await prisma.customerOrder.findFirst({
             where: { ifoodOrderId: orderId } as any,
-            select: { cancelledBy: true } as any,
+            select: { id: true, cancelledBy: true } as any,
           });
-          const cancelData: any = { status: "CANCELADO" };
-          if (!existingOrder?.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
-            cancelData.cancelledBy = "IFOOD";
+
+          if (existingOrder) {
+            // Pedido já existe — apenas atualizar status para CANCELADO
+            const cancelData: any = { status: "CANCELADO" };
+            if (!existingOrder.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
+              cancelData.cancelledBy = "IFOOD";
+            }
+            await (prisma.customerOrder as any).updateMany({
+              where: { ifoodOrderId: orderId } as any,
+              data: cancelData,
+            });
+            log.push(`  🚫 Cancelado (existente): ${orderId}`);
+          } else {
+            // Pedido NÃO existe no nosso DB — importar como CANCELADO
+            // Isso acontece quando o sistema estava fora do ar e o iFood cancelou por timeout
+            try {
+              const cancelOrderRes = await fetch(
+                `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (cancelOrderRes.ok) {
+                const cancelOrderData = await cancelOrderRes.json();
+                let cancelFranchisee = merchantId
+                  ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
+                  : null;
+
+                if (cancelFranchisee) {
+                  const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
+                  const cancelItems = (cancelOrderData.items ?? []).map((i: any) => {
+                    const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
+                    const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
+                      ? JSON.stringify(subItemsList.map((s: any) => ({
+                          name: s.name || s.label || s.productName || "",
+                          quantity: s.quantity || 1,
+                          price: s.price || s.unitPrice || s.addition || 0,
+                        })))
+                      : null;
+                    const itemUnitPrice = getIfoodItemUnitPrice(i);
+                    return {
+                      price: itemUnitPrice,
+                      quantity: i.quantity ?? 1,
+                      comboSelections: comboSels,
+                      menuProduct: {
+                        connectOrCreate: {
+                          where: { id: `ifood-${i.id}` } as any,
+                          create: {
+                            id: `ifood-${i.id}`,
+                            franchiseeId: cancelFranchisee.id,
+                            name: i.name ?? "Item iFood",
+                            description: "",
+                            price: itemUnitPrice,
+                            category: "iFood",
+                            active: true,
+                          } as any,
+                        } as any,
+                      },
+                    };
+                  });
+
+                  const cancelTotal = typeof cancelOrderData.total === "object"
+                    ? (cancelOrderData.total?.orderAmount ?? cancelOrderData.total?.subTotal ?? 0)
+                    : (cancelOrderData.totalPrice ?? cancelOrderData.total ?? 0);
+
+                  const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+                  const cancelParsedPay = parseOrderPaymentInfo(cancelOrderData, "IFOOD");
+
+                  const cancelMeta = event.metadata || {};
+                  const cancelReason = cancelMeta.cancelCodeDescription
+                    || cancelMeta.message
+                    || cancelMeta.reason
+                    || "Pedido cancelado automaticamente pelo iFood (não confirmado a tempo)";
+
+                  await (prisma.customerOrder as any).create({
+                    data: {
+                      franchiseeId: cancelFranchisee.id,
+                      ifoodOrderId: orderId,
+                      ifoodReference: cancelOrderData.displayId ?? undefined,
+                      source: "IFOOD",
+                      customerName: cancelOrderData.customer?.name ?? "Cliente iFood",
+                      customerPhone: (() => {
+                        const phone = cancelOrderData.customer?.phone;
+                        const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
+                        const localizer = phone?.localizer;
+                        return localizer ? `${number} ID: ${localizer}` : number;
+                      })(),
+                      customerAddress: (() => {
+                        const addr = cancelOrderData.delivery?.deliveryAddress;
+                        if (!addr) return "";
+                        const parts: string[] = [];
+                        if (addr.formattedAddress) parts.push(addr.formattedAddress);
+                        else if (addr.streetName) parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
+                        if (addr.neighborhood) parts.push(addr.neighborhood);
+                        if (addr.city) parts.push(addr.city);
+                        return parts.join(" - ");
+                      })(),
+                      deliveryType: cancelOrderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
+                      paymentMethod: cancelParsedPay.paymentMethod,
+                      totalAmount: cancelTotal,
+                      deliveryFee: cancelOrderData.total?.deliveryFee ?? cancelOrderData.delivery?.deliveryFee ?? 0,
+                      status: "CANCELADO",
+                      cancelledBy: "IFOOD",
+                      cancelReason,
+                      kdsStage: "PRODUCTION",
+                      kdsProductionAt: new Date(),
+                      notes: `Pedido iFood #${(cancelOrderData.displayId ?? orderId.slice(-6)).toUpperCase()} | ❌ Cancelado: ${cancelReason}`,
+                      createdAt: cancelOrderData.createdAt ? new Date(cancelOrderData.createdAt) : undefined,
+                      items: { create: cancelItems },
+                    },
+                  });
+                  created++;
+                  log.push(`  🚫📦 Cancelado + IMPORTADO: ${orderId} (R$ ${cancelTotal})`);
+                } else {
+                  log.push(`  ⚠️ Cancelado mas sem franqueado: ${orderId}`);
+                }
+              } else {
+                log.push(`  ⚠️ Cancelado mas detalhes indisponíveis: ${orderId} (${cancelOrderRes.status})`);
+              }
+            } catch (cancelErr: any) {
+              log.push(`  ⚠️ Erro ao importar cancelado ${orderId}: ${cancelErr.message}`);
+            }
           }
-          await (prisma.customerOrder as any).updateMany({
-            where: { ifoodOrderId: orderId } as any,
-            data: cancelData,
-          });
-          log.push(`  🚫 Cancelado: ${orderId}`);
+
           if (event.id) {
             processedEventIds.push({
               id: event.id,
@@ -162,11 +285,10 @@ export async function GET(req: NextRequest) {
           const orderData = await orderRes.json();
 
           const eventMerchantId = merchantId || orderData.merchant?.id;
-          const eventFranchisee = await prisma.user.findFirst({
-            where: { email: "contatohakim@gmail.com" }
-          }) || await prisma.user.findFirst({
-            where: { ifoodMerchantId: eventMerchantId } as any,
-          });
+          let eventFranchisee = eventMerchantId
+            ? await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId, role: "FRANCHISEE" } as any })
+            : null;
+
           if (!eventFranchisee) {
             log.push(`  ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
             continue;
@@ -317,11 +439,19 @@ export async function GET(req: NextRequest) {
                 const formatted = addr.formattedAddress || "";
                 const neighborhood = addr.neighborhood || "";
                 const city = addr.city || "";
+                const complement = addr.complement || addr.streetNameComplement || "";
+                const reference = addr.reference || addr.streetNameReference || orderData.delivery?.observations || orderData.customer?.customerNote || "";
                 const parts: string[] = [];
                 if (formatted) {
                   parts.push(formatted);
                 } else if (addr.streetName) {
                   parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
+                }
+                if (complement && !parts.some(p => p.toLowerCase().includes(complement.toLowerCase()))) {
+                  parts.push(`Comp: ${complement}`);
+                }
+                if (reference && !parts.some(p => p.toLowerCase().includes(reference.toLowerCase()))) {
+                  parts.push(`Ref: ${reference}`);
                 }
                 if (neighborhood && (!parts[0] || !parts[0].toLowerCase().includes(neighborhood.toLowerCase()))) {
                   parts.push(neighborhood);
@@ -334,6 +464,8 @@ export async function GET(req: NextRequest) {
               totalAmount: total,
               deliveryFee: deliveryFeeValue,
               status: initialStatus,
+              kdsStage: "PRODUCTION",
+              kdsProductionAt: new Date(),
               notes: notesArr,
               createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
               items: { create: items },
@@ -364,6 +496,29 @@ export async function GET(req: NextRequest) {
             if (isConcluded) {
               updateData.ifoodDriverStatus = "CONCLUDED";
             }
+
+            // === Sincronizar prazo de entrega do iFood ===
+            try {
+              const detailRes = await fetch(
+                `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (detailRes.ok) {
+                const detailData = await detailRes.json();
+                const updatedDeadline = detailData.delivery?.deliveryDateTime
+                  ?? detailData.delivery?.estimatedDeliveryWindow?.end
+                  ?? detailData.delivery?.estimatedDeliveryWindow?.start
+                  ?? detailData.takeout?.takeoutDateTime
+                  ?? detailData.takeout?.estimatedTakeoutWindow?.end;
+                if (updatedDeadline) {
+                  updateData.scheduledDatetime = new Date(updatedDeadline);
+                  log.push(`  ⏱️ Prazo atualizado: ${orderId} → ${updatedDeadline}`);
+                }
+              }
+            } catch (deadlineErr: any) {
+              log.push(`  ⚠️ Falha ao sincronizar prazo de ${orderId}: ${deadlineErr?.message}`);
+            }
+
             await (prisma.customerOrder as any).updateMany({
               where: { ifoodOrderId: orderId } as any,
               data: updateData,

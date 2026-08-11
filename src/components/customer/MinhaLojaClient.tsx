@@ -1,18 +1,29 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Store, Clock, Truck, CreditCard, Tag, Gift, ArrowLeft,
   Settings, Image, Phone, MapPin, ChevronRight,
-  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users
+  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed, Star
 } from "lucide-react";
 import StoreSettingsForm from "@/components/customer/StoreSettingsForm";
 import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
 import StoreTeamManager from "@/components/customer/StoreTeamManager";
+import StoreReviewsManager from "@/components/customer/StoreReviewsManager";
+import { StoreApiManager } from "@/components/customer/StoreApiManager";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "conta" | "equipe";
+type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api";
 
 const SECTIONS = [
+  {
+    id: "cardapio" as Section,
+    icon: <UtensilsCrossed size={28} />,
+    color: "#D97706",
+    bg: "#FEF3C7",
+    title: "Cardápio & Produtos",
+    desc: "Gerencie as categorias, produtos, fotos, adicionais e combos do cardápio",
+    link: "/store/cardapio",
+  },
   {
     id: "info" as Section,
     icon: <Store size={28} />,
@@ -70,6 +81,22 @@ const SECTIONS = [
     desc: "Programa de pontos ou cashback para clientes fiéis",
   },
   {
+    id: "reviews" as Section,
+    icon: <Star size={28} />,
+    color: "#D97706",
+    bg: "#FEF3C7",
+    title: "Avaliações & NPS",
+    desc: "Feedback dos clientes, respostas e visibilidade no cardápio digital",
+  },
+  {
+    id: "api" as Section,
+    icon: <ShieldCheck size={28} />,
+    color: "#4F46E5",
+    bg: "#EEF2FF",
+    title: "API Aberta & Webhooks",
+    desc: "Chaves de API para conectar PDV/ERP e webhooks de saída em tempo real",
+  },
+  {
     id: "conta" as Section,
     icon: <User size={28} />,
     color: "#0277BD",
@@ -87,8 +114,36 @@ const SECTION_TAB_MAP: Record<string, string> = {
   coupons: "coupons",
 };
 
+// Mapa de hash da URL → seção interna
+const HASH_TO_SECTION: Record<string, Section> = {
+  info: "info",
+  aparencia: "info",
+  horarios: "hours",
+  hours: "hours",
+  pagamento: "payment",
+  payment: "payment",
+  entrega: "delivery",
+  delivery: "delivery",
+  cupons: "coupons",
+  coupons: "coupons",
+  fidelidade: "loyalty",
+  loyalty: "loyalty",
+  avaliacoes: "reviews",
+  reviews: "reviews",
+  equipe: "equipe",
+  conta: "conta",
+};
+
 export default function MinhaLojaClient({ user }: { user: any }) {
   const [section, setSection] = useState<Section>("menu");
+
+  // Lê o hash da URL ao montar e navega direto para a seção correspondente
+  useEffect(() => {
+    const hash = window.location.hash.replace("#", "").toLowerCase();
+    if (hash && HASH_TO_SECTION[hash]) {
+      setSection(HASH_TO_SECTION[hash]);
+    }
+  }, []);
 
   async function saveLoyalty(config: any) {
     await fetch("/api/store-settings", {
@@ -129,7 +184,7 @@ export default function MinhaLojaClient({ user }: { user: any }) {
           {SECTIONS.map((s) => (
             <button
               key={s.id}
-              onClick={() => setSection(s.id)}
+              onClick={() => (s as any).link ? (window.location.href = (s as any).link) : setSection(s.id)}
               style={{
                 background: "#fff",
                 border: "1px solid #E2E8F0",
@@ -183,6 +238,26 @@ export default function MinhaLojaClient({ user }: { user: any }) {
       <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
         <BackBtn onClick={() => setSection("menu")} title="👥 Cadastrar Equipe & Permissões" />
         <StoreTeamManager />
+      </div>
+    );
+  }
+
+  // ── Seção Avaliações & NPS ──────────────────────────────────────────────────
+  if (section === "reviews") {
+    return (
+      <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="⭐ Avaliações & NPS" />
+        <StoreReviewsManager initialShowReviews={user.showReviewsOnMenu} />
+      </div>
+    );
+  }
+
+  // ── Seção API Aberta & Webhooks ──────────────────────────────────────────────
+  if (section === "api") {
+    return (
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="🔌 API Aberta & Webhooks" />
+        <StoreApiManager />
       </div>
     );
   }

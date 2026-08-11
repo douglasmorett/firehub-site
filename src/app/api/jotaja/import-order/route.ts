@@ -44,8 +44,38 @@ export async function POST(req: NextRequest) {
         const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
         const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
 
-        const eventFake = { orderId: cleanRef, eventType: "CREATED", code: "PLC" };
-        const result = await processJotajaEvent(eventFake, jotajaFetch, jotajaMutate);
+        let targetId = cleanRef;
+
+        // Se o usuário digitou um ID numérico (ex: 32766118 ou 4498), tenta resolver o UUID oficial correspondente
+        if (/^\d+$/.test(cleanRef)) {
+          try {
+            const evRes = await jotajaFetch("/v1/events:polling");
+            if (evRes.ok) {
+              const evsText = await evRes.text();
+              const evs = evsText ? JSON.parse(evsText) : [];
+              for (const ev of evs) {
+                if (ev.orderId) {
+                  const checkRes = await jotajaFetch(`/v1/orders/${ev.orderId}`);
+                  if (checkRes.ok) {
+                    const checkData = await checkRes.json();
+                    if (
+                      String(checkData.displayId || "").includes(cleanRef) ||
+                      String(checkData.orderSeqNumber || "").includes(cleanRef)
+                    ) {
+                      targetId = ev.orderId;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          } catch (resErr) {
+            console.warn("[Import JotaJá] Falha ao resolver UUID por displayId:", resErr);
+          }
+        }
+
+        const eventFake = { orderId: targetId, eventType: "CREATED", code: "PLC", displayId: cleanRef };
+        const result = await processJotajaEvent(eventFake, jotajaFetch, jotajaMutate, targetFranchiseeId);
 
         if (result.action === "created" || result.action === "updated") {
           return NextResponse.json({
@@ -76,6 +106,8 @@ export async function POST(req: NextRequest) {
         paymentMethod: paymentMethod || "JotaJá Online",
         deliveryType: (customerAddress && customerAddress.trim().length > 3) ? "DELIVERY" : "RETIRADA",
         status: "NOVO",
+        kdsStage: "PRODUCTION",
+        kdsProductionAt: new Date(),
         notes: `Pedido JotaJá #${refTag}${itemsSummary ? ` | ${itemsSummary}` : ""}`,
         items: {
           create: [

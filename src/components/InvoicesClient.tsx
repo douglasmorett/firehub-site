@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Camera, Upload, Receipt, CheckCircle, AlertCircle, Loader2, Trash2, Calendar, PenLine, Zap } from "lucide-react";
+import { Camera, Receipt, CheckCircle, AlertCircle, Loader2, Trash2, Calendar, PenLine, Zap, Pencil } from "lucide-react";
 
 type InvoiceMode = "ai" | "manual";
 
 export default function InvoicesClient({ role, canSeePersonal = false }: { role: string; canSeePersonal?: boolean }) {
+  const isAdmin = role === "ADMIN";
   const [invoices, setInvoices]     = useState<any[]>([]);
   const [loading, setLoading]       = useState(true);
   const [uploading, setUploading]   = useState(false);
@@ -23,6 +24,10 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
   const [manualCategory, setManualCategory] = useState("Outros");
   const [manualSupplier, setManualSupplier] = useState("");
   const [savingManual, setSavingManual]   = useState(false);
+
+  const [editingInvoice, setEditingInvoice] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ description: "", aiValue: "", aiCategory: "", invoiceDate: "" });
+  const [editLoading, setEditLoading] = useState(false);
 
   const EXPENSE_CATS = [
     "Matéria-prima / Ingredientes", "Embalagens", "Gás / Combustível",
@@ -50,29 +55,73 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
     const file = e.target.files?.[0];
     if (!file) return;
     if (!description.trim()) { setError("Por favor, digite a descrição ANTES de tirar a foto."); e.target.value = ""; return; }
-    setError(""); setUploading(true);
+
+    if (!file.type.startsWith("image/")) {
+      setError("Apenas imagens são permitidas. Selecione uma foto da nota.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError("A imagem é muito grande (máx 10MB). Tente tirar uma foto com menor resolução.");
+      e.target.value = "";
+      return;
+    }
+
+    setError(""); setSuccess(""); setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("type", "invoice");
-      const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
-      const uploadData = await uploadRes.json();
-      if (!uploadRes.ok) throw new Error(uploadData.error || "Erro ao enviar imagem");
-      const imageUrl = uploadData.url;
 
-      const aiRes = await fetch("/api/invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, description, category }),
-      });
-      const aiData = await aiRes.json();
-      if (!aiRes.ok) throw new Error(aiData.error || "A IA rejeitou a nota fiscal.");
+      let uploadRes: Response;
+      try {
+        uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
+      } catch (networkErr) {
+        throw new Error("Sem conexão com o servidor. Verifique sua internet e tente novamente.");
+      }
+
+      let uploadData;
+      try {
+        uploadData = await uploadRes.json();
+      } catch {
+        throw new Error("Erro inesperado no servidor ao enviar a imagem. Tente novamente.");
+      }
+
+      if (!uploadRes.ok) throw new Error(uploadData.error || "Erro ao enviar imagem para o servidor.");
+      const imageUrl = uploadData.url;
+      if (!imageUrl) throw new Error("O servidor não retornou a URL da imagem. Tente novamente.");
+
+      let aiRes: Response;
+      try {
+        aiRes = await fetch("/api/invoices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl, description, category }),
+        });
+      } catch (networkErr) {
+        throw new Error("Imagem enviada, mas erro ao conectar com a IA. Tente novamente.");
+      }
+
+      let aiData;
+      try {
+        aiData = await aiRes.json();
+      } catch {
+        throw new Error("Erro inesperado ao processar a nota com IA. Tente novamente.");
+      }
+
+      if (!aiRes.ok) {
+        if (aiData.error === "NAO_LEU_VALOR") {
+          throw new Error("📷 " + aiData.message);
+        }
+        throw new Error(aiData.message || aiData.error || "A IA não conseguiu processar a nota. Tire outra foto com melhor qualidade.");
+      }
 
       setSuccess(`✅ Nota salva! Valor lido: R$ ${aiData.invoice?.aiValue?.toFixed(2) ?? "–"}`);
       setDescription("");
       fetchInvoices();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Erro desconhecido. Tente novamente.");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -82,7 +131,8 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
   // ── MODO MANUAL: salva direto sem IA ────────────────────────────────────
   const handleManualSave = async () => {
     if (!manualDesc.trim()) { setError("Informe a descrição da nota."); return; }
-    const valor = parseFloat(manualValue.replace(",", "."));
+    const sanitized = manualValue.replace(/[R$\s]/g, "").replace(",", ".");
+    const valor = parseFloat(sanitized);
     if (!manualValue || isNaN(valor) || valor <= 0) { setError("Informe um valor válido (ex: 125,50)."); return; }
     setError(""); setSavingManual(true);
     try {
@@ -119,17 +169,45 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
     } catch { alert("Erro de conexão."); }
   };
 
+  const handleEdit = async () => {
+    if (!editingInvoice) return;
+    setEditLoading(true);
+    try {
+      const res = await fetch("/api/invoices", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingInvoice.id,
+          description: editForm.description,
+          aiValue: editForm.aiValue,
+          aiCategory: editForm.aiCategory,
+          invoiceDate: editForm.invoiceDate || null,
+        }),
+      });
+      if (res.ok) {
+        setEditingInvoice(null);
+        fetchInvoices();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Erro ao editar");
+      }
+    } catch {
+      alert("Erro de conexão");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const totalGasto = invoices.reduce((acc, inv) => acc + (inv.aiValue || 0), 0);
 
   return (
-    <div>
-      {/* Cabeçalho */}
+    <div style={{ padding: "20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
-        <h1 className="font-bold" style={{ fontSize: "1.75rem" }}>Notas de Compras</h1>
+        <h1 className="font-bold" style={{ fontSize: "1.75rem", margin: 0 }}>Notas de Compras</h1>
         {canSeePersonal && (
-          <div style={{ display: "flex", background: "var(--card-bg, #f1f5f9)", borderRadius: "10px", padding: "4px", border: "1px solid var(--border-color, #e2e8f0)" }}>
+          <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "10px", padding: "4px", border: "1px solid #e2e8f0" }}>
             {(["BUSINESS", "PERSONAL"] as const).map(cat => (
-              <button key={cat} onClick={() => setCategory(cat)} style={{ padding: "8px 18px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem", transition: "all 0.2s", background: category === cat ? (cat === "BUSINESS" ? "#DC2626" : "#7C3AED") : "transparent", color: category === cat ? "#fff" : "var(--text-muted, #64748b)", fontFamily: "inherit" }}>
+              <button key={cat} onClick={() => setCategory(cat)} style={{ padding: "8px 18px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem", transition: "all 0.2s", background: category === cat ? (cat === "BUSINESS" ? "#DC2626" : "#7C3AED") : "transparent", color: category === cat ? "#fff" : "#64748b", fontFamily: "inherit" }}>
                 {cat === "BUSINESS" ? "🏢 Empresarial" : "👤 Pessoal"}
               </button>
             ))}
@@ -137,7 +215,6 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
         )}
       </div>
 
-      {/* Feedback */}
       {error && (
         <div style={{ background: "#fee2e2", color: "#b91c1c", padding: "0.85rem 1rem", borderRadius: "10px", marginBottom: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <AlertCircle size={18} /><span>{error}</span>
@@ -151,11 +228,9 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
         </div>
       )}
 
-      {/* Card de nova nota */}
-      <div className="card" style={{ marginBottom: "2rem" }}>
+      <div style={{ background: "#FFF", borderRadius: "16px", padding: "20px", border: "1px solid #E2E8F0", marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h2 style={{ fontSize: "1.1rem", fontWeight: "bold", margin: 0 }}>Nova Nota Fiscal</h2>
-          {/* Toggle AI / Manual */}
           <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "10px", padding: "3px", gap: "2px" }}>
             <button onClick={() => { setMode("ai"); setError(""); setSuccess(""); }}
               style={{ padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 5, background: mode === "ai" ? "#DC2626" : "transparent", color: mode === "ai" ? "#fff" : "#64748b", fontFamily: "inherit" }}>
@@ -168,7 +243,6 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
           </div>
         </div>
 
-        {/* ── MODO IA ── */}
         {mode === "ai" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <p style={{ fontSize: "0.82rem", color: "#64748b", margin: 0 }}>
@@ -176,20 +250,23 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
             </p>
             <div>
               <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>📝 O que você comprou?</label>
-              <textarea className="input" placeholder="Ex: Abastecimento do carro, Papelão, Manutenção..." value={description}
+              <textarea placeholder="Ex: Abastecimento do carro, Papelão, Manutenção..." value={description}
                 onChange={e => setDescription(e.target.value)} disabled={uploading} rows={2}
-                style={{ width: "100%", padding: "0.85rem", fontSize: "1rem", resize: "none", borderRadius: "10px", border: "2px solid var(--border-color)", boxSizing: "border-box" }} />
+                style={{ width: "100%", padding: "0.85rem", fontSize: "1rem", resize: "none", borderRadius: "10px", border: "2px solid #E2E8F0", boxSizing: "border-box" }} />
             </div>
-            <button className="btn btn-primary" style={{ width: "100%", padding: "0.9rem", fontSize: "1rem" }} disabled={uploading}
-              onClick={() => { if (!description.trim()) { setError("Digite a descrição primeiro!"); return; } fileInputRef.current?.click(); }}>
+            <button style={{ width: "100%", padding: "0.9rem", fontSize: "1rem", borderRadius: "12px", border: "none", background: "#FF4D00", color: "#FFF", fontWeight: 800, cursor: uploading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }} disabled={uploading}
+              onClick={() => {
+                if (!description.trim()) { setError("Digite a descrição primeiro!"); return; }
+                setError(""); setSuccess("");
+                fileInputRef.current?.click();
+              }}>
               {uploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} style={{ marginRight: "0.5rem" }} />}
               {uploading ? "A IA está lendo a nota..." : "Tirar Foto da Nota"}
             </button>
-            <input type="file" accept="image/*" capture="environment" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} />
+            <input type="file" accept="image/*" ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} />
           </div>
         )}
 
-        {/* ── MODO MANUAL ── */}
         {mode === "manual" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
             <p style={{ fontSize: "0.82rem", color: "#2563EB", margin: 0, background: "#EFF6FF", padding: "8px 12px", borderRadius: 8 }}>
@@ -198,32 +275,32 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
               <div style={{ gridColumn: "span 2" }}>
                 <label style={{ fontWeight: 600, fontSize: "0.85rem", display: "block", marginBottom: 4 }}>Descrição *</label>
-                <input className="input-field" placeholder="Ex: Compra de embalagens na papelaria" value={manualDesc}
+                <input placeholder="Ex: Compra de embalagens na papelaria" value={manualDesc}
                   onChange={e => setManualDesc(e.target.value)}
-                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem" }} />
+                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontWeight: 600, fontSize: "0.85rem", display: "block", marginBottom: 4 }}>Valor (R$) *</label>
-                <input className="input-field" placeholder="Ex: 125,90" value={manualValue}
+                <input placeholder="Ex: 125,90" value={manualValue}
                   onChange={e => setManualValue(e.target.value)} inputMode="decimal"
-                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem" }} />
+                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontWeight: 600, fontSize: "0.85rem", display: "block", marginBottom: 4 }}>Data da Nota *</label>
-                <input type="date" className="input-field" value={manualDate}
+                <input type="date" value={manualDate}
                   onChange={e => setManualDate(e.target.value)}
-                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem" }} />
+                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontWeight: 600, fontSize: "0.85rem", display: "block", marginBottom: 4 }}>Fornecedor</label>
-                <input className="input-field" placeholder="Ex: Distribuidora ABC" value={manualSupplier}
+                <input placeholder="Ex: Distribuidora ABC" value={manualSupplier}
                   onChange={e => setManualSupplier(e.target.value)}
-                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem" }} />
+                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontWeight: 600, fontSize: "0.85rem", display: "block", marginBottom: 4 }}>Categoria da Despesa</label>
                 <select value={manualCategory} onChange={e => setManualCategory(e.target.value)}
-                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem", background: "#fff" }}>
+                  style={{ width: "100%", padding: "0.7rem", borderRadius: 8, border: "1.5px solid #e2e8f0", fontSize: "0.9rem", background: "#fff", boxSizing: "border-box" }}>
                   {EXPENSE_CATS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
@@ -237,24 +314,23 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
         )}
       </div>
 
-      {/* Tabela de notas */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
-        <h2 style={{ fontSize: "1.2rem", fontWeight: "bold" }}>Relatório de Gastos</h2>
+        <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", margin: 0 }}>Relatório de Gastos</h2>
         <div style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", padding: "0.5rem 1rem", borderRadius: "20px", fontWeight: "bold" }}>
           Total: R$ {totalGasto.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
         </div>
       </div>
 
-      <div className="card">
+      <div style={{ background: "#FFF", padding: "20px", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}><Loader2 className="animate-spin" size={24} style={{ margin: "0 auto 8px" }} /><p>Carregando notas...</p></div>
         ) : invoices.length === 0 ? (
-          <p style={{ textAlign: "center", color: "#94a3b8", padding: "2rem" }}>Nenhuma nota registrada ainda.</p>
+          <p style={{ textAlign: "center", color: "#94a3b8", padding: "2rem", margin: 0 }}>Nenhuma nota registrada ainda.</p>
         ) : (
           <div style={{ overflowX: "auto", width: "100%" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid var(--border-color)", textAlign: "left" }}>
+                <tr style={{ borderBottom: "1px solid #E2E8F0", textAlign: "left" }}>
                   <th style={{ padding: "0.5rem" }}>Postagem</th>
                   <th style={{ padding: "0.5rem" }}>Data NF</th>
                   <th style={{ padding: "0.5rem" }}>Descrição</th>
@@ -265,8 +341,8 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
               </thead>
               <tbody>
                 {invoices.map(inv => (
-                  <tr key={inv.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                    <td style={{ padding: "0.5rem", fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                  <tr key={inv.id} style={{ borderBottom: "1px solid #E2E8F0" }}>
+                    <td style={{ padding: "0.5rem", fontSize: "0.82rem", color: "#64748b" }}>
                       <div>{new Date(inv.createdAt).toLocaleDateString("pt-BR")}</div>
                       <div style={{ fontSize: "0.72rem", opacity: 0.7 }}>{inv.uploadedBy}</div>
                       {inv.source === "manual" && <span style={{ fontSize: "0.68rem", background: "#EFF6FF", color: "#2563EB", padding: "1px 5px", borderRadius: 4, fontWeight: 700 }}>MANUAL</span>}
@@ -282,7 +358,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
                       <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.description}</div>
                       {inv.aiCategory && <div style={{ fontSize: "0.72rem", color: "#94a3b8" }}>{inv.aiCategory}</div>}
                     </td>
-                    <td style={{ padding: "0.5rem", color: "var(--text-muted)", fontSize: "0.82rem" }}>
+                    <td style={{ padding: "0.5rem", color: "#64748b", fontSize: "0.82rem" }}>
                       {inv.category}
                     </td>
                     <td style={{ padding: "0.5rem", fontWeight: 700, color: "#ef4444" }}>
@@ -295,6 +371,22 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
                             style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid #e2e8f0", background: "#fff", fontSize: "0.78rem", color: "#475569", textDecoration: "none", fontWeight: 600 }}>
                             Ver Foto
                           </a>
+                        )}
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              setEditingInvoice(inv);
+                              setEditForm({
+                                description: inv.description || "",
+                                aiValue: inv.aiValue?.toString() || "",
+                                aiCategory: inv.aiCategory || "",
+                                invoiceDate: inv.invoiceDate ? inv.invoiceDate.slice(0, 10) : "",
+                              });
+                            }}
+                            style={{ color: "#2563eb", background: "none", border: "1px solid #2563eb", borderRadius: "6px", padding: "4px 10px", cursor: "pointer", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px" }}
+                          >
+                            <Pencil size={14} /> Editar
+                          </button>
                         )}
                         <button onClick={() => handleDelete(inv.id)}
                           style={{ padding: "4px 8px", color: "#ef4444", background: "rgba(239,68,68,0.1)", border: "none", borderRadius: 7, cursor: "pointer" }}
@@ -310,6 +402,41 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
           </div>
         )}
       </div>
+
+      {editingInvoice && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "white", borderRadius: 16, padding: "24px", maxWidth: 500, width: "100%" }}>
+            <h3 style={{ marginBottom: "1rem", fontWeight: "bold" }}>✏️ Editar Nota</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label style={{ fontSize: "0.85rem", fontWeight: "bold", display: "block", marginBottom: "4px" }}>Descrição</label>
+                <input style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", boxSizing: "border-box" }} value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ fontSize: "0.85rem", fontWeight: "bold", display: "block", marginBottom: "4px" }}>Valor (R$)</label>
+                <input style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", boxSizing: "border-box" }} type="number" step="0.01" value={editForm.aiValue} onChange={e => setEditForm({...editForm, aiValue: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ fontSize: "0.85rem", fontWeight: "bold", display: "block", marginBottom: "4px" }}>Categoria</label>
+                <select style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", boxSizing: "border-box" }} value={editForm.aiCategory} onChange={e => setEditForm({...editForm, aiCategory: e.target.value})}>
+                  <option value="">Selecione</option>
+                  {EXPENSE_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: "0.85rem", fontWeight: "bold", display: "block", marginBottom: "4px" }}>Data da NF</label>
+                <input style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", boxSizing: "border-box" }} type="date" value={editForm.invoiceDate} onChange={e => setEditForm({...editForm, invoiceDate: e.target.value})} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.5rem", justifyContent: "flex-end" }}>
+              <button onClick={() => setEditingInvoice(null)} style={{ padding: "8px 20px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "none", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={handleEdit} disabled={editLoading} style={{ padding: "8px 20px", borderRadius: "8px", border: "none", background: "#2563eb", color: "white", cursor: "pointer", fontWeight: "bold" }}>
+                {editLoading ? "Salvando..." : "💾 Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

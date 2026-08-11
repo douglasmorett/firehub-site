@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Já existe uma conta cadastrada com este e-mail" }, { status: 400 });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
     
     // Por padrão, se não passarem permissões específicas, ativa TUDO (como o dono)
     const permsList = Array.isArray(permissions) && permissions.length > 0 
@@ -170,7 +170,7 @@ export async function PUT(req: NextRequest) {
     }
 
     if (password && password.trim().length >= 4) {
-      updateData.password = await bcrypt.hash(password.trim(), 10);
+      updateData.password = await bcrypt.hash(password.trim(), 12);
     }
 
     const updated = await prisma.user.update({
@@ -216,7 +216,31 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Sem permissão para remover este funcionário" }, { status: 403 });
   }
 
-  await prisma.user.delete({ where: { id } });
+  // Desvincula registros para o dono da loja antes de deletar
+  if ((targetUser as any).ownerId) {
+    const ownerId = (targetUser as any).ownerId;
+    await prisma.customerOrder.updateMany({ where: { franchiseeId: id }, data: { franchiseeId: ownerId } }).catch(() => {});
+    await prisma.franchiseeBillingCycle.updateMany({ where: { franchiseeId: id }, data: { franchiseeId: ownerId } }).catch(() => {});
+    await prisma.cashSession.updateMany({ where: { franchiseeId: id }, data: { franchiseeId: ownerId } }).catch(() => {});
+    await prisma.motoboy.updateMany({ where: { franchiseeId: id }, data: { franchiseeId: ownerId } }).catch(() => {});
+    await prisma.menuProduct.updateMany({ where: { franchiseeId: id }, data: { franchiseeId: ownerId } }).catch(() => {});
+  }
+
+  try {
+    await prisma.user.delete({ where: { id } });
+  } catch {
+    // Se houver vínculos históricos irremovíveis no banco, efetua soft-delete para desativar o acesso imediatamente
+    await prisma.user.update({
+      where: { id },
+      data: {
+        ownerId: null,
+        role: "DELETED",
+        permissions: "",
+        email: `deleted_${Date.now()}_${targetUser.email}`,
+      } as any,
+    });
+  }
 
   return NextResponse.json({ success: true });
 }
+

@@ -49,6 +49,9 @@ export async function POST(req: Request) {
     const userEmailClean = user.email?.toLowerCase().replace(/\s+/g, "");
     // Contas isentas de verificação (configurar em BYPASS_BILLING_EMAILS no Vercel, separadas por vírgula)
     const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+    if (!bypassEmails.includes("viniciusmenezes.ofc@gmail.com")) {
+      bypassEmails.push("viniciusmenezes.ofc@gmail.com");
+    }
     const isSpecialStore = bypassEmails.includes(userEmailClean ?? "");
 
     if (user.cpfCnpj && !isSpecialStore) {

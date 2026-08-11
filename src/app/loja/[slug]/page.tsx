@@ -44,6 +44,9 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       ifoodMerchantId: true,
       ifoodConnected: true,
       ifoodWidgetId: true,
+      mpSellerId: true,
+      showReviewsOnMenu: true,
+      allowScheduledOrders: true,
     }
   });
 
@@ -66,30 +69,36 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
     }
   });
 
-  // Get store reviews
-  const reviewsData = await prisma.storeReview.aggregate({
-    where: { franchiseeId: franchisee.id },
-    _avg: { rating: true },
-    _count: { rating: true }
-  });
+  // Get store reviews if enabled
+  let storeRating = undefined;
+  if ((franchisee as any).showReviewsOnMenu !== false) {
+    const reviewsData = await prisma.storeReview.aggregate({
+      where: { franchiseeId: franchisee.id },
+      _avg: { rating: true },
+      _count: { rating: true }
+    });
 
-  const recentReviews = await prisma.storeReview.findMany({
-    where: { franchiseeId: franchisee.id, comment: { not: null } },
-    orderBy: { createdAt: "desc" },
-    take: 6,
-    include: { customer: { select: { name: true } } },
-  });
+    const recentReviews = await prisma.storeReview.findMany({
+      where: { franchiseeId: franchisee.id, comment: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      include: {
+        customer: { select: { name: true } },
+        order: { select: { customerName: true } },
+      },
+    });
 
-  const storeRating = {
-    average: reviewsData._avg.rating || 0,
-    count: reviewsData._count.rating || 0,
-    reviews: recentReviews.map(r => ({
-      rating: r.rating,
-      comment: r.comment || "",
-      customerName: r.customer?.name || "Cliente",
-      createdAt: r.createdAt.toISOString(),
-    })),
-  };
+    storeRating = {
+      average: reviewsData._avg.rating || 0,
+      count: reviewsData._count.rating || 0,
+      reviews: recentReviews.map(r => ({
+        rating: r.rating,
+        comment: r.comment || "",
+        customerName: r.order?.customerName || r.customer?.name || "Cliente",
+        createdAt: r.createdAt.toISOString(),
+      })),
+    };
+  }
 
   return (
     <>

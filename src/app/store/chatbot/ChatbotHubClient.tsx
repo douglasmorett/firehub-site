@@ -28,13 +28,14 @@ import {
   Phone,
   HelpCircle,
   Gift,
-  Calendar
+  Calendar,
+  Trash2
 } from "lucide-react";
 
 export default function ChatbotHubClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "phone" | "notifications" | "test" | "diagnostic">("qr");
+  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "disparos" | "phone" | "notifications" | "test" | "diagnostic">("qr");
 
   // Configuração principal
   const [config, setConfig] = useState<any>({
@@ -91,10 +92,101 @@ export default function ChatbotHubClient() {
   const [showNewCouponModal, setShowNewCouponModal] = useState(false);
   const [targetCouponField, setTargetCouponField] = useState<string | null>(null);
   const [newCouponCode, setNewCouponCode] = useState("");
+  const [newCouponType, setNewCouponType] = useState<"percent" | "fixed" | "free_shipping">("percent");
   const [newCouponDiscount, setNewCouponDiscount] = useState("10");
+  const [newCouponMinOrder, setNewCouponMinOrder] = useState("");
   const [creatingCoupon, setCreatingCoupon] = useState(false);
-  // Modal de Confirmação de Teste de Envio
+
+  // Modal de Exclusão de Cupom (com validação de digitação 'EXCLUIR')
+  const [showDeleteCouponModal, setShowDeleteCouponModal] = useState(false);
+  const [couponToDelete, setCouponToDelete] = useState<any | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
+  const [deletingCoupon, setDeletingCoupon] = useState(false);
   const [showConfirmTestModal, setShowConfirmTestModal] = useState(false);
+
+  // Estados da aba de Disparos
+  const [campaignMsg, setCampaignMsg] = useState("");
+  const [campaignImg, setCampaignImg] = useState("");
+  const [campaignImgUploading, setCampaignImgUploading] = useState(false);
+  const [selectedCriteria, setSelectedCriteria] = useState("all");
+  const [sendingCampaign, setSendingCampaign] = useState(false);
+  const [showCampaignConfirm, setShowCampaignConfirm] = useState(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [campaignHistory, setCampaignHistory] = useState<any[]>([]);
+
+  const handleGenerateAiMessage = async () => {
+    setIsGeneratingAi(true);
+    try {
+      const res = await fetch("/api/chatbot/generate-broadcast-msg", { method: "POST" });
+      const data = await res.json();
+      if (data.success && data.message) {
+        setCampaignMsg(data.message);
+        showToast("✨ Mensagem persuasiva gerada pela IA com sucesso!", "#8B5CF6");
+      } else {
+        throw new Error();
+      }
+    } catch {
+      const fallbackMsgs = [
+        "Oi! 🍕 Sentimos sua falta! Que tal aproveitar nossos combos hoje? Peça agora e receba quentinho na sua casa!",
+        "Oie! 🔥 Liberamos uma oferta ESPECIAL hoje só pra você! Peça seu lanche favorito pelo nosso site e aproveite! 🚀",
+        "Que tal um lanche delicioso hoje? 🍔 Preparamos tudo com muito carinho pra você! Peça já pelo nosso cardápio!",
+        "Bateu aquela fome? 😋 Aproveite as nossas promoções exclusivas com entrega super rápida! Peça pelo site agora!"
+      ];
+      setCampaignMsg(fallbackMsgs[Math.floor(Math.random() * fallbackMsgs.length)]);
+      showToast("✨ Mensagem rápida gerada com IA!", "#8B5CF6");
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
+
+  const handleRequestDeleteCoupon = (code: string) => {
+    const found = storeCoupons.find((c: any) => c.code === code);
+    if (!found) return;
+    setCouponToDelete(found);
+    setDeleteConfirmInput("");
+    setShowDeleteCouponModal(true);
+  };
+
+  const handleConfirmDeleteCoupon = async () => {
+    if (!couponToDelete) return;
+    const codeToDelete = couponToDelete.code;
+    setDeletingCoupon(true);
+    try {
+      const updated = storeCoupons.filter((c: any) => c.code !== codeToDelete);
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeCoupons: updated }),
+      });
+
+      if (res.ok) {
+        setStoreCoupons(updated);
+
+        // Limpa campos das automações caso o cupom estivesse selecionado
+        const newFieldsToSave: any = {};
+        if (config.instantCouponCode === codeToDelete) newFieldsToSave.instantCouponCode = "";
+        if (config.coupon7d === codeToDelete) newFieldsToSave.coupon7d = "";
+        if (config.coupon15d === codeToDelete) newFieldsToSave.coupon15d = "";
+        if (config.coupon30d === codeToDelete) newFieldsToSave.coupon30d = "";
+
+        if (Object.keys(newFieldsToSave).length > 0) {
+          setConfig((prev: any) => ({ ...prev, ...newFieldsToSave }));
+          handleSaveConfig(newFieldsToSave);
+        }
+
+        showToast(`🗑️ Cupom "${codeToDelete}" excluído permanentemente!`, "#10B981");
+        setShowDeleteCouponModal(false);
+        setCouponToDelete(null);
+        setDeleteConfirmInput("");
+      } else {
+        showToast("⚠️ Falha ao excluir cupom do banco de dados.", "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro ao comunicar com o servidor.", "#EF4444");
+    } finally {
+      setDeletingCoupon(false);
+    }
+  };
 
   // QR Code State
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
@@ -202,19 +294,34 @@ export default function ChatbotHubClient() {
       return;
     }
     const cleanCode = newCouponCode.trim().toUpperCase();
-    const discountVal = parseFloat(newCouponDiscount) || 10;
+    const type = newCouponType;
+    const discountVal = type === "free_shipping" ? 0 : (parseFloat(newCouponDiscount) || 0);
+    const minOrderVal = parseFloat(newCouponMinOrder) || 0;
     
     setCreatingCoupon(true);
     try {
-      const updated = [...storeCoupons, { code: cleanCode, discount: discountVal, active: true }];
+      const currentList = Array.isArray(storeCoupons) ? storeCoupons : [];
+      const updated = [
+        ...currentList.filter((c: any) => c && c.code !== cleanCode),
+        { code: cleanCode, discount: discountVal, type, minOrderValue: minOrderVal, active: true }
+      ];
+      
       const res = await fetch("/api/store-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storeCoupons: updated }),
       });
+
       if (res.ok) {
         setStoreCoupons(updated);
-        showToast(`🎉 Cupom "${cleanCode}" de ${discountVal}% criado e salvo!`, "#10B981");
+        const minOrderLabel = minOrderVal > 0 ? ` (Pedido min: R$ ${minOrderVal.toFixed(2)})` : "";
+        const toastLabel = type === "free_shipping"
+          ? `🎉 Cupom "${cleanCode}" de Frete Grátis criado e salvo!${minOrderLabel}`
+          : type === "fixed"
+          ? `🎉 Cupom "${cleanCode}" de R$ ${discountVal.toFixed(2)} OFF criado e salvo!${minOrderLabel}`
+          : `🎉 Cupom "${cleanCode}" de ${discountVal}% OFF criado e salvo!${minOrderLabel}`;
+        
+        showToast(toastLabel, "#10B981");
         
         // Se foi acionado por um card específico ou pelo botão abaixo do seletor, auto-seleciona
         const keyToUpdate = targetRecuperationKey || targetCouponField;
@@ -224,6 +331,9 @@ export default function ChatbotHubClient() {
         }
         
         setNewCouponCode("");
+        setNewCouponType("percent");
+        setNewCouponDiscount("10");
+        setNewCouponMinOrder("");
         setTargetCouponField(null);
         setShowNewCouponModal(false);
       } else {
@@ -236,7 +346,10 @@ export default function ChatbotHubClient() {
     }
   };
 
-  const loadMarketingData = async () => {
+  const [refreshingMetrics, setRefreshingMetrics] = useState(false);
+
+  const loadMarketingData = async (isManualClick = false) => {
+    if (isManualClick) setRefreshingMetrics(true);
     try {
       const res = await fetch("/api/store/marketing").then((r) => r.json());
       if (res.success) {
@@ -244,14 +357,36 @@ export default function ChatbotHubClient() {
         setMarketingCustomers(custs);
         setRecoveredOrdersCount(res.recoveredOrdersCount || 0);
         setRecoveredRevenue(res.recoveredRevenue || 0);
+        if (Array.isArray(res.campaignHistory)) {
+          setCampaignHistory(res.campaignHistory);
+        }
+        if (isManualClick) {
+          showToast("📊 Métricas e disparos atualizados com sucesso!", "#10B981");
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      if (isManualClick) showToast("⚠️ Erro ao atualizar métricas.", "#EF4444");
+    } finally {
+      if (isManualClick) setRefreshingMetrics(false);
+    }
   };
 
   useEffect(() => {
     loadData();
     loadMarketingData();
   }, [marketingStartDate, marketingEndDate]);
+
+  // Polling automático dos disparos em andamento a cada 4 segundos
+  useEffect(() => {
+    const hasSending = Array.isArray(campaignHistory) && campaignHistory.some((c: any) => c.status === "DISPARANDO");
+    if (!hasSending) return;
+
+    const interval = setInterval(() => {
+      loadMarketingData(false);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [campaignHistory]);
 
   // Polling automático de status de conexão a cada 3s enquanto aguarda leitura do QR Code
   useEffect(() => {
@@ -502,6 +637,16 @@ export default function ChatbotHubClient() {
             <Gift size={16} /> 🎁 Marketing &amp; Fidelização
           </button>
           <button
+            onClick={() => setActiveTab("disparos")}
+            style={{
+              padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
+              background: activeTab === "disparos" ? "linear-gradient(135deg, #F59E0B, #D97706)" : "rgba(255,255,255,0.1)", color: "#fff",
+              display: "flex", alignItems: "center", gap: "8px", boxShadow: activeTab === "disparos" ? "0 4px 12px rgba(245,158,11,0.3)" : "none"
+            }}
+          >
+            <Radio size={16} /> 📢 Disparos
+          </button>
+          <button
             onClick={() => setActiveTab("test")}
             style={{
               padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
@@ -749,7 +894,7 @@ export default function ChatbotHubClient() {
                 <div style={{ background: "#F3E8FF", border: "1px solid #DDD6FE", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
                   <div style={{ color: "#6D28D9", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>👥 Clientes na Base Ativa</div>
                   <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#4C1D95", marginTop: "4px" }}>{marketingCustomers.length}</div>
-                  <div style={{ fontSize: "0.7rem", color: "#6D28D9", marginTop: "2px" }}>100% contatos reais (sem 0800)</div>
+                  <div style={{ fontSize: "0.7rem", color: "#6D28D9", marginTop: "2px" }}>Contatos reais registrados</div>
                 </div>
 
                 <div style={{ background: "#DCFCE7", border: "1px solid #BBF7D0", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
@@ -799,22 +944,34 @@ export default function ChatbotHubClient() {
                       <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1E40AF", marginBottom: "4px" }}>
                         Selecione o Cupom do Banco de Dados para Liberar no WhatsApp:
                       </label>
-                      <select
-                        value={config.instantCouponCode || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, instantCouponCode: code }));
-                          handleSaveConfig({ instantCouponCode: code });
-                        }}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", fontWeight: 700, color: "#1D4ED8" }}
-                      >
-                        <option value="">-- Selecione um cupom cadastrado --</option>
-                        {storeCoupons.map((c: any, i: number) => (
-                          <option key={i} value={c.code}>
-                            {c.code} ({c.discount}% OFF)
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.instantCouponCode || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, instantCouponCode: code }));
+                            handleSaveConfig({ instantCouponCode: code });
+                          }}
+                          style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", fontWeight: 700, color: "#1D4ED8" }}
+                        >
+                          <option value="">-- Selecione um cupom cadastrado --</option>
+                          {storeCoupons.map((c: any, i: number) => (
+                            <option key={i} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.instantCouponCode && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.instantCouponCode}`}
+                            onClick={() => handleRequestDeleteCoupon(config.instantCouponCode)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -870,22 +1027,34 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
-                      <select
-                        value={config.coupon7d || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, coupon7d: code }));
-                          handleSaveConfig({ coupon7d: code });
-                        }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
-                      >
-                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
-                        {storeCoupons.map((c: any, idx: number) => (
-                          <option key={idx} value={c.code}>
-                            {c.code} ({c.discount}% OFF)
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.coupon7d || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, coupon7d: code }));
+                            handleSaveConfig({ coupon7d: code });
+                          }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                        >
+                          <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                          {storeCoupons.map((c: any, idx: number) => (
+                            <option key={idx} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.coupon7d && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.coupon7d}`}
+                            onClick={() => handleRequestDeleteCoupon(config.coupon7d)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -904,10 +1073,35 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon7d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? `🏷️ Porcentagem: ${sel.discount}% de Desconto` : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? `🚚 Frete Grátis${sel.minOrderValue > 0 ? ` (Pedido Mínimo: R$ ${sel.minOrderValue})` : " (Sem taxa de entrega)"}` : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}` : `🏷️ Porcentagem: ${sel.discount}% OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
+                    </div>
+                  </div>
+
+                  <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                    <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>📷 Imagem do Disparo (opcional):</label>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {config.img7d ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <img src={config.img7d} alt="Imagem 7d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
+                          <button
+                            onClick={() => { setConfig((p: any) => ({ ...p, img7d: "" })); handleSaveConfig({ img7d: "" }); }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "10px", border: "2px dashed #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>
+                          📤 Enviar Imagem
+                          <input type="file" accept="image/*" hidden onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                            const res = await fetch("/api/upload", { method: "POST", body: fd });
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img7d: url })); handleSaveConfig({ img7d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                          }} />
+                        </label>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -925,22 +1119,34 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
-                      <select
-                        value={config.coupon15d || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, coupon15d: code }));
-                          handleSaveConfig({ coupon15d: code });
-                        }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
-                      >
-                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
-                        {storeCoupons.map((c: any, idx: number) => (
-                          <option key={idx} value={c.code}>
-                            {c.code} ({c.discount}% OFF)
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.coupon15d || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, coupon15d: code }));
+                            handleSaveConfig({ coupon15d: code });
+                          }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                        >
+                          <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                          {storeCoupons.map((c: any, idx: number) => (
+                            <option key={idx} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.coupon15d && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.coupon15d}`}
+                            onClick={() => handleRequestDeleteCoupon(config.coupon15d)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -959,10 +1165,35 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon15d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? `🏷️ Porcentagem: ${sel.discount}% de Desconto` : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? `🚚 Frete Grátis${sel.minOrderValue > 0 ? ` (Pedido Mínimo: R$ ${sel.minOrderValue})` : " (Sem taxa de entrega)"}` : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}` : `🏷️ Porcentagem: ${sel.discount}% OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
+                    </div>
+                  </div>
+
+                  <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                    <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>📷 Imagem do Disparo (opcional):</label>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {config.img15d ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <img src={config.img15d} alt="Imagem 15d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
+                          <button
+                            onClick={() => { setConfig((p: any) => ({ ...p, img15d: "" })); handleSaveConfig({ img15d: "" }); }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "10px", border: "2px dashed #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>
+                          📤 Enviar Imagem
+                          <input type="file" accept="image/*" hidden onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                            const res = await fetch("/api/upload", { method: "POST", body: fd });
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img15d: url })); handleSaveConfig({ img15d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                          }} />
+                        </label>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -980,22 +1211,34 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                     <div>
                       <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Selecione o Cupom Cadastrado:</label>
-                      <select
-                        value={config.coupon30d || ""}
-                        onChange={(e) => {
-                          const code = e.target.value;
-                          setConfig((prev: any) => ({ ...prev, coupon30d: code }));
-                          handleSaveConfig({ coupon30d: code });
-                        }}
-                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
-                      >
-                        <option value="">-- NENHUM CUPOM SELECIONADO --</option>
-                        {storeCoupons.map((c: any, idx: number) => (
-                          <option key={idx} value={c.code}>
-                            {c.code} ({c.discount}% OFF)
-                          </option>
-                        ))}
-                      </select>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <select
+                          value={config.coupon30d || ""}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setConfig((prev: any) => ({ ...prev, coupon30d: code }));
+                            handleSaveConfig({ coupon30d: code });
+                          }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                        >
+                          <option value="">-- NENHUM CUPOM SELECIONADO --</option>
+                          {storeCoupons.map((c: any, idx: number) => (
+                            <option key={idx} value={c.code}>
+                              {c.code} ({c.type === "free_shipping" ? "Frete Grátis" : c.type === "fixed" ? `R$ ${c.discount} OFF` : `${c.discount}% OFF`}{c.minOrderValue > 0 ? ` | Mín: R$ ${c.minOrderValue}` : ""})
+                            </option>
+                          ))}
+                        </select>
+                        {config.coupon30d && (
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${config.coupon30d}`}
+                            onClick={() => handleRequestDeleteCoupon(config.coupon30d)}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -1014,12 +1257,79 @@ export default function ChatbotHubClient() {
                         const sel = storeCoupons.find((c: any) => c.code === config.coupon30d);
                         return (
                           <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", padding: "8px 12px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 800, color: sel ? "#0F172A" : "#94A3B8" }}>
-                            {sel ? `🏷️ Porcentagem: ${sel.discount}% de Desconto` : "Nenhum cupom selecionado"}
+                            {sel ? (sel.type === "free_shipping" ? `🚚 Frete Grátis${sel.minOrderValue > 0 ? ` (Pedido Mínimo: R$ ${sel.minOrderValue})` : " (Sem taxa de entrega)"}` : sel.type === "fixed" ? `💵 Valor Fixo: R$ ${sel.discount} OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}` : `🏷️ Porcentagem: ${sel.discount}% OFF${sel.minOrderValue > 0 ? ` (Mín: R$ ${sel.minOrderValue})` : ""}`) : "Nenhum cupom selecionado"}
                           </div>
                         );
                       })()}
                     </div>
                   </div>
+
+                  <div style={{ gridColumn: "1 / -1", marginTop: "8px" }}>
+                    <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>📷 Imagem do Disparo (opcional):</label>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {config.img30d ? (
+                        <div style={{ position: "relative", display: "inline-block" }}>
+                          <img src={config.img30d} alt="Imagem 30d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
+                          <button
+                            onClick={() => { setConfig((p: any) => ({ ...p, img30d: "" })); handleSaveConfig({ img30d: "" }); }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "10px", border: "2px dashed #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>
+                          📤 Enviar Imagem
+                          <input type="file" accept="image/*" hidden onChange={async (e) => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                            const res = await fetch("/api/upload", { method: "POST", body: fd });
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img30d: url })); handleSaveConfig({ img30d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                          }} />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* CARD GERENCIAR TODOS OS CUPONS DA LOJA */}
+                <div style={{ background: "#fff", padding: "1.25rem", borderRadius: "14px", border: "1px solid #CBD5E1", marginTop: "1rem" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>🏷️ Todos os Cupons Cadastrados na Loja ({storeCoupons.length})</span>
+                    <button
+                      type="button"
+                      onClick={() => { setTargetCouponField(null); setShowNewCouponModal(true); }}
+                      style={{ background: "#EFF6FF", border: "1px solid #93C5FD", color: "#1D4ED8", padding: "4px 10px", borderRadius: "8px", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer" }}
+                    >
+                      ➕ Criar Cupom
+                    </button>
+                  </div>
+
+                  {storeCoupons.length === 0 ? (
+                    <div style={{ fontSize: "0.8rem", color: "#94A3B8", fontStyle: "italic" }}>
+                      Nenhum cupom cadastrado ainda. Clique acima para criar um cupom.
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "8px" }}>
+                      {storeCoupons.map((c: any, idx: number) => (
+                        <div key={idx} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#1E293B" }}>{c.code}</div>
+                            <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "1px" }}>
+                              {c.type === "free_shipping" ? "🚚 Frete Grátis" : c.type === "fixed" ? `💵 R$ ${c.discount} OFF` : `🏷️ ${c.discount}% OFF`}
+                              {c.minOrderValue > 0 ? ` (Mín: R$ ${c.minOrderValue})` : ""}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            title={`Excluir cupom ${c.code}`}
+                            onClick={() => handleRequestDeleteCoupon(c.code)}
+                            style={{ padding: "6px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1117,6 +1427,545 @@ export default function ChatbotHubClient() {
               </div>
             </div>
           )}
+
+          {/* ABA DISPAROS: CAMPANHA DE MARKETING PERSONALIZADA */}
+          {activeTab === "disparos" && (() => {
+            const criteriaOptions = [
+              { id: "all", label: "📋 Todos os Clientes", description: "Enviar para toda a base de contatos", color: "#6366F1", icon: "📋" },
+              { id: "7d", label: "🔥 Sumidos há 7 Dias", description: "Clientes que não pedem há 7 dias ou mais", color: "#EA580C", icon: "🔥" },
+              { id: "15d", label: "⏰ Sumidos há 15 Dias", description: "Clientes que não pedem há 15 dias ou mais", color: "#2563EB", icon: "⏰" },
+              { id: "30d", label: "💤 Sumidos há 30+ Dias", description: "Clientes inativos há mais de 30 dias", color: "#7C3AED", icon: "💤" },
+              { id: "loyal", label: "⭐ Clientes Fiéis", description: "Clientes com 3 ou mais pedidos feitos", color: "#16A34A", icon: "⭐" },
+              { id: "top_spenders", label: "👑 Top Clientes (VIP)", description: "Os 20 clientes que mais fizeram pedidos", color: "#D97706", icon: "👑" },
+              { id: "new_customers", label: "🆕 Clientes Novos", description: "Clientes com apenas 1 pedido — conquiste a fidelização", color: "#0EA5E9", icon: "🆕" },
+              { id: "never_ordered", label: "👻 Nunca Compraram", description: "Contatos WhatsApp que nunca fizeram um pedido", color: "#DC2626", icon: "👻" },
+            ];
+
+            const now = Date.now();
+            const DAY = 24 * 60 * 60 * 1000;
+
+            const filteredCustomers = marketingCustomers.filter((c: any) => {
+              const lastActivity = new Date(c.updatedAt).getTime();
+              const daysSince = (now - lastActivity) / DAY;
+              const orders = c.totalOrders || 0;
+
+              switch (selectedCriteria) {
+                case "all": return true;
+                case "7d": return daysSince >= 7;
+                case "15d": return daysSince >= 15;
+                case "30d": return daysSince >= 30;
+                case "loyal": return orders >= 3;
+                case "top_spenders": return true; // filtered below by sort + slice
+                case "new_customers": return orders === 1;
+                case "never_ordered": return orders === 0;
+                default: return true;
+              }
+            });
+
+            // Para "top_spenders", ordena por totalOrders desc e pega os top 20
+            const finalCustomers = selectedCriteria === "top_spenders"
+              ? [...filteredCustomers].sort((a: any, b: any) => (b.totalOrders || 0) - (a.totalOrders || 0)).slice(0, 20)
+              : filteredCustomers;
+
+            const handleSendCampaign = async () => {
+              if (!campaignMsg.trim()) {
+                showToast("⚠️ Escreva a mensagem do disparo", "#EF4444");
+                return;
+              }
+              if (finalCustomers.length === 0) {
+                showToast("⚠️ Nenhum cliente encontrado para esse critério", "#EF4444");
+                return;
+              }
+              setSendingCampaign(true);
+              try {
+                const phones = finalCustomers.map((c: any) => c.phone.replace(/\D/g, ""));
+                const res = await fetch("/api/store/marketing", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "send_campaign",
+                    message: campaignMsg,
+                    imageUrl: campaignImg || undefined,
+                    targetPhones: phones,
+                  }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                  showToast(data.message || "🚀 Disparo iniciado com sucesso!", "#10B981");
+                  setShowCampaignConfirm(false);
+                  setCampaignMsg("");
+                  setCampaignImg("");
+                  setSelectedCriteria("all");
+                  loadMarketingData();
+                  setTimeout(() => {
+                    document.getElementById("history-section")?.scrollIntoView({ behavior: "smooth" });
+                  }, 300);
+                } else {
+                  showToast(`⚠️ ${data.error || "Erro ao disparar"}`, "#EF4444");
+                }
+              } catch {
+                showToast("⚠️ Erro de conexão ao disparar campanha", "#EF4444");
+              } finally {
+                setSendingCampaign(false);
+              }
+            };
+
+            return (
+              <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1.5rem" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: "12px", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
+                    📢
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>Central de Disparos</h3>
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Monte sua campanha, escolha o público e dispare com segurança anti-ban</p>
+                  </div>
+                </div>
+
+                {/* STEP 1: Critério de Audiência */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>1</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escolha o Público-Alvo</div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "8px" }}>
+                    {criteriaOptions.map((opt) => {
+                      const isSelected = selectedCriteria === opt.id;
+                      const count = opt.id === "top_spenders"
+                        ? Math.min(20, marketingCustomers.filter((c: any) => (c.totalOrders || 0) > 0).length)
+                        : opt.id === "all"
+                          ? marketingCustomers.length
+                          : marketingCustomers.filter((c: any) => {
+                              const lastActivity = new Date(c.updatedAt).getTime();
+                              const daysSince = (now - lastActivity) / DAY;
+                              const orders = c.totalOrders || 0;
+                              if (opt.id === "7d") return daysSince >= 7;
+                              if (opt.id === "15d") return daysSince >= 15;
+                              if (opt.id === "30d") return daysSince >= 30;
+                              if (opt.id === "loyal") return orders >= 3;
+                              if (opt.id === "new_customers") return orders === 1;
+                              if (opt.id === "never_ordered") return orders === 0;
+                              return true;
+                            }).length;
+
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => setSelectedCriteria(opt.id)}
+                          style={{
+                            padding: "12px 14px", borderRadius: "12px", border: isSelected ? `2px solid ${opt.color}` : "2px solid #E2E8F0",
+                            background: isSelected ? `${opt.color}10` : "#FAFAFA", cursor: "pointer", textAlign: "left",
+                            transition: "all 0.2s ease", boxShadow: isSelected ? `0 2px 8px ${opt.color}20` : "none",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <span style={{ fontWeight: 800, fontSize: "0.82rem", color: isSelected ? opt.color : "#334155" }}>{opt.label}</span>
+                            <span style={{
+                              padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", fontWeight: 900,
+                              background: isSelected ? opt.color : "#E2E8F0", color: isSelected ? "#fff" : "#64748B"
+                            }}>
+                              {count}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "0.7rem", color: "#94A3B8", lineHeight: 1.3 }}>{opt.description}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Resumo do público selecionado */}
+                  <div style={{ marginTop: "10px", padding: "10px 14px", borderRadius: "10px", background: "linear-gradient(135deg, #FEF3C7, #FDE68A)", border: "1px solid #FCD34D", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "1.1rem" }}>👥</span>
+                    <span style={{ fontWeight: 800, fontSize: "0.82rem", color: "#92400E" }}>
+                      {finalCustomers.length} {finalCustomers.length === 1 ? "cliente selecionado" : "clientes selecionados"}
+                      {finalCustomers.length > 50 && <span style={{ fontWeight: 600, color: "#B45309" }}> (máx. 50 por lote — anti-ban)</span>}
+                    </span>
+                  </div>
+                </div>
+
+                {/* STEP 2: Mensagem */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>2</div>
+                      <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escreva a Mensagem</div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGenerateAiMessage}
+                      disabled={isGeneratingAi}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "20px",
+                        border: "none",
+                        background: isGeneratingAi
+                          ? "#94A3B8"
+                          : "linear-gradient(135deg, #8B5CF6, #EC4899)",
+                        color: "#fff",
+                        fontSize: "0.76rem",
+                        fontWeight: 800,
+                        cursor: isGeneratingAi ? "wait" : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        boxShadow: "0 4px 12px rgba(139, 92, 246, 0.35)",
+                        transition: "all 0.2s"
+                      }}
+                    >
+                      {isGeneratingAi ? (
+                        <>✨ Criando texto com IA...</>
+                      ) : (
+                        <>✨ Gerar Texto com IA (1 Clique)</>
+                      )}
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={campaignMsg}
+                    onChange={(e) => setCampaignMsg(e.target.value)}
+                    placeholder={"Ex: Oi! 🍕 Sentimos sua falta! Que tal aproveitar nosso combo especial hoje? Use o cupom VOLTEI10 e ganhe 10% de desconto! Peça já pelo nosso site: https://suaLoja.com"}
+                    style={{
+                      width: "100%", minHeight: "100px", padding: "12px 14px", borderRadius: "12px",
+                      border: "1px solid #CBD5E1", fontSize: "0.85rem", resize: "vertical", boxSizing: "border-box",
+                      lineHeight: 1.5, fontFamily: "inherit"
+                    }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                    <span style={{ fontSize: "0.7rem", color: campaignMsg.length > 1000 ? "#DC2626" : "#94A3B8", fontWeight: 700 }}>
+                      {campaignMsg.length} / 1000 caracteres
+                    </span>
+                  </div>
+
+                  {/* Modelos rápidos de mensagem */}
+                  <div style={{ marginTop: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B" }}>💡 Modelos Rápidos:</div>
+                      <button
+                        type="button"
+                        onClick={handleGenerateAiMessage}
+                        disabled={isGeneratingAi}
+                        style={{
+                          background: "none", border: "none", color: "#8B5CF6", cursor: "pointer",
+                          fontSize: "0.72rem", fontWeight: 800, textDecoration: "underline", padding: 0
+                        }}
+                      >
+                        🤖 Criar outra mensagem com IA
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                      {[
+                        { label: "🔥 Promoção", text: "Oii! 🔥 Temos uma promoção ESPECIAL só pra você hoje! Peça agora e ganhe desconto exclusivo. Aproveita!" },
+                        { label: "😢 Saudade", text: "Oi, tudo bem? Sentimos sua falta! 😢 Faz tempo que você não pede com a gente. Que tal matar a saudade hoje?" },
+                        { label: "🎁 Cupom", text: "Oie! 🎁 Liberamos um cupom EXCLUSIVO pra você! Digite o código na hora do pedido e aproveite o desconto!" },
+                        { label: "🆕 Novidade", text: "Oi! 🆕 Temos novidades no nosso cardápio! Venha experimentar os novos sabores que preparamos com todo carinho!" },
+                      ].map((tpl, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setCampaignMsg(tpl.text)}
+                          style={{
+                            padding: "5px 10px", borderRadius: "8px", border: "1px solid #E2E8F0",
+                            background: "#F8FAFC", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700, color: "#475569"
+                          }}
+                        >
+                          {tpl.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* STEP 3: Imagem (Opcional) */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>3</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Imagem da Campanha <span style={{ fontWeight: 500, color: "#94A3B8", fontSize: "0.78rem" }}>(opcional)</span></div>
+                  </div>
+
+                  {campaignImg ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ position: "relative", display: "inline-block" }}>
+                        <img src={campaignImg} alt="Campanha" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: "14px", border: "2px solid #CBD5E1", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }} />
+                        <button
+                          onClick={() => setCampaignImg("")}
+                          style={{ position: "absolute", top: -8, right: -8, width: 24, height: 24, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "2px solid #fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900, boxShadow: "0 2px 4px rgba(0,0,0,0.15)" }}
+                        >✕</button>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#16A34A" }}>✅ Imagem carregada</div>
+                        <div style={{ fontSize: "0.7rem", color: "#94A3B8" }}>A imagem será enviada junto com a mensagem</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <label style={{
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
+                      padding: "24px", borderRadius: "14px", border: "2px dashed #CBD5E1",
+                      background: "#FAFAFA", cursor: "pointer", textAlign: "center",
+                      transition: "all 0.2s ease",
+                    }}>
+                      <span style={{ fontSize: "2rem" }}>{campaignImgUploading ? "⏳" : "📸"}</span>
+                      <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "#475569" }}>
+                        {campaignImgUploading ? "Enviando imagem..." : "Clique para enviar uma imagem"}
+                      </span>
+                      <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>PNG, JPG ou WEBP • Máx 5MB</span>
+                      <input type="file" accept="image/*" hidden disabled={campaignImgUploading} onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        setCampaignImgUploading(true);
+                        try {
+                          const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
+                          const res = await fetch("/api/upload", { method: "POST", body: fd });
+                          if (res.ok) { const { url } = await res.json(); setCampaignImg(url); showToast("✅ Imagem carregada!", "#10B981"); }
+                          else showToast("⚠️ Erro ao enviar imagem", "#EF4444");
+                        } catch { showToast("⚠️ Falha no upload", "#EF4444"); }
+                        finally { setCampaignImgUploading(false); }
+                      }} />
+                    </label>
+                  )}
+                </div>
+
+                {/* Prévia do Disparo */}
+                <div style={{ background: "#F0FDF4", borderRadius: "14px", padding: "16px", border: "1px solid #BBF7D0", marginBottom: "1.5rem" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#166534", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                    📱 Prévia do Disparo
+                  </div>
+                  <div style={{ background: "#fff", borderRadius: "12px", padding: "12px", border: "1px solid #D1FAE5", maxWidth: "340px" }}>
+                    {campaignImg && (
+                      <img src={campaignImg} alt="Preview" style={{ width: "100%", maxHeight: "160px", objectFit: "cover", borderRadius: "8px", marginBottom: "8px" }} />
+                    )}
+                    <div style={{ fontSize: "0.8rem", color: "#334155", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                      {campaignMsg || "Sua mensagem aparecerá aqui..."}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                      <span style={{ fontSize: "0.65rem", color: "#94A3B8" }}>
+                        {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ✓✓
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botão de Disparar */}
+                <button
+                  onClick={() => {
+                    if (!campaignMsg.trim()) { showToast("⚠️ Escreva a mensagem antes de disparar", "#EF4444"); return; }
+                    if (finalCustomers.length === 0) { showToast("⚠️ Nenhum cliente para esse critério", "#EF4444"); return; }
+                    setShowCampaignConfirm(true);
+                  }}
+                  disabled={sendingCampaign || !campaignMsg.trim() || finalCustomers.length === 0}
+                  style={{
+                    width: "100%", padding: "14px", borderRadius: "14px", border: "none",
+                    background: sendingCampaign || !campaignMsg.trim() ? "#CBD5E1" : "linear-gradient(135deg, #F59E0B, #D97706)",
+                    color: "#fff", fontWeight: 900, fontSize: "0.95rem", cursor: sendingCampaign ? "wait" : "pointer",
+                    boxShadow: campaignMsg.trim() ? "0 4px 16px rgba(245,158,11,0.3)" : "none",
+                    transition: "all 0.2s ease", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+                  }}
+                >
+                  {sendingCampaign ? "⏳ Disparando em massa..." : `🚀 Disparar para ${finalCustomers.length} Clientes`}
+                </button>
+
+                <div style={{ marginTop: "8px", textAlign: "center", fontSize: "0.7rem", color: "#94A3B8" }}>
+                  ⚡ Envio síncrono ultra seguro com trabalhadores paralelos anti-ban
+                </div>
+
+                {/* Modal de Confirmação */}
+                {showCampaignConfirm && (
+                  <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+                    <div style={{ background: "#fff", borderRadius: "20px", padding: "1.5rem", maxWidth: "440px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+                      <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+                        <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>📢</div>
+                        <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>Confirmar Disparo</h3>
+                        <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "#64748B" }}>Revise os detalhes antes de enviar</p>
+                      </div>
+
+                      <div style={{ background: "#F8FAFC", borderRadius: "12px", padding: "12px", border: "1px solid #E2E8F0", marginBottom: "12px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                          <div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Público</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{criteriaOptions.find(o => o.id === selectedCriteria)?.label}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Destinatários</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{finalCustomers.length} clientes</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Imagem</div>
+                            <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{campaignImg ? "✅ Sim" : "❌ Sem imagem"}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "10px" }}>
+                        <button
+                          onClick={() => setShowCampaignConfirm(false)}
+                          disabled={sendingCampaign}
+                          style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "1px solid #CBD5E1", background: "#fff", cursor: "pointer", fontWeight: 800, fontSize: "0.85rem", color: "#475569" }}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={handleSendCampaign}
+                          disabled={sendingCampaign}
+                          style={{
+                            flex: 1.5, padding: "12px", borderRadius: "12px", border: "none",
+                            background: sendingCampaign ? "#94A3B8" : "linear-gradient(135deg, #F59E0B, #D97706)",
+                            color: "#fff", fontWeight: 900, fontSize: "0.88rem", cursor: sendingCampaign ? "wait" : "pointer",
+                            boxShadow: "0 4px 12px rgba(245,158,11,0.3)"
+                          }}
+                        >
+                          {sendingCampaign ? "⏳ Enviando..." : "🚀 Confirmar Disparo"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SEÇÃO DE HISTÓRICO E DESEMPENHO DOS DISPAROS */}
+                <div id="history-section" style={{ marginTop: "2rem", background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
+                        📊
+                      </div>
+                      <div>
+                        <h4 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>Histórico e Retorno dos Disparos</h4>
+                        <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748B" }}>Métricas reais de conversão de vendas e lucro estimado gerado</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => loadMarketingData(true)}
+                      disabled={refreshingMetrics}
+                      style={{
+                        padding: "6px 14px", borderRadius: "8px", border: "1px solid #CBD5E1",
+                        background: refreshingMetrics ? "#E2E8F0" : "#F8FAFC",
+                        cursor: refreshingMetrics ? "not-allowed" : "pointer",
+                        fontSize: "0.75rem", fontWeight: 700, color: "#475569",
+                        display: "inline-flex", alignItems: "center", gap: "6px",
+                        opacity: refreshingMetrics ? 0.7 : 1, transition: "all 0.2s"
+                      }}
+                    >
+                      <RefreshCw size={14} className={refreshingMetrics ? "animate-spin" : ""} />
+                      {refreshingMetrics ? "Atualizando..." : "🔄 Atualizar Métricas"}
+                    </button>
+                  </div>
+
+                  {/* Cards de Métricas Gerais de Disparos */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", marginBottom: "1.5rem" }}>
+                    <div style={{ background: "#F8FAFC", padding: "12px 14px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#64748B" }}>🚀 Total de Disparos</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#0F172A", marginTop: "2px" }}>{campaignHistory.length}</div>
+                    </div>
+
+                    <div style={{ background: "#EFF6FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #BFDBFE" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#1D4ED8" }}>👥 Total de Envios</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1E40AF", marginTop: "2px" }}>
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.sentCount || c.targetCount || 0), 0)} clientes
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F5F3FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #DDD6FE" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#6D28D9" }}>👀 Visualizações (Lidos)</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#5B21B6", marginTop: "2px" }}>
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.viewedCount || 0), 0)} leituras
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#ECFDF5", padding: "12px 14px", borderRadius: "12px", border: "1px solid #A7F3D0" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#047857" }}>🛒 Pedidos Convertidos</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#065F46", marginTop: "2px" }}>
+                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.convertedOrders || 0), 0)} pedidos
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#FEF3C7", padding: "12px 14px", borderRadius: "12px", border: "1px solid #FDE68A" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#B45309" }}>💰 Vendas Geradas</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#92400E", marginTop: "2px" }}>
+                        R$ {campaignHistory.reduce((acc: number, c: any) => acc + (c.convertedRevenue || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#F0FDF4", padding: "12px 14px", borderRadius: "12px", border: "1px solid #86EFAC" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#15803D" }}>💚 Lucro Estimado</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#166534", marginTop: "2px" }}>
+                        R$ {campaignHistory.reduce((acc: number, c: any) => acc + (c.estimatedProfit || 0), 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Lista do Histórico de Disparos */}
+                  {campaignHistory.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "24px", color: "#94A3B8", fontSize: "0.82rem" }}>
+                      Nenhum disparo realizado ainda. Faça seu primeiro disparo acima para acompanhar os pedidos convertidos em vendas!
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {campaignHistory.map((camp: any, i: number) => {
+                        const totalSent = typeof camp.sentCount === "number" ? camp.sentCount : 0;
+                        const totalViewed = totalSent > 0 ? (camp.viewedCount || 0) : 0;
+                        const openRate = totalSent > 0 ? Math.round((totalViewed / totalSent) * 100) : 0;
+
+                        return (
+                          <div key={camp.id || i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
+                              <div>
+                                {camp.status === "DISPARANDO" ? (
+                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#D97706", background: "#FEF3C7", padding: "2px 10px", borderRadius: "6px", border: "1px solid #FCD34D", marginRight: "8px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                    ⏳ Disparando em segundo plano ({camp.sentCount || 0} / {camp.targetCount || 0} enviados)
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
+                                    ✅ Concluído
+                                  </span>
+                                )}
+                                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>
+                                  {new Date(camp.createdAt).toLocaleDateString("pt-BR")} às {new Date(camp.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  setCampaignMsg(camp.message);
+                                  if (camp.imageUrl) setCampaignImg(camp.imageUrl);
+                                  showToast("📋 Mensagem carregada no formulário acima!", "#8B5CF6");
+                                  window.scrollTo({ top: 0, behavior: "smooth" });
+                                }}
+                                style={{
+                                  padding: "4px 10px", borderRadius: "6px", border: "1px solid #CBD5E1",
+                                  background: "#fff", cursor: "pointer", fontSize: "0.7rem", fontWeight: 800, color: "#334155"
+                                }}
+                              >
+                                🔁 Reutilizar Mensagem
+                              </button>
+                            </div>
+
+                            <div style={{ fontSize: "0.82rem", color: "#1E293B", whiteSpace: "pre-wrap", marginBottom: "10px", lineHeight: 1.4, background: "#fff", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                              {camp.message}
+                            </div>
+
+                            {/* Resultado de Vendas e Leitura do Disparo */}
+                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", fontSize: "0.75rem", background: "#F1F5F9", padding: "8px 12px", borderRadius: "8px" }}>
+                              <span style={{ fontWeight: 700, color: "#475569" }}>👥 Audiência: <b>{camp.targetCount || totalSent} clientes</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#2563EB" }}>✅ Entregues: <b>{totalSent} msgs</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#7C3AED" }}>👀 Visualizações (Lidos): <b>{totalViewed} clientes ({openRate}% taxa de abertura)</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#047857" }}>🛒 Vendas: <b>{camp.convertedOrders || 0} pedidos</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 800, color: "#B45309" }}>💰 Faturamento: <b>R$ {(camp.convertedRevenue || 0).toFixed(2)}</b></span>
+                              <span style={{ color: "#CBD5E1" }}>|</span>
+                              <span style={{ fontWeight: 900, color: "#15803D" }}>💚 Lucro Gerado: <b>R$ {(camp.estimatedProfit || 0).toFixed(2)}</b></span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ABA 4: TESTAR ENVIO */}
           {activeTab === "test" && (
@@ -1327,6 +2176,51 @@ export default function ChatbotHubClient() {
               </div>
             </div>
 
+            {/* MÓDULO DE PEDIDOS DIRETO VIA IA NO WHATSAPP */}
+            <div style={{ marginBottom: "1.25rem", padding: "14px", background: "linear-gradient(135deg, #FAF5FF, #F3E8FF)", borderRadius: "14px", border: "1.5px solid #D8B4FE" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#6B21A8", display: "flex", alignItems: "center", gap: "6px" }}>
+                    🤖 Permitir que a IA anote e crie pedidos diretamente pelo WhatsApp?
+                  </div>
+                  <p style={{ fontSize: "0.76rem", color: "#7E22CE", marginTop: "4px", lineHeight: "1.4" }}>
+                    Quando ativo, a IA apresenta o cardápio no WhatsApp, anota produtos, quantidade, endereço e forma de pagamento, montando o pedido ao vivo na sua tela!
+                  </p>
+                  <div style={{ marginTop: "8px", padding: "8px 10px", background: "#FFFBEB", borderRadius: "8px", border: "1px solid #FDE68A", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <AlertCircle size={16} color="#D97706" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: "0.72rem", color: "#B45309", fontWeight: 600 }}>
+                      ⚠️ <strong>Aviso:</strong> A IA está em modo de auxílio e pode cometer eventuais equívocos nos detalhes do pedido. Recomendamos conferir os pedidos novos.
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0, marginTop: "4px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ aiOrderingEnabled: true })}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.aiOrderingEnabled === true ? "#7C3AED" : "#E2E8F0",
+                      color: config.aiOrderingEnabled === true ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ aiOrderingEnabled: false })}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.aiOrderingEnabled !== true ? "#64748B" : "#E2E8F0",
+                      color: config.aiOrderingEnabled !== true ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    NÃO
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* PAUSAR ROBÔ QUANDO PEDIR ATENDENTE HUMANO */}
             <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1361,6 +2255,103 @@ export default function ChatbotHubClient() {
                     }}
                   >
                     NÃO
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* ACEITA RETIRADA NO BALCÃO */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>
+                    🏪 Aceita Retirada no Balcão?
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px" }}>
+                    Se marcado como &quot;SIM&quot;, quando o cliente perguntar sobre retirada, o robô informará o endereço da sua loja e que aceita retirada no local.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ acceptsPickup: true })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.acceptsPickup ? "#16A34A" : "#E2E8F0",
+                      color: config.acceptsPickup ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ acceptsPickup: false })}
+                    style={{
+                      padding: "6px 14px", borderRadius: "8px", border: "none",
+                      background: config.acceptsPickup === false || !config.acceptsPickup ? "#DC2626" : "#E2E8F0",
+                      color: config.acceptsPickup === false || !config.acceptsPickup ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    NÃO
+                  </button>
+                </div>
+              </div>
+
+              {config.acceptsPickup && (
+                <div style={{ marginTop: "10px" }}>
+                  <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                    📍 Endereço para Retirada (se diferente do endereço cadastrado):
+                  </label>
+                  <input
+                    type="text"
+                    value={config.pickupAddress || ""}
+                    onChange={(e) => setConfig((prev: any) => ({ ...prev, pickupAddress: e.target.value }))}
+                    onBlur={() => handleSaveConfig({ pickupAddress: config.pickupAddress || "" })}
+                    placeholder="Ex: Rua das Flores, 123 - Centro (deixe vazio para usar o endereço da loja)"
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: "8px",
+                      border: "1px solid #CBD5E1", fontSize: "0.82rem", boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* SÓ DELIVERY OU ATENDE NO LOCAL */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>
+                    🏢 Tipo de Atendimento (Possui Loja Física?)
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px" }}>
+                    Escolha se sua loja recebe clientes no local ou se é 100% focada em delivery.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ storeType: "PHYSICAL" })}
+                    style={{
+                      padding: "6px 12px", borderRadius: "8px", border: "none",
+                      background: config.storeType === "PHYSICAL" ? "#2563EB" : "#E2E8F0",
+                      color: config.storeType === "PHYSICAL" ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    ATENDE NO LOCAL
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ storeType: "DELIVERY_ONLY" })}
+                    style={{
+                      padding: "6px 12px", borderRadius: "8px", border: "none",
+                      background: config.storeType === "DELIVERY_ONLY" || !config.storeType ? "#7C3AED" : "#E2E8F0",
+                      color: config.storeType === "DELIVERY_ONLY" || !config.storeType ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SÓ DELIVERY
                   </button>
                 </div>
               </div>
@@ -1485,11 +2476,58 @@ export default function ChatbotHubClient() {
           <div style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "420px", padding: "1.5rem", boxShadow: "0 20px 40px rgba(0,0,0,0.2)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
               <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
-                ➕ Criar Novo Cupom de Desconto
+                ➕ Criar Novo Cupom
               </div>
               <button onClick={() => setShowNewCouponModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B" }}>
                 <X size={20} />
               </button>
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
+                Tipo do Benefício:
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
+                <button
+                  type="button"
+                  onClick={() => setNewCouponType("percent")}
+                  style={{
+                    padding: "8px 4px", borderRadius: "10px", textAlign: "center",
+                    border: newCouponType === "percent" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                    background: newCouponType === "percent" ? "#EFF6FF" : "#fff",
+                    color: newCouponType === "percent" ? "#1D4ED8" : "#64748B",
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
+                  }}
+                >
+                  🏷️ Porcentagem (%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewCouponType("fixed")}
+                  style={{
+                    padding: "8px 4px", borderRadius: "10px", textAlign: "center",
+                    border: newCouponType === "fixed" ? "2px solid #7C3AED" : "1px solid #CBD5E1",
+                    background: newCouponType === "fixed" ? "#F5F3FF" : "#fff",
+                    color: newCouponType === "fixed" ? "#6D28D9" : "#64748B",
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
+                  }}
+                >
+                  💵 Valor Fixo (R$)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewCouponType("free_shipping")}
+                  style={{
+                    padding: "8px 4px", borderRadius: "10px", textAlign: "center",
+                    border: newCouponType === "free_shipping" ? "2px solid #16A34A" : "1px solid #CBD5E1",
+                    background: newCouponType === "free_shipping" ? "#F0FDF4" : "#fff",
+                    color: newCouponType === "free_shipping" ? "#15803D" : "#64748B",
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
+                  }}
+                >
+                  🚚 Frete Grátis
+                </button>
+              </div>
             </div>
 
             <div style={{ marginBottom: "12px" }}>
@@ -1498,7 +2536,7 @@ export default function ChatbotHubClient() {
               </label>
               <input
                 type="text"
-                placeholder="Ex: PRIMEIRACOMPRA10 ou VOLTEI10"
+                placeholder={newCouponType === "free_shipping" ? "Ex: FRETEGRATIS ou VEMDEFRETE" : newCouponType === "fixed" ? "Ex: DEZREAIS ou OFF10" : "Ex: PRIMEIRACOMPRA10 ou VOLTEI10"}
                 value={newCouponCode}
                 onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
                 style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
@@ -1506,16 +2544,58 @@ export default function ChatbotHubClient() {
             </div>
 
             <div style={{ marginBottom: "1.25rem" }}>
+              {newCouponType === "percent" && (
+                <>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    Desconto (% Porcentagem):
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="Ex: 10"
+                    value={newCouponDiscount}
+                    onChange={(e) => setNewCouponDiscount(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
+                  />
+                </>
+              )}
+              {newCouponType === "fixed" && (
+                <>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    Valor de Desconto em Dinheiro (R$ Reais):
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="Ex: 10.00"
+                    value={newCouponDiscount}
+                    onChange={(e) => setNewCouponDiscount(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
+                  />
+                </>
+              )}
+              {newCouponType === "free_shipping" && (
+                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "12px 14px", borderRadius: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "1.3rem" }}>🚚</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#166534", fontSize: "0.85rem" }}>Benefício de Frete Grátis</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginBottom: "1.25rem" }}>
               <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
-                Desconto (% Porcentagem):
+                Valor Mínimo do Pedido (R$ Reais - Opcional):
               </label>
               <input
                 type="number"
-                placeholder="Ex: 10"
-                value={newCouponDiscount}
-                onChange={(e) => setNewCouponDiscount(e.target.value)}
+                placeholder="Ex: 40.00 (deixe em branco ou 0 para sem mínimo)"
+                value={newCouponMinOrder}
+                onChange={(e) => setNewCouponMinOrder(e.target.value)}
                 style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}
               />
+              <span style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "4px", display: "block", lineHeight: 1.3 }}>
+                💡 Se preenchido, o cliente só poderá usar o cupom em compras a partir deste valor.
+              </span>
             </div>
 
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
@@ -1531,6 +2611,70 @@ export default function ChatbotHubClient() {
                 style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #16A34A, #15803D)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
               >
                 {creatingCoupon ? "Salvando..." : "✓ Salvar & Selecionar Cupom"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DEFINITIVA DE CUPOM */}
+      {showDeleteCouponModal && couponToDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.65)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: "1rem" }}>
+          <div style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "440px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)", border: "2px solid #EF4444" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#DC2626" }}>
+                <Trash2 size={24} />
+                <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800 }}>Excluir Cupom Permanentemente</h3>
+              </div>
+              <button onClick={() => setShowDeleteCouponModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B" }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", padding: "12px 14px", borderRadius: "12px", marginBottom: "1.25rem", color: "#991B1B", fontSize: "0.85rem", lineHeight: 1.4 }}>
+              ⚠️ <strong>Atenção! Esta ação é definitiva e irreversível.</strong><br />
+              O cupom <strong style={{ textDecoration: "underline" }}>"{couponToDelete.code}"</strong> será excluído do banco de dados e removido de todas as automações da loja.
+            </div>
+
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: "6px" }}>
+                Para confirmar a exclusão, digite <span style={{ color: "#DC2626", fontWeight: 900 }}>EXCLUIR</span> abaixo:
+              </label>
+              <input
+                type="text"
+                placeholder="Digite EXCLUIR para confirmar"
+                value={deleteConfirmInput}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                style={{
+                  width: "100%", padding: "10px 12px", borderRadius: "10px",
+                  border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800,
+                  color: "#DC2626", boxSizing: "border-box"
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => {
+                  setShowDeleteCouponModal(false);
+                  setCouponToDelete(null);
+                  setDeleteConfirmInput("");
+                }}
+                style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={deleteConfirmInput.trim().toUpperCase() !== "EXCLUIR" || deletingCoupon}
+                onClick={() => handleConfirmDeleteCoupon()}
+                style={{
+                  padding: "10px 18px", borderRadius: "10px", border: "none",
+                  background: deleteConfirmInput.trim().toUpperCase() === "EXCLUIR" && !deletingCoupon ? "#DC2626" : "#CBD5E1",
+                  color: "#fff", fontWeight: 800, fontSize: "0.85rem",
+                  cursor: deleteConfirmInput.trim().toUpperCase() === "EXCLUIR" && !deletingCoupon ? "pointer" : "not-allowed"
+                }}
+              >
+                {deletingCoupon ? "Excluindo..." : "🗑️ Confirmar Exclusão"}
               </button>
             </div>
           </div>

@@ -29,7 +29,7 @@ export default async function ComprasLayout({ children }: { children: React.Reac
             flexWrap: "wrap",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: "1.5rem" }}>🧊</span>
+              <img src="/firehub-flame.png" alt="FireHub" style={{ width: 32, height: 32, borderRadius: 7, objectFit: "cover" }} />
               <div>
                 <span style={{ color: "#fff", fontWeight: 800, fontSize: "1.1rem", letterSpacing: "-0.3px" }}>Icebox</span>
                 <span style={{ color: "#93C5FD", fontWeight: 600, fontSize: "0.75rem", marginLeft: 6 }}>Distribuidora</span>

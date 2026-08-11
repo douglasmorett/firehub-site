@@ -40,7 +40,7 @@ const PHASES: Phase[] = [
         title: "Adicione logo e banner da loja",
         description: "Lojas com identidade visual vendem até 3x mais. Configure sua aparência agora.",
         minutes: 3,
-        href: "/store/minha-loja",
+        href: "/store/minha-loja#info",
         subTasks: [
           { id: "logo_upload", label: "Fazer upload do logo" },
           { id: "banner_upload", label: "Fazer upload do banner" },

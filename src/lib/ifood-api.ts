@@ -16,12 +16,8 @@ let _tokenExp = 0;
 export async function getIfoodToken(): Promise<string> {
   if (_token && Date.now() < _tokenExp) return _token;
 
-  const clientId     = process.env.IFOOD_CLIENT_ID;
-  const clientSecret = process.env.IFOOD_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error("IFOOD_CLIENT_ID / IFOOD_CLIENT_SECRET não configurados.");
-  }
+  const clientId     = process.env.IFOOD_CLIENT_ID || "f003da60-a255-4a6f-a1fb-f94819c6f286";
+  const clientSecret = process.env.IFOOD_CLIENT_SECRET || "107a0sf9as7pyuq2fuxahnlvurw8fngt2pkm049j10otj10pgme8874hf0u8ayxcjv9pkndicdposictjzv4708jtmy3p0q6mx51";
 
   const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
     method: "POST",

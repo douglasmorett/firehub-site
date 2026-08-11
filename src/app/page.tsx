@@ -52,7 +52,7 @@ const COMPARE = [
   ["Leitura de notas por IA 🏆", true, false, false],
   ["Estoque automático 🏆", true, false, false],
   ["CMV automático 🏆", true, false, false],
-  ["Integração iFood / Rappi", true, true, false],
+  ["Integração iFood / 99Food", true, true, false],
 ];
 
 // Preço = 1% do faturamento, mín R$50, máx R$400
@@ -161,6 +161,337 @@ export default function Home() {
                 ))}
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO INOVAÇÃO EXCLUSIVA: AUTO-ETA IFOOD & SITE */}
+      <section className="sec" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#FFF", padding: "5rem 0", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -100, right: -100, width: 400, height: 400, background: "radial-gradient(circle, rgba(232,54,12,0.25) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "3rem", alignItems: "center" }}>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(232,54,12,0.2)", border: "1px solid rgba(232,54,12,0.5)", color: "#FF5722", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                ⚡ INOVAÇÃO EXCLUSIVA FIREHUB
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Automação Inteligente do Tempo de Entrega no <span style={{ color: "#EA1D2C" }}>iFood</span> & Site
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Chega de ter que parar o atendimento para ficar ajustando o iFood manualmente no meio da correria. O FireHub é a <strong style={{ color: "#FFF" }}>primeira tecnologia do Brasil</strong> que lê a carga real do seu KDS e a quantidade de motoboys na casa para atualizar os prazos no iFood e no seu site próprio 100% no automático!
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }}>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🤖 100% Silencioso</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Atualiza os prazos nos bastidores sem fechar a tela do caixa</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🛡️ Trava de Estouro</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Pausa a loja por 40 min se estourar a capacidade da cozinha</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🛵 Cálculo por Motoboy</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Ajusta os prazos conforme a quantidade de motoboys ativos</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⭐ Zero Avaliações 1 Estrela</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Elimine reclamações de atrasos e cancelamentos de pedidos</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem" }}>
+                  🔥 Testar Tecnologia Exclusiva Grátis
+                </a>
+                <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>
+                  Incluída sem custo adicional em todos os planos FireHub!
+                </span>
+              </div>
+            </div>
+
+            <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.5)", background: "#000" }}>
+              <img
+                src="/images/ifood_eta_banner.jpg"
+                alt="FireHub Auto-ETA iFood Automation"
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO CHATBOT HUMANIZADO */}
+      <section className="sec" style={{ background: "linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%)", padding: "5rem 0", position: "relative", overflow: "hidden" }}>
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid { grid-template-columns: 0.9fr 1.1fr !important; }
+                .responsive-grid > div:first-child { order: 2; }
+                .responsive-grid > div:last-child { order: 1; }
+              }
+            `}</style>
+            <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(0,0,0,0.05)", boxShadow: "0 20px 40px rgba(0,0,0,0.1)", background: "#FFF" }}>
+              <img
+                src="/images/chatbot_ui.jpg"
+                alt="FireHub Chatbot Humanizado"
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
+            
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(37,211,102,0.15)", border: "1px solid rgba(37,211,102,0.4)", color: "#16A34A", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                💬 CHATBOT WHATSAPP HUMANIZADO
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#0F172A", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Chega de robôs que irritam o seu cliente
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#475569", lineHeight: 1.6, margin: "0 0 24px" }}>
+                O robô de atendimento do FireHub é diferente de tudo o que você já viu. Ele <strong style={{ color: "#0F172A" }}>escuta áudios</strong> e entende naturalmente o que o cliente quer, montando o pedido direto na conversa sem forçar seu cliente a sair do WhatsApp para abrir links confusos.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="features-grid">
+                <style>{`
+                  @media (max-width: 600px) {
+                    .features-grid { grid-template-columns: 1fr !important; }
+                  }
+                `}</style>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>🎙️ Entende Áudios</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Compreende perfeitamente pedidos e instruções enviadas por voz</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>🛍️ Monta Pedidos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Adiciona itens ao carrinho sem que o cliente abra links do cardápio</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>❤️ Atendimento Empático</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Uma conversa natural, como se fosse o seu melhor atendente humano</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(0,0,0,0.05)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px" }}>🚀 Aumenta Vendas</div>
+                  <div style={{ fontSize: "0.82rem", color: "#64748B" }}>Zera desistências de quem odeia lidar com sistemas e sites complexos</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO ROTEIRIZADOR */}
+      <section className="sec" style={{ background: "#020617", color: "#FFF", padding: "5rem 0", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", bottom: -100, left: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-2">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-2 { grid-template-columns: 1.1fr 0.9fr !important; }
+              }
+            `}</style>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(59,130,246,0.2)", border: "1px solid rgba(59,130,246,0.5)", color: "#60A5FA", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                🗺️ LOGÍSTICA INTELIGENTE
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Roteirizador que coloca o seu restaurante em <span style={{ color: "#3B82F6" }}>outro nível</span>
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Não jogue dinheiro fora com entregas desorganizadas. Nosso sistema de roteirização inteligente permite acompanhar os motoboys e criar rotas perfeitas, garantindo que os pedidos saiam juntos e cheguem na temperatura ideal.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="features-grid">
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🗺️ Rotas Otimizadas</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Agrupa pedidos próximos automaticamente para um único motoboy</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🛵 Controle Total</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Saiba exatamente quem está disponível na loja e quem está na rua</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⏱️ Previsão Exata</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Reduza atrasos em horários de pico despachando no momento certo</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>💰 Economia de Taxas</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Aproveite melhor sua equipe e evite idas e vindas desnecessárias</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 20px 40px rgba(0,0,0,0.8)", background: "#000" }}>
+              <img
+                src="/images/roteirizador_ui.jpg"
+                alt="FireHub Roteirizador"
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO MÓDULO DE VALIDADE & ETIQUETAS (FIRECHECK) */}
+      <section className="sec" style={{ background: "linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%)", color: "#431407", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(234,88,12,0.15)" }}>
+        <div style={{ position: "absolute", top: -100, right: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(234,88,12,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-validade">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-validade { grid-template-columns: 0.95fr 1.05fr !important; }
+              }
+            `}</style>
+
+            <div style={{ order: 1 }}>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1.5px solid rgba(234,88,12,0.25)", boxShadow: "0 25px 50px rgba(234,88,12,0.12)", background: "#FFF" }}>
+                <img
+                  src="/images/etiquetas_validade_ui.jpg"
+                  alt="FireHub Módulo de Validade e Impressão de Etiquetas de Cozinha"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ order: 2 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(234,88,12,0.15)", border: "1px solid rgba(234,88,12,0.4)", color: "#C2410C", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                🏷️ MÓDULO DE VALIDADE & ETIQUETAS INCLUSO
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#431407", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Chega de ficar pagando caro por módulo para ter sua <span style={{ color: "#EA580C" }}>impressora de etiquetas e validade</span>
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#7C2D12", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Cliente do <strong>FireCheck / FireHub</strong> tem essa funcionalidade por nossa conta, <strong>sem pagar nada a mais por isso!</strong> Cadastre insumos internos da sua cozinha, imprima etiquetas com QR Code, lote e data de manipulação de acordo com a ANVISA e garanta 0% de desperdício sem gastar com licenças abusivas de outros sistemas.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="validade-features-grid">
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>🏷️ Impressão em 1 Clique</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Etiquetas prontas para insumos fracionados, molhos, carnes e massas</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>🛡️ Conformidade ANVISA</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Zero risco de autuações da Vigilância Sanitária no seu estabelecimento</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>💰 100% Grátis e Incluso</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Sem cobrar mensalidade extra por módulo de etiquetas de validade</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(234,88,12,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(234,88,12,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#431407", margin: "0 0 4px" }}>♻️ Redução de Desperdício</div>
+                  <div style={{ fontSize: "0.82rem", color: "#7C2D12" }}>Alerta visual de validade de insumos para evitar descarte de estoque</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO ENGENHARIA DE CARDÁPIO E MÓDULO FISCAL */}
+      <section className="sec" style={{ background: "#090D16", color: "#FFF", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ position: "absolute", top: -100, right: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(16,185,129,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-fiscal">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-fiscal { grid-template-columns: 0.95fr 1.05fr !important; }
+              }
+            `}</style>
+
+            <div style={{ order: 1 }}>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1px solid rgba(16,185,129,0.3)", boxShadow: "0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(16,185,129,0.15)", background: "#000" }}>
+                <img
+                  src="/images/engenharia_fiscal_ui.jpg"
+                  alt="FireHub Engenharia Fiscal e Imposto Reduzido"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ order: 2 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.4)", color: "#34D399", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                🧾 ENGENHARIA DE CARDÁPIO & FISCAL INTELIGENTE
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                A mesma estratégia dos <span style={{ color: "#10B981" }}>gigantes do Fast Food</span> para pagar menos imposto
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Reduza seus impostos <strong>100% dentro da lei, sem sonegar nada</strong>. Nossa tecnologia exclusiva de engenharia fiscal de cardápio permite que você configure o valor exato de cada item dentro dos seus combos para sair detalhado na nota fiscal, maximizando a isenção de PIS e COFINS Monofásico.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="fiscal-features-grid">
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🍔 Decomposição de Combos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Defina o preço individual de bebidas e acompanhamentos isentos na nota fiscal</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⚖️ 100% Legal e Auditado</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Aproveite brechas fiscais legítimas utilizadas pelas maiores redes do mundo</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>📉 Redução de PIS / COFINS</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Economize até 35% nos impostos sobre vendas de bebidas e sobremesas</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⚡ Emissão de NFe Automática</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Emitida direto no fechamento do pedido sem intervenção manual</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO FINANCEIRO INTELIGENTE COM IA */}
+      <section className="sec" style={{ background: "linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 100%)", color: "#831843", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(236,72,153,0.15)" }}>
+        <div style={{ position: "absolute", bottom: -100, left: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(236,72,153,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-finance-ai">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-finance-ai { grid-template-columns: 1.05fr 0.95fr !important; }
+              }
+            `}</style>
+
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(236,72,153,0.15)", border: "1px solid rgba(236,72,153,0.4)", color: "#DB2777", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                📸 CONTROLE FINANCEIRO & LEITURA COM IA
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#831843", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Tire foto de um boleto e a <span style={{ color: "#DB2777" }}>IA lança tudo sozinha</span>
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#9F1239", lineHeight: 1.6, margin: "0 0 24px" }}>
+                Diga adeus à digitação manual de notas fiscais e boletos de fornecedores. Com a nossa tecnologia de inteligência artificial baseada no Gemini, basta apontar a câmera do celular para a conta ou boleto: o sistema lê o fornecedor, valor, código de barras e data de vencimento e cadastra tudo no seu Contas a Pagar em segundos.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="finance-ai-features-grid">
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>📷 Leitura Instantânea</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Foto da conta extrai nome do recebedor, valor e vencimento em milissegundos</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>📊 Contas a Pagar & Compras</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Organização automatizada do fluxo de caixa e notas fiscais de entrada</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>⚡ Código de Barras Automático</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Copia a linha digitável direto pro app do seu banco sem erro de digitação</div>
+                </div>
+                <div style={{ background: "#FFF", border: "1px solid rgba(236,72,153,0.15)", borderRadius: 14, padding: "14px 16px", boxShadow: "0 4px 12px rgba(236,72,153,0.05)" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#831843", margin: "0 0 4px" }}>🔔 Alerta de Vencimentos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#9F1239" }}>Nunca mais pague juros por atraso em contas de fornecedores</div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1.5px solid rgba(236,72,153,0.25)", boxShadow: "0 25px 50px rgba(236,72,153,0.12)", background: "#FFF" }}>
+                <img
+                  src="/images/financeiro_ia_ui.jpg"
+                  alt="FireHub Leitura de Boletos e Contas com IA"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </section>

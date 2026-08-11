@@ -11,120 +11,183 @@ import { authOptions } from "@/lib/auth";
  * Updates KDS stage for an order (production → finishing → done).
  */
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 600): Promise<T> {
+  let lastErr: any;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  try {
+    let email: string | null = null;
+    try {
+      const session = await getServerSession(authOptions);
+      email = session?.user?.email || null;
+    } catch {}
 
-  const email = session.user?.email;
-  if (!email) return NextResponse.json({ error: "Email não encontrado" }, { status: 400 });
+    let userStoreIds: string[] = [];
+    let user: any = null;
 
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true, ownerId: true } });
-  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    if (email) {
+      user = await withRetry(() =>
+        prisma.user.findUnique({
+          where: { email },
+          select: { id: true, ownerId: true, isFranqueadoHakim: true, storeTimezone: true },
+        })
+      ).catch(() => null);
 
-  const targetFranchiseeId = user.ownerId || user.id;
-  const stage = req.nextUrl.searchParams.get("stage") || "production";
+      if (user) {
+        if (user.id) userStoreIds.push(user.id);
+        if (user.ownerId) userStoreIds.push(user.ownerId);
+      }
+    }
 
-  let where: any;
+    userStoreIds = Array.from(new Set(userStoreIds.filter(Boolean)));
 
-  if (stage === "production") {
-    // Tela de Preparo: mostra pedidos em produção (NOVO, ACEITO, PREPARANDO) que ainda não foram concluídos pela produção
-    where = {
-      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: { in: ["NOVO", "ACEITO", "PREPARANDO"] },
-      OR: [
-        { kdsStage: "PRODUCTION" },
-        { kdsStage: null },
-      ],
+    const stage = req.nextUrl.searchParams.get("stage") || "production";
+
+    // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos
+    const activeSession = await withRetry(() =>
+      prisma.cashSession.findFirst({
+        where: { franchiseeId: { in: userStoreIds }, status: "OPEN" },
+        orderBy: { openedAt: "desc" },
+        select: { openedAt: true },
+      })
+    ).catch(() => null);
+
+    // Usar corte amplo de 48 horas para NUNCA ocultar pedidos criados antes da abertura do caixa ativo!
+    const safeCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    let storeCondition: any[] = [];
+    if (userStoreIds.length > 0) {
+      storeCondition = [
+        { franchiseeId: { in: userStoreIds } },
+        { franchisee: { ownerId: { in: userStoreIds } } },
+        { franchiseeId: null }
+      ];
+    }
+
+    let where: any = {
+      franchiseeId: { in: userStoreIds },
+      status: { notIn: ["CANCELADO", "ENTREGUE"] },
+      createdAt: { gte: safeCutoff },
     };
-  } else if (stage === "finishing") {
-    // Tela de Finalização: mostra TODOS os pedidos ativos (NOVO, ACEITO, PREPARANDO), tanto os que estão em produção quanto os prontos na cozinha
-    where = {
-      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      status: { in: ["NOVO", "ACEITO", "PREPARANDO"] },
-      OR: [
-        { kdsStage: "PRODUCTION" },
-        { kdsStage: "FINISHING" },
-        { kdsStage: null },
-      ],
-    };
-  } else {
-    return NextResponse.json({ error: "Stage inválido" }, { status: 400 });
-  }
 
-  const orders = await prisma.customerOrder.findMany({
-    where,
-    select: {
-      id: true,
-      customerName: true,
-      customerPhone: true,
-      customerAddress: true,
-      deliveryType: true,
-      paymentMethod: true,
-      totalAmount: true,
-      deliveryFee: true,
-      status: true,
-      source: true,
-      notes: true,
-      ifoodReference: true,
-      openDeliveryReference: true,
-      kdsStage: true,
-      kdsStationId: true,
-      kdsProductionAt: true,
-      kdsFinishingAt: true,
-      createdAt: true,
-      updatedAt: true,
-      items: {
+    if (stage === "finishing") {
+      where.kdsStage = "FINISHING";
+    } else if (stage === "production") {
+      where.OR = [
+        { kdsStage: "PRODUCTION" },
+        { kdsStage: "PENDING" },
+        { kdsStage: null },
+      ];
+    } else if (stage !== "all") {
+      where.kdsStage = { not: "FINISHED" };
+    }
+
+    const orders = await withRetry(() =>
+      prisma.customerOrder.findMany({
+        where,
         select: {
           id: true,
-          quantity: true,
-          price: true,
-          comboSelections: true,
-          menuProduct: {
+          customerName: true,
+          customerPhone: true,
+          customerAddress: true,
+          deliveryType: true,
+          paymentMethod: true,
+          totalAmount: true,
+          deliveryFee: true,
+          status: true,
+          source: true,
+          notes: true,
+          ifoodReference: true,
+          openDeliveryReference: true,
+          isRoutePriority: true,
+          routeId: true,
+          routeSchedule: {
             select: {
-              name: true,
-              category: true,
+              routeNumber: true,
+            },
+          },
+          kdsStage: true,
+          kdsStationId: true,
+          kdsProductionAt: true,
+          kdsFinishingAt: true,
+          createdAt: true,
+          updatedAt: true,
+          items: {
+            select: {
+              id: true,
+              quantity: true,
+              price: true,
+              comboSelections: true,
+              menuProduct: {
+                select: {
+                  name: true,
+                  category: true,
+                },
+              },
             },
           },
         },
+        orderBy: [
+          { isRoutePriority: "desc" },
+          { createdAt: "asc" },
+        ],
+        take: 100,
+      })
+    ).catch(() => []);
+
+    const allCashSessions = await withRetry(() =>
+      prisma.cashSession.findMany({
+        where: { franchiseeId: { in: userStoreIds } },
+        select: { id: true, openedAt: true, closedAt: true, status: true },
+        orderBy: { openedAt: "asc" },
+        take: 100,
+      })
+    );
+
+    // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
+    const allRecentOrders = await withRetry(() =>
+      prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: { in: userStoreIds },
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      })
+    );
+
+    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
+    const tz = user?.storeTimezone || "America/Sao_Paulo";
+    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions, tz);
+
+    const ordersWithDailyNum = orders.map((o: any) => ({
+      ...o,
+      dailyOrderNumber: dailyNumMap.get(o.id) || null,
+    }));
+
+    return NextResponse.json(ordersWithDailyNum, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
       },
-    },
-    orderBy: { createdAt: "asc" },
-    take: 50,
-  });
-
-  // Buscar data de abertura do caixa ativo para calcular sequência contínua
-  const activeSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { openedAt: true }
-  });
-
-  const sessionStartCutoff = activeSession?.openedAt
-    ? new Date(activeSession.openedAt)
-    : new Date(Date.now() - 48 * 60 * 60 * 1000);
-
-  // Buscar todos os pedidos da sessão de caixa atual por ordem de criação
-  const sessionOrders = await prisma.customerOrder.findMany({
-    where: {
-      franchiseeId: user.role === "ADMIN" ? undefined : targetFranchiseeId,
-      createdAt: { gte: sessionStartCutoff },
-    },
-    select: { id: true, createdAt: true },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const dailyNumMap = new Map<string, number>();
-  sessionOrders.forEach((o, i) => {
-    dailyNumMap.set(o.id, i + 1);
-  });
-
-  const ordersWithDailyNum = orders.map((o) => ({
-    ...o,
-    dailyOrderNumber: dailyNumMap.get(o.id) || null,
-  }));
-
-  return NextResponse.json(ordersWithDailyNum);
+    });
+  } catch (err: any) {
+    console.error("[KDS GET Error]:", err?.message || err);
+    return NextResponse.json({ error: err?.message || String(err), stack: err?.stack }, { status: 500 });
+  }
 }
 
 export async function PUT(req: NextRequest) {
@@ -148,7 +211,7 @@ export async function PUT(req: NextRequest) {
 
   const order = await prisma.customerOrder.findUnique({
     where: { id: orderId },
-    select: { id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true },
+    select: { id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true, ifoodOrderId: true, openDeliveryOrderId: true },
   });
 
   if (!order) {
@@ -190,18 +253,85 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === "finish_order") {
-    // Finalização concluída no KDS: marca kdsStage como FINISHED (exibe "✅ Pronto Cozinha" no Kanban)
-    // O status principal permanece para ser alterado manualmente ao selecionar o motoboy no painel de pedidos.
+    const isPickup = order.deliveryType !== "DELIVERY";
+    const updateData: any = {
+      kdsStage: "FINISHED",
+      kdsFinishingAt: new Date(),
+      kdsStationId: null,
+    };
+
+    // Para pedidos de RETIRADA, avança o status automaticamente para SAIU_ENTREGA (Pronto)
+    if (isPickup) {
+      updateData.status = "SAIU_ENTREGA";
+    }
+
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: updateData,
+    });
+
+    // 🚀 Sincronizar com iFood, Jotajá e WhatsApp de forma assíncrona (não-bloqueante para resposta instantânea no KDS)
+    (async () => {
+      if (order.ifoodOrderId) {
+        try {
+          const { getIfoodToken } = await import("@/lib/ifood-api");
+          const token = await getIfoodToken();
+          const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+          await fetch(`https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/readyToPickup`, {
+            method: "POST",
+            headers,
+          });
+        } catch (errIfood) {
+          console.warn("[KDS iFood Sync Error]:", errIfood);
+        }
+      }
+
+      if (order.openDeliveryOrderId) {
+        try {
+          const { jotajaFetch } = await import("@/lib/jotaja-api");
+          await jotajaFetch(`/v1/orders/${order.openDeliveryOrderId}/readyToPickup`, { method: "POST" });
+        } catch (errOd) {
+          console.warn("[KDS Jotajá Sync Error]:", errOd);
+        }
+      }
+
+      if (isPickup) {
+        try {
+          const { sendOrderNotification } = await import("@/lib/order-notifications");
+          sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+        } catch (errWp) {
+          console.warn("[KDS API] Erro ao disparar notificação WhatsApp:", errWp);
+        }
+      }
+    })();
+
+    return NextResponse.json({ success: true, stage: "FINISHED" });
+  }
+
+  if (action === "revert_production" || action === "undo_production") {
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
-        kdsStage: "FINISHED",
-        kdsFinishingAt: new Date(),
-        kdsStationId: null,
+        kdsStage: "PRODUCTION",
+        kdsFinishingAt: null,
       },
     });
+    return NextResponse.json({ success: true, stage: "PRODUCTION" });
+  }
 
-    return NextResponse.json({ success: true, stage: "FINISHED" });
+  if (action === "revert_finishing" || action === "undo_finishing") {
+    const isPickup = order.deliveryType !== "DELIVERY";
+    const updateData: any = {
+      kdsStage: "FINISHING",
+    };
+    if (isPickup && order.status === "SAIU_ENTREGA") {
+      updateData.status = "PREPARANDO";
+    }
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: updateData,
+    });
+    return NextResponse.json({ success: true, stage: "FINISHING" });
   }
 
   return NextResponse.json({ error: "Action inválida" }, { status: 400 });

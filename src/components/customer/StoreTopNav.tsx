@@ -2,20 +2,24 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
+import StoreSelector from "./StoreSelector";
 
 const NAV_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
   { href: "/store/pedidos-clientes", label: "Pedidos", icon: ClipboardList, highlight: true },
   { href: "/store/kds", label: "KDS", icon: Monitor },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "NOVO" },
-  { href: "/store/cardapio", label: "Cardápio", icon: UtensilsCrossed },
+  { href: "/store/totem", label: "Totem", icon: TabletSmartphone, badge: "NOVO" },
   { href: "/store/estoque", label: "Estoque", icon: Package },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
-  { href: "/store/relatorios", label: "Relatórios", icon: PieChart },
+  { href: "/store/etiquetas", label: "Validação & Etiquetas", icon: Tag, badge: "NOVO" },
+  { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
+  { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "IA" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
+  { href: "/store/funcionarios", label: "Funcionários", icon: Users },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },
 ];
 
@@ -39,9 +43,16 @@ export default function StoreTopNav({
   showAntecipacao?: boolean;
 }) {
   const pathname = usePathname();
-  const menuItems = showAntecipacao
-    ? [...NAV_ITEMS, { href: "/store/antecipacao", label: "Antecipação", icon: Zap }]
-    : NAV_ITEMS;
+  const baseItems = [...NAV_ITEMS];
+  if (showAntecipacao) {
+    const finIdx = baseItems.findIndex(i => i.href === "/store/financeiro");
+    if (finIdx !== -1) {
+      baseItems.splice(finIdx + 1, 0, { href: "/store/antecipacao", label: "Antecipação", icon: Zap });
+    } else {
+      baseItems.push({ href: "/store/antecipacao", label: "Antecipação", icon: Zap });
+    }
+  }
+  const menuItems = baseItems;
   const router = useRouter();
   const [, startTransition] = useTransition();
   const isCompras = pathname?.startsWith("/store/compras") || pathname?.startsWith("/store/orders");
@@ -164,7 +175,7 @@ export default function StoreTopNav({
   };
 
   // ── CLOSE CASH ──────────────────────────────────────────────────
-  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0);
+  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0) + (expected.ifoodCoupons || 0);
 
   const tryClose = () => {
     const d = totalActual - expected.total;
@@ -481,6 +492,28 @@ export default function StoreTopNav({
                         </td>
                       </tr>
                     ))}
+                    {(expected.ifoodOnline || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#F0F9FF" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#0284C7" }}>🔴 iFood (Pago Online)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#0284C7", fontWeight:700 }}>{fmt(expected.ifoodOnline)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#BAE6FD", border:"1.5px solid #7DD3FC", fontSize:"0.78rem", textAlign:"center", color:"#0369A1", fontWeight:700 }}>
+                            🔒 {fmt(expected.ifoodOnline)}
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    {(expected.ifoodCoupons || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF7ED" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#EA580C" }}>🔴 iFood (Cupons)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#EA580C", fontWeight:700 }}>{fmt(expected.ifoodCoupons)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#FED7AA", border:"1.5px solid #FDBA74", fontSize:"0.78rem", textAlign:"center", color:"#9A3412", fontWeight:700 }}>
+                            🔒 {fmt(expected.ifoodCoupons)}
+                          </span>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                   <tfoot>
                     <tr style={{ background: Math.abs(totalActual - expected.total) < 0.01 ? "#F0FDF4" : "#FEF2F2" }}>
@@ -553,23 +586,24 @@ export default function StoreTopNav({
         <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", flexWrap:"wrap" }}>
           {isCompras ? (
             <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-              <div style={{ width:30, height:30, borderRadius:7, background:"rgba(255,255,255,0.15)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.1rem" }}>🧊</div>
+              <img src="/firehub-flame.png" alt="FireHub" style={{ width:30, height:30, borderRadius:7, objectFit:"cover" }} />
               <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1 }}>
                 <span style={{ color:"#fff", fontWeight:900, fontSize:"0.95rem" }}>Ice<span style={{ color:"#90CAF9" }}>box</span></span>
                 <span style={{ color:"rgba(255,255,255,0.65)", fontWeight:500, fontSize:"0.55rem", letterSpacing:"0.5px", textTransform:"uppercase" }}>Congelados & Insumos</span>
               </div>
             </div>
           ) : (
-            <Link href="/store" style={{ display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
+            <a href="/store" style={{ display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
               <img src="/firehub-flame.png" alt="FireHub" style={{ width:30, height:30, borderRadius:7, objectFit:"cover" }} />
               <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1 }}>
                 <span style={{ color:"#fff", fontWeight:900, fontSize:"0.95rem" }}>Fire<span style={{ color:"#FF6B35" }}>Hub</span></span>
                 <span style={{ color:"rgba(255,255,255,0.65)", fontWeight:500, fontSize:"0.55rem", letterSpacing:"0.5px", textTransform:"uppercase" }}>Sistema de Pedidos</span>
               </div>
-            </Link>
+            </a>
           )}
 
-          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+          {/* ── SELETOR MULTI-LOJAS ── */}
+          <StoreSelector />          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             <TogglePill
               label="Caixa" isOn={cashOpen}
               onClick={() => cashOpen ? setShowCloseModal(true) : setShowOpenModal(true)}
@@ -618,6 +652,9 @@ export default function StoreTopNav({
           <a href="/store/impressoras" title="Impressora" style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:32, height:32, borderRadius:9, background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.25)", color:"#fff", textDecoration:"none" }}>
             <Printer size={15} />
           </a>
+          <a href="/store/extensao-ifood" title="Extensão de mudança de prazo automático" style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:32, height:32, borderRadius:9, background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.25)", color:"#fff", textDecoration:"none" }}>
+            <Puzzle size={15} />
+          </a>
           <a href="/store/integracoes" title="Central de Integrações" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.65rem", borderRadius:8, background:"#E8360C", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap", border:"1px solid rgba(255,255,255,0.3)" }}>
             🔌 Integrações
           </a>
@@ -646,16 +683,16 @@ export default function StoreTopNav({
 
       {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
       {!isCompras && (
-      <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.75rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
-        <div style={{ maxWidth:"1400px", margin:"0 auto", display:"flex", alignItems:"stretch", gap:0, overflowX:"auto", scrollbarWidth:"none" }}>
+      <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.35rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
+        <div style={{ maxWidth:"100%", margin:"0 auto", display:"flex", alignItems:"stretch", justifyContent:"center", gap:"1px", overflowX:"auto", scrollbarWidth:"none" }}>
           {menuItems.map(item => {
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
             return (
-              <Link key={item.href} href={item.href} style={{ display:"flex", alignItems:"center", gap:5, padding:"0.65rem 0.8rem", fontSize:"0.8rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
-                <Icon size={14} /> {item.label}
-                {item.highlight && <span style={{ width:7, height:7, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
-              </Link>
+              <a key={item.href} href={item.href} className="store-nav-link" style={{ display:"flex", alignItems:"center", gap:3, padding:"0.5rem 0.38rem", fontSize:"0.73rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
+                <Icon size={13} /> {item.label}
+                {item.highlight && <span style={{ width:6, height:6, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
+              </a>
             );
           })}
         </div>
@@ -664,6 +701,9 @@ export default function StoreTopNav({
 
       <style>{`
         @media (max-width: 520px) { .nav-user-label { display: none !important; } .nav-view-store { display: none !important; } }
+        @media (max-width: 1400px) {
+          .store-nav-link { padding: 0.48rem 0.32rem !important; font-size: 0.71rem !important; gap: 2px !important; }
+        }
       `}</style>
     </>
   );

@@ -134,9 +134,17 @@ NÃO RETORNE NENHUM TEXTO ALÉM DO JSON.`;
       }, { status: 400 });
     }
 
+    // Buscar ID do franqueado/loja do usuário logado
+    const dbUser = await prisma.user.findUnique({
+      where: { email: session.user?.email || "" },
+      select: { id: true, ownerId: true }
+    });
+    const targetFranchiseeId = dbUser?.ownerId || dbUser?.id || null;
+
     // Se chegou aqui, aprovado! Salvar no banco.
     const invoice = await prisma.purchaseInvoice.create({
       data: {
+        franchiseeId: targetFranchiseeId,
         description,
         imageUrl,
         aiValue: parseFloat(aiData.valorTotal),
@@ -162,17 +170,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const role = (session.user as any).role;
-  const perms = (session.user as any).permissions || "";
   const userEmail = session.user?.email;
+  const dbUser = await prisma.user.findUnique({
+    where: { email: userEmail || "" },
+    select: { id: true, ownerId: true, role: true }
+  });
+  const targetFranchiseeId = dbUser?.ownerId || dbUser?.id || null;
 
-  // Admin vê tudo; demais usuários (FRANCHISEE, STAFF) veem apenas as suas
-  const isAdmin = role === "ADMIN" || (role === "STAFF" && perms.includes("invoices"));
   const category = req.nextUrl.searchParams.get("category") || undefined;
 
   const invoices = await prisma.purchaseInvoice.findMany({
     where: {
-      ...(isAdmin ? {} : { uploadedBy: userEmail! }),
+      ...(dbUser?.role === "ADMIN" ? {} : { OR: [{ franchiseeId: targetFranchiseeId || "" }, { uploadedBy: userEmail || "" }] }),
       ...(category ? { category } : {}),
     },
     orderBy: { createdAt: "desc" },

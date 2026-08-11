@@ -59,11 +59,20 @@ export async function GET(req: NextRequest) {
   if (!session || (session.user as any).role !== "ADMIN")
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const mode = req.nextUrl.searchParams.get("mode") || "current";
+  const userEmail = session.user?.email!;
+  const currentUser = await prisma.user.findUnique({
+    where: { email: userEmail },
+    select: { id: true, ownerId: true, storeTimezone: true }
+  });
+  if (!currentUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const targetFranchiseeId = currentUser.ownerId || currentUser.id;
+
+  const url = new URL(req.url);
+  const mode = url.searchParams.get("mode") || "current";
 
   if (mode === "current") {
     const open = await prisma.cashRegister.findFirst({
-      where: { status: "OPEN" },
+      where: { openedBy: userEmail, status: "OPEN" },
       include: { entries: true },
       orderBy: { openedAt: "desc" },
     });
@@ -73,13 +82,14 @@ export async function GET(req: NextRequest) {
   if (mode === "preview") {
     // Retorna valores esperados por método para o caixa aberto atual
     const open = await prisma.cashRegister.findFirst({
-      where: { status: "OPEN" },
+      where: { openedBy: userEmail, status: "OPEN" },
       orderBy: { openedAt: "desc" },
     });
     if (!open) return NextResponse.json({ error: "Nenhum caixa aberto" }, { status: 404 });
 
     const orders = await prisma.customerOrder.findMany({
       where: {
+        ...(targetFranchiseeId && { franchiseeId: targetFranchiseeId }),
         status: { in: ["ENTREGUE", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA"] },
         createdAt: { gte: open.openedAt }
       },
@@ -105,8 +115,9 @@ export async function GET(req: NextRequest) {
   }
 
   if (mode === "today") {
-    // Usar timezone de Brasília para calcular início do dia corretamente
-    const nowBR = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
+    // Usar timezone da loja para calcular início do dia corretamente
+    const nowBR = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
     const start = new Date(nowBR);
     start.setHours(0, 0, 0, 0);
     // Converter de volta para UTC para query no banco
@@ -159,6 +170,12 @@ export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session || (session.user as any).role !== "ADMIN")
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const currentUser = await prisma.user.findUnique({
+    where: { email: session.user?.email! },
+    select: { storeTimezone: true, storePhone: true, name: true, storeName: true }
+  });
+  const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
 
   const { registerId, entries, justification } = await req.json();
 
@@ -216,13 +233,10 @@ export async function PUT(req: NextRequest) {
   });
 
   // Buscar telefone do admin para WhatsApp
-  const admin = await prisma.user.findFirst({
-    where: { email: session.user?.email! },
-    select: { storePhone: true, name: true, storeName: true },
-  });
+  const admin = currentUser;
 
   // Montar mensagem WhatsApp
-  const now     = new Date().toLocaleString("pt-BR");
+  const now     = new Date().toLocaleString("pt-BR", { timeZone: tz });
   const diff    = discrepancy >= 0 ? `+${fmt(discrepancy)}` : fmt(discrepancy);
   const diffEmoji = Math.abs(discrepancy) <= 0.5 ? "✅" : (discrepancy > 0 ? "🟡 Sobra" : "🔴 Falta");
 

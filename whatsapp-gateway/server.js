@@ -8,6 +8,7 @@ const {
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
 } = require("@whiskeysockets/baileys");
 
 const app = express();
@@ -29,16 +30,72 @@ if (CLEAN_ON_BOOT) {
   console.log("[WhatsApp Gateway] 🗑️ Sessões limpas no boot (CLEAN_SESSIONS=true)");
 }
 
-// Monitoramento de memória - previne OOM
+// Monitoramento de memória - previne OOM + limpeza de cooldowns + auto-restart
 setInterval(() => {
   const mem = process.memoryUsage();
   const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
   const rssMB = Math.round(mem.rss / 1024 / 1024);
+  if (heapMB > 420) {
+    // Memória crítica: forçar restart gracioso (Railway ALWAYS policy reinicia)
+    console.error(`[WhatsApp Gateway] 🔴 Memória CRÍTICA: heap=${heapMB}MB. Reiniciando processo...`);
+    process.exit(1);
+  }
   if (heapMB > 350) {
     console.warn(`[WhatsApp Gateway] ⚠️ Memória alta: heap=${heapMB}MB rss=${rssMB}MB - forçando GC`);
     if (global.gc) { try { global.gc(); } catch(e) {} }
   }
+  // Fix 2: Limpar replyCooldowns antigos para evitar memory leak
+  const now = Date.now();
+  for (const [key, ts] of replyCooldowns.entries()) {
+    if (now - ts > 10000) replyCooldowns.delete(key);
+  }
+  // Limpar sessionLocks órfãos
+  for (const [key] of sessionLocks.entries()) {
+    if (!sessions.has(key)) sessionLocks.delete(key);
+  }
 }, 15000);
+
+// Self-ping: mantém o processo ativo a cada 4 min (evita sleep em qualquer hosting)
+setInterval(() => {
+  const url = `http://localhost:${PORT}/`;
+  fetch(url).catch(() => {});
+  console.log(`[WhatsApp Gateway] 💓 Self-ping (uptime: ${Math.round(process.uptime())}s, sessões: ${sessions.size})`);
+}, 4 * 60 * 1000);
+
+// Fix 1: GC periódico global (único, nunca duplica em reconexões)
+if (global.gc) {
+  setInterval(() => { try { global.gc(); } catch(e) {} }, 30000);
+}
+
+// Fix 3: Auto-health-check - reconecta sessões mortas a cada 5 minutos
+// Garante que o bot continue ativo na madrugada mesmo sem tráfego externo
+setInterval(() => {
+  for (const [name, session] of sessions.entries()) {
+    if (session.state !== "open" && session.state !== "connecting") {
+      console.log(`[WhatsApp Gateway] 🩺 Health-check: sessão "${name}" está ${session.state}. Reconectando...`);
+      getOrCreateSocket(name).catch((err) => {
+        console.warn(`[WhatsApp Gateway] ⚠️ Health-check reconexão falhou para ${name}:`, err.message);
+      });
+    }
+  }
+  // Também reconectar sessões salvas em disco que não estão no Map
+  const sessionsDir = path.join(__dirname, "data", "sessions");
+  if (fs.existsSync(sessionsDir)) {
+    try {
+      const folders = fs.readdirSync(sessionsDir).filter(f => {
+        try { return fs.statSync(path.join(sessionsDir, f)).isDirectory(); } catch { return false; }
+      });
+      for (const folder of folders) {
+        if (!sessions.has(folder)) {
+          console.log(`[WhatsApp Gateway] 🩺 Health-check: sessão salva "${folder}" não está no Map. Reconectando...`);
+          getOrCreateSocket(folder).catch((err) => {
+            console.warn(`[WhatsApp Gateway] ⚠️ Health-check reconexão falhou para ${folder}:`, err.message);
+          });
+        }
+      }
+    } catch (e) {}
+  }
+}, 5 * 60 * 1000);
 
 process.on("uncaughtException", (err) => {
   console.warn("[WhatsApp Gateway] Aviso uncaughtException ignorado:", err.message || err);
@@ -108,10 +165,7 @@ async function getOrCreateSocket(instanceName) {
   sock.ev.on("blocklist.set", () => {});
   sock.ev.on("blocklist.update", () => {});
 
-  // Forçar garbage collection periódico
-  if (global.gc) {
-    setInterval(() => { try { global.gc(); } catch(e) {} }, 30000);
-  }
+  // Fix 1: GC periódico agora é global (não duplica em reconexões)
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async (update) => {
@@ -129,6 +183,7 @@ async function getOrCreateSocket(instanceName) {
     if (connection === "open") {
       session.state = "open";
       session.qrBase64 = null;
+      reconnectCounters.set(instanceName, 0);
       const userJid = sock.user?.id || "";
       const rawPhone = userJid.split(":")[0] || "";
       session.phone = rawPhone ? `+55 ${rawPhone.replace(/^55/, "")}` : "";
@@ -144,7 +199,7 @@ async function getOrCreateSocket(instanceName) {
           body: JSON.stringify({
             event: "CONNECTION_UPDATE",
             instance: instanceName,
-            data: { state: "open", ownerJid: userJid },
+            data: { state: "open", ownerJid: userJid, phone: session.phone },
           }),
         });
       } catch (err) {
@@ -154,26 +209,29 @@ async function getOrCreateSocket(instanceName) {
 
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      const shouldReconnect = !isLoggedOut;
       session.state = "close";
       sessionLocks.delete(instanceName);
 
       const count = (reconnectCounters.get(instanceName) || 0) + 1;
       reconnectCounters.set(instanceName, count);
 
-      console.log(`[WhatsApp Gateway] Conexão encerrada para ${instanceName}. Reconectar: ${shouldReconnect} (tentativa ${count}/5)`);
+      console.log(`[WhatsApp Gateway] 🔄 Conexão encerrada para ${instanceName} (Status ${statusCode}). Reconectar: ${shouldReconnect} (tentativa #${count})`);
 
-      if (shouldReconnect && count < 5) {
-        const delay = Math.min(3000 * count, 15000);
-        setTimeout(() => getOrCreateSocket(instanceName), delay);
-      } else if (count >= 5) {
-        console.log(`[WhatsApp Gateway] ⛔ Max reconexões atingido para ${instanceName}. Limpando sessão corrompida...`);
-        reconnectCounters.delete(instanceName);
-        sessions.delete(instanceName);
-        try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
-        console.log(`[WhatsApp Gateway] 🗑️ Sessão ${instanceName} limpa. Pronta para nova conexão.`);
+      if (shouldReconnect) {
+        // Reconexão infinita com backoff de 3s até no máximo 30s
+        const delay = Math.min(3000 * Math.min(count, 10), 30000);
+        console.log(`[WhatsApp Gateway] ⏳ Agendando reconexão de ${instanceName} em ${delay / 1000}s...`);
+        setTimeout(() => {
+          getOrCreateSocket(instanceName).catch((err) => {
+            console.error(`[WhatsApp Gateway] Erro ao tentar reconectar ${instanceName}:`, err.message);
+          });
+        }, delay);
       } else {
+        console.log(`[WhatsApp Gateway] 🚪 Instância ${instanceName} desconectada pelo usuário (loggedOut). Limpando sessão...`);
         sessions.delete(instanceName);
+        reconnectCounters.delete(instanceName);
         try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
       }
     }
@@ -188,13 +246,21 @@ async function getOrCreateSocket(instanceName) {
       const remoteJid = msg.key.remoteJid || "";
       if (remoteJid.endsWith("@g.us")) continue;
 
+      const isAudio = Boolean(
+        msg.message.audioMessage ||
+        msg.message.pttMessage ||
+        msg.message.ephemeralMessage?.message?.audioMessage ||
+        msg.message.viewOnceMessage?.message?.audioMessage ||
+        msg.message.viewOnceMessageV2?.message?.audioMessage
+      );
+
       const textMessage =
         msg.message.conversation ||
         msg.message.extendedTextMessage?.text ||
         msg.message.imageMessage?.caption ||
-        "";
+        (isAudio ? "O cliente enviou a mensagem de áudio em anexo." : "");
 
-      if (!textMessage.trim()) continue;
+      if (!textMessage.trim() && !isAudio) continue;
 
       const now = Date.now();
       const lastReply = replyCooldowns.get(remoteJid) || 0;
@@ -204,11 +270,27 @@ async function getOrCreateSocket(instanceName) {
       }
       replyCooldowns.set(remoteJid, now);
 
-      console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}"`);
+      let payloadMessage = JSON.parse(JSON.stringify(msg.message));
+
+      if (isAudio) {
+        try {
+          console.log(`[WhatsApp Gateway] 🎙️ Baixando áudio de ${remoteJid}...`);
+          const buffer = await downloadMediaMessage(msg, "buffer", {});
+          const base64Str = buffer.toString("base64");
+          if (!payloadMessage.audioMessage) payloadMessage.audioMessage = {};
+          payloadMessage.audioMessage.base64 = base64Str;
+          payloadMessage.audioMessage.mimetype = "audio/ogg";
+          console.log(`[WhatsApp Gateway] ✅ Áudio de ${remoteJid} baixado com sucesso (${base64Str.length} chars)`);
+        } catch (audioErr) {
+          console.error(`[WhatsApp Gateway] ❌ Erro ao baixar áudio de ${remoteJid}:`, audioErr?.message || audioErr);
+        }
+      }
+
+      console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}" (isAudio: ${isAudio})`);
 
       try {
         const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
-        const res = await fetch(webhookUrl, {
+        await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -216,7 +298,9 @@ async function getOrCreateSocket(instanceName) {
             instance: instanceName,
             data: {
               key: msg.key,
-              message: msg.message,
+              message: payloadMessage,
+              sender: remoteJid,
+              pushName: msg.pushName || "",
             },
           }),
         });
@@ -266,9 +350,9 @@ app.get("/instance/connect/:instanceName", async (req, res) => {
     return res.json({ instance: { state: "open" }, connected: true, phone: session.phone });
   }
 
-  // Aguarda até 15 segundos se o QR Code ainda estiver sendo gerado
+  // Aguarda até 4 segundos se o QR Code ainda estiver sendo gerado
   let attempts = 0;
-  while (!session.qrBase64 && session.state !== "open" && attempts < 75) {
+  while (!session.qrBase64 && session.state !== "open" && attempts < 20) {
     await new Promise((r) => setTimeout(r, 200));
     attempts++;
   }
@@ -364,6 +448,85 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
   } catch (err) {
     console.error(`[WhatsApp Gateway] ❌ Erro ao enviar mensagem para ${jid}:`, err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// 4.1 Enviar Mídia (Imagem com legenda)
+app.post("/message/sendMedia/:instanceName", async (req, res) => {
+  const { instanceName } = req.params;
+  const { number, mediaMessage, mediaUrl: directMediaUrl, caption: directCaption } = req.body || {};
+
+  let session = sessions.get(instanceName);
+  if (!session || session.state !== "open") {
+    for (const s of sessions.values()) {
+      if (s.state === "open" && s.sock) {
+        session = s;
+        break;
+      }
+    }
+  }
+
+  if (!session || session.state !== "open" || !session.sock) {
+    return res.status(400).json({ error: "Instância não conectada no celular" });
+  }
+
+  const cleanNum = String(number || "").trim();
+  const jid = (cleanNum.includes("@s.whatsapp.net") || cleanNum.includes("@lid"))
+    ? cleanNum
+    : `${cleanNum.replace(/\D/g, "")}@s.whatsapp.net`;
+
+  const mediaUrl = mediaMessage?.media || mediaMessage?.url || directMediaUrl;
+  const caption = mediaMessage?.caption || directCaption || "";
+
+  if (!mediaUrl) {
+    return res.status(400).json({ error: "URL da mídia é obrigatória" });
+  }
+
+  try {
+    await session.sock.sendMessage(jid, {
+      image: { url: mediaUrl },
+      caption: caption || undefined,
+    });
+    console.log(`[WhatsApp Gateway] 📸 Mídia enviada com sucesso para ${jid}: "${mediaUrl}"`);
+    return res.json({ status: "SENT", to: jid });
+  } catch (err) {
+    console.error(`[WhatsApp Gateway] ❌ Erro ao enviar mídia para ${jid}:`, err);
+    try {
+      if (caption) {
+        await session.sock.sendMessage(jid, { text: caption });
+      }
+    } catch {}
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 4.5 Obter Base64 de Mídia / Áudio via API REST
+app.post("/chat/getBase64FromMediaMessage/:instanceName", async (req, res) => {
+  const { instanceName } = req.params;
+  const { message } = req.body || {};
+
+  try {
+    let session = sessions.get(instanceName);
+    if (!session || session.state !== "open") {
+      for (const s of sessions.values()) {
+        if (s.state === "open" && s.sock) {
+          session = s;
+          break;
+        }
+      }
+    }
+
+    if (!session || !session.sock) {
+      return res.status(400).json({ error: "Sessão não conectada" });
+    }
+
+    const msgObj = message?.key ? message : { key: message?.key || {}, message: message?.message || message };
+    const buffer = await downloadMediaMessage(msgObj, "buffer", {});
+    const base64Str = buffer.toString("base64");
+    return res.json({ base64: base64Str, status: "SUCCESS" });
+  } catch (err) {
+    console.error("[WhatsApp Gateway] Erro no endpoint getBase64FromMediaMessage:", err);
+    return res.status(500).json({ error: err.message || "Falha ao baixar mídia" });
   }
 });
 

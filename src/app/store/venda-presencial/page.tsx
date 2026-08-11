@@ -40,10 +40,16 @@ export default function VendaPresencialPage() {
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [change, setChange] = useState(""); // troco
   const [comboProduct, setComboProduct] = useState<any>(null);
+  const [employeeAccountEnabled, setEmployeeAccountEnabled] = useState(false);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [selectedEmployeeName, setSelectedEmployeeName] = useState("");
 
   useEffect(() => {
     fetch("/api/admin/menu-products").then(r => r.json()).then(d => Array.isArray(d) && setProducts(d));
     fetch("/api/store-settings/payment").then(r => r.ok ? r.json() : null).then(d => d && setPaymentConfig(d.paymentFees));
+    fetch("/api/store-settings/employee-account").then(r => r.ok ? r.json() : null).then(d => d && setEmployeeAccountEnabled(Boolean(d.employeeAccountEnabled)));
+    fetch("/api/store/employees").then(r => r.ok ? r.json() : null).then(d => d?.employees && setEmployees(d.employees));
   }, []);
 
   const getDisplayPrice = (p: any) => {
@@ -151,14 +157,21 @@ export default function VendaPresencialPage() {
     if (cart.length === 0) return setMsg("❌ Adicione pelo menos um produto.");
     if (orderType === "MESA" && !tableNum) return setMsg("❌ Informe o número da mesa.");
     if (orderType === "DELIVERY" && !address) return setMsg("❌ Informe o endereço de entrega.");
+    if (paymentMethod === "Conta Funcionário" && !selectedEmployeeId) {
+      return setMsg("❌ Selecione o funcionário responsável pela conta.");
+    }
 
     setLoading(true); setMsg("");
     const body = {
-      customerName: customerName || (orderType === "MESA" ? `Mesa ${tableNum}` : orderType === "BALCAO" ? "Balcão" : "Cliente"),
+      customerName: paymentMethod === "Conta Funcionário" && selectedEmployeeName
+        ? `Func. ${selectedEmployeeName}`
+        : customerName || (orderType === "MESA" ? `Mesa ${tableNum}` : orderType === "BALCAO" ? "Balcão" : "Cliente"),
       customerPhone: customerPhone || "00000000000",
       customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? `Mesa ${tableNum}` : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       paymentMethod,
+      employeeId: selectedEmployeeId || null,
+      employeeName: selectedEmployeeName || null,
       notes,
       totalAmount: total,
       deliveryFee: 0,
@@ -188,11 +201,17 @@ export default function VendaPresencialPage() {
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", display: "grid", gridTemplateColumns: "1fr 380px", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
       <style>{`
+        #floating-contact-widget, .fcw-container, .fcw-backdrop, #contact-widget-fab,
         #hubspot-messages-iframe-container, iframe[src*="chat"], .crisp-client, div[class*="chat"], #chat-widget-container, div[class*="widget"], div[id*="chat"] {
           display: none !important;
           pointer-events: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
         }
-        button[data-btn="finalizar"], button[data-btn="finalizar"] * {
+        button[data-btn="finalizar"] {
+          position: relative !important;
+          z-index: 9999999 !important;
+          pointer-events: auto !important;
           cursor: pointer !important;
         }
         button[data-btn="finalizar"] * {
@@ -340,17 +359,49 @@ export default function VendaPresencialPage() {
           <div style={{ marginBottom: 6 }}>
             <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 3 }}>Pagamento</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {PAYMENT_METHODS.map(m => (
+              {[...PAYMENT_METHODS, ...(employeeAccountEnabled ? ["Conta Funcionário"] : [])].map(m => (
                 <button key={m} type="button" onClick={() => setPaymentMethod(m)}
                   style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C62828" : "#CBD5E1"}`,
                     background: paymentMethod === m ? "#C62828" : "#fff",
                     color: paymentMethod === m ? "#fff" : "#334155",
                     fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
-                  {m}
+                  {m === "Conta Funcionário" ? "👤 Conta Funcionário" : m}
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Seleção do Funcionário quando forma for Conta Funcionário */}
+          {paymentMethod === "Conta Funcionário" && (
+            <div style={{ marginBottom: 6, background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 8, padding: "8px" }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#991B1B", display: "block", marginBottom: 4 }}>
+                Selecione o Funcionário *
+              </label>
+              {employees.length === 0 ? (
+                <div style={{ fontSize: "0.75rem", color: "#7F1D1D" }}>
+                  Nenhum funcionário cadastrado. Cadastre em <a href="/store/funcionarios" style={{ color: "#C62828", fontWeight: 700 }}>Funcionários</a>.
+                </div>
+              ) : (
+                <select
+                  value={selectedEmployeeId}
+                  onChange={e => {
+                    const empId = e.target.value;
+                    setSelectedEmployeeId(empId);
+                    const found = employees.find(emp => emp.id === empId);
+                    setSelectedEmployeeName(found ? found.name : "");
+                  }}
+                  style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #C62828", fontSize: "0.85rem", fontWeight: 700, color: "#1E293B", outline: "none" }}
+                >
+                  <option value="">-- Escolha um colaborador --</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.role || "Funcionário"}) — Dívida: R$ {(emp.currentDebt || 0).toFixed(2).replace(".", ",")}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* Acréscimo voucher */}
           {isVoucher && (

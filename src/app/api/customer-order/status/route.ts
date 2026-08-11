@@ -8,17 +8,24 @@ import { trackSaleForBilling } from "@/lib/billing";
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
 const BILLING_TRIGGER_STATUSES = ["ENTREGUE"];
 
-// Transições de status permitidas (state machine flexível para a operação do restaurante)
+// Transições de status permitidas (state machine total flexível para a operação dinâmica do restaurante)
+const ALL_TARGET_STATUSES = ["NOVO", "CONFIRMADO", "ACEITO", "PREPARANDO", "EM_PREPARO", "EM_ANDAMENTO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"];
+
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  NOVO:          ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  CONFIRMADO:    ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  ACEITO:        ["PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  PREPARANDO:    ["ACEITO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  PRONTO:        ["ACEITO", "PREPARANDO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"],
-  SAIU_ENTREGA:  ["ACEITO", "PREPARANDO", "ENTREGUE", "CANCELADO"],
-  SAIU_PARA_ENTREGA: ["ACEITO", "PREPARANDO", "ENTREGUE", "CANCELADO"],
-  ENTREGUE:      ["SAIU_ENTREGA", "PREPARANDO", "ACEITO", "CANCELADO"],
-  CANCELADO:     ["NOVO", "ACEITO", "PREPARANDO"],
+  CRIANDO_IA:    ALL_TARGET_STATUSES,
+  NOVO:          ALL_TARGET_STATUSES,
+  CONFIRMADO:    ALL_TARGET_STATUSES,
+  RECEBIDO:      ALL_TARGET_STATUSES,
+  PENDENTE:      ALL_TARGET_STATUSES,
+  ACEITO:        ALL_TARGET_STATUSES,
+  PREPARANDO:    ALL_TARGET_STATUSES,
+  EM_PREPARO:    ALL_TARGET_STATUSES,
+  EM_ANDAMENTO:  ALL_TARGET_STATUSES,
+  PRONTO:        ALL_TARGET_STATUSES,
+  SAIU_ENTREGA:  ALL_TARGET_STATUSES,
+  SAIU_PARA_ENTREGA: ALL_TARGET_STATUSES,
+  ENTREGUE:      ALL_TARGET_STATUSES,
+  CANCELADO:     ALL_TARGET_STATUSES,
 };
 
 // GET: Public status check (no auth required)
@@ -51,10 +58,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
 
   const role = (session.user as any)?.role;
   const body = await req.json();
@@ -115,14 +123,15 @@ export async function PUT(req: Request) {
 
   // ── Auto-set KDS stage ──
   if (status === "ACEITO" || status === "PREPARANDO") {
-    // Voltando para preparo/produção: reseta kdsStage para PRODUCTION para reaparecer em ambos os KDS
-    if (order.kdsStage === "FINISHED" || !order.kdsStage) {
+    // Apenas atribui PRODUCTION se o pedido ainda não tiver nenhum estágio no KDS
+    if (!order.kdsStage) {
       updateData.kdsStage = "PRODUCTION";
       updateData.kdsProductionAt = new Date();
     }
   }
-  if (["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"].includes(status)) {
-    // Saiu para entrega/cancelou/entregou: marca como FINISHED para sair de ambos os KDS
+  if (["ENTREGUE", "CANCELADO"].includes(status)) {
+    // Apenas ENTREGUE e CANCELADO encerram o pedido do KDS da cozinha.
+    // SAIU_ENTREGA mantém o pedido no KDS se a cozinha ainda estiver preparando!
     updateData.kdsStage = "FINISHED";
     updateData.kdsStationId = null;
   }
@@ -142,18 +151,20 @@ export async function PUT(req: Request) {
         console.log(`[iFood Sync] confirm ${ifoodId}: ${r.status}`);
       }
 
-      if (status === "PREPARANDO") {
-        // Start preparation
-        const r = await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers });
-        console.log(`[iFood Sync] startPreparation ${ifoodId}: ${r.status}`);
+      if (status === "PRONTO") {
+        // Envia readyToPickup para o iFood (acelera a alocação/chegada do motoboy parceiro do iFood e notifica cliente)
+        const r = await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers });
+        console.log(`[iFood Sync] readyToPickup ${ifoodId}: ${r.status}`);
       }
 
       if (status === "SAIU_ENTREGA") {
-        // Guarantee startPreparation occurred if jumping directly from ACEITO/NOVO
+        // Garantir que startPreparation e readyToPickup foram enviados ao iFood
         if (order.status === "ACEITO" || order.status === "NOVO") {
           await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers }).catch(() => {});
         }
-        // Dispatch (delivery orders)
+        await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
+
+        // Dispatch (pedidos de entrega)
         const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
         console.log(`[iFood Sync] dispatch ${ifoodId}: ${r.status}`);
       }
@@ -172,7 +183,6 @@ export async function PUT(req: Request) {
 
       if (status === "CANCELADO") {
         // Cancel on iFood
-        updateData.motoboyId = null;
         updateData.cancelledBy = "LOJA";
         if (cancelReason) updateData.cancelReason = cancelReason;
 
@@ -255,7 +265,6 @@ export async function PUT(req: Request) {
       }
 
       if (status === "CANCELADO") {
-        updateData.motoboyId = null;
         updateData.cancelledBy = "LOJA";
         if (cancelReason) updateData.cancelReason = cancelReason;
 
@@ -286,7 +295,6 @@ export async function PUT(req: Request) {
 
   // Handle non-iFood/non-Jotajá cancellations
   if (status === "CANCELADO" && !order.ifoodOrderId && !order.openDeliveryOrderId) {
-    updateData.motoboyId = null;
     updateData.cancelledBy = "LOJA";
     if (cancelReason) updateData.cancelReason = cancelReason;
   }
@@ -295,6 +303,45 @@ export async function PUT(req: Request) {
     where: { id: orderId },
     data: updateData
   });
+
+  // ── Notificações via WhatsApp ──
+  try {
+    const { sendOrderNotification } = await import("@/lib/order-notifications");
+    if (status === "SAIU_ENTREGA" || status === "SAIU_PARA_ENTREGA") {
+      if (order.deliveryType === "DELIVERY") {
+        sendOrderNotification(orderId, "SAIU_ENTREGA").catch(() => {});
+      } else {
+        sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+      }
+    } else if (status === "PRONTO") {
+      sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+    } else if (status === "ENTREGUE") {
+      sendOrderNotification(orderId, "ENTREGUE").catch(() => {});
+    } else if (status === "CANCELADO") {
+      sendOrderNotification(orderId, "CANCELADO", { cancelReason }).catch(() => {});
+    }
+  } catch (errWp) {
+    console.warn("[Status API] Erro ao disparar notificação WhatsApp:", errWp);
+  }
+
+  // Estorno Automático para Pagamentos Online no Cancelamento
+  if (status === "CANCELADO" && (order as any).paymentId) {
+    try {
+      const { refundMpPayment } = await import("@/lib/mercadopago");
+      const franchisee = await prisma.user.findUnique({
+        where: { id: order.franchiseeId },
+        select: { mpAccessToken: true },
+      });
+      const refundRes = await refundMpPayment((order as any).paymentId, franchisee?.mpAccessToken || undefined);
+      if (refundRes.success) {
+        console.log(`[Automatic Refund] Order ${orderId} refunded successfully via MP.`);
+      } else {
+        console.warn(`[Automatic Refund] Order ${orderId} refund notice:`, refundRes.error);
+      }
+    } catch (refundErr: any) {
+      console.error(`[Automatic Refund] Erro ao estornar pedido ${orderId}:`, refundErr.message);
+    }
+  }
 
   // Atualiza faturamento do ciclo mensal se pedido foi confirmado
   if (BILLING_TRIGGER_STATUSES.includes(status)) {
@@ -312,4 +359,8 @@ export async function PUT(req: Request) {
   }
 
   return NextResponse.json({ success: true });
+} catch (err: any) {
+    console.error("[PUT Status Error]:", err);
+    return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });
+  }
 }

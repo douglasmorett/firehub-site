@@ -2,10 +2,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
+import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
+import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
+  CRIANDO_IA: { label: "🤖 IA criando pedido...", emoji: "🤖", color: "#7C3AED", bg: "#F3E8FF" },
   ACEITO: { label: "Aceito", emoji: "✅", color: "#10B981", bg: "#ECFDF5" },
   PREPARANDO: { label: "Em Preparo", emoji: "👨‍🍳", color: "#F59E0B", bg: "#FFFBEB" },
   SAIU_ENTREGA: { label: "Em Transporte/Finalizados", emoji: "🛵", color: "#8B5CF6", bg: "#F5F3FF" },
@@ -45,13 +48,81 @@ const cleanAddress = (addr: string | null) => {
   return addr.replace(/\s*-\s*null\s*$/gi, "").replace(/\s*-\s*undefined\s*$/gi, "").trim();
 };
 
+const cleanAddressForMap = (addr: string | null, city?: string): string => {
+  if (!addr) return city || "";
+  let clean = cleanAddress(addr).trim();
+
+  // Remove pontos e traços finais desnecessários
+  clean = clean.replace(/[\.,\s\-]+$/, "");
+
+  // Separa por traços ou vírgulas
+  const parts = clean.split(/[-–—,]/).map(p => p.trim()).filter(Boolean);
+
+  const cleanParts: string[] = [];
+
+  for (const part of parts) {
+    // Filtra pontos de referência e complementos que impedem a localização no Google Maps
+    if (
+      /^(ref|referencia|referência|ponto de ref|ponto de referencia|ponto de referência|comp|complemento|ao lado|proximo|próximo|prox|apto|apt|ap|bloco|bl|qd|lote|lt|fundos|frente|casa\s*\d+)/i.test(part) ||
+      /^(ref|referencia|referência|comp|complemento)\s*:/i.test(part) ||
+      /^ao lado d/i.test(part) ||
+      /^pr[óo]ximo/i.test(part)
+    ) {
+      continue;
+    }
+
+    // Normaliza número (ex: n51, N51, nº 51 -> 51)
+    let fixedPart = part.replace(/\bn[ºo]?\s*(\d+)\b/gi, "$1");
+
+    // Expande abreviações comuns para melhorar a precisão no Google Maps
+    fixedPart = fixedPart
+      .replace(/\bR\.\s*/gi, "Rua ")
+      .replace(/\bAv\.\s*/gi, "Avenida ")
+      .replace(/\bRes\.\s*/gi, "Residencial ")
+      .replace(/\bTv\.\s*/gi, "Travessa ")
+      .replace(/\bEst\.\s*/gi, "Estrada ")
+      .replace(/\bPq\.\s*/gi, "Parque ");
+
+    if (fixedPart.trim()) {
+      cleanParts.push(fixedPart.trim());
+    }
+  }
+
+  let result = cleanParts.join(", ");
+
+  // Garante que a cidade está no parâmetro de busca se informado
+  if (city && !result.toLowerCase().includes(city.toLowerCase())) {
+    result += `, ${city}`;
+  }
+
+  return result || clean;
+};
+
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
-  // Apenas considera Motoboy iFood se houver motorista/status do iFood atribuído OU se for estritamente de logística parceira contratada
-  if (order.ifoodDriverName || order.ifoodDriverStatus) return true;
-  const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
-  const dMode = (order.deliveryMode || order.deliveryType || "").toString().toUpperCase();
-  if (dBy === "IFOOD_LOGISTICS" || dMode === "IFOOD_LOGISTICS") return true;
+
+  const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase().trim();
+  const dMode = (order.deliveryMode || "").toString().toUpperCase().trim();
+
+  // 1. Se explicitamente for "MERCHANT", "LOJA", "PROPRIO", "MERCHANT_DELIVERY" -> É ENTREGA PRÓPRIA DA LOJA!
+  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dBy === "MERCHANT_DELIVERY") {
+    return false;
+  }
+
+  // 2. Se o modo de entrega for DEFAULT, ECONOMIC, MERCHANT_DELIVERY, TAKEOUT, PICKUP -> É ENTREGA PRÓPRIA DA LOJA!
+  if (dMode === "DEFAULT" || dMode === "ECONOMIC" || dMode === "MERCHANT_DELIVERY" || dMode === "TAKEOUT" || dMode === "PICKUP") {
+    return false;
+  }
+
+  // 3. Apenas se explicitamente for "IFOOD" ou "IFOOD_LOGISTICS" ou "LOGISTICS" ou dMode === "LOGISTIC" / "PARTNER" -> É ENTREGA DO IFOOD
+  if (order.source === "IFOOD" && (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy === "LOGISTICS" || dMode === "LOGISTIC" || dMode === "PARTNER")) {
+    return true;
+  }
+
+  // 4. Fallback: se houver motorista do iFood alocado
+  if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) {
+    return true;
+  }
 
   return false;
 };
@@ -60,13 +131,11 @@ const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount
   if (item?.price && item.price > 0) return item.price;
 
   if (item?.comboSelections) {
-    try {
-      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
-        if (comboSum > 0) return comboSum;
-      }
-    } catch {}
+    const parsed = safeParseCombo(item.comboSelections);
+    if (parsed.length > 0) {
+      const comboSum = parsed.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+      if (comboSum > 0) return comboSum;
+    }
   }
 
   const otherItemsSum = (allItems || []).reduce((sum: number, it: any) => {
@@ -158,9 +227,22 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
   const today = hours[dayIdx];
   if (!today || !today.active) return { open: false, text: "Fechado hoje" };
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const [oh, om] = today.open.split(":").map(Number);
-  const [ch, cm] = today.close.split(":").map(Number);
-  if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${today.close}` };
+
+  if (Array.isArray(today.shifts) && today.shifts.length > 0) {
+    const activeShifts = today.shifts.filter((s: any) => s.open && s.close && s.active !== false);
+    for (const shift of activeShifts) {
+      const [oh, om] = (shift.open || "").split(":").map(Number);
+      const [ch, cm] = (shift.close || "").split(":").map(Number);
+      if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${shift.close}` };
+    }
+    return { open: false, text: "Fechado" };
+  }
+
+  if (today.open && today.close) {
+    const [oh, om] = today.open.split(":").map(Number);
+    const [ch, cm] = today.close.split(":").map(Number);
+    if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${today.close}` };
+  }
   return { open: false, text: "Fechado" };
 }
 
@@ -217,7 +299,7 @@ const DashboardColumn = memo(function DashboardColumn({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           {headerExtra}
-          <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
+          <span id={columnId === "col-preparo" ? "firehub-em-producao-count-badge" : undefined} data-column-count={count} style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.75rem" }}>
@@ -265,7 +347,22 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
 
   const isFinished = order.status === "ENTREGUE" || order.status === "CANCELADO" || order.status === "ENCERRADO";
-  const deadline = order.scheduledDatetime ? new Date(order.scheduledDatetime) : new Date(new Date(order.createdAt).getTime() + 45 * 60000);
+  const createdTime = new Date(order.createdAt).getTime();
+  const rawSchedTime = order.scheduledDatetime ? new Date(order.scheduledDatetime).getTime() : 0;
+  // Um agendamento verdadeiro de data futura deve ser superior ao horário de criação (+ 2 min)
+  const isRealScheduled = rawSchedTime > createdTime + 2 * 60000;
+
+  const isTakeoutOrder =
+    order.deliveryType === "RETIRADA" ||
+    order.deliveryType === "TAKEOUT" ||
+    String(order.deliveryType || "").toUpperCase().includes("RETIRADA") ||
+    String(order.notes || "").toUpperCase().includes("RETIRADA");
+
+  const defaultMinutes = isTakeoutOrder ? 40 : 45;
+
+  const deadline = isRealScheduled
+    ? new Date(order.scheduledDatetime)
+    : new Date(createdTime + defaultMinutes * 60000);
   const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
   const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
 
@@ -298,25 +395,30 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
   const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
 
+  const isAiCreating = order.status === "CRIANDO_IA";
   const cardBackground = isDragging
     ? "#DBEAFE"
-    : isRedAlert
-      ? "#FEF2F2"
-      : isYellowAlert
-        ? "#FFFBEB"
-        : "#fff";
+    : isAiCreating
+      ? "#FAF5FF"
+      : isRedAlert
+        ? "#FEF2F2"
+        : isYellowAlert
+          ? "#FFFBEB"
+          : "#fff";
 
   const cardBorder = isDragging
     ? "2.5px solid #2563EB"
-    : isRedAlert
-      ? "2.5px solid #EF4444"
-      : isYellowAlert
-        ? "2.5px solid #F59E0B"
-        : isLate
-          ? "1.5px solid #EF4444"
-          : isUrgent
-            ? "1.5px solid #F59E0B"
-            : "1px solid #E2E8F0";
+    : isAiCreating
+      ? "2px dashed #A855F7"
+      : isRedAlert
+        ? "2.5px solid #EF4444"
+        : isYellowAlert
+          ? "2.5px solid #F59E0B"
+          : isLate
+            ? "1.5px solid #EF4444"
+            : isUrgent
+              ? "1.5px solid #F59E0B"
+              : "1px solid #E2E8F0";
 
   const cardBoxShadow = isDragging
     ? "0 20px 40px -4px rgba(37, 99, 235, 0.45), 0 0 0 5px rgba(59, 130, 246, 0.2)"
@@ -366,10 +468,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             fontSize: (order.customerName || "").length > 25 ? "0.80rem" : (order.customerName || "").length > 15 ? "0.86rem" : "0.95rem",
             color: "#0F172A",
             flex: 1,
-            minWidth: 0,
-            whiteSpace: "normal",
-            wordBreak: "normal",
-            overflowWrap: "break-word",
+            minWidth: "120px",
+            wordBreak: "keep-all",
+            overflowWrap: "normal",
             lineHeight: "1.25",
             letterSpacing: "-0.2px"
           }}>
@@ -378,16 +479,21 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
             <span style={{
               padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
-              background: order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
-              color: order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
+              background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
+              color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
             }}>
-              {order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "Jotajá" : order.source === "PDV" ? "PDV" : "Online"}
+              {order.status === "CRIANDO_IA"
+                ? "🤖 IA criando..."
+                : order.source === "WHATSAPP_IA"
+                ? "🤖 IA Whats"
+                : order.source === "IFOOD"
+                ? `iFood #${order.ifoodReference || ""}`
+                : order.source === "JOTAJA"
+                ? `Jotajá #${order.openDeliveryReference || ""}`
+                : order.source === "PDV"
+                ? "PDV"
+                : "Online"}
             </span>
-            {(order.ifoodReference || order.openDeliveryReference) && (
-              <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#4F46E5" }}>
-                #{order.ifoodReference || order.openDeliveryReference}
-              </span>
-            )}
           </div>
         </div>
 
@@ -406,14 +512,55 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             </span>
           </div>
 
-          {/* Badge Pronto Cozinha se aplicável */}
-          {order.kdsStage === "FINISHED" && (
+          {/* Badge Pronto Cozinha / Botão Marcar como Pronto Cozinha */}
+          {order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
             <div style={{ marginBottom: "4px" }}>
-              <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block" }}>
+              <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block", border: "1px solid #86EFAC" }}>
                 ✅ Pronto Cozinha
               </span>
             </div>
-          )}
+          ) : order.status !== "CANCELADO" && order.status !== "ENCERRADO" ? (
+            <div style={{ marginBottom: "4px" }}>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const res = await fetch("/api/kds", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ orderId: order.id, action: "finish_order" }),
+                    });
+                    if (res.ok) {
+                      setOrders((prev: any[]) => prev.map((o: any) => o.id === order.id ? { ...o, kdsStage: "FINISHED" } : o));
+                    } else {
+                      const d = await res.json();
+                      alert("❌ " + (d.error || "Erro ao atualizar"));
+                    }
+                  } catch {
+                    alert("❌ Erro ao conectar.");
+                  }
+                }}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: "6px",
+                  fontSize: "0.68rem",
+                  fontWeight: 800,
+                  background: "#FEF3C7",
+                  color: "#B45309",
+                  border: "1.5px solid #FCD34D",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontFamily: "inherit",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                }}
+                title="Clique para marcar este pedido como pronto na cozinha"
+              >
+                👨‍🍳 Marcar como Pronto Cozinha
+              </button>
+            </div>
+          ) : null}
 
           {/* Endereço Resumido (Bairro) em caixa verde */}
           {order.customerAddress && (
@@ -473,6 +620,34 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               </span>
             )}
           </div>
+
+          {/* Banner de Alerta para Entrega Parceira iFood */}
+          {isIfoodMotoboy(order) && (
+            <div style={{
+              marginTop: "6px", padding: "6px 10px", borderRadius: "8px",
+              background: "#FEF2F2", border: "1.5px solid #FCA5A5",
+              color: "#DC2626", fontWeight: 800, fontSize: "0.75rem",
+              display: "flex", flexDirection: "column", gap: "4px"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>🛵</span>
+                <span>ENTREGA PARCEIRA IFOOD — Entregador do iFood (Não enviar motoboy da loja!)</span>
+              </div>
+              {(order.ifoodReference || order.openDeliveryReference) && (
+                <div style={{
+                  marginTop: "2px", padding: "5px 10px", borderRadius: "6px",
+                  background: "#FFF", border: "2px dashed #7C3AED",
+                  color: "#581C87", fontWeight: 900, fontSize: "0.84rem",
+                  display: "flex", alignItems: "center", justifyContent: "space-between"
+                }}>
+                  <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR:</span>
+                  <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
+                    #{order.ifoodPickupCode || order.ifoodReference || order.openDeliveryReference}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action Bar (Botões + Motoboy Dropdown Inline + WhatsApp + Print + Receipt) */}
@@ -511,7 +686,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             )}
 
             {/* Motoboy select / iFood Motoboy Badge */}
-            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && order.status !== "CANCELADO" && order.status !== "ENCERRADO" && (
+            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
               isIfoodMotoboy(order) ? (
                 <select
                   disabled
@@ -529,16 +704,20 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 </select>
               ) : (
                 <select
-                  value={order.motoboyId || ""}
+                  value={order.motoboyId || (order as any).motoboy?.id || ""}
                   onChange={e => { e.stopPropagation(); onAssignMotoboy && onAssignMotoboy(order.id, e.target.value); }}
                   disabled={assigningId === order.id}
                   onClick={e => e.stopPropagation()}
                   style={{
-                    padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #94A3B8",
-                    fontSize: "0.78rem", fontWeight: 600, color: order.motoboyId ? "#047857" : "#1E293B",
-                    background: order.motoboyId ? "#ECFDF5" : "#F8FAFC", fontFamily: "inherit",
-                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px"
+                    padding: "4px 8px", borderRadius: "6px",
+                    border: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "2px solid #EF4444" : (order.motoboyId ? "1.5.px solid #059669" : "1.5px solid #94A3B8"),
+                    fontSize: "0.78rem", fontWeight: 700,
+                    color: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#991B1B" : (order.motoboyId ? "#047857" : "#1E293B"),
+                    background: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#FEE2E2" : (order.motoboyId ? "#ECFDF5" : "#F8FAFC"),
+                    fontFamily: "inherit",
+                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "145px"
                   }}
+                  title={(order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "Pedido CANCELADO com Motoboy atribuído (para aviso e acerto financeiro)" : "Atribuir/Alterar Motoboy"}
                 >
                   <option value="">Motoboy</option>
                   {motoboys?.map((m: any) => (
@@ -552,17 +731,21 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           {/* Right: Icon buttons */}
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
             {/* WhatsApp */}
-            {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (
-              <a
-                href={`https://wa.me/55${(order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "")}`}
-                target="_blank" rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
-                title="WhatsApp"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
-              >
-                <MessageCircle size={15} />
-              </a>
-            )}
+            {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (() => {
+              const rawDigits = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "");
+              const waPhone = rawDigits.startsWith("55") ? rawDigits : `55${rawDigits}`;
+              return (
+                <a
+                  href={`https://wa.me/${waPhone}`}
+                  target="_blank" rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  title="WhatsApp do Cliente"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
+                >
+                  <MessageCircle size={15} />
+                </a>
+              );
+            })()}
 
             {/* Print */}
             <button
@@ -616,14 +799,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
           <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
             {order.items?.map((item: any) => {
-              const comboSels = (() => {
-                if (!item.comboSelections) return [];
-                try {
-                  const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-                  if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-                  return [];
-                } catch { return []; }
-              })();
+              const comboSels = parseComboSelections(item.comboSelections, item.quantity);
               const nameParts = (item.menuProduct?.name || "Item").split(" | ");
               const mainName = nameParts[0];
               const extras = nameParts.slice(1);
@@ -659,7 +835,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   );
 });
 
-export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[] }) {
+export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -705,7 +881,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         p.scheduledDatetime !== n.scheduledDatetime ||
         (p.items?.length || 0) !== (n.items?.length || 0) ||
         p.ifoodDriverStatus !== n.ifoodDriverStatus ||
-        p.ifoodDriverName !== n.ifoodDriverName
+        p.ifoodDriverName !== n.ifoodDriverName ||
+        p.kdsStage !== n.kdsStage
       ) {
         return false;
       }
@@ -726,6 +903,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     redMinutes: 5,
   });
   const [showAlertModal, setShowAlertModal] = useState(false);
+  const [showRoteirizacaoModal, setShowRoteirizacaoModal] = useState(false);
+  const [showMotoboyLinkModal, setShowMotoboyLinkModal] = useState(false);
+  const [copiedMotoboyLink, setCopiedMotoboyLink] = useState(false);
   const [showJotajaManualModal, setShowJotajaManualModal] = useState(false);
   const [jjOrderNumber, setJjOrderNumber] = useState("");
   const [jjCustomerName, setJjCustomerName] = useState("");
@@ -819,6 +999,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
     return 1;
   });
+  const [allowScheduledOrders, setAllowScheduledOrders] = useState<boolean>(() => {
+    return (user as any)?.allowScheduledOrders ?? true;
+  });
+
+  const toggleAllowScheduledOrders = async (newValue: boolean) => {
+    setAllowScheduledOrders(newValue);
+    try {
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowScheduledOrders: newValue }),
+      });
+      if (res.ok) {
+        showToast(newValue ? "🟢 Agendamentos ATIVADOS no site próprio!" : "🔴 Agendamentos DESATIVADOS no site próprio!", newValue ? "#10B981" : "#EF4444");
+      } else {
+        setAllowScheduledOrders(!newValue);
+        showToast("❌ Falha ao atualizar configuração de agendamentos", "#EF4444");
+      }
+    } catch {
+      setAllowScheduledOrders(!newValue);
+      showToast("❌ Erro de conexão ao salvar", "#EF4444");
+    }
+  };
   const [scheduleLeadInput, setScheduleLeadInput] = useState("");
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
@@ -908,6 +1111,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false) => {
     if (!order) return;
+    if (order.status === "CRIANDO_IA") {
+      showToast("⚠️ O pedido ainda está sendo montado pela IA no WhatsApp. Aguarde a finalização para imprimir.", "#F59E0B");
+      return;
+    }
     const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
     if (!isManual && orderKey && (printingInProgressRef.current.has(orderKey) || isAutoPrinted(order))) {
       console.log(`[Print] ⚠️ Impressão já em andamento ou pedido já impresso para ${orderKey}. Ignorando chamada duplicada.`);
@@ -942,8 +1149,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
         items: (order.items || []).map((i: any) => {
           const rawName = i.menuProduct?.name || i.name || "Item";
+          const cleanName = rawName.split(" | ")[0].trim();
           return {
-            name: rawName,
+            name: cleanName,
             qty: i.quantity || i.qty || 1,
             price: i.price || 0,
             notes: i.notes || "",
@@ -1062,7 +1270,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const poll = async () => {
       try {
         if (!isDraggingRef.current) {
-          const res = await fetch("/api/customer-order/poll");
+          const res = await fetch(`/api/customer-order/poll?t=${Date.now()}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" }
+          });
           if (res.ok && active) {
             const text = await res.text();
             // Only update if data actually changed — prevents re-render closing dropdowns
@@ -1071,6 +1282,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               const newOrders = JSON.parse(text);
               if (!areOrdersEqual(ordersRef.current, newOrders)) {
                 setOrders(newOrders);
+              }
+
+              // Detectar pedidos verdadeiramente NOVOS que chegaram via polling
+              const currentKnown = knownOrderIdsRef.current;
+              const freshOrders = newOrders.filter((o: any) => !currentKnown.has(o.id));
+
+              if (freshOrders.length > 0) {
+                freshOrders.forEach((o: any) => {
+                  if (o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
+                    if (printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
+                      markAutoPrinted(o);
+                      console.log("[AutoPrint] 🖨️ Disparando impressão automática para pedido novo:", o.id);
+                      handlePrint(o, "cozinha");
+                    }
+                  }
+                });
               }
 
               // Atualizar IDs e status conhecidos
@@ -1114,16 +1341,33 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, [cancelConfirmId]);
 
   // Auto-accept logic (apenas para pedidos recentes do dia/turno atual criados há menos de 6 horas)
+  const autoAcceptedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!autoAccept) return;
     const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
     const novos = orders.filter(o => {
       if (o.status !== "NOVO") return false;
+      if (autoAcceptedIdsRef.current.has(o.id)) return false; // Já aceito nesta sessão
       const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : Date.now();
       return orderTime >= sixHoursAgo;
     });
+    if (novos.length === 0) return;
+    // Aceitar todos de uma vez, sem loop de refresh
     novos.forEach(o => {
-      updateStatus(o.id, "ACEITO");
+      autoAcceptedIdsRef.current.add(o.id);
+      // Atualizar estado local imediatamente
+      setOrders(prev => prev.map(p => p.id === o.id ? { ...p, status: "ACEITO" } : p));
+      // Disparar API sem router.refresh()
+      fetch("/api/customer-order/status", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: o.id, status: "ACEITO" }),
+      }).then(res => {
+        if (res.ok && printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
+          markAutoPrinted(o);
+          handlePrint(o, "cozinha");
+        }
+      }).catch(() => {});
     });
   }, [orders, autoAccept]);
 
@@ -1277,11 +1521,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const assignMotoboy = async (orderId: string, motoboyId: string) => {
     setAssigningId(orderId);
+    const targetOrder = orders.find((o) => o.id === orderId);
+    const seqNum = targetOrder ? (targetOrder.dailyOrderNumber ?? orderNumberMap.get(orderId)) : undefined;
+
     try {
       await fetch("/api/customer-order/assign-motoboy", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, motoboyId: motoboyId || null }),
+        body: JSON.stringify({
+          orderId,
+          motoboyId: motoboyId || null,
+          firehubOrderNumber: seqNum,
+        }),
       });
       setOrders(prev => prev.map(o =>
         o.id === orderId
@@ -1381,7 +1632,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         })
       });
       if (res.ok) {
-        setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", motoboyId: null, motoboy: null } : o));
+        setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
         router.refresh();
       } else showToast("Erro ao cancelar.", "#EF4444");
     } catch { showToast("Erro.", "#EF4444"); } finally {
@@ -1590,46 +1841,67 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
     
     if (!searchTerm) return true;
-    const s = searchTerm.toLowerCase();
-    return o.customerName?.toLowerCase().includes(s) || o.customerPhone?.includes(s) || o.customerAddress?.toLowerCase().includes(s) || o.id.includes(s);
+    const s = searchTerm.toLowerCase().replace("#", "").trim();
+    const displayNum = String(o.dailyOrderNumber || o.ifoodReference || o.openDeliveryReference || "").toLowerCase();
+
+    return (
+      (o.customerName || "").toLowerCase().includes(s) ||
+      (o.customerPhone || "").includes(s) ||
+      (o.customerAddress || "").toLowerCase().includes(s) ||
+      o.id.toLowerCase().includes(s) ||
+      displayNum.includes(s) ||
+      (o.openDeliveryReference || "").toLowerCase().includes(s) ||
+      (o.ifoodReference || "").toLowerCase().includes(s) ||
+      (o.notes || "").toLowerCase().includes(s) ||
+      String(o.dailyOrderNumber || "").includes(s)
+    );
   });
 
-  // Sequential order numbering — includes ALL orders in period (even ENCERRADO)
-  // so numbers stay stable. Resets when date range / cash session changes.
-  // Sequential order numbering — tied strictly to active cash session (resets ONLY when cash is closed & opened)
-  const orderNumberMap = useMemo(() => {
-    const map = new Map<string, number>();
+  // Numeração PERMANENTE E IMUTÁVEL:
+  // Uma vez atribuído um número (ex: #97), ele é bloqueado e NUNCA muda ou pisca para outro valor.
+  const persistentOrderNumMapRef = useRef<Map<string, number>>(new Map());
 
-    // 1. If dailyOrderNumber was sent by API, use it
+  const orderNumberMap = useMemo(() => {
+    const map = persistentOrderNumMapRef.current;
+
+    // 1. Respeita dailyOrderNumber se veio da API/banco e fixa no mapa permanente
     orders.forEach((o: any) => {
-      if (o.dailyOrderNumber) {
+      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
         map.set(o.id, o.dailyOrderNumber);
       }
     });
 
-    // 2. Cutoff: data de abertura do caixa atual (se houver caixa aberto), ou janela de 48h (se não houver)
-    const sessionStartCutoff = cashOpenedAt
-      ? new Date(cashOpenedAt)
-      : new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const sortedOrders = [...orders].sort(
+      (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
 
-    const sortedSessionOrders = [...orders]
-      .filter((o: any) => new Date(o.createdAt) >= sessionStartCutoff)
-      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const openSessionStart = cashOpenedAt ? new Date(cashOpenedAt).getTime() : null;
 
-    sortedSessionOrders.forEach((o: any, i: number) => {
+    const pastOrders = openSessionStart
+      ? sortedOrders.filter((o: any) => new Date(o.createdAt).getTime() < openSessionStart)
+      : sortedOrders;
+
+    const currentSessionOrders = openSessionStart
+      ? sortedOrders.filter((o: any) => new Date(o.createdAt).getTime() >= openSessionStart)
+      : [];
+
+    // Mapear pedidos passados contínuos do turno
+    const shiftCounters = new Map<string, number>();
+    pastOrders.forEach((o: any) => {
       if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
+        const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
+        const tz = user?.storeTimezone || "America/Sao_Paulo";
+        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: tz }).split(",")[0];
+        const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
+        shiftCounters.set(shiftKey, nextSeq);
+        map.set(o.id, nextSeq);
       }
     });
 
-    // 3. Fallback para pedidos anteriores à abertura do caixa atual (isolados)
-    const sortedOlder = [...orders]
-      .filter((o: any) => new Date(o.createdAt) < sessionStartCutoff)
-      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    sortedOlder.forEach((o: any, i: number) => {
+    // Mapear pedidos da sessão atual a partir de #1, #2, #3...
+    currentSessionOrders.forEach((o: any, idx: number) => {
       if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
+        map.set(o.id, idx + 1);
       }
     });
 
@@ -1639,29 +1911,55 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
   const sortByOrderNumberAsc = (a: any, b: any) => {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+    if (timeA !== timeB) return timeA - timeB;
     const numA = a.dailyOrderNumber ?? orderNumberMap.get(a.id) ?? 0;
     const numB = b.dailyOrderNumber ?? orderNumberMap.get(b.id) ?? 0;
-    if (numA !== numB) return numA - numB;
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    return numA - numB;
   };
 
-  const novos = filteredOrders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
-  const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO").sort(sortByOrderNumberAsc);
-  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
+  const novos = filteredOrders.filter(o => (o.status === "NOVO" || o.status === "CRIANDO_IA") && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
+  const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
+  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
   const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberAsc);
+
+  // Transmite em tempo real a quantidade de pedidos em produção para a extensão Chrome do FireHub
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.postMessage({
+        type: "FIREHUB_EM_PRODUCAO_COUNT",
+        count: preparo.length
+      }, "*");
+    }
+  }, [preparo.length]);
 
   // Resumo de vendas
   const allInRange = orders.filter(o => { const d = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt); return d >= fromDate && d <= toDate; });
   const resumo = {
-    pendentes: allInRange.filter(o => o.status === "NOVO"),
+    pendentes: allInRange.filter(o => o.status === "AGUARDANDO_PAGAMENTO"),
+    novos: allInRange.filter(o => o.status === "NOVO"),
     preparo: allInRange.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO"),
     transporte: allInRange.filter(o => o.status === "SAIU_ENTREGA"),
     entregues: allInRange.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO"),
     cancelados: allInRange.filter(o => o.status === "CANCELADO"),
     total: allInRange.filter(o => o.status !== "CANCELADO"),
   };
-  const sumVal = (arr: any[]) => arr.reduce((s, o) => s + o.totalAmount + (o.discountIfood ?? 0), 0);
+
+  const getChannelDiscount = (o: any): number => {
+    if (typeof o.discountIfood === "number" && o.discountIfood > 0) return o.discountIfood;
+    const totDisc = Number(o.discountTotal || 0);
+    const merchDisc = Number(o.discountMerchant || 0);
+    if (totDisc > merchDisc) return totDisc - merchDisc;
+    if (o.notes) {
+      const match = o.notes.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i);
+      if (match && match[1]) return parseFloat(match[1].replace(",", "."));
+    }
+    return 0;
+  };
+
+  const sumVal = (arr: any[]) => arr.reduce((s, o) => s + (Number(o.totalAmount) || 0) + getChannelDiscount(o), 0);
   const fmtR = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
 
 
@@ -1760,11 +2058,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       {/* DELIVERY INFO & ROUTE MAP MODAL */}
       {deliveryInfoModalOrder && (() => {
         const order = deliveryInfoModalOrder;
-        const storeOriginAddress = user?.storeAddress || user?.address || (user?.city ? `São Francisco, ${user.city}` : "Sua Loja");
-        const customerDestAddress = cleanAddress(order.customerAddress) || "Endereço do Cliente";
+        const storeOriginAddress = user?.storeAddress || user?.address || (user?.city ? `São Francisco, ${user.city}` : "Sua Loja");
+        const rawCustomerAddress = cleanAddress(order.customerAddress) || "Endereço do Cliente";
 
-        const originFull = storeOriginAddress.includes(",") ? storeOriginAddress : `${storeOriginAddress}, ${user?.city || ""}`.trim();
-        const destFull = customerDestAddress.includes(",") ? customerDestAddress : `${customerDestAddress}, ${user?.city || ""}`.trim();
+        const originFull = cleanAddressForMap(storeOriginAddress, user?.city);
+        const destFull = cleanAddressForMap(rawCustomerAddress, user?.city || "Rio das Ostras");
 
         // Google Maps Directions Iframe URL (saddr = start/origem, daddr = destination/destino) -> gera a linha azul da rota e tempo estimado
         const mapEmbedUrl = `https://maps.google.com/maps?saddr=${encodeURIComponent(originFull)}&daddr=${encodeURIComponent(destFull)}&output=embed`;
@@ -1792,7 +2090,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 background: "#fff",
                 borderRadius: "16px",
                 width: "100%",
-                maxWidth: "520px",
+                maxWidth: "540px",
                 maxHeight: "92vh",
                 overflowY: "auto",
                 boxShadow: "0 25px 60px rgba(0,0,0,0.35)",
@@ -1871,13 +2169,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#2563EB", marginBottom: "6px" }}>
                     Rota de entrega
                   </div>
-                  <div style={{ fontSize: "0.82rem", color: "#475569", lineHeight: "1.5" }}>
-                    <span style={{ color: "#2563EB", fontWeight: 700 }}>↗ De</span> {originFull} <span style={{ color: "#0F172A", fontWeight: 700 }}>para</span> {destFull}.
+                  <div style={{ fontSize: "0.84rem", color: "#334155", lineHeight: "1.5", background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                    <div><span style={{ color: "#2563EB", fontWeight: 700 }}>↗ De:</span> {originFull}</div>
+                    <div style={{ marginTop: "4px" }}><span style={{ color: "#059669", fontWeight: 700 }}>📍 Para:</span> {rawCustomerAddress}</div>
+                    {destFull !== rawCustomerAddress && (
+                      <div style={{ marginTop: "4px", fontSize: "0.78rem", color: "#64748B" }}>
+                        <span style={{ fontWeight: 700 }}>🗺️ Busca do Mapa:</span> {destFull}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Google Maps / Embed Rota com linha azul */}
-                <div style={{ marginBottom: "16px", borderRadius: "12px", overflow: "hidden", border: "1px solid #CBD5E1", height: "300px", background: "#E2E8F0" }}>
+                <div style={{ marginBottom: "14px", borderRadius: "12px", overflow: "hidden", border: "1px solid #CBD5E1", height: "280px", background: "#E2E8F0" }}>
                   <iframe
                     title="Mapa de Rota de Entrega"
                     width="100%"
@@ -1887,6 +2191,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     src={mapEmbedUrl}
                     allowFullScreen
                   />
+                </div>
+
+                {/* Botões de GPS Direto (Google Maps / Waze) */}
+                <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+                  <a
+                    href={googleMapsDirUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ flex: 1, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 12px", borderRadius: "8px", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}
+                  >
+                    🗺️ Abrir no Google Maps
+                  </a>
+                  <a
+                    href={wazeNavUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ flex: 1, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 12px", borderRadius: "8px", background: "#0284C7", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}
+                  >
+                    🧭 Abrir no Waze
+                  </a>
                 </div>
 
                 {/* Botões de Ação */}
@@ -1915,7 +2239,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const order = orders.find(o => o.id === viewReceiptOrderId);
         if (!order) return null;
 
-        const phone = order.customerPhone || "";
+        const rawPhone = order.customerPhone || "";
+        const phoneDigits = rawPhone.replace(/\D/g, "");
+        let phone = rawPhone;
+        if (phoneDigits.length >= 10 && phoneDigits.length <= 13) {
+          phone = phoneDigits.length === 13 && phoneDigits.startsWith("55")
+            ? `+55 (${phoneDigits.slice(2, 4)}) ${phoneDigits.slice(4, 9)}-${phoneDigits.slice(9)}`
+            : phoneDigits.length === 11
+            ? `(${phoneDigits.slice(0, 2)}) ${phoneDigits.slice(2, 7)}-${phoneDigits.slice(7)}`
+            : rawPhone;
+        }
         const createdDate = new Date(order.createdAt);
         const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
         const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -1975,11 +2308,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <span style={{ fontSize: "16px", fontWeight: "bold" }}>{`#${order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}`}</span>
                 </div>
 
+                <div style={{ fontSize: "13px", fontWeight: 900, color: "#000", marginBottom: "10px", background: "#F1F5F9", padding: "6px 8px", borderRadius: "4px", border: "1px solid #CBD5E1", textAlign: "center" }}>
+                  📅 DATA E HORA DO PEDIDO: {dateStr} às {timeStr}
+                </div>
+
                 <div style={{ marginBottom: "12px" }}>
                   <div>Estabelecimento: <strong style={{ textTransform: "uppercase" }}>{storeName}</strong></div>
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
-                  <div>Data: {dateStr} {timeStr}</div>
                 </div>
+
+                {isIfoodMotoboy(order) && (order.ifoodPickupCode || order.ifoodReference) && (
+                  <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR IFOOD</div>
+                    <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodPickupCode || order.ifoodReference}</div>
+                  </div>
+                )}
 
                 <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
                   <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>CLIENTE</span>
@@ -2018,16 +2361,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 <div style={{ marginBottom: "14px" }}>
                   {order.items?.map((item: any) => {
-                    const comboSels = (() => {
-                      if (!item.comboSelections) return [];
-                      try {
-                        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-                        if (Array.isArray(parsed)) return parsed.filter((s: any) => s.name);
-                        return [];
-                      } catch { return []; }
-                    })();
-                    const nameParts = (item.menuProduct?.name || "Item").split(" | ");
-                    const mainName = nameParts[0];
+                    const comboSels = parseComboSelections(item.comboSelections, item.quantity);
+                    const nameParts = (item.menuProduct?.name || item.name || "Item").split(" | ");
+                    const mainName = nameParts[0].trim();
                     const extras = nameParts.slice(1);
                     const itemPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
                     const isStandaloneBeverage = comboSels.length === 0 && isBeverageItem(item);
@@ -2184,11 +2520,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         <div style={{ fontWeight: "bold", fontSize: "13px", color: "#000" }}>
                           Forma de Pagamento: {baseMethod} (Cobrar na Entrega)
                         </div>
-                        {order.changeAmount != null && Number(order.changeAmount) > 0 && (
-                          <div style={{ marginTop: "4px", fontSize: "12px", fontWeight: "bold" }}>
-                            💵 Troco para: R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
-                          </div>
-                        )}
+                        {order.changeAmount != null && Number(order.changeAmount) > 0 && (() => {
+                          const changeVal = Number(order.changeAmount);
+                          const changeToGive = changeVal > order.totalAmount ? (changeVal - order.totalAmount) : 0;
+                          return (
+                            <div style={{ marginTop: "6px", padding: "6px 8px", background: "#FFF3E0", border: "1.5px solid #000", borderRadius: "4px" }}>
+                              <div style={{ fontSize: "13px", fontWeight: 900, color: "#000" }}>
+                                💵 Troco para: R$ {changeVal.toFixed(2).replace('.', ',')}
+                              </div>
+                              {changeToGive > 0 && (
+                                <div style={{ color: "#C62828", fontSize: "13px", fontWeight: 900, marginTop: "3px" }}>
+                                  👉 SEPARAR R$ {changeToGive.toFixed(2).replace('.', ',')} DE TROCO
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <div style={{
                           marginTop: "10px",
                           padding: "8px 10px",
@@ -2457,24 +2804,53 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         }
 
         const timeLeftStr = timeLeft != null ? `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, "0")}` : null;
+
+        const isResend = dispute.type === "RESEND_ITEMS" || /reenvio|reenviar|repor|substituir|troca/i.test(dispute.reason || "");
+        const isRefund = dispute.type === "REFUND_ITEMS" || /reembolso|reembolsar/i.test(dispute.reason || "");
+        const isDueDate = dispute.type === "DUE_DATE_CHANGE" || /previsão|atraso|tempo/i.test(dispute.reason || "");
+
+        const modalEmoji = isResend ? "📦" : isRefund ? "💰" : isDueDate ? "⏱️" : "⚠️";
+        const modalTitle = isResend
+          ? `Pedido #${orderNum}: Solicitação de Reenvio de Item`
+          : isRefund
+          ? `Pedido #${orderNum}: Solicitação de Reembolso`
+          : isDueDate
+          ? `Pedido #${orderNum}: Nova Previsão de Entrega`
+          : `Pedido #${orderNum} em negociação`;
+
+        const modalSubtitle = isResend
+          ? `O cliente prefere o reenvio de itens para resolver o problema no iFood.`
+          : isRefund
+          ? `O cliente solicitou o reembolso de um item pelo iFood.`
+          : isDueDate
+          ? `O cliente pediu atualização do tempo de entrega pelo iFood.`
+          : `O cliente solicitou o cancelamento ${(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : "pelo iFood"}`;
+
+        const boxBg = isResend ? "#EFF6FF" : isRefund ? "#ECFDF5" : "#FEF3C7";
+        const boxBorder = isResend ? "#93C5FD" : isRefund ? "#A7F3D0" : "#FDE68A";
+        const boxTitleColor = isResend ? "#1D4ED8" : isRefund ? "#047857" : "#92400E";
+        const boxTextColor = isResend ? "#1E40AF" : isRefund ? "#065F46" : "#78350F";
+
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "440px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: "3px solid #F59E0B" }}>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "450px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: `3px solid ${isResend ? "#2563EB" : isRefund ? "#10B981" : "#F59E0B"}` }}>
               <div style={{ textAlign: "center", marginBottom: "16px" }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>⚠️</div>
-                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#92400E" }}>Pedido #{orderNum} em negociação</div>
-                <div style={{ fontSize: "0.82rem", color: "#6B7280", marginTop: "4px" }}>O cliente solicitou o cancelamento {(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : "pelo iFood"}</div>
+                <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>{modalEmoji}</div>
+                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: isResend ? "#1E40AF" : "#92400E" }}>{modalTitle}</div>
+                <div style={{ fontSize: "0.82rem", color: "#4B5563", marginTop: "4px", fontWeight: 600 }}>{modalSubtitle}</div>
                 {timeLeftStr && (
                   <div style={{ marginTop: "8px", padding: "4px 12px", display: "inline-block", background: timeLeft! < 60 ? "#FEE2E2" : "#FEF3C7", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, color: timeLeft! < 60 ? "#DC2626" : "#92400E" }}>
-                    ⏱ Tempo restante: {timeLeftStr}
+                    ⏱ Tempo para responder no iFood: {timeLeftStr}
                   </div>
                 )}
               </div>
-              <div style={{ background: "#FEF3C7", borderRadius: "10px", padding: "14px", marginBottom: "16px", border: "1px solid #FDE68A" }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#92400E", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>Motivo do cliente:</div>
-                <div style={{ fontSize: "0.95rem", color: "#78350F", fontWeight: 600 }}>"{dispute.reason || "Não informado"}"</div>
+              <div style={{ background: boxBg, borderRadius: "10px", padding: "14px", marginBottom: "16px", border: `1px solid ${boxBorder}` }}>
+                <div style={{ fontSize: "0.75rem", fontWeight: 800, color: boxTitleColor, marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {isResend ? "📦 SOLICITAÇÃO DO CLIENTE / MOTIVO:" : "MOTIVO DO CLIENTE:"}
+                </div>
+                <div style={{ fontSize: "0.95rem", color: boxTextColor, fontWeight: 700 }}>"{dispute.reason || "Cliente prefere o reenvio de itens pra resolver o problema."}"</div>
                 {dispute.requestedAt && (
-                  <div style={{ fontSize: "0.72rem", color: "#A16207", marginTop: "6px" }}>
+                  <div style={{ fontSize: "0.72rem", color: boxTitleColor, marginTop: "6px" }}>
                     Solicitado às {new Date(dispute.requestedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                   </div>
                 )}
@@ -2484,12 +2860,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
                 {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? "Jotajá" : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
               </div>
-              {/* Campo de motivo para recusa */}
+              {/* Campo de motivo para resposta */}
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>Sua resposta ao cliente (obrigatório para recusar):</label>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>Sua resposta ao cliente (opcional/obrigatório para recusar):</label>
                 <textarea
                   id="dispute-deny-reason"
-                  placeholder="Ex: O pedido já está em preparo e sairá em breve..."
+                  placeholder={isResend ? "Ex: Reenviaremos o item em até 25 minutos..." : "Ex: O pedido já foi preparado e entregue corretamente..."}
                   rows={3}
                   style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #D1D5DB", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
                 />
@@ -2499,8 +2875,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   disabled={!!loadingId}
                   onClick={async () => {
                     const reasonEl = document.getElementById("dispute-deny-reason") as HTMLTextAreaElement;
-                    const reason = reasonEl?.value?.trim();
-                    if (!reason) { showToast("Por favor, informe o motivo da recusa.", "#EF4444"); reasonEl?.focus(); return; }
+                    const reason = reasonEl?.value?.trim() || (isResend ? "Item será reenviado" : "Pedido mantido conforme solicitado");
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
@@ -2514,12 +2889,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : "✋ Recusar cancelamento — manter pedido"}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "📦 Reenviar item — manter pedido" : "✋ Recusar cancelamento — manter pedido")}
                 </button>
                 <button
                   disabled={!!loadingId}
                   onClick={async () => {
-                    if (!confirm("Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
+                    if (!confirm(isResend ? "Deseja recusar a proposta de reenvio e cancelar o pedido?" : "Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
@@ -2533,7 +2908,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : "✅ Aceitar cancelamento"}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "❌ Recusar reenvio — cancelar pedido" : "✅ Aceitar cancelamento")}
                 </button>
               </div>
             </div>
@@ -2550,7 +2925,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
             {[
               { label: `PAGAMENTOS PENDENTES (${resumo.pendentes.length})`, val: sumVal(resumo.pendentes), bold: false, red: false },
-              { label: `NOVOS PEDIDOS (${resumo.pendentes.length})`, val: sumVal(resumo.pendentes), bold: false, red: false },
+              { label: `NOVOS PEDIDOS (${resumo.novos.length})`, val: sumVal(resumo.novos), bold: false, red: false },
               { label: `EM PREPARO (${resumo.preparo.length})`, val: sumVal(resumo.preparo), bold: false, red: false },
               { label: `EM TRANSPORTE (${resumo.transporte.length})`, val: sumVal(resumo.transporte), bold: false, red: false },
               { label: `ENTREGUES (${resumo.entregues.length})`, val: sumVal(resumo.entregues), bold: false, red: false },
@@ -2693,6 +3068,48 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <p style={{ fontSize: "0.78rem", color: "#64748B", margin: 0 }}>{scheduledOrders.length} pedido{scheduledOrders.length !== 1 ? "s" : ""} agendado{scheduledOrders.length !== 1 ? "s" : ""} para os próximos dias</p>
               </div>
               <button onClick={() => setShowAgendamentos(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Bloco de Ativar / Desativar Agendamentos */}
+            <div style={{ marginBottom: "16px", padding: "14px 16px", background: allowScheduledOrders ? "#F0FDF4" : "#FEF2F2", borderRadius: "14px", border: `1.5px solid ${allowScheduledOrders ? "#BBF7D0" : "#FECACA"}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "0.9rem", color: allowScheduledOrders ? "#166534" : "#991B1B", display: "flex", alignItems: "center", gap: "6px" }}>
+                  {allowScheduledOrders ? "🟢 Aceitar Agendamentos no Site" : "🔴 Agendamentos Desativados"}
+                </div>
+                <div style={{ fontSize: "0.76rem", color: allowScheduledOrders ? "#15803D" : "#B91C1C", marginTop: "2px" }}>
+                  {allowScheduledOrders ? "Clientes podem escolher data/horário para agendar no seu site próprio." : "Seu site próprio aceitará apenas pedidos para entrega imediata."}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleAllowScheduledOrders(!allowScheduledOrders)}
+                style={{
+                  position: "relative",
+                  width: "52px",
+                  height: "28px",
+                  borderRadius: "20px",
+                  background: allowScheduledOrders ? "#22C55E" : "#CBD5E1",
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.25s ease",
+                  flexShrink: 0,
+                  boxShadow: "inset 0 2px 4px rgba(0,0,0,0.1)",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "3px",
+                    left: allowScheduledOrders ? "27px" : "3px",
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "50%",
+                    background: "#fff",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                    transition: "all 0.25s ease",
+                  }}
+                />
+              </button>
             </div>
 
             {/* Configuração de antecedência */}
@@ -2994,6 +3411,36 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               title="Configurar Alertas Visuais de Tempo Limite (Amarelo / Vermelho)"
             >
               <Bell size={14} /> ⏱️ Alertas de Produção
+            </button>
+
+            {/* Módulo de Roteirização */}
+            <button
+              onClick={() => setShowRoteirizacaoModal(true)}
+              style={{
+                padding: "5px 12px", border: "1.5px solid #2563EB", borderRadius: "8px",
+                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: "5px",
+                background: "#EFF6FF", color: "#1D4ED8",
+                boxShadow: "0 2px 6px rgba(37,99,235,0.15)"
+              }}
+              title="Abrir Módulo de Roteirização e Mapa de Entregas"
+            >
+              <MapPin size={14} /> 🗺️ Roteirização
+            </button>
+
+            {/* App Motoboys Link Button */}
+            <button
+              onClick={() => setShowMotoboyLinkModal(true)}
+              style={{
+                padding: "5px 12px", border: "1.5px solid #059669", borderRadius: "8px",
+                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: "5px",
+                background: "#ECFDF5", color: "#047857",
+                boxShadow: "0 2px 6px rgba(5,150,105,0.15)"
+              }}
+              title="App Motoboys - Copiar Link de Acesso para seus Entregadores"
+            >
+              🛵 App Motoboys
             </button>
           </div>
 
@@ -3347,6 +3794,90 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 💾 Salvar Configurações
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Módulo de Roteirização */}
+      <RoteirizacaoModal
+        isOpen={showRoteirizacaoModal}
+        onClose={() => setShowRoteirizacaoModal(false)}
+        orders={orders}
+        storeAddress={user.storeAddress}
+        storeCity={user.city}
+        storeSlug={user.slug}
+        storeId={user.id}
+        storeLatLng={user.storeLatLng}
+        onRefreshOrders={() => router.refresh()}
+        onUpdateOrderStatus={updateStatus}
+      />
+
+      {/* Modal App Motoboys - Link de Acesso Exclusivo */}
+      {showMotoboyLinkModal && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(6px)",
+          zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem"
+        }}>
+          <div style={{
+            background: "#FFFFFF", width: "100%", maxWidth: "520px", borderRadius: "16px",
+            padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.4)", border: "1px solid #E2E8F0"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.8rem" }}>🛵</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0F172A" }}>
+                    Portal de Acesso dos Motoboys
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748B" }}>
+                    Envie este link para seus entregadores cadastrarem/acessarem
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMotoboyLinkModal(false)}
+                style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontWeight: 800 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{
+              background: "#F8FAFC", border: "1.5px solid #CBD5E1", borderRadius: "10px",
+              padding: "1rem", marginBottom: "1.25rem"
+            }}>
+              <label style={{ fontSize: "0.76rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+                Link Direto da Loja ({user.slug || "sua-loja"}):
+              </label>
+              <div style={{
+                background: "#FFFFFF", border: "1px solid #E2E8F0", padding: "10px 12px",
+                borderRadius: "8px", fontSize: "0.88rem", fontWeight: 700, color: "#1D4ED8",
+                wordBreak: "break-all"
+              }}>
+                {typeof window !== "undefined" ? `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy` : `https://firehubfood.com.br/loja/${user.slug || "sua-loja"}/motoboy`}
+              </div>
+            </div>
+
+            <div style={{ display: "flex" }}>
+              <button
+                onClick={() => {
+                  const link = `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy`;
+                  navigator.clipboard.writeText(link);
+                  setCopiedMotoboyLink(true);
+                  setTimeout(() => setCopiedMotoboyLink(false), 3000);
+                }}
+                style={{
+                  width: "100%", padding: "14px", background: copiedMotoboyLink ? "#10B981" : "#2563EB",
+                  color: "#FFFFFF", border: "none", borderRadius: "10px", fontWeight: 900,
+                  fontSize: "0.95rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  boxShadow: "0 4px 12px rgba(37,99,235,0.25)"
+                }}
+              >
+                {copiedMotoboyLink ? "✅ Link Copiado para a Área de Transferência!" : "📋 Copiar Link para Motoboys"}
+              </button>
+            </div>
+
           </div>
         </div>
       )}

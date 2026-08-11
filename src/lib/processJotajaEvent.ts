@@ -103,35 +103,41 @@ export async function processJotajaEvent(
     });
 
     if (!existing) {
-      // ── CRIAR pedido novo ──────────────────────────────────────────────
-      const orderRes = await jotajaFetch(`/v1/orders/${orderId}`);
-      if (!orderRes.ok) {
-        return { action: "error", orderId, message: `GET /orders falhou: ${orderRes.status}` };
+      // ── CRIAR pedido novo (com até 3 tentativas resilientes) ──────────────
+      let orderRes: Response | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await jotajaFetch(`/v1/orders/${orderId}`);
+          if (res.ok) { orderRes = res; break; }
+        } catch (e) {}
+        if (attempt < 3) await new Promise(r => setTimeout(r, 500));
+      }
+
+      if (!orderRes || !orderRes.ok) {
+        return { action: "error", orderId, message: `GET /orders falhou após 3 tentativas (${orderRes?.status || "network error"})` };
       }
       const orderData = await orderRes.json();
 
-      // Resolve franqueado com fallbacks resilientes
+      // Resolve franqueado — MULTI-TENANT: resolução estrita por merchantId, sem fallbacks hardcoded
       let franchisee = targetFranchiseeId
         ? await prisma.user.findUnique({ where: { id: targetFranchiseeId } })
         : null;
 
       if (!franchisee) {
-        const merchantId = process.env.JOTAJA_MERCHANT_ID || "22238";
-        const eventMerchantId = merchantId || orderData.merchant?.id;
-        franchisee = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { jotajaMerchantId: eventMerchantId },
-              { jotajaConnected: true },
-              { email: "contatohakim@gmail.com" },
-              { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } }
-            ]
-          } as any,
-        });
+        // Resolver pelo merchantId do evento — cada loja tem seu merchantId único
+        const eventMerchantId = orderData.merchant?.id;
+        if (eventMerchantId) {
+          franchisee = await prisma.user.findFirst({
+            where: {
+              jotajaMerchantId: eventMerchantId,
+              jotajaConnected: true,
+              NOT: { email: { startsWith: "deleted_" } },
+            } as any,
+          });
+        }
       }
-      if (!franchisee) franchisee = await prisma.user.findFirst();
       if (!franchisee) {
-        return { action: "error", orderId, message: `Nenhum usuário encontrado para associar ao pedido` };
+        return { action: "error", orderId, message: `Nenhuma loja com merchantId correspondente (merchant: ${orderData.merchant?.id || "N/A"})` };
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
@@ -193,8 +199,22 @@ export async function processJotajaEvent(
           : itemName;
         const qty = i.quantity ?? i.qty ?? 1;
         const rawUnit = priceVal(i.unitPrice) || priceVal(i.price) || 0;
-        const rawTotal = priceVal(i.totalPrice) || 0;
-        const itemPrice = rawUnit > 0 ? rawUnit : (rawTotal > 0 && qty > 0 ? rawTotal / qty : 0);
+        const rawTotal = priceVal(i.totalPrice) || priceVal(i.total) || 0;
+        const optionsSum = options.reduce(
+          (sum: number, o: any) => sum + (priceVal(o.price) || priceVal(o.addition) || priceVal(o.unitPrice) || 0) * (o.quantity || 1),
+          0
+        );
+
+        // Se o payload informar totalPrice da linha (incluindo subitens e acréscimos), ele tem prioridade se for maior que o preço base.
+        // Caso contrário, soma o unitPrice base do item aos acréscimos das opções/sabores adicionais.
+        let itemPrice = 0;
+        if (rawTotal > 0 && qty > 0 && (rawTotal / qty) > rawUnit) {
+          itemPrice = rawTotal / qty;
+        } else if (rawUnit > 0 || optionsSum > 0) {
+          itemPrice = rawUnit + optionsSum;
+        } else if (rawTotal > 0 && qty > 0) {
+          itemPrice = rawTotal / qty;
+        }
 
         const comboSelsList = options.length > 0 ? options.map((o: any) => ({
           id: o.id,
@@ -235,34 +255,16 @@ export async function processJotajaEvent(
       const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
       const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
 
-      // Delivery fee — Jotajá sends in otherFees array
+      // Delivery fee — Jotajá sends in total.deliveryFee or otherFees array
       let deliveryFeeValue = priceVal(orderData.total?.deliveryFee) || priceVal(orderData.delivery?.deliveryFee) || priceVal(orderData.deliveryFee) || 0;
       if (!deliveryFeeValue && Array.isArray(orderData.otherFees)) {
-        const delFee = orderData.otherFees.find((f: any) => f.type === "DELIVERY_FEE" || f.name === "DELIVERY_FEE");
-        if (delFee) deliveryFeeValue = priceVal(delFee.price);
+        const delFee = orderData.otherFees.find((f: any) =>
+          (f.type || f.name || "").toUpperCase().includes("DELIVERY") ||
+          (f.type || f.name || "").toUpperCase().includes("FRETE") ||
+          (f.type || f.name || "").toUpperCase().includes("FEE")
+        );
+        if (delFee) deliveryFeeValue = priceVal(delFee.price ?? delFee.value);
       }
-
-      // Agendamento / Sincronização de prazo de entrega
-      const rawScheduled = orderData.delivery?.deliveryDateTime
-        ?? orderData.delivery?.deliveryDeadline
-        ?? orderData.delivery?.estimatedDeliveryWindow?.end
-        ?? orderData.delivery?.estimatedDeliveryWindow?.start
-        ?? orderData.takeout?.takeoutDateTime
-        ?? orderData.schedule?.scheduledDatetimeEnd
-        ?? orderData.schedule?.scheduledDatetimeStart
-        ?? orderData.scheduledDatetime
-        ?? (orderData.orderTiming === "SCHEDULED" && orderData.preparationStartDateTime
-          ? orderData.preparationStartDateTime : null);
-      const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
-      const deliveryDeadline = scheduledDatetime;
-
-      // Pagamento
-      const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
-      const parsedPay = parseOrderPaymentInfo(orderData, "JOTAJA");
-      const resolvedPaymentMethod = parsedPay.paymentMethod;
-      const changeAmount = parsedPay.changeAmount;
-
-      const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
       // Descontos/benefits (completo)
       const benefits = orderData.benefits ?? [];
@@ -293,6 +295,71 @@ export async function processJotajaEvent(
           description: benefit.campaign?.name ?? benefit.description ?? null,
         });
       }
+
+      // Se a taxa de entrega ainda veio 0 em pedido DELIVERY, calcula como a diferença entre total e subtotal
+      if (deliveryFeeValue === 0 && (orderData.total?.orderAmount || orderData.totalPrice) && orderData.total?.subTotal) {
+        const orderTotal = priceVal(orderData.total?.orderAmount ?? orderData.totalPrice);
+        const subTotal = priceVal(orderData.total?.subTotal);
+        const benefitsValue = discountTotal || 0;
+        const calcFee = orderTotal - subTotal + benefitsValue;
+        if (calcFee > 0 && calcFee < 100) {
+          deliveryFeeValue = Math.round(calcFee * 100) / 100;
+        }
+      }
+      // Data de entrega / Prazo limite do JotaJá
+      const isTakeout =
+        orderData.orderType === "TAKEOUT" ||
+        Boolean(orderData.takeout) ||
+        orderData.deliveryType === "TAKEOUT" ||
+        orderData.deliveryType === "RETIRADA";
+
+      const createdMs = orderData.createdAt ? new Date(orderData.createdAt).getTime() : Date.now();
+
+      const isExplicitScheduled =
+        orderData.orderTiming === "SCHEDULED" ||
+        Boolean(orderData.schedule?.scheduledDatetimeEnd) ||
+        Boolean(orderData.schedule?.scheduledDatetimeStart) ||
+        orderData.takeout?.mode === "SCHEDULED" ||
+        orderData.delivery?.mode === "SCHEDULED";
+
+      let scheduledDatetime: Date | null = null;
+
+      if (isExplicitScheduled) {
+        const rawScheduled =
+          orderData.schedule?.scheduledDatetimeEnd ??
+          orderData.schedule?.scheduledDatetimeStart ??
+          orderData.scheduledDatetime ??
+          orderData.preparationStartDateTime;
+        if (rawScheduled) {
+          scheduledDatetime = new Date(rawScheduled);
+        }
+      } else {
+        // Pedido Imediato: Se for Retirada no local, o prazo é 40 minutos a partir da criação
+        if (isTakeout) {
+          const rawTakeoutEnd = orderData.takeout?.estimatedTakeoutWindow?.end || orderData.takeout?.takeoutDeadline;
+          if (rawTakeoutEnd && new Date(rawTakeoutEnd).getTime() > createdMs + 5 * 60000) {
+            scheduledDatetime = new Date(rawTakeoutEnd);
+          } else {
+            scheduledDatetime = new Date(createdMs + 40 * 60000); // 40 minutos para Retirada
+          }
+        } else {
+          const rawDeliveryEnd = orderData.delivery?.deliveryDeadline || orderData.delivery?.estimatedDeliveryWindow?.end;
+          if (rawDeliveryEnd && new Date(rawDeliveryEnd).getTime() > createdMs + 5 * 60000) {
+            scheduledDatetime = new Date(rawDeliveryEnd);
+          } else {
+            scheduledDatetime = new Date(createdMs + 50 * 60000); // 50 minutos para Entrega
+          }
+        }
+      }
+      const deliveryDeadline = scheduledDatetime;
+
+      // Pagamento
+      const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+      const parsedPay = parseOrderPaymentInfo(orderData, "JOTAJA");
+      const resolvedPaymentMethod = parsedPay.paymentMethod;
+      const changeAmount = parsedPay.changeAmount;
+
+      const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
       // Notas — customer observations prominent
       const customerNote = orderData.extraInfo ?? orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
@@ -449,6 +516,10 @@ export async function processJotajaEvent(
           return { action: "error", orderId, message: `FALHA TOTAL: ${lastCreateError?.message}` };
         }
       }
+
+      // BROADCAST REMOVIDO — Esse bloco criava cópias do pedido para contas secundárias,
+      // causando duplicatas massivas (7x por pedido). Cada pedido Jotajá deve existir
+      // APENAS UMA VEZ, vinculado ao franchisee principal (contatohakim@gmail.com).
 
       // Auto-confirmar pedidos PLACED
       if (isPlaced) {

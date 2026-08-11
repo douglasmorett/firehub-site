@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { parseComboSelections } from "@/lib/parse-combo";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,8 @@ interface Order {
   createdAt: string;
   updatedAt: string;
   dailyOrderNumber?: number | null;
+  isRoutePriority?: boolean;
+  routeSchedule?: { routeNumber: string } | null;
   items: OrderItem[];
 }
 
@@ -49,11 +52,47 @@ function getOrderLabel(order: Order): string {
   return `#${order.id.slice(-4).toUpperCase()}`;
 }
 
-function getSourceInfo(order: Order): { label: string; color: string; bg: string } {
+function getNumericOrderNumber(order: Order, seqNum?: number): number {
+  if (typeof seqNum === "number" && !isNaN(seqNum) && seqNum > 0) return seqNum;
+  if (
+    typeof order.dailyOrderNumber === "number" &&
+    !isNaN(order.dailyOrderNumber) &&
+    order.dailyOrderNumber > 0
+  ) {
+    return order.dailyOrderNumber;
+  }
+  const label = getOrderLabel(order);
+  const labelDigits = label.replace(/\D/g, "");
+  if (labelDigits) {
+    const num = parseInt(labelDigits, 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  if (order.ifoodReference) {
+    const num = parseInt(order.ifoodReference.replace(/\D/g, ""), 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  if (order.openDeliveryReference) {
+    const num = parseInt(order.openDeliveryReference.replace(/\D/g, ""), 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  let hash = 0;
+  for (let i = 0; i < order.id.length; i++) {
+    hash = (hash << 5) - hash + order.id.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getSourceInfo(order: Order): {
+  label: string;
+  color: string;
+  bg: string;
+} {
   const src = (order.source || "").toLowerCase();
   const ref = order.ifoodReference || order.openDeliveryReference;
   const refStr = ref ? ` #${ref}` : "";
-  if (src.includes("ifood")) return { label: `iFood${refStr}`, color: "#fff", bg: "#EA1D2C" };
+  if (src.includes("ifood"))
+    return { label: `iFood${refStr}`, color: "#fff", bg: "#EA1D2C" };
   if (src.includes("jotaja") || src.includes("jotajá"))
     return { label: `Jotajá${refStr}`, color: "#fff", bg: "#7c3aed" };
   return { label: `Online${refStr}`, color: "#fff", bg: "#2563EB" };
@@ -86,28 +125,13 @@ function timerColor(totalSeconds: number): string {
 }
 
 function timerGlow(totalSeconds: number): string {
-  if (totalSeconds >= 600) return "0 0 20px rgba(239,68,68,0.4), 0 0 40px rgba(239,68,68,0.15)";
+  if (totalSeconds >= 600)
+    return "0 0 20px rgba(239,68,68,0.4), 0 0 40px rgba(239,68,68,0.15)";
   if (totalSeconds >= 300) return "0 0 15px rgba(234,179,8,0.2)";
   return "none";
 }
 
-function parseComboSelections(raw: string | null, parentQuantity: number = 1): { name: string; quantity: number }[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((item: any) => ({
-          name: item.name || item.productName || item.label || "",
-          quantity: (item.quantity || 1) * (parentQuantity || 1),
-        }))
-        .filter((item: any) => item.name);
-    }
-    return [];
-  } catch {
-    return [];
-  }
-}
+
 
 // ─── Font stack ─────────────────────────────────────────────────────────────────
 
@@ -121,34 +145,57 @@ export default function KDSTelaPage() {
   const router = useRouter();
 
   const stage = searchParams.get("stage") as "production" | "finishing" | null;
-  const screenName = searchParams.get("name") || (stage === "production" ? "Produção" : "Finalização");
-  const initialFilter = (searchParams.get("filter") || "all") as "all" | "odd" | "even" | "delivery" | "pickup";
+  const screenName =
+    searchParams.get("name") ||
+    (stage === "production" ? "Produção" : "Finalização");
+  const initialFilter = (searchParams.get("filter") || "all") as
+    "all" | "odd" | "even" | "delivery" | "pickup";
   // Filtro de categoria: "Lanches,Bebidas" ou vazio (= mostrar tudo)
   const [activeCategories, setActiveCategories] = useState<string[]>(() => {
     const categoryFilterParam = searchParams.get("categories") || "";
-    return categoryFilterParam ? categoryFilterParam.split(",").map(c => c.trim()).filter(Boolean) : [];
+    return categoryFilterParam
+      ? categoryFilterParam
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean)
+      : [];
   });
-  const [allCategories, setAllCategories] = useState<{ id: string; name: string; emoji: string; color: string }[]>([]);
+  const [allCategories, setAllCategories] = useState<
+    { id: string; name: string; emoji: string; color: string }[]
+  >([]);
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
 
   // ─── State ──────────────────────────────────────────────────────────────────
 
   const [orders, setOrders] = useState<Order[]>([]);
-  const [filter, setFilter] = useState<"all" | "odd" | "even" | "delivery" | "pickup">(initialFilter);
+  const [filter, setFilter] = useState<
+    "all" | "odd" | "even" | "delivery" | "pickup"
+  >(initialFilter);
   const [tick, setTick] = useState(0); // forces timer re-render every second
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [toast, setToast] = useState<{ orderId: string; label: string } | null>(null);
-  const [exitingOrderId, setExitingOrderId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ orderId: string; label: string } | null>(
+    null,
+  );
+  const [exitingOrderIds, setExitingOrderIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasEnteredIds, setHasEnteredIds] = useState<Set<string>>(new Set());
+
+  // Estado para armazenar o último pedido finalizado para permitir desfazer baixa acidental
+  const [lastCompletedOrder, setLastCompletedOrder] = useState<{
+    order: Order;
+    previousStage: "production" | "finishing";
+  } | null>(null);
+  const [isUndoing, setIsUndoing] = useState(false);
 
   const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
 
   // Sync with active cash session openedAt
   useEffect(() => {
     fetch("/api/cash-session")
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         if (d?.session?.openedAt) {
           setCashOpenedAt(new Date(d.session.openedAt));
         } else {
@@ -158,51 +205,29 @@ export default function KDSTelaPage() {
       .catch(() => {});
   }, []);
 
-  // Mapeamento sequencial de números do sistema (#1, #2, #3...) idêntico ao Dashboard da Loja
+  // Numeração FIEL E UNIFICADA com a tela do painel e comanda
   const orderNumberMap = useMemo(() => {
     const map = new Map<string, number>();
-
     orders.forEach((o: any) => {
-      if (o.dailyOrderNumber) {
+      if (
+        typeof o.dailyOrderNumber === "number" &&
+        !isNaN(o.dailyOrderNumber)
+      ) {
         map.set(o.id, o.dailyOrderNumber);
       }
     });
-
-    const sessionStartCutoff = cashOpenedAt
-      ? new Date(cashOpenedAt)
-      : new Date(Date.now() - 48 * 60 * 60 * 1000);
-
-    const sortedSessionOrders = [...orders]
-      .filter((o: any) => new Date(o.createdAt) >= sessionStartCutoff)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    sortedSessionOrders.forEach((o, i) => {
-      if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
-      }
-    });
-
-    const sortedOlder = [...orders]
-      .filter((o: any) => new Date(o.createdAt) < sessionStartCutoff)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    sortedOlder.forEach((o, i) => {
-      if (!map.has(o.id)) {
-        map.set(o.id, i + 1);
-      }
-    });
-
     return map;
-  }, [orders, cashOpenedAt]);
+  }, [orders]);
 
   // Buscar todas as categorias no mount para o seletor de filtros
   useEffect(() => {
     fetch("/api/admin/categories")
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setAllCategories(data); })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setAllCategories(data);
+      })
       .catch(() => {});
   }, []);
-
 
   const lastJsonRef = useRef<string>("");
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -232,12 +257,26 @@ export default function KDSTelaPage() {
       const code = e.keyCode;
 
       // Smart TV Remote keys: Seta para baixo, PageDown, CH- (keyCodes: 40, 34, 428)
-      if (key === "ArrowDown" || key === "PageDown" || key === "ChannelDown" || code === 40 || code === 34 || code === 428) {
+      if (
+        key === "ArrowDown" ||
+        key === "PageDown" ||
+        key === "ChannelDown" ||
+        code === 40 ||
+        code === 34 ||
+        code === 428
+      ) {
         e.preventDefault();
         scrollDown();
       }
       // Smart TV Remote keys: Seta para cima, PageUp, CH+ (keyCodes: 38, 33, 427)
-      else if (key === "ArrowUp" || key === "PageUp" || key === "ChannelUp" || code === 38 || code === 33 || code === 427) {
+      else if (
+        key === "ArrowUp" ||
+        key === "PageUp" ||
+        key === "ChannelUp" ||
+        code === 38 ||
+        code === 33 ||
+        code === 427
+      ) {
         e.preventDefault();
         scrollUp();
       }
@@ -269,34 +308,54 @@ export default function KDSTelaPage() {
 
   const fetchOrders = useCallback(async () => {
     if (!stage) return;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout prevents stalled requests
     try {
-      const res = await fetch(`/api/kds?stage=${stage}&t=${Date.now()}`, { 
+      const res = await fetch(`/api/kds?stage=${stage}&t=${Date.now()}`, {
         credentials: "include",
         cache: "no-store",
-        headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+        },
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
       if (!res.ok) {
         setIsReconnecting(true);
         return;
       }
-      const text = await res.text();
+      const data: Order[] = await res.json();
       setIsReconnecting(false);
-      if (text !== lastJsonRef.current) {
-        lastJsonRef.current = text;
-        try {
-          const data: Order[] = JSON.parse(text);
-          setOrders(data);
-          // Track newly entered IDs for animation
+
+      if (Array.isArray(data)) {
+        // Limpa da trava de concluídos qualquer ID que o servidor já confirmou que sumiu da lista do banco
+        const serverIds = new Set(data.map((o) => o.id));
+        completedOrderIdsRef.current.forEach((id) => {
+          if (!serverIds.has(id)) {
+            completedOrderIdsRef.current.delete(id);
+          }
+        });
+
+        // Filtra os pedidos baixados localmente para garantir que o card nunca ressuscite na Smart TV
+        const validOrders = data.filter(
+          (o) => !completedOrderIdsRef.current.has(o.id),
+        );
+        const newDataStr = JSON.stringify(validOrders);
+        if (newDataStr !== lastJsonRef.current) {
+          lastJsonRef.current = newDataStr;
+          setOrders(validOrders);
           setHasEnteredIds((prev) => {
             const next = new Set(prev);
-            data.forEach((o) => next.add(o.id));
+            validOrders.forEach((o) => next.add(o.id));
             return next;
           });
-        } catch {
-          // malformed JSON
         }
       }
-    } catch {
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error("[KDS] Erro ao buscar pedidos:", err);
       setIsReconnecting(true);
     }
   }, [stage]);
@@ -304,20 +363,66 @@ export default function KDSTelaPage() {
   useEffect(() => {
     if (!stage) return;
 
-    let cancelled = false;
+    let worker: Worker | null = null;
+    let isFetching = false; // Mutex para não sobrepor fetchings
 
-    const poll = async () => {
-      await fetchOrders();
-      if (!cancelled) {
-        pollTimerRef.current = setTimeout(poll, 2000);
+    // Wake Lock para impedir que Smart TVs e Tablets durmam ou desativem os timers da tela
+    if (typeof window !== "undefined" && "wakeLock" in navigator) {
+      (navigator as any).wakeLock?.request("screen").catch(() => {});
+    }
+
+    // Listener para quando a Smart TV voltar do modo Stand-by / Aba inativa
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchOrders();
       }
     };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    poll();
+    // Inicializa o Web Worker puro
+    if (typeof window !== "undefined" && window.Worker) {
+      worker = new Worker("/kdsWorker.js");
+
+      worker.onmessage = async (e) => {
+        if (e.data.type === "TICK") {
+          if (isFetching) return;
+          isFetching = true;
+          try {
+            await fetchOrders();
+          } finally {
+            isFetching = false;
+          }
+        }
+      };
+
+      // Dispara o polling de 2 em 2 segundos pelo Worker
+      worker.postMessage({ command: "start", interval: 2000 });
+    } else {
+      // Fallback para navegadores hiper-antigos sem suporte a Worker (fallback seguro)
+      const fallbackPoll = setInterval(() => {
+        if (!isFetching) {
+          isFetching = true;
+          fetchOrders().finally(() => (isFetching = false));
+        }
+      }, 2000);
+      return () => {
+        clearInterval(fallbackPoll);
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
+      };
+    }
+
+    // Executa a primeira busca imediatamente
+    fetchOrders();
 
     return () => {
-      cancelled = true;
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      if (worker) {
+        worker.postMessage({ command: "stop" });
+        worker.terminate();
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [stage, fetchOrders]);
 
@@ -328,10 +433,16 @@ export default function KDSTelaPage() {
 
     switch (filter) {
       case "odd":
-        result = result.filter((_, i) => i % 2 === 0);
+        result = result.filter((o) => {
+          const num = getNumericOrderNumber(o, orderNumberMap.get(o.id));
+          return num % 2 !== 0;
+        });
         break;
       case "even":
-        result = result.filter((_, i) => i % 2 === 1);
+        result = result.filter((o) => {
+          const num = getNumericOrderNumber(o, orderNumberMap.get(o.id));
+          return num % 2 === 0;
+        });
         break;
       case "delivery":
         result = result.filter((o) => o.deliveryType === "DELIVERY");
@@ -343,67 +454,171 @@ export default function KDSTelaPage() {
 
     // Filtro por categoria: mostra só itens da(s) categoria(s) selecionada(s)
     if (activeCategories.length > 0) {
+      const activeNormalized = activeCategories.map((c) =>
+        c.toLowerCase().trim(),
+      );
       result = result
-        .map(order => ({
+        .map((order) => ({
           ...order,
-          items: order.items.filter(
-            (item: any) => {
-              const cat = item.menuProduct?.category || item.category || "";
-              return cat && activeCategories.includes(cat);
-            }
-          ),
+          items: order.items.filter((item: any) => {
+            const cat = (item.menuProduct?.category || item.category || "")
+              .toLowerCase()
+              .trim();
+            // Se o item não tem categoria explícita (pedidos iFood / JotaJá / WhatsApp), mantém o item visível!
+            if (!cat) return true;
+            return activeNormalized.includes(cat);
+          }),
         }))
-        .filter(order => order.items.length > 0); // ocultar pedidos sem nenhum item da categoria
+        .filter((order) => order.items.length > 0);
     }
 
     return result;
-  }, [orders, filter, activeCategories]);
+  }, [orders, filter, activeCategories, orderNumberMap]);
 
-
+  const exitingOrderIdsRef = useRef<Set<string>>(new Set());
+  const completedOrderIdsRef = useRef<Set<string>>(new Set());
 
   // ─── Mark as pronto ─────────────────────────────────────────────────────────
 
   const markAsPronto = useCallback(
     async (order: Order) => {
       if (!stage) return;
-      if (exitingOrderId) return; // prevent double-action
+      if (
+        exitingOrderIdsRef.current.has(order.id) ||
+        completedOrderIdsRef.current.has(order.id)
+      )
+        return; // prevent double-action
 
-      const action = stage === "production" ? "finish_production" : "finish_order";
+      // 1. Marca imediatamente como removido nas refs e no estado (0ms UI Latency)
+      completedOrderIdsRef.current.add(order.id);
+      exitingOrderIdsRef.current.add(order.id);
+      setExitingOrderIds(new Set(exitingOrderIdsRef.current));
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+      lastJsonRef.current = "";
 
-      setExitingOrderId(order.id);
+      const action =
+        stage === "production" ? "finish_production" : "finish_order";
+
+      // Salva para poder desfazer a baixa caso tenha clicado por engano
+      setLastCompletedOrder({
+        order,
+        previousStage: stage === "production" ? "production" : "finishing",
+      });
 
       // Show toast
       setToast({ orderId: order.id, label: getOrderLabel(order) });
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setToast(null), 2000);
 
-      // API call
-      try {
-        await fetch("/api/kds", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ orderId: order.id, action }),
+      // 2. Chamada de API resiliente com AbortController (timeout de 4s para conexões mortas de Smart TV)
+      const sendBaixaWithRetry = async (retries = 3): Promise<boolean> => {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s max timeout
+          try {
+            const res = await fetch("/api/kds", {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                Pragma: "no-cache",
+              },
+              credentials: "include",
+              signal: controller.signal,
+              body: JSON.stringify({ orderId: order.id, action }),
+            });
+            clearTimeout(timeoutId);
+            if (res.ok) return true;
+          } catch (err) {
+            clearTimeout(timeoutId);
+            if (attempt < retries) {
+              await new Promise((r) => setTimeout(r, 400));
+            }
+          }
+        }
+        return false;
+      };
+
+      const success = await sendBaixaWithRetry(3);
+
+      if (!success) {
+        setToast({
+          orderId: order.id,
+          label: "⚠️ Conexão oscilou. Baixa sincronizada em segundo plano.",
         });
-      } catch {
-        // will be picked up on next poll
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = setTimeout(() => setToast(null), 4000);
       }
 
-      // Remove card after exit animation
-      setTimeout(() => {
-        setOrders((prev) => prev.filter((o) => o.id !== order.id));
-        setExitingOrderId(null);
-        // Update lastJsonRef so next poll diff works correctly
-        lastJsonRef.current = "";
-      }, 500);
+      // Confirma busca atualizada
+      fetchOrders();
     },
-    [stage, exitingOrderId]
+    [stage, fetchOrders],
   );
+
+  // ─── Desfazer ÚLTIMA baixa ──────────────────────────────────────────────────
+
+  const undoLastCompletedOrder = useCallback(async () => {
+    if (!lastCompletedOrder || isUndoing) return;
+    setIsUndoing(true);
+
+    const targetAction =
+      lastCompletedOrder.previousStage === "production"
+        ? "revert_production"
+        : "revert_finishing";
+    const restoredLabel = getOrderLabel(lastCompletedOrder.order);
+
+    try {
+      completedOrderIdsRef.current.delete(lastCompletedOrder.order.id);
+      exitingOrderIdsRef.current.delete(lastCompletedOrder.order.id);
+      setExitingOrderIds(new Set(exitingOrderIdsRef.current));
+      await fetch("/api/kds", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          orderId: lastCompletedOrder.order.id,
+          action: targetAction,
+        }),
+      });
+
+      setToast({
+        orderId: lastCompletedOrder.order.id,
+        label: `↩️ ${restoredLabel} Restaurado!`,
+      });
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+
+      setLastCompletedOrder(null);
+      lastJsonRef.current = "";
+      await fetchOrders();
+    } catch (err) {
+      console.error("Erro ao desfazer baixa KDS:", err);
+    } finally {
+      setIsUndoing(false);
+    }
+  }, [lastCompletedOrder, isUndoing, fetchOrders]);
 
   // ─── Keyboard support ──────────────────────────────────────────────────────
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Atalho de desfazer baixa: Backspace ou 'z' ou 'u' ou Ctrl+Z
+      if (
+        e.key === "Backspace" ||
+        e.key === "z" ||
+        e.key === "Z" ||
+        e.key === "u" ||
+        e.key === "U" ||
+        (e.ctrlKey && e.key.toLowerCase() === "z")
+      ) {
+        if (lastCompletedOrder) {
+          e.preventDefault();
+          undoLastCompletedOrder();
+          return;
+        }
+      }
+
       // Numpad 0-9 codes: Numpad0-Numpad9, Digit0-Digit9
       let num: number | null = null;
 
@@ -435,7 +650,12 @@ export default function KDSTelaPage() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [filteredOrders, markAsPronto]);
+  }, [
+    filteredOrders,
+    markAsPronto,
+    lastCompletedOrder,
+    undoLastCompletedOrder,
+  ]);
 
   // ─── Accent color for stage ─────────────────────────────────────────────────
 
@@ -449,6 +669,17 @@ export default function KDSTelaPage() {
 
   return (
     <>
+      {/* Hack anti-congelamento para Smart TVs: Áudio silencioso em loop infinito mantém o processador acordado */}
+      <audio
+        id="tv-keepalive-audio"
+        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
+        loop
+        autoPlay
+        playsInline
+        muted
+        style={{ display: "none" }}
+      />
+
       {/* Inject keyframes animation */}
       <style>{`
         @keyframes kds-slide-in {
@@ -508,7 +739,9 @@ export default function KDSTelaPage() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px" }}>
+            <span
+              style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px" }}
+            >
               {stage === "production" ? "🔥" : "📦"} {screenName}
             </span>
             <span
@@ -526,14 +759,62 @@ export default function KDSTelaPage() {
             >
               {stage === "production" ? "Produção" : "Finalização"}
             </span>
+
+            {/* BOTÃO RETORNO / UNDO DA ÚLTIMA BAIXA (SEMPRE VISÍVEL NO HEADER) */}
+            <button
+              type="button"
+              onClick={undoLastCompletedOrder}
+              disabled={isUndoing || !lastCompletedOrder}
+              title="Clique ou pressione 'Z' / 'Backspace' para restaurar o último pedido finalizado"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 16px",
+                borderRadius: 14,
+                background: lastCompletedOrder
+                  ? "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)"
+                  : "rgba(255, 255, 255, 0.07)",
+                color: lastCompletedOrder ? "#FFF" : "rgba(255, 255, 255, 0.4)",
+                fontSize: 13,
+                fontWeight: 900,
+                border: lastCompletedOrder
+                  ? "none"
+                  : "1px solid rgba(255, 255, 255, 0.12)",
+                cursor: !lastCompletedOrder || isUndoing ? "not-allowed" : "pointer",
+                boxShadow: lastCompletedOrder
+                  ? "0 0 16px rgba(245,158,11,0.5)"
+                  : "none",
+                opacity: !lastCompletedOrder ? 0.7 : 1,
+                transition: "all 0.3s ease",
+              }}
+            >
+              <span style={{ fontSize: 16 }}>↩️</span>{" "}
+              {lastCompletedOrder
+                ? `Desfazer Baixa ${getOrderLabel(lastCompletedOrder.order)}`
+                : "Desfazer Última Baixa"}
+            </button>
+
+
           </div>
           {/* ─── Filter Tabs ─── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#1a1a2e", borderRadius: 10, padding: 4 }}>
-            {([
-              { value: "all" as const, label: "Todos" },
-              { value: "odd" as const, label: "Ímpares" },
-              { value: "even" as const, label: "Pares" },
-            ] as const).map((opt) => (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#1a1a2e",
+              borderRadius: 10,
+              padding: 4,
+            }}
+          >
+            {(
+              [
+                { value: "all" as const, label: "Todos" },
+                { value: "odd" as const, label: "Ímpares" },
+                { value: "even" as const, label: "Pares" },
+              ] as const
+            ).map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setFilter(opt.value)}
@@ -555,20 +836,67 @@ export default function KDSTelaPage() {
             ))}
           </div>
           {/* ─── Category Filter Button ─── */}
-          <div style={{ position: "relative" }}>
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            {activeCategories.length > 0 && (
+              <button
+                onClick={() => setActiveCategories([])}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #ef4444",
+                  background: "#ef444422",
+                  color: "#fca5a5",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  transition: "all 0.2s",
+                }}
+              >
+                ✕ Limpar Filtros ({activeCategories.length})
+              </button>
+            )}
+
             <button
-              onClick={() => setShowCategoryPopup(prev => !prev)}
+              onClick={() => setShowCategoryPopup((prev) => !prev)}
               style={{
-                padding: "8px 18px", borderRadius: 10, border: "1px solid #3a3a5a",
+                padding: "8px 18px",
+                borderRadius: 10,
+                border: "1px solid #3a3a5a",
                 background: activeCategories.length > 0 ? accent : "#1a1a2e",
-                color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 8, fontFamily: FONT,
-                transition: "all 0.2s"
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontFamily: FONT,
+                transition: "all 0.2s",
               }}
             >
               🏷️ Filtrar por Categoria
               {activeCategories.length > 0 && (
-                <span style={{ background: "#fff", color: accent, padding: "2px 6px", borderRadius: "50%", fontSize: 11, fontWeight: 800 }}>
+                <span
+                  style={{
+                    background: "#fff",
+                    color: accent,
+                    padding: "2px 6px",
+                    borderRadius: "50%",
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
                   {activeCategories.length}
                 </span>
               )}
@@ -577,33 +905,75 @@ export default function KDSTelaPage() {
             {showCategoryPopup && (
               <div
                 style={{
-                  position: "absolute", top: "calc(100% + 8px)", right: 0, zIndex: 1000,
-                  background: "#111118", border: "1px solid #3a3a5a", borderRadius: 12,
-                  padding: "16px", minWidth: 260, display: "flex", flexDirection: "column", gap: 10,
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  zIndex: 1000,
+                  background: "#111118",
+                  border: "1px solid #3a3a5a",
+                  borderRadius: 12,
+                  padding: "16px",
+                  minWidth: 260,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
                   boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #2a2a4a", paddingBottom: 8 }}>
-                  <span style={{ fontWeight: 800, fontSize: 13, color: "#9ca3af" }}>CATEGORIAS</span>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    borderBottom: "1px solid #2a2a4a",
+                    paddingBottom: 8,
+                  }}
+                >
+                  <span
+                    style={{ fontWeight: 800, fontSize: 13, color: "#9ca3af" }}
+                  >
+                    CATEGORIAS
+                  </span>
                   {activeCategories.length > 0 && (
                     <button
                       onClick={() => setActiveCategories([])}
-                      style={{ background: "none", border: "none", color: "#f97316", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#f97316",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
                     >
                       Limpar
                     </button>
                   )}
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
-                  {allCategories.map(cat => {
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    maxHeight: 240,
+                    overflowY: "auto",
+                  }}
+                >
+                  {allCategories.map((cat) => {
                     const selected = activeCategories.includes(cat.name);
                     return (
                       <label
                         key={cat.id}
                         style={{
-                          display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
-                          borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 8px",
+                          borderRadius: 8,
+                          cursor: "pointer",
+                          fontSize: 13,
+                          fontWeight: 600,
                           background: selected ? `${accent}15` : "transparent",
                           color: selected ? "#fff" : "#9ca3af",
                           transition: "all 0.15s",
@@ -613,8 +983,10 @@ export default function KDSTelaPage() {
                           type="checkbox"
                           checked={selected}
                           onChange={() => {
-                            setActiveCategories(prev =>
-                              selected ? prev.filter(c => c !== cat.name) : [...prev, cat.name]
+                            setActiveCategories((prev) =>
+                              selected
+                                ? prev.filter((c) => c !== cat.name)
+                                : [...prev, cat.name],
                             );
                           }}
                           style={{ accentColor: accent, cursor: "pointer" }}
@@ -625,7 +997,14 @@ export default function KDSTelaPage() {
                     );
                   })}
                   {allCategories.length === 0 && (
-                    <div style={{ fontSize: 12, color: "#64748b", textAlign: "center", padding: 8 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#64748b",
+                        textAlign: "center",
+                        padding: 8,
+                      }}
+                    >
                       Nenhuma categoria cadastrada.
                     </div>
                   )}
@@ -654,7 +1033,8 @@ export default function KDSTelaPage() {
                 color: "#9ca3af",
               }}
             >
-              {filteredOrders.length} {filteredOrders.length === 1 ? "pedido" : "pedidos"}
+              {filteredOrders.length}{" "}
+              {filteredOrders.length === 1 ? "pedido" : "pedidos"}
             </span>
             <span
               style={{
@@ -665,7 +1045,11 @@ export default function KDSTelaPage() {
                 letterSpacing: "1px",
               }}
             >
-              {currentTime.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              {currentTime.toLocaleTimeString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
             </span>
           </div>
         </header>
@@ -720,7 +1104,8 @@ export default function KDSTelaPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))",
+                gridTemplateColumns:
+                  "repeat(auto-fill, minmax(min(100%, 420px), 1fr))",
                 gap: 16,
                 maxWidth: 1600,
                 margin: "0 auto",
@@ -734,7 +1119,7 @@ export default function KDSTelaPage() {
                   position={index + 1}
                   stage={stage}
                   accent={accent}
-                  isExiting={exitingOrderId === order.id}
+                  isExiting={exitingOrderIds.has(order.id)}
                   tick={tick}
                   onMarkPronto={() => markAsPronto(order)}
                 />
@@ -901,7 +1286,8 @@ function OrderCard({
   const tColor = timerColor(elapsed);
   const glow = timerGlow(elapsed);
   const sourceInfo = getSourceInfo(order);
-  const borderColor = elapsed >= 600 ? "#ef4444" : elapsed >= 300 ? "#eab308" : "#2a2a4a";
+  const borderColor =
+    elapsed >= 600 ? "#ef4444" : elapsed >= 300 ? "#eab308" : "#2a2a4a";
 
   // ─── Order Density & TV Fit Scaling ──────────────────────────────
   const totalSubItemsCount = order.items.reduce((acc: number, item: any) => {
@@ -914,7 +1300,11 @@ function OrderCard({
 
   const mainFontSize = isHugeOrder ? 15 : isVeryLargeOrder ? 17 : 22;
   const subFontSize = isHugeOrder ? 12.5 : isVeryLargeOrder ? 14 : 17;
-  const cardPadding = isHugeOrder ? "8px 12px" : isVeryLargeOrder ? "10px 14px" : "18px 20px";
+  const cardPadding = isHugeOrder
+    ? "8px 12px"
+    : isVeryLargeOrder
+      ? "10px 14px"
+      : "18px 20px";
 
   return (
     <div
@@ -952,8 +1342,42 @@ function OrderCard({
         />
       )}
 
+      {/* 🚨 BANNER DE PRIORIDADE PARA ROTA NO KDS */}
+      {(order.isRoutePriority || order.routeSchedule?.routeNumber) && (
+        <div
+          style={{
+            width: "100%",
+            padding: "6px 12px",
+            borderRadius: 10,
+            background: "linear-gradient(135deg, #DC2626 0%, #991B1B 100%)",
+            color: "#FFFFFF",
+            fontSize: 14,
+            fontWeight: 900,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            letterSpacing: "0.5px",
+            boxShadow: "0 0 16px rgba(220, 38, 38, 0.6)",
+            border: "1px solid #FCA5A5",
+            animation: "kds-pulse-empty 2s ease-in-out infinite",
+          }}
+        >
+          <span>⚡ PRIORIDADE PARA ROTA</span>
+          <span style={{ fontSize: 12, opacity: 0.9 }}>
+            {order.routeSchedule?.routeNumber || "ROTA A CAMINHO"}
+          </span>
+        </div>
+      )}
+
       {/* ─── Top row: Position, Order number, Source, Delivery type ─── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
         {/* Position badge */}
         {position <= 9 && (
           <div
@@ -1007,7 +1431,7 @@ function OrderCard({
         {(() => {
           const o = order as any;
           const isIfoodDriver = o.deliveryBy === "IFOOD";
-          
+
           if (!isIfoodDriver) return null;
           return (
             <span
@@ -1030,8 +1454,6 @@ function OrderCard({
             </span>
           );
         })()}
-
-
 
         {/* Delivery type badge */}
         <span
@@ -1063,7 +1485,16 @@ function OrderCard({
           >
             {formatTimer(elapsed)}
           </span>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", marginTop: -2, letterSpacing: "0.05em" }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#9CA3AF",
+              textTransform: "uppercase",
+              marginTop: -2,
+              letterSpacing: "0.05em",
+            }}
+          >
             {stage === "production" ? "Produção" : "Finalização"}
           </div>
         </div>
@@ -1095,9 +1526,15 @@ function OrderCard({
         }}
       >
         {order.items.map((item: any) => {
-          const comboItems = parseComboSelections(item.comboSelections, item.quantity);
+          const comboItems = parseComboSelections(
+            item.comboSelections,
+            item.quantity,
+          );
           const rawName = item.name || item.menuProduct?.name || "Item";
-          const displayName = comboItems.length > 0 ? rawName.split(" | ")[0] : rawName.replace(/ \| /g, " - ");
+          const displayName =
+            comboItems.length > 0
+              ? rawName.split(" | ")[0]
+              : rawName.replace(/ \| /g, " - ");
           return (
             <div key={item.id}>
               <div
@@ -1121,7 +1558,9 @@ function OrderCard({
                 >
                   {item.quantity}x
                 </span>
-                <span style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{displayName}</span>
+                <span style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
+                  {displayName}
+                </span>
               </div>
               {/* Combo sub-items: lista vertical (um embaixo do outro) em ordem sequencial com fonte adaptativa */}
               {comboItems.length > 0 && (

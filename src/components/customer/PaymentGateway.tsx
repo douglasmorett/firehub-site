@@ -21,20 +21,23 @@ const PAYMENT_LABELS: Record<PayMethod, string> = {
 };
 
 export default function PaymentGateway({
-  orderId, amount, onPaid, onError, onCancel
+  orderId, amount, initialMethod = "pix", onPaid, onError, onCancel
 }: {
   orderId:  string;
   amount:   number;
+  initialMethod?: "pix" | "credit_card";
   onPaid:   () => void;
   onError:  (msg: string) => void;
   onCancel: () => void;
 }) {
-  const [method, setMethod]       = useState<PayMethod>("pix");
+  const [method, setMethod]       = useState<PayMethod>(initialMethod);
   const [loading, setLoading]     = useState(false);
   const [pixData, setPixData]     = useState<{ paymentId: string; pixKey: string; qrCodeBase64: string | null; expiresAt: string } | null>(null);
   const [pixPaid, setPixPaid]     = useState(false);
   const [pixExpired, setPixExpired] = useState(false);
   const [copied, setCopied]       = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const autoTriggeredRef           = useRef(false);
 
   // Dados do cartão (tokenizados via MP Brick)
   const [cardNumber, setCardNumber]         = useState("");
@@ -50,6 +53,14 @@ export default function PaymentGateway({
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
+  // Disparar geração de PIX automaticamente na montagem se o método for PIX
+  useEffect(() => {
+    if (method === "pix" && !pixData && !loading && !autoTriggeredRef.current) {
+      autoTriggeredRef.current = true;
+      handlePixPay();
+    }
+  }, [method]);
+
   // ──────────────────────────── PIX ────────────────────────────
   const handlePixPay = async () => {
     setLoading(true);
@@ -60,7 +71,15 @@ export default function PaymentGateway({
         body: JSON.stringify({ orderId }),
       });
       const data = await res.json();
-      if (!res.ok) { onError(data.error || "Erro ao gerar PIX"); return; }
+      if (!res.ok) {
+        const rawErr = data.error || "Erro ao gerar PIX";
+        const isMerchantConfigError = rawErr.includes("Credenciais") || rawErr.includes("Mercado Pago") || rawErr.includes("não configuradas");
+        const cleanMsg = isMerchantConfigError
+          ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, escolha pagamento na entrega."
+          : rawErr;
+        onError(cleanMsg);
+        return;
+      }
 
       setPixData(data);
       startPixPolling(data.paymentId);
@@ -164,11 +183,13 @@ export default function PaymentGateway({
   return (
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
         <div>
-          <h2 style={{ fontWeight: 800, fontSize: "1.05rem", margin: 0 }}>💳 Pagamento Online</h2>
-          <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>
-            Total: <strong style={{ color: "#16A34A" }}>R$ {amount.toFixed(2).replace(".", ",")}</strong>
+          <h2 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0, color: "#0F172A" }}>
+            {method === "pix" ? "💰 Pagamento via Pix" : "💳 Pagamento via Cartão"}
+          </h2>
+          <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "2px 0 0" }}>
+            Total a pagar: <strong style={{ color: "#16A34A" }}>R$ {amount.toFixed(2).replace(".", ",")}</strong>
           </p>
         </div>
         <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8" }}>
@@ -176,8 +197,58 @@ export default function PaymentGateway({
         </button>
       </div>
 
-      {/* Seleção de método */}
-      {!pixData && !pixPaid && (
+      {/* Banner explicativo de aguardar pagamento para envio à cozinha */}
+      {!pixPaid && (
+        <div style={{
+          background: "#FEF3C7",
+          border: "1.5px solid #FCD34D",
+          borderRadius: "12px",
+          padding: "10px 14px",
+          marginBottom: "16px",
+          fontSize: "0.82rem",
+          fontWeight: 700,
+          color: "#92400E",
+          lineHeight: "1.4",
+          textAlign: "center"
+        }}>
+          ⚠️ Você precisa realizar o pagamento para o pedido ser enviado para a cozinha. Aguarde a confirmação automática nesta tela.
+        </div>
+      )}
+
+      {/* Mensagem de Erro Inline se houver */}
+      {errorMessage && (
+        <div style={{
+          background: "#FEF2F2",
+          border: "1.5px solid #FCA5A5",
+          borderRadius: "12px",
+          padding: "14px",
+          marginBottom: "16px",
+          textAlign: "center"
+        }}>
+          <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#DC2626", margin: "0 0 10px" }}>
+            ❌ {errorMessage}
+          </p>
+          <button
+            onClick={handlePixPay}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "8px",
+              border: "none",
+              background: "#DC2626",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: "0.8rem",
+              cursor: "pointer",
+              fontFamily: "inherit"
+            }}
+          >
+            🔄 Tentar Gerar Novamente
+          </button>
+        </div>
+      )}
+
+      {/* Seleção de método apenas se não tiver método inicial pré-definido */}
+      {!initialMethod && !pixData && !pixPaid && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
           {(["pix", "credit_card"] as PayMethod[]).map(m => (
             <button key={m} onClick={() => setMethod(m)}
@@ -197,27 +268,19 @@ export default function PaymentGateway({
       )}
 
       {/* ── PIX ── */}
-      {method === "pix" && !pixData && !pixPaid && (
-        <button onClick={handlePixPay} disabled={loading}
-          style={{
-            width: "100%", padding: "14px", borderRadius: "12px", border: "none",
-            background: loading ? "#94A3B8" : "linear-gradient(135deg,#00BFA5,#009688)",
-            color: "#fff", fontWeight: 800, fontSize: "1rem",
-            cursor: loading ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontFamily: "inherit",
-          }}>
-          {loading
-            ? <><Loader size={18} style={{ animation: "spin 1s linear infinite" }} /> Gerando PIX...</>
-            : <><QrCode size={18} /> Gerar QR Code PIX</>}
-        </button>
+      {method === "pix" && !pixData && !pixPaid && !errorMessage && (
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <Loader size={32} color="#009688" style={{ animation: "spin 1s linear infinite", marginBottom: "12px" }} />
+          <p style={{ fontWeight: 700, fontSize: "0.9rem", color: "#334155" }}>Gerando QR Code PIX...</p>
+        </div>
       )}
 
       {/* QR CODE */}
       {pixData && !pixPaid && !pixExpired && (
         <div style={{ textAlign: "center" }}>
           <div style={{ background: "#F0FDF4", border: "2px solid #BBF7D0", borderRadius: "16px", padding: "20px", marginBottom: "12px" }}>
-            <p style={{ fontSize: "0.8rem", fontWeight: 700, color: "#16A34A", marginBottom: "12px" }}>
-              📱 Escaneie ou copie o código PIX abaixo
+            <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "#16A34A", marginBottom: "12px" }}>
+              📱 Escaneie o QR Code ou copie o código PIX
             </p>
             {pixData.qrCodeBase64 ? (
               <img src={`data:image/png;base64,${pixData.qrCodeBase64}`}
@@ -226,26 +289,27 @@ export default function PaymentGateway({
               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixData.pixKey)}`}
                 alt="QR Code PIX" style={{ width: 200, height: 200, borderRadius: "8px" }} />
             )}
-            <div style={{ marginTop: "12px" }}>
+            <div style={{ marginTop: "14px" }}>
               <button onClick={copyPix}
                 style={{
-                  padding: "10px 20px", borderRadius: "10px",
+                  padding: "12px 24px", borderRadius: "10px",
                   border: "1.5px solid #16A34A",
                   background: copied ? "#16A34A" : "#fff",
                   color: copied ? "#fff" : "#16A34A",
-                  fontWeight: 700, cursor: "pointer",
-                  display: "inline-flex", alignItems: "center", gap: "6px", fontFamily: "inherit",
+                  fontWeight: 800, cursor: "pointer", fontSize: "0.9rem",
+                  display: "inline-flex", alignItems: "center", gap: "8px", fontFamily: "inherit",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.05)"
                 }}>
-                {copied ? <><Check size={14} /> Copiado!</> : "📋 Copiar código PIX"}
+                {copied ? <><Check size={16} /> Código Copiado!</> : <>📋 Copiar Código PIX</>}
               </button>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "#64748B", fontSize: "0.8rem" }}>
-            <Loader size={13} style={{ animation: "spin 2s linear infinite" }} />
-            Aguardando confirmação...
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "#475569", fontSize: "0.85rem", fontWeight: 700 }}>
+            <Loader size={15} style={{ animation: "spin 1.5s linear infinite" }} />
+            Aguardando confirmação do pagamento...
           </div>
           {pixData.expiresAt && (
-            <p style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: "6px" }}>
+            <p style={{ fontSize: "0.74rem", color: "#94A3B8", marginTop: "6px" }}>
               Expira às {new Date(pixData.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
             </p>
           )}
@@ -253,12 +317,16 @@ export default function PaymentGateway({
       )}
 
       {pixPaid && (
-        <div style={{ textAlign: "center", padding: "2rem" }}>
+        <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
           <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#16A34A", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-            <Check size={32} color="#fff" />
+            <Check size={36} color="#fff" />
           </div>
-          <h3 style={{ fontWeight: 800, color: "#16A34A" }}>PIX Confirmado! ✅</h3>
-          <p style={{ fontSize: "0.85rem", color: "#64748B" }}>Seu pedido foi aceito automaticamente.</p>
+          <h3 style={{ fontWeight: 800, color: "#16A34A", fontSize: "1.2rem", marginBottom: "6px" }}>
+            Pagamento Confirmado! ✅
+          </h3>
+          <p style={{ fontSize: "0.88rem", color: "#334155", fontWeight: 600 }}>
+            Seu pedido foi recebido e enviado para a cozinha!
+          </p>
         </div>
       )}
 

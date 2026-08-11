@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 
 // Valida assinatura HMAC do iFood (segurança)
@@ -81,8 +82,6 @@ export async function POST(req: NextRequest) {
 // Polling de eventos (alternativa/backup ao webhook)
 export async function GET(req: NextRequest) {
   const { getIfoodToken } = await import("@/lib/ifood-api");
-  const merchantId = process.env.IFOOD_MERCHANT_UUID;
-  if (!merchantId) return NextResponse.json({ error: "IFOOD_MERCHANT_UUID não configurado" }, { status: 500 });
 
   let token: string;
   try {
@@ -104,19 +103,9 @@ export async function GET(req: NextRequest) {
   const dataText = await res.text();
   const data = dataText ? JSON.parse(dataText) : [];
 
-  const franchisee = await prisma.user.findFirst({
-    where: { email: "contatohakim@gmail.com" }
-  }) || await prisma.user.findFirst({
-    where: { ifoodMerchantId: merchantId } as any,
-  });
-  
-  if (!franchisee) {
-    return NextResponse.json({ events: [], error: `Nenhum franqueado encontrado para merchantId: ${merchantId}` });
-  }
-
   for (const event of data ?? []) {
     try {
-      await processIfoodEvent(event, franchisee.id);
+      await processIfoodEvent(event);
     } catch (err) {
       console.error("[iFood Polling] Erro ao processar evento:", event?.id, err);
     }
@@ -159,11 +148,9 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     const { getIfoodToken } = await import("@/lib/ifood-api");
     const token = await getIfoodToken();
 
-    let franchisee = await prisma.user.findFirst({
-      where: { email: "contatohakim@gmail.com" }
-    }) || (merchantId ? await prisma.user.findFirst({
-      where: { ifoodMerchantId: merchantId } as any,
-    }) : null);
+    let franchisee = merchantId 
+      ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
+      : null;
 
     if (!franchisee && franchiseeIdOverride) {
       franchisee = await prisma.user.findUnique({ where: { id: franchiseeIdOverride } });
@@ -312,11 +299,23 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     // "IFOOD" = entrega parceira iFood (motoboy iFood). "MERCHANT" = entrega própria da loja.
     const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS")) ? "IFOOD" : "MERCHANT";
 
+    const ifoodPickupCode = (
+      orderData.delivery?.pickupCode ||
+      orderData.pickupCode ||
+      orderData.takeout?.pickupCode ||
+      orderData.driver?.pickupCode ||
+      orderData.logistics?.pickupCode ||
+      event?.pickupCode ||
+      event?.data?.pickupCode ||
+      null
+    )?.toString().trim() || null;
+
       const createdOrder = await (prisma.customerOrder as any).create({
         data: {
           franchiseeId:     franchisee.id,
           ifoodOrderId:     orderId,
           ifoodReference:   orderData.displayId ?? undefined,
+          ifoodPickupCode:  ifoodPickupCode ?? undefined,
           scheduledDatetime,
           changeAmount,
           customerCpfCnpj,
@@ -367,6 +366,8 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           paymentMethod:    parsedPaymentMethod,
           totalAmount:      total,
           status:           "NOVO",
+          kdsStage:         "PRODUCTION",
+          kdsProductionAt:  new Date(),
           notes:            notesArr,
           items:            { create: items },
         },
@@ -375,9 +376,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
       // 🖨️ AUTO-PRINT: Enfileira na Fila de Impressão na Nuvem para impressão automática imediata!
       try {
-        const startOfTodayBrazil = new Date(new Date().toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo" }) + "T00:00:00-03:00");
+        const tz = franchisee.storeTimezone || "America/Sao_Paulo";
+        const startOfTodayStore = getStartOfDayUTC(toLocalISODate(new Date(), tz), tz);
         const countToday = await prisma.customerOrder.count({
-          where: { franchiseeId: franchisee.id, createdAt: { gte: startOfTodayBrazil } }
+          where: { franchiseeId: franchisee.id, createdAt: { gte: startOfTodayStore } }
         });
 
         const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
@@ -426,6 +428,17 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     const meta = event.metadata || {};
     const driverUpdate: any = {};
 
+    const pickupCodeCandidate = (
+      meta.pickupCode ||
+      meta.delivery?.pickupCode ||
+      event.pickupCode ||
+      event.data?.pickupCode ||
+      null
+    )?.toString().trim();
+    if (pickupCodeCandidate) {
+      driverUpdate.ifoodPickupCode = pickupCodeCandidate;
+    }
+
     if (code === "ASSIGN_DRIVER" || code === "ADR" || event.fullCode === "ASSIGN_DRIVER" || code === "REQUEST_DRIVER_SUCCESS" || code === "RDS" || event.fullCode === "REQUEST_DRIVER_SUCCESS") {
       driverUpdate.ifoodDriverName = meta.driverName || meta.name || null;
       driverUpdate.ifoodDriverPhone = meta.driverPhone || null;
@@ -457,16 +470,32 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
     if (code === "HSD" || code === "CRR" || code === "DDC" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED" || event.fullCode === "DUE_DATE_CHANGE_REQUESTED") {
       const meta = event.metadata || {};
-      const actionType = (meta.action || meta.handshakeType || event.fullCode || "").toUpperCase();
-      const isDueDateChange = actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC";
+      const actionType = (meta.action || meta.handshakeType || meta.type || event.fullCode || "").toUpperCase();
+      const rawReason = meta.message || meta.cancelCodeDescription || meta.subCodeDescription || meta.reason || meta.description || "";
+      
+      let disputeType = "CANCELLATION";
+      if (actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC") {
+        disputeType = "DUE_DATE_CHANGE";
+      } else if (actionType.includes("RESEND") || actionType.includes("REPLACEMENT") || actionType.includes("REENVIO") || /reenvio|reenviar|repor|substituir/i.test(rawReason)) {
+        disputeType = "RESEND_ITEMS";
+      } else if (actionType.includes("REFUND") || /reembolso|reembolsar/i.test(rawReason)) {
+        disputeType = "REFUND_ITEMS";
+      }
+
+      const finalReason = rawReason || (
+        disputeType === "DUE_DATE_CHANGE" ? "O pedido está atrasado. Quero uma nova previsão de entrega." :
+        disputeType === "RESEND_ITEMS" ? "Cliente prefere o reenvio de itens pra resolver o problema." :
+        disputeType === "REFUND_ITEMS" ? "Cliente solicitou reembolso de item." :
+        "Cliente solicitou cancelamento do pedido pelo iFood."
+      );
 
       const disputeData = {
         pending: true,
         disputeId: meta.disputeId || "",
-        type: isDueDateChange ? "DUE_DATE_CHANGE" : "CANCELLATION",
-        reason: meta.message || meta.cancelCodeDescription || (isDueDateChange ? "O pedido está atrasado. Quero uma nova previsão de entrega." : "Cliente solicitou cancelamento"),
+        type: disputeType,
+        reason: finalReason,
         customerName: meta.customerName || "",
-        handshakeType: meta.handshakeType || "",
+        handshakeType: meta.handshakeType || actionType,
         expiresAt: meta.expiresAt || "",
         requestedAt: meta.createdAt || new Date().toISOString(),
       };

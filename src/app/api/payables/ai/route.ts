@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   const role = (session.user as any).role;
   const perms = (session.user as any).permissions || "";
   
-  if (role !== "ADMIN" && !(role === "STAFF" && (perms.includes("finance") || perms.includes("payables")))) {
+  if (role !== "ADMIN" && role !== "FRANCHISEE" && !(role === "STAFF" && (perms.includes("finance") || perms.includes("payables")))) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 

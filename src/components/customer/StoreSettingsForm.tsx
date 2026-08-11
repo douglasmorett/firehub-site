@@ -2,13 +2,13 @@
 import DeliveryZoneMap from "@/components/customer/DeliveryZoneMap";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle } from "lucide-react";
+import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle, ShieldCheck, Truck } from "lucide-react";
 
 const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 // Padrão 18h-23h — foco em delivery de jantar, igual Brendi
 const defaultHours = () => DAYS.map(d => ({ day: d, open: "18:00", close: "23:00", active: true, shifts: [{ open: "18:00", close: "23:00" }] }));
 
-type Coupon = { id?: string; code: string; discount: number; active: boolean };
+type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "fixed" | "free_shipping"; minOrderValue?: number; active: boolean };
 
 // Botão de salvar inline por seção
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
@@ -63,13 +63,17 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     DINHEIRO: { rate: 0, active: true },
     DEBITO: { rate: 0, active: true, brands: [
       { name: "Mastercard", rate: 1.5, active: true },
-      { name: "Visa", rate: 1.5, active: true },
       { name: "Elo", rate: 2.0, active: true },
+      { name: "Visa", rate: 1.5, active: true },
+      { name: "Hipercard", rate: 2.0, active: true },
+      { name: "American Express", rate: 2.5, active: true },
     ] },
     CREDITO: { rate: 0, active: true, brands: [
       { name: "Mastercard", rate: 3.0, active: true },
-      { name: "Visa", rate: 3.0, active: true },
       { name: "Elo", rate: 3.5, active: true },
+      { name: "Visa", rate: 3.0, active: true },
+      { name: "Hipercard", rate: 3.5, active: true },
+      { name: "American Express", rate: 4.0, active: true },
     ] },
     VOUCHER: { rate: 0, active: true, surcharge: 0, brands: [
       { name: "Ticket", rate: 5.0, active: true },
@@ -87,6 +91,46 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     }
     return defaultPaymentConfig;
   });
+  // Repasse (Configurações financeiras de repasse Brendi Flow)
+  const defaultRepasse = {
+    tipoChave: "CPF",
+    chavePix: "",
+    titular: user.name || user.storeName || "",
+    cpfCnpj: user.cpfCnpj || "",
+    banco: "",
+    frequencia: "DAILY",
+    horario: "03:00",
+    status: "ATIVO"
+  };
+  const [repasseConfig, setRepasseConfig] = useState<any>(() => user.repasseConfig || defaultRepasse);
+  const [showRepasseModal, setShowRepasseModal] = useState(false);
+  const [savingRepasse, setSavingRepasse] = useState(false);
+  const [dirtyRepasse, setDirtyRepasse] = useState(false);
+
+  const handleSaveRepasse = async () => {
+    setSavingRepasse(true);
+    try {
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repasseConfig }),
+      });
+      if (res.ok) {
+        setDirtyRepasse(false);
+        alert("✅ Configurações de repasse salvas com sucesso!");
+        setShowRepasseModal(false);
+        router.refresh();
+      } else {
+        const d = await res.json();
+        alert(`❌ Erro: ${d.error || "Erro ao salvar repasse"}`);
+      }
+    } catch {
+      alert("❌ Erro de conexão ao salvar repasse.");
+    } finally {
+      setSavingRepasse(false);
+    }
+  };
+
   const [expandedPM, setExpandedPM] = useState<string | null>(null);
   const [newBrandName, setNewBrandName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -96,8 +140,13 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   // Delivery zones
   const [deliveryZoneType, setDeliveryZoneType] = useState<string>(user.deliveryZoneType || "");
   const [deliveryZones, setDeliveryZones] = useState<any[]>(user.deliveryZones || []);
-  const [newNeighborhood, setNewNeighborhood] = useState("");
-  const [newNeighborhoodFee, setNewNeighborhoodFee] = useState("");
+
+  // Frete grátis por valor mínimo
+  const initialDelivConfig = (user as any).deliveryConfig || {};
+  const [freeShippingActive, setFreeShippingActive] = useState<boolean>(Boolean(initialDelivConfig.freeShippingActive));
+  const [freeShippingMinValue, setFreeShippingMinValue] = useState<string>(initialDelivConfig.freeShippingMinValue ? String(initialDelivConfig.freeShippingMinValue) : "60.00");
+  const [savingFreeShipping, setSavingFreeShipping] = useState(false);
+  const [dirtyFreeShipping, setDirtyFreeShipping] = useState(false);
 
   // Helper: salvar campos específicos
   const saveFields = async (fields: Record<string, any>) => {
@@ -169,15 +218,20 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             body: JSON.stringify({ shifts: ifoodShifts }),
           });
           if (syncRes.ok) {
-            setHoursSyncMsg("✅ Horários sincronizados com o iFood!");
+            setHoursSyncMsg("✅ Horários salvos no site e sincronizados com o iFood!");
           } else {
             const errData = await syncRes.json().catch(() => ({}));
-            setHoursSyncMsg(`❌ iFood rejeitou: ${errData?.error || syncRes.status} ${JSON.stringify(errData?.details || '')}`);
+            const errDetailsStr = JSON.stringify(errData);
+            if (syncRes.status === 403 || errDetailsStr.includes("Forbidden") || errDetailsStr.includes("forbidden")) {
+              setHoursSyncMsg("⚠️ Horários salvos no site! (Obs: O iFood retornou Erro 403 Forbidden porque sua loja/chave iFood não possui permissão para alterar horários via API. Ajuste diretamente no Portal do Parceiro iFood se necessário).");
+            } else {
+              setHoursSyncMsg(`⚠️ Horários salvos no site! (iFood não sincronizou: ${errData?.error || syncRes.status})`);
+            }
           }
-          setTimeout(() => setHoursSyncMsg(null), 8000);
+          setTimeout(() => setHoursSyncMsg(null), 10000);
         } catch(e: any) {
-          setHoursSyncMsg(`❌ Erro ao sincronizar: ${e.message}`);
-          setTimeout(() => setHoursSyncMsg(null), 8000);
+          setHoursSyncMsg(`⚠️ Horários salvos no site! (Falha na conexão iFood: ${e.message})`);
+          setTimeout(() => setHoursSyncMsg(null), 10000);
         }
       }
     } finally { setSavingHours(false); }
@@ -247,7 +301,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     } catch { alert("Erro no upload."); } finally { setUploading(false); }
   };
 
-  const addCoupon = () => { setCoupons(prev => [...prev, { code: "", discount: 5, active: true }]); setDirtyCoupons(true); };
+  const addCoupon = () => { setCoupons(prev => [...prev, { code: "", discount: 10, type: "percent", active: true }]); setDirtyCoupons(true); };
   const updateCoupon = (idx: number, key: string, val: any) => { setCoupons(prev => prev.map((c, i) => i === idx ? { ...c, [key]: val } : c)); setDirtyCoupons(true); };
   const removeCoupon = (idx: number) => { setCoupons(prev => prev.filter((_, i) => i !== idx)); setDirtyCoupons(true); };
 
@@ -518,12 +572,34 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {coupons.map((c, idx) => (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", backgroundColor: c.active ? "#F0FDF4" : "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", backgroundColor: c.active ? "#F0FDF4" : "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0", flexWrap: "wrap" }}>
                 <Tag size={16} color={c.active ? "#16A34A" : "#94A3B8"} />
-                <input placeholder="CÓDIGO" value={c.code} onChange={e => updateCoupon(idx, "code", e.target.value.toUpperCase())} style={{ flex: 1, padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase" }} />
+                <input placeholder="CÓDIGO" value={c.code} onChange={e => updateCoupon(idx, "code", e.target.value.toUpperCase())} style={{ flex: 1, minWidth: "120px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase" }} />
+                <select
+                  value={c.type || "percent"}
+                  onChange={e => updateCoupon(idx, "type", e.target.value)}
+                  style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#16A34A" : c.type === "fixed" ? "#7C3AED" : "#2563EB", background: "#fff" }}
+                >
+                  <option value="percent">% Porcentagem</option>
+                  <option value="fixed">R$ Valor Fixo</option>
+                  <option value="free_shipping">🚚 Frete Grátis</option>
+                </select>
+                {c.type === "free_shipping" ? (
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#16A34A", padding: "0.3rem 0.6rem", background: "#DCFCE7", borderRadius: "6px" }}>Frete Grátis</span>
+                ) : c.type === "fixed" ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "0.8rem", color: "#64748B" }}>R$</span>
+                    <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                    <span style={{ fontSize: "0.8rem", color: "#64748B" }}>%</span>
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <span style={{ fontSize: "0.8rem", color: "#64748B" }}>R$</span>
-                  <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "70px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                  <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Mín: R$</span>
+                  <input type="number" placeholder="0" value={c.minOrderValue || 0} onChange={e => updateCoupon(idx, "minOrderValue", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
                 </div>
                 <label style={{ display: "flex", alignItems: "center", gap: "3px", cursor: "pointer" }}>
                   <input type="checkbox" checked={c.active} onChange={e => updateCoupon(idx, "active", e.target.checked)} />
@@ -539,55 +615,111 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
       {/* TAXAS DE PAGAMENTO */}
       {show("payment") && <div className="card mb-4">
-        <h3 className="font-bold mb-4">💳 Formas de Pagamento & Taxas</h3>
-        <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "1rem" }}>Configure quais formas você aceita e a taxa de cada uma. Usado para calcular seu lucro líquido.</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <h3 className="font-bold mb-2">💳 Formas de Pagamento</h3>
+        <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.25rem" }}>Gerencie suas formas de pagamento online e na entrega do pedido.</p>
 
-          {/* PIX */}
-          {(() => {
-            const cfg = paymentConfig.PIX || { rate: 0, active: true };
-            return (
-              <div style={{ borderRadius: "12px", border: `1.5px solid ${cfg.active ? '#00BFA530' : '#E2E8F020'}`, background: cfg.active ? '#00BFA505' : '#F8FAFC', overflow: 'hidden' }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.7rem 0.85rem" }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#00BFA515", display: "flex", alignItems: "center", justifyContent: "center" }}><Smartphone size={17} color="#00BFA5" /></div>
-                  <span style={{ fontWeight: 600, fontSize: "0.92rem", flex: 1 }}>Pix</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <input type="number" step="0.1" min="0" max="100" value={cfg.rate} onChange={e => setPaymentConfig((p: any) => ({ ...p, PIX: { ...p.PIX, rate: Number(e.target.value) } }))} style={{ width: "68px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", textAlign: "right" }} />
-                    <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 600 }}>%</span>
-                  </div>
-                  <button onClick={() => setPaymentConfig((p: any) => ({ ...p, PIX: { ...p.PIX, active: !p.PIX.active } }))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                    {cfg.active ? <ToggleRight size={28} color="#00BFA5" /> : <ToggleLeft size={28} color="#CBD5E1" />}
-                  </button>
+        {/* ── ALERTA DE OBRIGATORIEDADE ── */}
+        <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: "14px", padding: "1rem 1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <ShieldCheck size={20} color="#1D4ED8" style={{ marginTop: 2, flexShrink: 0 }} />
+            <div style={{ fontSize: "0.83rem", color: "#1E40AF", lineHeight: 1.6 }}>
+              <strong>🔒 Pagamento Online no FireHub:</strong>
+              <ul style={{ margin: "4px 0 0", paddingLeft: "1.2rem" }}>
+                <li>O <strong>Pix Online</strong> é <strong>obrigatório e permanece sempre ativo</strong> para garantir praticidade ao cliente final e permitir o abatimento automático da sua fatura mensal.</li>
+                <li>O <strong>Cartão de Crédito Online</strong> pode ser ativado ou desativado por você a qualquer momento.</li>
+                <li>Pendências de mensalidade do sistema são <strong>descontadas automaticamente</strong> das vendas online recebidas.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* ── SEÇÃO PAGAMENTO ONLINE ── */}
+        <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem" }}>
+            <ShieldCheck size={20} color="#16A34A" />
+            <div>
+              <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Pagamento online</h4>
+              <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Sempre disponível para seus clientes. Não podem ser desativados.</span>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            {/* PIX Online */}
+            <div style={{ background: "#fff", border: "1.5px solid #00BFA530", borderRadius: "12px", padding: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Smartphone size={18} color="#00BFA5" />
+                  <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Pix</strong>
                 </div>
+                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#E6F4EA", color: "#137333", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 Sempre ativo</span>
               </div>
-            );
-          })()}
+              <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
+                <div><strong>Taxa:</strong> 0,5% + R$ 0,40 por pedido</div>
+                <div><strong>Recebimento:</strong> Conforme suas configurações de repasse</div>
+                <div style={{ color: "#166534", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático em até 24h na conta do cliente ao cancelar</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRepasseModal(true)}
+                style={{ marginTop: "12px", width: "100%", padding: "7px 12px", borderRadius: "10px", border: "1.5px solid #00BFA5", background: "#E6F4EA", color: "#00796B", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "inherit" }}
+              >
+                <Upload size={14} /> Configurar repasse
+              </button>
+            </div>
+
+            {/* Cartão de Crédito Online */}
+            <div style={{ background: "#fff", border: "1.5px solid #9C27B030", borderRadius: "12px", padding: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <CreditCard size={18} color="#9C27B0" />
+                  <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Cartão de crédito online</strong>
+                </div>
+                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>⚡ D+30 / D+0</span>
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
+                <div><strong>Taxa:</strong> 3,99% por transação</div>
+                <div><strong>Recebimento:</strong> D+30, ou no mesmo dia (D+0) com +1,7% de adiantamento</div>
+                <div style={{ color: "#166534", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático na fatura do cartão ao cancelar</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRepasseModal(true)}
+                style={{ marginTop: "12px", width: "100%", padding: "7px 12px", borderRadius: "10px", border: "1.5px solid #9C27B0", background: "#F3E5F5", color: "#7B1FA2", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "inherit" }}
+              >
+                <Upload size={14} /> Configurar repasse
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── SEÇÃO PAGAMENTO NA ENTREGA ── */}
+        <h4 style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", marginBottom: "0.85rem" }}>Pagamento na entrega (Maquininha / Dinheiro)</h4>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
 
           {/* DINHEIRO */}
           {(() => {
             const cfg = paymentConfig.DINHEIRO || { rate: 0, active: true };
             return (
               <div style={{ borderRadius: "12px", border: `1.5px solid ${cfg.active ? '#4CAF5030' : '#E2E8F020'}`, background: cfg.active ? '#4CAF5005' : '#F8FAFC', overflow: 'hidden' }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.7rem 0.85rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem" }}>
                   <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#4CAF5015", display: "flex", alignItems: "center", justifyContent: "center" }}><Banknote size={17} color="#4CAF50" /></div>
-                  <span style={{ fontWeight: 600, fontSize: "0.92rem", flex: 1 }}>Dinheiro</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <input type="number" step="0.1" min="0" max="100" value={cfg.rate} onChange={e => setPaymentConfig((p: any) => ({ ...p, DINHEIRO: { ...p.DINHEIRO, rate: Number(e.target.value) } }))} style={{ width: "68px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", textAlign: "right" }} />
-                    <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 600 }}>%</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0F172A", display: "block" }}>Dinheiro</span>
+                    <span style={{ fontSize: "0.72rem", color: "#64748B" }}>Ative esta opção para aceitar pagamentos em dinheiro na entrega.</span>
                   </div>
-                  <button onClick={() => setPaymentConfig((p: any) => ({ ...p, DINHEIRO: { ...p.DINHEIRO, active: !p.DINHEIRO.active } }))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                    {cfg.active ? <ToggleRight size={28} color="#4CAF50" /> : <ToggleLeft size={28} color="#CBD5E1" />}
+                  <button onClick={() => { setPaymentConfig((p: any) => ({ ...p, DINHEIRO: { ...p.DINHEIRO, active: !p.DINHEIRO.active } })); setDirtyPayment(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                    {cfg.active ? <ToggleRight size={32} color="#4CAF50" /> : <ToggleLeft size={32} color="#CBD5E1" />}
                   </button>
                 </div>
               </div>
             );
           })()}
 
-          {/* DÉBITO, CRÉDITO, VOUCHER - com bandeiras */}
+          {/* DÉBITO, CRÉDITO, VOUCHER - com bandeiras no estilo Brendi */}
           {[
-            { key: "DEBITO", label: "Débito", icon: CreditCard, color: "#2196F3", defaultBrands: ["Mastercard", "Visa", "Elo"] },
-            { key: "CREDITO", label: "Crédito", icon: CreditCard, color: "#9C27B0", defaultBrands: ["Mastercard", "Visa", "Elo"] },
-            { key: "VOUCHER", label: "Voucher / Vale", icon: Ticket, color: "#E65100", defaultBrands: ["Ticket", "VR", "Sodexo", "Pluxee"] },
+            { key: "CREDITO", label: "Cartão de crédito", desc: "Maquininha na entrega. Escolha as bandeiras aceitas.", icon: CreditCard, color: "#9C27B0", defaultBrands: ["Mastercard", "Elo", "Visa", "Hipercard", "American Express"] },
+            { key: "DEBITO", label: "Cartão de débito", desc: "Maquininha na entrega. Escolha as bandeiras aceitas.", icon: CreditCard, color: "#2196F3", defaultBrands: ["Mastercard", "Elo", "Visa", "Hipercard", "American Express"] },
+            { key: "VOUCHER", label: "Voucher / Vale", desc: "Maquininha na entrega. Escolha as bandeiras de vale aceitas.", icon: Ticket, color: "#E65100", defaultBrands: ["Ticket", "VR", "Sodexo", "Pluxee"] },
           ].map(pm => {
             const Icon = pm.icon;
             const cfg = paymentConfig[pm.key] || { rate: 0, active: true, brands: [] };
@@ -601,6 +733,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 updated.brands[idx] = { ...updated.brands[idx], [field]: val };
                 return { ...p, [pm.key]: updated };
               });
+              setDirtyPayment(true);
             };
             const removeBrand = (idx: number) => {
               setPaymentConfig((p: any) => {
@@ -608,6 +741,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 updated.brands = updated.brands.filter((_: any, i: number) => i !== idx);
                 return { ...p, [pm.key]: updated };
               });
+              setDirtyPayment(true);
             };
             const addBrand = () => {
               if (!newBrandName.trim()) return;
@@ -617,51 +751,66 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 return { ...p, [pm.key]: updated };
               });
               setNewBrandName("");
+              setDirtyPayment(true);
             };
 
             return (
-              <div key={pm.key} style={{ borderRadius: "12px", border: `1.5px solid ${cfg.active ? pm.color + '30' : '#E2E8F020'}`, background: cfg.active ? pm.color + '05' : '#F8FAFC', overflow: 'hidden' }}>
+              <div key={pm.key} style={{ borderRadius: "14px", border: `1.5px solid ${cfg.active ? pm.color + '25' : '#E2E8F0'}`, background: cfg.active ? '#fff' : '#F8FAFC', padding: "1.25rem", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                 {/* Header */}
-                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.7rem 0.85rem" }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: pm.color + '15', display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={pm.color} /></div>
-                  <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => setExpandedPM(isOpen ? null : pm.key)}>
-                    <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{pm.label}</span>
-                    <span style={{ fontSize: "0.7rem", color: "#94A3B8", marginLeft: "8px" }}>{brands.filter((b: any) => b.active).length} bandeira(s) ativa(s)</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.85rem" }}>
+                  <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: pm.color + '12', display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={19} color={pm.color} /></div>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", display: "block" }}>{pm.label}</span>
+                    <span style={{ fontSize: "0.76rem", color: "#64748B" }}>{pm.desc}</span>
                   </div>
-                  <button onClick={() => setPaymentConfig((p: any) => ({ ...p, [pm.key]: { ...p[pm.key], active: !cfg.active } }))} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                    {cfg.active ? <ToggleRight size={28} color={pm.color} /> : <ToggleLeft size={28} color="#CBD5E1" />}
-                  </button>
-                  <button onClick={() => setExpandedPM(isOpen ? null : pm.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-                    {isOpen ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
+                  <button onClick={() => { setPaymentConfig((p: any) => ({ ...p, [pm.key]: { ...p[pm.key], active: !cfg.active } })); setDirtyPayment(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                    {cfg.active ? <ToggleRight size={32} color={pm.color} /> : <ToggleLeft size={32} color="#CBD5E1" />}
                   </button>
                 </div>
 
-                {/* Brands Panel */}
-                {isOpen && (
-                  <div style={{ padding: "0 0.85rem 0.85rem", borderTop: '1px solid #E2E8F020' }}>
-                    <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "0.6rem 0", fontWeight: 600 }}>CADASTRAR POR BANDEIRA</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                {/* Bandeiras estilo Chip Pills (igual à Brendi) */}
+                {cfg.active && (
+                  <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: "0.85rem" }}>
+                    <p style={{ fontSize: "0.74rem", fontWeight: 700, color: "#475569", marginBottom: "0.6rem", textTransform: "uppercase", letterSpacing: 0.5 }}>Bandeiras aceitas</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
                       {brands.map((brand: any, idx: number) => (
-                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.6rem', borderRadius: '8px', background: brand.active ? '#fff' : '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                          <button onClick={() => updateBrand(idx, 'active', !brand.active)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                            {brand.active ? <ToggleRight size={22} color={pm.color} /> : <ToggleLeft size={22} color="#CBD5E1" />}
-                          </button>
-                          <span style={{ flex: 1, fontWeight: 500, fontSize: '0.85rem', color: brand.active ? '#1E293B' : '#94A3B8', textDecoration: brand.active ? 'none' : 'line-through' }}>{brand.name}</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <input type="number" step="0.1" min="0" max="100" value={brand.rate} onChange={e => updateBrand(idx, 'rate', Number(e.target.value))} disabled={!brand.active} style={{ width: '60px', padding: '0.3rem', borderRadius: '5px', border: '1px solid #E2E8F0', fontSize: '0.8rem', textAlign: 'right', opacity: brand.active ? 1 : 0.4 }} />
-                            <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>%</span>
-                          </div>
-                          {!pm.defaultBrands.includes(brand.name) && (
-                            <button onClick={() => removeBrand(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}><Trash2 size={14} color="#EF4444" /></button>
-                          )}
+                        <div key={idx} onClick={() => updateBrand(idx, 'active', !brand.active)}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            padding: "6px 14px", borderRadius: 99, cursor: "pointer",
+                            fontSize: "0.82rem", fontWeight: 700, transition: "all 0.2s",
+                            border: brand.active ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+                            background: brand.active ? "#FEF2F2" : "#F8FAFC",
+                            color: brand.active ? "#DC2626" : "#94A3B8",
+                          }}>
+                          <span style={{ width: 14, height: 14, borderRadius: "50%", background: brand.active ? "#DC2626" : "#CBD5E1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", color: "#fff" }}>
+                            {brand.active ? "✓" : ""}
+                          </span>
+                          {brand.name}
                         </div>
                       ))}
+
+                      {/* Botão + Nova bandeira */}
+                      <button onClick={() => setExpandedPM(isOpen ? null : pm.key)}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          padding: "6px 14px", borderRadius: 99, cursor: "pointer",
+                          fontSize: "0.82rem", fontWeight: 700, border: "1.5px dashed #EF4444",
+                          background: "#fff", color: "#EF4444", transition: "all 0.2s",
+                        }}>
+                        + Nova bandeira
+                      </button>
                     </div>
-                    {/* Add new brand */}
-                    <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem' }}>
-                      <input type="text" placeholder={pm.key === 'VOUCHER' ? 'Nome do voucher...' : 'Nova bandeira...'} value={expandedPM === pm.key ? newBrandName : ''} onChange={e => setNewBrandName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addBrand()} style={{ flex: 1, padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '0.82rem' }} />
-                      <button onClick={addBrand} style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', background: pm.color, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px' }}><Plus size={14} /> Adicionar</button>
-                    </div>
+
+                    {/* Input para adicionar nova bandeira customizada */}
+                    {isOpen && (
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem', background: '#F8FAFC', padding: '0.75rem', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                        <input type="text" placeholder={pm.key === 'VOUCHER' ? 'Nome do voucher...' : 'Nome da nova bandeira (ex: Hiper)'}
+                          value={newBrandName} onChange={e => setNewBrandName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addBrand()}
+                          style={{ flex: 1, padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.84rem' }} />
+                        <button onClick={addBrand} style={{ padding: '0.5rem 1rem', borderRadius: '8px', background: "#EF4444", color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><Plus size={14} /> Adicionar</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -684,9 +833,79 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <SectionSaveBtn dirty={dirtyPayment} saving={savingPayment} onSave={savePayment} label="Salvar Formas de Pagamento" />
       </div>}
 
-      {/* ===== DELIVERY ZONES - MAP ===== */}
-      {show("delivery") && <div style={{ marginTop: "1.5rem" }}>
-        <DeliveryZoneMap
+      {/* ===== DELIVERY ZONES - MAP & FRETE GRÁTIS ===== */}
+      {show("delivery") && (
+        <div style={{ marginTop: "1.5rem" }}>
+          {/* Card: Frete Grátis por Valor Mínimo */}
+          <div className="card mb-4" style={{ background: "#fff", border: "1.5px solid #BBF7D0", borderRadius: 16, padding: "1.25rem", marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Truck size={22} color="#16A34A" />
+                <div>
+                  <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1rem", color: "#15803D" }}>🚚 Frete Grátis por Valor Mínimo</h3>
+                  <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Ofereça entrega grátis automaticamente para pedidos acima de um determinado valor</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFreeShippingActive(v => !v);
+                  setDirtyFreeShipping(true);
+                }}
+                style={{ background: "none", border: "none", cursor: "pointer" }}
+              >
+                {freeShippingActive ? <ToggleRight size={32} color="#16A34A" /> : <ToggleLeft size={32} color="#CBD5E1" />}
+              </button>
+            </div>
+
+            {freeShippingActive && (
+              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "12px", marginTop: "10px" }}>
+                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#166534", display: "block", marginBottom: "6px" }}>
+                  Valor mínimo do pedido para Frete Grátis (R$) *
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: "1rem", fontWeight: 800, color: "#15803D" }}>R$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={freeShippingMinValue}
+                    onChange={e => {
+                      setFreeShippingMinValue(e.target.value);
+                      setDirtyFreeShipping(true);
+                    }}
+                    placeholder="60.00"
+                    style={{ width: 140, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #16A34A", fontSize: "1rem", fontWeight: 800, color: "#0F172A", outline: "none" }}
+                  />
+                </div>
+                <p style={{ fontSize: "0.76rem", color: "#166534", margin: "8px 0 0", lineHeight: 1.4 }}>
+                  💡 Exemplo: Com R$ {Number(freeShippingMinValue || 0).toFixed(2).replace(".", ",")}, qualquer pedido em que o valor dos produtos atingir ou ultrapassar essa quantia terá a entrega gratuita para o cliente. A taxa de entrega original continuará visível na notinha com o aviso <strong>(Frete Grátis)</strong>.
+                </p>
+              </div>
+            )}
+
+            <SectionSaveBtn
+              dirty={dirtyFreeShipping}
+              saving={savingFreeShipping}
+              onSave={async () => {
+                setSavingFreeShipping(true);
+                try {
+                  await saveFields({
+                    deliveryConfig: {
+                      freeShippingActive,
+                      freeShippingMinValue: parseFloat(freeShippingMinValue) || 0,
+                    },
+                  });
+                  setDirtyFreeShipping(false);
+                } finally {
+                  setSavingFreeShipping(false);
+                }
+              }}
+              label="Salvar Regra de Frete Grátis"
+            />
+          </div>
+
+          <DeliveryZoneMap
           initialAddress={storeAddress}
           initialLatLng={(user.storeLatLng as any) || null}
           initialZones={(user.deliveryZones as any) || []}
@@ -714,13 +933,167 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             router.refresh();
           }}
         />
-      </div>}
+        </div>
+      )}
 
       {/* Salvar Tudo — só mostra quando modo "all" (sem aba específica) */}
       {tab === "all" && (
         <button onClick={handleSave} disabled={loading} className="btn btn-primary" style={{ width: "100%", marginTop: "1rem" }}>
           <Save size={16} style={{ marginRight: "6px" }} /> {loading ? "Salvando..." : "Salvar Tudo"}
         </button>
+      )}
+
+      {/* ===== MODAL CONFIGURAÇÕES FINANCEIRAS DE REPASSE (ESTILO BRENDI) ===== */}
+      {showRepasseModal && (
+        <div onClick={() => setShowRepasseModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(4px)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "28px", maxWidth: "600px", width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)", border: "1px solid #E2E8F0" }}>
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid #F1F5F9", paddingBottom: "14px" }}>
+              <div>
+                <h3 style={{ fontWeight: 900, fontSize: "1.15rem", color: "#0F172A", margin: 0 }}>Configurações financeiras de repasse</h3>
+                <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Configure a conta e a frequência para receber suas vendas online.</span>
+              </div>
+              <button onClick={() => setShowRepasseModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem", color: "#64748B", fontWeight: 700 }}>✕</button>
+            </div>
+
+            {/* Banner de status / aviso */}
+            <div style={{ background: "#FFFBEB", border: "1.5px solid #FCD34D", borderRadius: "14px", padding: "14px 16px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <ShieldCheck size={22} color="#D97706" style={{ marginTop: 2, flexShrink: 0 }} />
+                <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
+                  <strong>Ativação da sua conta bancária na FireHub</strong>
+                  <div style={{ marginTop: 4 }}>Acompanhe o progresso da sua conta. Quando estiver tudo certo, você receberá seus repasses automaticamente no Pix cadastrado!</div>
+                </div>
+              </div>
+            </div>
+
+            {/* CARD 1: Conta de repasse */}
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "0.75rem" }}>
+                <Banknote size={20} color="#16A34A" />
+                <div>
+                  <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Conta de repasse</h4>
+                  <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Configure a conta para recebimento do saldo disponível das vendas online da sua loja.</span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "14px" }}>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Tipo de Chave Pix</label>
+                  <select
+                    value={repasseConfig.tipoChave || "CPF"}
+                    onChange={e => setRepasseConfig({ ...repasseConfig, tipoChave: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem", background: "#fff" }}
+                  >
+                    <option value="CPF">CPF</option>
+                    <option value="CNPJ">CNPJ</option>
+                    <option value="EMAIL">E-mail</option>
+                    <option value="TELEFONE">Celular / Telefone</option>
+                    <option value="ALEATORIA">Chave Aleatória (EVP)</option>
+                    <option value="DADOS_BANCARIOS">Dados Bancários (Conta Corrente / Poupança)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Chave Pix ou Dados da Conta</label>
+                  <input
+                    type="text"
+                    placeholder="Digite sua Chave Pix..."
+                    value={repasseConfig.chavePix || ""}
+                    onChange={e => setRepasseConfig({ ...repasseConfig, chavePix: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem", background: "#fff" }}
+                  />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Nome do Titular</label>
+                    <input
+                      type="text"
+                      placeholder="Nome completo ou Razão Social"
+                      value={repasseConfig.titular || ""}
+                      onChange={e => setRepasseConfig({ ...repasseConfig, titular: e.target.value })}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem", background: "#fff" }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>CPF / CNPJ do Titular</label>
+                    <input
+                      type="text"
+                      placeholder="000.000.000-00"
+                      value={repasseConfig.cpfCnpj || ""}
+                      onChange={e => setRepasseConfig({ ...repasseConfig, cpfCnpj: e.target.value })}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem", background: "#fff" }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* CARD 2: Frequência do repasse */}
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "0.75rem" }}>
+                <Clock size={20} color="#2563EB" />
+                <div>
+                  <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Frequência do repasse</h4>
+                  <span style={{ fontSize: "0.76rem", color: "#64748B" }}>De quanto em quanto tempo e a que horas você quer receber o saldo disponível da sua loja.</span>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "14px" }}>
+                <label
+                  onClick={() => setRepasseConfig({ ...repasseConfig, frequencia: "DAILY" })}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: "12px", border: `2px solid ${repasseConfig.frequencia === "DAILY" ? "#EF4444" : "#E2E8F0"}`, background: repasseConfig.frequencia === "DAILY" ? "#FEF2F2" : "#fff", cursor: "pointer" }}
+                >
+                  <input type="radio" checked={repasseConfig.frequencia === "DAILY"} readOnly />
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#0F172A" }}>Todos os dias</span>
+                </label>
+
+                <label
+                  onClick={() => setRepasseConfig({ ...repasseConfig, frequencia: "WEEKLY" })}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: "12px", border: `2px solid ${repasseConfig.frequencia === "WEEKLY" ? "#EF4444" : "#E2E8F0"}`, background: repasseConfig.frequencia === "WEEKLY" ? "#FEF2F2" : "#fff", cursor: "pointer" }}
+                >
+                  <input type="radio" checked={repasseConfig.frequencia === "WEEKLY"} readOnly />
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#0F172A" }}>Uma vez por semana</span>
+                </label>
+              </div>
+
+              <div style={{ marginTop: "14px" }}>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Horário do repasse (Horário de Brasília)</label>
+                <select
+                  value={repasseConfig.horario || "03:00"}
+                  onChange={e => setRepasseConfig({ ...repasseConfig, horario: e.target.value })}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem", background: "#fff" }}
+                >
+                  <option value="03:00">03:00 (Madrugada)</option>
+                  <option value="06:00">06:00 (Manhã)</option>
+                  <option value="12:00">12:00 (Meio-dia)</option>
+                  <option value="18:00">18:00 (Fim de Tarde)</option>
+                  <option value="22:00">22:00 (Noite)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                type="button"
+                onClick={() => setShowRepasseModal(false)}
+                style={{ flex: 1, padding: "12px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#F8FAFC", fontWeight: 700, cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRepasse}
+                disabled={savingRepasse}
+                style={{ flex: 2, padding: "12px", borderRadius: "10px", border: "none", background: "#EF4444", color: "#fff", fontWeight: 700, cursor: savingRepasse ? "not-allowed" : "pointer" }}
+              >
+                {savingRepasse ? "Salvando..." : "Salvar Configurações de Repasse"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

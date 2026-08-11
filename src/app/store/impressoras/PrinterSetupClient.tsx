@@ -386,7 +386,7 @@ export default function PrinterSetupClient({
               <div>
                 <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Marcador Inteligente de Bebidas</p>
                 <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>
-                  {(config.autoBeverageTag !== false) ? "✅ Filtra e destaca bebidas automaticamente nos pedidos do JotaJá/iFood" : "Desativado — destaca apenas bebidas marcadas no cardápio"}
+                  {(config.autoBeverageTag !== false) ? "✅ Filtra e destaca bebidas automaticamente em TODAS as comandas e notas impressas (iFood, JotaJá, 99Food, WhatsApp, Balcão, etc.)" : "Desativado — destaca apenas bebidas sinalizadas manualmente no cardápio"}
                 </p>
               </div>
             </div>
@@ -411,7 +411,7 @@ export default function PrinterSetupClient({
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", outline: "none", boxSizing: "border-box", fontFamily: "inherit" }}
               />
               <p style={{ fontSize: "0.74rem", color: "#64748B", margin: "6px 0 0", lineHeight: 1.4 }}>
-                💡 Separe por vírgula. O filtro é case-insensitive (letras maiúsculas e minúsculas não fazem diferença, ex: <code>guarana jesus</code> ou <code>GUARANA JESUS</code> são identificados da mesma forma).
+                💡 Separe por vírgula. Funciona em <b>todas as integrações (iFood, JotaJá, 99Food, WhatsApp, Venda Presencial)</b>. Qualquer produto ou opção com estes termos receberá o carimbo <code>[ ◄=== BEBIDA ]</code> na impressão.
               </p>
             </div>
           )}

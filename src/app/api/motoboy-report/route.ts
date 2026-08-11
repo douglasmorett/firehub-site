@@ -2,16 +2,17 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, toLocalISODate } from "@/lib/timezone";
 
 // GET /api/motoboy-report?motoboyId=xxx&from=2026-05-01&to=2026-05-31
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  // Segurança e otimização: buscar apenas o id do usuário (evita carregar tokens e dados sensíveis)
+  // Segurança e otimização: buscar apenas o id do usuário e timezone
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, ownerId: true }
+    select: { id: true, ownerId: true, storeTimezone: true }
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
@@ -23,11 +24,23 @@ export async function GET(req: Request) {
   const to = url.searchParams.get("to");
   const calcMode = url.searchParams.get("calcMode") || "all"; // "all" | "fee_only"
 
-  // Determinar período
-  const fromDate = from ? new Date(from + "T00:00:00") : (() => {
-    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
-  })();
-  const toDate = to ? new Date(to + "T23:59:59") : new Date();
+  const tz = user.storeTimezone || "America/Sao_Paulo";
+
+  // Determinar período exato respeitando fuso horário do restaurante
+  let fromDate: Date;
+  let toDate: Date;
+
+  if (from) {
+    fromDate = getStartOfDayUTC(from, tz);
+  } else {
+    fromDate = getStartOfMonthUTC(new Date(), tz);
+  }
+
+  if (to) {
+    toDate = getEndOfDayUTC(to, tz);
+  } else {
+    toDate = new Date();
+  }
 
   // Buscar motoboys do franqueado
   const motoboyFilter = motoboyId ? { id: motoboyId } : {};
@@ -44,7 +57,6 @@ export async function GET(req: Request) {
       motoboyId: { in: motoboyIds },
       createdAt: { gte: fromDate, lte: toDate },
       deliveryType: "DELIVERY",
-      status: { notIn: ["CANCELADO"] },
     },
     select: {
       id: true,
@@ -54,9 +66,13 @@ export async function GET(req: Request) {
       motoboyFee: true,
       deliveryDistance: true,
       customerName: true,
+      customerPhone: true,
       customerAddress: true,
       status: true,
       motoboyId: true,
+      paymentMethod: true,
+      items: true,
+      notes: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -79,76 +95,143 @@ export async function GET(req: Request) {
     const totalDeliveries = orders.length;
     const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
 
-    // Calcular dias únicos trabalhados (para diária)
+    // Calcular dias únicos trabalhados no fuso horário do restaurante
     const uniqueDays = orders.length > 0
-      ? new Set(orders.map((o) => o.createdAt.toISOString().split("T")[0])).size
+      ? new Set(orders.map((o) => toLocalISODate(new Date(o.createdAt), tz))).size
       : 0;
 
     // Soma das taxas dos pedidos
     const deliveryFeeSum = orders.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
     const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
 
-    // Calcular pagamento baseado no tipo
+    // Classificação de pagamentos recebidos pelo motoboy na entrega vs online
+    let cashCollectedSum = 0, cashOrdersCount = 0;
+    let debitTotal = 0, debitCount = 0;
+    let creditTotal = 0, creditCount = 0;
+    let voucherTotal = 0, voucherCount = 0;
+    let onlineTotal = 0, onlineCount = 0;
+
+    for (const o of orders) {
+      if (o.status === "CANCELADO") continue; // Pedido cancelado: não cobrar prestação de contas do motoboy
+      const pm = (o.paymentMethod || "").toUpperCase();
+      if (pm === "CASH" || pm.includes("DINHEIR")) {
+        cashCollectedSum += o.totalAmount;
+        cashOrdersCount++;
+      } else if (pm.includes("DEBIT") || pm.includes("DEBITO") || pm.includes("DÉBITO")) {
+        debitTotal += o.totalAmount;
+        debitCount++;
+      } else if (pm.includes("VOUCHER") || pm.includes("VALE") || pm.includes("VR") || pm.includes("VA")) {
+        voucherTotal += o.totalAmount;
+        voucherCount++;
+      } else if (pm.includes("CARD") || pm.includes("CART") || pm.includes("CREDIT") || pm.includes("MAQUININHA") || pm.includes("MAQUINA")) {
+        creditTotal += o.totalAmount;
+        creditCount++;
+      } else {
+        // PIX Online, iFood Pago Online, etc.
+        onlineTotal += o.totalAmount;
+        onlineCount++;
+      }
+    }
+
+    const cardPosTotal = debitTotal + creditTotal + voucherTotal;
+    const cardPosCount = debitCount + creditCount + voucherCount;
+
+    // Calcular remuneração segundo o tipo do motoboy
+    const dailyRate = mb.dailyRate || 0;
+    const perDeliveryRate = mb.perDeliveryRate || 0;
+    const perKmRate = mb.perKmRate || 0;
+
+    let feeTotal = 0;
     let dailyTotal = 0;
-    let perDeliveryTotal = 0;
-    let perKmTotal = 0;
 
-    if (mb.paymentType === "DAILY_RATE" || mb.paymentType === "BOTH" || mb.paymentType === "DAILY_PLUS_FEE") {
-      dailyTotal = (mb.dailyRate || 0) * uniqueDays;
-    }
-    if (mb.paymentType === "PER_DELIVERY" || mb.paymentType === "BOTH") {
-      perDeliveryTotal = (mb.perDeliveryRate || 0) * totalDeliveries;
-    } else if (mb.paymentType === "DAILY_PLUS_FEE") {
-      perDeliveryTotal = deliveryFeeSum;
-    }
-    if (mb.paymentType === "PER_KM" || (mb.paymentType === "BOTH" && mb.perKmRate)) {
-      perKmTotal = (mb.perKmRate || 0) * totalDistance;
+    switch (mb.paymentType) {
+      case "DAILY_RATE":
+        dailyTotal = uniqueDays * dailyRate;
+        feeTotal = 0;
+        break;
+
+      case "PER_DELIVERY":
+        feeTotal = perDeliveryRate > 0
+          ? totalDeliveries * perDeliveryRate
+          : deliveryFeeSum;
+        dailyTotal = 0;
+        break;
+
+      case "BOTH":
+      case "DAILY_PLUS_FEE":
+        dailyTotal = uniqueDays * dailyRate;
+        feeTotal = perDeliveryRate > 0
+          ? totalDeliveries * perDeliveryRate
+          : deliveryFeeSum;
+        break;
+
+      case "PER_KM":
+        feeTotal = totalDistance * perKmRate;
+        dailyTotal = 0;
+        break;
+
+      default:
+        feeTotal = deliveryFeeSum;
+        dailyTotal = 0;
     }
 
-    const totalWithDaily = dailyTotal + perDeliveryTotal + perKmTotal;
-    const totalFeeOnly = perDeliveryTotal + perKmTotal;
-    const totalToPay = calcMode === "fee_only" ? totalFeeOnly : totalWithDaily;
+    const totalWithDaily = dailyTotal + feeTotal;
+    const totalFeeOnly = feeTotal;
 
     return {
       motoboy: {
         id: mb.id,
         name: mb.name,
-        phone: mb.phone,
         paymentType: mb.paymentType,
-        dailyRate: mb.dailyRate,
-        perDeliveryRate: mb.perDeliveryRate,
-        perKmRate: mb.perKmRate,
+        dailyRate,
+        perDeliveryRate,
+        perKmRate,
         active: mb.active,
       },
       stats: {
         totalDeliveries,
-        totalDistance: Math.round(totalDistance * 10) / 10,
+        totalDistance,
         uniqueDays,
-        dailyTotal,
-        perDeliveryTotal,
-        perKmTotal,
         deliveryFeeSum,
         motoboyFeeSum,
+        cashCollectedSum,
+        cashOrdersCount,
+        cardPosTotal,
+        cardPosCount,
+        debitTotal,
+        debitCount,
+        creditTotal,
+        creditCount,
+        voucherTotal,
+        voucherCount,
+        onlineTotal,
+        onlineCount,
+        dailyTotal,
+        feeTotal,
         totalWithDaily,
         totalFeeOnly,
-        totalToPay,
       },
-      orders: orders.map((o) => ({
+      orders: orders.map(o => ({
         id: o.id,
-        date: o.createdAt.toISOString(),
+        createdAt: o.createdAt,
+        totalAmount: o.totalAmount,
+        deliveryFee: o.deliveryFee,
+        motoboyFee: o.motoboyFee,
         customerName: o.customerName,
         customerAddress: o.customerAddress,
-        totalAmount: o.totalAmount,
-        deliveryFee: o.deliveryFee || o.motoboyFee || 0,
-        motoboyFee: o.motoboyFee,
-        deliveryDistance: o.deliveryDistance,
+        paymentMethod: o.paymentMethod,
         status: o.status,
       })),
     };
   });
 
   return NextResponse.json({
-    period: { from: fromDate.toISOString(), to: toDate.toISOString() },
+    period: {
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      fromFormatted: fromDate.toLocaleDateString("pt-BR", { timeZone: tz }),
+      toFormatted: toDate.toLocaleDateString("pt-BR", { timeZone: tz }),
+    },
     report,
   });
 }

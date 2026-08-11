@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 const AUTH_BASE = "https://merchant-api.ifood.com.br/authentication/v1.0";
 
@@ -20,10 +21,10 @@ export async function POST() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const clientId = process.env.IFOOD_CLIENT_ID;
+  const clientId = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || "cabc4064-8d01-4bb0-bb5b-ed93963f9a7a";
 
   if (!clientId) {
-    return NextResponse.json({ error: "IFOOD_CLIENT_ID não configurado" }, { status: 500 });
+    return NextResponse.json({ error: "IFOOD_CLIENT_ID_DISTRIBUTED não configurado" }, { status: 500 });
   }
 
   try {
@@ -52,9 +53,23 @@ export async function POST() {
       );
     }
 
+    if (data.authorizationCodeVerifier && session.user?.email) {
+      try {
+        await prisma.user.update({
+          where: { email: session.user.email },
+          data: { ifoodAuthVerifier: data.authorizationCodeVerifier },
+        });
+      } catch (e: any) {
+        console.warn("[iFood userCode] aviso ao salvar verifier:", e?.message);
+      }
+    }
+
+    const verificationUrl = data.verificationUrlComplete || data.verificationUrl || `https://portal.ifood.com.br/apps/code?c=${data.userCode}`;
+
     return NextResponse.json({
       success:  true,
       userCode: data.userCode,
+      verificationUrl,
       verifier: data.authorizationCodeVerifier,
       expiresIn: data.expiresIn,
     });

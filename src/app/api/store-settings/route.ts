@@ -44,22 +44,26 @@ export async function PUT(req: Request) {
     "storeLoyalty",      // Programa de fidelidade/cashback
     "city",              // Cidade / Estado (ex: Rio de Janeiro - RJ)
     "storeTimezone",     // Fuso Horário (ex: America/Sao_Paulo)
+    "repasseConfig",     // Configurações de Repasse Automático (Brendi Flow)
+    "deliveryConfig",    // Configurações de Entrega / Frete Grátis
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
   }
   if (body.storeDeliveryOnly !== undefined) data.storeDeliveryOnly = body.storeDeliveryOnly;
   if (body.autoAcceptOrders !== undefined) data.autoAcceptOrders = Boolean(body.autoAcceptOrders);
+  if (body.allowScheduledOrders !== undefined) data.allowScheduledOrders = Boolean(body.allowScheduledOrders);
   if (body.storeAlertSound !== undefined) data.storeAlertSound = body.storeAlertSound;
   if (body.ifoodSyncDeliveryTime !== undefined) data.ifoodSyncDeliveryTime = Boolean(body.ifoodSyncDeliveryTime);
 
   const updatedUser = await prisma.user.update({ where: { id: currentUser.id }, data });
 
   // ── Sincronizar cidade e dados da loja para todos os funcionários da equipe ──
-  if (data.city !== undefined || data.storeName !== undefined || data.cpfCnpj !== undefined) {
+  if (data.city !== undefined || data.storeName !== undefined || data.cpfCnpj !== undefined || data.storeTimezone !== undefined) {
     const staffUpdates: any = {};
     if (data.city !== undefined) staffUpdates.city = data.city;
     if (data.storeName !== undefined) staffUpdates.storeName = data.storeName;
     if (data.cpfCnpj !== undefined) staffUpdates.cpfCnpj = data.cpfCnpj;
+    if (data.storeTimezone !== undefined) staffUpdates.storeTimezone = data.storeTimezone;
 
     await prisma.user.updateMany({
       where: { ownerId: currentUser.id },

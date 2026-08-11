@@ -256,7 +256,7 @@ export default function MarketingHubClient() {
           <div style={{ background: "#fff", padding: "1.5rem", borderRadius: "16px", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
             <h3 style={{ margin: "0 0 4px 0", fontWeight: 800, fontSize: "1.1rem", color: "#0F172A" }}>Criar Nova Campanha de Promoção</h3>
             <p style={{ margin: "0 0 16px 0", fontSize: "0.78rem", color: "#64748B" }}>
-              Escreva sua mensagem. O sistema enviará cada mensagem com um intervalo aleatório de 8 a 15 segundos para proteger seu número contra banimentos do WhatsApp.
+              Escreva sua mensagem. O sistema enviará cada mensagem com intervalo humano aleatório de 12 a 28 segundos e pausas de descanso em lote para proteger seu chip contra bloqueios do WhatsApp.
             </p>
 
             <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>

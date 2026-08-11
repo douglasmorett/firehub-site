@@ -22,11 +22,29 @@ import { prisma } from "@/lib/prisma";
 import { calcMensalidade } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 
-export function getCurrentYearMonth(offset = 0): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() + offset);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
+export function isExemptAccount(email?: string | null): boolean {
+  if (!email) return false;
+  const clean = email.toLowerCase().replace(/\s+/g, "");
+  const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  const exemptList = [
+    "contatohakim@gmail.com",
+    "viniciusmenezes.ofc@gmail.com",
+    ...bypassEmails,
+  ];
+  return exemptList.includes(clean);
+}
+
+export function getCurrentYearMonth(offset = 0, timezone = "America/Sao_Paulo"): string {
+  // Usa o fuso horário da loja (ou Brasília) para garantir que
+  // o fechamento do mês acontece à meia-noite local, não UTC.
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: timezone }));
+  now.setMonth(now.getMonth() + offset);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
 }
 
@@ -42,15 +60,17 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { planPercent: true },
+    select: { email: true, planPercent: true },
   });
+
+  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
 
   return prisma.franchiseeBillingCycle.create({
     data: {
       franchiseeId,
       yearMonth,
-      planPercent: user?.planPercent ?? 1, // default 1%
-      status: "OPEN",
+      planPercent: isExempt ? 0 : (user?.planPercent ?? 1), // default 1%
+      status: isExempt ? "PAID" : "OPEN",
     },
   });
 }
@@ -62,9 +82,17 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
  * O franqueado vê imediatamente quanto deve no painel financeiro.
  */
 export async function trackSaleForBilling(franchiseeId: string) {
-  const yearMonth = getCurrentYearMonth();
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { email: true, planPercent: true, storeTimezone: true },
+  });
+
+  const tz = user?.storeTimezone || "America/Sao_Paulo";
+  const yearMonth = getCurrentYearMonth(0, tz);
 
   await ensureCycle(franchiseeId, yearMonth);
+
+  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
 
   const [y, m] = yearMonth.split("-").map(Number);
   const monthStart = new Date(y, m - 1, 1);
@@ -111,7 +139,9 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   });
 
   if (!cycle) throw new Error(`Ciclo ${yearMonth} não encontrado para ${franchiseeId}`);
-  if (cycle.status !== "OPEN") return { charged: false, message: `Ciclo já está ${cycle.status}` };
+  if (cycle.status !== "OPEN" && cycle.status !== "PAID") return { charged: false, message: `Ciclo já está ${cycle.status}` };
+
+  const isSpecialStore = isExemptAccount(cycle.franchisee?.email) || cycle.franchisee?.planPercent === 0;
 
   // Recalcula valores finais (pedidos confirmados do mês)
   const [y, m] = yearMonth.split("-").map(Number);
@@ -131,10 +161,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
   const amountPending = cycle.franchisee.isFranqueadoHakim ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
 
-  const userEmailClean = cycle.franchisee.email?.toLowerCase().replace(/\s+/g, "");
-  const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
-  if (!bypassEmails.includes("viniciusmenezes.ofc@gmail.com")) {
-    bypassEmails.push("viniciusmenezes.ofc@gmail.com");
+  let ifoodExtraCharge = 0;
+  if (!isSpecialStore) {
+    const ifoodIntegCount = await prisma.ifoodIntegration.count({
+      where: { userId: franchiseeId, active: true },
+    });
+    const legacyIfood = cycle.franchisee?.ifoodConnected ? 1 : 0;
+    const totalIfood = Math.max(ifoodIntegCount, legacyIfood);
+    ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
   }
   const isSpecialStore = bypassEmails.includes(userEmailClean ?? "") || cycle.franchisee.isFranqueadoHakim === true;
 
@@ -142,9 +176,9 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   if (amountPending < 1 || totalSales === 0 || isSpecialStore) {
     await prisma.franchiseeBillingCycle.update({
       where: { id: cycle.id },
-      data: { totalSales, amountDue, amountPending: 0, status: "PAID", closedAt: new Date() },
+      data: { totalSales, amountDue: 0, amountPending: 0, status: "PAID", closedAt: new Date() },
     });
-    return { charged: false, amountPending: 0, message: isSpecialStore ? "Isento (loja própria)." : "Nada a cobrar neste mês." };
+    return { charged: false, amountPending: 0, message: isSpecialStore ? "Isento (loja oficial / própria)." : "Nada a cobrar neste mês." };
   }
 
   // Gera cobrança Asaas pelo valor restante
@@ -186,6 +220,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       // Vencimento: dia 5 do próximo mês
       const due = new Date(y, m, 5).toISOString().split("T")[0];
 
+      const chargeDescription = ifoodExtraCharge > 0
+        ? `FireHub ${yearMonth} — Mensalidade R$${baseDue.toFixed(2)} + iFood Extra R$${ifoodExtraCharge.toFixed(2)}`
+        : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$50 · máx R$400)`;
+
       const pr = await fetch(`${BASE}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json", access_token: asaasKey },
@@ -194,7 +232,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
           billingType: "BOLETO",
           value: amountPending,
           dueDate: due,
-          description: `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$50 · máx R$400)`,
+          description: chargeDescription,
           externalReference: `billing:${cycle.id}`,
         }),
       });
@@ -222,7 +260,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     },
   });
 
-  return { charged: true, amountPending, asaasBoletoUrl, message: "Boleto gerado com valor pendente." };
+  return { charged: true, amountPending, ifoodExtraCharge, asaasBoletoUrl, message: "Boleto gerado com valor pendente." };
 }
 
 /**
@@ -230,14 +268,33 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
  * Se não existe, retorna dados zerados (sem criar no banco).
  */
 export async function getCurrentCycleView(franchiseeId: string) {
-  const yearMonth = getCurrentYearMonth();
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { email: true, planPercent: true, storeTimezone: true },
+  });
+
+  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
+  const tz = user?.storeTimezone || "America/Sao_Paulo";
+  const yearMonth = getCurrentYearMonth(0, tz);
 
   const cycle = await prisma.franchiseeBillingCycle.findUnique({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
   });
 
+  if (isExempt) {
+    return {
+      yearMonth,
+      totalSales: cycle?.totalSales || 0,
+      amountDue: 0,
+      amountOffset: 0,
+      amountPending: 0,
+      status: "PAID",
+      isExempt: true,
+    };
+  }
+
   if (!cycle) {
-    return { yearMonth, totalSales: 0, amountDue: 0, amountOffset: 0, amountPending: 0, status: "OPEN" };
+    return { yearMonth, totalSales: 0, amountDue: 0, amountOffset: 0, amountPending: 0, status: "OPEN", isExempt: false };
   }
 
   return {
@@ -247,6 +304,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     amountOffset: cycle.amountOffset,
     amountPending: cycle.amountPending,
     status: cycle.status,
+    isExempt: false,
     asaasBoletoUrl: cycle.asaasBoletoUrl,
     asaasBoletoCode: cycle.asaasBoletoCode,
   };

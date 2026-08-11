@@ -102,51 +102,178 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const { authorizationCode } = await req.json();
-  if (!authorizationCode) return NextResponse.json({ error: "authorizationCode obrigatório" }, { status: 400 });
+  const body = await req.json();
+  const rawCode = (body.authorizationCode || body.merchantId || "").trim();
+  if (!rawCode) return NextResponse.json({ error: "Código de autorização obrigatório" }, { status: 400 });
 
-  const clientId     = process.env.IFOOD_CLIENT_ID;
-  const clientSecret = process.env.IFOOD_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    return NextResponse.json({ error: "Credenciais iFood não configuradas" }, { status: 500 });
-  }
-
-  // Troca o authorization code por um access token com scope de merchant
-  const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grantType:         "authorization_code",
-      clientId,
-      clientSecret,
-      authorizationCode,
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    return NextResponse.json({ error: `iFood ${res.status}`, details: data }, { status: res.status });
-  }
-
-  const merchantId = data.merchantId || data.merchant?.id;
-
-  // Salva o token no banco — nunca expor ao client
-  if (session.user?.email) {
+  // Se o usuário digitou diretamente um Merchant UUID (formato 8-4-4-4-12)
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCode);
+  if (isUuid && session.user?.email) {
     await prisma.user.update({
       where: { email: session.user.email },
       data: {
         ifoodConnected: true,
-        ifoodMerchantId: merchantId,
-        ifoodAccessToken: data.accessToken,
+        ifoodMerchantId: rawCode,
       },
+    });
+    return NextResponse.json({
+      success: true,
+      merchantId: rawCode,
+      message: "Merchant ID salvo com sucesso!",
+    });
+  }
+
+  const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || "cabc4064-8d01-4bb0-bb5b-ed93963f9a7a";
+  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED || "2k28s9uil03gobzo6p3gkojim4ffsw9ttu3031veoxm1irbiz53vbzrd50n8wqnywrbvfsurzalevhv4ank4jrrm9wr4xhfcahv";
+
+  const user = session.user?.email ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;
+  const verifier = user?.ifoodAuthVerifier;
+
+  // Tentativa 1: Com verifier (Fluxo Distribuído UserCode)
+  let res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grantType: "authorization_code",
+      clientId,
+      clientSecret,
+      authorizationCode: rawCode,
+      ...(verifier ? { authorizationCodeVerifier: verifier } : {}),
+    }),
+  });
+
+  let data = await res.json();
+
+  // Tentativa 2: Sem verifier (caso seja fluxo centralizado/direto)
+  if (!res.ok && verifier) {
+    res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grantType: "authorization_code",
+        clientId,
+        clientSecret,
+        authorizationCode: rawCode,
+      }),
+    });
+    if (res.ok) {
+      data = await res.json();
+    }
+  }
+
+  if (!res.ok) {
+    const errorMsg = data?.error?.message || data?.error || `iFood ${res.status}`;
+    console.error("[iFood Auth] Token Exchange Error:", data);
+    return NextResponse.json({
+      error: `Erro de autorização iFood: ${errorMsg}`,
+      details: data,
+      hint: "Certifique-se de ter clicado em '1. Conectar e Autorizar no Portal iFood' e colado o código gerado na janela 'Aplicativo Autorizado' dentro de 60 segundos.",
+    }, { status: res.status });
+  }
+
+  // Obter merchantId do iFood usando o accessToken obtido
+  let merchantId = data.merchantId || data.merchant?.id;
+  if (!merchantId && data.accessToken) {
+    try {
+      const mRes = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants`, {
+        headers: { Authorization: `Bearer ${data.accessToken}` },
+      });
+      if (mRes.ok) {
+        const mData = await mRes.json();
+        if (Array.isArray(mData) && mData.length > 0) {
+          merchantId = mData[0].id;
+        }
+      }
+    } catch (e: any) {
+      console.warn("[iFood Auth] Erro ao buscar lista de merchants:", e?.message);
+    }
+  }
+
+  // Salvar token e merchantId no banco (preservando loja principal e acumulando lojas adicionais)
+  if (session.user?.email && merchantId) {
+    const userId = user?.id;
+    const isPrimaryAlreadySet = !!user?.ifoodMerchantId;
+    const isNewStore = isPrimaryAlreadySet && user.ifoodMerchantId !== merchantId;
+
+    if (userId) {
+      // Garantir que a loja principal também esteja cadastrada na tabela de integrações
+      if (user?.ifoodMerchantId) {
+        const primaryMerchantId = user.ifoodMerchantId;
+        try {
+          await prisma.ifoodIntegration.upsert({
+            where: { userId_merchantId: { userId, merchantId: primaryMerchantId } },
+            create: {
+              userId,
+              label: "Loja Principal",
+              merchantId: user.ifoodMerchantId,
+              connected: true,
+              active: true,
+            },
+            update: { connected: true, active: true },
+          });
+        } catch (e: any) {
+          console.warn("[iFood Auth] Aviso ao garantir loja principal:", e?.message);
+        }
+      }
+
+      // Se for uma LOJA NOVA (diferente da principal), adicionar na tabela de integrações adicionais
+      if (isNewStore) {
+        try {
+          await prisma.ifoodIntegration.upsert({
+            where: { userId_merchantId: { userId, merchantId } },
+            create: {
+              userId,
+              label: `Loja iFood (${merchantId.slice(0, 6)})`,
+              merchantId,
+              connected: true,
+              active: true,
+            },
+            update: { connected: true, active: true },
+          });
+        } catch (e: any) {
+          console.warn("[iFood Auth] Aviso ao salvar loja adicional:", e?.message);
+        }
+      }
+    }
+
+    // Se NÃO tinha loja principal ainda, define esta como a principal. Se já tinha, mantém a principal e só atualiza tokens se for a mesma.
+    if (!isPrimaryAlreadySet) {
+      await prisma.user.update({
+        where: { email: session.user.email },
+        data: {
+          ifoodConnected: true,
+          ifoodMerchantId: merchantId,
+          ifoodAccessToken: data.accessToken,
+          ifoodRefreshToken: data.refreshToken || null,
+          ifoodTokenExpiresAt: data.expiresIn ? new Date(Date.now() + data.expiresIn * 1000) : null,
+        },
+      });
+    } else if (!isNewStore) {
+      // É a mesma loja principal sendo re-autorizada
+      await prisma.user.update({
+        where: { email: session.user.email },
+        data: {
+          ifoodConnected: true,
+          ifoodAccessToken: data.accessToken,
+          ifoodRefreshToken: data.refreshToken || null,
+          ifoodTokenExpiresAt: data.expiresIn ? new Date(Date.now() + data.expiresIn * 1000) : null,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      merchantId,
+      isAdditional: isNewStore,
+      message: isNewStore
+        ? "🎉 Nova loja iFood adicional vinculada com sucesso (+R$50,00/mês)!"
+        : "🎉 Loja iFood principal re-autorizada com sucesso!",
     });
   }
 
   return NextResponse.json({
-    success:      true,
+    success: true,
     merchantId,
-    message:      "Autorização concluída! MerchantId salvo automaticamente.",
-    instruction:  "A conexão com o iFood foi configurada. Você já pode gerenciar pedidos.",
+    message: "Autorização concluída! Loja conectada com sucesso.",
   });
 }

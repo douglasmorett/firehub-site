@@ -116,6 +116,9 @@ export default function GlobalPrintListener() {
               const isRecent = orderTime > thirtyMinutesAgo;
 
               if (!isFinished && isRecent) {
+                // IGNORAR RASCUNHOS IA (CRIANDO_IA) — Rascunho não deve ser impresso até o pedido ser finalizado pelo cliente!
+                if (statusUpper === "CRIANDO_IA" || statusUpper === "AGUARDANDO_PAGAMENTO") continue;
+
                 // ATOMIC CHECK: Se já foi impresso ou reclamado, ignora!
                 if (isOrderPrinted(order)) continue;
 
@@ -134,6 +137,13 @@ export default function GlobalPrintListener() {
                   const payStr = (order.paymentMethod || "").toString();
                   const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
 
+                  const activePrinterConfig = printerConfig || {
+                    autoprint: true,
+                    printers: [
+                      { id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" as const },
+                    ],
+                  };
+
                   const formattedOrder = {
                     id: order.id,
                     dailyOrderNumber: order.dailyOrderNumber || order.orderSeqNumber || "—",
@@ -146,8 +156,9 @@ export default function GlobalPrintListener() {
                     isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
                     items: (order.items || []).map((i: any) => {
                       const rawName = i.menuProduct?.name || i.name || "Item";
+                      const cleanName = rawName.split(" | ")[0].trim();
                       return {
-                        name: rawName,
+                        name: cleanName,
                         qty: i.quantity || i.qty || 1,
                         price: i.price || 0,
                         notes: i.notes || "",
@@ -161,17 +172,11 @@ export default function GlobalPrintListener() {
                     discountMerchant: order.discountMerchant,
                     changeAmount: order.changeAmount,
                     ifoodReference: order.ifoodReference,
-                    openDeliveryReference: order.openDeliveryReference,
-                    source: order.source,
+                    printerConfig: activePrinterConfig,
+                    customBeverageKeywords: activePrinterConfig?.customBeverageKeywords || "",
+                    autoBeverageTag: activePrinterConfig?.autoBeverageTag !== false,
                     notes: order.notes,
                     createdAt: order.createdAt,
-                  };
-
-                  const activePrinterConfig = printerConfig || {
-                    autoprint: true,
-                    printers: [
-                      { id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" as const },
-                    ],
                   };
 
                   const storeName = (session.user as any)?.storeName || "FIREHUB";

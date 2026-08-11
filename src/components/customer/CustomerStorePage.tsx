@@ -9,7 +9,7 @@ import "./store.css";
 
 type MenuProduct = { id: string; name: string; description: string; price: number; imageUrl: string | null; category: string; isCombo?: boolean; comboConfig?: any; comboGroups?: any[] };
 type CartItem = MenuProduct & { quantity: number; comboSelections?: any };
-type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean; ifoodWidgetId?: string | null };
+type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean; ifoodWidgetId?: string | null; mpSellerId?: string | null; mpAccessToken?: string | null; hasOnlinePayment?: boolean };
 type StoreRating = { average: number; count: number; reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[] };
 
 function isStoreOpen(hours: any[]): { open: boolean; text: string } {
@@ -19,11 +19,29 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
   const today = hours[dayIdx];
   if (!today || !today.active) return { open: false, text: "Fechado hoje" };
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const [oh, om] = today.open.split(":").map(Number);
-  const [ch, cm] = today.close.split(":").map(Number);
-  if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${today.close}` };
-  if (nowMin < oh * 60 + om) return { open: false, text: `Abre às ${today.open}` };
-  return { open: false, text: "Fechado · Abre amanhã" };
+
+  if (Array.isArray(today.shifts) && today.shifts.length > 0) {
+    const activeShifts = today.shifts.filter((s: any) => s.open && s.close && s.active !== false);
+    for (const shift of activeShifts) {
+      const [oh, om] = (shift.open || "").split(":").map(Number);
+      const [ch, cm] = (shift.close || "").split(":").map(Number);
+      if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${shift.close}` };
+    }
+    const nextShift = activeShifts.find((s: any) => {
+      const [oh, om] = (s.open || "").split(":").map(Number);
+      return nowMin < oh * 60 + om;
+    });
+    if (nextShift) return { open: false, text: `Abre às ${nextShift.open}` };
+    return { open: false, text: "Fechado · Abre amanhã" };
+  }
+
+  if (today.open && today.close) {
+    const [oh, om] = today.open.split(":").map(Number);
+    const [ch, cm] = today.close.split(":").map(Number);
+    if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${today.close}` };
+    return { open: false, text: `Abre às ${today.open}` };
+  }
+  return { open: true, text: "Aberto" };
 }
 
 export default function CustomerStorePage({ franchisee, menuProducts, storeRating }: { franchisee: Franchisee; menuProducts: MenuProduct[]; storeRating?: StoreRating }) {
@@ -39,11 +57,15 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [deliveryType, setDeliveryType] = useState("DELIVERY");
-  const [paymentMethod, setPaymentMethod] = useState("PIX");
+
+  const hasOnlinePayment = franchisee.hasOnlinePayment !== false;
+  const [paymentMethod, setPaymentMethod] = useState(() => (hasOnlinePayment ? "PIX" : "DINHEIRO"));
+  
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
-  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number } | null>(null);
+  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  
   // Customer login
   const [customer, setCustomer] = useState<any>(null);
   const [showAuth, setShowAuth] = useState(false);
@@ -108,20 +130,48 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
   };
 
-  const activeTodayProducts = menuProducts.filter(p => isAvailableToday(p, currentDayCode));
-  const categories = ["Todos", ...Array.from(new Set(activeTodayProducts.map(p => p.category)))];
+  const isIntegrationCategory = (catName: string) => {
+    if (!catName) return false;
+    const c = catName.trim().toLowerCase();
+    return c === "jotajá" || c === "jotaja" || c === "jota já" || c === "ifood" || c.includes("jotajá") || c.includes("jotaja") || c.includes("ifood");
+  };
+
+  const activeTodayProducts = menuProducts.filter(p => isAvailableToday(p, currentDayCode) && !isIntegrationCategory(p.category));
+
+  const categories = [
+    "Todos",
+    ...Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))))
+  ];
 
   const filtered = activeTodayProducts.filter(p => {
-    const mc = selectedCategory === "Todos" || p.category === selectedCategory;
+    const pCat = (p.category || "").trim();
+    const mc = selectedCategory === "Todos" || pCat.toLowerCase() === selectedCategory.trim().toLowerCase();
     const ms = !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description?.toLowerCase().includes(searchTerm.toLowerCase());
     return mc && ms;
   });
-  const grouped: Record<string, MenuProduct[]> = {};
-  filtered.forEach(p => { if (!grouped[p.category]) grouped[p.category] = []; grouped[p.category].push(p); });
 
+  const grouped: Record<string, MenuProduct[]> = {};
+  filtered.forEach(p => {
+    const cat = (p.category || "").trim();
+    if (!cat) return;
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(p);
+  });
+
+  const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const discount = couponApplied ? couponApplied.discount : 0;
-  const finalTotal = Math.max(0, cartTotal - discount + (deliveryType === "DELIVERY" ? deliveryFee : 0));
+  const isFreeShippingByMin = Boolean(
+    delivConfig.freeShippingActive &&
+    delivConfig.freeShippingMinValue &&
+    cartTotal >= Number(delivConfig.freeShippingMinValue)
+  );
+  const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingByMin) ? deliveryFee : 0;
+  const discount = couponApplied
+    ? (couponApplied.isFreeShipping
+        ? (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0)
+        : couponApplied.discount)
+    : 0;
+  const finalTotal = Math.max(0, cartTotal - discount + (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0));
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   const addToCart = (product: MenuProduct, cs?: any) => {
@@ -132,6 +182,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
       if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
       return [...prev, { ...product, quantity: 1 }];
     });
+    trackPixelEvent("AddToCart", { content_name: product.name, value: product.price, currency: "BRL" });
   };
   const removeFromCart = (id: string) => setCart(prev => { const e = prev.find(i => i.id === id); if (e && e.quantity > 1) return prev.map(i => i.id === id ? { ...i, quantity: i.quantity - 1 } : i); return prev.filter(i => i.id !== id); });
   const deleteFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
@@ -139,18 +190,64 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
 
   const scrollToCategory = (cat: string) => {
     setSelectedCategory(cat);
-    if (cat !== "Todos" && sectionRefs.current[cat]) {
-      sectionRefs.current[cat]!.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (cat === "Todos") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
+    setTimeout(() => {
+      const el = sectionRefs.current[cat] || sectionRefs.current[cat.trim()];
+      if (el) {
+        const yOffset = -140;
+        const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset;
+        window.scrollTo({ top: y, behavior: "smooth" });
+      }
+    }, 50);
   };
 
   const applyCoupon = async () => {
     if (!couponCode.trim()) return;
-    try {
-      const res = await fetch(`/api/validate-coupon?code=${couponCode}&franchiseeId=${franchisee.id}`);
-      if (res.ok) { const d = await res.json(); setCouponApplied({ code: couponCode, discount: d.discount || 0 }); }
-      else { alert("Cupom inválido."); setCouponApplied(null); }
-    } catch { setCouponApplied({ code: couponCode, discount: 5 }); }
+    const cleanCode = couponCode.trim().toUpperCase();
+    const storeCoupons = (franchisee as any).storeCoupons || [];
+    const found = storeCoupons.find((c: any) => c.code?.toUpperCase() === cleanCode && c.active !== false);
+
+    if (found) {
+      if (found.minOrderValue && cartTotal < found.minOrderValue) {
+        alert(`⚠️ Este cupom é válido apenas para pedidos a partir de R$ ${Number(found.minOrderValue).toFixed(2)}.`);
+        setCouponApplied(null);
+        return;
+      }
+      if (found.type === "free_shipping") {
+        setCouponApplied({ code: found.code, discount: deliveryFee, isFreeShipping: true });
+      } else if (found.type === "fixed") {
+        const fixedVal = typeof found.discount === "number" ? found.discount : 10;
+        setCouponApplied({ code: found.code, discount: fixedVal, isFreeShipping: false });
+      } else {
+        const pct = typeof found.discount === "number" ? found.discount : 10;
+        setCouponApplied({ code: found.code, discount: cartTotal * (pct / 100), isFreeShipping: false });
+      }
+    } else {
+      try {
+        const res = await fetch(`/api/validate-coupon?code=${cleanCode}&franchiseeId=${franchisee.id}`);
+        if (res.ok) {
+          const d = await res.json();
+          if (d.minOrderValue && cartTotal < d.minOrderValue) {
+            alert(`⚠️ Este cupom é válido apenas para pedidos a partir de R$ ${Number(d.minOrderValue).toFixed(2)}.`);
+            setCouponApplied(null);
+            return;
+          }
+          const isFree = d.type === "free_shipping";
+          const isFixed = d.type === "fixed";
+          const calcDiscount = isFree ? deliveryFee : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);
+          setCouponApplied({ code: cleanCode, discount: calcDiscount, isFreeShipping: isFree });
+        } else {
+          alert("Cupom inválido ou expirado.");
+          setCouponApplied(null);
+        }
+      } catch {
+        alert("Cupom inválido ou expirado.");
+        setCouponApplied(null);
+      }
+    }
   };
 
   // Customer auth
@@ -208,26 +305,37 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     }
   }, [mobileCartOpen]);
 
-  // Build dynamic payment options
+  // Build dynamic payment options (Online via Mercado Pago vs Na Entrega)
   const paymentOptions = (() => {
-    const base = [
-      { k: "PIX", l: "💰 Pix" },
+    const base: { k: string; l: string }[] = [];
+
+    // Pagamento Online: apenas se o lojista tiver credenciais conectadas do Mercado Pago
+    if (hasOnlinePayment) {
+      base.push(
+        { k: "PIX", l: "💰 Pix (Online)" },
+        { k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" }
+      );
+    }
+
+    // Pagamento na Entrega (sempre disponível)
+    base.push(
       { k: "DINHEIRO", l: "💵 Dinheiro" },
-      { k: "DEBITO", l: "💳 Débito" },
-      { k: "CREDITO", l: "💳 Crédito" },
-    ];
+      { k: "DEBITO", l: "💳 Débito (Entrega)" },
+      { k: "CREDITO", l: "💳 Crédito (Entrega)" }
+    );
+
     const fees = franchisee.paymentFees as any;
     if (fees?.VOUCHER?.active && fees.VOUCHER.brands) {
       const activeBrands = fees.VOUCHER.brands.filter((b: any) => b.active);
       if (activeBrands.length > 0) {
         activeBrands.forEach((b: any) => {
-          base.push({ k: `VOUCHER_${b.name}`, l: `🎫 ${b.name}` });
+          base.push({ k: `VOUCHER_${b.name}`, l: `🎟️ ${b.name}` });
         });
       } else {
-        base.push({ k: "VOUCHER", l: "🎫 Voucher" });
+        base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
       }
     } else {
-      base.push({ k: "VOUCHER", l: "🎫 Voucher" });
+      base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
     }
     return base;
   })();
@@ -257,8 +365,8 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     } catch { alert("Erro de conexão"); }
   };
 
-  // Métodos que exigem pagamento online via Pagar.me
-  const ONLINE_METHODS = ["PIX", "CREDITO", "DEBITO", "VOUCHER", "ALELO", "TICKET", "BEN", "SODEXO", "VR"];
+  // Métodos que exigem pagamento online via Mercado Pago
+  const ONLINE_METHODS = ["PIX", "PIX_ONLINE", "CREDITO_ONLINE", "DEBITO_ONLINE", "ONLINE"];
 
   const handleCheckout = async () => {
     if (!customerName || !customerPhone) { alert("Preencha nome e telefone."); return; }
@@ -271,15 +379,18 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           franchiseeSlug: franchisee.slug, customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? customerAddress : null,
           deliveryType, paymentMethod, notes,
+          deliveryFee: deliveryFee || 0,
           couponCode: couponApplied?.code || null,
           items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null }))
         })
       });
       if (res.ok) {
         const d = await res.json();
-        const isOnline = ONLINE_METHODS.includes((paymentMethod || "").toUpperCase());
+        trackPixelEvent("Purchase", { value: finalTotal, currency: "BRL", order_id: d.orderId });
+        const pmUpper = (paymentMethod || "").toUpperCase();
+        const isOnline = ONLINE_METHODS.some(m => pmUpper.includes(m));
         if (isOnline) {
-          // Pagamento online: mostrar gateway Pagar.me antes de confirmar
+          // Pagamento online: mostrar gateway Mercado Pago antes de confirmar
           setPendingOrderId(d.orderId);
           setPendingAmount(finalTotal);
           setShowPayment(true);
@@ -434,7 +545,13 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                   <input className="coupon-input" placeholder="Cupom de desconto" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
                   <button className="coupon-btn" onClick={applyCoupon}>Aplicar</button>
                 </div>
-                {couponApplied && <p style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 600 }}>✅ Cupom "{couponApplied.code}" aplicado! -R$ {couponApplied.discount.toFixed(2)}</p>}
+                {couponApplied && (
+                  <p style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 600 }}>
+                    {couponApplied.isFreeShipping
+                      ? `✅ Cupom "${couponApplied.code}" aplicado! Frete Grátis 🚚`
+                      : `✅ Cupom "${couponApplied.code}" aplicado! -R$ ${discount.toFixed(2)}`}
+                  </p>
+                )}
               </div>
             </div>
           )
@@ -463,11 +580,31 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                       ))}
                     </select>
                     {!deliveryAvailable && customerNeighborhood && <p style={{ color: "#EF4444", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>❌ Bairro fora da área de entrega</p>}
-                    {deliveryAvailable && deliveryFee > 0 && <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>🛵 Taxa de entrega: R$ {deliveryFee.toFixed(2)}</p>}
+                    {deliveryAvailable && deliveryFee > 0 && (
+                      <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>
+                        🛵 Taxa de entrega: {isFreeShippingByMin ? (
+                          <>
+                            <s style={{ color: "#94A3B8", marginRight: 4 }}>R$ {deliveryFee.toFixed(2)}</s>
+                            <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
+                          </>
+                        ) : (
+                          `R$ ${deliveryFee.toFixed(2)}`
+                        )}
+                      </p>
+                    )}
                   </div>
                 )}
                 {franchisee.deliveryZoneType === "RADIUS" && deliveryFee > 0 && (
-                  <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>🛵 Taxa de entrega: R$ {deliveryFee.toFixed(2)}</p>
+                  <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>
+                    🛵 Taxa de entrega: {isFreeShippingByMin ? (
+                      <>
+                        <s style={{ color: "#94A3B8", marginRight: 4 }}>R$ {deliveryFee.toFixed(2)}</s>
+                        <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
+                      </>
+                    ) : (
+                      `R$ ${deliveryFee.toFixed(2)}`
+                    )}
+                  </p>
                 )}
               </div>
             )}
@@ -482,8 +619,25 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
             <div><label className="checkout-label">Observações</label><textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} /></div>
             <div className="checkout-summary">
               {cart.map(i => <div key={i.id} className="checkout-summary-item"><span>{i.quantity}x {i.name}</span><span>R$ {(i.price * i.quantity).toFixed(2)}</span></div>)}
-              {couponApplied && <div className="checkout-summary-item" style={{ color: "#16A34A" }}><span>Cupom ({couponApplied.code})</span><span>-R$ {couponApplied.discount.toFixed(2)}</span></div>}
-              {deliveryType === "DELIVERY" && deliveryFee > 0 && <div className="checkout-summary-item" style={{ color: "#E67E22" }}><span>🛵 Taxa de Entrega</span><span>R$ {deliveryFee.toFixed(2)}</span></div>}
+              {couponApplied && (
+                <div className="checkout-summary-item" style={{ color: "#16A34A" }}>
+                  <span>Cupom ({couponApplied.code})</span>
+                  <span>{couponApplied.isFreeShipping ? `Frete Grátis (-R$ ${discount.toFixed(2)})` : `-R$ ${discount.toFixed(2)}`}</span>
+                </div>
+              )}
+              {deliveryType === "DELIVERY" && deliveryFee > 0 && (
+                <div className="checkout-summary-item" style={{ color: isFreeShippingByMin ? "#16A34A" : "#E67E22" }}>
+                  <span>🛵 Taxa de Entrega</span>
+                  {isFreeShippingByMin ? (
+                    <span>
+                      <s style={{ color: "#94A3B8", marginRight: 6 }}>R$ {deliveryFee.toFixed(2)}</s>
+                      <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
+                    </span>
+                  ) : (
+                    <span>R$ {deliveryFee.toFixed(2)}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -492,7 +646,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         <div className="cart-footer">
           <div className="cart-total-row"><span className="cart-total-label">Total</span><span className="cart-total-value">R$ {finalTotal.toFixed(2)}</span></div>
           {!isCheckout ? (
-            <button onClick={() => setIsCheckout(true)} className="cart-checkout-btn">Continuar</button>
+            <button onClick={() => { setIsCheckout(true); trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" }); }} className="cart-checkout-btn">Continuar</button>
           ) : (
             <>
               <button onClick={handleCheckout} disabled={loading} className="cart-checkout-btn">{loading ? "Enviando..." : `Enviar Pedido • R$ ${finalTotal.toFixed(2)}`}</button>
@@ -846,21 +1000,48 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         </div>
       )}
 
-      {/* PAYMENT GATEWAY MODAL — Pagar.me (PIX / Cartão / Voucher) */}
+      {/* PAYMENT GATEWAY MODAL — Mercado Pago (PIX / Cartão) */}
       {showPayment && pendingOrderId && (
-        <div className="mob-cart-overlay" style={{ zIndex: 9999 }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: "white", borderRadius: "20px", padding: "1.75rem",
-            maxWidth: "440px", width: "92%", margin: "auto",
-            position: "relative", top: "50%", transform: "translateY(-50%)",
-            maxHeight: "90vh", overflowY: "auto",
-            boxShadow: "0 25px 60px rgba(0,0,0,0.25)"
-          }}>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.65)",
+            zIndex: 99999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+            backdropFilter: "blur(4px)"
+          }}
+          onClick={() => setShowPayment(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "white",
+              borderRadius: "24px",
+              padding: "1.75rem",
+              maxWidth: "440px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 25px 60px rgba(0,0,0,0.3)",
+              position: "relative"
+            }}
+          >
             <PaymentGateway
               orderId={pendingOrderId}
               amount={pendingAmount}
+              initialMethod={paymentMethod === "CREDITO_ONLINE" ? "credit_card" : "pix"}
               onPaid={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
-              onError={(msg) => { alert(`❌ ${msg}`); }}
+              onError={(msg) => {
+                const isMerchantConfigError = msg.includes("Credenciais") || msg.includes("Mercado Pago") || msg.includes("não configuradas");
+                const cleanMsg = isMerchantConfigError
+                  ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, selecione outra forma de pagamento na entrega (como Dinheiro ou Cartão)."
+                  : msg;
+                alert(`❌ ${cleanMsg}`);
+              }}
               onCancel={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
             />
           </div>

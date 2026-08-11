@@ -24,10 +24,15 @@ export async function POST(req: Request) {
       where: { slug: franchiseeSlug },
       select: {
         id: true, storeName: true, storeOpen: true, storePause: true,
-        autoAcceptOrders: true, storeCoupons: true
+        autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true
       }
     });
     if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
+
+    // Validar se agendamento está desativado
+    if ((body.scheduledDatetime || body.scheduledDate || body.isScheduled) && franchisee.allowScheduledOrders === false) {
+      return NextResponse.json({ error: "Esta loja não está aceitando pedidos agendados no momento." }, { status: 400 });
+    }
 
     // Verificar se loja está operando
     if (franchisee.storeOpen === false) {
@@ -51,7 +56,7 @@ export async function POST(req: Request) {
       where: { id: { in: productIds }, active: true }
     });
 
-    // Calcular total
+    // Calcular total dos produtos
     let totalAmount = 0;
     const orderItems = items.map((item: any) => {
       const product = menuProducts.find(p => p.id === item.menuProductId);
@@ -60,33 +65,74 @@ export async function POST(req: Request) {
       return { menuProductId: product.id, quantity: item.quantity, price: product.price, comboSelections: item.comboSelections || null };
     });
 
+    // Regra de Frete Grátis por valor mínimo da loja
+    const delivConfig = (franchisee.deliveryConfig as any) || {};
+    const isFreeShippingMin = Boolean(
+      deliveryType === "DELIVERY" &&
+      delivConfig.freeShippingActive &&
+      delivConfig.freeShippingMinValue &&
+      totalAmount >= Number(delivConfig.freeShippingMinValue)
+    );
+
+    // Taxa de entrega base informada
+    const originalFee = deliveryType === "DELIVERY" ? (deliveryFee || 0) : 0;
+    let fee = originalFee;
+    let freeShippingNote = "";
+
+    if (isFreeShippingMin) {
+      fee = 0; // Isenta a taxa cobrada
+      freeShippingNote = ` [Frete Grátis (Pedido >= R$ ${Number(delivConfig.freeShippingMinValue).toFixed(2).replace('.', ',')}) — Taxa ref: R$ ${originalFee.toFixed(2).replace('.', ',')}]`;
+    }
+
     // Aplicar cupom de desconto
     let discount = 0;
     if (couponCode) {
       const coupons = (franchisee.storeCoupons as any[]) || [];
       const coupon = coupons.find((c: any) =>
-        c.code?.toLowerCase() === couponCode.toLowerCase() && c.active
+        c.code?.toLowerCase() === couponCode.toLowerCase() && c.active !== false
       );
       if (coupon) {
-        if (coupon.type === "percent") discount = totalAmount * (coupon.value / 100);
-        else discount = coupon.value;
-        discount = Math.min(discount, totalAmount);
+        if (coupon.minOrderValue && totalAmount < coupon.minOrderValue) {
+          discount = 0;
+        } else {
+          if (coupon.type === "free_shipping") {
+            discount = fee;
+            fee = 0;
+          } else if (coupon.type === "fixed") {
+            discount = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 0);
+          } else if (coupon.type === "percent") {
+            const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
+            discount = totalAmount * (pct / 100);
+          } else {
+            const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
+            discount = totalAmount * (pct / 100);
+          }
+          discount = Math.min(discount, totalAmount + fee);
+        }
       }
     }
 
-    // Taxa de entrega
-    const fee = deliveryType === "DELIVERY" ? (deliveryFee || 0) : 0;
     const finalTotal = Math.max(0, totalAmount - discount + fee);
-
-    // Status inicial: auto-aceitar ou aguardar
-    const initialStatus = franchisee.autoAcceptOrders ? "ACEITO" : "NOVO";
-
-    // Se cupom válido foi aplicado, registra na observação para rastreio de marketing
-    let finalNotes = notes || null;
+    let orderNotes = notes || "";
     if (couponCode && discount > 0) {
-      const couponTag = `[Cupom: ${couponCode.trim().toUpperCase()}]`;
-      finalNotes = finalNotes ? `${couponTag} ${finalNotes}` : couponTag;
+      orderNotes = `[Cupom: ${couponCode.trim().toUpperCase()}] ${orderNotes}`.trim();
     }
+    if (freeShippingNote) {
+      orderNotes = `${orderNotes} ${freeShippingNote}`.trim();
+    }
+    const finalNotes = orderNotes || null;
+
+    const pmUpper = (paymentMethod || "").toUpperCase().trim();
+    const isOnlinePayment = pmUpper.includes("ONLINE") || pmUpper === "PIX" || pmUpper === "PIX_ONLINE" || pmUpper === "CREDITO_ONLINE" || pmUpper === "DEBITO_ONLINE";
+
+    const initialStatus = isOnlinePayment
+      ? "AGUARDANDO_PAGAMENTO"
+      : franchisee.autoAcceptOrders
+      ? "ACEITO"
+      : "NOVO";
+
+    const initialKdsStage = isOnlinePayment ? null : "PRODUCTION";
+    const initialKdsProductionAt = isOnlinePayment ? null : new Date();
 
     // Criar pedido
     const order = await prisma.customerOrder.create({
@@ -100,9 +146,41 @@ export async function POST(req: Request) {
         totalAmount: finalTotal,
         deliveryFee: fee,
         status: initialStatus,
+        kdsStage: initialKdsStage,
+        kdsProductionAt: initialKdsProductionAt,
         items: { create: orderItems }
       }
     });
+
+    // Se NÃO for pagamento online (ex: dinheiro/maquininha na entrega), envia direto para a fila de impressão da loja!
+    if (!isOnlinePayment) {
+      try {
+        const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
+        const formattedOrder = {
+          id: order.id,
+          dailyOrderNumber: order.id.slice(-4).toUpperCase(),
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          customerAddress: order.customerAddress,
+          deliveryType: order.deliveryType || "DELIVERY",
+          paymentMethod: order.paymentMethod || "Não informado",
+          isPrepaid: false,
+          items: orderItems.map((i: any) => ({
+            name: menuProducts.find(p => p.id === i.menuProductId)?.name || "Item",
+            qty: i.quantity,
+            price: i.price,
+            comboSelections: i.comboSelections,
+          })),
+          totalAmount: finalTotal,
+          deliveryFee: fee,
+          notes: finalNotes,
+          createdAt: order.createdAt.toISOString(),
+        };
+        pushJobToPrintQueue(franchisee.id, formattedOrder, franchisee.storeName || "FIREHUB", "80mm");
+      } catch (errPrint) {
+        console.error("[CustomerOrder] Auto-print error:", errPrint);
+      }
+    }
 
     // Incrementar contador de pedidos (Pay as You Grow)
     await prisma.user.update({
@@ -110,32 +188,16 @@ export async function POST(req: Request) {
       data: { storeOrderCount: { increment: 1 } }
     });
 
-    // Se a confirmação automática por WhatsApp estiver ativada (padrão true), envia detalhes do pedido
-    const franchiseeConfig = await prisma.user.findUnique({
-      where: { id: franchisee.id },
-      select: { chatbotConfig: true }
-    });
-    const chatbotConfig = (franchiseeConfig?.chatbotConfig as any) || {};
-    if (chatbotConfig.sendOrderConfirmation !== false && customerPhone) {
-      try {
-        const { sendEvolutionMessage } = await import("@/lib/whatsapp-evolution");
-        const itemsSummary = orderItems.map((i: any) => {
-          const prod = menuProducts.find(p => p.id === i.menuProductId);
-          return `${i.quantity}x ${prod?.name || "Item"}`;
-        }).join(", ");
-
-        const msgConfirm = `🎉 Pedido #${order.id.slice(-5).toUpperCase()} Confirmado!\n\nOlá, ${customerName}! Recebemos seu pedido:\n📝 Itens: ${itemsSummary}\n💰 Total: R$ ${finalTotal.toFixed(2).replace(".", ",")}\n🛵 Entrega: ${deliveryType === "DELIVERY" ? (customerAddress || "Endereço cadastrado") : "Retirada na Loja"}\n\nQualquer dúvida sobre seu pedido é só responder por aqui! 😊`;
-        
-        sendEvolutionMessage(franchisee.id, customerPhone, msgConfirm).catch(err =>
-          console.warn("[CustomerOrder] Erro ao enviar confirmação WhatsApp:", err)
-        );
-      } catch (errWp) {
-        console.warn("[CustomerOrder] Aviso envio WhatsApp:", errWp);
-      }
+    // Envia notificação WhatsApp de confirmação de pedido recebido apenas se for pagamento presencial (não-online)
+    if (!isOnlinePayment) {
+      const { sendOrderNotification } = await import("@/lib/order-notifications");
+      sendOrderNotification(order.id, "CREATED").catch(err =>
+        console.warn("[CustomerOrder] Erro ao enviar notificação CREATED:", err)
+      );
     }
 
-    // Se auto-aceito, já contabiliza no faturamento e deduz estoque imediatamente
-    if (franchisee.autoAcceptOrders) {
+    // Se auto-aceito e não-online, contabiliza no faturamento e deduz estoque imediatamente
+    if (franchisee.autoAcceptOrders && !isOnlinePayment) {
       trackSaleForBilling(franchisee.id).catch(err =>
         console.error("[Billing] Erro ao atualizar ciclo:", err)
       );

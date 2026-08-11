@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 const WA_URL = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20FireHub";
 
@@ -10,8 +11,14 @@ export default function FloatingContactWidget({
   ifoodWidgetId?: string;
   ifoodMerchantId?: string;
 } = {}) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(true);
+
+  // Não renderiza em telas de venda presencial ou KDS para não sobrepor botões
+  if (pathname?.startsWith("/store/venda-presencial") || pathname?.startsWith("/store/kds")) {
+    return null;
+  }
 
   // Stop pulsing after first open
   useEffect(() => {

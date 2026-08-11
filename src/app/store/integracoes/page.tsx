@@ -14,7 +14,16 @@ export default async function IntegracoesPage() {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { email: true, ifoodWidgetId: true, ifoodMerchantId: true },
+    select: {
+      email: true,
+      ifoodWidgetId: true,
+      ifoodMerchantId: true,
+      facebookPixelId: true,
+      metaPixelId: true,
+      pagarmeRecipientId: true,
+      mpAccessToken: true,
+      mpSellerId: true,
+    },
   });
 
   return (
@@ -23,6 +32,9 @@ export default async function IntegracoesPage() {
       ifoodMerchantId={user?.ifoodMerchantId || ""}
       ifoodClientId={clientId}
       ifoodWidgetId={user?.ifoodWidgetId || undefined}
+      facebookPixelId={user?.facebookPixelId || user?.metaPixelId || ""}
+      pagarmeRecipientId={user?.pagarmeRecipientId || undefined}
+      mpConnected={!!(user?.mpAccessToken || user?.mpSellerId)}
     />
   );
 }
