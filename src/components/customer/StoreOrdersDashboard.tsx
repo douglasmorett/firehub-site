@@ -704,57 +704,27 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   <option value="">🛵 Motoboy iFood</option>
                 </select>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", flex: 1, minWidth: "90px" }}>
-                  <select
-                    value={order.motoboyId || (order as any).motoboy?.id || ""}
-                    onChange={e => { e.stopPropagation(); onAssignMotoboy && onAssignMotoboy(order.id, e.target.value); }}
-                    disabled={assigningId === order.id}
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                      padding: "4px 6px", borderRadius: "6px",
-                      border: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "2px solid #EF4444" : (order.motoboyId ? "1.5px solid #059669" : "1.5px solid #94A3B8"),
-                      fontSize: "0.76rem", fontWeight: 700,
-                      color: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#991B1B" : (order.motoboyId ? "#047857" : "#1E293B"),
-                      background: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#FEE2E2" : (order.motoboyId ? "#ECFDF5" : "#F8FAFC"),
-                      fontFamily: "inherit",
-                      cursor: "pointer", flex: 1, minWidth: "75px"
-                    }}
-                    title={(order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "Pedido CANCELADO com Motoboy atribuído" : "Atribuir Motoboy da Loja"}
-                  >
-                    <option value="">Motoboy</option>
-                    {motoboys?.map((m: any) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
-
-                  {/* Botão iFood Entrega Fácil */}
-                  {onFetchIfoodDriverQuote && order.deliveryType !== "TAKEOUT" && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        onFetchIfoodDriverQuote(order.id);
-                      }}
-                      title="Chamar Motoboy iFood (Entrega Fácil)"
-                      style={{
-                        padding: "4px 6px",
-                        borderRadius: "6px",
-                        border: "1px solid #EA1D2C",
-                        background: "#FEF2F2",
-                        color: "#EA1D2C",
-                        fontWeight: 800,
-                        fontSize: "0.72rem",
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "2px",
-                        flexShrink: 0
-                      }}
-                    >
-                      🛵 iFood
-                    </button>
-                  )}
-                </div>
+                <select
+                  value={order.motoboyId || (order as any).motoboy?.id || ""}
+                  onChange={e => { e.stopPropagation(); onAssignMotoboy && onAssignMotoboy(order.id, e.target.value); }}
+                  disabled={assigningId === order.id}
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    padding: "4px 8px", borderRadius: "6px",
+                    border: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "2px solid #EF4444" : (order.motoboyId ? "1.5px solid #059669" : "1.5px solid #94A3B8"),
+                    fontSize: "0.78rem", fontWeight: 700,
+                    color: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#991B1B" : (order.motoboyId ? "#047857" : "#1E293B"),
+                    background: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#FEE2E2" : (order.motoboyId ? "#ECFDF5" : "#F8FAFC"),
+                    fontFamily: "inherit",
+                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "145px"
+                  }}
+                  title={(order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "Pedido CANCELADO com Motoboy atribuído" : "Atribuir Motoboy da Loja"}
+                >
+                  <option value="">Motoboy</option>
+                  {motoboys?.map((m: any) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
               )
             )}
           </div>
@@ -2167,60 +2137,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       🛵 Motoboy iFood (Entrega Parceira Bloqueada)
                     </div>
                   ) : (
-                    <>
-                      <select
-                        value={order.motoboyId || ""}
-                        onChange={e => {
-                          assignMotoboy(order.id, e.target.value);
-                          setDeliveryInfoModalOrder((prev: any) => prev ? { ...prev, motoboyId: e.target.value } : null);
-                        }}
-                        style={{
-                          width: "100%",
-                          padding: "10px 12px",
-                          borderRadius: "8px",
-                          border: "1.5px solid #CBD5E1",
-                          fontSize: "0.9rem",
-                          fontWeight: 600,
-                          color: "#0F172A",
-                          background: "#F8FAFC",
-                          outline: "none",
-                        }}
-                      >
-                        <option value="">Nenhum motoboy da loja atribuído</option>
-                        {motoboys?.map((m: any) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name} {m.phone ? `(${m.phone})` : ""}
-                          </option>
-                        ))}
-                      </select>
-
-                      <button
-                        onClick={() => {
-                          const targetId = order.id;
-                          setDeliveryInfoModalOrder(null);
-                          fetchIfoodDriverQuote(targetId);
-                        }}
-                        style={{
-                          width: "100%",
-                          marginTop: "10px",
-                          padding: "10px 14px",
-                          borderRadius: "8px",
-                          border: "none",
-                          background: "linear-gradient(135deg, #EA1D2C, #B91C1C)",
-                          color: "#FFF",
-                          fontWeight: 800,
-                          fontSize: "0.88rem",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "6px",
-                          boxShadow: "0 4px 12px rgba(234, 29, 44, 0.25)"
-                        }}
-                      >
-                        🛵 Solicitar Motoboy iFood (Entrega Fácil)
-                      </button>
-                    </>
+                    <select
+                      value={order.motoboyId || ""}
+                      onChange={e => {
+                        assignMotoboy(order.id, e.target.value);
+                        setDeliveryInfoModalOrder((prev: any) => prev ? { ...prev, motoboyId: e.target.value } : null);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1.5px solid #CBD5E1",
+                        fontSize: "0.9rem",
+                        fontWeight: 600,
+                        color: "#0F172A",
+                        background: "#F8FAFC",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="">Nenhum motoboy da loja atribuído</option>
+                      {motoboys?.map((m: any) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} {m.phone ? `(${m.phone})` : ""}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </div>
 
