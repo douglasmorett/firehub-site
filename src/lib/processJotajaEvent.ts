@@ -323,60 +323,132 @@ export async function processJotajaEvent(
       else if (isDispatched)   initialStatus = "SAIU_ENTREGA";
       else if (isConcluded)    initialStatus = "ENTREGUE";
 
-      await (prisma.customerOrder as any).create({
-        data: {
-          franchiseeId: franchiseeIdToUse,
-          openDeliveryOrderId: orderId,
-          openDeliveryReference: orderData.displayId ?? undefined,
-          openDeliveryChannel: "JOTAJA",
-          scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
-          changeAmount,
-          customerCpfCnpj,
-          discountTotal: discountTotal > 0 ? discountTotal : null,
-          discountMerchant: discountMerchant > 0 ? discountMerchant : null,
-          discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
-          source: "JOTAJA",
-          customerName: orderData.customer?.name ?? "Cliente Jotajá",
-          customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
-          customerAddress: (() => {
-            const addr = orderData.delivery?.deliveryAddress;
-            if (!addr) return "";
-            const formatted = addr.formattedAddress || "";
-            const street = addr.streetName ? `${addr.streetName}${addr.streetNumber ? ` ${addr.streetNumber}` : ""}${addr.complement ? ` ${addr.complement}` : ""}` : formatted;
-            const neighborhood = addr.neighborhood || "";
-            const city = addr.city || "";
-            const parts: string[] = [];
-            if (street) parts.push(street);
-            if (neighborhood && (!street || !street.toLowerCase().includes(neighborhood.toLowerCase()))) {
-              parts.push(neighborhood);
-            }
-            if (city) parts.push(city);
-            return parts.join(" - ");
-          })(),
-          deliveryType: (() => {
-            const ot = (orderData.orderType || "").toUpperCase();
-            const dm = (orderData.deliveryMode || orderData.takeoutMode || "").toUpperCase();
-            const isTakeout =
-              ot === "TAKEOUT" ||
-              ot === "TOGO" ||
-              ot === "PICKUP" ||
-              ot === "RETIRADA" ||
-              ot === "IN_STORE" ||
-              Boolean(orderData.takeout) ||
-              (dm !== "" && dm !== "DELIVERY") ||
-              (!orderData.delivery?.deliveryAddress?.streetName && !orderData.delivery?.deliveryAddress?.formattedAddress && deliveryFeeValue === 0);
-            return isTakeout ? "RETIRADA" : "DELIVERY";
-          })(),
-          paymentMethod: resolvedPaymentMethod,
-          totalAmount: total,
-          deliveryFee: deliveryFeeValue,
-          status: initialStatus,
-          createdAt: new Date(), // Garante que novos pedidos puxados entram no FINAL da fila como o próximo número sequencial
-          items: {
-            create: items,
-          },
-        },
-      });
+      // === CRIAR PEDIDO COM RETRY (barreira anti-perda) ===
+      let createSuccess = false;
+      let lastCreateError: any = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await (prisma.customerOrder as any).create({
+            data: {
+              franchiseeId: franchiseeIdToUse,
+              openDeliveryOrderId: orderId,
+              openDeliveryReference: orderData.displayId ?? undefined,
+              openDeliveryChannel: "JOTAJA",
+              scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
+              changeAmount,
+              customerCpfCnpj,
+              discountTotal: discountTotal > 0 ? discountTotal : null,
+              discountMerchant: discountMerchant > 0 ? discountMerchant : null,
+              discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
+              source: "JOTAJA",
+              customerName: orderData.customer?.name ?? "Cliente Jotajá",
+              customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
+              customerAddress: (() => {
+                const addr = orderData.delivery?.deliveryAddress;
+                if (!addr) return "";
+                const formatted = addr.formattedAddress || "";
+                const street = addr.streetName ? `${addr.streetName}${addr.streetNumber ? ` ${addr.streetNumber}` : ""}${addr.complement ? ` ${addr.complement}` : ""}` : formatted;
+                const neighborhood = addr.neighborhood || "";
+                const city = addr.city || "";
+                const parts: string[] = [];
+                if (street) parts.push(street);
+                if (neighborhood && (!street || !street.toLowerCase().includes(neighborhood.toLowerCase()))) {
+                  parts.push(neighborhood);
+                }
+                if (city) parts.push(city);
+                return parts.join(" - ");
+              })(),
+              deliveryType: (() => {
+                const ot = (orderData.orderType || "").toUpperCase();
+                const dm = (orderData.deliveryMode || orderData.takeoutMode || "").toUpperCase();
+                const isTakeout =
+                  ot === "TAKEOUT" ||
+                  ot === "TOGO" ||
+                  ot === "PICKUP" ||
+                  ot === "RETIRADA" ||
+                  ot === "IN_STORE" ||
+                  Boolean(orderData.takeout) ||
+                  (dm !== "" && dm !== "DELIVERY") ||
+                  (!orderData.delivery?.deliveryAddress?.streetName && !orderData.delivery?.deliveryAddress?.formattedAddress && deliveryFeeValue === 0);
+                return isTakeout ? "RETIRADA" : "DELIVERY";
+              })(),
+              paymentMethod: resolvedPaymentMethod,
+              totalAmount: total,
+              deliveryFee: deliveryFeeValue,
+              status: initialStatus,
+              createdAt: new Date(),
+              items: {
+                create: items,
+              },
+            },
+          });
+          createSuccess = true;
+          break; // Sucesso — sai do loop de retry
+        } catch (createErr: any) {
+          lastCreateError = createErr;
+          // Unique constraint = pedido já existe (race condition) — não é erro real
+          if (createErr?.code === "P2002") {
+            console.log(`[Jotaja] ℹ️ Pedido ${orderId} já existe (race condition detectada) — ok`);
+            return { action: "skipped", orderId, message: "duplicata detectada via constraint" };
+          }
+          console.error(`[Jotaja] ❌ Tentativa ${attempt}/3 de criar pedido ${orderId} FALHOU:`, createErr?.message);
+          if (attempt < 3) {
+            await new Promise(res => setTimeout(res, 2000)); // Espera 2s antes de retry
+          }
+        }
+      }
+
+      if (!createSuccess) {
+        // FALLBACK: Salvar dados mínimos do pedido para recuperação manual
+        console.error(`[Jotaja] 🚨 PEDIDO PERDIDO APÓS 3 TENTATIVAS — orderId=${orderId}, cliente=${orderData.customer?.name}, total=${total}`);
+        try {
+          // Tenta criar com dados mínimos (sem itens complexos) como última barreira
+          await (prisma.customerOrder as any).create({
+            data: {
+              franchiseeId: franchiseeIdToUse,
+              openDeliveryOrderId: `${orderId}_recovered`,
+              openDeliveryReference: orderData.displayId ?? undefined,
+              openDeliveryChannel: "JOTAJA",
+              source: "JOTAJA",
+              customerName: orderData.customer?.name ?? "Cliente Jotajá (RECUPERADO)",
+              customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
+              customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress || "",
+              deliveryType: "DELIVERY",
+              paymentMethod: resolvedPaymentMethod || "Verificar",
+              totalAmount: total,
+              deliveryFee: deliveryFeeValue,
+              status: "NOVO",
+              notes: `⚠️ PEDIDO RECUPERADO — Erro original: ${lastCreateError?.message?.slice(0, 200)}. Verifique itens manualmente.`,
+              createdAt: new Date(),
+              items: {
+                create: [{
+                  quantity: 1,
+                  price: total,
+                  menuProduct: {
+                    connectOrCreate: {
+                      where: { id: `jotaja-recovered-${orderId}` } as any,
+                      create: {
+                        id: `jotaja-recovered-${orderId}`,
+                        franchiseeId: franchiseeIdToUse,
+                        name: `Pedido JotaJá #${orderData.displayId || orderId.slice(-6)} (verificar itens)`,
+                        description: "Pedido recuperado automaticamente",
+                        price: total,
+                        category: "Jotajá",
+                        active: true,
+                      } as any,
+                    } as any,
+                  },
+                }],
+              },
+            },
+          });
+          console.log(`[Jotaja] 🛟 Pedido ${orderId} RECUPERADO com dados mínimos!`);
+          return { action: "created", orderId, message: `RECUPERADO com dados mínimos após falha: ${lastCreateError?.message}` };
+        } catch (fallbackErr: any) {
+          console.error(`[Jotaja] 🚨🚨 FALHA TOTAL — nem o fallback funcionou para ${orderId}:`, fallbackErr?.message);
+          return { action: "error", orderId, message: `FALHA TOTAL: ${lastCreateError?.message}` };
+        }
+      }
 
       // Auto-confirmar pedidos PLACED
       if (isPlaced) {

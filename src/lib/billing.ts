@@ -70,7 +70,6 @@ export async function trackSaleForBilling(franchiseeId: string) {
   const monthStart = new Date(y, m - 1, 1);
   const monthEnd   = new Date(y, m, 1);
 
-  // Soma todos os pedidos não cancelados do mês (fonte de verdade)
   const agg = await prisma.customerOrder.aggregate({
     where: {
       franchiseeId,
@@ -81,17 +80,23 @@ export async function trackSaleForBilling(franchiseeId: string) {
   });
 
   const totalSales = agg._sum.totalAmount ?? 0;
-
-  // Aplica regra: 3%, mín R$60, máx R$400
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
+
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { isFranqueadoHakim: true, email: true },
+  });
+
+  const isExempt = user?.isFranqueadoHakim === true || user?.email?.toLowerCase() === "contatohakim@gmail.com";
+  const pendingVal = isExempt ? 0 : amountDue;
 
   await prisma.franchiseeBillingCycle.update({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
-    data: { totalSales, amountDue, amountPending: amountDue },
+    data: { totalSales, amountDue, amountPending: pendingVal },
   });
 
   console.log(
-    `[Billing] ${franchiseeId} ${yearMonth} | Vendas=${totalSales.toFixed(2)} Devido=${amountDue.toFixed(2)}`
+    `[Billing] ${franchiseeId} ${yearMonth} | Vendas=${totalSales.toFixed(2)} Devido=${amountDue.toFixed(2)} Pendente=${pendingVal}`
   );
 }
 
@@ -124,14 +129,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 
   const totalSales = agg._sum.totalAmount ?? 0;
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
-  const amountPending = parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
+  const amountPending = cycle.franchisee.isFranqueadoHakim ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
 
   const userEmailClean = cycle.franchisee.email?.toLowerCase().replace(/\s+/g, "");
   const bypassEmails = (process.env.BYPASS_BILLING_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
   if (!bypassEmails.includes("viniciusmenezes.ofc@gmail.com")) {
     bypassEmails.push("viniciusmenezes.ofc@gmail.com");
   }
-  const isSpecialStore = bypassEmails.includes(userEmailClean ?? "");
+  const isSpecialStore = bypassEmails.includes(userEmailClean ?? "") || cycle.franchisee.isFranqueadoHakim === true;
 
   // Nada a cobrar ou loja isenta
   if (amountPending < 1 || totalSales === 0 || isSpecialStore) {

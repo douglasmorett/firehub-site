@@ -203,33 +203,55 @@ export async function PUT(req: Request) {
 
   // ── Sync with Jotajá (Open Delivery) ──
   if (order.openDeliveryOrderId) {
+    const syncErrors: string[] = [];
     try {
-      const { jotajaFetch } = await import("@/lib/jotaja-api");
+      const { jotajaMutate } = await import("@/lib/jotaja-api");
       const odId = order.openDeliveryOrderId;
 
+      // Retry helper: tenta até 2x com 1s de intervalo
+      const jotajaCall = async (path: string, label: string): Promise<Response> => {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const r = await jotajaMutate(path, { method: "POST" });
+            if (r.ok || r.status === 409) {
+              console.log(`[Jotajá Sync] ✅ ${label} ${odId}: ${r.status}`);
+              return r;
+            }
+            const errBody = await r.text().catch(() => "");
+            console.warn(`[Jotajá Sync] ⚠️ ${label} ${odId} tentativa ${attempt}: ${r.status} — ${errBody.slice(0, 300)}`);
+            if (attempt < 2) await new Promise(res => setTimeout(res, 1000));
+            if (attempt === 2) syncErrors.push(`${label}: ${r.status} ${errBody.slice(0, 100)}`);
+          } catch (err: any) {
+            console.warn(`[Jotajá Sync] ⚠️ ${label} ${odId} tentativa ${attempt}: ${err.message}`);
+            if (attempt < 2) await new Promise(res => setTimeout(res, 1000));
+            if (attempt === 2) syncErrors.push(`${label}: ${err.message}`);
+          }
+        }
+        return new Response(null, { status: 500 });
+      };
+
       if (status === "ACEITO") {
-        const r = await jotajaFetch(`/v1/orders/${odId}/confirm`, { method: "POST" });
-        console.log(`[Jotajá Sync] confirm ${odId}: ${r.status}`);
+        await jotajaCall(`/v1/orders/${odId}/confirm`, "confirm");
       }
 
       if (status === "PREPARANDO") {
-        const r = await jotajaFetch(`/v1/orders/${odId}/startPreparation`, { method: "POST" });
-        console.log(`[Jotajá Sync] startPreparation ${odId}: ${r.status}`);
+        await jotajaCall(`/v1/orders/${odId}/startPreparation`, "startPreparation");
       }
 
       if (status === "SAIU_ENTREGA") {
-        const r = await jotajaFetch(`/v1/orders/${odId}/dispatch`, { method: "POST" });
-        console.log(`[Jotajá Sync] dispatch ${odId}: ${r.status}`);
+        // Garantir startPreparation antes do dispatch (igual iFood)
+        if (order.status === "ACEITO" || order.status === "NOVO") {
+          await jotajaCall(`/v1/orders/${odId}/startPreparation`, "startPreparation (pre-dispatch)");
+        }
+        await jotajaCall(`/v1/orders/${odId}/dispatch`, "dispatch");
       }
 
       if (status === "ENTREGUE") {
         const isPickup = order.deliveryType !== "DELIVERY";
         if (isPickup) {
-          const r1 = await jotajaFetch(`/v1/orders/${odId}/readyToPickup`, { method: "POST" });
-          console.log(`[Jotajá Sync] readyToPickup ${odId}: ${r1.status}`);
+          await jotajaCall(`/v1/orders/${odId}/readyToPickup`, "readyToPickup");
         }
-        const r2 = await jotajaFetch(`/v1/orders/${odId}/delivered`, { method: "POST" });
-        console.log(`[Jotajá Sync] delivered ${odId}: ${r2.status}`);
+        await jotajaCall(`/v1/orders/${odId}/delivered`, "delivered");
       }
 
       if (status === "CANCELADO") {
@@ -239,15 +261,26 @@ export async function PUT(req: Request) {
 
         const codeToUse = cancellationCode || "501";
 
-        const cancelRes = await jotajaFetch(`/v1/orders/${odId}/requestCancellation`, {
+        const cancelRes = await jotajaMutate(`/v1/orders/${odId}/requestCancellation`, {
           method: "POST",
           body: JSON.stringify({ code: String(codeToUse), mode: "MANUAL", reason: cancelReason || "CANCELLED_BY_RESTAURANT" }),
         });
+        if (!cancelRes.ok) {
+          const errBody = await cancelRes.text().catch(() => "");
+          syncErrors.push(`cancel: ${cancelRes.status} ${errBody.slice(0, 100)}`);
+        }
         console.log(`[Jotajá Sync] cancel ${odId}: ${cancelRes.status}`);
       }
     } catch (err: any) {
-      console.error(`[Jotajá Sync] Erro ${order.openDeliveryOrderId}:`, err?.message);
-      // Don't block local update even if Jotajá sync fails
+      console.error(`[Jotajá Sync] ❌ Erro ${order.openDeliveryOrderId}:`, err?.message);
+      syncErrors.push(`geral: ${err.message}`);
+    }
+    // Registrar erro de sync para visibilidade no dashboard
+    if (syncErrors.length > 0) {
+      updateData.jotajaSyncError = syncErrors.join(" | ");
+      console.error(`[Jotajá Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${syncErrors.join(" | ")}`);
+    } else {
+      updateData.jotajaSyncError = null; // Limpa erros anteriores
     }
   }
 

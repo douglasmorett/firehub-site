@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
+import { prisma } from "@/lib/prisma";
 
 /**
  * GET /api/cron/jotaja-poll
@@ -94,11 +95,57 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // ── RECONCILIAÇÃO PROATIVA: busca pedidos ativos no JotaJá que podem ter sido perdidos ──
+    let reconciled = 0;
+    try {
+      const activeRes = await jotajaFetch("/v1/orders?status=CONFIRMED,PLACED,IN_PREPARATION,READY_TO_PICKUP,DISPATCHED").catch(() => null);
+      if (activeRes && activeRes.ok) {
+        const activeText = await activeRes.text().catch(() => "");
+        const activeOrders = activeText ? JSON.parse(activeText) : [];
+        const orderList = Array.isArray(activeOrders) ? activeOrders : (activeOrders.orders ?? activeOrders.data ?? []);
+
+        for (const jjOrder of orderList) {
+          const jjId = jjOrder.id || jjOrder.orderId;
+          if (!jjId) continue;
+
+          // Verifica se já existe localmente
+          const existsLocally = await prisma.customerOrder.findFirst({
+            where: {
+              OR: [
+                { openDeliveryOrderId: jjId },
+                { openDeliveryOrderId: { startsWith: `${jjId}_` } },
+                { openDeliveryReference: jjOrder.displayId || jjOrder.orderSeqNumber }
+              ].filter(Boolean)
+            } as any,
+            select: { id: true },
+          });
+
+          if (!existsLocally) {
+            // Pedido existe no JotaJá mas NÃO no banco local — IMPORTAR!
+            log.push(`🛟 RECONCILIAÇÃO: Pedido ${jjId} encontrado no JotaJá mas ausente localmente — importando...`);
+            const syntheticEvent = { orderId: jjId, eventType: "CREATED", code: "PLC" };
+            const result = await processJotajaEvent(syntheticEvent, jotajaFetch, jotajaMutate);
+            if (result.action === "created") {
+              reconciled++;
+              log.push(`  ✅ Pedido ${jjId} RECUPERADO com sucesso!`);
+            } else {
+              log.push(`  ⚠️ Pedido ${jjId}: ${result.action} — ${result.message}`);
+            }
+          }
+        }
+      } else if (activeRes) {
+        log.push(`⚠️ Reconciliação: GET /v1/orders retornou ${activeRes.status}`);
+      }
+    } catch (reconcileErr: any) {
+      log.push(`⚠️ Reconciliação falhou: ${reconcileErr.message}`);
+    }
+
     return NextResponse.json({
       ok: true,
       events: events.length,
       created, updated, disputes, cancelled,
       acknowledged: processedEventIds.length,
+      reconciled,
       durationMs: Date.now() - startTime,
       log,
     });

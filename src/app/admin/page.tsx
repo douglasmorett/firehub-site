@@ -20,9 +20,11 @@ export default async function AdminPage() {
       id: true, name: true, email: true, slug: true,
       storeName: true, city: true, createdAt: true, storeOpen: true,
       isFranqueadoHakim: true, mpAccessToken: true, celcoinAccountId: true,
-      mpSellerId: true, storeLogo: true, storePhone: true,
+      mpSellerId: true, storeLogo: true, storePhone: true, trialEndsAt: true,
     },
   });
+
+  const hakimSet = new Set(lojistas.filter(l => l.isFranqueadoHakim || l.email?.toLowerCase() === "contatohakim@gmail.com").map(l => l.id));
 
   // ── Billing cycles ────────────────────────────────────────
   const billings = await prisma.franchiseeBillingCycle.findMany({
@@ -34,10 +36,25 @@ export default async function AdminPage() {
     },
   });
 
+  const isLojistaInTrial = (l: { createdAt: Date; trialEndsAt: Date | null }) => {
+    if (l.trialEndsAt) {
+      return new Date(l.trialEndsAt) > new Date();
+    }
+    return daysSince(l.createdAt) < TRIAL_DAYS;
+  };
+
+  const getTrialDaysLeft = (l: { createdAt: Date; trialEndsAt: Date | null }) => {
+    if (l.trialEndsAt) {
+      const diff = new Date(l.trialEndsAt).getTime() - Date.now();
+      return Math.max(0, Math.ceil(diff / 86400000));
+    }
+    return Math.max(0, TRIAL_DAYS - daysSince(l.createdAt));
+  };
+
   // ── KPIs gerais ───────────────────────────────────────────
   const totalLojistas = lojistas.length;
-  const emTrial = lojistas.filter(l => daysSince(l.createdAt) < TRIAL_DAYS).length;
-  const assinantes = lojistas.filter(l => daysSince(l.createdAt) >= TRIAL_DAYS).length;
+  const emTrial = lojistas.filter(l => isLojistaInTrial(l)).length;
+  const assinantes = lojistas.filter(l => !isLojistaInTrial(l)).length;
 
   // Novos este mês
   const startOfMonth = new Date();
@@ -52,7 +69,7 @@ export default async function AdminPage() {
   // MRR = soma dos amountDue do último billing de cada lojista
   const lastBillingMap: Record<string, number> = {};
   billings.forEach(b => {
-    if (!lastBillingMap[b.franchiseeId]) {
+    if (!hakimSet.has(b.franchiseeId) && !lastBillingMap[b.franchiseeId]) {
       lastBillingMap[b.franchiseeId] = b.amountDue;
     }
   });
@@ -61,10 +78,10 @@ export default async function AdminPage() {
   // Total arrecadado = amountDue - amountPending (o que efetivamente foi pago)
   const totalArrecadado = billings.reduce((sum, b) => sum + Math.max(0, b.amountDue - b.amountPending), 0);
 
-  // Pendências
+  // Pendências (ignorando lojistas isentos/Hakim)
   const pendingMap: Record<string, number> = {};
   billings.forEach(b => {
-    if (!pendingMap[b.franchiseeId] && b.amountPending > 0) {
+    if (!hakimSet.has(b.franchiseeId) && !pendingMap[b.franchiseeId] && b.amountPending > 0) {
       pendingMap[b.franchiseeId] = b.amountPending;
     }
   });
@@ -98,9 +115,11 @@ export default async function AdminPage() {
     storeLogo: l.storeLogo,
     storePhone: l.storePhone,
     mpSellerId: l.mpSellerId,
+    trialEndsAt: l.trialEndsAt ? l.trialEndsAt.toISOString() : null,
     diasCadastro: daysSince(l.createdAt),
-    emTrial: daysSince(l.createdAt) < TRIAL_DAYS,
-    pendente: pendingMap[l.id] || 0,
+    emTrial: isLojistaInTrial(l),
+    diasRestantesTrial: getTrialDaysLeft(l),
+    pendente: hakimSet.has(l.id) ? 0 : (pendingMap[l.id] || 0),
     temMP: !!(l.mpAccessToken || l.mpSellerId),
     temCelcoin: !!l.celcoinAccountId,
   }));

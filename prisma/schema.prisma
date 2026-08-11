@@ -53,6 +53,7 @@ model User {
   financialGoals  Json?           // Metas financeiras mensais: { faturamento, margemLiquida, cmvPct, pedidos, ticketMedio }
   resetToken      String?         // Token de recuperação de senha
   resetTokenExp   DateTime?       // Expiração do token de recuperação
+  trialEndsAt     DateTime?       // Data limite de teste/benefício concedido
   // === FATURAMENTO: USE FIRST, PAY LATER ===
   planPercent     Float           @default(0)  // % cobrado sobre vendas (ex: 5.0 = 5%)
   billingCycles   FranchiseeBillingCycle[]

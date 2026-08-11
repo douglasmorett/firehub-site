@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -10,6 +11,7 @@ type Lojista = {
   storeName: string | null; city: string | null; createdAt: string;
   storeOpen: boolean; isFranqueadoHakim: boolean; storeLogo: string | null;
   storePhone: string | null; diasCadastro: number; emTrial: boolean;
+  diasRestantesTrial?: number; trialEndsAt?: string | null;
   pendente: number; temMP: boolean; temCelcoin: boolean;
 };
 
@@ -20,7 +22,7 @@ type KPIs = {
 };
 
 export default function AdminDashboardClient({
-  adminName, kpis, monthlyGrowth, lojistas,
+  adminName, kpis, monthlyGrowth, lojistas: initialLojistas,
 }: {
   adminName: string;
   kpis: KPIs;
@@ -29,6 +31,15 @@ export default function AdminDashboardClient({
 }) {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"overview" | "lojistas" | "financeiro">("overview");
+  const [lojistas, setLojistas] = useState<Lojista[]>(initialLojistas);
+
+  // Modal de concessão de dias
+  const [grantModalUser, setGrantModalUser] = useState<Lojista | null>(null);
+  const [customDays, setCustomDays] = useState<string>("15");
+  const [granting, setGranting] = useState(false);
+
+  // Impersonação
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
 
   const filtered = lojistas.filter(l =>
     [l.name, l.storeName, l.email, l.city].some(v =>
@@ -37,6 +48,57 @@ export default function AdminDashboardClient({
   );
 
   const maxGrowth = Math.max(...monthlyGrowth.map(m => m.count), 1);
+
+  const handleImpersonate = async (l: Lojista) => {
+    const storeLabel = l.storeName || l.name || l.email;
+    if (!confirm(`Deseja acessar o sistema como "${storeLabel}" para prestar suporte?`)) return;
+    setImpersonatingId(l.id);
+    try {
+      await signIn("credentials", {
+        impersonateId: l.id,
+        callbackUrl: "/store",
+      });
+    } catch (e) {
+      alert("Erro ao impersonar conta. Tente novamente.");
+      setImpersonatingId(null);
+    }
+  };
+
+  const handleGrantDays = async (daysToGrant: number) => {
+    if (!grantModalUser) return;
+    setGranting(true);
+    try {
+      const res = await fetch("/api/admin/grant-days", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: grantModalUser.id, days: daysToGrant }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        alert(data.message);
+        // Atualiza estado local do lojista
+        setLojistas(prev => prev.map(item => {
+          if (item.id === grantModalUser.id) {
+            const currentRestantes = item.diasRestantesTrial || 0;
+            return {
+              ...item,
+              emTrial: true,
+              diasRestantesTrial: currentRestantes + daysToGrant,
+              trialEndsAt: data.trialEndsAt,
+            };
+          }
+          return item;
+        }));
+        setGrantModalUser(null);
+      } else {
+        alert(data.error || "Erro ao conceder dias.");
+      }
+    } catch (err) {
+      alert("Erro de conexão ao salvar dias.");
+    } finally {
+      setGranting(false);
+    }
+  };
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", fontFamily: "'Inter', sans-serif", background: "#0F172A" }}>
@@ -61,11 +123,18 @@ export default function AdminDashboardClient({
         .fha-badge-trial { background: rgba(245,158,11,0.15); color: #FCD34D; border: 1px solid rgba(245,158,11,0.25); }
         .fha-badge-active { background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.25); }
         .fha-badge-pending { background: rgba(239,68,68,0.15); color: #F87171; border: 1px solid rgba(239,68,68,0.25); }
+        .fha-badge-exempt { background: rgba(99,102,241,0.15); color: #818CF8; border: 1px solid rgba(99,102,241,0.25); }
         .fha-input { background: #1E293B; border: 1px solid #334155; border-radius: 10px; padding: 10px 14px; color: #F1F5F9; font-size: 0.875rem; font-family: inherit; outline: none; transition: border-color 0.2s; }
         .fha-input:focus { border-color: #EF4444; }
         .fha-input::placeholder { color: #475569; }
         .fha-section { background: #1E293B; border: 1px solid #334155; border-radius: 16px; overflow: hidden; }
         .fha-bar { background: linear-gradient(180deg, #EF4444, #DC2626); border-radius: 4px 4px 0 0; transition: height 0.5s ease; min-height: 3px; }
+        .fha-btn-action { background: #334155; color: #F1F5F9; border: 1px solid #475569; padding: 5px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+        .fha-btn-action:hover { background: #475569; border-color: #64748B; }
+        .fha-btn-impersonate { background: rgba(37,99,235,0.15); color: #60A5FA; border: 1px solid rgba(37,99,235,0.3); }
+        .fha-btn-impersonate:hover { background: rgba(37,99,235,0.25); color: #93C5FD; }
+        .fha-btn-grant { background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.3); }
+        .fha-btn-grant:hover { background: rgba(16,185,129,0.25); color: #6EE7B7; }
       `}</style>
 
       {/* ── SIDEBAR ── */}
@@ -151,7 +220,7 @@ export default function AdminDashboardClient({
                   { icon: "💵", label: "MRR Estimado", val: fmt(kpis.mrr), sub: "Receita recorrente mensal", color: "#A78BFA" },
                   { icon: "💰", label: "Total Arrecadado", val: fmt(kpis.totalArrecadado), sub: "Histórico de pagamentos", color: "#F59E0B" },
                   { icon: "⚠️", label: "Pendências", val: fmt(kpis.totalPendente), sub: `${kpis.comPendencia} lojistas com débito`, color: "#F87171" },
-                  { icon: "🎁", label: "Em Trial", val: kpis.emTrial, sub: `${kpis.assinantes} já são assinantes`, color: "#FCD34D" },
+                  { icon: "🎁", label: "Em Trial / Benefício", val: kpis.emTrial, sub: `${kpis.assinantes} já são assinantes`, color: "#FCD34D" },
                 ].map(k => (
                   <div key={k.label} className="fha-kpi">
                     <div style={{ fontSize: "1.4rem" }}>{k.icon}</div>
@@ -184,7 +253,7 @@ export default function AdminDashboardClient({
                 <table className="fha-table">
                   <thead>
                     <tr>
-                      <th>Lojista</th><th>Cidade</th><th>Cadastro</th><th>Status</th>
+                      <th>Lojista</th><th>Cidade</th><th>Cadastro</th><th>Status</th><th>Ação</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -197,11 +266,34 @@ export default function AdminDashboardClient({
                         <td style={{ color: "#94A3B8" }}>{l.city || "—"}</td>
                         <td style={{ color: "#64748B" }}>{fmtDate(l.createdAt)}</td>
                         <td>
-                          {l.pendente > 0
-                            ? <span className="fha-badge fha-badge-pending">⚠️ {fmt(l.pendente)}</span>
-                            : l.emTrial
-                              ? <span className="fha-badge fha-badge-trial">🎁 Trial</span>
-                              : <span className="fha-badge fha-badge-active">✅ Ativo</span>}
+                          {l.isFranqueadoHakim ? (
+                            <span className="fha-badge fha-badge-exempt">🛡️ Isento (Hakim)</span>
+                          ) : l.pendente > 0 ? (
+                            <span className="fha-badge fha-badge-pending">⚠️ {fmt(l.pendente)}</span>
+                          ) : l.emTrial ? (
+                            <span className="fha-badge fha-badge-trial">🎁 Trial {l.diasRestantesTrial ?? 0}d</span>
+                          ) : (
+                            <span className="fha-badge fha-badge-active">✅ Ativo</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button
+                              onClick={() => handleImpersonate(l)}
+                              disabled={impersonatingId === l.id}
+                              className="fha-btn-action fha-btn-impersonate"
+                              title="Acessar conta para dar suporte"
+                            >
+                              🔑 {impersonatingId === l.id ? "Entrando..." : "Acessar"}
+                            </button>
+                            <button
+                              onClick={() => setGrantModalUser(l)}
+                              className="fha-btn-action fha-btn-grant"
+                              title="Liberar dias de benefício"
+                            >
+                              🎁 +Dias
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -226,7 +318,7 @@ export default function AdminDashboardClient({
                 <table className="fha-table">
                   <thead>
                     <tr>
-                      <th>Lojista</th><th>Cidade</th><th>Cadastro</th><th>Status</th><th>Hakim</th><th>Pagamento</th><th>Loja</th>
+                      <th>Lojista</th><th>Cidade</th><th>Cadastro</th><th>Status</th><th>Hakim</th><th>Pagamento</th><th>Ações Suporte</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -246,11 +338,15 @@ export default function AdminDashboardClient({
                         <td style={{ color: "#94A3B8" }}>{l.city || "—"}</td>
                         <td style={{ color: "#64748B", whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
                         <td>
-                          {l.pendente > 0
-                            ? <span className="fha-badge fha-badge-pending">⚠️ {fmt(l.pendente)}</span>
-                            : l.emTrial
-                              ? <span className="fha-badge fha-badge-trial">🎁 {15 - l.diasCadastro}d restantes</span>
-                              : <span className="fha-badge fha-badge-active">✅ Ativo</span>}
+                          {l.isFranqueadoHakim ? (
+                            <span className="fha-badge fha-badge-exempt">🛡️ Isento (Hakim)</span>
+                          ) : l.pendente > 0 ? (
+                            <span className="fha-badge fha-badge-pending">⚠️ {fmt(l.pendente)}</span>
+                          ) : l.emTrial ? (
+                            <span className="fha-badge fha-badge-trial">🎁 Trial {l.diasRestantesTrial ?? 0}d restantes</span>
+                          ) : (
+                            <span className="fha-badge fha-badge-active">✅ Ativo</span>
+                          )}
                         </td>
                         <td><ToggleFranqueadoHakim userId={l.id} initialValue={l.isFranqueadoHakim} /></td>
                         <td>
@@ -260,9 +356,28 @@ export default function AdminDashboardClient({
                           </div>
                         </td>
                         <td>
-                          {l.slug && (
-                            <a href={`/loja/${l.slug}`} target="_blank" style={{ color: "#60A5FA", fontWeight: 600, fontSize: "0.75rem", textDecoration: "none" }}>🔗 Ver</a>
-                          )}
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                            {l.slug && (
+                              <a href={`/loja/${l.slug}`} target="_blank" className="fha-btn-action" title="Ver Cardápio Online">
+                                🔗 Cardápio
+                              </a>
+                            )}
+                            <button
+                              onClick={() => handleImpersonate(l)}
+                              disabled={impersonatingId === l.id}
+                              className="fha-btn-action fha-btn-impersonate"
+                              title="Acessar conta para dar suporte"
+                            >
+                              🔑 {impersonatingId === l.id ? "Acessando..." : "Acessar Conta"}
+                            </button>
+                            <button
+                              onClick={() => setGrantModalUser(l)}
+                              className="fha-btn-action fha-btn-grant"
+                              title="Liberar dias de benefício"
+                            >
+                              🎁 Liberar Dias
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -295,10 +410,10 @@ export default function AdminDashboardClient({
                 </div>
                 <table className="fha-table">
                   <thead>
-                    <tr><th>Lojista</th><th>Valor Pendente</th><th>Status</th></tr>
+                    <tr><th>Lojista</th><th>Valor Pendente</th><th>Status</th><th>Ação</th></tr>
                   </thead>
                   <tbody>
-                    {lojistas.filter(l => l.pendente > 0).map(l => (
+                    {lojistas.filter(l => !l.isFranqueadoHakim && l.pendente > 0).map(l => (
                       <tr key={l.id}>
                         <td>
                           <div style={{ fontWeight: 600, color: "#F1F5F9" }}>{l.storeName || l.name}</div>
@@ -306,18 +421,139 @@ export default function AdminDashboardClient({
                         </td>
                         <td style={{ color: "#F87171", fontWeight: 700 }}>{fmt(l.pendente)}</td>
                         <td><span className="fha-badge fha-badge-pending">⚠️ Em aberto</span></td>
+                        <td>
+                          <button
+                            onClick={() => handleImpersonate(l)}
+                            className="fha-btn-action fha-btn-impersonate"
+                          >
+                            🔑 Acessar Conta
+                          </button>
+                        </td>
                       </tr>
                     ))}
-                    {lojistas.filter(l => l.pendente > 0).length === 0 && (
-                      <tr><td colSpan={3} style={{ textAlign: "center", padding: 32, color: "#475569" }}>✅ Nenhuma pendência no momento</td></tr>
+                    {lojistas.filter(l => !l.isFranqueadoHakim && l.pendente > 0).length === 0 && (
+                      <tr><td colSpan={4} style={{ textAlign: "center", padding: 32, color: "#475569" }}>✅ Nenhuma pendência no momento</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </>
           )}
+
         </div>
       </main>
+
+      {/* ── MODAL LIBERAR DIAS DE BENEFÍCIO ── */}
+      {grantModalUser && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 16,
+        }}>
+          <div style={{
+            background: "#1E293B", border: "1px solid #334155", borderRadius: 16,
+            width: "100%", maxWidth: 440, padding: 24, boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ color: "#F1F5F9", margin: 0, fontSize: "1.1rem", fontWeight: 800 }}>
+                🎁 Liberar Benefício / Dias Gratis
+              </h3>
+              <button
+                onClick={() => setGrantModalUser(null)}
+                style={{ background: "none", border: "none", color: "#64748B", fontSize: "1.2rem", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ color: "#94A3B8", fontSize: "0.85rem", margin: "0 0 16px" }}>
+              Conceder dias adicionais de trial/acesso sem cobrança para <strong>{grantModalUser.storeName || grantModalUser.name}</strong> ({grantModalUser.email}).
+            </p>
+
+            <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px 14px", borderRadius: 10, border: "1px solid #334155", marginBottom: 20 }}>
+              <div style={{ fontSize: "0.75rem", color: "#64748B" }}>Status atual de Trial:</div>
+              <div style={{ color: grantModalUser.emTrial ? "#34D399" : "#F87171", fontWeight: 700, fontSize: "0.9rem", marginTop: 2 }}>
+                {grantModalUser.emTrial
+                  ? `🎁 Ativo — ${grantModalUser.diasRestantesTrial ?? 0} dias restantes`
+                  : "⏹️ Encerrado"}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#CBD5E1", marginBottom: 8 }}>
+                Escolha a quantidade de dias para liberar:
+              </label>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => handleGrantDays(15)}
+                  disabled={granting}
+                  style={{
+                    background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff",
+                    border: "none", padding: "12px", borderRadius: 10, fontWeight: 800,
+                    cursor: "pointer", fontSize: "0.9rem", transition: "transform 0.1s",
+                  }}
+                >
+                  ⚡ +15 Dias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGrantDays(30)}
+                  disabled={granting}
+                  style={{
+                    background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff",
+                    border: "none", padding: "12px", borderRadius: 10, fontWeight: 800,
+                    cursor: "pointer", fontSize: "0.9rem", transition: "transform 0.1s",
+                  }}
+                >
+                  🚀 +30 Dias
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="number"
+                  min="1"
+                  className="fha-input"
+                  placeholder="Ou digite o nº de dias (ex: 45)"
+                  value={customDays}
+                  onChange={e => setCustomDays(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const num = parseInt(customDays, 10);
+                    if (num > 0) handleGrantDays(num);
+                    else alert("Digite um número válido de dias.");
+                  }}
+                  disabled={granting || !customDays}
+                  style={{
+                    background: "#334155", color: "#F1F5F9", border: "1px solid #475569",
+                    padding: "10px 16px", borderRadius: 10, fontWeight: 700, cursor: "pointer",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  {granting ? "Salvando..." : "Confirmar"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setGrantModalUser(null)}
+                style={{
+                  background: "none", border: "none", color: "#64748B",
+                  fontWeight: 600, fontSize: "0.85rem", cursor: "pointer",
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

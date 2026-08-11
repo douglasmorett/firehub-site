@@ -27,7 +27,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   try {
     user = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
+      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true },
     });
     console.log("[StoreLayout] Session Email:", session.user?.email, "| User Email from DB:", user?.email);
   } catch (err) {
@@ -39,7 +39,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     try {
       const owner = await prisma.user.findUnique({
         where: { id: user.ownerId },
-        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true },
+        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true },
       });
       if (owner) storeOwner = owner;
     } catch (e) {}
@@ -48,11 +48,17 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const isFranqueado = user?.role === "FRANCHISEE" || user?.role === "STAFF";
   const isAdmin = user?.role === "ADMIN";
 
-  // === TRIAL: calcular dias restantes baseado na conta proprietária ===
+  // === TRIAL / BENEFÍCIO: calcular dias restantes baseado na conta proprietária ===
   let trialDaysLeft = 0;
   let isInTrial = false;
   const ownerCreatedAt = storeOwner?.createdAt || user?.createdAt;
-  if (ownerCreatedAt) {
+  const ownerTrialEndsAt = storeOwner?.trialEndsAt || user?.trialEndsAt;
+
+  if (ownerTrialEndsAt) {
+    const trialMsLeft = new Date(ownerTrialEndsAt).getTime() - Date.now();
+    trialDaysLeft = Math.max(0, Math.ceil(trialMsLeft / (1000 * 60 * 60 * 24)));
+    isInTrial = trialDaysLeft > 0;
+  } else if (ownerCreatedAt) {
     const diffMs = Date.now() - new Date(ownerCreatedAt).getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     trialDaysLeft = Math.max(0, FIREHUB_PLAN.TRIAL_DAYS - diffDays);
@@ -63,7 +69,8 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   let pendingPayment: { amount: number; url: string | null; isOverdue: boolean } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
   const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
-  const isSpecialStore = userEmailClean === "viniciusmenezes.ofc@gmail.com";
+  const isHakimStore = storeOwner?.isFranqueadoHakim === true || user?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";
+  const isSpecialStore = isHakimStore || userEmailClean === "viniciusmenezes.ofc@gmail.com";
 
   if (isFranqueado && targetFranchiseeId && !isSpecialStore) {
     try {

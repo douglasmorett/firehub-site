@@ -28,5 +28,12 @@ export async function POST(req: Request) {
     select: { id: true, name: true, isFranqueadoHakim: true },
   });
 
+  if (isFranqueadoHakim) {
+    await prisma.franchiseeBillingCycle.updateMany({
+      where: { franchiseeId: userId, amountPending: { gt: 0 } },
+      data: { amountPending: 0, status: "PAID" },
+    });
+  }
+
   return NextResponse.json({ ok: true, user: updated });
 }

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import ToggleAdmin from "@/components/ToggleAdmin";
+import { ImpersonateButton } from "@/components/FranchiseeForm";
+import GrantDaysButton from "@/components/admin/GrantDaysButton";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -10,7 +12,7 @@ export const metadata = { title: "Lojistas — Admin FireHub" };
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 const fmtDate = (d: Date | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "—";
 const daysSince = (d: Date) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
-const TRIAL_DAYS = 30;
+const TRIAL_DAYS = 15;
 
 export default async function AdminLojistasPage() {
   const session = await getServerSession(authOptions);
@@ -29,10 +31,12 @@ export default async function AdminLojistasPage() {
       id: true, name: true, email: true, slug: true, role: true,
       storeName: true, city: true, createdAt: true, storeOpen: true,
       isFranqueadoHakim: true, mpAccessToken: true, celcoinAccountId: true,
-      mpSellerId: true, cashOpen: true, storeLogo: true,
+      mpSellerId: true, cashOpen: true, storeLogo: true, trialEndsAt: true,
       _count: { select: { menuProducts: true, customerOrders: true } },
     },
   });
+
+  const hakimSet = new Set(lojistas.filter(l => l.isFranqueadoHakim || l.email?.toLowerCase() === "contatohakim@gmail.com").map(l => l.id));
 
   // Pega billing de cada lojista
   const billings = await prisma.franchiseeBillingCycle.findMany({
@@ -42,12 +46,25 @@ export default async function AdminLojistasPage() {
   });
   const billingMap: Record<string, number> = {};
   billings.forEach(b => {
-    if (!billingMap[b.franchiseeId]) billingMap[b.franchiseeId] = b.amountPending;
+    if (!hakimSet.has(b.franchiseeId) && !billingMap[b.franchiseeId]) billingMap[b.franchiseeId] = b.amountPending;
   });
 
+  const isLojistaInTrial = (l: typeof lojistas[0]) => {
+    if (l.trialEndsAt) return new Date(l.trialEndsAt) > new Date();
+    return daysSince(l.createdAt) < TRIAL_DAYS;
+  };
+
+  const getTrialDaysLeft = (l: typeof lojistas[0]) => {
+    if (l.trialEndsAt) {
+      const diff = new Date(l.trialEndsAt).getTime() - Date.now();
+      return Math.max(0, Math.ceil(diff / 86400000));
+    }
+    return Math.max(0, TRIAL_DAYS - daysSince(l.createdAt));
+  };
+
   const totalLojistas = lojistas.length;
-  const emTrial = lojistas.filter(l => daysSince(l.createdAt) < TRIAL_DAYS).length;
-  const ativos = lojistas.filter(l => daysSince(l.createdAt) >= TRIAL_DAYS).length;
+  const emTrial = lojistas.filter(l => isLojistaInTrial(l)).length;
+  const ativos = lojistas.filter(l => !isLojistaInTrial(l)).length;
   const comMP = lojistas.filter(l => l.mpAccessToken || l.mpSellerId).length;
   const comPendencia = Object.values(billingMap).filter(v => v > 0).length;
 
@@ -55,7 +72,7 @@ export default async function AdminLojistasPage() {
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "'Inter', sans-serif" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        <a href="/store" style={{ color: "#64748B", textDecoration: "none", fontSize: "0.85rem" }}>← Dashboard</a>
+        <a href="/admin" style={{ color: "#64748B", textDecoration: "none", fontSize: "0.85rem" }}>← Voltar para Visão Geral</a>
         <h1 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>
           🏪 Gestão de Lojistas
         </h1>
@@ -68,7 +85,7 @@ export default async function AdminLojistasPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
         {[
           { label: "Total Lojistas", value: totalLojistas, color: "#2563EB", icon: "🏪" },
-          { label: "Em Trial", value: emTrial, color: "#F59E0B", icon: "🎁" },
+          { label: "Em Trial / Benefício", value: emTrial, color: "#F59E0B", icon: "🎁" },
           { label: "Assinantes", value: ativos, color: "#10B981", icon: "✅" },
           { label: "Com Mercado Pago", value: comMP, color: "#8B5CF6", icon: "💳" },
           { label: "Com Pendência", value: comPendencia, color: "#EF4444", icon: "⚠️" },
@@ -93,19 +110,16 @@ export default async function AdminLojistasPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.83rem" }}>
             <thead>
               <tr style={{ background: "#F8FAFC" }}>
-                {["Lojista", "Email", "Cidade", "Cadastro", "Status", "Produtos", "Pedidos", "Admin", "Hakim", "Pagamento", "Ação"].map(h => (
+                {["Lojista", "Email", "Cidade", "Cadastro", "Status", "Produtos", "Pedidos", "Admin", "Hakim", "Ações de Suporte"].map(h => (
                   <th key={h} style={{ padding: "10px 12px", textAlign: "left", color: "#64748B", fontWeight: 700, borderBottom: "1px solid #E2E8F0", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {lojistas.map(l => {
-                const dias = daysSince(l.createdAt);
-                const emTrialL = dias < TRIAL_DAYS;
-                const diasRestantes = Math.max(0, TRIAL_DAYS - dias);
-                const pendencia = billingMap[l.id] || 0;
-                const temMP = !!(l.mpAccessToken || l.mpSellerId);
-                const temCelcoin = !!l.celcoinAccountId;
+                const emTrialL = isLojistaInTrial(l);
+                const diasRestantes = getTrialDaysLeft(l);
+                const pendencia = hakimSet.has(l.id) ? 0 : (billingMap[l.id] || 0);
 
                 return (
                   <tr key={l.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
@@ -125,7 +139,11 @@ export default async function AdminLojistasPage() {
                     <td style={{ padding: "10px 12px", color: "#64748B" }}>{l.city || "—"}</td>
                     <td style={{ padding: "10px 12px", color: "#64748B", whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
                     <td style={{ padding: "10px 12px" }}>
-                      {pendencia > 0 ? (
+                      {l.isFranqueadoHakim ? (
+                        <span style={{ background: "#EEF2FF", color: "#4F46E5", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
+                          🛡️ Isento (Hakim)
+                        </span>
+                      ) : pendencia > 0 ? (
                         <span style={{ background: "#FEF2F2", color: "#DC2626", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
                           ⚠️ {fmt(pendencia)}
                         </span>
@@ -148,21 +166,12 @@ export default async function AdminLojistasPage() {
                       <ToggleFranqueadoHakim userId={l.id} initialValue={l.isFranqueadoHakim} />
                     </td>
                     <td style={{ padding: "10px 12px" }}>
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                        <span style={{ background: temMP ? "#F0FDF4" : "#F8FAFC", color: temMP ? "#16A34A" : "#94A3B8", padding: "2px 7px", borderRadius: 5, fontSize: "0.7rem", fontWeight: 700, border: `1px solid ${temMP ? "#BBF7D0" : "#E2E8F0"}` }}>
-                          MP {temMP ? "✓" : "✗"}
-                        </span>
-                        <span style={{ background: temCelcoin ? "#F0FDF4" : "#F8FAFC", color: temCelcoin ? "#16A34A" : "#94A3B8", padding: "2px 7px", borderRadius: 5, fontSize: "0.7rem", fontWeight: 700, border: `1px solid ${temCelcoin ? "#BBF7D0" : "#E2E8F0"}` }}>
-                          PIX {temCelcoin ? "✓" : "✗"}
-                        </span>
-                      </div>
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <div style={{ display: "flex", gap: 6 }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                         {l.slug && (
-                          <a href={`/loja/${l.slug}`} target="_blank" style={{ fontSize: "0.75rem", color: "#2563EB", fontWeight: 600, textDecoration: "none" }} title="Ver loja">🔗</a>
+                          <a href={`/loja/${l.slug}`} target="_blank" style={{ fontSize: "0.75rem", color: "#2563EB", fontWeight: 600, textDecoration: "none" }} title="Ver loja">🔗 Cardápio</a>
                         )}
-                        <a href={`/store/admin/lojistas/${l.id}`} style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600, textDecoration: "none" }} title="Detalhes">⚙️</a>
+                        <ImpersonateButton id={l.id} />
+                        <GrantDaysButton userId={l.id} storeName={l.storeName || l.name} />
                       </div>
                     </td>
                   </tr>
