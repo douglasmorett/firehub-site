@@ -64,13 +64,18 @@ export async function createTotemLicense(label: string) {
     data: { token }
   });
 
+  const rawTotemBase = process.env.NEXTAUTH_URL || "";
+  const totemBaseUrl = (rawTotemBase && !rawTotemBase.includes("[SENSITIVE]") && rawTotemBase.startsWith("http"))
+    ? rawTotemBase.replace(/\/$/, "")
+    : "https://www.firehubfood.com.br";
+
   return { 
     success: true, 
     license: { 
       id: license.id, 
       label: license.label, 
       token,
-      url: `${process.env.NEXTAUTH_URL || "https://www.firehubfood.com.br"}/totem/${store.slug}?token=${token}`
+      url: `${totemBaseUrl}/totem/${store.slug}?token=${token}`
     } 
   };
 }

@@ -12,15 +12,20 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state");
   const error = searchParams.get("error");
 
+  const rawBase = process.env.NEXTAUTH_URL || "";
+  const baseUrl = (rawBase && !rawBase.includes("[SENSITIVE]") && rawBase.startsWith("http"))
+    ? rawBase.replace(/\/$/, "")
+    : "https://firehubfood.com.br";
+
   if (error) {
     return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL}/store/meta-ads?error=facebook_denied`
+      `${baseUrl}/store/meta-ads?error=facebook_denied`
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL}/store/meta-ads?error=missing_params`
+      `${baseUrl}/store/meta-ads?error=missing_params`
     );
   }
 
@@ -48,12 +53,12 @@ export async function GET(req: NextRequest) {
     // Redireciona para o wizard de criativo (NÃO cria campanha automaticamente)
     const budgetParam = investment ? `&budget=${investment}` : "";
     return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL}/store/meta-ads?connected=true${budgetParam}`
+      `${baseUrl}/store/meta-ads?connected=true${budgetParam}`
     );
   } catch (err) {
     console.error("[MetaAds OAuth]", err);
     return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL}/store/meta-ads?error=token_exchange_failed`
+      `${baseUrl}/store/meta-ads?error=token_exchange_failed`
     );
   }
 }

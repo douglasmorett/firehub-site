@@ -10,7 +10,10 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
-const APP_URL = process.env.NEXTAUTH_URL || "https://firehubfood.com.br";
+const rawAppUrl = process.env.NEXTAUTH_URL || "";
+const APP_URL = (rawAppUrl && !rawAppUrl.includes("[SENSITIVE]") && rawAppUrl.startsWith("http"))
+  ? rawAppUrl.replace(/\/$/, "")
+  : "https://firehubfood.com.br";
 
 // ── POST /api/auth/forgot-password ────────────────────────────────
 export async function POST(req: NextRequest) {
