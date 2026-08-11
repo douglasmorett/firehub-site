@@ -34,6 +34,15 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 };
 
+function safeUrl(path: string, base: string): URL {
+  try {
+    if (base && !base.includes("[SENSITIVE]") && (base.startsWith("http://") || base.startsWith("https://"))) {
+      return new URL(path, base);
+    }
+  } catch (e) {}
+  return new URL(path, "https://firehubfood.com.br");
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -58,8 +67,12 @@ export async function middleware(request: NextRequest) {
     });
 
     if (!token) {
-      const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("callbackUrl", request.url);
+      const loginUrl = safeUrl("/login", request.url);
+      if (request.url && !request.url.includes("[SENSITIVE]")) {
+        try {
+          loginUrl.searchParams.set("callbackUrl", request.url);
+        } catch (e) {}
+      }
       return NextResponse.redirect(loginUrl);
     }
 
