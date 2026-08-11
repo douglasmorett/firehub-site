@@ -675,7 +675,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         { role: "user", parts: userParts }
       ];
 
-      const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite"];
+      const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
       
       let generatedText = "";
       
@@ -795,7 +795,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       try {
         const ai = new GoogleGenAI({ apiKey });
         const miniResponse = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-2.5-flash",
           contents: [{ role: "user", parts: [{ text: message }] }],
           config: {
             systemInstruction: `Você é ${agentName}, atendente do ${storeName}. Responda de forma curta, simpática e natural como uma pessoa no WhatsApp. Link do cardápio: ${storeLink}. ${customerFirstName ? `O cliente se chama ${customerFirstName}.` : ""}`,

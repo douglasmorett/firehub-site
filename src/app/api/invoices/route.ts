@@ -74,7 +74,7 @@ NÃO RETORNE NENHUM TEXTO ALÉM DO JSON.`;
     try {
       // Usa gemini-2.0-flash — modelo estável com suporte a visão (imagens)
       const response = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-2.5-flash",
           contents: [
               prompt,
               {
@@ -93,7 +93,7 @@ NÃO RETORNE NENHUM TEXTO ALÉM DO JSON.`;
       console.error("Gemini com responseMimeType falhou, tentando sem:", geminiError.message);
       // Fallback: tenta sem responseMimeType
       const response = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-2.5-flash",
           contents: [
               prompt,
               {
