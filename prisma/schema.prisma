@@ -128,6 +128,9 @@ model User {
   totemConfig         Json?     // { theme, welcomeMessage, inactivityTimeout, requireCustomerName }
   totemLicenses       TotemLicense[]
 
+  // === TRACKING DE CUSTOS ===
+  usageLogs           UsageLog[]
+
   @@index([ifoodMerchantId])
   @@index([jotajaMerchantId])
   @@index([accountGroupId])
@@ -944,4 +947,21 @@ model WebhookSubscription {
   @@index([franchiseeId])
 }
 
+// ══════════════════════════════════════════════════════════
+// TRACKING DE CUSTOS POR LOJISTA
+// ══════════════════════════════════════════════════════════
+model UsageLog {
+  id             String   @id @default(cuid())
+  franchiseeId   String
+  category       String   // WHATSAPP_MSG | WHATSAPP_CONV | GEMINI_CHAT | GEMINI_VISION | STORAGE
+  subCategory    String?  // SERVICE | MARKETING | UTILITY | INPUT_TOKENS | OUTPUT_TOKENS
+  quantity       Float    @default(1)
+  estimatedCost  Float    @default(0)
+  metadata       Json?
+  yearMonth      String   // "2026-08"
+  createdAt      DateTime @default(now())
+  franchisee     User     @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
 
+  @@index([franchiseeId, yearMonth])
+  @@index([category, yearMonth])
+}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { GoogleGenAI } from "@google/genai";
+import { trackVisionUsage } from "@/lib/usage-tracker";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -114,6 +115,9 @@ IMPORTANTE:
         error: parsed.motivoRejeicao || "Não foi possível ler a nota fiscal" 
       }, { status: 400 });
     }
+
+    // Track Vision AI usage (fire-and-forget)
+    trackVisionUsage((session.user as any).id, { imageUrl });
 
     return NextResponse.json({ success: true, data: parsed });
   } catch (error: any) {

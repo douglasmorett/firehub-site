@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { signIn } from "next-auth/react";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import AmbassadorsTab from "./AmbassadorsTab";
+import AdminCostsTab from "./AdminCostsTab";
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 const fmtDate = (d: string) => new Date(d).toLocaleDateString("pt-BR");
@@ -32,7 +33,7 @@ export default function AdminDashboardClient({
   lojistas: Lojista[];
 }) {
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"overview" | "lojistas" | "financeiro" | "ambassadors">("overview");
+  const [tab, setTab] = useState<"overview" | "lojistas" | "financeiro" | "ambassadors" | "custos">("overview");
   const [lojistas, setLojistas] = useState<Lojista[]>(initialLojistas);
 
   // Modal de concessão de dias
@@ -166,7 +167,12 @@ export default function AdminDashboardClient({
             <span style={{ marginRight: 10 }}>💵</span> Faturamento
           </button>
           <button onClick={() => setTab("ambassadors")} className={`fha-nav-item${tab === "ambassadors" ? " active" : ""}`} style={{ width: "100%", border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
-            <span style={{ marginRight: 10 }}>🤝</span> Embaixadores
+            <div className="fha-nav-icon">🤝</div>
+            Embaixadores
+          </button>
+          <button onClick={() => setTab("custos")} className={`fha-nav-item${tab === "custos" ? " active" : ""}`} style={{ width: "100%", border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
+            <div className="fha-nav-icon">💰</div>
+            Custos & P&L
           </button>
 
           <p style={{ fontSize: "0.6rem", color: "#475569", textTransform: "uppercase", letterSpacing: "1px", padding: "14px 8px 4px", fontWeight: 700 }}>Ações</p>
@@ -559,6 +565,7 @@ export default function AdminDashboardClient({
           )}
 
           {tab === "ambassadors" && <AmbassadorsTab />}
+        {tab === "custos" && <AdminCostsTab />}
 
         </div>
       </main>

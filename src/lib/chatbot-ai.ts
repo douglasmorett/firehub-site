@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
+import { trackGeminiUsage } from "@/lib/usage-tracker";
 
 function getFirstName(fullName?: string | null): string {
   if (!fullName) return "";
@@ -707,6 +708,19 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           
           if (response && response.text) {
             generatedText = response.text;
+            // Track token usage (fire-and-forget)
+            try {
+              const usage = (response as any).usageMetadata;
+              if (usage) {
+                trackGeminiUsage(
+                  userId,
+                  mName,
+                  usage.promptTokenCount || usage.inputTokens || 0,
+                  usage.candidatesTokenCount || usage.outputTokens || 0,
+                  { remoteJid }
+                );
+              }
+            } catch (_) { /* tracking should never break chatbot */ }
             break;
           }
         } catch (mErr: any) {
@@ -809,6 +823,19 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           }
         });
         if (miniResponse?.text) {
+          // Track fallback token usage
+          try {
+            const usage = (miniResponse as any).usageMetadata;
+            if (usage) {
+              trackGeminiUsage(
+                userId,
+                "gemini-2.5-flash-mini",
+                usage.promptTokenCount || usage.inputTokens || 0,
+                usage.candidatesTokenCount || usage.outputTokens || 0,
+                { remoteJid, fallback: true }
+              );
+            }
+          } catch (_) { /* tracking should never break chatbot */ }
           return { reply: miniResponse.text.replace(/(\*\*|\*|_|#|`)/g, "").trim() };
         }
       } catch (miniErr) {

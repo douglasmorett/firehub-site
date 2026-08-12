@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
 import { processChatbotAI } from '@/lib/chatbot-ai';
+import { trackWhatsAppMessage } from '@/lib/usage-tracker';
 
 export const dynamic = 'force-dynamic';
 
@@ -510,6 +511,9 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     const recipientTarget = remoteJid || data.from || "";
     await sendEvolutionMessage(user.id, recipientTarget, replyText);
+    // Track WhatsApp usage (fire-and-forget)
+    trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });
+    trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
     
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${replyText}"`);
 
