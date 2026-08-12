@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const API = "";
 const PORTAL = API;
@@ -41,6 +41,16 @@ export default function CadastroPage() {
   const [step, setStep] = useState<1|2|3|4|5|6>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [trialDays, setTrialDays] = useState(15);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get("ref") || urlParams.get("codigo")) {
+        setTrialDays(30);
+      }
+    }
+  }, []);
 
   // Step 1 - Qualificação
   const [nome, setNome] = useState("");
@@ -232,7 +242,7 @@ export default function CadastroPage() {
               Fale com nosso time, entenda qual plano faz mais sentido para sua operação e comece a vender mais no seu canal próprio.
             </p>
             {[
-              "🔥 15 dias grátis, sem cartão",
+              "🔥 {trialDays} dias grátis, sem cartão",
               "📱 Cardápio digital + WhatsApp IA",
               "📊 Relatórios e controle completo",
               "💬 Suporte humano 7 dias por semana",
@@ -261,7 +271,7 @@ export default function CadastroPage() {
                   Transforme o seu delivery agora <span style={{ color: "#EF4444" }}>gratuitamente</span>
                 </h2>
                 <p style={{ color: "#9CA3AF", fontSize: ".82rem", textAlign: "center", marginBottom: 20 }}>
-                  Preencha seus dados e comece seu teste grátis de 15 dias
+                  Preencha seus dados e comece seu teste grátis de {trialDays} dias
                 </p>
                 {error && <div className="err">{error}</div>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -467,7 +477,7 @@ export default function CadastroPage() {
                 <h2 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#111", marginBottom: 8 }}>Conta criada!</h2>
                 <p style={{ color: "#6B7280", lineHeight: 1.6, marginBottom: 20, fontSize: ".9rem" }}>
                   <strong>&quot;{createdStore}&quot;</strong> está pronto.<br />
-                  Seus 15 dias de teste grátis começam agora!
+                  Seus {trialDays} dias de teste grátis começam agora!
                 </p>
                 <p style={{ fontSize: ".82rem", color: "#9CA3AF", marginBottom: 16 }}>
                   ⏳ Redirecionando para o seu painel em instantes...
