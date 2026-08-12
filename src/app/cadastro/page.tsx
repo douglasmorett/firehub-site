@@ -242,7 +242,7 @@ export default function CadastroPage() {
               Fale com nosso time, entenda qual plano faz mais sentido para sua operação e comece a vender mais no seu canal próprio.
             </p>
             {[
-              "🔥 {trialDays} dias grátis, sem cartão",
+              `🔥 ${trialDays} dias grátis, sem cartão`,
               "📱 Cardápio digital + WhatsApp IA",
               "📊 Relatórios e controle completo",
               "💬 Suporte humano 7 dias por semana",
