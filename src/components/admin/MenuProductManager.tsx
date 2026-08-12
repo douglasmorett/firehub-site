@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList } from "lucide-react";
 
 const CHANNELS = [
   { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#3B82F6", desc: "Atendimento no balcão/caixa" },
@@ -201,6 +201,92 @@ export default function MenuProductManager({
   const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; items: { id: string; additionalPrice: number }[] }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("TODAS");
+
+  // === FICHA TÉCNICA (Recipe) State ===
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [recipeProductId, setRecipeProductId] = useState<string | null>(null);
+  const [recipeProductName, setRecipeProductName] = useState("");
+  const [recipeStockItems, setRecipeStockItems] = useState<Array<{ id: string; name: string; unit: string }>>([]);
+  const [recipeIngredients, setRecipeIngredients] = useState<Array<{ stockItemId: string; quantityConsumed: string; newItemName: string; newItemUnit: string }>>([]);
+  const [recipeSaving, setRecipeSaving] = useState(false);
+  const [recipeLoading, setRecipeLoading] = useState(false);
+  const [productsWithRecipe, setProductsWithRecipe] = useState<Set<string>>(new Set());
+
+  // Load which products have recipes configured (on mount)
+  useEffect(() => {
+    fetch("/api/store/estoque/recipes")
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.menuProducts) {
+          const withRecipe = new Set<string>();
+          data.menuProducts.forEach((p: any) => {
+            if (p.recipeItems && p.recipeItems.length > 0) withRecipe.add(p.id);
+          });
+          setProductsWithRecipe(withRecipe);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const openRecipeModal = async (productId: string, productName: string) => {
+    setRecipeProductId(productId);
+    setRecipeProductName(productName);
+    setRecipeLoading(true);
+    setShowRecipeModal(true);
+    try {
+      const res = await fetch(`/api/store/estoque/recipes?menuProductId=${productId}`);
+      const data = await res.json();
+      if (data.success) {
+        setRecipeStockItems(data.stockItems || []);
+        const existing = (data.recipe || []).map((r: any) => ({
+          stockItemId: r.stockItemId,
+          quantityConsumed: String(r.quantityConsumed),
+          newItemName: "",
+          newItemUnit: "g",
+        }));
+        setRecipeIngredients(existing.length > 0 ? existing : [{ stockItemId: "", quantityConsumed: "", newItemName: "", newItemUnit: "g" }]);
+      }
+    } catch {
+      showToast("Erro ao carregar ficha técnica", "#EF4444");
+    } finally {
+      setRecipeLoading(false);
+    }
+  };
+
+  const handleSaveRecipe = async () => {
+    if (!recipeProductId) return;
+    setRecipeSaving(true);
+    try {
+      const validIngredients = recipeIngredients.filter(
+        ri => (ri.stockItemId || ri.stockItemId === 'NEW') && parseFloat(ri.quantityConsumed) > 0
+      );
+      const res = await fetch("/api/store/estoque/recipes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          menuProductId: recipeProductId,
+          ingredients: validIngredients.map(i => ({
+            stockItemId: i.stockItemId,
+            quantityConsumed: i.quantityConsumed,
+            newItemName: i.newItemName,
+            newItemUnit: i.newItemUnit,
+          }))
+        })
+      });
+      if (res.ok) {
+        showToast("✅ Ficha técnica salva!");
+        setShowRecipeModal(false);
+        setProductsWithRecipe(prev => new Set([...prev, recipeProductId!]));
+      } else {
+        const d = await res.json();
+        showToast(d.error || "Erro ao salvar", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao salvar ficha técnica", "#EF4444");
+    } finally {
+      setRecipeSaving(false);
+    }
+  };
 
 
   const resetForm = () => {
@@ -1428,8 +1514,11 @@ export default function MenuProductManager({
                     {/* Badges de canais inline — clicáveis */}
                     <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
 
-                    <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+                    <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
                       <button onClick={() => openEdit(p)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}><Edit3 size={10} /> Editar</button>
+                      <button onClick={() => openRecipeModal(p.id, p.name)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", borderColor: productsWithRecipe.has(p.id) ? "#10B981" : "#F59E0B", color: productsWithRecipe.has(p.id) ? "#10B981" : "#92400E", background: productsWithRecipe.has(p.id) ? "#F0FDF4" : "#FFFBEB" }}>
+                        <ClipboardList size={10} /> {productsWithRecipe.has(p.id) ? "✅ Ficha" : "📋 Ficha"}
+                      </button>
                       <button onClick={() => handleToggle(p.id, p.active)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>
                         {p.active ? <><Pause size={10} /> Pausar</> : <><Play size={10} /> Ativar</>}
                       </button>
@@ -1442,6 +1531,127 @@ export default function MenuProductManager({
           </div>
         );
       })()}
+
+      {/* MODAL: FICHA TÉCNICA (Recipe Editor) */}
+      {showRecipeModal && recipeProductId && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+          onClick={() => setShowRecipeModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "1.25rem", width: "100%", maxWidth: "680px", padding: "1.75rem", position: "relative", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", animation: "slideUpFade 0.3s ease-out", maxHeight: "90vh", overflowY: "auto" }}>
+            <button onClick={() => setShowRecipeModal(false)} style={{ position: "absolute", top: "1rem", right: "1rem", background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: "0.25rem", borderRadius: "0.25rem" }}><X size={20} /></button>
+            
+            <div style={{ marginBottom: "1.25rem" }}>
+              <h2 style={{ fontSize: "1.25rem", fontWeight: 900, color: "#0f172a", margin: 0 }}>📋 Ficha Técnica</h2>
+              <p style={{ fontSize: "0.88rem", color: "#475569", margin: "0.35rem 0 0 0" }}>Produto: <strong>{recipeProductName}</strong></p>
+              <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0.25rem 0 0 0" }}>Defina os insumos consumidos por unidade vendida deste produto. Isso permite a baixa automática do estoque a cada venda.</p>
+            </div>
+
+            {recipeLoading ? (
+              <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
+                <div style={{ width: "36px", height: "36px", border: "3px solid #f1f5f9", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 1rem" }} />
+                <p style={{ color: "#64748b", fontSize: "0.85rem" }}>Carregando...</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: "0.75rem", overflow: "hidden", marginBottom: "1rem", maxHeight: "320px", overflowY: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        <th style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "#475569", borderBottom: "1px solid #e2e8f0", textAlign: "left" }}>Ingrediente/Insumo</th>
+                        <th style={{ padding: "0.75rem 1rem", fontWeight: 700, color: "#475569", borderBottom: "1px solid #e2e8f0", textAlign: "left", width: "180px" }}>Qtd. por Venda</th>
+                        <th style={{ padding: "0.75rem", borderBottom: "1px solid #e2e8f0", width: "40px" }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipeIngredients.map((row, idx) => (
+                        <tr key={idx}>
+                          <td style={{ padding: "0.65rem 1rem", borderBottom: "1px solid #f1f5f9" }}>
+                            <select
+                              value={row.stockItemId}
+                              onChange={e => {
+                                const next = [...recipeIngredients];
+                                next[idx].stockItemId = e.target.value;
+                                if (e.target.value !== 'NEW') { next[idx].newItemName = ""; }
+                                setRecipeIngredients(next);
+                              }}
+                              style={{ width: "100%", padding: "0.5rem", borderRadius: "0.38rem", border: "1.5px solid #cbd5e1", fontSize: "0.82rem", fontWeight: 600, background: "#f8fafc" }}
+                            >
+                              <option value="">Selecione...</option>
+                              {recipeStockItems.map(si => (
+                                <option key={si.id} value={si.id}>{si.name} ({si.unit})</option>
+                              ))}
+                              <option value="NEW">➕ Criar novo insumo...</option>
+                            </select>
+                            {row.stockItemId === 'NEW' && (
+                              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                                <input
+                                  type="text" placeholder="Nome do insumo"
+                                  value={row.newItemName}
+                                  onChange={e => { const n = [...recipeIngredients]; n[idx].newItemName = e.target.value; setRecipeIngredients(n); }}
+                                  style={{ flex: 1, padding: "0.45rem 0.6rem", border: "1.5px solid #cbd5e1", borderRadius: "0.38rem", fontSize: "0.8rem", fontWeight: 600 }}
+                                />
+                                <select
+                                  value={row.newItemUnit}
+                                  onChange={e => { const n = [...recipeIngredients]; n[idx].newItemUnit = e.target.value; setRecipeIngredients(n); }}
+                                  style={{ width: "80px", padding: "0.45rem", border: "1.5px solid #cbd5e1", borderRadius: "0.38rem", fontSize: "0.8rem", fontWeight: 600 }}
+                                >
+                                  <option value="g">g</option>
+                                  <option value="kg">kg</option>
+                                  <option value="un">un</option>
+                                  <option value="ml">ml</option>
+                                  <option value="l">l</option>
+                                </select>
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: "0.65rem 1rem", borderBottom: "1px solid #f1f5f9" }}>
+                            <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
+                              <input
+                                type="number" step="0.001" min="0.001" placeholder="Ex: 50"
+                                value={row.quantityConsumed}
+                                onChange={e => { const n = [...recipeIngredients]; n[idx].quantityConsumed = e.target.value; setRecipeIngredients(n); }}
+                                style={{ width: "100%", padding: "0.5rem", paddingRight: "2rem", borderRadius: "0.38rem", border: "1.5px solid #cbd5e1", fontSize: "0.82rem", fontWeight: 600 }}
+                              />
+                              <span style={{ position: "absolute", right: "0.6rem", fontSize: "0.72rem", fontWeight: 800, color: "#64748b", pointerEvents: "none" }}>
+                                {row.stockItemId === 'NEW' ? row.newItemUnit : (recipeStockItems.find(s => s.id === row.stockItemId)?.unit || "un")}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ padding: "0.65rem 0.5rem", borderBottom: "1px solid #f1f5f9" }}>
+                            <button onClick={() => {
+                              const n = [...recipeIngredients];
+                              n.splice(idx, 1);
+                              setRecipeIngredients(n.length > 0 ? n : [{ stockItemId: "", quantityConsumed: "", newItemName: "", newItemUnit: "g" }]);
+                            }} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", padding: "0.3rem", borderRadius: "0.25rem", display: "flex" }}>
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
+                  <button onClick={() => setRecipeIngredients([...recipeIngredients, { stockItemId: "", quantityConsumed: "", newItemName: "", newItemUnit: "g" }])}
+                    style={{ border: "1.5px dashed #2563eb", background: "none", color: "#2563eb", fontWeight: 700, fontSize: "0.82rem", padding: "0.5rem 1rem", borderRadius: "0.5rem", cursor: "pointer" }}>
+                    + Adicionar Ingrediente
+                  </button>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button onClick={() => setShowRecipeModal(false)}
+                      style={{ background: "#f1f5f9", color: "#475569", border: "none", padding: "0.55rem 1.1rem", borderRadius: "0.5rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                      Cancelar
+                    </button>
+                    <button onClick={handleSaveRecipe} disabled={recipeSaving}
+                      style={{ background: "#2563eb", color: "white", border: "none", padding: "0.55rem 1.1rem", borderRadius: "0.5rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", opacity: recipeSaving ? 0.6 : 1 }}>
+                      {recipeSaving ? "Salvando..." : "💾 Salvar Ficha Técnica"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

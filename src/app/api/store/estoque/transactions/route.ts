@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       },
       include: {
         stockItem: {
-          select: { name: true, unit: true }
+          select: { id: true, name: true, unit: true }
         }
       },
       orderBy: { createdAt: "desc" },

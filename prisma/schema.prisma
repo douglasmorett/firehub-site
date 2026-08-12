@@ -105,6 +105,7 @@ model User {
   motoboys        Motoboy[]
   menuProducts    MenuProduct[]
   stockItems      StockItem[]
+  stockInvoices   StockInvoice[]
   menuCategories  MenuCategory[]
   routeSchedules  RouteSchedule[]
 
@@ -835,6 +836,8 @@ model StockItem {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   user          User               @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  unitCost      Float?             // Custo unitário do último recebimento (R$)
+  supplier      String?            // Nome do último fornecedor
   transactions  StockTransaction[]
   recipeItems   ProductRecipe[]
 
@@ -865,6 +868,20 @@ model ProductRecipe {
   stockItem        StockItem    @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
 
   @@unique([menuProductId, stockItemId])
+}
+
+model StockInvoice {
+  id            String             @id @default(cuid())
+  franchiseeId  String
+  invoiceNumber String?
+  supplier      String?
+  totalAmount   Float?
+  imageUrl      String?
+  processedData Json?              // JSON com itens detectados pela IA
+  createdAt     DateTime           @default(now())
+  user          User               @relation(fields: [franchiseeId], references: [id])
+
+  @@index([franchiseeId])
 }
 
 model PrintJob {

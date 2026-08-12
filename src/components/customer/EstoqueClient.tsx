@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   Package, Database, History, ClipboardList, Plus, 
   Trash2, ArrowUpRight, ArrowDownRight, AlertTriangle, 
-  Settings, Check, X, Search, Info, RefreshCw
+  Settings, Check, X, Search, Info, RefreshCw,
+  Camera, Upload, Sparkles, TrendingDown, FileText,
+  ChevronDown, ChevronUp, Eye, EyeOff, BarChart3
 } from "lucide-react";
 
 interface EstoqueClientProps {
@@ -18,6 +20,8 @@ interface StockItem {
   quantity: number;
   unit: string;
   minQuantity: number | null;
+  unitCost: number | null;
+  supplier: string | null;
 }
 
 interface Transaction {
@@ -27,6 +31,7 @@ interface Transaction {
   type: string;
   notes: string | null;
   stockItem: {
+    id: string;
     name: string;
     unit: string;
   };
@@ -48,10 +53,25 @@ interface MenuProduct {
   }>;
 }
 
+interface NfeItem {
+  nome: string;
+  quantidade: number;
+  unidade: string;
+  valorUnitario: number;
+  valorTotal: number;
+  stockItemId: string; // '' = unlinked, 'NEW' = create new
+  newItemName: string;
+  newItemUnit: string;
+}
+
 export default function EstoqueClient({ userName, storeName }: EstoqueClientProps) {
-  const [activeTab, setActiveTab] = useState<"items" | "history" | "recipes">("items");
+  const [activeTab, setActiveTab] = useState<"items" | "nfe" | "history" | "recipes">("items");
   const [loading, setLoading] = useState<boolean>(true);
   
+  // Onboarding
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
+  const [expandedKpi, setExpandedKpi] = useState<"low" | "negative" | null>(null);
+
   // Data States
   const [items, setItems] = useState<StockItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -60,6 +80,13 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
   // Search & Filter
   const [itemSearch, setItemSearch] = useState<string>("");
   const [productSearch, setProductSearch] = useState<string>("");
+  const [showOnlyWithoutRecipe, setShowOnlyWithoutRecipe] = useState<boolean>(false);
+
+  // History Filters
+  const [histType, setHistType] = useState<string>("ALL");
+  const [histItem, setHistItem] = useState<string>("ALL");
+  const [histDateStart, setHistDateStart] = useState<string>("");
+  const [histDateEnd, setHistDateEnd] = useState<string>("");
 
   // Modais
   const [showItemModal, setShowItemModal] = useState<boolean>(false);
@@ -71,35 +98,46 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
   const [newItemQty, setNewItemQty] = useState<string>("");
   const [newItemUnit, setNewItemUnit] = useState<string>("g");
   const [newItemMin, setNewItemMin] = useState<string>("");
+  const [newItemCost, setNewItemCost] = useState<string>("");
 
   // Form States - Movimentação
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
   const [moveQty, setMoveQty] = useState<string>("");
-  const [moveType, setMoveType] = useState<string>("INPUT"); // INPUT, OUTPUT, WASTE
+  const [moveType, setMoveType] = useState<string>("INPUT"); // INPUT, OUTPUT, WASTE, NFE
   const [moveNotes, setMoveNotes] = useState<string>("");
 
   // Form States - Receita / Ficha Técnica
   const [selectedProduct, setSelectedProduct] = useState<MenuProduct | null>(null);
   const [recipeIngredients, setRecipeIngredients] = useState<Array<{ stockItemId: string; quantityConsumed: string }>>([]);
 
+  // NF-e States
+  const [nfeImage, setNfeImage] = useState<string | null>(null);
+  const [nfeProcessing, setNfeProcessing] = useState(false);
+  const [nfeScanResult, setNfeScanResult] = useState<any>(null);
+  const [nfeItems, setNfeItems] = useState<NfeItem[]>([]);
+  const [nfeConfirming, setNfeConfirming] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      if (activeTab === "items") {
-        const res = await fetch("/api/store/estoque/items");
-        const data = await res.json();
-        if (data.success) setItems(data.items);
-      } else if (activeTab === "history") {
-        const res = await fetch("/api/store/estoque/transactions");
-        const data = await res.json();
-        if (data.success) setTransactions(data.transactions);
-      } else if (activeTab === "recipes") {
-        const res = await fetch("/api/store/estoque/recipes");
-        const data = await res.json();
-        if (data.success) {
-          setProducts(data.menuProducts);
-          setItems(data.stockItems); // Mantém estoque atualizado para o dropdown
-        }
+      // Load all data on mount
+      const [itemsRes, transRes, recipesRes] = await Promise.all([
+        fetch("/api/store/estoque/items"),
+        fetch("/api/store/estoque/transactions"),
+        fetch("/api/store/estoque/recipes")
+      ]);
+
+      const itemsData = await itemsRes.json();
+      const transData = await transRes.json();
+      const recipesData = await recipesRes.json();
+
+      if (itemsData.success) setItems(itemsData.items);
+      if (transData.success) setTransactions(transData.transactions);
+      if (recipesData.success) {
+        setProducts(recipesData.menuProducts);
+        // We only use the initial items fetch to avoid conflict, but we could update here if needed.
       }
     } catch (err) {
       console.error("Erro ao carregar dados do estoque:", err);
@@ -109,10 +147,30 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
   };
 
   useEffect(() => {
+    const dismissed = localStorage.getItem("estoque-onboarding-dismissed");
+    if (dismissed === "true") {
+      setShowOnboarding(false);
+    }
     loadData();
-  }, [activeTab]);
+  }, []);
 
-  // Handler - Criar Ingrediente
+  const dismissOnboarding = () => {
+    setShowOnboarding(false);
+    localStorage.setItem("estoque-onboarding-dismissed", "true");
+  };
+
+  // KPIs Calculation
+  const totalItemsCount = items.length;
+  const negativeStockItems = items.filter(i => i.quantity < 0);
+  const lowStockItems = items.filter(i => i.minQuantity !== null && i.quantity <= i.minQuantity && i.quantity >= 0);
+  
+  const validProducts = products.filter(p => !isHiddenIntegrationItem(p));
+  const productsWithRecipe = validProducts.filter(p => p.recipeItems.length > 0);
+  const recipeCoveragePct = validProducts.length > 0 
+    ? Math.round((productsWithRecipe.length / validProducts.length) * 100) 
+    : 0;
+
+  // Handlers - Items
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName) return;
@@ -125,7 +183,8 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           name: newItemName,
           quantity: parseFloat(newItemQty) || 0,
           unit: newItemUnit,
-          minQuantity: newItemMin ? parseFloat(newItemMin) : null
+          minQuantity: newItemMin ? parseFloat(newItemMin) : null,
+          unitCost: newItemCost ? parseFloat(newItemCost) : null
         })
       });
       const data = await res.json();
@@ -137,13 +196,13 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
       setNewItemName("");
       setNewItemQty("");
       setNewItemMin("");
+      setNewItemCost("");
       loadData();
     } catch (err) {
       alert("Erro ao enviar dados.");
     }
   };
 
-  // Handler - Excluir Ingrediente
   const handleDeleteItem = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir este ingrediente do estoque? Isso também afetará receitas vinculadas.")) return;
     try {
@@ -159,7 +218,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
     }
   };
 
-  // Handler - Registrar Movimentação
+  // Handlers - Transactions
   const handleRegisterMove = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem || !moveQty) return;
@@ -189,7 +248,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
     }
   };
 
-  // Abrir Modal de Ficha Técnica
+  // Handlers - Recipes
   const openRecipeEditor = (product: MenuProduct) => {
     setSelectedProduct(product);
     const existingRecipe = product.recipeItems.map(ri => ({
@@ -200,31 +259,24 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
     setShowRecipeModal(true);
   };
 
-  // Adicionar Linha de Receita
-  const addRecipeRow = () => {
-    setRecipeIngredients([...recipeIngredients, { stockItemId: "", quantityConsumed: "" }]);
-  };
-
-  // Remover Linha de Receita
+  const addRecipeRow = () => setRecipeIngredients([...recipeIngredients, { stockItemId: "", quantityConsumed: "" }]);
+  
   const removeRecipeRow = (index: number) => {
     const next = [...recipeIngredients];
     next.splice(index, 1);
     setRecipeIngredients(next.length > 0 ? next : [{ stockItemId: "", quantityConsumed: "" }]);
   };
 
-  // Atualizar Linha de Receita
   const updateRecipeRow = (index: number, field: "stockItemId" | "quantityConsumed", val: string) => {
     const next = [...recipeIngredients];
     next[index][field] = val;
     setRecipeIngredients(next);
   };
 
-  // Handler - Salvar Receita
   const handleSaveRecipe = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
 
-    // Filtra apenas linhas válidas
     const validIngredients = recipeIngredients.filter(
       ri => ri.stockItemId && parseFloat(ri.quantityConsumed) > 0
     );
@@ -250,18 +302,142 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
     }
   };
 
+  // NF-e AI Handlers
+  const triggerFileInput = () => fileInputRef.current?.click();
+
+  const processNFEFile = async (file: File) => {
+    if (!file) return;
+    setNfeProcessing(true);
+    setNfeScanResult(null);
+    setNfeItems([]);
+
+    try {
+      // 1. Upload
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      const uploadRes = await fetch("/api/upload-image", {
+        method: "POST",
+        body: formData
+      });
+      const uploadData = await uploadRes.json();
+      
+      if (!uploadRes.ok) throw new Error(uploadData.error || "Falha ao enviar imagem");
+
+      const imageUrl = uploadData.url;
+      setNfeImage(imageUrl);
+
+      // 2. Scan with AI
+      const scanRes = await fetch("/api/store/estoque/nfe-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl })
+      });
+      const scanData = await scanRes.json();
+
+      if (!scanRes.ok) throw new Error(scanData.error || "Falha ao analisar NF-e");
+
+      setNfeScanResult(scanData.data);
+      
+      // Map scanned items to our state format
+      const mappedItems: NfeItem[] = (scanData.data.itens || []).map((it: any) => {
+        // Try to guess a match
+        const match = items.find(stockIt => 
+          stockIt.name.toLowerCase() === it.nome.toLowerCase() || 
+          stockIt.name.toLowerCase().includes(it.nome.toLowerCase())
+        );
+
+        return {
+          nome: it.nome,
+          quantidade: it.quantidade || 0,
+          unidade: it.unidade || "un",
+          valorUnitario: it.valorUnitario || 0,
+          valorTotal: it.valorTotal || 0,
+          stockItemId: match ? match.id : "",
+          newItemName: it.nome,
+          newItemUnit: it.unidade || "un"
+        };
+      });
+
+      setNfeItems(mappedItems);
+    } catch (err: any) {
+      alert(err.message || "Erro no processamento da Nota Fiscal.");
+      setNfeImage(null);
+    } finally {
+      setNfeProcessing(false);
+    }
+  };
+
+  const handleNfeFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processNFEFile(file);
+  };
+
+  const handleNfeDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      processNFEFile(file);
+    }
+  };
+
+  const updateNfeItem = (index: number, field: keyof NfeItem, val: any) => {
+    const next = [...nfeItems];
+    next[index] = { ...next[index], [field]: val };
+    setNfeItems(next);
+  };
+
+  const handleConfirmNfe = async () => {
+    if (nfeItems.length === 0) return;
+    
+    // Validate
+    const invalid = nfeItems.some(it => !it.stockItemId || (it.stockItemId === 'NEW' && !it.newItemName));
+    if (invalid) {
+      alert("Por favor, vincule todos os itens a um insumo existente ou configure-os como novo insumo.");
+      return;
+    }
+
+    setNfeConfirming(true);
+    try {
+      const res = await fetch("/api/store/estoque/nfe-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: nfeItems,
+          invoiceData: nfeScanResult ? {
+            fornecedor: nfeScanResult.fornecedor,
+            numeroNF: nfeScanResult.numeroNF,
+            dataEmissao: nfeScanResult.dataEmissao,
+            valorTotal: nfeScanResult.valorTotal,
+          } : null,
+          imageUrl: nfeImage,
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao confirmar NF-e");
+      
+      alert("Nota fiscal processada e estoque atualizado com sucesso!");
+      setNfeImage(null);
+      setNfeScanResult(null);
+      setNfeItems([]);
+      setActiveTab("items");
+      loadData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setNfeConfirming(false);
+    }
+  };
+
+  // Utilities
   const getTransactionBadge = (type: string) => {
     switch (type) {
-      case "INPUT":
-        return <span className="badge badge-success">Entrada</span>;
-      case "OUTPUT":
-        return <span className="badge badge-error">Saída</span>;
-      case "WASTE":
-        return <span className="badge badge-warning">Desperdício</span>;
-      case "SALE":
-        return <span className="badge badge-sale">Venda</span>;
-      default:
-        return <span className="badge">{type}</span>;
+      case "INPUT": return <span className="badge badge-success">Entrada</span>;
+      case "OUTPUT": return <span className="badge badge-error">Saída</span>;
+      case "WASTE": return <span className="badge badge-warning">Desperdício</span>;
+      case "SALE": return <span className="badge badge-sale">Venda</span>;
+      case "NFE": return <span className="badge badge-nfe">NF-e</span>;
+      default: return <span className="badge">{type}</span>;
     }
   };
 
@@ -269,17 +445,90 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
     return `${qty.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit}`;
   };
 
+  const formatCurrency = (val: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  };
+
+  function isHiddenIntegrationItem(p: MenuProduct) {
+    const catUpper = (p.category || "").toUpperCase().trim();
+    const nameUpper = (p.name || "").toUpperCase().trim();
+    if (["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"].some(h => catUpper.includes(h))) {
+      return true;
+    }
+    if (["IFOOD |", "JOTAJÁ |", "JOTAJA |", "COMBOS |", "PRODUTO (R$"].some(prefix => nameUpper.startsWith(prefix))) {
+      return true;
+    }
+    return false;
+  }
+
+  // Derived Filtered Data
   const filteredItems = items.filter(item => 
     item.name.toLowerCase().includes(itemSearch.toLowerCase())
   );
 
-  const filteredProducts = products.filter(prod => 
-    prod.name.toLowerCase().includes(productSearch.toLowerCase())
-  );
+  const filteredProducts = validProducts.filter(prod => {
+    const matchesSearch = prod.name.toLowerCase().includes(productSearch.toLowerCase());
+    const matchesCoverage = showOnlyWithoutRecipe ? prod.recipeItems.length === 0 : true;
+    return matchesSearch && matchesCoverage;
+  });
+
+  const filteredTransactions = transactions.filter(t => {
+    if (histType !== "ALL" && t.type !== histType) return false;
+    if (histItem !== "ALL" && t.stockItem?.id !== histItem) return false;
+    
+    const tDate = new Date(t.createdAt);
+    if (histDateStart) {
+      const sDate = new Date(histDateStart);
+      sDate.setHours(0,0,0,0);
+      if (tDate < sDate) return false;
+    }
+    if (histDateEnd) {
+      const eDate = new Date(histDateEnd);
+      eDate.setHours(23,59,59,999);
+      if (tDate > eDate) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="estoque-container">
-      {/* BANNER HEADER */}
+      {/* ONBOARDING BANNER */}
+      {showOnboarding && (
+        <div className="onboarding-banner">
+          <div className="onboarding-content">
+            <div className="onboarding-header">
+              <Sparkles className="onboarding-icon" size={24} />
+              <h2>Controle de Estoque com Tecnologia de Ponta</h2>
+            </div>
+            <p className="onboarding-text">
+              Gerencie seus insumos com inteligência artificial. Tire uma foto da nota fiscal do seu fornecedor e a IA lê e dá entrada automática no estoque.
+            </p>
+            <div className="onboarding-steps">
+              <div className="step">
+                <span className="step-num">1</span>
+                <span>📸 <strong>Recebeu mercadoria?</strong> Tire uma foto da nota fiscal → a IA lê e dá entrada.</span>
+              </div>
+              <div className="step">
+                <span className="step-num">2</span>
+                <span>📋 <strong>Ficha Técnica:</strong> Configure os insumos de cada produto no Cardápio.</span>
+              </div>
+              <div className="step">
+                <span className="step-num">3</span>
+                <span>📊 <strong>Automático:</strong> Cada venda debita os insumos automaticamente.</span>
+              </div>
+              <div className="step">
+                <span className="step-num">4</span>
+                <span>🔔 <strong>Alertas:</strong> Seja avisado quando o estoque estiver baixo ou negativo.</span>
+              </div>
+            </div>
+          </div>
+          <button className="btn-onboarding-dismiss" onClick={dismissOnboarding}>
+            Entendi <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* HEADER CARD */}
       <div className="header-card">
         <div className="header-glow"></div>
         <div className="header-content">
@@ -290,7 +539,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           </div>
           <div className="header-actions">
             <button className="btn-refresh" onClick={loadData}>
-              <RefreshCw size={16} />
+              <RefreshCw size={16} className={loading ? "spin" : ""} />
             </button>
             <button className="btn-primary" onClick={() => setShowItemModal(true)}>
               <Plus size={16} /> Novo Insumo
@@ -298,6 +547,76 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           </div>
         </div>
       </div>
+
+      {/* KPI DASHBOARD */}
+      {!loading && (
+        <div className="kpi-grid">
+          <div className="kpi-card">
+            <div className="kpi-icon-wrapper blue"><Database size={20} /></div>
+            <div className="kpi-info">
+              <span className="kpi-label">Total de Insumos</span>
+              <span className="kpi-value">{totalItemsCount}</span>
+            </div>
+          </div>
+          <div 
+            className="kpi-card warning clickable" 
+            onClick={() => setExpandedKpi(expandedKpi === "low" ? null : "low")}
+          >
+            <div className="kpi-icon-wrapper yellow"><AlertTriangle size={20} /></div>
+            <div className="kpi-info">
+              <span className="kpi-label">Estoque Baixo</span>
+              <span className="kpi-value">{lowStockItems.length}</span>
+            </div>
+            {expandedKpi === "low" ? <ChevronUp size={16} className="kpi-chevron"/> : <ChevronDown size={16} className="kpi-chevron"/>}
+          </div>
+          <div 
+            className="kpi-card danger clickable"
+            onClick={() => setExpandedKpi(expandedKpi === "negative" ? null : "negative")}
+          >
+            <div className="kpi-icon-wrapper red pulse"><TrendingDown size={20} /></div>
+            <div className="kpi-info">
+              <span className="kpi-label">Estoque Negativo</span>
+              <span className="kpi-value">{negativeStockItems.length}</span>
+            </div>
+            {expandedKpi === "negative" ? <ChevronUp size={16} className="kpi-chevron"/> : <ChevronDown size={16} className="kpi-chevron"/>}
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-icon-wrapper purple"><ClipboardList size={20} /></div>
+            <div className="kpi-info">
+              <span className="kpi-label">Fichas Técnicas</span>
+              <span className="kpi-value">{recipeCoveragePct}% <span className="kpi-subtext">({productsWithRecipe.length}/{validProducts.length})</span></span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXPANDABLE KPI LISTS */}
+      {expandedKpi === "low" && lowStockItems.length > 0 && (
+        <div className="kpi-expanded-panel warning-panel">
+          <h4>Itens com Estoque Baixo</h4>
+          <ul>
+            {lowStockItems.map(it => (
+              <li key={it.id}>
+                <span>{it.name}</span>
+                <strong>{formatQuantity(it.quantity, it.unit)} <span className="min-label">(Min: {it.minQuantity}{it.unit})</span></strong>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {expandedKpi === "negative" && negativeStockItems.length > 0 && (
+        <div className="kpi-expanded-panel danger-panel">
+          <h4>Itens com Estoque Negativo</h4>
+          <ul>
+            {negativeStockItems.map(it => (
+              <li key={it.id}>
+                <span>{it.name}</span>
+                <strong>{formatQuantity(it.quantity, it.unit)}</strong>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* DASHBOARD TABS */}
       <div className="tabs-container">
@@ -309,22 +628,29 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           Insumos em Estoque
         </button>
         <button 
+          className={`tab-link ${activeTab === "nfe" ? "active nfe-tab" : ""}`}
+          onClick={() => setActiveTab("nfe")}
+        >
+          <Sparkles size={16} />
+          Entrada com IA
+        </button>
+        <button 
           className={`tab-link ${activeTab === "history" ? "active" : ""}`}
           onClick={() => setActiveTab("history")}
         >
           <History size={16} />
-          Histórico de Movimentações
+          Histórico
         </button>
         <button 
           className={`tab-link ${activeTab === "recipes" ? "active" : ""}`}
           onClick={() => setActiveTab("recipes")}
         >
           <ClipboardList size={16} />
-          Ficha Técnica (Receitas)
+          Fichas Técnicas
         </button>
       </div>
 
-      {/* SEARCH AND LOADING STATEMENTS */}
+      {/* LOADING STATE */}
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>
@@ -332,6 +658,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
         </div>
       ) : (
         <div className="tab-body">
+          
           {/* TAB 1: ITEMS */}
           {activeTab === "items" && (
             <>
@@ -359,20 +686,32 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
                         <th>Nome do Insumo</th>
                         <th>Saldo Atual</th>
                         <th>Estoque Mínimo</th>
+                        <th>Custo Unit.</th>
+                        <th>Valor em Estoque</th>
                         <th>Status</th>
                         <th style={{ textAlign: "right" }}>Ações</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredItems.map(item => {
-                        const isLow = item.minQuantity !== null && item.quantity <= item.minQuantity;
+                        const isNegative = item.quantity < 0;
+                        const isLow = !isNegative && item.minQuantity !== null && item.quantity <= item.minQuantity;
+                        const unitCost = item.unitCost || 0;
+                        const stockValue = item.quantity > 0 ? (item.quantity * unitCost) : 0;
+
                         return (
-                          <tr key={item.id} className={isLow ? "low-stock-tr" : ""}>
+                          <tr key={item.id} className={`${isNegative ? "negative-stock-tr" : ""} ${isLow ? "low-stock-tr" : ""}`}>
                             <td className="name-col">{item.name}</td>
                             <td className="qty-col">{formatQuantity(item.quantity, item.unit)}</td>
                             <td>{item.minQuantity !== null ? formatQuantity(item.minQuantity, item.unit) : "—"}</td>
+                            <td>{unitCost > 0 ? formatCurrency(unitCost) : "—"}</td>
+                            <td>{stockValue > 0 ? formatCurrency(stockValue) : "—"}</td>
                             <td>
-                              {isLow ? (
+                              {isNegative ? (
+                                <span className="status-label status-negative">
+                                  <AlertTriangle size={12} /> Estoque Negativo
+                                </span>
+                              ) : isLow ? (
                                 <span className="status-label status-low">
                                   <AlertTriangle size={12} /> Estoque Baixo
                                 </span>
@@ -406,14 +745,178 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
             </>
           )}
 
-          {/* TAB 2: HISTORY */}
+          {/* TAB 2: NF-E (ENTRADA COM IA) */}
+          {activeTab === "nfe" && (
+            <div className="nfe-container">
+              {!nfeImage && !nfeProcessing && (
+                <div 
+                  className="nfe-upload-zone"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleNfeDrop}
+                  onClick={triggerFileInput}
+                >
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    ref={fileInputRef}
+                    onChange={handleNfeFileSelect}
+                    style={{ display: "none" }}
+                  />
+                  <div className="upload-icons">
+                    <Upload size={32} className="text-blue-500" />
+                    <Camera size={32} className="text-slate-400" />
+                  </div>
+                  <h3>Enviar Nota Fiscal</h3>
+                  <p>Arraste e solte a foto da NF-e aqui, ou clique para fazer upload.</p>
+                  <div className="upload-hints">
+                    <span>Formatos aceitos: JPG, PNG, WEBP, HEIC</span>
+                  </div>
+                  <button className="btn-primary mt-4">
+                    <Camera size={16} /> Abrir Câmera / Galeria
+                  </button>
+                </div>
+              )}
+
+              {nfeProcessing && (
+                <div className="nfe-processing-zone">
+                  <div className="spinner large"></div>
+                  <h3>🤖 IA processando nota fiscal...</h3>
+                  <p>Extraindo itens, quantidades e valores da imagem. Aguarde um instante.</p>
+                </div>
+              )}
+
+              {nfeScanResult && (
+                <div className="nfe-results-card">
+                  <div className="nfe-results-header">
+                    <div className="nfe-meta">
+                      <h4>Resumo da Nota</h4>
+                      <p><strong>Fornecedor:</strong> {nfeScanResult.fornecedor || "Não identificado"}</p>
+                      <p><strong>Número NF-e:</strong> {nfeScanResult.numeroNF || "Não identificado"}</p>
+                      <p><strong>Data:</strong> {nfeScanResult.dataEmissao || "Não identificado"}</p>
+                      <p><strong>Valor Total:</strong> {nfeScanResult.valorTotal ? formatCurrency(nfeScanResult.valorTotal) : "Não identificado"}</p>
+                    </div>
+                    <div className="nfe-actions">
+                      <button className="btn-secondary" onClick={() => { setNfeScanResult(null); setNfeImage(null); setNfeItems([]); }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="nfe-items-table-wrapper">
+                    <h4>Itens Detectados ({nfeItems.length})</h4>
+                    <table className="nfe-items-table">
+                      <thead>
+                        <tr>
+                          <th>Item na Nota</th>
+                          <th>Qtd</th>
+                          <th>UN</th>
+                          <th>V. Unit.</th>
+                          <th>V. Total</th>
+                          <th>Vincular ao Estoque</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {nfeItems.map((item, idx) => (
+                          <tr key={idx}>
+                            <td><strong>{item.nome}</strong></td>
+                            <td>{item.quantidade}</td>
+                            <td>{item.unidade}</td>
+                            <td>{formatCurrency(item.valorUnitario)}</td>
+                            <td>{formatCurrency(item.valorTotal)}</td>
+                            <td className="linking-col">
+                              <select 
+                                value={item.stockItemId}
+                                onChange={(e) => updateNfeItem(idx, 'stockItemId', e.target.value)}
+                                className={!item.stockItemId ? "unlinked" : ""}
+                              >
+                                <option value="">⚠️ Selecionar Insumo...</option>
+                                <option value="NEW">+ Criar novo insumo</option>
+                                <optgroup label="Insumos Existentes">
+                                  {items.map(it => (
+                                    <option key={it.id} value={it.id}>{it.name} ({it.unit})</option>
+                                  ))}
+                                </optgroup>
+                              </select>
+
+                              {item.stockItemId === 'NEW' && (
+                                <div className="new-item-inline">
+                                  <input 
+                                    type="text" 
+                                    placeholder="Nome do novo insumo" 
+                                    value={item.newItemName}
+                                    onChange={(e) => updateNfeItem(idx, 'newItemName', e.target.value)}
+                                  />
+                                  <select 
+                                    value={item.newItemUnit}
+                                    onChange={(e) => updateNfeItem(idx, 'newItemUnit', e.target.value)}
+                                    className="small-select"
+                                  >
+                                    <option value="g">g</option>
+                                    <option value="kg">kg</option>
+                                    <option value="un">un</option>
+                                    <option value="ml">ml</option>
+                                    <option value="l">l</option>
+                                  </select>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <div className="nfe-confirm-bar">
+                    <button 
+                      className="btn-submit" 
+                      onClick={handleConfirmNfe}
+                      disabled={nfeConfirming}
+                    >
+                      {nfeConfirming ? "Confirmando..." : "✅ Confirmar Entrada"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: HISTORY */}
           {activeTab === "history" && (
             <>
-              {transactions.length === 0 ? (
+              <div className="filter-controls">
+                <div className="form-group mb-0">
+                  <label>Tipo de Movimentação</label>
+                  <select value={histType} onChange={e => setHistType(e.target.value)}>
+                    <option value="ALL">Todas</option>
+                    <option value="INPUT">Entrada</option>
+                    <option value="OUTPUT">Saída</option>
+                    <option value="SALE">Venda</option>
+                    <option value="WASTE">Desperdício</option>
+                    <option value="NFE">NF-e</option>
+                  </select>
+                </div>
+                <div className="form-group mb-0 flex-1">
+                  <label>Insumo</label>
+                  <select value={histItem} onChange={e => setHistItem(e.target.value)}>
+                    <option value="ALL">Todos os insumos</option>
+                    {items.map(it => <option key={it.id} value={it.id}>{it.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group mb-0">
+                  <label>Data Início</label>
+                  <input type="date" value={histDateStart} onChange={e => setHistDateStart(e.target.value)} />
+                </div>
+                <div className="form-group mb-0">
+                  <label>Data Fim</label>
+                  <input type="date" value={histDateEnd} onChange={e => setHistDateEnd(e.target.value)} />
+                </div>
+              </div>
+
+              {filteredTransactions.length === 0 ? (
                 <div className="empty-state">
                   <History size={48} />
-                  <h3>Nenhuma movimentação registrada</h3>
-                  <p>Movimentações manuais ou automáticas por vendas aparecerão listadas aqui.</p>
+                  <h3>Nenhuma movimentação encontrada</h3>
+                  <p>Ajuste os filtros ou aguarde novas movimentações.</p>
                 </div>
               ) : (
                 <div className="items-table-wrapper">
@@ -428,7 +931,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
                       </tr>
                     </thead>
                     <tbody>
-                      {transactions.map(t => {
+                      {filteredTransactions.map(t => {
                         const isNegative = t.quantity < 0;
                         return (
                           <tr key={t.id}>
@@ -450,24 +953,43 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
             </>
           )}
 
-          {/* TAB 3: RECIPES */}
+          {/* TAB 4: RECIPES */}
           {activeTab === "recipes" && (
             <>
-              <div className="search-bar">
-                <Search size={18} className="search-icon" />
-                <input 
-                  type="text" 
-                  placeholder="Pesquisar produto do cardápio..." 
-                  value={productSearch}
-                  onChange={e => setProductSearch(e.target.value)}
-                />
+              <div className="coverage-bar">
+                <div className="coverage-info">
+                  <BarChart3 size={18} />
+                  <strong>{productsWithRecipe.length} de {validProducts.length} produtos</strong> com ficha técnica configurada ({recipeCoveragePct}%)
+                </div>
+                <div className="coverage-track">
+                  <div className="coverage-fill" style={{ width: `${recipeCoveragePct}%` }}></div>
+                </div>
+              </div>
+
+              <div className="search-bar" style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <Search size={18} className="search-icon" />
+                  <input 
+                    type="text" 
+                    placeholder="Pesquisar produto do cardápio..." 
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                  />
+                </div>
+                <button 
+                  className={`btn-secondary ${showOnlyWithoutRecipe ? 'active' : ''}`}
+                  onClick={() => setShowOnlyWithoutRecipe(!showOnlyWithoutRecipe)}
+                >
+                  {showOnlyWithoutRecipe ? <EyeOff size={16} /> : <Eye size={16} />}
+                  Sem ficha técnica
+                </button>
               </div>
 
               {filteredProducts.length === 0 ? (
                 <div className="empty-state">
                   <ClipboardList size={48} />
                   <h3>Nenhum produto encontrado</h3>
-                  <p>Certifique-se de cadastrar produtos no Cardápio da sua loja antes de configurar receitas.</p>
+                  <p>Revise os filtros ou verifique o cadastro de produtos.</p>
                 </div>
               ) : (
                 <div className="products-grid">
@@ -552,16 +1074,29 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>Estoque Mínimo (Alerta)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  min="0"
-                  placeholder="Ex: 200 (Alerta abaixo de 200g)" 
-                  value={newItemMin}
-                  onChange={e => setNewItemMin(e.target.value)}
-                />
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Estoque Mínimo (Alerta)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    min="0"
+                    placeholder="Ex: 200" 
+                    value={newItemMin}
+                    onChange={e => setNewItemMin(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Custo Unitário (R$)</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    min="0"
+                    placeholder="Ex: 25.50" 
+                    value={newItemCost}
+                    onChange={e => setNewItemCost(e.target.value)}
+                  />
+                </div>
               </div>
 
               <button type="submit" className="btn-submit">
@@ -595,7 +1130,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
                       checked={moveType === "INPUT"}
                       onChange={e => setMoveType(e.target.value)}
                     />
-                    📈 Entrada (Compra)
+                    📈 Entrada
                   </label>
                   <label className={`radio-label ${moveType === "OUTPUT" ? "selected" : ""}`}>
                     <input 
@@ -605,7 +1140,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
                       checked={moveType === "OUTPUT"}
                       onChange={e => setMoveType(e.target.value)}
                     />
-                    📉 Saída (Ajuste)
+                    📉 Saída
                   </label>
                   <label className={`radio-label ${moveType === "WASTE" ? "selected" : ""}`}>
                     <input 
@@ -615,7 +1150,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
                       checked={moveType === "WASTE"}
                       onChange={e => setMoveType(e.target.value)}
                     />
-                    🗑️ Desperdício
+                    🗑️ Perda
                   </label>
                 </div>
               </div>
@@ -751,6 +1286,115 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           color: #1e293b;
           animation: fadeIn 0.4s ease-out;
         }
+        
+        .flex-1 { flex: 1; }
+        .mb-0 { margin-bottom: 0 !important; }
+        .mt-4 { margin-top: 1rem; }
+
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        /* ONBOARDING BANNER */
+        .onboarding-banner {
+          background: linear-gradient(135deg, #0f172a, #1e293b);
+          border-radius: 1.25rem;
+          padding: 1.5rem 2rem;
+          color: white;
+          margin-bottom: 1.5rem;
+          position: relative;
+          box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.4);
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          overflow: hidden;
+        }
+
+        .onboarding-content {
+          position: relative;
+          z-index: 2;
+        }
+
+        .onboarding-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin-bottom: 0.75rem;
+        }
+        
+        .onboarding-header h2 {
+          margin: 0;
+          font-size: 1.25rem;
+          font-weight: 800;
+          background: linear-gradient(to right, #60a5fa, #a78bfa);
+          -webkit-background-clip: text;
+          color: transparent;
+        }
+
+        .onboarding-icon {
+          color: #a78bfa;
+        }
+
+        .onboarding-text {
+          color: #cbd5e1;
+          font-size: 0.95rem;
+          margin: 0 0 1.25rem 0;
+          max-width: 800px;
+          line-height: 1.5;
+        }
+
+        .onboarding-steps {
+          display: flex;
+          gap: 1.5rem;
+          flex-wrap: wrap;
+        }
+
+        .step {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.5rem;
+          font-size: 0.85rem;
+          color: #94a3b8;
+          max-width: 250px;
+        }
+
+        .step-num {
+          background: rgba(255,255,255,0.1);
+          color: white;
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          font-size: 0.7rem;
+          font-weight: 800;
+          flex-shrink: 0;
+        }
+
+        .step strong { color: white; }
+
+        .btn-onboarding-dismiss {
+          background: rgba(255,255,255,0.1);
+          border: 1px solid rgba(255,255,255,0.2);
+          color: white;
+          padding: 0.5rem 1rem;
+          border-radius: 9999px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          transition: background 0.2s;
+          position: relative;
+          z-index: 2;
+        }
+
+        .btn-onboarding-dismiss:hover {
+          background: rgba(255,255,255,0.2);
+        }
 
         /* HEADER */
         .header-card {
@@ -827,6 +1471,10 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           justify-content: center;
           transition: all 0.2s;
         }
+        
+        .btn-refresh .spin {
+          animation: spin 1s linear infinite;
+        }
 
         .btn-refresh:hover {
           background: rgba(255, 255, 255, 0.18);
@@ -852,6 +1500,151 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           transform: translateY(-2px);
           box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
           filter: brightness(1.1);
+        }
+        
+        .btn-primary:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        /* KPI GRID */
+        .kpi-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 1rem;
+          margin-bottom: 1.5rem;
+        }
+
+        .kpi-card {
+          background: rgba(255, 255, 255, 0.7);
+          backdrop-filter: blur(10px);
+          border: 1px solid white;
+          border-radius: 1rem;
+          padding: 1.25rem;
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+          position: relative;
+          transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .kpi-card.clickable {
+          cursor: pointer;
+        }
+        .kpi-card.clickable:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0,0,0,0.05);
+        }
+
+        .kpi-card.warning {
+          background: linear-gradient(to right, #fffbeb, white);
+          border-color: #fde68a;
+        }
+        
+        .kpi-card.danger {
+          background: linear-gradient(to right, #fef2f2, white);
+          border-color: #fecaca;
+        }
+
+        .kpi-chevron {
+          position: absolute;
+          right: 1rem;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #94a3b8;
+        }
+
+        .kpi-icon-wrapper {
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .kpi-icon-wrapper.blue { background: #eff6ff; color: #2563eb; }
+        .kpi-icon-wrapper.yellow { background: #fef3c7; color: #d97706; }
+        .kpi-icon-wrapper.red { background: #fee2e2; color: #dc2626; }
+        .kpi-icon-wrapper.purple { background: #f3e8ff; color: #9333ea; }
+
+        @keyframes pulse-red {
+          0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+          70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+        }
+
+        .pulse {
+          animation: pulse-red 2s infinite;
+        }
+
+        .kpi-info {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .kpi-label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #64748b;
+          text-transform: uppercase;
+        }
+
+        .kpi-value {
+          font-size: 1.5rem;
+          font-weight: 900;
+          color: #0f172a;
+          line-height: 1.1;
+          margin-top: 0.25rem;
+        }
+
+        .kpi-subtext {
+          font-size: 0.85rem;
+          font-weight: 600;
+          color: #94a3b8;
+        }
+
+        .kpi-expanded-panel {
+          background: white;
+          border-radius: 1rem;
+          padding: 1.25rem;
+          margin-bottom: 1.5rem;
+          animation: slideUp 0.3s ease-out;
+        }
+
+        .kpi-expanded-panel.warning-panel { border: 1px solid #fde68a; }
+        .kpi-expanded-panel.danger-panel { border: 1px solid #fecaca; }
+
+        .kpi-expanded-panel h4 {
+          margin: 0 0 1rem 0;
+          font-size: 0.95rem;
+          color: #0f172a;
+        }
+
+        .kpi-expanded-panel ul {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+          gap: 1rem;
+        }
+
+        .kpi-expanded-panel li {
+          display: flex;
+          justify-content: space-between;
+          padding: 0.75rem;
+          background: #f8fafc;
+          border-radius: 0.5rem;
+          font-size: 0.85rem;
+        }
+        
+        .min-label {
+          font-size: 0.75rem;
+          color: #94a3b8;
+          font-weight: normal;
         }
 
         /* TABS */
@@ -887,7 +1680,16 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
         }
 
-        /* SEARCH BAR */
+        .tab-link.nfe-tab {
+          background: linear-gradient(to right, #fdf4ff, #faf5ff);
+          color: #9333ea;
+        }
+        .tab-link.active.nfe-tab {
+          background: white;
+          border-bottom: 2px solid #a855f7;
+        }
+
+        /* SEARCH BAR & FILTERS */
         .search-bar {
           position: relative;
           margin-bottom: 1.25rem;
@@ -914,6 +1716,21 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
 
         .search-bar input:focus {
           border-color: #2563eb;
+        }
+
+        .filter-controls {
+          display: flex;
+          gap: 1rem;
+          margin-bottom: 1.25rem;
+          background: white;
+          padding: 1rem;
+          border-radius: 1rem;
+          border: 1px solid #e2e8f0;
+          flex-wrap: wrap;
+        }
+
+        .filter-controls .form-group {
+          min-width: 150px;
         }
 
         /* TABLES */
@@ -949,9 +1766,8 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           border-bottom: none;
         }
 
-        .items-table tr.low-stock-tr {
-          background: #fffbeb;
-        }
+        .items-table tr.low-stock-tr { background: #fffbeb; }
+        .items-table tr.negative-stock-tr { background: #fef2f2; }
 
         .name-col {
           font-weight: 700;
@@ -983,14 +1799,12 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           border-radius: 9999px;
         }
 
-        .status-ok {
-          background: #dcfce7;
-          color: #15803d;
-        }
-
-        .status-low {
-          background: #fef3c7;
-          color: #b45309;
+        .status-ok { background: #dcfce7; color: #15803d; }
+        .status-low { background: #fef3c7; color: #b45309; }
+        .status-negative { 
+          background: #fee2e2; 
+          color: #b91c1c;
+          animation: pulse-red 2s infinite;
         }
 
         .badge {
@@ -1006,6 +1820,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
         .badge-error { background: #fee2e2; color: #b91c1c; }
         .badge-warning { background: #fef3c7; color: #b45309; }
         .badge-sale { background: #eff6ff; color: #1d4ed8; }
+        .badge-nfe { background: #f3e8ff; color: #9333ea; border: 1px solid #d8b4fe; }
 
         /* ACTION BUTTONS */
         .action-buttons {
@@ -1024,29 +1839,210 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           transition: all 0.2s;
         }
 
-        .btn-move {
-          background: #eff6ff;
-          color: #2563eb;
+        .btn-move { background: #eff6ff; color: #2563eb; }
+        .btn-move:hover { background: #dbeafe; }
+        .btn-delete { background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center; padding: 0.45rem; }
+        .btn-delete:hover { background: #fecaca; }
+
+        /* NFE TAB CSS */
+        .nfe-container {
+          animation: fadeIn 0.4s ease-out;
         }
 
-        .btn-move:hover {
-          background: #dbeafe;
-        }
-
-        .btn-delete {
-          background: #fee2e2;
-          color: #dc2626;
+        .nfe-upload-zone {
+          border: 2px dashed #cbd5e1;
+          border-radius: 1rem;
+          padding: 4rem 2rem;
+          text-align: center;
+          background: #f8fafc;
+          cursor: pointer;
+          transition: all 0.2s;
           display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
-          padding: 0.45rem;
         }
 
-        .btn-delete:hover {
-          background: #fecaca;
+        .nfe-upload-zone:hover {
+          border-color: #3b82f6;
+          background: #eff6ff;
         }
 
-        /* RECIPES CONFIG GRID */
+        .upload-icons {
+          display: flex;
+          gap: 1rem;
+          margin-bottom: 1.5rem;
+        }
+        
+        .text-blue-500 { color: #3b82f6; }
+        .text-slate-400 { color: #94a3b8; }
+
+        .nfe-upload-zone h3 { margin: 0 0 0.5rem 0; color: #0f172a; font-size: 1.25rem; font-weight: 800; }
+        .nfe-upload-zone p { color: #64748b; margin: 0 0 1rem 0; font-size: 0.95rem; }
+        
+        .upload-hints {
+          display: inline-block;
+          background: white;
+          padding: 0.25rem 0.75rem;
+          border-radius: 9999px;
+          font-size: 0.75rem;
+          color: #94a3b8;
+          border: 1px solid #e2e8f0;
+        }
+
+        .nfe-processing-zone {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 4rem 2rem;
+          background: white;
+          border-radius: 1rem;
+          border: 1px solid #e2e8f0;
+          text-align: center;
+        }
+
+        .spinner.large {
+          width: 60px;
+          height: 60px;
+          border-width: 4px;
+        }
+
+        .nfe-processing-zone h3 { margin: 1.5rem 0 0.5rem 0; color: #0f172a; }
+        .nfe-processing-zone p { color: #64748b; }
+
+        .nfe-results-card {
+          background: white;
+          border-radius: 1rem;
+          border: 1px solid #e2e8f0;
+          overflow: hidden;
+          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);
+        }
+
+        .nfe-results-header {
+          padding: 1.5rem;
+          background: #f8fafc;
+          border-bottom: 1px solid #e2e8f0;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          flex-wrap: wrap;
+          gap: 1rem;
+        }
+
+        .nfe-meta h4 {
+          margin: 0 0 1rem 0;
+          font-size: 1.1rem;
+          color: #0f172a;
+        }
+
+        .nfe-meta p {
+          margin: 0.25rem 0;
+          font-size: 0.9rem;
+          color: #475569;
+        }
+
+        .nfe-items-table-wrapper {
+          padding: 1.5rem;
+        }
+        
+        .nfe-items-table-wrapper h4 { margin: 0 0 1rem 0; }
+
+        .nfe-items-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.85rem;
+        }
+
+        .nfe-items-table th {
+          background: #f1f5f9;
+          padding: 0.75rem;
+          text-align: left;
+          color: #475569;
+          font-weight: 700;
+        }
+
+        .nfe-items-table td {
+          padding: 0.75rem;
+          border-bottom: 1px solid #f1f5f9;
+          vertical-align: middle;
+        }
+
+        .linking-col select {
+          width: 100%;
+          padding: 0.5rem;
+          border-radius: 0.5rem;
+          border: 1px solid #cbd5e1;
+          font-size: 0.8rem;
+          font-weight: 600;
+          background: #f8fafc;
+          outline: none;
+        }
+        
+        .linking-col select.unlinked {
+          border-color: #fbbf24;
+          background: #fffbeb;
+          color: #b45309;
+        }
+        
+        .new-item-inline {
+          display: flex;
+          gap: 0.5rem;
+          margin-top: 0.5rem;
+        }
+        
+        .new-item-inline input {
+          flex: 1;
+          padding: 0.4rem;
+          border: 1px dashed #3b82f6;
+          border-radius: 0.25rem;
+          font-size: 0.8rem;
+        }
+        
+        .new-item-inline .small-select {
+          width: 60px;
+          padding: 0.4rem;
+        }
+
+        .nfe-confirm-bar {
+          padding: 1.5rem;
+          background: #f8fafc;
+          border-top: 1px solid #e2e8f0;
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        /* RECIPES CONFIG GRID & COVERAGE */
+        .coverage-bar {
+          background: white;
+          padding: 1.25rem;
+          border-radius: 1rem;
+          border: 1px solid #e2e8f0;
+          margin-bottom: 1.25rem;
+        }
+        
+        .coverage-info {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 0.9rem;
+          color: #475569;
+          margin-bottom: 0.75rem;
+        }
+        
+        .coverage-track {
+          height: 8px;
+          background: #f1f5f9;
+          border-radius: 9999px;
+          overflow: hidden;
+        }
+        
+        .coverage-fill {
+          height: 100%;
+          background: linear-gradient(to right, #3b82f6, #10b981);
+          border-radius: 9999px;
+          transition: width 1s ease-out;
+        }
+
         .products-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -1073,20 +2069,8 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           gap: 0.5rem;
         }
 
-        .card-header-prod h3 {
-          margin: 0.25rem 0 0 0;
-          font-size: 1rem;
-          font-weight: 800;
-          color: #0f172a;
-        }
-
-        .prod-category {
-          font-size: 0.65rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          color: #64748b;
-          letter-spacing: 0.05em;
-        }
+        .card-header-prod h3 { margin: 0.25rem 0 0 0; font-size: 1rem; font-weight: 800; color: #0f172a; }
+        .prod-category { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; }
 
         .btn-configure {
           background: white;
@@ -1103,32 +2087,11 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           transition: all 0.2s;
         }
 
-        .btn-configure:hover {
-          border-color: #2563eb;
-          color: #2563eb;
-        }
+        .btn-configure:hover { border-color: #2563eb; color: #2563eb; }
 
-        .card-body-recipe {
-          padding: 1.25rem;
-          flex: 1;
-        }
-
-        .card-body-recipe h4 {
-          margin: 0 0 0.75rem 0;
-          font-size: 0.78rem;
-          font-weight: 700;
-          color: #64748b;
-          text-transform: uppercase;
-          letter-spacing: 0.025em;
-        }
-
-        .no-ingredients {
-          font-size: 0.8rem;
-          color: #94a3b8;
-          font-style: italic;
-          margin: 0.5rem 0;
-          line-height: 1.4;
-        }
+        .card-body-recipe { padding: 1.25rem; flex: 1; }
+        .card-body-recipe h4 { margin: 0 0 0.75rem 0; font-size: 0.78rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.025em; }
+        .no-ingredients { font-size: 0.8rem; color: #94a3b8; font-style: italic; margin: 0.5rem 0; line-height: 1.4; }
 
         .ingredients-list {
           list-style: none;
@@ -1148,10 +2111,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           border-bottom: 1px dashed #f1f5f9;
         }
 
-        .ingredients-list li:last-child {
-          border-bottom: none;
-          padding-bottom: 0;
-        }
+        .ingredients-list li:last-child { border-bottom: none; padding-bottom: 0; }
 
         /* LOADING & EMPTY STATES */
         .loading-state {
@@ -1191,16 +2151,8 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           color: #64748b;
         }
 
-        .empty-state h3 {
-          margin: 0.75rem 0 0.25rem 0;
-          font-weight: 800;
-          color: #334155;
-        }
-
-        .empty-state p {
-          font-size: 0.85rem;
-          margin: 0;
-        }
+        .empty-state h3 { margin: 0.75rem 0 0.25rem 0; font-weight: 800; color: #334155; }
+        .empty-state p { font-size: 0.85rem; margin: 0; }
 
         /* MODALS */
         .modal-overlay {
@@ -1224,11 +2176,11 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           position: relative;
           box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
           animation: slideUp 0.3s ease-out;
+          max-height: 90vh;
+          overflow-y: auto;
         }
 
-        .modal-card.modal-large {
-          max-width: 720px;
-        }
+        .modal-card.modal-large { max-width: 720px; }
 
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px); }
@@ -1247,42 +2199,15 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           border-radius: 0.25rem;
         }
 
-        .btn-close:hover {
-          background: #f1f5f9;
-        }
+        .btn-close:hover { background: #f1f5f9; }
 
-        .modal-card h2 {
-          font-size: 1.25rem;
-          font-weight: 900;
-          color: #0f172a;
-          margin: 0 0 1.25rem 0;
-        }
+        .modal-card h2 { font-size: 1.25rem; font-weight: 900; color: #0f172a; margin: 0 0 1.25rem 0; }
+        .modal-subtitle { font-size: 0.88rem; color: #475569; margin: -0.85rem 0 1.25rem 0; }
 
-        .modal-subtitle {
-          font-size: 0.88rem;
-          color: #475569;
-          margin: -0.85rem 0 1.25rem 0;
-        }
+        .form-group { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1.15rem; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.35rem;
-          margin-bottom: 1.15rem;
-        }
-
-        .form-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 1rem;
-        }
-
-        .form-group label {
-          font-size: 0.78rem;
-          font-weight: 700;
-          color: #475569;
-          text-transform: uppercase;
-        }
+        .form-group label { font-size: 0.78rem; font-weight: 700; color: #475569; text-transform: uppercase; }
 
         .form-group input,
         .form-group select {
@@ -1295,11 +2220,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           background: #f8fafc;
         }
 
-        .form-group input:focus,
-        .form-group select:focus {
-          border-color: #2563eb;
-          background: white;
-        }
+        .form-group input:focus, .form-group select:focus { border-color: #2563eb; background: white; }
 
         .btn-submit {
           width: 100%;
@@ -1315,7 +2236,7 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           transition: all 0.2s;
         }
 
-        .btn-submit:hover {
+        .btn-submit:hover:not(:disabled) {
           filter: brightness(1.08);
           box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
         }
@@ -1334,189 +2255,75 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
         .item-summary-badge span { color: #1e40af; }
         .item-summary-badge strong { color: #1e3a8a; }
 
-        .radio-group-types {
-          display: flex;
-          gap: 0.5rem;
-          flex-wrap: wrap;
-        }
-
+        .radio-group-types { display: flex; gap: 0.5rem; flex-wrap: wrap; }
         .radio-label {
-          flex: 1;
-          min-width: 120px;
-          display: flex;
-          align-items: center;
-          gap: 0.35rem;
-          padding: 0.7rem 0.5rem;
-          border: 1.5px solid #e2e8f0;
-          border-radius: 0.5rem;
-          font-size: 0.75rem;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all 0.2s;
-          background: #f8fafc;
-          justify-content: center;
+          flex: 1; min-width: 100px; display: flex; align-items: center; gap: 0.35rem;
+          padding: 0.7rem 0.5rem; border: 1.5px solid #e2e8f0; border-radius: 0.5rem;
+          font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: all 0.2s;
+          background: #f8fafc; justify-content: center;
         }
-
-        .radio-label input {
-          display: none;
-        }
-
-        .radio-label.selected {
-          border-color: #2563eb;
-          background: #eff6ff;
-          color: #2563eb;
-        }
+        .radio-label input { display: none; }
+        .radio-label.selected { border-color: #2563eb; background: #eff6ff; color: #2563eb; }
 
         /* RECIPE EDITOR */
         .recipe-rows-container {
-          max-height: 350px;
-          overflow-y: auto;
-          margin-bottom: 1.25rem;
-          border: 1px solid #e2e8f0;
-          border-radius: 0.75rem;
+          max-height: 350px; overflow-y: auto; margin-bottom: 1.25rem;
+          border: 1px solid #e2e8f0; border-radius: 0.75rem;
         }
 
-        .recipe-editor-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 0.85rem;
+        .recipe-editor-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .recipe-editor-table th { background: #f8fafc; padding: 0.75rem 1rem; font-weight: 700; color: #475569; border-bottom: 1px solid #e2e8f0; text-align: left; }
+        .recipe-editor-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; }
+        
+        .recipe-editor-table select, .recipe-editor-table input {
+          width: 100%; padding: 0.6rem; border-radius: 0.38rem; border: 1.5px solid #cbd5e1;
+          font-size: 0.82rem; font-weight: 600; outline: none;
         }
 
-        .recipe-editor-table th {
-          background: #f8fafc;
-          padding: 0.75rem 1rem;
-          font-weight: 700;
-          color: #475569;
-          border-bottom: 1px solid #e2e8f0;
-          text-align: left;
-        }
-
-        .recipe-editor-table td {
-          padding: 0.75rem 1rem;
-          border-bottom: 1px solid #f1f5f9;
-        }
-
-        .recipe-editor-table select,
-        .recipe-editor-table input {
-          width: 100%;
-          padding: 0.6rem;
-          border-radius: 0.38rem;
-          border: 1.5px solid #cbd5e1;
-          font-size: 0.82rem;
-          font-weight: 600;
-          outline: none;
-        }
-
-        .qty-input-unit {
-          position: relative;
-          display: flex;
-          align-items: center;
-        }
-
-        .qty-input-unit input {
-          padding-right: 2.25rem;
-        }
-
-        .unit-label {
-          position: absolute;
-          right: 0.6rem;
-          font-size: 0.75rem;
-          font-weight: 800;
-          color: #64748b;
-          pointer-events: none;
-        }
+        .qty-input-unit { position: relative; display: flex; align-items: center; }
+        .qty-input-unit input { padding-right: 2.25rem; }
+        .unit-label { position: absolute; right: 0.6rem; font-size: 0.75rem; font-weight: 800; color: #64748b; pointer-events: none; }
 
         .btn-remove-row {
-          background: none;
-          border: none;
-          color: #dc2626;
-          cursor: pointer;
-          padding: 0.4rem;
-          border-radius: 0.38rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          background: none; border: none; color: #dc2626; cursor: pointer;
+          padding: 0.4rem; border-radius: 0.38rem; display: flex; align-items: center; justify-content: center;
         }
+        .btn-remove-row:hover { background: #fee2e2; }
 
-        .btn-remove-row:hover {
-          background: #fee2e2;
-        }
-
-        .recipe-footer-actions {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 1rem;
-        }
-
+        .recipe-footer-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
         .btn-add-ingredient {
-          border: 1.5px dashed #2563eb;
-          background: none;
-          color: #2563eb;
-          font-weight: 700;
-          font-size: 0.82rem;
-          padding: 0.55rem 1.1rem;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          transition: all 0.2s;
+          border: 1.5px dashed #2563eb; background: none; color: #2563eb;
+          font-weight: 700; font-size: 0.82rem; padding: 0.55rem 1.1rem; border-radius: 0.5rem;
+          cursor: pointer; transition: all 0.2s;
         }
+        .btn-add-ingredient:hover { background: #eff6ff; }
 
-        .btn-add-ingredient:hover {
-          background: #eff6ff;
-        }
-
-        .footer-right-buttons {
-          display: flex;
-          gap: 0.5rem;
-        }
-
+        .footer-right-buttons { display: flex; gap: 0.5rem; }
+        
         .btn-secondary {
-          background: #f1f5f9;
-          color: #475569;
-          border: none;
-          padding: 0.6rem 1.25rem;
-          border-radius: 0.5rem;
-          font-weight: 700;
-          font-size: 0.85rem;
-          cursor: pointer;
+          background: #f1f5f9; color: #475569; border: none; padding: 0.6rem 1.25rem;
+          border-radius: 0.5rem; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+          display: inline-flex; align-items: center; gap: 0.5rem;
         }
-
-        .btn-secondary:hover {
-          background: #e2e8f0;
+        .btn-secondary:hover, .btn-secondary.active { background: #e2e8f0; }
+        
+        .btn-secondary.active {
+          background: #e0e7ff;
+          color: #4f46e5;
         }
 
         .btn-submit-recipe {
-          background: #2563eb;
-          color: white;
-          border: none;
-          padding: 0.6rem 1.25rem;
-          border-radius: 0.5rem;
-          font-weight: 700;
-          font-size: 0.85rem;
-          cursor: pointer;
+          background: #2563eb; color: white; border: none; padding: 0.6rem 1.25rem;
+          border-radius: 0.5rem; font-weight: 700; font-size: 0.85rem; cursor: pointer;
         }
-
-        .btn-submit-recipe:hover {
-          background: #1d4ed8;
-        }
+        .btn-submit-recipe:hover { background: #1d4ed8; }
 
         @media (max-width: 768px) {
-          .header-content {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-          .header-actions {
-            width: 100%;
-          }
-          .btn-primary {
-            flex: 1;
-            justify-content: center;
-          }
-          .form-row {
-            grid-template-columns: 1fr;
-            gap: 0;
-          }
+          .header-content { flex-direction: column; align-items: flex-start; }
+          .header-actions { width: 100%; }
+          .btn-primary { flex: 1; justify-content: center; }
+          .form-row { grid-template-columns: 1fr; gap: 0; }
+          .onboarding-banner { flex-direction: column; gap: 1rem; }
         }
       `}</style>
     </div>

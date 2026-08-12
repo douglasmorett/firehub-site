@@ -5,13 +5,17 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const junkCategories = ["IFOOD", "iFood", "Jotajá", "JOTAJA", "Jotaja", "ONLINE"];
+    const junkCategories = ["IFOOD", "iFood", "Jotajá", "JOTAJA", "Jotaja", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"];
 
     // 1. Buscar todos os produtos lixo auto-gerados
     const junkProducts = await prisma.menuProduct.findMany({
       where: {
         OR: [
           { category: { in: junkCategories } },
+          { name: { startsWith: "IFOOD |" } },
+          { name: { startsWith: "JOTAJÁ |" } },
+          { name: { startsWith: "JOTAJA |" } },
+          { name: { startsWith: "COMBOS |" } },
           { name: { startsWith: "Produto (R$" } },
         ],
       },

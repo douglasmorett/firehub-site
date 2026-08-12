@@ -241,7 +241,7 @@ export async function processJotajaEvent(
                 price: itemPrice,
                 category: i.category || "Jotajá",
                 isBeverage: isBeverageName(fullName) || options.some((o: any) => isBeverageName(o.name)),
-                active: true,
+                active: false,
               } as any,
             } as any,
           },

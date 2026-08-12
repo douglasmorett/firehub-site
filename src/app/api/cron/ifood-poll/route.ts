@@ -322,7 +322,7 @@ export async function GET(req: NextRequest) {
                     description: "",
                     price: itemUnitPrice,
                     category: "iFood",
-                    active: true,
+                    active: false,
                   } as any,
                 } as any,
               },

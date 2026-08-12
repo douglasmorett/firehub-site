@@ -155,7 +155,7 @@ export default function GlobalPrintListener() {
                     paymentMethod: payStr,
                     isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
                     items: (order.items || []).map((i: any) => {
-                      const rawName = i.menuProduct?.name || i.name || "Item";
+                      const rawName = i.menuProduct?.name || i.name || (i.comboSelections ? "Combo" : "Item");
                       const cleanName = rawName.split(" | ")[0].trim();
                       return {
                         name: cleanName,

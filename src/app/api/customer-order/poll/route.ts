@@ -251,7 +251,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                       description: i.observations || i.notes || "",
                       price: itemUnitPrice,
                       category: i.category || "iFood",
-                      active: true,
+                      active: false,
                     } as any,
                   } as any,
                 },

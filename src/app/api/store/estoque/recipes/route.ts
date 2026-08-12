@@ -43,9 +43,24 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, recipe, stockItems });
     }
 
-    // Se não informou ID de produto, retorna todos os produtos ativos do cardápio com suas receitas
+    // Se não informou ID de produto, retorna todos os produtos ativos reais do cardápio com suas receitas
+    const junkCategories = ["IFOOD", "iFood", "Jotajá", "JOTAJA", "Jotaja", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"];
+    
     const menuProducts = await prisma.menuProduct.findMany({
-      where: { franchiseeId: user.id, active: true },
+      where: {
+        franchiseeId: user.id,
+        active: true,
+        category: {
+          notIn: junkCategories
+        },
+        NOT: [
+          { name: { startsWith: "IFOOD |" } },
+          { name: { startsWith: "JOTAJÁ |" } },
+          { name: { startsWith: "JOTAJA |" } },
+          { name: { startsWith: "COMBOS |" } },
+          { name: { startsWith: "Produto (R$" } }
+        ]
+      },
       include: {
         recipeItems: {
           include: {
@@ -100,19 +115,49 @@ export async function POST(req: Request) {
 
       // 2. Criar novos itens de receita (se houver)
       if (ingredients.length > 0) {
-        // Validar ingredientes e quantidades
-        const recipeData = ingredients
-          .filter((ing: any) => ing.stockItemId && Number(ing.quantityConsumed) > 0)
-          .map((ing: any) => ({
+        const recipeData = [];
+        
+        for (const ing of ingredients) {
+          let stockItemId = ing.stockItemId;
+          const qty = Number(ing.quantityConsumed);
+          if (qty <= 0) continue;
+          
+          // Auto-create stock item if it's a new ingredient
+          if (stockItemId === 'NEW' && ing.newItemName) {
+            // Check if already exists (case-insensitive)
+            const existing = await tx.stockItem.findFirst({
+              where: {
+                franchiseeId: user.id,
+                name: { equals: ing.newItemName, mode: 'insensitive' }
+              }
+            });
+            
+            if (existing) {
+              stockItemId = existing.id;
+            } else {
+              const newItem = await tx.stockItem.create({
+                data: {
+                  franchiseeId: user.id,
+                  name: ing.newItemName,
+                  quantity: 0,
+                  unit: ing.newItemUnit || 'un',
+                }
+              });
+              stockItemId = newItem.id;
+            }
+          }
+          
+          if (!stockItemId || stockItemId === 'NEW') continue;
+          
+          recipeData.push({
             menuProductId,
-            stockItemId: ing.stockItemId,
-            quantityConsumed: Number(ing.quantityConsumed)
-          }));
+            stockItemId,
+            quantityConsumed: qty
+          });
+        }
 
         if (recipeData.length > 0) {
-          await tx.productRecipe.createMany({
-            data: recipeData
-          });
+          await tx.productRecipe.createMany({ data: recipeData });
         }
       }
     });

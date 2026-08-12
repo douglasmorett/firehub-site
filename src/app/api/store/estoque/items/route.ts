@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     if (!franchiseeId) return NextResponse.json({ error: "Lojista não encontrado" }, { status: 404 });
 
     const body = await req.json();
-    const { name, quantity, unit, minQuantity } = body;
+    const { name, quantity, unit, minQuantity, unitCost } = body;
 
     if (!name) return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
 
@@ -63,7 +63,8 @@ export async function POST(req: Request) {
         name,
         quantity: Number(quantity) || 0,
         unit: unit || "un",
-        minQuantity: minQuantity !== undefined && minQuantity !== "" ? Number(minQuantity) : null
+        minQuantity: minQuantity !== undefined && minQuantity !== "" ? Number(minQuantity) : null,
+        unitCost: unitCost !== undefined && unitCost !== "" ? Number(unitCost) : null
       }
     });
 
