@@ -21,6 +21,7 @@ export default async function AdminPage() {
       storeName: true, city: true, createdAt: true, storeOpen: true,
       isFranqueadoHakim: true, mpAccessToken: true, celcoinAccountId: true,
       mpSellerId: true, storeLogo: true, storePhone: true, trialEndsAt: true,
+      cpfCnpj: true, repasseConfig: true,
     },
   });
 
@@ -114,6 +115,8 @@ export default async function AdminPage() {
     isFranqueadoHakim: l.isFranqueadoHakim,
     storeLogo: l.storeLogo,
     storePhone: l.storePhone,
+    cpfCnpj: l.cpfCnpj,
+    repasseConfig: l.repasseConfig,
     mpSellerId: l.mpSellerId,
     trialEndsAt: l.trialEndsAt ? l.trialEndsAt.toISOString() : null,
     diasCadastro: daysSince(l.createdAt),

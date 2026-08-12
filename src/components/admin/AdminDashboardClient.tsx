@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { signIn } from "next-auth/react";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import AmbassadorsTab from "./AmbassadorsTab";
@@ -11,7 +11,8 @@ type Lojista = {
   id: string; name: string | null; email: string; slug: string | null;
   storeName: string | null; city: string | null; createdAt: string;
   storeOpen: boolean; isFranqueadoHakim: boolean; storeLogo: string | null;
-  storePhone: string | null; diasCadastro: number; emTrial: boolean;
+  storePhone: string | null; cpfCnpj: string | null; repasseConfig: any;
+  diasCadastro: number; emTrial: boolean;
   diasRestantesTrial?: number; trialEndsAt?: string | null;
   pendente: number; temMP: boolean; temCelcoin: boolean;
 };
@@ -41,6 +42,9 @@ export default function AdminDashboardClient({
 
   // Impersonação
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+
+  // Expandir detalhes do lojista
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const filtered = lojistas.filter(l =>
     [l.name, l.storeName, l.email, l.city].some(v =>
@@ -258,17 +262,23 @@ export default function AdminDashboardClient({
                 <table className="fha-table">
                   <thead>
                     <tr>
-                      <th>Lojista</th><th>Cidade</th><th>Cadastro</th><th>Status</th><th>Ação</th>
+                      <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Ação</th>
                     </tr>
                   </thead>
                   <tbody>
                     {lojistas.slice(0, 8).map(l => (
-                      <tr key={l.id}>
+                      <React.Fragment key={l.id}>
+                      <tr>
                         <td>
                           <div style={{ fontWeight: 600, color: "#F1F5F9" }}>{l.storeName || l.name}</div>
                           <div style={{ color: "#475569", fontSize: "0.72rem" }}>{l.email}</div>
                         </td>
                         <td style={{ color: "#94A3B8" }}>{l.city || "—"}</td>
+                        <td style={{ color: "#60A5FA", whiteSpace: "nowrap", fontSize: "0.78rem" }}>
+                          {l.storePhone ? (
+                            <a href={`https://wa.me/${l.storePhone.replace(/\D/g, '')}`} target="_blank" style={{ color: "#34D399", textDecoration: "none" }}>📱 {l.storePhone}</a>
+                          ) : "—"}
+                        </td>
                         <td style={{ color: "#64748B" }}>{fmtDate(l.createdAt)}</td>
                         <td>
                           {l.isFranqueadoHakim ? (
@@ -298,9 +308,58 @@ export default function AdminDashboardClient({
                             >
                               🎁 +Dias
                             </button>
+                            <button
+                              onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
+                              className="fha-btn-action"
+                              style={{ background: expandedId === l.id ? "rgba(139,92,246,0.25)" : "rgba(100,116,139,0.15)", color: expandedId === l.id ? "#A78BFA" : "#94A3B8", border: `1px solid ${expandedId === l.id ? "rgba(139,92,246,0.4)" : "#334155"}` }}
+                              title="Ver dados completos do cadastro"
+                            >
+                              📋 Dados
+                            </button>
                           </div>
                         </td>
                       </tr>
+                      {expandedId === l.id && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: 0 }}>
+                            <div style={{ background: "#1a2332", padding: "16px 20px", borderBottom: "2px solid #334155", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px", animation: "fadeIn 0.2s" }}>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Nome Completo</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.name || "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>E-mail</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.email}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>WhatsApp</div>
+                                <div style={{ color: "#34D399", fontSize: "0.82rem", fontWeight: 600 }}>{l.storePhone || "Não informado"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>CPF/CNPJ</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.cpfCnpj || "Não informado"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Cidade</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.city || "Não informada"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Slug</div>
+                                <div style={{ color: "#60A5FA", fontSize: "0.82rem", fontWeight: 600 }}>{l.slug || "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Trial Encerra</div>
+                                <div style={{ color: "#FCD34D", fontSize: "0.82rem", fontWeight: 600 }}>{l.trialEndsAt ? fmtDate(l.trialEndsAt) : "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Repasse Pix</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.repasseConfig ? (typeof l.repasseConfig === 'object' ? `${(l.repasseConfig as any).tipoChave || '—'}: ${(l.repasseConfig as any).chavePix || '—'}` : 'Configurado') : "Não configurado"}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -323,12 +382,13 @@ export default function AdminDashboardClient({
                 <table className="fha-table">
                   <thead>
                     <tr>
-                      <th>Lojista</th><th>Cidade</th><th>Cadastro</th><th>Status</th><th>Hakim</th><th>Pagamento</th><th>Ações Suporte</th>
+                      <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Hakim</th><th>Pagamento</th><th>Ações Suporte</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map(l => (
-                      <tr key={l.id}>
+                      <React.Fragment key={l.id}>
+                      <tr>
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             {l.storeLogo
@@ -341,6 +401,11 @@ export default function AdminDashboardClient({
                           </div>
                         </td>
                         <td style={{ color: "#94A3B8" }}>{l.city || "—"}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {l.storePhone ? (
+                            <a href={`https://wa.me/${l.storePhone.replace(/\D/g, '')}`} target="_blank" style={{ color: "#34D399", textDecoration: "none", fontSize: "0.78rem", fontWeight: 600 }}>📱 {l.storePhone}</a>
+                          ) : <span style={{ color: "#475569" }}>—</span>}
+                        </td>
                         <td style={{ color: "#64748B", whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
                         <td>
                           {l.isFranqueadoHakim ? (
@@ -382,9 +447,57 @@ export default function AdminDashboardClient({
                             >
                               🎁 Liberar Dias
                             </button>
+                            <button
+                              onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
+                              className="fha-btn-action"
+                              style={{ background: expandedId === l.id ? "rgba(139,92,246,0.25)" : "rgba(100,116,139,0.15)", color: expandedId === l.id ? "#A78BFA" : "#94A3B8", border: `1px solid ${expandedId === l.id ? "rgba(139,92,246,0.4)" : "#334155"}` }}
+                            >
+                              📋 Dados
+                            </button>
                           </div>
                         </td>
                       </tr>
+                      {expandedId === l.id && (
+                        <tr>
+                          <td colSpan={8} style={{ padding: 0 }}>
+                            <div style={{ background: "#1a2332", padding: "16px 20px", borderBottom: "2px solid #334155", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" }}>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Nome Completo</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.name || "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>E-mail</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.email}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>WhatsApp</div>
+                                <div style={{ color: "#34D399", fontSize: "0.82rem", fontWeight: 600 }}>{l.storePhone || "Não informado"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>CPF/CNPJ</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.cpfCnpj || "Não informado"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Cidade</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.city || "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Slug (Cardápio)</div>
+                                <div style={{ color: "#60A5FA", fontSize: "0.82rem", fontWeight: 600 }}>{l.slug ? <a href={`/loja/${l.slug}`} target="_blank" style={{ color: "#60A5FA" }}>{l.slug}</a> : "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Trial Encerra</div>
+                                <div style={{ color: "#FCD34D", fontSize: "0.82rem", fontWeight: 600 }}>{l.trialEndsAt ? fmtDate(l.trialEndsAt) : "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Repasse Pix</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.repasseConfig ? (typeof l.repasseConfig === 'object' ? `${(l.repasseConfig as any).tipoChave || '—'}: ${(l.repasseConfig as any).chavePix || '—'}` : 'Configurado') : "Não configurado"}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
