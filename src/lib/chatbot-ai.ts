@@ -42,7 +42,6 @@ export async function processChatbotAI(
       deliveryZoneType: true,
       chatbotConfig: true,
       storeCoupons: true,
-      email: true,
     },
   });
 
@@ -158,7 +157,6 @@ export async function processChatbotAI(
   const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : (isHakimStore ? "https://www.hakimriodasostras.com.br" : "");
   const storeLink = customMenuUrl || defaultStoreLink;
   const storeLinkMsg = storeLink ? ` Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}` : "";
-  const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.extraInstructions || "").trim();
 
   const personalityMap: Record<string, string> = {
     SIMPATICO: "muito simpático, acolhedor e fofo. Use carinho, emojis (😊, 🥰, 🍕) e demonstre felicidade.",
