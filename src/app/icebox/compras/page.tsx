@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import ProductGrid from "@/components/ProductGrid";
 import { getNextDeliveryInfo } from "@/lib/deliveryDates";
 
+export const dynamic = 'force-dynamic';
+
 export default async function IceboxComprasPage() {
   let session: any = null;
   try {

@@ -11,7 +11,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    const { items } = await req.json();
+    const body = await req.json();
+    const { items, totalAmount: frontendTotal } = body;
+    
     if (!items || items.length === 0) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
     }
@@ -43,6 +45,16 @@ export async function POST(req: Request) {
         { error: `Pedido mínimo é R$ 300,00. Seu total é R$ ${calculatedTotal.toFixed(2)}.` },
         { status: 400 }
       );
+    }
+
+    if (frontendTotal !== undefined) {
+      const diff = Math.abs(calculatedTotal - frontendTotal);
+      if (diff > 0.10) { // Tolerância de 10 centavos
+        return NextResponse.json(
+          { error: "Os preços de alguns produtos foram atualizados. Por favor, recarregue a página e verifique seu carrinho." },
+          { status: 400 }
+        );
+      }
     }
 
     // ── Verifica inadimplência ───────────────────────────────────────────────

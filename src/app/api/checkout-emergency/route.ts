@@ -11,7 +11,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    const { items } = await req.json();
+    const body = await req.json();
+    const { items, totalAmount: frontendTotal } = body;
 
     if (!items || items.length === 0) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
@@ -55,10 +56,20 @@ export async function POST(req: Request) {
       };
     });
 
-    // Adiciona 30% se tiver multa
     let finalTotal = calculatedTotal;
     if (hasPenalty) {
       finalTotal = calculatedTotal * 1.30;
+    }
+
+    if (frontendTotal !== undefined) {
+      const expectedTotal = hasPenalty ? frontendTotal * 1.30 : frontendTotal;
+      const diff = Math.abs(finalTotal - expectedTotal);
+      if (diff > 0.10) { // Tolerância de 10 centavos
+        return NextResponse.json(
+          { error: "Os preços de alguns produtos foram atualizados. Por favor, recarregue a página e verifique seu carrinho." },
+          { status: 400 }
+        );
+      }
     }
 
     // Se for a loja de registro, não gera cobrança no Asaas
