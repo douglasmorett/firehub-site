@@ -1128,57 +1128,71 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
 
-    // 1. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
+    // 1. Prepara dados do pedido
+    const activeConfig = printerConfig && printerConfig.printers?.length > 0
+      ? printerConfig
+      : { autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
+
+    const payStr = (order.paymentMethod || "").toString();
+    const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
+
+    const formattedOrder = {
+      id: order.id,
+      dailyOrderNumber: seqNum,
+      customerName: order.customerName || "Cliente",
+      customerPhone: order.customerPhone,
+      customerAddress: order.customerAddress,
+      deliveryType: order.deliveryType || "DELIVERY",
+      deliveryBy: order.deliveryBy || "MERCHANT",
+      paymentMethod: translatePayment(payStr),
+      isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
+      items: (order.items || []).map((i: any) => {
+        const rawName = i.menuProduct?.name || i.name || "Item";
+        const cleanName = rawName.split(" | ")[0].trim();
+        return {
+          name: cleanName,
+          qty: i.quantity || i.qty || 1,
+          price: i.price || 0,
+          notes: i.notes || "",
+          comboSelections: i.comboSelections,
+        };
+      }),
+      totalAmount: order.totalAmount || 0,
+      deliveryFee: order.deliveryFee || 0,
+      discountTotal: order.discountTotal,
+      discountIfood: order.discountIfood,
+      discountMerchant: order.discountMerchant,
+      changeAmount: order.changeAmount,
+      ifoodReference: order.ifoodReference,
+      openDeliveryReference: order.openDeliveryReference,
+      source: order.source,
+      notes: order.notes,
+      createdAt: order.createdAt,
+    };
+
+    let printedLocally = false;
+
+    // 2. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
     try {
       const { printOrder } = await import("@/lib/print");
-      const activeConfig = printerConfig && printerConfig.printers?.length > 0
-        ? printerConfig
-        : { autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
-
-      const payStr = (order.paymentMethod || "").toString();
-      const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
-
-      const formattedOrder = {
-        id: order.id,
-        dailyOrderNumber: seqNum,
-        customerName: order.customerName || "Cliente",
-        customerPhone: order.customerPhone,
-        customerAddress: order.customerAddress,
-        deliveryType: order.deliveryType || "DELIVERY",
-        deliveryBy: order.deliveryBy || "MERCHANT",
-        paymentMethod: translatePayment(payStr),
-        isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
-        items: (order.items || []).map((i: any) => {
-          const rawName = i.menuProduct?.name || i.name || "Item";
-          const cleanName = rawName.split(" | ")[0].trim();
-          return {
-            name: cleanName,
-            qty: i.quantity || i.qty || 1,
-            price: i.price || 0,
-            notes: i.notes || "",
-            comboSelections: i.comboSelections,
-          };
-        }),
-        totalAmount: order.totalAmount || 0,
-        deliveryFee: order.deliveryFee || 0,
-        discountTotal: order.discountTotal,
-        discountIfood: order.discountIfood,
-        discountMerchant: order.discountMerchant,
-        changeAmount: order.changeAmount,
-        ifoodReference: order.ifoodReference,
-        openDeliveryReference: order.openDeliveryReference,
-        source: order.source,
-        notes: order.notes,
-        createdAt: order.createdAt,
-      };
-
       const result = await printOrder(formattedOrder as any, storeName, activeConfig, {}, isManual);
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
-        return; // Impresso diretamente via Assistente RAW
+        printedLocally = true;
       }
+    } catch (err) {
+      console.warn("[Print] Erro na impressão local:", err);
+    }
 
-      // 2. Se o assistente local não respondeu com sucesso, envia para a Fila de Impressão na nuvem
+    if (printedLocally) {
+      setTimeout(() => {
+        if (orderKey) printingInProgressRef.current.delete(orderKey);
+      }, 10000);
+      return;
+    }
+
+    // 3. Se o assistente local não respondeu com sucesso ou deu erro, envia para a Fila de Impressão na nuvem
+    try {
       const queueRes = await fetch("/api/store/print-queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1192,17 +1206,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
       if (queueRes.ok) {
         showToast("✅ Enviado para a fila de impressão da impressora!", "#10B981");
-        return;
+      } else {
+        showToast("⚠️ Falha ao enfileirar impressão na nuvem.", "#EF4444");
       }
     } catch (err) {
-      console.warn("[Print] Erro na impressão:", err);
+      console.warn("[Print] Erro ao enviar para fila em nuvem:", err);
+      showToast("⚠️ Erro de conexão ao enviar para fila de impressão.", "#EF4444");
     } finally {
       setTimeout(() => {
         if (orderKey) printingInProgressRef.current.delete(orderKey);
       }, 10000);
     }
-
-    showToast("⚠️ Verifique se o FireHub Assistente está rodando no PC com a impressora.", "#EF4444");
   };
 
   useEffect(() => {

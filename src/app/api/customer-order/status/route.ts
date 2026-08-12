@@ -284,12 +284,9 @@ export async function PUT(req: Request) {
       console.error(`[Jotajá Sync] ❌ Erro ${order.openDeliveryOrderId}:`, err?.message);
       syncErrors.push(`geral: ${err.message}`);
     }
-    // Registrar erro de sync para visibilidade no dashboard
+    // Registrar erro de sync para visibilidade no dashboard (Removido pois jotajaSyncError não existe no schema)
     if (syncErrors.length > 0) {
-      updateData.jotajaSyncError = syncErrors.join(" | ");
       console.error(`[Jotajá Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${syncErrors.join(" | ")}`);
-    } else {
-      updateData.jotajaSyncError = null; // Limpa erros anteriores
     }
   }
 
