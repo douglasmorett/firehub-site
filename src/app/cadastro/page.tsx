@@ -57,7 +57,6 @@ export default function CadastroPage() {
   const [whatsapp, setWhatsapp] = useState("");
   const [empresa, setEmpresa] = useState("");
   const [email, setEmail] = useState("");
-  const [temPC, setTemPC] = useState<string>("");
   const [comoConheceu, setComoConheceu] = useState("");
   const [faturamento, setFaturamento] = useState("");
 
@@ -89,8 +88,7 @@ export default function CadastroPage() {
     if (!nome.trim()) { setError("Digite seu nome."); return; }
     if (!whatsapp.replace(/\D/g,"") || whatsapp.replace(/\D/g,"").length < 10) { setError("WhatsApp inválido."); return; }
     if (!empresa.trim()) { setError("Digite o nome da sua empresa."); return; }
-    if (!email.trim() || !email.includes("@")) { setError("E-mail inválido."); return; }
-    if (!temPC) { setError("Informe se tem computador ou notebook."); return; }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError("Email inválido."); return; }
     if (!comoConheceu) { setError("Selecione como conheceu o FireHub."); return; }
     if (!faturamento) { setError("Selecione seu faturamento."); return; }
     setStep(2);
@@ -280,18 +278,6 @@ export default function CadastroPage() {
                     value={whatsapp} onChange={e => setWhatsapp(fmtPhone(e.target.value))} />
                   <input className="inp" placeholder="Nome da sua empresa*" value={empresa} onChange={e => setEmpresa(e.target.value)} />
                   <input className="inp" placeholder="Email*" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-
-                  <div>
-                    <label className="lbl">Você tem computador ou notebook para trabalhar?*</label>
-                    <div className="radio-group">
-                      <label className="radio-opt">
-                        <input type="radio" name="pc" checked={temPC==="sim"} onChange={() => setTemPC("sim")} /> Sim
-                      </label>
-                      <label className="radio-opt">
-                        <input type="radio" name="pc" checked={temPC==="nao"} onChange={() => setTemPC("nao")} /> Não
-                      </label>
-                    </div>
-                  </div>
 
                   <div>
                     <select className="sel" value={comoConheceu} onChange={e => setComoConheceu(e.target.value)}>
