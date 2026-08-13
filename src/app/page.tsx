@@ -104,6 +104,7 @@ export default function Home() {
           <a href="#planos">Planos</a>
           <a href="#comparativo">Comparativo</a>
           <a href="#faq">FAQ</a>
+          <a href="/indique-ganhe" style={{color: "#EF4444", fontWeight: 700}}>🤝 Indique e Ganhe</a>
           <a href={LOGIN} className="btn-cta">🔑 Acessar</a>
         </div>
       </nav>
