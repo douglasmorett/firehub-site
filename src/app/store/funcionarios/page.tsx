@@ -52,6 +52,11 @@ export default function FuncionariosPage() {
   const [abateNotes, setAbateNotes] = useState("");
   const [savingAbate, setSavingAbate] = useState(false);
 
+  const [addDebtEmp, setAddDebtEmp] = useState<Employee | null>(null);
+  const [addDebtAmount, setAddDebtAmount] = useState("");
+  const [addDebtNotes, setAddDebtNotes] = useState("");
+  const [savingAddDebt, setSavingAddDebt] = useState(false);
+
   const [statementEmp, setStatementEmp] = useState<Employee | null>(null);
   const [statementData, setStatementData] = useState<StatementItem[]>([]);
   const [loadingStatement, setLoadingStatement] = useState(false);
@@ -208,9 +213,35 @@ export default function FuncionariosPage() {
     }
   };
 
-  // Desativar funcionário
+  // Adicionar Dívida Manualmente
+  const handleAddDebt = async () => {
+    if (!addDebtEmp) return;
+    const amountNum = parseFloat(addDebtAmount.replace(",", "."));
+    if (isNaN(amountNum) || amountNum <= 0) return alert("Digite um valor válido.");
+
+    setSavingAddDebt(true);
+    try {
+      const res = await fetch(`/api/store/employees/${addDebtEmp.id}/debt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amountNum, notes: addDebtNotes }),
+      });
+      if (res.ok) {
+        setAddDebtEmp(null);
+        fetchEmployees();
+      } else {
+        alert("Erro ao adicionar dívida.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao adicionar dívida.");
+    }
+    setSavingAddDebt(false);
+  };
+
+  // Desativar cliente
   const handleDeleteEmp = async (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja desativar o funcionário ${name}?`)) return;
+    if (!confirm(`Tem certeza que deseja desativar o cliente fiado ${name}?`)) return;
     try {
       await fetch(`/api/store/employees/${id}`, { method: "DELETE" });
       fetchEmployees();
@@ -261,10 +292,10 @@ export default function FuncionariosPage() {
         <div>
           <h1 style={{ fontSize: "1.6rem", fontWeight: 800, color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
             <Users size={28} color="#EA1D2C" />
-            Conta Funcionário (Fiado)
+            Controle de Fiado
           </h1>
           <p style={{ color: "#64748B", fontSize: "0.88rem", margin: "4px 0 0" }}>
-            Gerencie débitos de funcionários, vendas presenciais fiadas e registro de baixas/abatimentos.
+            Gerencie débitos de clientes, vendas presenciais fiadas e registro de baixas/abatimentos.
           </p>
         </div>
 
@@ -323,7 +354,7 @@ export default function FuncionariosPage() {
           </div>
           <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#991B1B" }}>{fmt(totalDebtSum)}</div>
           <div style={{ fontSize: "0.75rem", color: "#B91C1C", marginTop: 4 }}>
-            {debtorCount} {debtorCount === 1 ? "colaborador com débito" : "colaboradores com débito"}
+            {debtorCount} {debtorCount === 1 ? "cliente com débito" : "clientes com débito"}
           </div>
         </div>
 
@@ -344,7 +375,7 @@ export default function FuncionariosPage() {
             <Users size={18} color="#64748B" />
           </div>
           <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A" }}>{employees.length}</div>
-          <div style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 4 }}>Equipe ativa</div>
+          <div style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 4 }}>Clientes ativos</div>
         </div>
       </div>
 
@@ -444,18 +475,18 @@ export default function FuncionariosPage() {
             gap: 6,
           }}
         >
-          <UserPlus size={16} /> Cadastrar Funcionário
+          <UserPlus size={16} /> Cadastrar Cliente
         </button>
       </div>
 
-      {/* Lista de Funcionários */}
+      {/* Lista de Clientes */}
       {loading ? (
-        <div style={{ textAlign: "center", padding: "3rem", color: "#64748B" }}>Carregando colaboradores...</div>
+        <div style={{ textAlign: "center", padding: "3rem", color: "#64748B" }}>Carregando clientes...</div>
       ) : filteredEmployees.length === 0 ? (
         <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 14, padding: "3rem 1rem", textAlign: "center" }}>
           <Users size={40} color="#CBD5E1" style={{ margin: "0 auto 12px" }} />
-          <h3 style={{ margin: 0, fontSize: "1rem", color: "#475569" }}>Nenhum funcionário encontrado</h3>
-          <p style={{ fontSize: "0.82rem", color: "#94A3B8", margin: "4px 0 16px" }}>Cadastre sua equipe para gerenciar contas de consumo interno.</p>
+          <h3 style={{ margin: 0, fontSize: "1rem", color: "#475569" }}>Nenhum cliente encontrado</h3>
+          <p style={{ fontSize: "0.82rem", color: "#94A3B8", margin: "4px 0 16px" }}>Cadastre os clientes para gerenciar contas de consumo fiado.</p>
           <button
             onClick={() => {
               setEditingEmp(null);
@@ -464,7 +495,7 @@ export default function FuncionariosPage() {
             }}
             style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#EA1D2C", color: "#fff", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}
           >
-            + Adicionar Colaborador
+            + Adicionar Cliente
           </button>
         </div>
       ) : (
@@ -490,7 +521,7 @@ export default function FuncionariosPage() {
                     <div>
                       <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0F172A" }}>{emp.name}</h3>
                       <span style={{ fontSize: "0.75rem", background: "#F1F5F9", color: "#475569", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>
-                        {emp.role || "Funcionário"}
+                        {emp.role || "Cliente Fiado"}
                       </span>
                     </div>
 
@@ -549,6 +580,31 @@ export default function FuncionariosPage() {
                   </button>
 
                   <button
+                    onClick={() => {
+                      setAddDebtEmp(emp);
+                      setAddDebtAmount("");
+                      setAddDebtNotes("");
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: "#EA1D2C",
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <AlertTriangle size={14} /> Incluir Dívida
+                  </button>
+
+                  <button
                     onClick={() => handleOpenStatement(emp)}
                     style={{
                       padding: "8px 10px",
@@ -590,12 +646,12 @@ export default function FuncionariosPage() {
         </div>
       )}
 
-      {/* MODAL 1: Cadastrar / Editar Funcionário */}
+      {/* MODAL 1: Cadastrar / Editar Cliente Fiado */}
       {showAddModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
           <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 450, padding: 20, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.1rem" }}>{editingEmp ? "Editar Funcionário" : "Novo Funcionário"}</h3>
+              <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.1rem" }}>{editingEmp ? "Editar Cliente" : "Novo Cliente Fiado"}</h3>
               <button onClick={() => setShowAddModal(false)} style={{ border: "none", background: "none", cursor: "pointer", color: "#64748B" }}>
                 <X size={20} />
               </button>
@@ -801,6 +857,59 @@ export default function FuncionariosPage() {
           </div>
         </div>
       )}
+      {/* Modal INCLUIR DÍVIDA MANUAL */}
+      {addDebtEmp && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#fff", padding: "24px", borderRadius: 16, width: "100%", maxWidth: 400, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)" }}>
+            <h2 style={{ margin: "0 0 8px", fontSize: "1.2rem", fontWeight: 800, color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertTriangle color="#EA1D2C" size={20} /> Incluir Dívida Manual
+            </h2>
+            <p style={{ margin: "0 0 20px", fontSize: "0.85rem", color: "#64748B" }}>
+              Adicione um débito para <strong style={{ color: "#334155" }}>{addDebtEmp.name}</strong>. Saldo atual: <strong style={{ color: "#DC2626" }}>{fmt(addDebtEmp.currentDebt)}</strong>
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#475569", marginBottom: 6 }}>Valor da Dívida (R$)*</label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Ex: 50,00"
+                value={addDebtAmount}
+                onChange={(e) => setAddDebtAmount(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", outline: "none" }}
+              />
+            </div>
+            
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#475569", marginBottom: 6 }}>Observação / Motivo</label>
+              <textarea
+                placeholder="Ex: Lanche da tarde, Refrigerante..."
+                value={addDebtNotes}
+                onChange={(e) => setAddDebtNotes(e.target.value)}
+                rows={3}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", outline: "none", resize: "none" }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={() => setAddDebtEmp(null)}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1.5px solid #CBD5E1", background: "#F8FAFC", color: "#475569", fontWeight: 700, cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAddDebt}
+                disabled={savingAddDebt}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: "#EA1D2C", color: "#fff", fontWeight: 700, cursor: savingAddDebt ? "not-allowed" : "pointer", opacity: savingAddDebt ? 0.7 : 1 }}
+              >
+                {savingAddDebt ? "Salvando..." : "Confirmar Dívida"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

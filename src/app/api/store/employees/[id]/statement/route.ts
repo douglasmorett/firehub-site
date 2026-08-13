@@ -83,11 +83,11 @@ export async function GET(
     ...orders.map((o) => ({
       id: o.id,
       type: "ORDER" as const,
-      title: `Pedido #${o.ifoodReference || o.id.slice(-4).toUpperCase()}`,
+      title: o.items.length === 0 ? "Inclusão de Dívida Manual" : `Pedido #${o.ifoodReference || o.id.slice(-4).toUpperCase()}`,
       amount: o.totalAmount,
       date: o.createdAt,
       notes: o.notes,
-      itemsSummary: o.items.map((i) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", "),
+      itemsSummary: o.items.length === 0 ? o.notes : o.items.map((i) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", "),
     })),
     ...payments.map((p) => ({
       id: p.id,
