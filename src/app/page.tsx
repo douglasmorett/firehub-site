@@ -279,6 +279,45 @@ export default function Home() {
         </div>
       </section>
 
+      {/* SEÇÃO INTEGRAÇÕES */}
+      <section className="sec" style={{ background: "#FFFFFF", padding: "4rem 0", borderTop: "1px solid rgba(0,0,0,0.05)" }}>
+        <div className="w">
+          <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+            <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#0F172A", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+              Integramos com os maiores marketplaces do Brasil
+            </h2>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "4rem", flexWrap: "wrap", marginBottom: "3rem", padding: "0 1rem" }}>
+            {/* iFood */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src="https://upload.wikimedia.org/wikipedia/commons/2/23/Ifood-logo-1.png" alt="iFood" style={{ height: "45px", objectFit: "contain" }} />
+            </div>
+            {/* 99Food */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.9 }}>
+              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/99_app_logo_2.svg/1200px-99_app_logo_2.svg.png" alt="99" style={{ height: "35px", objectFit: "contain" }} />
+            </div>
+            {/* Jotajá */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src="https://cdn.jotaja.com/assets/images/logo_color_jotaja.png" alt="Jotajá" style={{ height: "40px", objectFit: "contain" }} />
+            </div>
+            {/* Facebook */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/Facebook_f_logo_%282019%29.svg" alt="Facebook" style={{ height: "40px", objectFit: "contain" }} />
+            </div>
+          </div>
+
+          <div style={{ textAlign: "center", background: "#F8FAFC", padding: "20px", borderRadius: "12px", border: "1px solid #E2E8F0", maxWidth: 650, margin: "0 auto" }}>
+            <p style={{ margin: 0, fontSize: "1.05rem", color: "#334155" }}>
+              <strong>Precisa integrar com algum marketplace que não temos?</strong> <br />
+              <a href={WA} target="_blank" rel="noopener noreferrer" style={{ color: "#EF4444", fontWeight: 700, textDecoration: "none", display: "inline-block", marginTop: "8px" }}>
+                Fale com nossa equipe aí no nosso WhatsApp!
+              </a>
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* SEÇÃO ROTEIRIZADOR */}
       <section className="sec" style={{ background: "#020617", color: "#FFF", padding: "5rem 0", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", bottom: -100, left: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
