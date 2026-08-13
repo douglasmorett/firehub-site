@@ -572,7 +572,12 @@ async function handleIncomingMessage(body: any, instance: string) {
     
     // Update cache after response
     history.push({ sender: 'user', text: textMessage, timestamp: now });
-    history.push({ sender: 'bot', text: replyText, timestamp: Date.now() });
+    
+    // NÃO salvar mensagens de erro de sistema no histórico da IA,
+    // senão na próxima iteração a IA começa a alucinar que está quebrada de propósito.
+    if (!replyText.includes("instabilidade técnica")) {
+      history.push({ sender: 'bot', text: replyText, timestamp: Date.now() });
+    }
     
     // Keep only the last 15 messages
     const updatedHistory = history.slice(-15);
