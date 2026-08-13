@@ -40,7 +40,6 @@ export async function POST(
       source: "PDV",
       paymentMethod: "FIADO",
       totalAmount: numericAmount,
-      subtotal: numericAmount,
       notes: notes?.trim() || null,
       items: { create: [] }, // Sem itens vinculados
     },
