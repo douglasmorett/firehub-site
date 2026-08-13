@@ -133,7 +133,7 @@ export default function CadastroPage() {
 
   async function handleStep4(e: React.FormEvent) {
     e.preventDefault();
-    if (senha.length < 8 || !/[a-zA-Z]/.test(senha) || !/[0-9]/.test(senha)) { setError("A senha deve ter no mínimo 8 caracteres e conter letras e números."); return; }
+    if (senha.length < 6) { setError("Senha precisa ter pelo menos 6 caracteres."); return; }
     if (!termos) { setError("Aceite os termos para continuar."); return; }
     setError("");
     if (!titularNome) setTitularNome(nome);
@@ -377,7 +377,7 @@ export default function CadastroPage() {
                 <form onSubmit={handleStep4} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   <div>
                     <label className="lbl">Senha de acesso *</label>
-                    <input className="inp" type="password" placeholder="Mínimo 8 caracteres com letras e números" value={senha} autoFocus
+                    <input className="inp" type="password" placeholder="Mínimo 6 caracteres" value={senha} autoFocus
                       onChange={e => setSenha(e.target.value)} />
                   </div>
                   <label className="check-opt">

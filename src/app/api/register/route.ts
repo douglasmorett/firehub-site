@@ -31,9 +31,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+    if (password.length < 6) {
       return NextResponse.json(
-        { error: "A senha deve ter no mínimo 8 caracteres e conter letras e números." },
+        { error: "A senha deve ter no mínimo 6 caracteres." },
         { status: 400, headers: getCorsHeaders(req) }
       );
     }
