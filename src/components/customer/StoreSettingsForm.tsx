@@ -27,6 +27,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const show = (t: string) => tab === "all" || tab === t;
   const [storeName, setStoreName] = useState(user.storeName || "");
   const [storePhone, setStorePhone] = useState(user.storePhone || "");
+  const [notificationPhone, setNotificationPhone] = useState(user.notificationPhone || "");
   const [storeAddress, setStoreAddress] = useState(user.storeAddress || "");
   const [city, setCity] = useState(user.city || "");
   const [storeTimezone, setStoreTimezone] = useState(user.storeTimezone || "America/Sao_Paulo");
@@ -163,7 +164,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     "Quinta": "THURSDAY", "Sexta": "FRIDAY", "Sábado": "SATURDAY", "Domingo": "SUNDAY"
   };
 
-  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, storeAddress, storeDeliveryOnly, city, storeTimezone }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
+  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, notificationPhone, storeAddress, storeDeliveryOnly, city, storeTimezone }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
 
   // Valida sobreposição de turnos no mesmo dia
   const validateShifts = (): string | null => {
@@ -369,7 +370,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <h3 className="font-bold mb-4">📋 Informações da Loja</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <div className="input-group"><label>Nome da Loja</label><input className="input-field" value={storeName} onChange={e => { setStoreName(e.target.value); setDirtyInfo(true); }} /></div>
-          <div className="input-group"><label>Telefone / WhatsApp</label><input className="input-field" value={storePhone} onChange={e => { setStorePhone(e.target.value); setDirtyInfo(true); }} /></div>
+          <div className="input-group"><label>Telefone / WhatsApp da Loja</label><input className="input-field" value={storePhone} onChange={e => { setStorePhone(e.target.value); setDirtyInfo(true); }} /></div>
+          <div className="input-group"><label>WhatsApp do Proprietário (Notificações do Robô) <Smartphone size={14} style={{display:'inline', marginBottom:-2}} /></label><input className="input-field" placeholder="Ex: 5521999999999" value={notificationPhone} onChange={e => { setNotificationPhone(e.target.value); setDirtyInfo(true); }} /></div>
           <div className="input-group"><label>Cidade / Estado (UF)</label><input className="input-field" placeholder="Ex: Rio de Janeiro - RJ" value={city} onChange={e => { setCity(e.target.value); setDirtyInfo(true); }} /></div>
           <div className="input-group"><label>Fuso Horário (Timezone)</label>
             <select className="input-field" value={storeTimezone} onChange={e => { setStoreTimezone(e.target.value); setDirtyInfo(true); }} style={{ background: "#fff", cursor: "pointer" }}>
@@ -916,10 +918,18 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
+                storeName, 
+                storePhone, 
+                notificationPhone,
+                storeAddress: data.storeAddress,
+                city,
+                storeTimezone,
+                storeBanner, 
+                storeLogo, 
+                storeDeliveryOnly,
                 storeLatLng: data.storeLatLng,
                 deliveryZones: data.deliveryZones,
                 deliveryZoneType: data.deliveryZoneType,
-                storeAddress: data.storeAddress,
                 ifoodSyncDeliveryTime: data.ifoodSyncDeliveryTime,
               }),
             });

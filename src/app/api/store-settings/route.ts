@@ -37,7 +37,7 @@ export async function PUT(req: Request) {
 
   // Store settings — campos permitidos
   for (const key of [
-    "storeName", "storePhone", "storeAddress", "storeBanner", "storeLogo",
+    "storeName", "storePhone", "notificationPhone", "storeAddress", "storeBanner", "storeLogo",
     "storeHours", "paymentFees", "deliveryZoneType", "deliveryZones",
     "storeLatLng", "storeCoupons", "storePause",
     "facebookPixelId",   // Meta Pixel ID

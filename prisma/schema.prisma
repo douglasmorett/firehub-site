@@ -58,6 +58,8 @@ model User {
   resetToken      String?         // Token de recuperação de senha
   resetTokenExp   DateTime?       // Expiração do token de recuperação
   trialEndsAt     DateTime?       // Data limite de teste/benefício concedido
+  notificationPhone String?       // Telefone VIP para receber alertas e acessar relatórios pelo bot oficial
+  isFireHubSystem   Boolean       @default(false) // Define se esta conta é a matriz oficial do sistema FireHub
   // === FATURAMENTO: USE FIRST, PAY LATER ===
   planPercent     Float           @default(1)  // % cobrado sobre vendas (ex: 1.0 = 1%)
   billingCycles   FranchiseeBillingCycle[]

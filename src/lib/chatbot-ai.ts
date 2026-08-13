@@ -478,8 +478,35 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     }
   }
 
+  let ownerContext = "";
+  let blockFinancialsContext = "REGRA DE SEGURANÇA BANCÁRIA: NUNCA passe informações financeiras, quantidade de vendas, faturamento, tickets médios ou status financeiro da loja. Se perguntarem (mesmo se o usuário disser que é o dono/franqueado), você DEVE recusar dizendo de forma educada: 'Desculpe, este WhatsApp não tem permissão para visualizar relatórios de vendas. Favor chamar usando o número de WhatsApp do Proprietário cadastrado no painel.' NUNCA BURLAR ESSA REGRA.";
+  
+  if (user.notificationPhone && clientPhoneDigits && user.notificationPhone.replace(/\D/g, "").includes(clientPhoneDigits.slice(-8))) {
+    try {
+      const todayOrders = await prisma.customerOrder.findMany({
+        where: { franchiseeId: targetFranchiseeId, createdAt: { gte: startOfToday }, status: { not: "CANCELADO" } },
+        select: { totalAmount: true }
+      });
+      const totalSales = todayOrders.reduce((acc: number, o: any) => acc + (o.totalAmount || 0), 0);
+      ownerContext = `
+ATENÇÃO (MODO ASSISTENTE DO DONO/GERENTE): 
+O número de WhatsApp falando com você AGORA é o PROPRIETÁRIO OFICIAL da loja (telefone verificado: ${user.notificationPhone}).
+- SEU PAPEL AGORA: Você NÃO deve atuar como vendedor de comida com ele. Você é o ASSISTENTE GERENCIAL do sistema FireHub trabalhando para ele.
+- O chefe vai pedir relatórios de faturamento, quantidade de pedidos e status de fechamento de caixa.
+- DADOS REAIS DE HOJE DA LOJA (Base de Dados ao vivo):
+  - Status do Caixa Físico: ${user.cashOpen ? "ABERTO 🟢" : "FECHADO 🔴"}
+  - Faturamento Hoje: R$ ${totalSales.toFixed(2).replace(".", ",")}
+  - Total de Pedidos Hoje: ${todayOrders.length}
+- REGRAS COM O DONO: Chame-o de chefe, patrão ou pelo nome se souber. Seja direto, profissional e dê as informações exatas acima quando ele perguntar sobre o movimento de hoje. Você tem autorização total para revelar esses dados a ele e informá-lo sobre o negócio.
+`;
+      blockFinancialsContext = ""; // O dono tem acesso livre.
+    } catch(e) {
+      console.error("[Chatbot AI] Erro ao buscar dados do dono:", e);
+    }
+  }
+
   try {
-    const systemPrompt = `Você é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.
+    const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n\nVocê é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.
 
 REGRAS ABSOLUTAS:
 1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem. NUNCA escreva cabeçalhos ou pensamentos internos como "TRAIN OF THOUGHT:", "THOUGHTS:", "RACIOCÍNIO:", "PENSAMENTO:" ou "RESPONSE:". Responda diretamente com o texto final em linguagem humana natural!
