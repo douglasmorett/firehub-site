@@ -95,16 +95,30 @@ export async function POST(req: NextRequest) {
     // Hash da senha com alto nível de segurança (rounds: 12)
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Buscar embaixador por refCode (se existir)
+    // Buscar embaixador ou parceiro por refCode (se existir)
     let ambassadorId = null;
+    let referredById = null;
     if (refCode) {
-      const amb = await prisma.ambassador.findUnique({ where: { code: String(refCode).toLowerCase().trim() } });
+      const code = String(refCode).toLowerCase().trim();
+      const amb = await prisma.ambassador.findUnique({ where: { code } });
       if (amb && amb.active) {
         ambassadorId = amb.id;
+      } else {
+        const partner = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { slug: code },
+              { id: code }
+            ]
+          }
+        });
+        if (partner) {
+          referredById = partner.id;
+        }
       }
     }
 
-    // Calcula o prazo de trial: 30 dias se tiver embaixador, senão 15 dias
+    // Calcula o prazo de trial: 30 dias se tiver embaixador, senão 15 dias (inclusive para indique e ganhe normal)
     const trialDays = ambassadorId ? 30 : 15;
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
@@ -122,6 +136,7 @@ export async function POST(req: NextRequest) {
         cpfCnpj: cnpjClean,
         slug,
         ambassadorId,
+        referredById,
         trialEndsAt,
         ...(repasseConfig && Object.keys(repasseConfig).length > 0 ? { repasseConfig } : {}),
         permissions: "",

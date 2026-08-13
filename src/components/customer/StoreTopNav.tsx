@@ -11,13 +11,13 @@ const NAV_ITEMS = [
   { href: "/store/pedidos-clientes", label: "Pedidos", icon: ClipboardList, highlight: true },
   { href: "/store/kds", label: "KDS", icon: Monitor },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "NOVO" },
-  { href: "/store/totem", label: "Totem", icon: TabletSmartphone, badge: "NOVO" },
+  { href: "/store/totem", label: "Totem", icon: TabletSmartphone, badge: "EM TESTES" },
   { href: "/store/estoque", label: "Estoque", icon: Package },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
   { href: "/store/etiquetas", label: "Validação & Etiquetas", icon: Tag, badge: "NOVO" },
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
-  { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "IA" },
+  { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "EM TESTES" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
   { href: "/store/funcionarios", label: "Funcionários", icon: Users },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },
@@ -692,6 +692,11 @@ export default function StoreTopNav({
               <a key={item.href} href={item.href} className="store-nav-link" style={{ display:"flex", alignItems:"center", gap:3, padding:"0.5rem 0.38rem", fontSize:"0.73rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
                 <Icon size={13} /> {item.label}
                 {item.highlight && <span style={{ width:6, height:6, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
+                {item.badge && (
+                  <span style={{ fontSize:"0.55rem", fontWeight:900, background: item.badge === "EM TESTES" ? "#FEF08A" : "#FEE2E2", color: item.badge === "EM TESTES" ? "#854D0E" : "#991B1B", padding:"2px 4px", borderRadius:4, marginLeft:2 }}>
+                    {item.badge}
+                  </span>
+                )}
               </a>
             );
           })}

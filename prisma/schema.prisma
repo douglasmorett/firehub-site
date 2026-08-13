@@ -97,6 +97,12 @@ model User {
   showReviewsOnMenu Boolean        @default(true)  // Exibir avaliações no cardápio digital
   ambassadorId    String?        // ID do embaixador que indicou esta loja
   ambassador      Ambassador?    @relation("AmbassadorStores", fields: [ambassadorId], references: [id], onDelete: SetNull)
+  // === INDIQUE E GANHE (Parceiros/Revendedores) ===
+  referredById    String?
+  referredBy      User?          @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals       User[]         @relation("UserReferrals")
+  asaasWalletId   String?        // Carteira Asaas para o split de pagamentos
+
   apiKeys         ApiKey[]
   webhookSubscriptions WebhookSubscription[]
   orders          Order[]

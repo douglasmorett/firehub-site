@@ -46,8 +46,18 @@ export default function CadastroPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get("ref") || urlParams.get("codigo")) {
-        setTrialDays(30);
+      const code = urlParams.get("ref") || urlParams.get("codigo");
+      if (code) {
+        fetch(`${API}/api/check-ref?code=${code}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.type === "ambassador") {
+              setTrialDays(30);
+            } else {
+              setTrialDays(15);
+            }
+          })
+          .catch(() => setTrialDays(15));
       }
     }
   }, []);
