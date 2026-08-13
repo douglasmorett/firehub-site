@@ -176,26 +176,22 @@ async function handleIncomingMessage(body: any, instance: string) {
   if (remoteJid.endsWith("@g.us") || remoteJid.includes("@g.us")) return;
 
   const shortId = instance.replace(/^firehub_/, "");
-  let user = await prisma.user.findFirst({
-    where: { id: { endsWith: shortId } },
+  
+  // Busca multi-tenant genérica: encontra a loja pelo ID ou pelo nome da instância configurada
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { id: shortId },
+        { id: { endsWith: shortId } },
+        { id: instance },
+        { chatbotConfig: { path: ['instanceName'], equals: instance } }
+      ]
+    },
     select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
   });
 
   if (!user) {
-    user = await prisma.user.findFirst({
-      where: { email: "contatohakim@gmail.com" },
-      select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
-    });
-  }
-
-  if (!user) {
-    user = await prisma.user.findFirst({
-      select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
-    });
-  }
-
-  if (!user) {
-    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Usuário com id curto ${shortId} não encontrado.`);
+    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Instância "${instance}" não pertence a nenhuma loja cadastrada.`);
     return;
   }
 
@@ -479,9 +475,8 @@ async function handleIncomingMessage(body: any, instance: string) {
   // ── Chamada da IA com TIMEOUT de 15 segundos ──
   // Se o Gemini travar, não podemos deixar o webhook pendurado — a Evolution API
   // desiste e para de enviar mensagens para o nosso endpoint.
-  const isHakimStore = (user.email || "").toLowerCase().includes("hakim") || user.isFranqueadoHakim === true;
   const customMenuUrl = ((user.chatbotConfig as any)?.externalMenuUrl || "").trim();
-  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : (isHakimStore ? "https://www.hakimriodasostras.com.br" : "");
+  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "";
   const storeLink = customMenuUrl || defaultStoreLink;
   const fallbackReply = storeLink
     ? `Olá! 😊 No momento estou com uma instabilidade técnica por aqui. Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}`
