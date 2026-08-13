@@ -280,9 +280,15 @@ export default function MarketingHubClient() {
               }}
             />
 
-            <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", padding: "12px", borderRadius: "10px", fontSize: "0.78rem", color: "#92400E", marginBottom: "1.25rem", lineHeight: 1.5 }}>
-              🛡️ <strong>Proteção Anti-Ban Ativada:</strong> Os disparos são fracionados em lotes e enviados com pausas inteligentes humanas. Nunca enviamos 100 mensagens no mesmo segundo para garantir a saúde da sua conta.
+            <div style={{ background: "#F0FDF4", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #BBF7D0", color: "#166534", fontSize: "0.95rem" }}>
+              🛡️ <strong>Proteção Anti-Ban Ativada:</strong> Os disparos são fracionados e enviados com pausas inteligentes humanas (aprox. 1 mensagem a cada 20 segundos). O disparo pode demorar alguns minutos para finalizar rodando em segundo plano. Nunca fechamos o ciclo de forma simultânea.
             </div>
+
+            {selectedPhones.length > 150 && (
+              <div style={{ background: "#FEF2F2", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #FECACA", color: "#991B1B", fontSize: "0.95rem", marginTop: "12px" }}>
+                ⚠️ <strong>Risco de Banimento Elevado:</strong> Você selecionou {selectedPhones.length} clientes. Recomendamos disparar para no máximo 100-150 pessoas por dia usando o QR Code para proteger o seu número de bloqueios do WhatsApp.
+              </div>
+            )}
 
             <button
               onClick={handleSendBroadcast}

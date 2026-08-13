@@ -128,6 +128,8 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
   } catch {}
 
   try {
+    const typingDelay = Math.min(Math.max(text.length * 40, 1500), 12000);
+
     const res = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
       method: "POST",
       headers: {
@@ -140,7 +142,7 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
         number,
         text,
         options: {
-          delay: 1200,
+          delay: typingDelay,
           presence: "composing",
         },
       }),

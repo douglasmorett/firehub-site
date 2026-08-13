@@ -266,7 +266,8 @@ export async function GET(req: NextRequest) {
       let failedCount = typeof activeCamp.failedCount === "number" ? activeCamp.failedCount : 0;
 
       if (sentCount + failedCount < targetPhones.length) {
-        const batch = targetPhones.slice(sentCount + failedCount, sentCount + failedCount + 10);
+        // Pega apenas 1 pessoa por ciclo (agora que o ciclo é a cada 20s) para simular digitação humana
+        const batch = targetPhones.slice(sentCount + failedCount, sentCount + failedCount + 1);
         for (const phone of batch) {
           const cleanPhone = String(phone).replace(/\D/g, "");
           const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;

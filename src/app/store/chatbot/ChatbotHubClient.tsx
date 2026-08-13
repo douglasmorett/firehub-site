@@ -381,9 +381,10 @@ export default function ChatbotHubClient() {
     const hasSending = Array.isArray(campaignHistory) && campaignHistory.some((c: any) => c.status === "DISPARANDO");
     if (!hasSending) return;
 
+    // Para imitar humanos, a cada "batida" enviamos 1 mensagem e aguardamos
     const interval = setInterval(() => {
       loadMarketingData(false);
-    }, 4000);
+    }, 20000); // 20 segundos entre cada envio
 
     return () => clearInterval(interval);
   }, [campaignHistory]);

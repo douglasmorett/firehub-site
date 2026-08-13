@@ -482,6 +482,12 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   let aiResponse: any = null;
   try {
+    // Se for mensagem de usuário, aplicamos um delay de leitura para imitar humano
+    if (remoteJid?.includes("@s.whatsapp.net")) {
+      const readingDelay = Math.floor(Math.random() * (7000 - 4000 + 1)) + 4000; // 4s a 7s
+      await new Promise(r => setTimeout(r, readingDelay));
+    }
+
     aiResponse = await withTimeout(
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName),
       25000 // 25 segundos máximo
@@ -504,10 +510,6 @@ async function handleIncomingMessage(body: any, instance: string) {
       callHuman = true;
       replyText = replyText.replace(/\[\[CHAMAR_ATENDENTE.*\]\]/g, "").trim();
     }
-
-    // Human typing delay (1000ms a 2500ms)
-    const delay = Math.floor(Math.random() * (2500 - 1000 + 1)) + 1000;
-    await new Promise(r => setTimeout(r, delay));
 
     const recipientTarget = remoteJid || data.from || "";
     await sendEvolutionMessage(user.id, recipientTarget, replyText);
