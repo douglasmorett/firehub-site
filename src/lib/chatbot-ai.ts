@@ -153,6 +153,9 @@ export async function processChatbotAI(
   const customerFirstName = getFirstName(rawCustomerName);
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
+  const delivConfig = (user.deliveryConfig as any) || {};
+  const minimumOrderValue = parseFloat(delivConfig.minimumOrderValue) || 26.00;
+  
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.customInstructions || "").trim();
@@ -540,10 +543,11 @@ REGRAS ABSOLUTAS:
    - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
    - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
-10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO DE PREÇOS):
+10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO DE PRODUTOS E PREÇOS):
     - É SEVERAMENTE PROIBIDO INVENTAR OU MENCIONAR QUALQUER PRODUTO, COMBO, SABOR, REFRIGERANTE OU PREÇO QUE NÃO ESTEJA EXPLICITAMENTE CADASTRADO NO CARDÁPIO ABAIXO!
-    - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA APÓS "PREÇO EXATO E OBRIGATÓRIO = R$"!
+    - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA NO BANCO!
     - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! Exemplo: "Monte seu Combo (10 itens Variados)" custa EXATAMENTE R$ 59,90. É PROIBIDO inventar R$ 47,85, R$ 42,89 ou qualquer outro valor!
+    - VOCÊ SÓ PODE OFERECER E REGISTRAR O QUE ESTÁ NA LISTA OFICIAL FORNECIDA. SE O CLIENTE PEDIR UM PRODUTO OU SABOR QUE NÃO EXISTE AQUI, NEGUE COM EDUCAÇÃO E OFEREÇA AS OPÇÕES DISPONÍVEIS.
     - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
     - Cite APENAS itens/combos reais cadastrados no cardápio abaixo com o seu preço exato oficial e envie o link (${storeLink}). NUNCA invente ou chute um produto ou preço que não seja o cadastrado no banco!
@@ -598,6 +602,10 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       a) Você DEVE imediatamente incluir a tag JSON de finalização:
          [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome", "address": "Endereço", "paymentMethod": "Forma", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": true}]]
       b) Diga ao cliente: "Perfeito! Seu pedido foi confirmado e enviado para a cozinha! Te avisamos assim que sair para entrega! 🚀"
+22. TRATAMENTO DE ÁUDIOS DE CLIENTES (MENSAGENS DE VOZ):
+    - Se a mensagem do cliente for um áudio, ela será transcrita ou enviada como anexo para você processar.
+    - ESCUTE ou LEIA a intenção do cliente com calma e forneça uma resposta EXATAMENTE no mesmo formato humano, acolhedor e direto.
+    - NÃO é necessário dizer "Ouvi o seu áudio". Apenas responda naturalmente como se estivessem em uma conversa falada.
     - ANOTAÇÃO TEMPORÁRIA DO RASCUNHO (RASCUNHO EM ANDAMENTO):
       Em TODA mensagem onde você estiver anotando itens ou dados sem ter a confirmação final:
       Inclua a tag JSON com "finalized": false:
@@ -621,7 +629,7 @@ ${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS
     - SE O CLIENTE PERGUNTAR SE AMANHÃ VAI TER SABOR POR R$ 1,90 OU QUAL O SABOR DE AMANHÃ:
       a) Consulte a seção "PROMOÇÃO E ITENS DE R$ 1,90 AMANHÃ (${tomorrowDayName})" no cardápio abaixo.
       b) Se houver item/promoção programada para amanhã (ou se a loja tem promoção todo dia), RESPONDA COM TOTAL CERTEZA E SIMPATIA:
-         "Sim! Amanhã (${tomorrowDayName}) teremos promoção de R$ 1,90 sim! 😊 O sabor será [Nome do Sabor de Amanhã / Sabores Promocionais]! Lembramos que para entrega o pedido mínimo é de 26 reais."
+         "Sim! Amanhã (${tomorrowDayName}) teremos promoção de R$ 1,90 sim! 😊 O sabor será [Nome do Sabor de Amanhã / Sabores Promocionais]! Lembramos que para entrega o pedido mínimo é de ${minimumOrderValue.toFixed(2).replace('.', ',')} reais."
     - SE O CLIENTE PERGUNTAR QUAIS DIAS DA SEMANA TEM PROMOÇÃO (ex: "é todo dia?", "quais dias tem?"):
       a) Consulte a seção "CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA" no cardápio abaixo.
       b) Informe com exatidão os dias reais da semana que aquela loja específica oferece a promoção de R$ 1,90 (ex: "Aqui na nossa loja a promoção de R$ 1,90 rola de Segunda, Quarta e Sexta!" ou "Aqui na nossa loja temos promoção de R$ 1,90 TODOS OS DIAS sim! 😊"). NUNCA diga que não tem certeza sobre os dias da loja!

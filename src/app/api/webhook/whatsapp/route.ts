@@ -5,6 +5,7 @@ import { processChatbotAI } from '@/lib/chatbot-ai';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Evita timeout silencioso do Vercel (504) se a IA ou download demorar
 
 // In-memory caches
 interface CacheMsg {
@@ -293,15 +294,14 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   let textMessage = rawText;
-  if (!textMessage.trim() && (isAudioMessage || audioObj)) {
+  if (isAudioMessage || audioObj) {
     if (audioData?.base64) {
-      textMessage = "O cliente enviou a mensagem de áudio em anexo. Por favor escute o áudio com atenção, entenda o pedido ou dúvida do cliente e responda no mesmo tom carinhoso e prestativo do cardápio.";
+      textMessage = (rawText ? rawText + "\n\n" : "") + "O cliente enviou a mensagem de áudio em anexo. Por favor escute o áudio com atenção, entenda o pedido ou dúvida do cliente e responda no mesmo tom carinhoso e prestativo do cardápio.";
     } else {
       // Se não conseguiu baixar o áudio de jeito nenhum, envia uma resposta amigável de fallback pedindo para o cliente regravar ou digitar
-      const cleanTarget = remoteJid.replace(/@.*$/, "");
-      sendEvolutionMessage(
+      await sendEvolutionMessage(
         instance || user.id,
-        cleanTarget,
+        remoteJid,
         "Ops, tentei ouvir o seu áudio mas deu uma instabilidade no sinal! 😅\n\nVocê pode me mandar em texto ou gravar um novo áudio para eu te ajudar?"
       ).catch(() => {});
       return;
@@ -392,7 +392,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       ? `Recebemos a confirmação do seu pedido *#${orderNum}* pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`
       : `Recebemos a confirmação do seu pedido pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`;
 
-    sendEvolutionMessage(instance || user.id, cleanTarget, thankMsg).catch(() => {});
+    await sendEvolutionMessage(instance || user.id, remoteJid, thankMsg).catch(() => {});
     return;
   }
 
@@ -515,26 +515,8 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     const recipientTarget = remoteJid || data.from || "";
     
-    // Se a mensagem original do cliente foi áudio, enviamos a resposta também em áudio
-    if (isAudioMessage) {
-      try {
-        const { textToSpeechBase64 } = await import("@/lib/tts");
-        const { sendEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
-        const audioBase64 = await textToSpeechBase64(replyText);
-        if (audioBase64) {
-          await sendEvolutionAudioBase64(user.id, recipientTarget, audioBase64);
-          console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🎙️ Resposta em áudio enviada para ${recipientTarget}`);
-        } else {
-          // Fallback para texto se falhar o TTS
-          await sendEvolutionMessage(user.id, recipientTarget, replyText);
-        }
-      } catch (ttsErr) {
-        console.error("Erro no envio de áudio:", ttsErr);
-        await sendEvolutionMessage(user.id, recipientTarget, replyText);
-      }
-    } else {
-      await sendEvolutionMessage(user.id, recipientTarget, replyText);
-    }
+    // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
+    await sendEvolutionMessage(user.id, recipientTarget, replyText);
 
     // Track WhatsApp usage (fire-and-forget)
     trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });

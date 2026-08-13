@@ -17,9 +17,9 @@ const NAV_ITEMS = [
   { href: "/store/etiquetas", label: "Validação & Etiquetas", icon: Tag, badge: "NOVO" },
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
-  { href: "/store/meta-ads", label: "Tráfego Pago", icon: Zap, badge: "EM TESTES" },
+  { href: "/store/trafego", label: "Tráfego Pago", icon: BarChart3, badge: "EM TESTES" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
-  { href: "/store/funcionarios", label: "Funcionários", icon: Users },
+  { href: "/store/funcionarios", label: "Fiado", icon: Users },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },
 ];
 

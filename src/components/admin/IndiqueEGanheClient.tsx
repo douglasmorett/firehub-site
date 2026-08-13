@@ -71,34 +71,74 @@ export default function IndiqueEGanheClient({ userId, userSlug, asaasWalletId, r
           <div style={{ width: 80, height: 80, borderRadius: 40, background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
             <Wallet size={40} color="#10B981" />
           </div>
-          <h1 style={{ fontSize: "2rem", fontWeight: 900, color: "#0F172A", marginBottom: 16 }}>Ative sua Conta de Parceiro</h1>
-          <p style={{ fontSize: "1.1rem", color: "#64748B", marginBottom: 32, lineHeight: 1.6 }}>
-            Para gerar seu link e começar a ganhar até <strong>20% de comissão recorrente</strong>, você precisa ter uma conta no Asaas para receber os pagamentos via Split Automático.
+          <h1 style={{ fontSize: "2.2rem", fontWeight: 900, color: "#0F172A", marginBottom: 16 }}>Ative sua Conta de Parceiro</h1>
+          <p style={{ fontSize: "1.1rem", color: "#475569", marginBottom: 32, lineHeight: 1.6 }}>
+            Cadastre sua conta digital para gerar seu link de parceiro e começar a receber pagamentos automáticos pelo nosso sistema de Split!
           </p>
-          
-          <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 24, textAlign: "left", marginBottom: 32, border: "1px solid #E2E8F0" }}>
-            <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 16, color: "#334155" }}>Como conectar?</h3>
-            <ol style={{ paddingLeft: 20, color: "#475569", margin: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-              <li>Crie uma conta gratuita no <a href="https://asaas.com" target="_blank" rel="noreferrer" style={{color:"var(--primary)", fontWeight:600}}>Asaas</a> (se ainda não tiver).</li>
-              <li>No painel do Asaas, vá em <strong>Minha Conta {">"} Integrações</strong> e copie o seu <strong>Wallet ID</strong>.</li>
-              <li>Cole o Wallet ID no campo abaixo.</li>
-            </ol>
-          </div>
 
-          <div style={{ display: "flex", gap: 12, flexDirection: "column" }}>
-            <label style={{ textAlign: "left", fontWeight: 600, color: "#334155" }}>Seu Asaas Wallet ID</label>
-            <div style={{ display: "flex", gap: 12 }}>
-              <input 
-                type="text" 
-                placeholder="Ex: d7a8...c9f2" 
-                className="input" 
-                value={walletInput} 
-                onChange={e => setWalletInput(e.target.value)} 
-                style={{ flex: 1 }}
-              />
-              <button className="btn-primary" onClick={handleSaveWallet} disabled={saving || !walletInput} style={{ padding: "0 24px" }}>
-                {saving ? "Salvando..." : "Conectar Conta"}
-              </button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 32 }}>
+            <div style={{ background: "#F0FDF4", padding: "16px", borderRadius: 12, border: "1px solid #BBF7D0" }}>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#166534" }}>20%</div>
+              <div style={{ fontSize: "0.85rem", color: "#15803D", fontWeight: 600 }}>1º Nível (Indicações Diretas)</div>
+            </div>
+            <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: 12, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#334155" }}>3%</div>
+              <div style={{ fontSize: "0.85rem", color: "#475569", fontWeight: 600 }}>2º Nível (Indiretos)</div>
+            </div>
+            <div style={{ background: "#F8FAFC", padding: "16px", borderRadius: 12, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#334155" }}>1%</div>
+              <div style={{ fontSize: "0.85rem", color: "#475569", fontWeight: 600 }}>3º Nível (Indiretos)</div>
+            </div>
+          </div>
+          
+          <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 32, textAlign: "left", marginBottom: 32, border: "1px solid #E2E8F0" }}>
+            <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 20, color: "#0F172A" }}>Passo a Passo para Conectar:</h3>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 16, background: "#10B981", color: "#FFF", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0 }}>1</div>
+                <div>
+                  <strong style={{ display: "block", color: "#1E293B", marginBottom: 4 }}>Crie sua conta no Banco Asaas</strong>
+                  <span style={{ color: "#475569", fontSize: "0.95rem" }}>Se você ainda não tem, crie uma conta gratuita para receber os valores.</span>
+                  <div style={{ marginTop: 12 }}>
+                    <a href="https://asaas.com" target="_blank" rel="noreferrer" style={{ display: "inline-flex", background: "#2563EB", color: "#FFF", padding: "8px 16px", borderRadius: 8, fontWeight: 700, textDecoration: "none", fontSize: "0.9rem" }}>Faça seu cadastro no Asaas</a>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 16, background: "#10B981", color: "#FFF", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0 }}>2</div>
+                <div>
+                  <strong style={{ display: "block", color: "#1E293B", marginBottom: 4 }}>Encontre seu Wallet ID (Chave de Split)</strong>
+                  <span style={{ color: "#475569", fontSize: "0.95rem", lineHeight: 1.5, display: "block" }}>
+                    No painel do Asaas, acesse o menu lateral, clique em <strong>Minha Conta</strong> e depois na aba <strong>Integrações</strong>. Role a tela para baixo até encontrar a seção <strong>Split de Pagamentos (Wallet ID)</strong> e copie o código.
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 16, background: "#10B981", color: "#FFF", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0 }}>3</div>
+                <div style={{ width: "100%" }}>
+                  <strong style={{ display: "block", color: "#1E293B", marginBottom: 4 }}>Cole o Wallet ID e comece a ganhar</strong>
+                  <span style={{ color: "#475569", fontSize: "0.95rem", marginBottom: 12, display: "block" }}>
+                    Insira o código copiado no campo abaixo para conectar sua carteira ao nosso sistema.
+                  </span>
+                  
+                  <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: d7a8...c9f2" 
+                      className="input" 
+                      value={walletInput} 
+                      onChange={e => setWalletInput(e.target.value)} 
+                      style={{ flex: 1, padding: "12px 16px", border: "2px solid #E2E8F0" }}
+                    />
+                    <button className="btn-primary" onClick={handleSaveWallet} disabled={saving || !walletInput} style={{ padding: "0 24px", height: 48 }}>
+                      {saving ? "Salvando..." : "Conectar Conta"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

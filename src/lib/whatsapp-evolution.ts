@@ -128,7 +128,7 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
   } catch {}
 
   try {
-    const typingDelay = Math.min(Math.max(text.length * 40, 1500), 12000);
+    const typingDelay = Math.min(Math.max(text.length * 40, 1500), 8000);
 
     const res = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
       method: "POST",
@@ -146,7 +146,7 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
           presence: "composing",
         },
       }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
     });
     return res.ok;
   } catch (err) {
@@ -238,9 +238,12 @@ export async function sendEvolutionAudioBase64(userIdOrInstance: string, toPhone
       },
       body: JSON.stringify({
         number,
-        audio: `data:audio/mp3;base64,${base64Audio}`, // Ou envia no formato que a evolution API suporta
+        audio: base64Audio.startsWith("data:") ? base64Audio : `data:audio/mp3;base64,${base64Audio}`,
         delay: baseDelay,
         encoding: true,
+        options: {
+          presence: "recording"
+        }
       }),
       signal: AbortSignal.timeout(20000),
     });
@@ -314,7 +317,7 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
         message: { key: messageKey, message: messageObj?.message || messageObj },
         convertToMp4: false,
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(12000),
     });
 
     if (res.ok) {
@@ -338,7 +341,7 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
         message: { key: messageKey },
         convertToMp4: false,
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(12000),
     });
 
     if (res2.ok) {
@@ -362,7 +365,7 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
         message: messageObj,
         convertToMp4: false,
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(12000),
     });
 
     if (res3.ok) {

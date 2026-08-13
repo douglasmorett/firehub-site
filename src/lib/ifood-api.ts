@@ -159,17 +159,30 @@ export async function updateIfoodPreparationTime(merchantId: string, minutes: nu
  */
 export function getIfoodItemUnitPrice(i: any): number {
   if (!i) return 0;
+
+  // A forma mais segura e exata é usar o totalPrice da linha (se existir), 
+  // pois o iFood já calculou (unitPrice + soma das opções) * quantity.
+  if (typeof i.totalPrice === "number" && i.totalPrice > 0 && (i.quantity || 1) > 0) {
+    return i.totalPrice / (i.quantity || 1);
+  }
+
+  // Fallback: tentar calcular manualmente se não vier totalPrice
   const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
   const optionsSum = Array.isArray(subItemsList)
-    ? subItemsList.reduce((acc: number, s: any) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0)
+    ? subItemsList.reduce((acc: number, s: any) => {
+        // Se tiver unitPrice, multiplica pela quantidade. Senão, assume que o price já é o total da opção
+        const unitAdd = typeof s.unitPrice === "number" ? s.unitPrice : (typeof s.addition === "number" ? s.addition : null);
+        if (unitAdd !== null) {
+          return acc + (unitAdd * (s.quantity || 1));
+        }
+        return acc + (s.price || 0);
+      }, 0)
     : 0;
 
   const basePrice = typeof i.unitPrice === "number" ? i.unitPrice : (typeof i.price === "number" ? i.price : 0);
   let totalUnitPrice = basePrice + optionsSum;
 
-  if (totalUnitPrice === 0 && typeof i.totalPrice === "number" && i.totalPrice > 0 && (i.quantity || 1) > 0) {
-    totalUnitPrice = i.totalPrice / (i.quantity || 1);
-  } else if (totalUnitPrice === 0 && typeof i.price === "number" && i.price > 0) {
+  if (totalUnitPrice === 0 && typeof i.price === "number" && i.price > 0) {
     totalUnitPrice = i.price;
   }
 

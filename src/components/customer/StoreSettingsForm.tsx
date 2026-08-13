@@ -146,6 +146,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const initialDelivConfig = (user as any).deliveryConfig || {};
   const [freeShippingActive, setFreeShippingActive] = useState<boolean>(Boolean(initialDelivConfig.freeShippingActive));
   const [freeShippingMinValue, setFreeShippingMinValue] = useState<string>(initialDelivConfig.freeShippingMinValue ? String(initialDelivConfig.freeShippingMinValue) : "60.00");
+  const [minimumOrderValue, setMinimumOrderValue] = useState<string>(initialDelivConfig.minimumOrderValue ? String(initialDelivConfig.minimumOrderValue) : "26.00");
   const [savingFreeShipping, setSavingFreeShipping] = useState(false);
   const [dirtyFreeShipping, setDirtyFreeShipping] = useState(false);
 
@@ -346,13 +347,50 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
   return (
     <div style={{ maxWidth: "700px" }}>
-      {/* LINK DA LOJA */}
-      {show("info") && <div className="card mb-4" style={{ background: "linear-gradient(135deg, #FFF4E5, #FEF3C7)", border: "1.5px solid #F59E0B" }}>
-        <p className="font-bold" style={{ marginBottom: "0.5rem" }}>🔗 Link da sua Loja</p>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <code style={{ flex: 1, padding: "0.5rem", backgroundColor: "white", borderRadius: "8px", fontSize: "0.8rem", wordBreak: "break-all" }}>{storeUrl}</code>
-          <button onClick={() => { navigator.clipboard.writeText(storeUrl); alert("Copiado!"); }} className="btn btn-outline" style={{ padding: "0.5rem" }}><Copy size={16} /></button>
-          <a href={storeUrl} target="_blank" className="btn btn-primary" style={{ padding: "0.5rem" }}><ExternalLink size={16} /></a>
+      {/* LINK DA LOJA PREMIUM */}
+      {show("info") && <div style={{ 
+        background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", 
+        borderRadius: "16px", 
+        padding: "24px",
+        marginBottom: "1.5rem",
+        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.2)",
+        position: "relative",
+        overflow: "hidden"
+      }}>
+        <div style={{ position: "absolute", top: "-20px", right: "-20px", opacity: 0.1 }}>
+          <ExternalLink size={120} color="#fff" />
+        </div>
+        <h3 style={{ color: "#fff", fontSize: "1.1rem", fontWeight: 700, margin: "0 0 16px 0", display: "flex", alignItems: "center", gap: "8px", position: "relative", zIndex: 1 }}>
+          🚀 Link Oficial do Seu Cardápio
+        </h3>
+        <div style={{ 
+          display: "flex", 
+          gap: "8px", 
+          alignItems: "center", 
+          background: "rgba(255,255,255,0.1)", 
+          padding: "8px", 
+          borderRadius: "12px",
+          border: "1px solid rgba(255,255,255,0.2)",
+          backdropFilter: "blur(10px)",
+          position: "relative", zIndex: 1
+        }}>
+          <div style={{ flex: 1, padding: "8px 12px", color: "#F8FAFC", fontSize: "0.95rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {storeUrl}
+          </div>
+          <button onClick={() => { navigator.clipboard.writeText(storeUrl); alert("Copiado com sucesso!"); }} 
+            style={{ display: "flex", alignItems: "center", gap: "6px", background: "#3B82F6", color: "#fff", border: "none", padding: "10px 16px", borderRadius: "8px", fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}
+            onMouseOver={(e) => e.currentTarget.style.background = "#2563EB"}
+            onMouseOut={(e) => e.currentTarget.style.background = "#3B82F6"}
+          >
+            <Copy size={16} /> Copiar
+          </button>
+          <a href={storeUrl} target="_blank" 
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#F59E0B", color: "#fff", border: "none", padding: "10px", borderRadius: "8px", fontWeight: 600, cursor: "pointer", textDecoration: "none", transition: "all 0.2s" }}
+            onMouseOver={(e) => e.currentTarget.style.background = "#D97706"}
+            onMouseOut={(e) => e.currentTarget.style.background = "#F59E0B"}
+          >
+            <ExternalLink size={18} />
+          </a>
         </div>
       </div>}
 
@@ -393,12 +431,24 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             </select>
           </div>
           <div className="input-group" style={{ gridColumn: "span 2" }}><label>Endereço Completo</label><input className="input-field" value={storeAddress} onChange={e => { setStoreAddress(e.target.value); setDirtyInfo(true); }} /></div>
+          
+          <div className="input-group" style={{ background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+            <label style={{ color: "#334155", fontWeight: 700 }}>🛒 Pedido Mínimo (R$)</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "#64748B" }}>R$</span>
+              <input type="number" step="0.01" min="0" className="input-field" value={minimumOrderValue} onChange={e => { setMinimumOrderValue(e.target.value); setDirtyInfo(true); setDirtyFreeShipping(true); }} placeholder="26.00" style={{ flex: 1, background: "#fff" }} />
+            </div>
+            <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 6, lineHeight: 1.3 }}>Valor mínimo exigido para que o cliente consiga finalizar um pedido de entrega.</p>
+          </div>
+
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "0.75rem", cursor: "pointer" }}>
-          <input type="checkbox" checked={storeDeliveryOnly} onChange={e => { setStoreDeliveryOnly(e.target.checked); setDirtyInfo(true); }} />
-          <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>🛵 Somente Delivery</span>
+        <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "1rem", cursor: "pointer" }}>
+          <input type="checkbox" checked={storeDeliveryOnly} onChange={e => { setStoreDeliveryOnly(e.target.checked); setDirtyInfo(true); }} style={{ transform: "scale(1.2)" }} />
+          <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#334155" }}>🛵 Loja Exclusiva de Delivery (Sem consumo no local)</span>
         </label>
-        <SectionSaveBtn dirty={dirtyInfo} saving={savingInfo} onSave={saveInfo} label="Salvar Informações" />
+        <div style={{ marginTop: "1.5rem" }}>
+          <SectionSaveBtn dirty={dirtyInfo} saving={savingInfo} onSave={async () => { await saveInfo(); await saveFields({ deliveryConfig: { freeShippingActive, freeShippingMinValue: parseFloat(freeShippingMinValue) || 0, minimumOrderValue: parseFloat(minimumOrderValue) || 0 } }); setDirtyFreeShipping(false); }} label="Salvar Informações" />
+        </div>
       </div>}
 
       {/* HORÁRIOS */}
@@ -902,6 +952,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                     deliveryConfig: {
                       freeShippingActive,
                       freeShippingMinValue: parseFloat(freeShippingMinValue) || 0,
+                      minimumOrderValue: parseFloat(minimumOrderValue) || 0,
                     },
                   });
                   setDirtyFreeShipping(false);

@@ -1077,7 +1077,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
 
-  // Auto-sync dateFrom with active cash session openedAt
+  // Auto-sync dateFrom with active cash session openedAt (DISABLED - Users want to see only today's orders by default)
   useEffect(() => {
     fetch("/api/cash-session")
       .then(r => r.json())
@@ -1085,9 +1085,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (d?.session?.openedAt) {
           const opened = new Date(d.session.openedAt);
           setCashOpenedAt(opened);
-          const pad = (n: number) => String(n).padStart(2, "0");
-          const localIso = `${opened.getFullYear()}-${pad(opened.getMonth() + 1)}-${pad(opened.getDate())}T${pad(opened.getHours())}:${pad(opened.getMinutes())}`;
-          setDateFrom(localIso);
         } else {
           setCashOpenedAt(null);
         }
