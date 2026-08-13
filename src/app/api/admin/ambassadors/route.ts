@@ -16,6 +16,14 @@ export async function GET(req: NextRequest) {
       include: {
         _count: {
           select: { referredStores: true }
+        },
+        referredStores: {
+          select: {
+            id: true,
+            storeName: true,
+            storePhone: true,
+            createdAt: true
+          }
         }
       }
     });

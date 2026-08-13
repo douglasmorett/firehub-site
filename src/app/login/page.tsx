@@ -35,7 +35,11 @@ export default function FireHubLoginPage() {
       const meData = meRes.ok ? await meRes.json() : null;
       const role = meData?.role;
       // Redireciona com navegação completa (full page) para garantir que cookies sejam lidos
-      window.location.href = role === "ADMIN" ? "/admin" : "/store";
+      if (role === "AMBASSADOR") {
+        window.location.href = "/embaixador";
+      } else {
+        window.location.href = role === "ADMIN" ? "/admin" : "/store";
+      }
     } else {
       setError("E-mail ou senha incorretos. Tente novamente.");
     }

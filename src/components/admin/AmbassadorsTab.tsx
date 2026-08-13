@@ -1,12 +1,19 @@
 "use client";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Ambassador } from "@prisma/client";
 
+// Define the extended interface locally so TypeScript knows about referredStores
+type AmbassadorWithStores = Ambassador & { 
+  _count?: { referredStores: number },
+  referredStores?: { id: string, storeName: string | null, storePhone: string | null, createdAt: Date }[]
+};
+
 export default function AmbassadorsTab() {
-  const [ambassadors, setAmbassadors] = useState<(Ambassador & { _count?: { referredStores: number } })[]>([]);
+  const [ambassadors, setAmbassadors] = useState<AmbassadorWithStores[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Form State
   const [name, setName] = useState("");
@@ -123,7 +130,8 @@ export default function AmbassadorsTab() {
             </thead>
             <tbody>
               {ambassadors.map(amb => (
-                <tr key={amb.id} style={{ borderBottom: "1px solid #E2E8F0" }}>
+                <React.Fragment key={amb.id}>
+                <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
                   <td style={{ padding: "12px 16px" }}>
                     <div style={{ fontWeight: 700, color: "#1E293B" }}>{amb.name}</div>
                     <div style={{ fontSize: "0.8rem", color: "#64748B", marginTop: 4 }}>Código: <strong style={{color:"#EA1D2C"}}>{amb.code}</strong></div>
@@ -138,8 +146,9 @@ export default function AmbassadorsTab() {
                     </span>
                     {amb.asaasWalletId && <div style={{ fontSize:"0.75rem", color:"#3B82F6", marginTop:4 }}>Asaas Split Ativo</div>}
                   </td>
-                  <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1E293B" }}>
+                  <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1E293B", cursor: "pointer" }} onClick={() => setExpandedId(expandedId === amb.id ? null : amb.id)}>
                     {amb._count?.referredStores || 0} lojas
+                    <span style={{ marginLeft: 4, fontSize: "0.7rem", color: "#64748B" }}>{expandedId === amb.id ? "▲" : "▼"}</span>
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     <span style={{ 
@@ -171,6 +180,36 @@ export default function AmbassadorsTab() {
                     </button>
                   </td>
                 </tr>
+                {expandedId === amb.id && amb.referredStores && amb.referredStores.length > 0 && (
+                  <tr key={`${amb.id}-stores`} style={{ background: "#F8FAFC" }}>
+                    <td colSpan={6} style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0" }}>
+                      <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#1E293B", marginBottom: "8px" }}>Lojas Indicadas:</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        {amb.referredStores.map((store: any) => (
+                          <div key={store.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFF", padding: "10px 16px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                            <div>
+                              <div style={{ fontWeight: 600, color: "#334155" }}>{store.storeName || "Sem Nome"}</div>
+                              <div style={{ fontSize: "0.75rem", color: "#64748B" }}>Desde: {new Date(store.createdAt).toLocaleDateString('pt-BR')}</div>
+                            </div>
+                            {store.storePhone ? (
+                              <a 
+                                href={`https://wa.me/55${store.storePhone.replace(/\D/g, "")}?text=Olá`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ background: "#25D366", color: "#FFF", padding: "4px 10px", borderRadius: "6px", textDecoration: "none", fontSize: "0.75rem", fontWeight: 700 }}
+                              >
+                                WhatsApp
+                              </a>
+                            ) : (
+                              <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>Sem telefone</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
               {ambassadors.length === 0 && (
                 <tr>

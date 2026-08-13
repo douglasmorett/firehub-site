@@ -55,7 +55,25 @@ export const authOptions: NextAuthOptions = {
           }
         });
 
-        if (!user) return null;
+        if (!user) {
+          const ambassador = await prisma.ambassador.findFirst({
+            where: { email: { equals: emailInput, mode: "insensitive" } }
+          });
+          if (ambassador && ambassador.password) {
+            const ambPasswordMatch = await bcrypt.compare(credentials.password.trim(), ambassador.password);
+            if (ambPasswordMatch) {
+              return {
+                id: ambassador.id,
+                name: ambassador.name,
+                email: ambassador.email,
+                role: "AMBASSADOR",
+                city: null,
+                permissions: "[]"
+              };
+            }
+          }
+          return null;
+        }
 
         const passwordMatch = await bcrypt.compare(credentials.password.trim(), user.password);
         if (!passwordMatch) return null;
