@@ -128,7 +128,22 @@ export async function trackSaleForBilling(franchiseeId: string) {
 export async function closeBillingCycle(franchiseeId: string, yearMonth: string) {
   const cycle = await prisma.franchiseeBillingCycle.findUnique({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
-    include: { franchisee: { include: { ambassador: true } } },
+    include: {
+      franchisee: {
+        include: {
+          ambassador: true,
+          referredBy: {
+            include: {
+              referredBy: {
+                include: {
+                  referredBy: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!cycle) throw new Error(`Ciclo ${yearMonth} não encontrado para ${franchiseeId}`);
@@ -233,6 +248,28 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
             percentualValue: cycle.franchisee.ambassador.commissionPercent,
           }
         ];
+      } else {
+        // Multi-level split for Indique e Ganhe
+        const splits = [];
+        
+        const level1 = cycle.franchisee?.referredBy;
+        if (level1?.asaasWalletId) {
+          splits.push({ walletId: level1.asaasWalletId, percentualValue: 20 });
+        }
+        
+        const level2 = level1?.referredBy;
+        if (level2?.asaasWalletId) {
+          splits.push({ walletId: level2.asaasWalletId, percentualValue: 3 });
+        }
+        
+        const level3 = level2?.referredBy;
+        if (level3?.asaasWalletId) {
+          splits.push({ walletId: level3.asaasWalletId, percentualValue: 1 });
+        }
+        
+        if (splits.length > 0) {
+          payload.split = splits;
+        }
       }
 
       const pr = await fetch(`${BASE}/payments`, {
