@@ -17,6 +17,7 @@ type CostData = {
     geminiCalls: number;
     geminiVision: number;
     geminiVisionCalls: number;
+    hosting: number;
     total: number;
   };
   profit: number;
@@ -159,15 +160,15 @@ export default function AdminCostsTab() {
                             
                             <div style={{ flex: 1 }}>
                               <h4 style={{ fontSize: "0.85rem", fontWeight: 800, color: "#475569", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
-                                📱 WhatsApp (Cloud API)
+                                ☁️ Hospedagem & Infra
                               </h4>
                               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "4px 0", borderBottom: "1px solid #F1F5F9" }}>
-                                <span style={{ color: "#64748B" }}>Mensagens</span>
-                                <strong style={{ color: "#1E293B" }}>{l.costs.whatsappMessages}</strong>
+                                <span style={{ color: "#64748B" }}>Servidores</span>
+                                <strong style={{ color: "#1E293B" }}>Vercel/Neon/AWS</strong>
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "4px 0" }}>
-                                <span style={{ color: "#64748B" }}>Custo (Est.)</span>
-                                <strong style={{ color: "#EA1D2C" }}>{fmt(l.costs.whatsapp)}</strong>
+                                <span style={{ color: "#64748B" }}>Custo Fixo</span>
+                                <strong style={{ color: "#EA1D2C" }}>{fmt(l.costs.hosting)}</strong>
                               </div>
                             </div>
 

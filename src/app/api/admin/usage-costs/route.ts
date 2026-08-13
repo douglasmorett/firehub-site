@@ -48,15 +48,18 @@ export async function GET(req: NextRequest) {
       const usage = usageData.get(franchisee.id);
       const billing = billingByFranchisee.get(franchisee.id);
 
+      const HOSTING_FIXED_COST = 29.90;
+
       const costs = {
-        whatsapp: usage?.whatsapp.cost || 0,
+        whatsapp: 0, // Removido API Oficial
         whatsappMessages: usage?.whatsapp.messages || 0,
         geminiChat: usage?.geminiChat.cost || 0,
         geminiTokens: usage?.geminiChat.tokens || 0,
         geminiCalls: usage?.geminiChat.calls || 0,
         geminiVision: usage?.geminiVision.cost || 0,
         geminiVisionCalls: usage?.geminiVision.calls || 0,
-        total: usage?.total || 0,
+        hosting: HOSTING_FIXED_COST,
+        total: (usage?.geminiChat.cost || 0) + (usage?.geminiVision.cost || 0) + HOSTING_FIXED_COST,
       };
 
       const amountPaid = (billing?.amountDue || 0) - (billing?.amountPending || 0);
