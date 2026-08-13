@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -17,9 +18,12 @@ export async function POST(req: Request) {
 
   const targetFranchiseeId = dbUser.ownerId || dbUser.id;
 
+  const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
+
   const order = await prisma.customerOrder.create({
     data: {
       franchiseeId: targetFranchiseeId,
+      dailyOrderNumber,
       customerName: customerName || (employeeName ? `Func. ${employeeName}` : "Balcão"),
       customerPhone: customerPhone || "00000000000",
       customerAddress: customerAddress || "",

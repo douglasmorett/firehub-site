@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
@@ -134,10 +135,13 @@ export async function POST(req: Request) {
     const initialKdsStage = isOnlinePayment ? null : "PRODUCTION";
     const initialKdsProductionAt = isOnlinePayment ? null : new Date();
 
+    const dailyOrderNumber = await generateDailyOrderNumber(franchisee.id);
+
     // Criar pedido
     const order = await prisma.customerOrder.create({
       data: {
         franchiseeId: franchisee.id,
+        dailyOrderNumber,
         customerName, customerPhone,
         customerAddress: customerAddress || null,
         deliveryType: deliveryType || "DELIVERY",

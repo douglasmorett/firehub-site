@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import fs from "fs";
+import { formatInTimeZone } from "date-fns-tz";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 import { GoogleGenAI } from "@google/genai";
 import { trackGeminiUsage } from "@/lib/usage-tracker";
 
@@ -1040,9 +1043,12 @@ async function syncAiOrderToDatabase({
     console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
   } else {
     // Cria novo pedido rascunho
+    const dailyOrderNumber = await generateDailyOrderNumber(franchiseeId);
+
     const newOrder = await prisma.customerOrder.create({
       data: {
         franchiseeId,
+        dailyOrderNumber,
         customerName: finalCustomerName,
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || null,

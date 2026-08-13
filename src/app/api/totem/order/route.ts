@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 import { jwtVerify } from "jose";
 
 const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET || "fallback-secret");
@@ -91,10 +92,13 @@ export async function POST(req: NextRequest) {
     const autoAccept = store?.autoAcceptOrders ?? false;
     const initialStatus = autoAccept ? "ACEITO" : "NOVO";
 
+    const dailyOrderNumber = await generateDailyOrderNumber(license.franchiseeId);
+
     // Criar pedido
     const order = await prisma.customerOrder.create({
       data: {
         franchiseeId: license.franchiseeId,
+        dailyOrderNumber,
         customerName: customerName || `Totem ${license.label}`,
         customerPhone: "totem",
         deliveryType: "TAKEOUT", // Totem é sempre retirada no balcão
