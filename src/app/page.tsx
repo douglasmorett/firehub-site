@@ -295,7 +295,7 @@ export default function Home() {
             </div>
             {/* 99Food */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.9 }}>
-              <img src="/images/logos/99.png" alt="99" style={{ height: "35px", objectFit: "contain" }} />
+              <img src="/images/logos/99.svg" alt="99" style={{ height: "35px", objectFit: "contain" }} />
             </div>
             {/* Jotajá */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
