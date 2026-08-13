@@ -371,7 +371,13 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <div className="input-group"><label>Nome da Loja</label><input className="input-field" value={storeName} onChange={e => { setStoreName(e.target.value); setDirtyInfo(true); }} /></div>
           <div className="input-group"><label>Telefone / WhatsApp da Loja</label><input className="input-field" value={storePhone} onChange={e => { setStorePhone(e.target.value); setDirtyInfo(true); }} /></div>
-          <div className="input-group"><label>WhatsApp do Proprietário (Notificações do Robô) <Smartphone size={14} style={{display:'inline', marginBottom:-2}} /></label><input className="input-field" placeholder="Ex: 5521999999999" value={notificationPhone} onChange={e => { setNotificationPhone(e.target.value); setDirtyInfo(true); }} /></div>
+          <div className="input-group">
+            <label>WhatsApp do Proprietário (Notificações do Robô) <Smartphone size={14} style={{display:'inline', marginBottom:-2}} /></label>
+            <input className="input-field" placeholder="Ex: 5521999999999" value={notificationPhone} onChange={e => { setNotificationPhone(e.target.value); setDirtyInfo(true); }} />
+            <p style={{fontSize: "0.75rem", color: "#64748b", marginTop: "4px", lineHeight: 1.4}}>
+              Cadastre o seu celular para receber avisos de abertura/fechamento de caixa. Além disso, ao chamar o WhatsApp da sua loja por este número, o robô te reconhecerá como dono e passará relatórios de faturamento na hora!
+            </p>
+          </div>
           <div className="input-group"><label>Cidade / Estado (UF)</label><input className="input-field" placeholder="Ex: Rio de Janeiro - RJ" value={city} onChange={e => { setCity(e.target.value); setDirtyInfo(true); }} /></div>
           <div className="input-group"><label>Fuso Horário (Timezone)</label>
             <select className="input-field" value={storeTimezone} onChange={e => { setStoreTimezone(e.target.value); setDirtyInfo(true); }} style={{ background: "#fff", cursor: "pointer" }}>
