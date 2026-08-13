@@ -1,12 +1,18 @@
 import { prisma } from "@/lib/prisma";
-import { formatInTimeZone } from "date-fns-tz";
 
 export async function generateDailyOrderNumber(franchiseeId: string): Promise<number> {
   const now = new Date();
   
-  // Pegamos o início do dia atual considerando o fuso de São Paulo
-  const startOfDayString = formatInTimeZone(now, "America/Sao_Paulo", "yyyy-MM-dd'T'00:00:00.000XXX");
-  const startOfDay = new Date(startOfDayString);
+  // Format current date in America/Sao_Paulo (YYYY-MM-DD)
+  const spDateStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(now);
+
+  // Start of day in Sao Paulo (-03:00)
+  const startOfDay = new Date(`${spDateStr}T00:00:00-03:00`);
 
   // Busca o último pedido do dia para esta loja que tenha dailyOrderNumber
   const lastOrder = await prisma.customerOrder.findFirst({
@@ -26,3 +32,4 @@ export async function generateDailyOrderNumber(franchiseeId: string): Promise<nu
   // Se for o primeiro do dia
   return 1;
 }
+
