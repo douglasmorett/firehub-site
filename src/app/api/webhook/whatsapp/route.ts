@@ -183,6 +183,13 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   if (!user) {
     user = await prisma.user.findFirst({
+      where: { email: "contatohakim@gmail.com" },
+      select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
+    });
+  }
+
+  if (!user) {
+    user = await prisma.user.findFirst({
       select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
     });
   }
