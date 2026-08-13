@@ -19,9 +19,9 @@ export default function TermosPage() {
         </p>
         <ul style={{ lineHeight: 2, paddingLeft: "1.5rem", fontSize: "0.92rem" }}>
           <li><strong>Taxa:</strong> 1% do faturamento mensal via FireHub</li>
-          <li><strong>Mínimo:</strong> R$ 50,00/mês — <strong>se houve pelo menos 1 venda no mês</strong></li>
+          <li><strong>Mínimo:</strong> R$ 100,00/mês — <strong>aplicado caso haja vendas no mês ou uso ativo de ferramentas (ex: Chatbot de IA conectado, Cardápio Digital ativo)</strong></li>
           <li><strong>Máximo (teto):</strong> R$ 400,00/mês (para faturamentos ≥ R$ 40.000)</li>
-          <li><strong>Sem vendas = sem cobrança:</strong> Se você não faturou NADA no mês, o valor é R$ 0,00</li>
+          <li><strong>Sem vendas e sem uso = sem cobrança:</strong> Se você não faturou NADA no mês e não usou ativamente as ferramentas da plataforma, o valor é R$ 0,00</li>
           <li><strong>Período de teste:</strong> 15 dias gratuitos a partir da criação da conta</li>
         </ul>
 

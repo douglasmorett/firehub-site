@@ -55,13 +55,13 @@ const COMPARE = [
   ["Integração iFood / 99Food", true, true, false],
 ];
 
-// Preço = 1% do faturamento, mín R$50, máx R$400
-const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(50, Math.min(400, rev * 0.01));
+// Preço = 1% do faturamento, mín R$100, máx R$400
+const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(100, Math.min(400, rev * 0.01));
 
 const FAQ = [
   { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades durante o período de teste." },
   { q: "E se eu não usar a plataforma?", a: "Se você não processar nenhuma venda pelo FireHub no mês, você não paga nada. Nosso modelo é justo: você só paga quando vende." },
-  { q: "Como funciona a cobrança?", a: "Cobramos apenas 1% do seu faturamento no canal próprio (cardápio digital + WhatsApp). Mínimo de R$ 50 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
+  { q: "Como funciona a cobrança?", a: "Cobramos apenas 1% do seu faturamento no canal próprio (cardápio digital + WhatsApp). Mínimo de R$ 100 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona 100% no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento." },
   { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana — manhã, tarde e noite. Você nunca fica sem resposta." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
@@ -615,7 +615,7 @@ export default function Home() {
                 </div>
                 <div style={{width:1,background:"#E5E7EB"}} />
                 <div style={{textAlign:"center"}}>
-                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#374151"}}>R$ 50</p>
+                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#374151"}}>R$ 100</p>
                   <p style={{fontSize:".72rem",color:"#9CA3AF"}}>mínimo/mês</p>
                 </div>
                 <div style={{width:1,background:"#E5E7EB"}} />
@@ -627,8 +627,8 @@ export default function Home() {
 
               {/* Faixa info */}
               <div style={{background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:14,padding:"16px 20px",marginBottom:24}}>
-                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Faturou R$ 0? Não paga nada." : `Faturamento de R$ ${sliderValue.toLocaleString("pt-BR")} × 1% = R$ ${(sliderValue * 0.01).toFixed(2).replace(".",",")}`}</p>
-                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Se você não processar vendas pelo FireHub no mês, não cobramos nada. Você só paga quando vende." : calculatedPrice <= 50 ? "Valor mínimo de R$ 50,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 40k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
+                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Zero faturamento e sem uso ativo?" : `Faturamento de R$ ${sliderValue.toLocaleString("pt-BR")} × 1% = R$ ${(sliderValue * 0.01).toFixed(2).replace(".",",")}`}</p>
+                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Sem vendas E sem usar as funcionalidades ativamente, a taxa é R$ 0. Se houver uso ativo (ex: Chatbot), aplica-se a taxa mínima." : calculatedPrice <= 100 ? "Valor mínimo de R$ 100,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 40k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
               </div>
 
 

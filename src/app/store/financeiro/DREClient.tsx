@@ -508,7 +508,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       {isExempt ? "Mensalidade FireHub Pro (Isento)" : "Mensalidade FireHub Pro"}
                     </h2>
                     <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
-                      {isExempt ? "Esta conta (contatohakim@gmail.com) é isenta de cobranças de mensalidade e comissão da plataforma." : "Plano Oficial: 1% sobre vendas · Mínimo R$ 50,00 · Teto Máximo R$ 400,00/mês"}
+                      {isExempt ? "Esta conta (contatohakim@gmail.com) é isenta de cobranças de mensalidade e comissão da plataforma." : "Plano Oficial: 1% sobre vendas · Mínimo R$ 100,00 · Teto Máximo R$ 400,00/mês"}
                     </p>
                   </div>
 
@@ -1284,7 +1284,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 </div>
 
                 <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0", fontSize: "0.78rem", color: "#475569", lineHeight: 1.5 }}>
-                  💡 <strong>Regra Oficial do Plano FireHub:</strong> A comissão é de exatamente <strong>1% sobre o faturamento do mês</strong> (respeitando o piso mínimo de R$ 50,00 e o teto máximo fixo de R$ 400,00/mês).
+                  💡 <strong>Regra Oficial do Plano FireHub:</strong> A comissão é de exatamente <strong>1% sobre o faturamento do mês</strong> (respeitando o piso mínimo de R$ 100,00 e o teto máximo fixo de R$ 400,00/mês).
                 </div>
               </div>
 

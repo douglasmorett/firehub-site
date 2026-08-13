@@ -17,7 +17,7 @@
 
 export const FIREHUB_PLAN = {
   PERCENT_RATE: 1,          // 1% sobre o faturamento
-  MIN_MONTHLY: 50,          // Mínimo R$50/mês
+  MIN_MONTHLY: 100,         // Mínimo R$100/mês
   MAX_MONTHLY: 400,         // Teto R$400/mês
   THRESHOLD: 40000,         // A partir de R$40.000, vai pro teto fixo
   TRIAL_DAYS: 15,           // Dias de trial gratuito
@@ -33,10 +33,10 @@ export const FIREHUB_PLAN = {
  * Calcula a mensalidade do mês com base no faturamento FireHub
  * 
  * Regra especial:
- * - Se faturamento = 0 → cobra R$0 (restaurante não vendeu nada online)
- * - Se faturamento > 0 → mínimo de R$60 se aplica
+ * - Se faturamento = 0 e a conta não tem uso ativo → cobra R$0
+ * - Se faturamento > 0 ou tiver uso ativo → mínimo de R$100 se aplica
  */
-export function calcMensalidade(faturamentoMes: number): {
+export function calcMensalidade(faturamentoMes: number, hasActiveUsage: boolean = false): {
   mensalidade: number;
   modelo: "zero" | "percentual" | "fixo";
   faturamento: number;
@@ -46,15 +46,15 @@ export function calcMensalidade(faturamentoMes: number): {
   let mensalidade: number;
   let modelo: "zero" | "percentual" | "fixo";
 
-  // REGRA PRINCIPAL: sem vendas = sem cobrança
-  if (faturamentoMes === 0) {
+  // REGRA PRINCIPAL: sem vendas E sem uso ativo = sem cobrança
+  if (faturamentoMes === 0 && !hasActiveUsage) {
     mensalidade = 0;
     modelo = "zero";
   } else if (faturamentoMes >= FIREHUB_PLAN.THRESHOLD) {
     mensalidade = FIREHUB_PLAN.MAX_MONTHLY; // R$400 fixo
     modelo = "fixo";
   } else {
-    // 1% do faturamento, com mínimo de R$50
+    // 1% do faturamento, com mínimo de R$100
     mensalidade = Math.max(
       FIREHUB_PLAN.MIN_MONTHLY,
       faturamentoMes * (FIREHUB_PLAN.PERCENT_RATE / 100)
@@ -82,14 +82,15 @@ export function calcMensalidade(faturamentoMes: number): {
  */
 export function calcCobrancaComAcumulado(
   faturamentoMes: number,
-  dividaAcumulada: number = 0
+  dividaAcumulada: number = 0,
+  hasActiveUsage: boolean = false
 ): {
   mensalidadeBase: number;    // Cobrança do mês atual
   dividaAnterior: number;      // Dívida de meses anteriores
   totalDevido: number;         // Total a cobrar (base + dívida)
   modelo: "zero" | "percentual" | "fixo";
 } {
-  const { mensalidade, modelo } = calcMensalidade(faturamentoMes);
+  const { mensalidade, modelo } = calcMensalidade(faturamentoMes, hasActiveUsage);
   const totalDevido = mensalidade + dividaAcumulada;
   return {
     mensalidadeBase: mensalidade,
@@ -125,7 +126,8 @@ export function calcTaxaCartao(
  * Simula o extrato mensal do restaurante
  */
 export function simularExtrato(faturamento: number, pedidosPix: number, ticketMedio: number) {
-  const { mensalidade, modelo } = calcMensalidade(faturamento);
+  // Na simulação assumimos que a conta tem uso se faturou > 0
+  const { mensalidade, modelo } = calcMensalidade(faturamento, faturamento > 0);
   const totalTaxasPix = pedidosPix * calcTaxaPix(ticketMedio);
   const liquido = faturamento - mensalidade - totalTaxasPix;
 
@@ -135,6 +137,6 @@ export function simularExtrato(faturamento: number, pedidosPix: number, ticketMe
     modelo,
     totalTaxasPix,
     liquido,
-    percentualTotal: ((mensalidade + totalTaxasPix) / faturamento * 100).toFixed(1),
+    percentualTotal: ((mensalidade + totalTaxasPix) / (faturamento || 1) * 100).toFixed(1),
   };
 }

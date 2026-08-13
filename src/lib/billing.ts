@@ -167,7 +167,23 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   });
 
   const totalSales = agg._sum.totalAmount ?? 0;
-  const { mensalidade: amountDue } = calcMensalidade(totalSales);
+  
+  let hasUsage = totalSales > 0;
+  if (!hasUsage && !isSpecialStore) {
+    const userWithIncludes = await prisma.user.findUnique({
+      where: { id: franchiseeId },
+      include: {
+        menuProducts: { take: 1 },
+        ifoodIntegrations: { take: 1, where: { active: true } },
+      }
+    });
+    const hasProducts = (userWithIncludes?.menuProducts?.length || 0) > 0;
+    const hasIfood = (userWithIncludes?.ifoodIntegrations?.length || 0) > 0;
+    const hasChatbot = (userWithIncludes?.chatbotConfig as any)?.connected === true;
+    hasUsage = hasProducts || hasIfood || hasChatbot;
+  }
+
+  const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage);
   const amountPending = isSpecialStore ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
 
   let ifoodExtraCharge = 0;
@@ -181,7 +197,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   }
 
   // Nada a cobrar ou loja isenta
-  if (amountPending < 1 || totalSales === 0 || isSpecialStore) {
+  if (amountPending < 1 || (!hasUsage) || isSpecialStore) {
     await prisma.franchiseeBillingCycle.update({
       where: { id: cycle.id },
       data: { totalSales, amountDue: 0, amountPending: 0, status: "PAID", closedAt: new Date() },
