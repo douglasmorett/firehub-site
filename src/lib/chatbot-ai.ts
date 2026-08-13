@@ -46,6 +46,8 @@ export async function processChatbotAI(
       deliveryZoneType: true,
       chatbotConfig: true,
       storeCoupons: true,
+      notificationPhone: true,
+      cashOpen: true,
     },
   });
 
