@@ -25,7 +25,8 @@ export default async function AdminPage() {
     },
   });
 
-  const hakimSet = new Set(lojistas.filter(l => l.isFranqueadoHakim || l.email?.toLowerCase() === "contatohakim@gmail.com").map(l => l.id));
+  // Lojistas isentos de cobrança do FireHub
+  const exemptSet = new Set(lojistas.filter(l => l.isFranqueadoHakim).map(l => l.id));
 
   // ── Billing cycles ────────────────────────────────────────
   const billings = await prisma.franchiseeBillingCycle.findMany({
@@ -70,7 +71,7 @@ export default async function AdminPage() {
   // MRR = soma dos amountDue do último billing de cada lojista
   const lastBillingMap: Record<string, number> = {};
   billings.forEach(b => {
-    if (!hakimSet.has(b.franchiseeId) && !lastBillingMap[b.franchiseeId]) {
+    if (!exemptSet.has(b.franchiseeId) && !lastBillingMap[b.franchiseeId]) {
       lastBillingMap[b.franchiseeId] = b.amountDue;
     }
   });
@@ -79,10 +80,10 @@ export default async function AdminPage() {
   // Total arrecadado = amountDue - amountPending (o que efetivamente foi pago)
   const totalArrecadado = billings.reduce((sum, b) => sum + Math.max(0, b.amountDue - b.amountPending), 0);
 
-  // Pendências (ignorando lojistas isentos/Hakim)
+  // Pendências (ignorando lojistas isentos)
   const pendingMap: Record<string, number> = {};
   billings.forEach(b => {
-    if (!hakimSet.has(b.franchiseeId) && !pendingMap[b.franchiseeId] && b.amountPending > 0) {
+    if (!exemptSet.has(b.franchiseeId) && !pendingMap[b.franchiseeId] && b.amountPending > 0) {
       pendingMap[b.franchiseeId] = b.amountPending;
     }
   });
@@ -122,7 +123,7 @@ export default async function AdminPage() {
     diasCadastro: daysSince(l.createdAt),
     emTrial: isLojistaInTrial(l),
     diasRestantesTrial: getTrialDaysLeft(l),
-    pendente: hakimSet.has(l.id) ? 0 : (pendingMap[l.id] || 0),
+    pendente: exemptSet.has(l.id) ? 0 : (pendingMap[l.id] || 0),
     temMP: !!(l.mpAccessToken || l.mpSellerId),
     temCelcoin: !!l.celcoinAccountId,
   }));

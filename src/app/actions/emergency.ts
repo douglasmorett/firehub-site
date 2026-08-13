@@ -27,7 +27,7 @@ export async function approveEmergencyOrder(orderId: string) {
     cpfCnpj: order.user.cpfCnpj || "",
     totalAmount: order.totalAmount,
     orderId: order.id,
-    description: `Pedido de Emergência #${shortId} — Hakim Congelados`
+    description: `Pedido de Emergência #${shortId} — Reposição FireHub`
   });
 
   if (asaasResult) {

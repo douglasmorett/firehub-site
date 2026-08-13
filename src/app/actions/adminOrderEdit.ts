@@ -89,7 +89,7 @@ export async function adminUpdateOrderItems(orderId: string, items: { productId:
         cpfCnpj: order.user.cpfCnpj || "",
         totalAmount: newTotal,
         orderId: order.id,
-        description: `Pedido #${shortId} — Hakim Congelados (Editado)`
+        description: `Pedido #${shortId} — FireHub (Editado)`
       });
 
       if (asaasResult) {

@@ -33,7 +33,7 @@ export async function updateOrderStatus(orderId: string, newStatus: string, note
           method: "DELETE",
           headers: {
             "access_token": asaasKey,
-            "User-Agent": "HakimPortal/1.0"
+            "User-Agent": "FireHubPortal/1.0"
           }
         });
         const data = await res.json().catch(() => ({}));

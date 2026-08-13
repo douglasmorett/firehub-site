@@ -66,7 +66,7 @@ export async function cancelOrder(orderId: string, adminPassword?: string, reaso
           method: "DELETE",
           headers: {
             "access_token": asaasKey,
-            "User-Agent": "HakimPortal/1.0"
+            "User-Agent": "FireHubPortal/1.0"
           }
         });
         
