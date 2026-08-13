@@ -291,19 +291,19 @@ export default function Home() {
           <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "4rem", flexWrap: "wrap", marginBottom: "3rem", padding: "0 1rem" }}>
             {/* iFood */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <img src="https://upload.wikimedia.org/wikipedia/commons/2/23/Ifood-logo-1.png" alt="iFood" style={{ height: "45px", objectFit: "contain" }} />
+              <img src="/images/logos/ifood.png" alt="iFood" style={{ height: "45px", objectFit: "contain" }} />
             </div>
             {/* 99Food */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.9 }}>
-              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/99_app_logo_2.svg/1200px-99_app_logo_2.svg.png" alt="99" style={{ height: "35px", objectFit: "contain" }} />
+              <img src="/images/logos/99.png" alt="99" style={{ height: "35px", objectFit: "contain" }} />
             </div>
             {/* Jotajá */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <img src="https://cdn.jotaja.com/assets/images/logo_color_jotaja.png" alt="Jotajá" style={{ height: "40px", objectFit: "contain" }} />
+              <img src="/images/logos/jotaja.png" alt="Jotajá" style={{ height: "40px", objectFit: "contain" }} />
             </div>
             {/* Facebook */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/Facebook_f_logo_%282019%29.svg" alt="Facebook" style={{ height: "40px", objectFit: "contain" }} />
+              <img src="/images/logos/facebook.png" alt="Facebook" style={{ height: "40px", objectFit: "contain" }} />
             </div>
           </div>
 
