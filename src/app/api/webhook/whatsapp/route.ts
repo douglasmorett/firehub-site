@@ -512,7 +512,28 @@ async function handleIncomingMessage(body: any, instance: string) {
     }
 
     const recipientTarget = remoteJid || data.from || "";
-    await sendEvolutionMessage(user.id, recipientTarget, replyText);
+    
+    // Se a mensagem original do cliente foi áudio, enviamos a resposta também em áudio
+    if (isAudioMessage) {
+      try {
+        const { textToSpeechBase64 } = await import("@/lib/tts");
+        const { sendEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
+        const audioBase64 = await textToSpeechBase64(replyText);
+        if (audioBase64) {
+          await sendEvolutionAudioBase64(user.id, recipientTarget, audioBase64);
+          console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🎙️ Resposta em áudio enviada para ${recipientTarget}`);
+        } else {
+          // Fallback para texto se falhar o TTS
+          await sendEvolutionMessage(user.id, recipientTarget, replyText);
+        }
+      } catch (ttsErr) {
+        console.error("Erro no envio de áudio:", ttsErr);
+        await sendEvolutionMessage(user.id, recipientTarget, replyText);
+      }
+    } else {
+      await sendEvolutionMessage(user.id, recipientTarget, replyText);
+    }
+
     // Track WhatsApp usage (fire-and-forget)
     trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });
     trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });

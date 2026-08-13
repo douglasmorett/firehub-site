@@ -979,25 +979,30 @@ async function syncAiOrderToDatabase({
     return;
   }
 
-  const orderItemsData = (payload.items || []).map((it: any) => {
-    const matchedProduct = storeProducts.find(
-      (p) => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim()
-    ) || storeProducts.find(
-      (p) => p.name.toLowerCase().includes((it.name || "").toLowerCase()) || (it.name || "").toLowerCase().includes(p.name.toLowerCase())
-    );
+  const orderItemsData = (payload.items || [])
+    .map((it: any) => {
+      const matchedProduct = storeProducts.find(
+        (p) => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim()
+      ) || storeProducts.find(
+        (p) => p.name.toLowerCase().includes((it.name || "").toLowerCase()) || (it.name || "").toLowerCase().includes(p.name.toLowerCase())
+      );
 
-    // REGRA DE SEGURANÇA SUPREMA E ANTI-ALUCINAÇÃO DE PREÇOS:
-    // NUNCA usar o preço inventado pela IA no payload! Usar sempre o preço REAL do produto cadastrado no banco de dados!
-    const realPrice = matchedProduct ? matchedProduct.price : (Number(it.price) || 0);
-    const quantity = Math.max(1, parseInt(it.quantity) || 1);
+      // GUILHOTINA ANTI-ALUCINAÇÃO: Se a IA tentou lançar um produto que não existe, bloqueamos a entrada dele no pedido.
+      if (!matchedProduct) return null;
 
-    return {
-      menuProductId: matchedProduct?.id || null,
-      name: matchedProduct?.name || it.name || "Item",
-      quantity,
-      price: realPrice,
-    };
-  });
+      // REGRA DE SEGURANÇA SUPREMA E ANTI-ALUCINAÇÃO DE PREÇOS:
+      // NUNCA usar o preço inventado pela IA no payload! Usar sempre o preço REAL do produto cadastrado no banco de dados!
+      const realPrice = matchedProduct.price;
+      const quantity = Math.max(1, parseInt(it.quantity) || 1);
+
+      return {
+        menuProductId: matchedProduct.id,
+        name: matchedProduct.name,
+        quantity,
+        price: realPrice,
+      };
+    })
+    .filter(Boolean); // Remove os nulls (itens alucinados)
 
   const totalItemsSum = orderItemsData.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
   const deliveryFee = Number(payload.deliveryFee || payload.deliveryTax || payload.shippingFee || 0);

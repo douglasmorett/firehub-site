@@ -203,6 +203,54 @@ export async function sendEvolutionMediaUrl(userIdOrInstance: string, toPhone: s
   }
 }
 
+export async function sendEvolutionAudioBase64(userIdOrInstance: string, toPhone: string, base64Audio: string) {
+  const isInstanceName = userIdOrInstance.startsWith("firehub_");
+  const instanceName = isInstanceName ? userIdOrInstance : `firehub_${userIdOrInstance.slice(-10)}`;
+  const number = (toPhone.includes("@s.whatsapp.net") || toPhone.includes("@lid"))
+    ? toPhone
+    : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
+
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
+  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+
+  try {
+    const shortId = instanceName.replace(/^firehub_/, "");
+    const user = await prisma.user.findFirst({
+      where: isInstanceName ? { id: { endsWith: shortId } } : { id: userIdOrInstance },
+      select: { chatbotConfig: true },
+    });
+    const config = (user?.chatbotConfig as any) || {};
+    if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
+    if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
+  } catch {}
+
+  // Aprox 1MB = 1 minuto. Base64 de áudio curto. Delay mínimo 3s, máximo 15s.
+  const baseDelay = Math.min(Math.max(Math.floor(base64Audio.length / 5000), 3000), 15000);
+
+  try {
+    const res = await fetch(`${baseUrl}/message/sendWhatsAppAudio/${instanceName}`, {
+      method: "POST",
+      headers: {
+        "apikey": apiKey,
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Remainder": "true",
+        "User-Agent": "FireHub"
+      },
+      body: JSON.stringify({
+        number,
+        audio: `data:audio/mp3;base64,${base64Audio}`, // Ou envia no formato que a evolution API suporta
+        delay: baseDelay,
+        encoding: true,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error("[Evolution API Gateway] Erro ao enviar áudio:", err);
+    return false;
+  }
+}
+
 export async function disconnectEvolutionInstance(userId: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
@@ -263,7 +311,7 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
       method: "POST",
       headers,
       body: JSON.stringify({
-        message: { key: messageKey, message: messageObj },
+        message: { key: messageKey, message: messageObj?.message || messageObj },
         convertToMp4: false,
       }),
       signal: AbortSignal.timeout(8000),
