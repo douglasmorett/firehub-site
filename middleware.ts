@@ -46,6 +46,16 @@ function safeUrl(path: string, base: string): URL {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // ─── Force HTTPS in production ───
+  if (
+    process.env.NODE_ENV === "production" &&
+    request.headers.get("x-forwarded-proto") === "http"
+  ) {
+    const url = request.nextUrl.clone();
+    url.protocol = "https:";
+    return NextResponse.redirect(url, 301);
+  }
+
   // ─── CORS preflight for API routes ───
   if (pathname.startsWith("/api")) {
     if (request.method === "OPTIONS") {

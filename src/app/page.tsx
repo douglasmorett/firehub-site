@@ -104,7 +104,18 @@ export default function Home() {
           <a href="#planos">Planos</a>
           <a href="#comparativo">Comparativo</a>
           <a href="#faq">FAQ</a>
-          <a href="/indique-ganhe" style={{color: "#EF4444", fontWeight: 700}}>🤝 Indique e Ganhe</a>
+          <a href="/indique-ganhe" style={{
+            color: "#EF4444", 
+            fontWeight: 700, 
+            border: "2px solid #EF4444", 
+            padding: "8px 16px", 
+            borderRadius: "50px", 
+            background: "rgba(239, 68, 68, 0.08)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            transition: "all 0.2s"
+          }}>🤝 Indique e Ganhe</a>
           <a href={LOGIN} className="btn-cta">🔑 Acessar</a>
         </div>
       </nav>
