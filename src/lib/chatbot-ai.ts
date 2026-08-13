@@ -366,10 +366,10 @@ ${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma promoçã
 (SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE OU QUAL A ESFIRRA DA PROMOÇÃO, RESPONDA EXATAMENTE A OPÇÃO ACIMA! É PROIBIDO MENCIONAR QUALQUER OUTRA ESFIRRA COMO SE FOSSE A PROMOÇÃO DE HOJE!)
 
 === COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
-${availableCombos.length > 0 ? availableCombos.join("\n") : "Nenhum combo específico cadastrado."}
+${availableCombos.length > 0 ? availableCombos.join("\n") : "[NENHUM COMBO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER COMBOS QUE NÃO ESTEJAM AQUI!]"}
 
 === PRODUTOS E ITENS AVULSOS DISPONÍVEIS HOJE (${currentDayName}) ===
-${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "Nenhum item avulso cadastrado."}
+${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "[NENHUM ITEM AVULSO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER ITENS QUE NÃO ESTEJAM AQUI!]"}
 
 === PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER E PROIBIDO DAR O DESCONTO HOJE! ===
 ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
@@ -546,7 +546,7 @@ REGRAS ABSOLUTAS:
 10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO DE PRODUTOS E PREÇOS):
     - É SEVERAMENTE PROIBIDO INVENTAR OU MENCIONAR QUALQUER PRODUTO, COMBO, SABOR, REFRIGERANTE OU PREÇO QUE NÃO ESTEJA EXPLICITAMENTE CADASTRADO NO CARDÁPIO ABAIXO!
     - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA NO BANCO!
-    - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! Exemplo: "Monte seu Combo (10 itens Variados)" custa EXATAMENTE R$ 59,90. É PROIBIDO inventar R$ 47,85, R$ 42,89 ou qualquer outro valor!
+    - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! O valor do item é EXATAMENTE o que está no banco. É PROIBIDO inventar valores diferentes!
     - VOCÊ SÓ PODE OFERECER E REGISTRAR O QUE ESTÁ NA LISTA OFICIAL FORNECIDA. SE O CLIENTE PEDIR UM PRODUTO OU SABOR QUE NÃO EXISTE AQUI, NEGUE COM EDUCAÇÃO E OFEREÇA AS OPÇÕES DISPONÍVEIS.
     - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
