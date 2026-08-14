@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     const categories = await prisma.menuCategory.findMany({
       where: { franchiseeId: license.franchiseeId },
       orderBy: { sortOrder: "asc" },
-      select: { id: true, name: true, emoji: true, color: true, sortOrder: true }
+      select: { id: true, name: true, emoji: true, imageUrl: true, color: true, sortOrder: true }
     });
 
     // Filtrar por dia da semana

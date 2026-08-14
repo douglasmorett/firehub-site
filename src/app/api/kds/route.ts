@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
 
     let where: any = {
       franchiseeId: { in: userStoreIds },
-      status: { notIn: ["CANCELADO", "ENTREGUE"] },
+      status: { notIn: ["CANCELADO", "ENTREGUE", "ENCERRADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
       createdAt: { gte: safeCutoff },
     };
 

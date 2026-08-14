@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   const user = await getUser(session);
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  const { name, emoji = "🍽️", color = "#64748B", sortOrder = 0 } = await req.json();
+  const { name, emoji = "🍽️", color = "#64748B", sortOrder = 0, imageUrl = null } = await req.json();
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "Nome da categoria é obrigatório" }, { status: 400 });
@@ -49,6 +49,7 @@ export async function POST(req: Request) {
       name: name.trim(),
       emoji,
       color,
+      imageUrl,
       sortOrder,
       franchiseeId: user.role === "ADMIN" ? null : user.targetFranchiseeId,
     },
@@ -65,7 +66,7 @@ export async function PUT(req: Request) {
   const user = await getUser(session);
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  const { id, name, emoji, color, sortOrder } = await req.json();
+  const { id, name, emoji, color, sortOrder, imageUrl } = await req.json();
   if (!id) return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
 
   const existing = await prisma.menuCategory.findUnique({ where: { id } });
@@ -80,6 +81,7 @@ export async function PUT(req: Request) {
       ...(name !== undefined && { name: name.trim() }),
       ...(emoji !== undefined && { emoji }),
       ...(color !== undefined && { color }),
+      ...(imageUrl !== undefined && { imageUrl }),
       ...(sortOrder !== undefined && { sortOrder }),
     },
   });

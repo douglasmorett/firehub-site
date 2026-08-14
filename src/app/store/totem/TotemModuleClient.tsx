@@ -10,8 +10,9 @@ import {
   toggleTotemModule, createTotemLicense, toggleTotemLicense,
   unbindTotemDevice, deleteTotemLicense, updateTotemConfig
 } from "./actions";
+import TotemCategoriesClient from "@/components/admin/TotemCategoriesClient";
 
-export default function TotemModuleClient({ store }: { store: any }) {
+export default function TotemModuleClient({ store, categories }: { store: any, categories?: any[] }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -419,6 +420,11 @@ export default function TotemModuleClient({ store }: { store: any }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Totem Categories Image Editor */}
+      {store.totemEnabled && categories && (
+        <TotemCategoriesClient categories={categories} storeSlug={store.slug} />
       )}
 
     </div>

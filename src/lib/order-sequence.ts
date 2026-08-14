@@ -39,12 +39,14 @@ export function buildSessionOrderNumberMap(
   // A) Pedidos passados (criados ANTES da abertura do caixa atual) -> Mantêm sequência original contínua do turno
   // B) Pedidos da sessão atual (criados DEPOIS da abertura do caixa atual) -> Iniciam em #1, #2, #3... #20
 
+  const isCountable = (o: any) => o.status !== "CRIANDO_IA" && o.status !== "AGUARDANDO_PAGAMENTO";
+
   const pastOrders = openSessionStart
-    ? sortedOrders.filter((o) => new Date(o.createdAt).getTime() < openSessionStart)
-    : sortedOrders;
+    ? sortedOrders.filter((o) => new Date(o.createdAt).getTime() < openSessionStart && isCountable(o))
+    : sortedOrders.filter(isCountable);
 
   const currentSessionOrders = openSessionStart
-    ? sortedOrders.filter((o) => new Date(o.createdAt).getTime() >= openSessionStart)
+    ? sortedOrders.filter((o) => new Date(o.createdAt).getTime() >= openSessionStart && isCountable(o))
     : [];
 
   // 1. Mapear pedidos da sessão ATIVA primeiro (garante #1, #2, #3... #20 rigorosamente alinhados com a tela)

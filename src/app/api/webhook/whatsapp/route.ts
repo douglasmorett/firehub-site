@@ -150,8 +150,10 @@ async function handleIncomingMessage(body: any, instance: string) {
       if (typeof c !== "string") return false;
       if (c.includes("@lid") || c.includes("@broadcast") || c.includes("@g.us")) return false;
       const digits = c.replace(/\D/g, "");
-      // Telefone válido do WhatsApp Brasil tem entre 10 e 13 dígitos. LIDs possuem 14+ dígitos.
-      return digits.length >= 10 && digits.length <= 13 && !digits.startsWith("22010");
+      // WhatsApp LIDs (Linked Devices/Proxy IDs) usually have a very specific prefix or format,
+      // but standard WhatsApp phone numbers globally can be up to 15 digits (E.164).
+      // We assume it's a valid phone JID if it doesn't have the LID suffix and has valid length.
+      return digits.length >= 10 && digits.length <= 15 && !digits.startsWith("22010");
     };
 
     const cleanCandidate = candidates.find(isCleanPhoneJid);

@@ -135,7 +135,9 @@ export async function POST(req: Request) {
     const initialKdsStage = isOnlinePayment ? null : "PRODUCTION";
     const initialKdsProductionAt = isOnlinePayment ? null : new Date();
 
-    const dailyOrderNumber = await generateDailyOrderNumber(franchisee.id);
+    const dailyOrderNumber = isOnlinePayment 
+      ? null 
+      : await generateDailyOrderNumber(franchisee.id);
 
     // Criar pedido
     const order = await prisma.customerOrder.create({

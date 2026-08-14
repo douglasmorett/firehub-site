@@ -22,7 +22,14 @@ export async function confirmOrderPayment(orderId: string) {
   const franchisee = order.franchisee;
   const initialStatus = franchisee?.autoAcceptOrders ? "ACEITO" : "NOVO";
 
-  // Atualização atômica do pedido: marca como pago, define status ativo e coloca no KDS em produção
+  // Gera número do pedido apenas agora, se o pedido estiver sem número (abandonou no AGUARDANDO_PAGAMENTO)
+  let finalDailyNumber = order.dailyOrderNumber;
+  if (!finalDailyNumber && order.franchiseeId) {
+    const { generateDailyOrderNumber } = await import("@/lib/order-number");
+    finalDailyNumber = await generateDailyOrderNumber(order.franchiseeId);
+  }
+
+  // Atualização atômica do pedido: marca como pago, define status ativo, gera senha e coloca no KDS em produção
   const updatedOrder = await prisma.customerOrder.update({
     where: { id: orderId },
     data: {
@@ -31,6 +38,7 @@ export async function confirmOrderPayment(orderId: string) {
       pagarmeStatus: "approved",
       kdsStage: "PRODUCTION",
       kdsProductionAt: new Date(),
+      ...(finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {})
     },
   });
 

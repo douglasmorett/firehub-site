@@ -51,5 +51,10 @@ export default async function TotemPage() {
     if (owner) storeData = owner as any;
   }
 
-  return <TotemModuleClient store={storeData} />;
+  const categories = await prisma.menuCategory.findMany({
+    where: { franchiseeId },
+    orderBy: { sortOrder: "asc" }
+  });
+
+  return <TotemModuleClient store={storeData} categories={categories} />;
 }

@@ -412,6 +412,7 @@ model MenuCategory {
   franchiseeId String?
   name         String
   emoji        String   @default("🍽️")
+  imageUrl     String?
   color        String   @default("#64748B")
   sortOrder    Int      @default(0)
   franchisee   User?    @relation(fields: [franchiseeId], references: [id])

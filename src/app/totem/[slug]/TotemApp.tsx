@@ -31,6 +31,8 @@ type Category = {
   id: string;
   name: string;
   sortOrder: number;
+  emoji?: string;
+  imageUrl?: string | null;
 };
 
 type ComboGroup = {
@@ -406,7 +408,13 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   if (screen === "WELCOME") {
     return (
       <div 
-        onClick={() => setScreen("MENU")}
+        onClick={() => {
+          setScreen("MENU");
+          // Entrar em tela cheia (Kiosk Mode) ao tocar para começar
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          }
+        }}
         style={{
           width: "100%", height: "100%", display: "flex", flexDirection: "column", 
           alignItems: "center", justifyContent: "center", 
@@ -464,96 +472,139 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     });
 
     return (
-      <div style={{ width: "100%", height: "100%", background: "#0F172A", display: "flex", flexDirection: "column", color: "white" }}>
-        {/* HEADER */}
-        <div style={{ padding: "24px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <button onClick={() => setScreen("WELCOME")} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: "50%", width: 56, height: 56, display: "flex", alignItems: "center", justifyContent: "center", color: "white" }}>
-              <ArrowLeft size={28} />
-            </button>
-            <h1 style={{ fontSize: 28, fontWeight: 700 }}>Cardápio</h1>
-          </div>
+      <div style={{ width: "100%", height: "100%", background: "#F1F5F9", display: "flex", color: "#0F172A", overflow: "hidden" }}>
+        
+        {/* SIDEBAR (Categories) */}
+        <div style={{ width: "240px", background: "white", display: "flex", flexDirection: "column", flexShrink: 0, height: "100%", boxShadow: "4px 0 24px rgba(0,0,0,0.06)", zIndex: 10 }}>
           
-          <div style={{ display: "flex", background: "rgba(255,255,255,0.1)", borderRadius: 16, padding: "8px 16px", alignItems: "center", width: 300 }}>
-            <Search size={24} color="#94A3B8" />
-            <input 
-              type="text" 
-              placeholder="Buscar..." 
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ background: "transparent", border: "none", color: "white", fontSize: 20, padding: "8px 12px", width: "100%", outline: "none" }}
-            />
+          <div style={{ padding: "32px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            <button onClick={() => setScreen("WELCOME")} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748B", alignSelf: "flex-start", cursor: "pointer" }}>
+              <ArrowLeft size={24} />
+            </button>
+            {store?.logoUrl ? (
+              <img src={store.logoUrl} alt="Logo" style={{ width: 120, height: 120, objectFit: "contain" }} />
+            ) : (
+              <div style={{ width: 100, height: 100, background: "#F8FAFC", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <ChefHat size={48} color="#E53935" />
+              </div>
+            )}
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
+            {categories.sort((a,b) => a.sortOrder - b.sortOrder).map(cat => {
+              const isActive = activeCategory === cat.id;
+              return (
+                <button 
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id)}
+                  style={{
+                    width: "100%", padding: "16px", borderRadius: "16px", border: "none",
+                    background: isActive ? "#E53935" : "transparent",
+                    color: isActive ? "white" : "#475569",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+                    boxShadow: isActive ? "0 4px 12px rgba(229, 57, 53, 0.3)" : "none",
+                    transition: "all 0.2s", cursor: "pointer"
+                  }}
+                >
+                  <div style={{ 
+                    width: 72, height: 72, borderRadius: "16px", background: isActive ? "rgba(255,255,255,0.2)" : "#F1F5F9",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    backgroundImage: cat.imageUrl ? `url(${cat.imageUrl})` : "none",
+                    backgroundSize: "cover", backgroundPosition: "center",
+                    fontSize: cat.imageUrl ? "0" : "32px", color: isActive ? "white" : "inherit"
+                  }}>
+                    {!cat.imageUrl && (cat.emoji || "🍽️")}
+                  </div>
+                  <span style={{ fontSize: 16, fontWeight: 700, textAlign: "center", lineHeight: 1.2 }}>{cat.name}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
+        
+        {/* MAIN CONTENT */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" }}>
+          
+          {/* HEADER */}
+          <div style={{ padding: "32px 40px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h1 style={{ fontSize: 32, fontWeight: 800, color: "#0F172A", margin: 0 }}>
+              {searchQuery ? "Resultados da Busca" : categories.find(c => c.id === activeCategory)?.name || "Cardápio"}
+            </h1>
+            
+            <div style={{ display: "flex", background: "white", borderRadius: 20, padding: "12px 20px", alignItems: "center", width: 360, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", border: "1px solid #E2E8F0" }}>
+              <Search size={24} color="#94A3B8" />
+              <input 
+                type="text" 
+                placeholder="Buscar no cardápio..." 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ background: "transparent", border: "none", color: "#0F172A", fontSize: 20, padding: "4px 16px", width: "100%", outline: "none", fontWeight: 500 }}
+              />
+            </div>
+          </div>
 
-        {/* CATEGORIES */}
-        {!searchQuery && (
-          <div style={{ padding: "24px 32px", display: "flex", gap: 16, overflowX: "auto", whiteSpace: "nowrap", flexShrink: 0 }}>
-            {categories.sort((a,b) => a.sortOrder - b.sortOrder).map(cat => (
-              <button 
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                style={{
-                  padding: "16px 32px", fontSize: 22, fontWeight: 700, borderRadius: 30, border: "none",
-                  background: activeCategory === cat.id ? "#E53935" : "rgba(255,255,255,0.1)",
-                  color: activeCategory === cat.id ? "white" : "#94A3B8",
-                  transition: "all 0.2s"
+          {/* PRODUCTS GRID */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 40px 140px 40px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 24, alignContent: "start" }}>
+            {filteredProducts.map(prod => (
+              <div 
+                key={prod.id} 
+                onClick={() => handleAddToCart(prod)}
+                style={{ 
+                  background: "white", borderRadius: 24, padding: 20, display: "flex", flexDirection: "column", 
+                  cursor: "pointer", position: "relative", overflow: "hidden", border: "1px solid #E2E8F0",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.03)", transition: "transform 0.2s"
                 }}
               >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* PRODUCTS GRID */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "24px 32px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 24, alignContent: "start" }}>
-          {filteredProducts.map(prod => (
-            <div 
-              key={prod.id} 
-              onClick={() => handleAddToCart(prod)}
-              style={{ ...glassStyle, padding: 24, display: "flex", flexDirection: "column", cursor: "pointer", position: "relative", overflow: "hidden" }}
-            >
-              <div style={{ width: "100%", height: 180, background: "rgba(0,0,0,0.2)", borderRadius: 12, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {prod.imageUrl ? (
-                  <img src={prod.imageUrl} alt={prod.name} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 12 }} />
-                ) : (
-                  <ChefHat size={64} color="#475569" />
-                )}
-              </div>
-              <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, lineHeight: 1.2 }}>{prod.name}</h3>
-              <p style={{ fontSize: 16, color: "#94A3B8", flex: 1, marginBottom: 16 }}>{prod.description}</p>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto" }}>
-                <span style={{ fontSize: 24, fontWeight: 800, color: "#16A34A" }}>{formatPrice(prod.price)}</span>
-                <div style={{ background: "#E53935", borderRadius: "50%", width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Plus size={24} color="white" />
+                <div style={{ width: "100%", height: 200, background: "#F8FAFC", borderRadius: 16, marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  {prod.imageUrl ? (
+                    <img src={prod.imageUrl} alt={prod.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <ChefHat size={64} color="#CBD5E1" />
+                  )}
+                </div>
+                <h3 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8, lineHeight: 1.2, color: "#0F172A" }}>{prod.name}</h3>
+                <p style={{ fontSize: 15, color: "#64748B", flex: 1, marginBottom: 20, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{prod.description}</p>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", borderTop: "1px solid #F1F5F9", paddingTop: 16 }}>
+                  <span style={{ fontSize: 24, fontWeight: 800, color: "#16A34A" }}>{formatPrice(prod.price)}</span>
+                  <div style={{ background: "#E53935", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(229, 57, 53, 0.3)" }}>
+                    <Plus size={24} color="white" />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-          {filteredProducts.length === 0 && (
-            <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: 64, color: "#94A3B8", fontSize: 24 }}>
-              Nenhum produto encontrado.
+            ))}
+            {filteredProducts.length === 0 && (
+              <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: 80, color: "#94A3B8" }}>
+                <ChefHat size={64} style={{ opacity: 0.5, marginBottom: 16 }} />
+                <h2 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Nenhum produto encontrado.</h2>
+                <p style={{ fontSize: 18, marginTop: 8 }}>Tente buscar por outro termo ou escolha outra categoria.</p>
+              </div>
+            )}
+          </div>
+
+          {/* FLOATING CART BUTTON */}
+          {cartItemCount > 0 && (
+            <div style={{ position: "absolute", bottom: 40, left: "50%", transform: "translateX(-50%)", zIndex: 10, width: "calc(100% - 80px)" }}>
+              <button 
+                onClick={() => setScreen("CART")}
+                style={{
+                  ...btnStyle, width: "100%", padding: "24px 32px", fontSize: 24, borderRadius: 24,
+                  boxShadow: "0 12px 32px rgba(229, 57, 53, 0.4)", cursor: "pointer", border: "none",
+                  display: "flex", justifyContent: "space-between", alignItems: "center"
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <div style={{ background: "rgba(255,255,255,0.2)", width: 56, height: 56, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <ShoppingCart size={28} color="white" />
+                  </div>
+                  <span style={{ color: "white" }}>Ver Carrinho ({cartItemCount} itens)</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, color: "white" }}>
+                  <span style={{ fontWeight: 800, fontSize: 28 }}>{formatPrice(cartTotal)}</span>
+                  <ChevronRight size={32} />
+                </div>
+              </button>
             </div>
           )}
-        </div>
-
-        {/* FLOATING CART BUTTON */}
-        {cartItemCount > 0 && (
-          <div style={{ position: "absolute", bottom: 32, right: 32, zIndex: 10 }}>
-            <button 
-              onClick={() => setScreen("CART")}
-              style={{
-                ...btnStyle, padding: "24px 40px", fontSize: 24, borderRadius: 32,
-                boxShadow: "0 10px 25px rgba(229, 57, 53, 0.4)",
-              }}
-            >
-              <ShoppingCart size={32} />
-              <span>Ver Carrinho ({cartItemCount})</span>
-              <span style={{ marginLeft: 16, fontWeight: 800 }}>{formatPrice(cartTotal)}</span>
-            </button>
-          </div>
-        )}
 
         {/* COMBO MODAL */}
         {selectedComboProduct && (

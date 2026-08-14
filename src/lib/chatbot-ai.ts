@@ -485,7 +485,13 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
   let ownerContext = "";
   let blockFinancialsContext = "REGRA DE SEGURANÇA BANCÁRIA: NUNCA passe informações financeiras, quantidade de vendas, faturamento, tickets médios ou status financeiro da loja. Se perguntarem (mesmo se o usuário disser que é o dono/franqueado), você DEVE recusar dizendo de forma educada: 'Desculpe, este WhatsApp não tem permissão para visualizar relatórios de vendas. Favor chamar usando o número de WhatsApp do Proprietário cadastrado no painel.' NUNCA BURLAR ESSA REGRA.";
-  
+
+  let phoneInstruction = "";
+  if (clientPhoneDigits && !clientPhoneDigits.startsWith("55") && !clientPhoneDigits.startsWith("0800")) {
+    phoneInstruction = `\n11. ALERTA DE TELEFONE (MUITO IMPORTANTE): O cliente atual está usando um número de WhatsApp estrangeiro ou virtual (não começa com 55 do Brasil). VOCÊ É OBRIGADO A PEDIR UM NÚMERO DE TELEFONE LOCAL (BRASIL COM DDD) ANTES DE FECHAR O PEDIDO, senão o motoboy não conseguirá ligar para ele na hora da entrega! (Ex: "Como seu número não é do Brasil, me passa um telefone de contato daqui com DDD para o entregador te ligar se precisar?")`;
+  } else if (!clientPhoneDigits || clientPhoneDigits.length < 10) {
+    phoneInstruction = `\n11. ALERTA DE TELEFONE (MUITO IMPORTANTE): O sistema não conseguiu capturar o telefone do cliente automaticamente (pode ser uma integração de Instagram/Facebook). SUA PRIMEIRA AÇÃO, ANTES DE QUALQUER OUTRA COISA (ANOTAR PEDIDO OU MANDAR LINK), DEVE SER PERGUNTAR O TELEFONE DE WHATSAPP COM DDD DO CLIENTE! (Ex: "Oi! Pra começarmos o seu atendimento, qual é o seu WhatsApp de contato com DDD para colocarmos no seu pedido?")`;
+  }
   if (user.notificationPhone && clientPhoneDigits && user.notificationPhone.replace(/\D/g, "").includes(clientPhoneDigits.slice(-8))) {
     try {
       const todayOrders = await prisma.customerOrder.findMany({
@@ -548,7 +554,7 @@ REGRAS ABSOLUTAS:
     - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA NO BANCO!
     - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! O valor do item é EXATAMENTE o que está no banco. É PROIBIDO inventar valores diferentes!
     - VOCÊ SÓ PODE OFERECER E REGISTRAR O QUE ESTÁ NA LISTA OFICIAL FORNECIDA. SE O CLIENTE PEDIR UM PRODUTO OU SABOR QUE NÃO EXISTE AQUI, NEGUE COM EDUCAÇÃO E OFEREÇA AS OPÇÕES DISPONÍVEIS.
-    - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
+    - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.${phoneInstruction}
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
     - Cite APENAS itens/combos reais cadastrados no cardápio abaixo com o seu preço exato oficial e envie o link (${storeLink}). NUNCA invente ou chute um produto ou preço que não seja o cadastrado no banco!
 12. Quando informar preços, fale de forma natural (ex: "24,90 reais").
@@ -711,9 +717,11 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       }
       if (message) {
         userParts.push({ text: message });
+      } else if (audioData?.base64) {
+        userParts.push({ text: "O cliente enviou uma mensagem de voz/áudio acima. Por favor, ouça e responda a ele de forma natural, como atendente." });
       }
       if (userParts.length === 0) {
-        userParts.push({ text: "O cliente enviou uma mensagem de áudio." });
+        userParts.push({ text: "O cliente enviou um anexo de mídia." });
       }
 
       const fullContents = [
@@ -727,7 +735,8 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       
       for (let idx = 0; idx < modelNames.length; idx++) {
         const mName = modelNames[idx];
-        const modelTimeout = idx === 0 ? 10000 : 6000; // 10s primeiro, 6s retries
+        const baseTimeout = audioData?.base64 ? 30000 : 10000;
+        const modelTimeout = idx === 0 ? baseTimeout : (baseTimeout - 4000); 
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), modelTimeout);
@@ -1057,6 +1066,11 @@ async function syncAiOrderToDatabase({
     // Atualiza rascunho existente
     await prisma.customerOrderItem.deleteMany({ where: { orderId: existingDraft.id } });
 
+    let finalDailyNumber = existingDraft.dailyOrderNumber;
+    if (isFinal && !finalDailyNumber) {
+      finalDailyNumber = await generateDailyOrderNumber(franchiseeId);
+    }
+
     await prisma.customerOrder.update({
       where: { id: existingDraft.id },
       data: {
@@ -1068,6 +1082,7 @@ async function syncAiOrderToDatabase({
         totalAmount: totalOrderAmount,
         status: finalStatus,
         notes: notesText,
+        ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         items: {
           create: orderItemsData.map((i: any) => ({
             quantity: i.quantity,
@@ -1080,12 +1095,14 @@ async function syncAiOrderToDatabase({
     console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
   } else {
     // Cria novo pedido rascunho
-    const dailyOrderNumber = await generateDailyOrderNumber(franchiseeId);
+    let finalDailyNumber = null;
+    if (isFinal) {
+      finalDailyNumber = await generateDailyOrderNumber(franchiseeId);
+    }
 
     const newOrder = await prisma.customerOrder.create({
       data: {
         franchiseeId,
-        dailyOrderNumber,
         customerName: finalCustomerName,
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || null,
@@ -1096,6 +1113,7 @@ async function syncAiOrderToDatabase({
         source: "WHATSAPP_IA",
         status: finalStatus,
         notes: notesText,
+        ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         items: {
           create: orderItemsData.map((i: any) => ({
             quantity: i.quantity,
