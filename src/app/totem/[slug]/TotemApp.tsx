@@ -690,8 +690,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           </div>
         )}
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // ---------------------------------------------------------
   // RENDER: CART
