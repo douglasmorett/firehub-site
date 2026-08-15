@@ -22,7 +22,7 @@ export async function POST(
     if (!id) return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
 
     const data = await req.json();
-    const { paymentMethods, serviceFeePercent } = data;
+    const { paymentMethods, serviceFeePercent, waiterTip } = data;
 
     const tableSession = await prisma.tableSession.findUnique({
       where: { id },
@@ -43,7 +43,8 @@ export async function POST(
     // Calculate total amount
     const subtotal = tableSession.orders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
     const serviceFee = serviceFeePercent ? (subtotal * serviceFeePercent) / 100 : 0;
-    const totalAmount = subtotal + serviceFee;
+    const tipAmount = waiterTip ? Number(waiterTip) : 0;
+    const totalAmount = subtotal + serviceFee + tipAmount;
 
     // Validate payment methods total
     let totalPaid = 0;
@@ -63,15 +64,8 @@ export async function POST(
 
       // Calculate waiter commission if linked
       let waiterCommission = 0;
-      if (tableSession.waiterId && serviceFee > 0) {
-        // Option A: Waiter gets the exact service fee collected
-        waiterCommission = serviceFee;
-        
-        // If you prefer Option B (fixed % of subtotal), uncomment and adjust:
-        // const waiter = await tx.waiter.findUnique({ where: { id: tableSession.waiterId } });
-        // if (waiter && waiter.commissionRate) {
-        //   waiterCommission = (subtotal * waiter.commissionRate) / 100;
-        // }
+      if (tableSession.waiterId) {
+        waiterCommission = serviceFee + tipAmount;
       }
 
       // 2. Update session to CLOSED
@@ -82,6 +76,7 @@ export async function POST(
           closedAt: new Date(),
           totalPaid,
           serviceFee,
+          waiterTip: tipAmount > 0 ? tipAmount : undefined,
           waiterCommission: waiterCommission > 0 ? waiterCommission : undefined,
           paymentMethods: paymentMethods ? paymentMethods : undefined
         }

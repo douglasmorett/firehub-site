@@ -577,7 +577,8 @@ model TableSession {
   closedAt        DateTime?
   notes           String?
   serviceFee      Float?          // Taxa de serviço cobrada (ex: 10%)
-  waiterCommission Float?         // Valor da comissão (R$) que o garçom ganhou nesta mesa
+  waiterTip       Float?          // Gorjeta adicional
+  waiterCommission Float?         // Valor total da comissão (serviço + gorjeta)
   totalPaid       Float?          // Total pago no fechamento
   paymentMethods  Json?           // [{method: "Pix", amount: 100}, ...]
   orders          CustomerOrder[]

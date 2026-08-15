@@ -111,6 +111,7 @@ export default function MesasPage() {
   // Close form
   const [serviceFee, setServiceFee] = useState(10);
   const [useServiceFee, setUseServiceFee] = useState(true);
+  const [waiterTip, setWaiterTip] = useState(0);
   const [splitCount, setSplitCount] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
 
@@ -308,6 +309,7 @@ export default function MesasPage() {
         body: JSON.stringify({
           paymentMethods: [{ method: paymentMethod, amount: 0 }],
           serviceFeePercent: useServiceFee ? serviceFee : 0,
+          waiterTip
         }),
       });
       if (res.ok) {
@@ -315,6 +317,7 @@ export default function MesasPage() {
         setShowCloseModal(false);
         setSelectedTable(null);
         setSessionDetail(null);
+        setWaiterTip(0);
         setView("grid");
         await fetchTables();
       } else {
@@ -1061,9 +1064,14 @@ export default function MesasPage() {
                   <span style={{ fontWeight: 700 }}>{fmt(sessionTotal * serviceFee / 100)}</span>
                 </div>
               )}
+              <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 14, marginTop: 8, cursor: "pointer", color: "#64748B" }}>
+                <span>Gorjeta Extra (R$)</span>
+                <input type="number" min="0" step="0.5" value={waiterTip} onChange={e => setWaiterTip(Number(e.target.value))}
+                  style={{ width: 80, padding: "4px 8px", borderRadius: 6, border: "1px solid #E2E8F0", textAlign: "right", accentColor: "#7C3AED" }} />
+              </label>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, fontWeight: 900, marginTop: 12, paddingTop: 12, borderTop: "2px solid #E2E8F0" }}>
                 <span>TOTAL</span>
-                <span style={{ color: "#7C3AED" }}>{fmt(sessionTotal + (useServiceFee ? sessionTotal * serviceFee / 100 : 0))}</span>
+                <span style={{ color: "#7C3AED" }}>{fmt(sessionTotal + (useServiceFee ? sessionTotal * serviceFee / 100 : 0) + waiterTip)}</span>
               </div>
             </div>
 
@@ -1083,7 +1091,7 @@ export default function MesasPage() {
               </div>
               {splitCount > 1 && (
                 <div style={{ textAlign: "center", marginTop: 8, fontSize: 15, color: "#7C3AED", fontWeight: 800 }}>
-                  {fmt((sessionTotal + (useServiceFee ? sessionTotal * serviceFee / 100 : 0)) / splitCount)} por pessoa
+                  {fmt((sessionTotal + (useServiceFee ? sessionTotal * serviceFee / 100 : 0) + waiterTip) / splitCount)} por pessoa
                 </div>
               )}
             </div>
