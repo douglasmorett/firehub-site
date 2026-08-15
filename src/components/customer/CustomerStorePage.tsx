@@ -22,7 +22,8 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
-  ShieldCheck
+  Trash2,
+  Edit3
 } from "lucide-react";
 import ComboModal from "./ComboModal";
 import PaymentGateway from "./PaymentGateway";
@@ -140,6 +141,7 @@ export default function CustomerStorePage({
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
+  const [showCouponInput, setShowCouponInput] = useState(false);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Modais especiais de alto engajamento
@@ -147,7 +149,6 @@ export default function CustomerStorePage({
   const [showPromotionsModal, setShowPromotionsModal] = useState(false);
   const [showMyOrdersModal, setShowMyOrdersModal] = useState(false);
   const [showBairroCalcModal, setShowBairroCalcModal] = useState(false);
-  const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
 
   // Busca rápida de pedidos
   const [myOrdersPhone, setMyOrdersPhone] = useState("");
@@ -252,6 +253,11 @@ export default function CustomerStorePage({
     }).slice(0, 4);
   }, [activeTodayProducts]);
 
+  // FILTRO OBRIGATÓRIO DE 5 ESTRELAS (Para proteger a conversão de vendas)
+  const fiveStarReviews = useMemo(() => {
+    return (storeRating?.reviews || []).filter(r => r.rating >= 5);
+  }, [storeRating]);
+
   const filtered = useMemo(() => {
     return activeTodayProducts.filter(p => {
       const pCat = (p.category || "").trim();
@@ -320,6 +326,7 @@ export default function CustomerStorePage({
   });
 
   const deleteFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
+  const clearCart = () => setCart([]);
   const getQty = (id: string) => cart.find(i => i.id === id)?.quantity || 0;
 
   const scrollToCategory = (cat: string) => {
@@ -660,72 +667,181 @@ export default function CustomerStorePage({
     );
   }
 
-  // ===== CART SIDEBAR CONTENT =====
+  // ===== CART SIDEBAR CONTENT (LIMPO, FOCO TOTAL NOS PRODUTOS SEM UPSELL) =====
   const cartContentJSX = (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div className="cart-header">
-        <h3>{isCheckout ? "Finalizar Pedido" : `Sua Sacola (${cartCount})`}</h3>
-        <button className="mob-close-btn" onClick={() => setMobileCartOpen(false)} style={{ cursor: "pointer", background: "none", border: "none" }}><X size={22} /></button>
+      {/* HEADER DA SACOLA */}
+      <div style={{ padding: "1rem 1.25rem 0.75rem", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>
+          {isCheckout ? "Finalizar Pedido" : "Sua sacola"}
+        </h3>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {!isCheckout && cart.length > 0 && (
+            <button
+              type="button"
+              onClick={clearCart}
+              style={{ background: "none", border: "none", color: "#64748B", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em" }}
+            >
+              Limpar
+            </button>
+          )}
+          <button className="mob-close-btn" onClick={() => setMobileCartOpen(false)} style={{ cursor: "pointer", background: "none", border: "none" }}><X size={20} /></button>
+        </div>
       </div>
 
-      {/* FREE SHIPPING PROGRESS BAR */}
+      {/* AVISO DE FRETE GRÁTIS */}
       {freeShippingThreshold && (
-        <div style={{ padding: "0.6rem 1.25rem", background: "#F0FDF4", borderBottom: "1px solid #DCFCE7" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", fontWeight: 700, marginBottom: "4px", color: isFreeShippingByMin ? "#15803D" : "#1E293B" }}>
-            <span>{isFreeShippingByMin ? "🎉 Parabéns! Você ganhou Frete Grátis!" : `Faltam R$ ${remainingForFreeShipping.toFixed(2).replace(".", ",")} para Frete Grátis`}</span>
-            <span>{freeShippingProgress.toFixed(0)}%</span>
-          </div>
-          <div style={{ width: "100%", height: "6px", backgroundColor: "#E2E8F0", borderRadius: "4px", overflow: "hidden" }}>
-            <div style={{ width: `${freeShippingProgress}%`, height: "100%", backgroundColor: isFreeShippingByMin ? "#16A34A" : "#F59E0B", transition: "width 0.3s ease" }} />
+        <div style={{ padding: "0.6rem 1.25rem", background: isFreeShippingByMin ? "#F0FDF4" : "#FFFBEB", borderBottom: "1px solid #E2E8F0" }}>
+          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: isFreeShippingByMin ? "#15803D" : "#B45309", textAlign: "center" }}>
+            {isFreeShippingByMin ? "🎉 Você ganhou Frete Grátis!" : `Entrega grátis em pedidos a partir de R$ ${freeShippingThreshold.toFixed(2).replace(".", ",")}`}
           </div>
         </div>
       )}
 
-      <div className="cart-body">
+      {/* CORPO DA SACOLA */}
+      <div className="cart-body" style={{ flex: 1, overflowY: "auto", padding: "1rem 1.25rem" }}>
         {!isCheckout ? (
           cart.length === 0 ? (
-            <div className="cart-empty">
-              <ShoppingCart size={40} />
-              <p>Sacola vazia</p>
-              <p style={{ fontSize: "0.8rem" }}>Adicione itens do cardápio</p>
+            <div className="cart-empty" style={{ padding: "3rem 1rem", textAlign: "center", color: "#94A3B8" }}>
+              <ShoppingCart size={42} style={{ opacity: 0.3, marginBottom: "8px" }} />
+              <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#64748B", margin: "0 0 4px" }}>Sua sacola está vazia</p>
+              <p style={{ fontSize: "0.8rem", margin: 0 }}>Adicione itens do cardápio para começar seu pedido.</p>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {cart.map(item => (
-                <div key={item.id} className="cart-item">
-                  <div style={{ flex: 1 }}>
-                    <p className="cart-item-name">{item.name}</p>
-                    {item.notes && <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "2px 0 0" }}>📝 {item.notes}</p>}
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "4px" }}>
-                      <button onClick={() => removeFromCart(item.id)} className="qty-btn-minus" style={{ width: 24, height: 24 }}><Minus size={12} /></button>
-                      <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>{item.quantity}</span>
-                      <button onClick={() => addToCart(item)} className="qty-btn-plus" style={{ width: 24, height: 24 }}><Plus size={12} /></button>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {cart.map(item => {
+                const itemTotal = item.price * item.quantity;
+                const formattedSelections = item.comboSelections ? Object.entries(item.comboSelections).flatMap(([_, gObj]: any) => Object.entries(gObj).filter(([_, q]) => (q as number) > 0).map(([name, q]) => `${(q as number) > 1 ? `${q}x ` : ""}${name}`)) : [];
+
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1.5px solid #E2E8F0",
+                      borderRadius: "14px",
+                      padding: "12px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.02)"
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", lineHeight: 1.3 }}>
+                          {item.quantity}x {item.name}
+                        </div>
+                        {formattedSelections.length > 0 && (
+                          <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "3px", lineHeight: 1.35 }}>
+                            {formattedSelections.map((sel, sIdx) => (
+                              <div key={sIdx}>• {sel}</div>
+                            ))}
+                          </div>
+                        )}
+                        {item.notes && (
+                          <div style={{ fontSize: "0.72rem", color: "#92400E", backgroundColor: "#FEF3C7", padding: "2px 6px", borderRadius: "4px", marginTop: "4px", display: "inline-block" }}>
+                            📝 {item.notes}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>
+                          R$ {itemTotal.toFixed(2).replace(".", ",")}
+                        </div>
+                        {item.imageUrl && (
+                          <img src={item.imageUrl} alt="" style={{ width: "42px", height: "42px", borderRadius: "8px", objectFit: "cover", marginTop: "4px" }} />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* BOTÕES DE QUANTIDADE E REMOVER */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #F1F5F9", paddingTop: "8px", marginTop: "4px" }}>
+                      <button
+                        type="button"
+                        onClick={() => deleteFromCart(item.id)}
+                        style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "0.74rem", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        Remover
+                      </button>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <button
+                          type="button"
+                          onClick={() => removeFromCart(item.id)}
+                          style={{ width: 24, height: 24, borderRadius: "50%", border: "1px solid #CBD5E1", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          <Minus size={11} strokeWidth={2.5} />
+                        </button>
+                        <span style={{ fontWeight: 800, fontSize: "0.85rem", minWidth: "16px", textAlign: "center" }}>{item.quantity}</span>
+                        <button
+                          type="button"
+                          onClick={() => addToCart(item)}
+                          style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "#059669", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        >
+                          <Plus size={11} strokeWidth={2.5} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <p className="cart-item-price">R$ {(item.price * item.quantity).toFixed(2)}</p>
-                    <button onClick={() => deleteFromCart(item.id)} className="cart-item-remove">remover</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
 
-              {/* COUPON */}
-              <div style={{ marginTop: "0.5rem" }}>
-                <div className="coupon-row">
-                  <input className="coupon-input" placeholder="Cupom de desconto" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
-                  <button className="coupon-btn" onClick={applyCoupon}>Aplicar</button>
-                </div>
-                {couponApplied && (
-                  <p style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 600 }}>
-                    {couponApplied.isFreeShipping
-                      ? `✅ Cupom "${couponApplied.code}" aplicado! Frete Grátis 🚚`
-                      : `✅ Cupom "${couponApplied.code}" aplicado! -R$ ${discount.toFixed(2)}`}
-                  </p>
+              {/* CUPOM DE DESCONTO */}
+              <div style={{ marginTop: "0.5rem", borderTop: "1px solid #F1F5F9", paddingTop: "0.75rem" }}>
+                {!showCouponInput && !couponApplied ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCouponInput(true)}
+                    style={{ background: "none", border: "none", padding: 0, color: "#2563EB", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                  >
+                    🏷️ Que tal usar um cupom de desconto?
+                  </button>
+                ) : (
+                  <div>
+                    <div className="coupon-row">
+                      <input className="coupon-input" placeholder="Digite seu cupom" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
+                      <button className="coupon-btn" onClick={applyCoupon}>Aplicar</button>
+                    </div>
+                    {couponApplied && (
+                      <p style={{ fontSize: "0.76rem", color: "#16A34A", fontWeight: 700, margin: "4px 0 0" }}>
+                        {couponApplied.isFreeShipping
+                          ? `✅ Cupom "${couponApplied.code}" aplicado! Frete Grátis 🚚`
+                          : `✅ Cupom "${couponApplied.code}" aplicado! -R$ ${discount.toFixed(2)}`}
+                      </p>
+                    )}
+                  </div>
                 )}
+              </div>
+
+              {/* RESUMO DOS VALORES */}
+              <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "4px", fontSize: "0.82rem", color: "#64748B" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Subtotal</span>
+                  <span style={{ fontWeight: 700, color: "#0F172A" }}>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Taxa de entrega</span>
+                  <span style={{ fontWeight: 700, color: deliveryFee === 0 || isFreeShippingByMin ? "#16A34A" : "#0F172A" }}>
+                    {deliveryType === "PICKUP" ? "Retirada no local" : deliveryFee === 0 || isFreeShippingByMin ? "Grátis" : `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`}
+                  </span>
+                </div>
+                {discount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A" }}>
+                    <span>Desconto</span>
+                    <span style={{ fontWeight: 700 }}>- R$ {discount.toFixed(2).replace(".", ",")}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 900, color: "#0F172A", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #E2E8F0" }}>
+                  <span>Total</span>
+                  <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
+                </div>
               </div>
             </div>
           )
         ) : (
+          /* TELA DE IDENTIFICAÇÃO E FINALIZAÇÃO */
           <div className="checkout-form">
             <div><label className="checkout-label">Seu Nome *</label><input className="checkout-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Como podemos te chamar?" /></div>
             <div><label className="checkout-label">WhatsApp *</label><input className="checkout-input" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="(21) 99999-9999" /></div>
@@ -750,31 +866,7 @@ export default function CustomerStorePage({
                       ))}
                     </select>
                     {!deliveryAvailable && customerNeighborhood && <p style={{ color: "#EF4444", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>❌ Bairro fora da área de entrega</p>}
-                    {deliveryAvailable && deliveryFee > 0 && (
-                      <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>
-                        🛵 Taxa de entrega: {isFreeShippingByMin ? (
-                          <>
-                            <s style={{ color: "#94A3B8", marginRight: 4 }}>R$ {deliveryFee.toFixed(2)}</s>
-                            <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
-                          </>
-                        ) : (
-                          `R$ ${deliveryFee.toFixed(2)}`
-                        )}
-                      </p>
-                    )}
                   </div>
-                )}
-                {franchisee.deliveryZoneType === "RADIUS" && deliveryFee > 0 && (
-                  <p style={{ color: "#16A34A", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>
-                    🛵 Taxa de entrega: {isFreeShippingByMin ? (
-                      <>
-                        <s style={{ color: "#94A3B8", marginRight: 4 }}>R$ {deliveryFee.toFixed(2)}</s>
-                        <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
-                      </>
-                    ) : (
-                      `R$ ${deliveryFee.toFixed(2)}`
-                    )}
-                  </p>
                 )}
               </div>
             )}
@@ -787,41 +879,69 @@ export default function CustomerStorePage({
               </div>
             </div>
             <div><label className="checkout-label">Observações do Pedido</label><textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex: Sem talher, tocar interfone..." /></div>
-            <div className="checkout-summary">
-              {cart.map(i => <div key={i.id} className="checkout-summary-item"><span>{i.quantity}x {i.name}</span><span>R$ {(i.price * i.quantity).toFixed(2)}</span></div>)}
-              {couponApplied && (
-                <div className="checkout-summary-item" style={{ color: "#16A34A" }}>
-                  <span>Cupom ({couponApplied.code})</span>
-                  <span>{couponApplied.isFreeShipping ? `Frete Grátis (-R$ ${discount.toFixed(2)})` : `-R$ ${discount.toFixed(2)}`}</span>
-                </div>
-              )}
-              {deliveryType === "DELIVERY" && deliveryFee > 0 && (
-                <div className="checkout-summary-item" style={{ color: isFreeShippingByMin ? "#16A34A" : "#E67E22" }}>
-                  <span>🛵 Taxa de Entrega</span>
-                  {isFreeShippingByMin ? (
-                    <span>
-                      <s style={{ color: "#94A3B8", marginRight: 6 }}>R$ {deliveryFee.toFixed(2)}</s>
-                      <strong style={{ color: "#16A34A" }}>R$ 0,00 (Frete Grátis)</strong>
-                    </span>
-                  ) : (
-                    <span>R$ {deliveryFee.toFixed(2)}</span>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </div>
+
+      {/* FOOTER DA SACOLA */}
       {cart.length > 0 && (
-        <div className="cart-footer">
-          <div className="cart-total-row"><span className="cart-total-label">Total</span><span className="cart-total-value">R$ {finalTotal.toFixed(2)}</span></div>
+        <div style={{ padding: "0.85rem 1.25rem", borderTop: "1px solid #E2E8F0", background: "#FFFFFF" }}>
           {!isCheckout ? (
-            <button onClick={() => { setIsCheckout(true); trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" }); }} className="cart-checkout-btn">Continuar Pedido</button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsCheckout(true);
+                trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
+              }}
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "12px",
+                border: "none",
+                background: "#0F172A",
+                color: "#FFFFFF",
+                fontWeight: 800,
+                fontSize: "0.95rem",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                boxShadow: "0 4px 12px rgba(15, 23, 42, 0.25)",
+                transition: "all 0.2s ease"
+              }}
+            >
+              <span>Continuar pedido</span>
+              <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
+            </button>
           ) : (
-            <>
-              <button onClick={handleCheckout} disabled={loading} className="cart-checkout-btn">{loading ? "Enviando..." : `Confirmar Pedido • R$ ${finalTotal.toFixed(2)}`}</button>
-              <button onClick={() => setIsCheckout(false)} className="cart-back-btn">← Voltar à Sacola</button>
-            </>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <button
+                type="button"
+                onClick={handleCheckout}
+                disabled={loading}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: "12px",
+                  border: "none",
+                  background: "#059669",
+                  color: "#FFFFFF",
+                  fontWeight: 800,
+                  fontSize: "0.95rem",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  boxShadow: "0 4px 12px rgba(5, 150, 105, 0.3)"
+                }}
+              >
+                {loading ? "Enviando pedido..." : `Confirmar Pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCheckout(false)}
+                style={{ width: "100%", padding: "6px", background: "none", border: "none", color: "#64748B", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}
+              >
+                ← Voltar para a sacola
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1175,8 +1295,8 @@ export default function CustomerStorePage({
             </div>
           ))}
 
-          {/* ===== SEÇÃO DE AVALIAÇÕES ===== */}
-          {storeRating && storeRating.reviews && storeRating.reviews.length > 0 && (
+          {/* ===== SEÇÃO DE AVALIAÇÕES (EXIBINDO APENAS AS DE 5 ESTRELAS) ===== */}
+          {fiveStarReviews.length > 0 && (
             <div style={{ marginTop: "2rem", paddingBottom: "2rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
                 <h2 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0 }}>⭐ Avaliações dos clientes</h2>
@@ -1197,11 +1317,11 @@ export default function CustomerStorePage({
                   }}
                 >
                   <Star size={12} fill="#F59E0B" color="#F59E0B" />
-                  {storeRating.average.toFixed(1)} ({storeRating.count} avaliações)
+                  {storeRating?.average.toFixed(1)} ({storeRating?.count} avaliações)
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px" }}>
-                {storeRating.reviews.slice(0, 6).map((r, i) => (
+                {fiveStarReviews.slice(0, 6).map((r, i) => (
                   <div key={i} style={{ background: "#fff", borderRadius: "14px", padding: "1rem 1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
                       <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C62828)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}>
@@ -1212,7 +1332,7 @@ export default function CustomerStorePage({
                         <p style={{ fontSize: "0.65rem", color: "#94A3B8", margin: 0 }}>{new Date(r.createdAt).toLocaleDateString("pt-BR")}</p>
                       </div>
                       <div style={{ marginLeft: "auto", display: "flex", gap: "2px" }}>
-                        {[1,2,3,4,5].map(n => <Star key={n} size={11} fill={n <= r.rating ? "#F59E0B" : "none"} color={n <= r.rating ? "#F59E0B" : "#CBD5E1"} />)}
+                        {[1,2,3,4,5].map(n => <Star key={n} size={11} fill="#F59E0B" color="#F59E0B" />)}
                       </div>
                     </div>
                     <p style={{ fontSize: "0.82rem", color: "#475569", margin: 0, lineHeight: 1.5 }}>"{r.comment}"</p>
@@ -1330,7 +1450,7 @@ export default function CustomerStorePage({
         />
       )}
 
-      {/* MODAL DE AVALIAÇÕES COMPLETAS */}
+      {/* MODAL DE AVALIAÇÕES COMPLETAS (APENAS 5 ESTRELAS) */}
       {showReviewsModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowReviewsModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "24px", maxWidth: "520px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
@@ -1350,8 +1470,8 @@ export default function CustomerStorePage({
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", paddingRight: "4px" }}>
-              {storeRating?.reviews && storeRating.reviews.length > 0 ? (
-                storeRating.reviews.map((r, i) => (
+              {fiveStarReviews.length > 0 ? (
+                fiveStarReviews.map((r, i) => (
                   <div key={i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1365,7 +1485,7 @@ export default function CustomerStorePage({
                       </div>
                       <div style={{ display: "flex", gap: "2px" }}>
                         {[1,2,3,4,5].map(n => (
-                          <Star key={n} size={13} fill={n <= r.rating ? "#F59E0B" : "none"} color={n <= r.rating ? "#F59E0B" : "#CBD5E1"} />
+                          <Star key={n} size={13} fill="#F59E0B" color="#F59E0B" />
                         ))}
                       </div>
                     </div>
@@ -1379,7 +1499,7 @@ export default function CustomerStorePage({
               ) : (
                 <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
                   <Star size={40} style={{ opacity: 0.2, marginBottom: "8px" }} />
-                  <p style={{ fontSize: "0.9rem" }}>Esta loja ainda não possui avaliações públicas.</p>
+                  <p style={{ fontSize: "0.9rem" }}>Esta loja ainda não possui avaliações públicas 5 estrelas.</p>
                 </div>
               )}
             </div>
@@ -1458,7 +1578,7 @@ export default function CustomerStorePage({
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowMyOrdersModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "24px", maxWidth: "480px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F1F5F9", paddingBottom: "12px", marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ display: "center", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "1.4rem" }}>📦</span>
                 <div>
                   <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#0F172A" }}>Meus Pedidos</h3>
