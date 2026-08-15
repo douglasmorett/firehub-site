@@ -782,49 +782,96 @@ export default function KDSTelaPage() {
 
 
           </div>
-          {/* ─── Filter Tabs ─── */}
+          {/* ─── Filter Tabs (Smart TV safe: explicit buttons + onPointerDown) ─── */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 4,
               background: "#1a1a2e",
               borderRadius: 12,
               padding: 5,
               position: "relative",
-              zIndex: 5,
-              marginRight: 8,
+              zIndex: 50,
+              isolation: "isolate",
+              marginRight: 12,
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
+              userSelect: "none",
             }}
           >
-            {(
-              [
-                { value: "all" as const, label: "Todos" },
-                { value: "odd" as const, label: "Ímpares" },
-                { value: "even" as const, label: "Pares" },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setFilter(opt.value)}
-                style={{
-                  padding: "10px 22px",
-                  borderRadius: 10,
-                  border: "none",
-                  fontWeight: 700,
-                  fontSize: 15,
-                  cursor: "pointer",
-                  fontFamily: FONT,
-                  transition: "all 0.15s",
-                  background: filter === opt.value ? accent : "transparent",
-                  color: filter === opt.value ? "#fff" : "#9ca3af",
-                  minWidth: 70,
-                  minHeight: 42,
-                  touchAction: "manipulation",
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              onPointerDown={(e) => { e.stopPropagation(); setFilter("all"); }}
+              onClick={() => setFilter("all")}
+              style={{
+                padding: "10px 20px",
+                borderRadius: 10,
+                border: "none",
+                fontWeight: 700,
+                fontSize: 15,
+                cursor: "pointer",
+                fontFamily: FONT,
+                background: filter === "all" ? accent : "transparent",
+                color: filter === "all" ? "#fff" : "#9ca3af",
+                minWidth: 70,
+                minHeight: 44,
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+                userSelect: "none",
+                outline: "none",
+              }}
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onPointerDown={(e) => { e.stopPropagation(); setFilter("odd"); }}
+              onClick={() => setFilter("odd")}
+              style={{
+                padding: "10px 20px",
+                borderRadius: 10,
+                border: "none",
+                fontWeight: 700,
+                fontSize: 15,
+                cursor: "pointer",
+                fontFamily: FONT,
+                background: filter === "odd" ? accent : "transparent",
+                color: filter === "odd" ? "#fff" : "#9ca3af",
+                minWidth: 70,
+                minHeight: 44,
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+                userSelect: "none",
+                outline: "none",
+              }}
+            >
+              Ímpares
+            </button>
+            <button
+              type="button"
+              onPointerDown={(e) => { e.stopPropagation(); setFilter("even"); }}
+              onClick={() => setFilter("even")}
+              style={{
+                padding: "10px 20px",
+                borderRadius: 10,
+                border: "none",
+                fontWeight: 700,
+                fontSize: 15,
+                cursor: "pointer",
+                fontFamily: FONT,
+                background: filter === "even" ? accent : "transparent",
+                color: filter === "even" ? "#fff" : "#9ca3af",
+                minWidth: 70,
+                minHeight: 44,
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+                userSelect: "none",
+                outline: "none",
+              }}
+            >
+              Pares
+            </button>
           </div>
           {/* ─── Category Filter Button ─── */}
           <div
