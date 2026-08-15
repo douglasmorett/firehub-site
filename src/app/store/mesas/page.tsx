@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import ComboModal from "@/components/customer/ComboModal";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface TableItem {
@@ -27,6 +28,8 @@ interface MenuItem {
   category?: string;
   isCombo?: boolean;
   imageUrl?: string | null;
+  comboGroups?: any[];
+  comboConfig?: any;
 }
 
 interface SessionOrder {
@@ -58,6 +61,20 @@ function elapsed(from: string) {
   const h = Math.floor(m / 60);
   return `${h}h${m % 60 > 0 ? ` ${m % 60}min` : ""}`;
 }
+
+const getEffectiveComboGroups = (prod: any) => {
+  if (prod?.comboGroups && Array.isArray(prod.comboGroups) && prod.comboGroups.length > 0) {
+    return prod.comboGroups;
+  }
+  if (!prod?.comboConfig) return [];
+  try {
+    const config = typeof prod.comboConfig === "string" ? JSON.parse(prod.comboConfig) : prod.comboConfig;
+    if (Array.isArray(config)) return config;
+    if (config.groups && Array.isArray(config.groups)) return config.groups;
+    if (config.comboGroups && Array.isArray(config.comboGroups)) return config.comboGroups;
+  } catch {}
+  return [];
+};
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export default function MesasPage() {
@@ -104,9 +121,10 @@ export default function MesasPage() {
   }, []);
 
   // Order form
-  const [cart, setCart] = useState<{ item: MenuItem; qty: number }[]>([]);
+  const [cart, setCart] = useState<{ item: MenuItem; qty: number; unitPrice?: number; comboSelections?: any[] }[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [menuCat, setMenuCat] = useState("Todos");
+  const [comboProduct, setComboProduct] = useState<MenuItem | null>(null);
 
   // Close form
   const [serviceFee, setServiceFee] = useState(10);
@@ -181,6 +199,8 @@ export default function MesasPage() {
               category: p.isCombo ? "Combos" : (p.category || "Outros"),
               isCombo: p.isCombo,
               imageUrl: p.imageUrl || null,
+              comboGroups: p.comboGroups,
+              comboConfig: p.comboConfig
             }));
           setMenuItems(items);
           const cats = ["Todos", ...Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros")))];
@@ -271,7 +291,8 @@ export default function MesasPage() {
           items: cart.map(c => ({
             menuProductId: c.item.id,
             quantity: c.qty,
-            price: c.item.price,
+            price: c.unitPrice ?? c.item.price,
+            comboSelections: c.comboSelections ? JSON.stringify(c.comboSelections) : null
           })),
         }),
       });
@@ -327,6 +348,27 @@ export default function MesasPage() {
     } catch { showToast("❌ Erro de conexão"); } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleProductClick = (item: MenuItem) => {
+    const groups = getEffectiveComboGroups(item);
+    if ((item.isCombo || groups.length > 0) && groups.length > 0) {
+      setComboProduct({ ...item, comboGroups: groups });
+    } else {
+      addToCart(item);
+    }
+  };
+
+  const addToCart = (item: MenuItem, comboSelections?: any[], extraSum: number = 0) => {
+    const unitPrice = item.price + extraSum;
+    setCart(prev => {
+      if (comboSelections && comboSelections.length > 0) {
+        return [...prev, { item, qty: 1, comboSelections, unitPrice }];
+      }
+      const ex = prev.find(i => i.item.id === item.id && !i.comboSelections);
+      if (ex) return prev.map(i => i.item.id === item.id && !i.comboSelections ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { item, qty: 1, unitPrice }];
+    });
   };
 
   const updateTable = async () => {
@@ -436,7 +478,6 @@ export default function MesasPage() {
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
   const sessionTotal = sessionDetail?.orders.reduce((s, o) => s + o.totalAmount, 0) || selectedTable?.openSession?.totalAmount || 0;
 
-  // ─── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{
@@ -456,7 +497,6 @@ export default function MesasPage() {
     );
   }
 
-  // ─── ORDER VIEW (making order for a table) ────────────────────────────────
   if (view === "order" && selectedTable?.openSession) {
     return (
       <div style={{
@@ -464,9 +504,7 @@ export default function MesasPage() {
         fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
         background: "#F8FAFC",
       }}>
-        {/* LEFT: Menu */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {/* Header */}
           <div style={{
             padding: "14px 20px", background: "#7C3AED",
             display: "flex", alignItems: "center", gap: 12,
@@ -488,7 +526,6 @@ export default function MesasPage() {
             </div>
           </div>
 
-          {/* Search + Categories */}
           <div style={{ padding: "12px 16px 8px", background: "#fff", borderBottom: "1px solid #E2E8F0" }}>
             <input
               placeholder="🔍 Buscar no cardápio..."
@@ -513,22 +550,15 @@ export default function MesasPage() {
             </div>
           </div>
 
-          {/* Products Grid */}
           <div style={{
             flex: 1, overflowY: "auto", padding: 12,
             display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
             gap: 8, alignContent: "start",
           }}>
-            {filteredMenu.map(item => {
-              const inCart = cart.find(c => c.item.id === item.id);
+            {filteredMenu.map(p => {
+              const inCart = cart.find(c => c.item.id === p.id && !c.comboSelections);
               return (
-                <div key={item.id} onClick={() => {
-                  if (inCart) {
-                    setCart(prev => prev.map(c => c.item.id === item.id ? { ...c, qty: c.qty + 1 } : c));
-                  } else {
-                    setCart(prev => [...prev, { item, qty: 1 }]);
-                  }
-                }}
+                <div key={p.id} onClick={() => handleProductClick(p)}
                   style={{ background: "#fff", border: `2px solid ${inCart ? "#C62828" : "#E2E8F0"}`, borderRadius: 14, padding: 10, cursor: "pointer", transition: "all 0.15s", position: "relative", userSelect: "none" }}
                   onMouseEnter={e => { if (!inCart) e.currentTarget.style.borderColor = "#FCA5A5"; }}
                   onMouseLeave={e => { if (!inCart) e.currentTarget.style.borderColor = "#E2E8F0"; }}>
@@ -537,22 +567,23 @@ export default function MesasPage() {
                       <span style={{ color: "#fff", fontSize: "0.65rem", fontWeight: 900 }}>{inCart.qty}</span>
                     </div>
                   )}
-                  {item.imageUrl
-                    ? <img src={item.imageUrl} alt={item.name} style={{ width: "100%", height: 75, objectFit: "cover", borderRadius: 8, marginBottom: 6 }} />
+                  {p.imageUrl
+                    ? <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 75, objectFit: "cover", borderRadius: 8, marginBottom: 6 }} />
                     : <div style={{ width: "100%", height: 75, background: "#F1F5F9", borderRadius: 8, marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
-                        {item.isCombo ? "🍱" : "🍔"}
+                        {p.isCombo ? "🍱" : "🍔"}
                       </div>
                   }
-                  <div style={{ fontWeight: 700, fontSize: "0.8rem", marginBottom: 2, lineHeight: 1.2 }}>{item.name}</div>
-                  <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginBottom: 4 }}>{item.isCombo ? "Combo" : item.category}</div>
-                  <div style={{ color: "#C62828", fontWeight: 800, fontSize: "0.88rem" }}>{fmt(item.price)}</div>
+                  <div style={{ fontWeight: 700, fontSize: "0.8rem", marginBottom: 2, lineHeight: 1.2 }}>{p.name}</div>
+                  <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginBottom: 4 }}>{p.isCombo ? "Combo" : p.category}</div>
+                  <div style={{ color: "#C62828", fontWeight: 800, fontSize: 14 }}>
+                    {p.isCombo ? `a partir de ${fmt(p.price)}` : fmt(p.price)}
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* RIGHT: Cart */}
         <div style={{
           width: 340, borderLeft: "1px solid #E2E8F0", background: "#fff",
           display: "flex", flexDirection: "column",
