@@ -102,14 +102,29 @@ const cleanAddressForMap = (addr: string | null, city?: string): string => {
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
 
-  // Certeza absoluta 1: Tem motorista do iFood alocado ou a caminho
-  if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) return true;
+  const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase().trim();
+  const dMode = (order.deliveryMode || "").toString().toUpperCase().trim();
 
-  // Certeza absoluta 2: O iFood enviou um código de coleta para motoboy parceiro
-  if (order.ifoodPickupCode) return true;
+  // 1. Se explicitamente for "MERCHANT", "LOJA", "PROPRIO", "MERCHANT_DELIVERY" -> É ENTREGA PRÓPRIA DA LOJA!
+  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dBy === "MERCHANT_DELIVERY") {
+    return false;
+  }
 
-  // Se não tem código de coleta nem motorista designado, NUNCA trave a loja. 
-  // O lojista deve poder usar seu próprio motoboy se quiser.
+  // 2. Se o modo de entrega for DEFAULT, ECONOMIC, MERCHANT_DELIVERY, TAKEOUT, PICKUP -> É ENTREGA PRÓPRIA DA LOJA!
+  if (dMode === "DEFAULT" || dMode === "ECONOMIC" || dMode === "MERCHANT_DELIVERY" || dMode === "TAKEOUT" || dMode === "PICKUP") {
+    return false;
+  }
+
+  // 3. Apenas se explicitamente for "IFOOD" ou "IFOOD_LOGISTICS" ou "LOGISTICS" ou dMode === "LOGISTIC" / "PARTNER" -> É ENTREGA DO IFOOD
+  if (order.source === "IFOOD" && (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy === "LOGISTICS" || dMode === "LOGISTIC" || dMode === "PARTNER")) {
+    return true;
+  }
+
+  // 4. Fallback: se houver motorista do iFood alocado
+  if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) {
+    return true;
+  }
+
   return false;
 };
 
@@ -624,8 +639,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 <div style={{
                   marginTop: "2px", padding: "5px 10px", borderRadius: "6px",
                   background: "#FFF", border: "2px dashed #7C3AED",
-                  color: "#581C87", fontWeight: 900, fontSize: "0.84rem",
-                  display: "flex", alignItems: "center", justifyContent: "space-between"
+                  color: "#581C87", fontWeight: 800, fontSize: "0.85rem",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: "2px"
                 }}>
                   <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR:</span>
                   <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
@@ -676,18 +691,24 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
               isIfoodMotoboy(order) ? (
                 <select
-                  disabled
                   onClick={e => e.stopPropagation()}
+                  onChange={async (e) => {
+                    if (!e.target.value) return;
+                    await onAssignMotoboy && onAssignMotoboy(order.id, e.target.value);
+                  }}
                   style={{
                     padding: "4px 8px", borderRadius: "6px", border: "2px solid #EF4444",
                     fontSize: "0.75rem", fontWeight: 800, color: "#DC2626",
                     background: "#FEF2F2", fontFamily: "inherit",
-                    cursor: "not-allowed", flex: 1, minWidth: "90px", maxWidth: "135px",
+                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
                     boxShadow: "0 0 0 1px #FCA5A5"
                   }}
-                  title="Entrega parceira do iFood — motoboy próprio do iFood (bloqueado para motoboy da loja)"
+                  title="O sistema detectou como Entrega Parceira iFood. Você pode alterar se estiver incorreto."
                 >
                   <option value="">🛵 Motoboy iFood</option>
+                  {motoboys?.map((m: any) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
                 </select>
               ) : (
                 <select
@@ -2266,7 +2287,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
                 </div>
 
-                {order.ifoodPickupCode && (
+                {isIfoodMotoboy(order) && order.ifoodPickupCode && (
                   <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
                     <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR IFOOD</div>
                     <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodPickupCode}</div>

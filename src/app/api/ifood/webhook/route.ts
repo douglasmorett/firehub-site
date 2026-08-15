@@ -303,8 +303,6 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
     const ifoodPickupCode = (
       orderData.delivery?.pickupCode ||
-      orderData.pickupCode ||
-      orderData.takeout?.pickupCode ||
       orderData.driver?.pickupCode ||
       orderData.logistics?.pickupCode ||
       event?.pickupCode ||
