@@ -10,7 +10,6 @@ const NAV_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
   { href: "/store/pedidos-clientes", label: "Pedidos", icon: ClipboardList, highlight: true },
   { href: "/store/kds", label: "KDS", icon: Monitor },
-  { href: "/store/mesas", label: "Mesas", icon: UtensilsCrossed },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "NOVO" },
   { href: "/store/totem", label: "Totem", icon: TabletSmartphone, badge: "EM TESTES" },
   { href: "/store/estoque", label: "Estoque", icon: Package },

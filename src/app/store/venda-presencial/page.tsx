@@ -91,10 +91,20 @@ export default function VendaPresencialPage() {
     return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
   };
 
+  // Esconde itens de integração (iFood, JotaJá, 99Food) que existem no banco
+  // apenas para referência de pedidos, mas não devem aparecer no PDV
+  const HIDDEN_CATEGORIES = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"]);
+  const isIntegrationItem = (p: any) => {
+    if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
+    const cat = (p.category || "").toUpperCase().trim();
+    return HIDDEN_CATEGORIES.has(cat);
+  };
+
   const categories = useMemo(() => {
     const activeTodayProducts = products.filter(p => {
       if (!p.active || p.activePDV === false) return false;
       if (!isAvailableToday(p, currentDayCode)) return false;
+      if (isIntegrationItem(p)) return false;
       return true;
     });
     const cats = Array.from(new Set(activeTodayProducts.map(p => p.isCombo ? "Combos" : (p.category || "Outros"))));
@@ -105,6 +115,7 @@ export default function VendaPresencialPage() {
     if (!p.active) return false;
     if (p.activePDV === false) return false;
     if (!isAvailableToday(p, currentDayCode)) return false;
+    if (isIntegrationItem(p)) return false;
     const cat = p.isCombo ? "Combos" : (p.category || "Outros");
     if (selectedCategory !== "Todos" && cat !== selectedCategory) return false;
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;

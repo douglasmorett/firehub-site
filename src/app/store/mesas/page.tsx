@@ -26,6 +26,7 @@ interface MenuItem {
   price: number;
   category?: string;
   isCombo?: boolean;
+  imageUrl?: string | null;
 }
 
 interface SessionOrder {
@@ -152,13 +153,23 @@ export default function MesasPage() {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          const items = data.filter((p: any) => p.active).map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            price: p.price,
-            category: p.category || "Outros",
-            isCombo: p.isCombo,
-          }));
+          // Esconde itens de integração (iFood, JotaJá, 99Food)
+          const HIDDEN_CATS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"]);
+          const isIntegration = (p: any) => {
+            if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
+            return HIDDEN_CATS.has((p.category || "").toUpperCase().trim());
+          };
+
+          const items = data
+            .filter((p: any) => p.active && p.activePDV !== false && !isIntegration(p))
+            .map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              price: p.price,
+              category: p.isCombo ? "Combos" : (p.category || "Outros"),
+              isCombo: p.isCombo,
+              imageUrl: p.imageUrl || null,
+            }));
           setMenuItems(items);
           const cats = ["Todos", ...Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros")))];
           setMenuCategories(cats as string[]);
