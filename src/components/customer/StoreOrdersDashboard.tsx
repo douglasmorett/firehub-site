@@ -584,6 +584,15 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               🏪 Retirada no local
             </div>
           )}
+          {order.deliveryType === "MESA" && (
+            <div style={{
+              color: "#5B21B6", fontWeight: 800, fontSize: "0.8rem",
+              background: "#F5F3FF", border: "1px solid #DDD6FE",
+              padding: "5px 10px", borderRadius: "8px", margin: "5px 0"
+            }}>
+              🍽️ {order.customerAddress || "Mesa"}
+            </div>
+          )}
 
           {/* Total + Forma de Pagamento */}
           <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "5px", flexWrap: "wrap" }}>
@@ -3366,6 +3375,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               }}
             >
               🛒 Pedidos Balcão
+            </a>
+
+            <a
+              href="/store/mesas"
+              style={{
+                padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
+                cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
+                background: "#F5F3FF", color: "#7C3AED", outline: "1.5px solid #DDD6FE",
+                textDecoration: "none"
+              }}
+            >
+              🍽️ Mesas
             </a>
 
             {/* Configurações de Alerta de Produção */}

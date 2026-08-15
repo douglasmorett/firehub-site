@@ -1485,14 +1485,18 @@ function OrderCard({
             display: "inline-block",
             padding: "3px 10px",
             borderRadius: 12,
-            background: "#1f2937",
-            color: "#d1d5db",
+            background: order.deliveryType === "MESA" ? "#5B21B6" : "#1f2937",
+            color: order.deliveryType === "MESA" ? "#E9D5FF" : "#d1d5db",
             fontSize: 12,
-            fontWeight: 600,
-            border: "1px solid #374151",
+            fontWeight: order.deliveryType === "MESA" ? 800 : 600,
+            border: order.deliveryType === "MESA" ? "1px solid #7C3AED" : "1px solid #374151",
           }}
         >
-          {order.deliveryType === "DELIVERY" ? "🛵 Delivery" : "🏠 Retirada"}
+          {order.deliveryType === "DELIVERY"
+            ? "🛵 Delivery"
+            : order.deliveryType === "MESA"
+              ? `🍽️ ${order.customerAddress || "Mesa"}`
+              : "🏠 Retirada"}
         </span>
 
         {/* Timer — pushed to the right com indicação de etapa (Produção / Finalização) */}
