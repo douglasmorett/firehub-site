@@ -85,6 +85,7 @@ export default function MesasPage() {
   const [showEditModal, setShowEditModal] = useState<TableItem | null>(null);
   const [editNumber, setEditNumber] = useState("");
   const [editLabel, setEditLabel] = useState("");
+  const [showFreeConfirm, setShowFreeConfirm] = useState(false);
 
   // Open table form
   const [openCustomerName, setOpenCustomerName] = useState("");
@@ -205,18 +206,22 @@ export default function MesasPage() {
     }
   };
 
-  const freeTable = async (table: TableItem) => {
-    if (!table.openSession) return;
-    if (!confirm(`Liberar Mesa ${table.number}? Todos os pedidos vinculados serão mantidos.`)) return;
+  const freeTable = async () => {
+    if (!selectedTable?.openSession) return;
+    if ((selectedTable.openSession.totalAmount || 0) > 0) {
+      showToast("❌ Não é possível liberar mesa com consumo. Feche a conta primeiro.");
+      return;
+    }
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/store/table-sessions/${table.openSession.id}/close`, {
+      const res = await fetch(`/api/store/table-sessions/${selectedTable.openSession.id}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentMethods: [], serviceFeePercent: 0 }),
       });
       if (res.ok) {
-        showToast(`✅ Mesa ${table.number} liberada!`);
+        showToast(`✅ Mesa ${selectedTable.number} liberada!`);
+        setShowFreeConfirm(false);
         setSelectedTable(null);
         setSessionDetail(null);
         setView("grid");
@@ -801,16 +806,9 @@ export default function MesasPage() {
                 cursor: "pointer", boxShadow: "0 2px 6px rgba(220,38,38,0.2)",
               }}>💰 Fechar Conta</button>
               {(selectedTable.openSession.totalAmount === 0) && (
-                <button onClick={() => freeTable(selectedTable)} style={{
+                <button onClick={() => setShowFreeConfirm(true)} style={{
                   padding: "10px 0", borderRadius: 10, border: "1.5px solid #F59E0B",
                   background: "#FFFBEB", color: "#D97706", fontWeight: 800, fontSize: 13,
-                  cursor: "pointer", gridColumn: "1 / -1",
-                }}>🔓 Liberar Mesa (sem consumo)</button>
-              )}
-              {(selectedTable.openSession.totalAmount > 0) && (
-                <button onClick={() => freeTable(selectedTable)} style={{
-                  padding: "10px 0", borderRadius: 10, border: "1.5px solid #E2E8F0",
-                  background: "#F8FAFC", color: "#64748B", fontWeight: 700, fontSize: 12,
                   cursor: "pointer", gridColumn: "1 / -1",
                 }}>🔓 Liberar Mesa</button>
               )}
@@ -1166,6 +1164,46 @@ export default function MesasPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── FREE TABLE CONFIRM MODAL ─── */}
+      {showFreeConfirm && selectedTable && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={() => setShowFreeConfirm(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "#fff", borderRadius: 20, width: "90%", maxWidth: 400,
+            padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", textAlign: "center",
+          }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: 16, background: "#FEF3C7",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 28, margin: "0 auto 14px",
+            }}>🔓</div>
+            <h3 style={{ margin: "0 0 8px", fontWeight: 800, fontSize: 20 }}>
+              Liberar Mesa {selectedTable.number}?
+            </h3>
+            <p style={{ color: "#64748B", fontSize: 14, margin: "0 0 20px", lineHeight: 1.5 }}>
+              A mesa será liberada e ficará disponível para novos clientes.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowFreeConfirm(false)} style={{
+                flex: 1, padding: "12px 0", borderRadius: 12,
+                border: "1.5px solid #E2E8F0", background: "#F8FAFC",
+                color: "#64748B", fontWeight: 700, fontSize: 14, cursor: "pointer",
+              }}>Cancelar</button>
+              <button onClick={freeTable} disabled={actionLoading} style={{
+                flex: 1, padding: "12px 0", borderRadius: 12, border: "none",
+                background: "#F59E0B", color: "#fff", fontWeight: 800, fontSize: 14,
+                cursor: "pointer", boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
+                opacity: actionLoading ? 0.6 : 1,
+              }}>
+                {actionLoading ? "Liberando..." : "Sim, Liberar"}
+              </button>
             </div>
           </div>
         </div>
