@@ -112,6 +112,7 @@ model User {
   customerOrders  CustomerOrder[]
   storeReviews    StoreReview[]
   motoboys        Motoboy[]
+  waiters         Waiter[]
   menuProducts    MenuProduct[]
   stockItems      StockItem[]
   stockInvoices   StockInvoice[]
@@ -570,10 +571,13 @@ model TableSession {
   status          String          @default("OPEN") // OPEN | CLOSING | CLOSED
   customerName    String?         // Nome opcional do cliente/grupo
   waiterName      String?         // Nome do garçom
+  waiterId        String?         // ID do garçom vinculado
+  waiter          Waiter?         @relation(fields: [waiterId], references: [id], onDelete: SetNull)
   openedAt        DateTime        @default(now())
   closedAt        DateTime?
   notes           String?
   serviceFee      Float?          // Taxa de serviço cobrada (ex: 10%)
+  waiterCommission Float?         // Valor da comissão (R$) que o garçom ganhou nesta mesa
   totalPaid       Float?          // Total pago no fechamento
   paymentMethods  Json?           // [{method: "Pix", amount: 100}, ...]
   orders          CustomerOrder[]
@@ -581,6 +585,7 @@ model TableSession {
 
   @@index([tableId])
   @@index([franchiseeId, status])
+  @@index([waiterId])
 }
 
 model StoreEmployee {
@@ -764,6 +769,24 @@ model Motoboy {
   @@index([franchiseeId])
 }
 
+// ========== GARÇONS ==========
+model Waiter {
+  id               String          @id @default(cuid())
+  franchiseeId     String
+  name             String
+  phone            String?
+  active           Boolean         @default(true)
+  commissionRate   Float?          @default(10) // Ex: 10% padrão de comissão
+  notes            String?
+  
+  franchisee       User            @relation(fields: [franchiseeId], references: [id])
+  tableSessions    TableSession[]
+  
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([franchiseeId])
+}
 
 // ========== SESSÕES DE CAIXA ==========
 model CashSession {

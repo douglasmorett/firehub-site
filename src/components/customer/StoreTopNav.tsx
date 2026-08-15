@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/trafego", label: "Tráfego Pago", icon: PieChart, badge: "EM TESTES" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
+  { href: "/store/garcons", label: "Garçons", icon: Users },
   { href: "/store/funcionarios", label: "Fiado", icon: Users },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },
 ];

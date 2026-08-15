@@ -61,6 +61,19 @@ export async function POST(
         });
       }
 
+      // Calculate waiter commission if linked
+      let waiterCommission = 0;
+      if (tableSession.waiterId && serviceFee > 0) {
+        // Option A: Waiter gets the exact service fee collected
+        waiterCommission = serviceFee;
+        
+        // If you prefer Option B (fixed % of subtotal), uncomment and adjust:
+        // const waiter = await tx.waiter.findUnique({ where: { id: tableSession.waiterId } });
+        // if (waiter && waiter.commissionRate) {
+        //   waiterCommission = (subtotal * waiter.commissionRate) / 100;
+        // }
+      }
+
       // 2. Update session to CLOSED
       await tx.tableSession.update({
         where: { id },
@@ -69,6 +82,7 @@ export async function POST(
           closedAt: new Date(),
           totalPaid,
           serviceFee,
+          waiterCommission: waiterCommission > 0 ? waiterCommission : undefined,
           paymentMethods: paymentMethods ? paymentMethods : undefined
         }
       });

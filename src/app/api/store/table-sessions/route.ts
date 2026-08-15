@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const targetFranchiseeId = dbUser.ownerId || dbUser.id;
 
     const data = await req.json();
-    const { tableId, customerName, waiterName } = data;
+    const { tableId, customerName, waiterName, waiterId } = data;
 
     if (!tableId) return NextResponse.json({ error: "Table ID is required" }, { status: 400 });
 
@@ -102,6 +102,7 @@ export async function POST(req: NextRequest) {
         franchiseeId: targetFranchiseeId,
         customerName: customerName || null,
         waiterName: waiterName || null,
+        waiterId: waiterId || null,
         status: "OPEN",
         openedAt: new Date()
       }

@@ -90,7 +90,18 @@ export default function MesasPage() {
 
   // Open table form
   const [openCustomerName, setOpenCustomerName] = useState("");
-  const [openWaiterName, setOpenWaiterName] = useState("");
+  const [openWaiterId, setOpenWaiterId] = useState("");
+  const [waiters, setWaiters] = useState<any[]>([]);
+
+  // Load waiters
+  useEffect(() => {
+    fetch("/api/store/waiters")
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        if (Array.isArray(data)) setWaiters(data.filter(w => w.active));
+      })
+      .catch(() => {});
+  }, []);
 
   // Order form
   const [cart, setCart] = useState<{ item: MenuItem; qty: number }[]>([]);
@@ -161,7 +172,7 @@ export default function MesasPage() {
           };
 
           const items = data
-            .filter((p: any) => p.active && p.activePDV !== false && !isIntegration(p))
+            .filter((p: any) => p.active && p.activeGarcom !== false && !isIntegration(p))
             .map((p: any) => ({
               id: p.id,
               name: p.name,
@@ -183,20 +194,22 @@ export default function MesasPage() {
     if (!confirmOpen) return;
     setActionLoading(true);
     try {
+      const selectedWaiter = waiters.find(w => w.id === openWaiterId);
       const res = await fetch("/api/store/table-sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tableId: confirmOpen.id,
-          customerName: openCustomerName || null,
-          waiterName: openWaiterName || null,
-        }),
+        body: JSON.stringify({ 
+          tableId: confirmOpen.id, 
+          customerName: openCustomerName, 
+          waiterId: openWaiterId,
+          waiterName: selectedWaiter ? selectedWaiter.name : "" 
+        })
       });
       if (res.ok) {
         showToast(`✅ Mesa ${confirmOpen.number} ocupada!`);
         setConfirmOpen(null);
         setOpenCustomerName("");
-        setOpenWaiterName("");
+        setOpenWaiterId("");
         await fetchTables();
         // Select the now-opened table
         const updated = await fetch("/api/store/tables");
@@ -506,31 +519,31 @@ export default function MesasPage() {
             {filteredMenu.map(item => {
               const inCart = cart.find(c => c.item.id === item.id);
               return (
-                <button key={item.id} onClick={() => {
+                <div key={item.id} onClick={() => {
                   if (inCart) {
                     setCart(prev => prev.map(c => c.item.id === item.id ? { ...c, qty: c.qty + 1 } : c));
                   } else {
                     setCart(prev => [...prev, { item, qty: 1 }]);
                   }
-                }} style={{
-                  background: inCart ? "#F0EDFF" : "#fff",
-                  border: inCart ? "2px solid #7C3AED" : "1px solid #E2E8F0",
-                  borderRadius: 12, padding: "12px 10px", cursor: "pointer",
-                  textAlign: "left", position: "relative", transition: "all 0.1s",
-                }}>
+                }}
+                  style={{ background: "#fff", border: `2px solid ${inCart ? "#C62828" : "#E2E8F0"}`, borderRadius: 14, padding: 10, cursor: "pointer", transition: "all 0.15s", position: "relative", userSelect: "none" }}
+                  onMouseEnter={e => { if (!inCart) e.currentTarget.style.borderColor = "#FCA5A5"; }}
+                  onMouseLeave={e => { if (!inCart) e.currentTarget.style.borderColor = "#E2E8F0"; }}>
                   {inCart && (
-                    <span style={{
-                      position: "absolute", top: -6, right: -6,
-                      background: "#7C3AED", color: "#fff", borderRadius: "50%",
-                      width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 11, fontWeight: 900,
-                    }}>{inCart.qty}</span>
+                    <div style={{ position: "absolute", top: 6, right: 6, width: 20, height: 20, background: "#C62828", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ color: "#fff", fontSize: "0.65rem", fontWeight: 900 }}>{inCart.qty}</span>
+                    </div>
                   )}
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B", lineHeight: 1.3, marginBottom: 6 }}>
-                    {item.isCombo ? "🍱 " : ""}{item.name}
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: "#7C3AED" }}>{fmt(item.price)}</div>
-                </button>
+                  {item.imageUrl
+                    ? <img src={item.imageUrl} alt={item.name} style={{ width: "100%", height: 75, objectFit: "cover", borderRadius: 8, marginBottom: 6 }} />
+                    : <div style={{ width: "100%", height: 75, background: "#F1F5F9", borderRadius: 8, marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
+                        {item.isCombo ? "🍱" : "🍔"}
+                      </div>
+                  }
+                  <div style={{ fontWeight: 700, fontSize: "0.8rem", marginBottom: 2, lineHeight: 1.2 }}>{item.name}</div>
+                  <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginBottom: 4 }}>{item.isCombo ? "Combo" : item.category}</div>
+                  <div style={{ color: "#C62828", fontWeight: 800, fontSize: "0.88rem" }}>{fmt(item.price)}</div>
+                </div>
               );
             })}
           </div>
@@ -888,7 +901,7 @@ export default function MesasPage() {
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
           display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenWaiterName(""); }}>
+        }} onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenWaiterId(""); }}>
           <div onClick={e => e.stopPropagation()} style={{
             background: "#fff", borderRadius: 20, width: "90%", maxWidth: 420,
             padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
@@ -930,16 +943,24 @@ export default function MesasPage() {
               <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>
                 Garçom (opcional)
               </label>
-              <input value={openWaiterName} onChange={e => setOpenWaiterName(e.target.value)}
-                placeholder="Nome do garçom"
+              <select value={openWaiterId} onChange={e => setOpenWaiterId(e.target.value)}
                 style={{
                   width: "100%", padding: "10px 14px", borderRadius: 10,
                   border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit",
-                }} />
+                  background: "#fff", cursor: "pointer"
+                }}>
+                <option value="">Sem garçom</option>
+                {waiters.map(w => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+              <a href="/store/garcons" target="_blank" style={{ fontSize: 12, color: "#3B82F6", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 600 }}>
+                + adicionar garçom
+              </a>
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenWaiterName(""); }}
+              <button onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenWaiterId(""); }}
                 style={{
                   flex: 1, padding: "12px 0", borderRadius: 12,
                   border: "1.5px solid #E2E8F0", background: "#F8FAFC",
