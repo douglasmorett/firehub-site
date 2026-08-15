@@ -105,24 +105,16 @@ export const isIfoodMotoboy = (order: any): boolean => {
   const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase().trim();
   const dMode = (order.deliveryMode || "").toString().toUpperCase().trim();
 
-  // 1. Se explicitamente for "MERCHANT", "LOJA", "PROPRIO", "MERCHANT_DELIVERY" -> É ENTREGA PRÓPRIA DA LOJA!
-  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dBy === "MERCHANT_DELIVERY") {
-    return false;
-  }
+  // Se explicitamente for da loja
+  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dBy === "MERCHANT_DELIVERY") return false;
 
-  // 2. Se o modo de entrega for DEFAULT, ECONOMIC, MERCHANT_DELIVERY, TAKEOUT, PICKUP -> É ENTREGA PRÓPRIA DA LOJA!
-  if (dMode === "DEFAULT" || dMode === "ECONOMIC" || dMode === "MERCHANT_DELIVERY" || dMode === "TAKEOUT" || dMode === "PICKUP") {
-    return false;
-  }
+  // Se tem motorista iFood alocado, é parceira!
+  if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) return true;
 
-  // 3. Apenas se explicitamente for "IFOOD" ou "IFOOD_LOGISTICS" ou "LOGISTICS" ou dMode === "LOGISTIC" / "PARTNER" -> É ENTREGA DO IFOOD
-  if (order.source === "IFOOD" && (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy === "LOGISTICS" || dMode === "LOGISTIC" || dMode === "PARTNER")) {
-    return true;
-  }
-
-  // 4. Fallback: se houver motorista do iFood alocado
-  if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) {
-    return true;
+  // Apenas se tiver o campo explícito "IFOOD" ou código de coleta
+  if (order.source === "IFOOD") {
+    if (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "LOGISTICS" || dMode === "LOGISTIC" || dMode === "PARTNER") return true;
+    if (order.ifoodPickupCode) return true; // Se tem código de coleta, é entrega iFood
   }
 
   return false;
@@ -635,7 +627,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 <span>🛵</span>
                 <span>ENTREGA PARCEIRA IFOOD — Entregador do iFood (Não enviar motoboy da loja!)</span>
               </div>
-              {(order.ifoodReference || order.openDeliveryReference) && (
+              {order.ifoodPickupCode && (
                 <div style={{
                   marginTop: "2px", padding: "5px 10px", borderRadius: "6px",
                   background: "#FFF", border: "2px dashed #7C3AED",
@@ -644,7 +636,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 }}>
                   <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR:</span>
                   <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
-                    #{order.ifoodPickupCode || order.ifoodReference || order.openDeliveryReference}
+                    #{order.ifoodPickupCode}
                   </span>
                 </div>
               )}
@@ -2281,10 +2273,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
                 </div>
 
-                {isIfoodMotoboy(order) && (order.ifoodPickupCode || order.ifoodReference) && (
+                {order.ifoodPickupCode && (
                   <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
                     <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR IFOOD</div>
-                    <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodPickupCode || order.ifoodReference}</div>
+                    <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodPickupCode}</div>
                   </div>
                 )}
 
