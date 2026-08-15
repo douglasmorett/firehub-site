@@ -779,33 +779,78 @@ export default function KDSTelaPage() {
                 ? `Desfazer Baixa #${getDisplayOrderNumber(lastCompletedOrder.order)}`
                 : "Desfazer Última Baixa"}
             </button>
-
-
           </div>
-          {/* ─── Filter Tabs (Smart TV safe: explicit buttons + onPointerDown) ─── */}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+            {isReconnecting && (
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#ef4444",
+                  animation: "kds-reconnecting-pulse 1.5s ease-in-out infinite",
+                }}
+              >
+                ⚠ Reconectando...
+              </span>
+            )}
+            <span
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color: "#9ca3af",
+              }}
+            >
+              {filteredOrders.length}{" "}
+              {filteredOrders.length === 1 ? "pedido" : "pedidos"}
+            </span>
+            <span
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                fontFamily: MONO_FONT,
+                color: "#e5e7eb",
+                letterSpacing: "1px",
+              }}
+            >
+              {currentTime.toLocaleTimeString("pt-BR", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
+            </span>
+          </div>
+        </header>
+
+        {/* ─── Filter Bar (separada do header para compatibilidade com Smart TVs) ─── */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "8px 24px",
+            background: "#0d0d14",
+            borderBottom: "1px solid #1a1a2e",
+            flexShrink: 0,
+            gap: 12,
+          }}
+        >
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 4,
+              gap: 6,
               background: "#1a1a2e",
               borderRadius: 12,
               padding: 5,
-              position: "relative",
-              zIndex: 50,
-              isolation: "isolate",
-              marginRight: 12,
-              touchAction: "manipulation",
-              WebkitTapHighlightColor: "transparent",
-              userSelect: "none",
             }}
           >
             <button
               type="button"
-              onPointerDown={(e) => { e.stopPropagation(); setFilter("all"); }}
+              onPointerDown={() => setFilter("all")}
               onClick={() => setFilter("all")}
               style={{
-                padding: "10px 20px",
+                padding: "10px 24px",
                 borderRadius: 10,
                 border: "none",
                 fontWeight: 700,
@@ -814,22 +859,18 @@ export default function KDSTelaPage() {
                 fontFamily: FONT,
                 background: filter === "all" ? accent : "transparent",
                 color: filter === "all" ? "#fff" : "#9ca3af",
-                minWidth: 70,
                 minHeight: 44,
                 touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                userSelect: "none",
-                outline: "none",
               }}
             >
               Todos
             </button>
             <button
               type="button"
-              onPointerDown={(e) => { e.stopPropagation(); setFilter("odd"); }}
+              onPointerDown={() => setFilter("odd")}
               onClick={() => setFilter("odd")}
               style={{
-                padding: "10px 20px",
+                padding: "10px 24px",
                 borderRadius: 10,
                 border: "none",
                 fontWeight: 700,
@@ -838,22 +879,18 @@ export default function KDSTelaPage() {
                 fontFamily: FONT,
                 background: filter === "odd" ? accent : "transparent",
                 color: filter === "odd" ? "#fff" : "#9ca3af",
-                minWidth: 70,
                 minHeight: 44,
                 touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                userSelect: "none",
-                outline: "none",
               }}
             >
               Ímpares
             </button>
             <button
               type="button"
-              onPointerDown={(e) => { e.stopPropagation(); setFilter("even"); }}
+              onPointerDown={() => setFilter("even")}
               onClick={() => setFilter("even")}
               style={{
-                padding: "10px 20px",
+                padding: "10px 24px",
                 borderRadius: 10,
                 border: "none",
                 fontWeight: 700,
@@ -862,17 +899,14 @@ export default function KDSTelaPage() {
                 fontFamily: FONT,
                 background: filter === "even" ? accent : "transparent",
                 color: filter === "even" ? "#fff" : "#9ca3af",
-                minWidth: 70,
                 minHeight: 44,
                 touchAction: "manipulation",
-                WebkitTapHighlightColor: "transparent",
-                userSelect: "none",
-                outline: "none",
               }}
             >
               Pares
             </button>
           </div>
+
           {/* ─── Category Filter Button ─── */}
           <div
             style={{
@@ -1051,47 +1085,7 @@ export default function KDSTelaPage() {
               </div>
             )}
           </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-            {isReconnecting && (
-              <span
-                style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: "#ef4444",
-                  animation: "kds-reconnecting-pulse 1.5s ease-in-out infinite",
-                }}
-              >
-                ⚠ Reconectando...
-              </span>
-            )}
-            <span
-              style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: "#9ca3af",
-              }}
-            >
-              {filteredOrders.length}{" "}
-              {filteredOrders.length === 1 ? "pedido" : "pedidos"}
-            </span>
-            <span
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
-                fontFamily: MONO_FONT,
-                color: "#e5e7eb",
-                letterSpacing: "1px",
-              }}
-            >
-              {currentTime.toLocaleTimeString("pt-BR", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })}
-            </span>
-          </div>
-        </header>
+        </div>
 
         {/* ─── Content ─────────────────────────────────────────────────── */}
         <div
