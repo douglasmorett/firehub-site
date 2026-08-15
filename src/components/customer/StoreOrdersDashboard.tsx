@@ -102,21 +102,14 @@ const cleanAddressForMap = (addr: string | null, city?: string): string => {
 export const isIfoodMotoboy = (order: any): boolean => {
   if (!order) return false;
 
-  const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase().trim();
-  const dMode = (order.deliveryMode || "").toString().toUpperCase().trim();
-
-  // Se explicitamente for da loja
-  if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dBy === "MERCHANT_DELIVERY") return false;
-
-  // Se tem motorista iFood alocado, é parceira!
+  // Certeza absoluta 1: Tem motorista do iFood alocado ou a caminho
   if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) return true;
 
-  // Apenas se tiver o campo explícito "IFOOD" ou código de coleta
-  if (order.source === "IFOOD") {
-    if (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "LOGISTICS" || dMode === "LOGISTIC" || dMode === "PARTNER") return true;
-    if (order.ifoodPickupCode) return true; // Se tem código de coleta, é entrega iFood
-  }
+  // Certeza absoluta 2: O iFood enviou um código de coleta para motoboy parceiro
+  if (order.ifoodPickupCode) return true;
 
+  // Se não tem código de coleta nem motorista designado, NUNCA trave a loja. 
+  // O lojista deve poder usar seu próprio motoboy se quiser.
   return false;
 };
 
