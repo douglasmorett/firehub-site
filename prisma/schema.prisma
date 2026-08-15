@@ -99,6 +99,7 @@ model User {
   showReviewsOnMenu Boolean        @default(true)  // Exibir avaliações no cardápio digital
   ambassadorId    String?        // ID do embaixador que indicou esta loja
   ambassador      Ambassador?    @relation("AmbassadorStores", fields: [ambassadorId], references: [id], onDelete: SetNull)
+  onboardingData  Json?          // { comoConheceu, faturamento, etc }
   // === INDIQUE E GANHE (Parceiros/Revendedores) ===
   referredById    String?
   referredBy      User?          @relation("UserReferrals", fields: [referredById], references: [id])

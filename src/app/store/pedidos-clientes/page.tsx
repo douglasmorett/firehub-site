@@ -115,10 +115,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       }),
     ]);
 
-    orders = ordersRes.map((o: any) => ({
-      ...o,
-      dailyOrderNumber: o.dailyOrderNumber || parseInt(o.id.slice(-4), 16) % 10000 || null,
-    }));
+    orders = ordersRes;
 
     motoboys = motoboysRes;
     if (cashSessionRes?.openedAt) {

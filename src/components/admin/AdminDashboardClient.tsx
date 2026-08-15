@@ -12,7 +12,7 @@ type Lojista = {
   id: string; name: string | null; email: string; slug: string | null;
   storeName: string | null; city: string | null; createdAt: string;
   storeOpen: boolean; isFranqueadoHakim: boolean; storeLogo: string | null;
-  storePhone: string | null; cpfCnpj: string | null; repasseConfig: any;
+  storePhone: string | null; cpfCnpj: string | null; repasseConfig: any; onboardingData?: any;
   diasCadastro: number; emTrial: boolean;
   diasRestantesTrial?: number; trialEndsAt?: string | null;
   pendente: number; temMP: boolean; temCelcoin: boolean;
@@ -361,6 +361,14 @@ export default function AdminDashboardClient({
                                 <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Repasse Pix</div>
                                 <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.repasseConfig ? (typeof l.repasseConfig === 'object' ? `${(l.repasseConfig as any).tipoChave || '—'}: ${(l.repasseConfig as any).chavePix || '—'}` : 'Configurado') : "Não configurado"}</div>
                               </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Canal (Como Conheceu)</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.onboardingData?.comoConheceu || "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Faturamento Declarado</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.onboardingData?.faturamento || "—"}</div>
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -498,6 +506,14 @@ export default function AdminDashboardClient({
                               <div>
                                 <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Repasse Pix</div>
                                 <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.repasseConfig ? (typeof l.repasseConfig === 'object' ? `${(l.repasseConfig as any).tipoChave || '—'}: ${(l.repasseConfig as any).chavePix || '—'}` : 'Configurado') : "Não configurado"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Canal (Como Conheceu)</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.onboardingData?.comoConheceu || "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Faturamento Declarado</div>
+                                <div style={{ color: "#E2E8F0", fontSize: "0.82rem", fontWeight: 600 }}>{l.onboardingData?.faturamento || "—"}</div>
                               </div>
                             </div>
                           </td>

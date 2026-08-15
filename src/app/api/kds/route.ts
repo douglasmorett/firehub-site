@@ -147,10 +147,7 @@ export async function GET(req: NextRequest) {
       })
     ).catch(() => []);
 
-    const ordersWithDailyNum = orders.map((o: any) => ({
-      ...o,
-      dailyOrderNumber: o.dailyOrderNumber || parseInt(o.id.slice(-4), 16) % 10000 || null,
-    }));
+    const ordersWithDailyNum = orders;
 
     return NextResponse.json(ordersWithDailyNum, {
       headers: {

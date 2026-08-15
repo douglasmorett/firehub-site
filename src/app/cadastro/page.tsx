@@ -155,7 +155,8 @@ export default function CadastroPage() {
       const body: any = {
         name: nome, email, password: senha, phone: whatsapp.replace(/\D/g, ""),
         cnpj: cnpjData?.cnpj, cpf: cpf.replace(/\D/g, ""),
-        storeName, city: cnpjData?.municipio, refCode
+        storeName, city: cnpjData?.municipio, refCode,
+        comoConheceu, faturamento
       };
       if (repasseData) body.repasseConfig = repasseData;
 

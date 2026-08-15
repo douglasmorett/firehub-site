@@ -687,10 +687,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const ordersWithDailyNum = orders.map((o: any) => ({
-      ...o,
-      dailyOrderNumber: o.dailyOrderNumber || parseInt(o.id.slice(-4), 16) % 10000 || null,
-    }));
+    // Apenas passamos os pedidos diretamente (A numeração será tratada no Client via getDisplayOrderNumber)
+    const ordersWithDailyNum = orders;
 
     // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
     try {

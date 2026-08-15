@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, password, phone, storeName, cnpj, cpf, city, repasseConfig, refCode } = await req.json();
+    const { name, email, password, phone, storeName, cnpj, cpf, city, repasseConfig, refCode, comoConheceu, faturamento } = await req.json();
 
     // Validações básicas
     if (!name || !email || !password) {
@@ -139,6 +139,10 @@ export async function POST(req: NextRequest) {
         referredById,
         trialEndsAt,
         ...(repasseConfig && Object.keys(repasseConfig).length > 0 ? { repasseConfig } : {}),
+        onboardingData: {
+          comoConheceu: comoConheceu || null,
+          faturamento: faturamento || null,
+        },
         permissions: "",
         isFranqueadoHakim: false,
         storeOpen: true,

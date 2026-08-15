@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { parseComboSelections } from "@/lib/parse-combo";
+import { getDisplayOrderNumber } from "@/lib/order-sequence";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -204,21 +205,6 @@ export default function KDSTelaPage() {
       })
       .catch(() => {});
   }, []);
-
-  // Numeração FIEL E UNIFICADA com a tela do painel e comanda
-  const orderNumberMap = useMemo(() => {
-    const map = new Map<string, number>();
-    orders.forEach((o: any) => {
-      if (
-        typeof o.dailyOrderNumber === "number" &&
-        !isNaN(o.dailyOrderNumber)
-      ) {
-        map.set(o.id, o.dailyOrderNumber);
-      }
-    });
-    return map;
-  }, [orders]);
-
   // Buscar todas as categorias no mount para o seletor de filtros
   useEffect(() => {
     fetch("/api/admin/categories")
@@ -228,7 +214,6 @@ export default function KDSTelaPage() {
       })
       .catch(() => {});
   }, []);
-
   const lastJsonRef = useRef<string>("");
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -434,13 +419,13 @@ export default function KDSTelaPage() {
     switch (filter) {
       case "odd":
         result = result.filter((o) => {
-          const num = getNumericOrderNumber(o, orderNumberMap.get(o.id));
+          const num = parseInt(getDisplayOrderNumber(o).replace(/\D/g, "") || "0", 10);
           return num % 2 !== 0;
         });
         break;
       case "even":
         result = result.filter((o) => {
-          const num = getNumericOrderNumber(o, orderNumberMap.get(o.id));
+          const num = parseInt(getDisplayOrderNumber(o).replace(/\D/g, "") || "0", 10);
           return num % 2 === 0;
         });
         break;
@@ -473,7 +458,7 @@ export default function KDSTelaPage() {
     }
 
     return result;
-  }, [orders, filter, activeCategories, orderNumberMap]);
+  }, [orders, filter, activeCategories]);
 
   const exitingOrderIdsRef = useRef<Set<string>>(new Set());
   const completedOrderIdsRef = useRef<Set<string>>(new Set());
@@ -506,7 +491,7 @@ export default function KDSTelaPage() {
       });
 
       // Show toast
-      setToast({ orderId: order.id, label: getOrderLabel(order) });
+      setToast({ orderId: order.id, label: `#${getDisplayOrderNumber(order)}` });
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setToast(null), 2000);
 
@@ -566,7 +551,7 @@ export default function KDSTelaPage() {
       lastCompletedOrder.previousStage === "production"
         ? "revert_production"
         : "revert_finishing";
-    const restoredLabel = getOrderLabel(lastCompletedOrder.order);
+    const restoredLabel = getDisplayOrderNumber(lastCompletedOrder.order);
 
     try {
       completedOrderIdsRef.current.delete(lastCompletedOrder.order.id);
@@ -791,7 +776,7 @@ export default function KDSTelaPage() {
             >
               <span style={{ fontSize: 16 }}>↩️</span>{" "}
               {lastCompletedOrder
-                ? `Desfazer Baixa ${getOrderLabel(lastCompletedOrder.order)}`
+                ? `Desfazer Baixa #${getDisplayOrderNumber(lastCompletedOrder.order)}`
                 : "Desfazer Última Baixa"}
             </button>
 
@@ -1115,7 +1100,6 @@ export default function KDSTelaPage() {
                 <OrderCard
                   key={order.id}
                   order={order}
-                  seqNum={orderNumberMap.get(order.id)}
                   position={index + 1}
                   stage={stage}
                   accent={accent}
@@ -1409,7 +1393,7 @@ function OrderCard({
             letterSpacing: "-0.5px",
           }}
         >
-          {`#${seqNum ?? order.dailyOrderNumber ?? getOrderLabel(order).replace("#", "")}`}
+          {`#${getDisplayOrderNumber(order).replace("#", "")}`}
         </span>
 
         {/* Source badge */}

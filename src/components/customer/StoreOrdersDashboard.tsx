@@ -5,6 +5,7 @@ import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
+import { getDisplayOrderNumber } from "@/lib/order-sequence";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -1123,7 +1124,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     markAutoPrinted(order);
 
-    const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
+    const seqNum = getDisplayOrderNumber(order);
 
     // 1. Prepara dados do pedido
     const activeConfig = printerConfig && printerConfig.printers?.length > 0
@@ -1534,7 +1535,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const assignMotoboy = async (orderId: string, motoboyId: string) => {
     setAssigningId(orderId);
     const targetOrder = orders.find((o) => o.id === orderId);
-    const seqNum = targetOrder ? (targetOrder.dailyOrderNumber ?? orderNumberMap.get(orderId)) : undefined;
+    const seqNum = targetOrder ? getDisplayOrderNumber(targetOrder) : undefined;
 
     try {
       await fetch("/api/customer-order/assign-motoboy", {
@@ -1869,25 +1870,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     );
   });
 
-  // Numeração PERMANENTE E IMUTÁVEL:
-  // Uma vez atribuído um número (ex: #97), ele é bloqueado e NUNCA muda ou pisca para outro valor.
-  const persistentOrderNumMapRef = useRef<Map<string, number>>(new Map());
 
-  const orderNumberMap = useMemo(() => {
-    const map = persistentOrderNumMapRef.current;
-
-    orders.forEach((o: any) => {
-      if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
-        map.set(o.id, o.dailyOrderNumber);
-      } else if (!map.has(o.id)) {
-        // Fallback visual para pedidos legados de ontem sem numeração no DB
-        const fallbackNum = parseInt(o.id.slice(-4), 16) % 10000;
-        map.set(o.id, fallbackNum);
-      }
-    });
-
-    return map;
-  }, [orders]);
 
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 
@@ -1895,8 +1878,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const timeA = new Date(a.createdAt).getTime();
     const timeB = new Date(b.createdAt).getTime();
     if (timeA !== timeB) return timeA - timeB;
-    const numA = a.dailyOrderNumber ?? orderNumberMap.get(a.id) ?? 0;
-    const numB = b.dailyOrderNumber ?? orderNumberMap.get(b.id) ?? 0;
+    const numA = parseInt(getDisplayOrderNumber(a).replace(/\D/g, "") || "0", 10);
+    const numB = parseInt(getDisplayOrderNumber(b).replace(/\D/g, "") || "0", 10);
     return numA - numB;
   };
 
@@ -2234,7 +2217,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const dateStr = createdDate.toLocaleDateString("pt-BR", { year: "2-digit", month: "2-digit", day: "2-digit" });
         const timeStr = createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
         const isDelivery = order.deliveryType === "DELIVERY";
-        const seqNum = order.dailyOrderNumber ?? orderNumberMap.get(order.id) ?? "—";
+        const seqNum = getDisplayOrderNumber(order);
         const subtotal = order.items?.reduce((sum: number, it: any) => sum + getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * it.quantity, 0) || order.totalAmount;
 
         return (
@@ -2635,7 +2618,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const disputeOrder = orders.find((o: any) => o.cancelDispute?.pending === true);
         if (!disputeOrder) return null;
         const dispute = (disputeOrder as any).cancelDispute;
-        const orderNum = orderNumberMap.get(disputeOrder.id) || disputeOrder.ifoodReference || disputeOrder.openDeliveryReference || disputeOrder.id.slice(-4);
+        const orderNum = getDisplayOrderNumber(disputeOrder);
         const expiresAt = dispute.expiresAt ? new Date(dispute.expiresAt) : null;
         const timeLeft = expiresAt ? Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000)) : null;
         const timeLeftMin = timeLeft != null ? Math.floor(timeLeft / 60) : 0;
@@ -3518,7 +3501,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
-                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                seqNum={getDisplayOrderNumber(o)}
                 timeAlertConfig={timeAlertConfig}
                 selectedOrderIds={selectedOrderIds}
                 motoboys={motoboys}
@@ -3548,7 +3531,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
-                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                seqNum={getDisplayOrderNumber(o)}
                 timeAlertConfig={timeAlertConfig}
                 selectedOrderIds={selectedOrderIds}
                 motoboys={motoboys}
@@ -3578,7 +3561,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
-                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                seqNum={getDisplayOrderNumber(o)}
                 timeAlertConfig={timeAlertConfig}
                 selectedOrderIds={selectedOrderIds}
                 motoboys={motoboys}
@@ -3608,7 +3591,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
-                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                seqNum={getDisplayOrderNumber(o)}
                 timeAlertConfig={timeAlertConfig}
                 selectedOrderIds={selectedOrderIds}
                 motoboys={motoboys}
@@ -3638,7 +3621,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
-                seqNum={o.dailyOrderNumber ?? orderNumberMap.get(o.id) ?? "—"}
+                seqNum={getDisplayOrderNumber(o)}
                 timeAlertConfig={timeAlertConfig}
                 selectedOrderIds={selectedOrderIds}
                 motoboys={motoboys}
