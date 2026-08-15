@@ -709,43 +709,43 @@ export default function KDSTelaPage() {
           overflow: "hidden",
         }}
       >
-        {/* ─── Header ──────────────────────────────────────────────────── */}
+        {/* ─── Header (single row, 2 groups to prevent Smart TV overlap) ─── */}
         <header
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "12px 24px",
+            padding: "10px 20px",
             background: "linear-gradient(180deg, #111118 0%, #0d0d14 100%)",
             borderBottom: `2px solid ${accent}33`,
             flexShrink: 0,
-            flexWrap: "wrap",
-            gap: 12,
+            gap: 10,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* ── Left group: Name + Badge + Undo + Filter Tabs ── */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
             <span
-              style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px" }}
+              style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px", whiteSpace: "nowrap" }}
             >
               {stage === "production" ? "🔥" : "📦"} {screenName}
             </span>
             <span
               style={{
                 display: "inline-block",
-                padding: "4px 14px",
+                padding: "3px 12px",
                 borderRadius: 20,
                 background: accent,
                 color: "#fff",
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: 700,
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
+                whiteSpace: "nowrap",
               }}
             >
               {stage === "production" ? "Produção" : "Finalização"}
             </span>
 
-            {/* BOTÃO RETORNO / UNDO DA ÚLTIMA BAIXA (SEMPRE VISÍVEL NO HEADER) */}
             <button
               type="button"
               onClick={undoLastCompletedOrder}
@@ -754,14 +754,14 @@ export default function KDSTelaPage() {
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 8,
-                padding: "6px 16px",
+                gap: 6,
+                padding: "5px 12px",
                 borderRadius: 14,
                 background: lastCompletedOrder
                   ? "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)"
                   : "rgba(255, 255, 255, 0.07)",
                 color: lastCompletedOrder ? "#FFF" : "rgba(255, 255, 255, 0.4)",
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: 900,
                 border: lastCompletedOrder
                   ? "none"
@@ -772,23 +772,278 @@ export default function KDSTelaPage() {
                   : "none",
                 opacity: !lastCompletedOrder ? 0.7 : 1,
                 transition: "all 0.3s ease",
+                whiteSpace: "nowrap",
               }}
             >
-              <span style={{ fontSize: 16 }}>↩️</span>{" "}
+              <span style={{ fontSize: 14 }}>↩️</span>{" "}
               {lastCompletedOrder
-                ? `Desfazer Baixa #${getDisplayOrderNumber(lastCompletedOrder.order)}`
+                ? `Desfazer #${getDisplayOrderNumber(lastCompletedOrder.order)}`
                 : "Desfazer Última Baixa"}
             </button>
+
+            {/* Filter Tabs */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: "#1a1a2e",
+                borderRadius: 10,
+                padding: 4,
+                marginLeft: 4,
+              }}
+            >
+              <button
+                type="button"
+                onPointerDown={() => setFilter("all")}
+                onClick={() => setFilter("all")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                  background: filter === "all" ? accent : "transparent",
+                  color: filter === "all" ? "#fff" : "#9ca3af",
+                  minHeight: 36,
+                  touchAction: "manipulation",
+                }}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onPointerDown={() => setFilter("odd")}
+                onClick={() => setFilter("odd")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                  background: filter === "odd" ? accent : "transparent",
+                  color: filter === "odd" ? "#fff" : "#9ca3af",
+                  minHeight: 36,
+                  touchAction: "manipulation",
+                }}
+              >
+                Ímpares
+              </button>
+              <button
+                type="button"
+                onPointerDown={() => setFilter("even")}
+                onClick={() => setFilter("even")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                  background: filter === "even" ? accent : "transparent",
+                  color: filter === "even" ? "#fff" : "#9ca3af",
+                  minHeight: 36,
+                  touchAction: "manipulation",
+                }}
+              >
+                Pares
+              </button>
+            </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+          {/* ── Right group: Category + Count + Time ── */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Category Filter */}
+            <div
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              {activeCategories.length > 0 && (
+                <button
+                  onClick={() => setActiveCategories([])}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 10,
+                    border: "1px solid #ef4444",
+                    background: "#ef444422",
+                    color: "#fca5a5",
+                    fontWeight: 700,
+                    fontSize: 12,
+                    cursor: "pointer",
+                    fontFamily: FONT,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ✕ Limpar ({activeCategories.length})
+                </button>
+              )}
+
+              <button
+                onClick={() => setShowCategoryPopup((prev) => !prev)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #3a3a5a",
+                  background: activeCategories.length > 0 ? accent : "#1a1a2e",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontFamily: FONT,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                🏷️ Filtrar por Categoria
+                {activeCategories.length > 0 && (
+                  <span
+                    style={{
+                      background: "#fff",
+                      color: accent,
+                      padding: "2px 6px",
+                      borderRadius: "50%",
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {activeCategories.length}
+                  </span>
+                )}
+              </button>
+
+              {showCategoryPopup && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 8px)",
+                    right: 0,
+                    zIndex: 1000,
+                    background: "#111118",
+                    border: "1px solid #3a3a5a",
+                    borderRadius: 12,
+                    padding: "16px",
+                    minWidth: 260,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      borderBottom: "1px solid #2a2a4a",
+                      paddingBottom: 8,
+                    }}
+                  >
+                    <span
+                      style={{ fontWeight: 800, fontSize: 13, color: "#9ca3af" }}
+                    >
+                      CATEGORIAS
+                    </span>
+                    {activeCategories.length > 0 && (
+                      <button
+                        onClick={() => setActiveCategories([])}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#f97316",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      maxHeight: 240,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {allCategories.map((cat) => {
+                      const selected = activeCategories.includes(cat.name);
+                      return (
+                        <label
+                          key={cat.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "6px 8px",
+                            borderRadius: 8,
+                            cursor: "pointer",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            background: selected ? `${accent}15` : "transparent",
+                            color: selected ? "#fff" : "#9ca3af",
+                            transition: "all 0.15s",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => {
+                              setActiveCategories((prev) =>
+                                selected
+                                  ? prev.filter((c) => c !== cat.name)
+                                  : [...prev, cat.name],
+                              );
+                            }}
+                            style={{ accentColor: accent, cursor: "pointer" }}
+                          />
+                          <span>{cat.emoji}</span>
+                          <span>{cat.name}</span>
+                        </label>
+                      );
+                    })}
+                    {allCategories.length === 0 && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                          textAlign: "center",
+                          padding: 8,
+                        }}
+                      >
+                        Nenhuma categoria cadastrada.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {isReconnecting && (
               <span
                 style={{
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: 600,
                   color: "#ef4444",
                   animation: "kds-reconnecting-pulse 1.5s ease-in-out infinite",
+                  whiteSpace: "nowrap",
                 }}
               >
                 ⚠ Reconectando...
@@ -796,9 +1051,10 @@ export default function KDSTelaPage() {
             )}
             <span
               style={{
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: 600,
                 color: "#9ca3af",
+                whiteSpace: "nowrap",
               }}
             >
               {filteredOrders.length}{" "}
@@ -806,11 +1062,12 @@ export default function KDSTelaPage() {
             </span>
             <span
               style={{
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: 700,
                 fontFamily: MONO_FONT,
                 color: "#e5e7eb",
                 letterSpacing: "1px",
+                whiteSpace: "nowrap",
               }}
             >
               {currentTime.toLocaleTimeString("pt-BR", {
@@ -821,271 +1078,6 @@ export default function KDSTelaPage() {
             </span>
           </div>
         </header>
-
-        {/* ─── Filter Bar (separada do header para compatibilidade com Smart TVs) ─── */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "8px 24px",
-            background: "#0d0d14",
-            borderBottom: "1px solid #1a1a2e",
-            flexShrink: 0,
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#1a1a2e",
-              borderRadius: 12,
-              padding: 5,
-            }}
-          >
-            <button
-              type="button"
-              onPointerDown={() => setFilter("all")}
-              onClick={() => setFilter("all")}
-              style={{
-                padding: "10px 24px",
-                borderRadius: 10,
-                border: "none",
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: "pointer",
-                fontFamily: FONT,
-                background: filter === "all" ? accent : "transparent",
-                color: filter === "all" ? "#fff" : "#9ca3af",
-                minHeight: 44,
-                touchAction: "manipulation",
-              }}
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              onPointerDown={() => setFilter("odd")}
-              onClick={() => setFilter("odd")}
-              style={{
-                padding: "10px 24px",
-                borderRadius: 10,
-                border: "none",
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: "pointer",
-                fontFamily: FONT,
-                background: filter === "odd" ? accent : "transparent",
-                color: filter === "odd" ? "#fff" : "#9ca3af",
-                minHeight: 44,
-                touchAction: "manipulation",
-              }}
-            >
-              Ímpares
-            </button>
-            <button
-              type="button"
-              onPointerDown={() => setFilter("even")}
-              onClick={() => setFilter("even")}
-              style={{
-                padding: "10px 24px",
-                borderRadius: 10,
-                border: "none",
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: "pointer",
-                fontFamily: FONT,
-                background: filter === "even" ? accent : "transparent",
-                color: filter === "even" ? "#fff" : "#9ca3af",
-                minHeight: 44,
-                touchAction: "manipulation",
-              }}
-            >
-              Pares
-            </button>
-          </div>
-
-          {/* ─── Category Filter Button ─── */}
-          <div
-            style={{
-              position: "relative",
-              zIndex: 2,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            {activeCategories.length > 0 && (
-              <button
-                onClick={() => setActiveCategories([])}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 10,
-                  border: "1px solid #ef4444",
-                  background: "#ef444422",
-                  color: "#fca5a5",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  fontFamily: FONT,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  transition: "all 0.2s",
-                }}
-              >
-                ✕ Limpar Filtros ({activeCategories.length})
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowCategoryPopup((prev) => !prev)}
-              style={{
-                padding: "8px 18px",
-                borderRadius: 10,
-                border: "1px solid #3a3a5a",
-                background: activeCategories.length > 0 ? accent : "#1a1a2e",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                fontFamily: FONT,
-                transition: "all 0.2s",
-              }}
-            >
-              🏷️ Filtrar por Categoria
-              {activeCategories.length > 0 && (
-                <span
-                  style={{
-                    background: "#fff",
-                    color: accent,
-                    padding: "2px 6px",
-                    borderRadius: "50%",
-                    fontSize: 11,
-                    fontWeight: 800,
-                  }}
-                >
-                  {activeCategories.length}
-                </span>
-              )}
-            </button>
-
-            {showCategoryPopup && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 8px)",
-                  right: 0,
-                  zIndex: 1000,
-                  background: "#111118",
-                  border: "1px solid #3a3a5a",
-                  borderRadius: 12,
-                  padding: "16px",
-                  minWidth: 260,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                  boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    borderBottom: "1px solid #2a2a4a",
-                    paddingBottom: 8,
-                  }}
-                >
-                  <span
-                    style={{ fontWeight: 800, fontSize: 13, color: "#9ca3af" }}
-                  >
-                    CATEGORIAS
-                  </span>
-                  {activeCategories.length > 0 && (
-                    <button
-                      onClick={() => setActiveCategories([])}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        color: "#f97316",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Limpar
-                    </button>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    maxHeight: 240,
-                    overflowY: "auto",
-                  }}
-                >
-                  {allCategories.map((cat) => {
-                    const selected = activeCategories.includes(cat.name);
-                    return (
-                      <label
-                        key={cat.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "6px 8px",
-                          borderRadius: 8,
-                          cursor: "pointer",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          background: selected ? `${accent}15` : "transparent",
-                          color: selected ? "#fff" : "#9ca3af",
-                          transition: "all 0.15s",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => {
-                            setActiveCategories((prev) =>
-                              selected
-                                ? prev.filter((c) => c !== cat.name)
-                                : [...prev, cat.name],
-                            );
-                          }}
-                          style={{ accentColor: accent, cursor: "pointer" }}
-                        />
-                        <span>{cat.emoji}</span>
-                        <span>{cat.name}</span>
-                      </label>
-                    );
-                  })}
-                  {allCategories.length === 0 && (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "#64748b",
-                        textAlign: "center",
-                        padding: 8,
-                      }}
-                    >
-                      Nenhuma categoria cadastrada.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* ─── Content ─────────────────────────────────────────────────── */}
         <div
