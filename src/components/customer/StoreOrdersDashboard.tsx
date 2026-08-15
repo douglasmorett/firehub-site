@@ -1876,7 +1876,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       (o.customerName || "").toLowerCase().includes(s) ||
       (o.customerPhone || "").includes(s) ||
       (o.customerAddress || "").toLowerCase().includes(s) ||
-      o.id.toLowerCase().includes(s) ||
+      (s.length >= 4 && o.id.toLowerCase().includes(s)) ||
+      getDisplayOrderNumber(o).toLowerCase().includes(s) ||
       displayNum.includes(s) ||
       (o.openDeliveryReference || "").toLowerCase().includes(s) ||
       (o.ifoodReference || "").toLowerCase().includes(s) ||
