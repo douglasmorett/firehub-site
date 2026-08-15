@@ -376,6 +376,10 @@ async function pollIfoodEvents(sessionUserId?: string) {
             await (prisma.customerOrder as any).create({
               data: {
                 franchiseeId: eventFranchisee.id,
+                dailyOrderNumber: await (async () => {
+                  const { generateDailyOrderNumber } = await import("@/lib/order-number");
+                  return generateDailyOrderNumber(eventFranchisee.id);
+                })(),
                 ifoodOrderId: orderId,
                 ifoodReference: orderData.displayId ?? undefined,
                 scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
