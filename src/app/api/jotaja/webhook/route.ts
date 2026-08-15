@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
 
 /**
@@ -58,68 +58,68 @@ export async function POST(req: NextRequest) {
     const rawEvents = JSON.parse(bodyText);
     const events = Array.isArray(rawEvents) ? rawEvents : [rawEvents];
 
-    // Resolver storeId a partir do payload — tenta encontrar a loja dona dos pedidos
-    let resolvedStoreId: string | undefined;
-    try {
-      // Tenta extrair merchantId do primeiro evento que tenha dados de merchant
-      const firstEvent = events[0];
-      const merchantId = firstEvent?.merchant?.id || firstEvent?.metadata?.merchantId;
-      if (merchantId) {
-        const store = await prisma.user.findFirst({
-          where: {
-            jotajaMerchantId: merchantId,
-            jotajaConnected: true,
-            NOT: { email: { startsWith: "deleted_" } },
-          },
-          select: { id: true, ownerId: true },
-        });
-        if (store) resolvedStoreId = store.ownerId || store.id;
-      }
-      // Fallback: SEM storeId — processJotajaEvent resolverá via merchantId do payload do pedido
-      // ⚠️ NÃO atribuir a uma loja aleatória para evitar vazamento de dados entre lojas
-      if (!resolvedStoreId) {
-        console.warn("[Jotajá Webhook] ⚠️ merchantId não encontrado no payload — processJotajaEvent resolverá via orderData.merchant.id");
-      }
-    } catch {}
-
-    const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
-    let created = 0, updated = 0, disputes = 0, cancelled = 0;
-
-    for (const event of events) {
-      const result = await processJotajaEvent(
-        event,
-        (path: string, opts?: RequestInit) => jotajaFetch(path, opts, resolvedStoreId),
-        (path: string, opts?: RequestInit) => jotajaMutate(path, opts, resolvedStoreId),
-        resolvedStoreId
-      );
-      console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
-
-      const eid = event.eventId || event.id;
-      if (result.action !== "error" && eid) {
-        processedEvents.push({
-          id: eid,
-          orderId: event.orderId || "",
-          eventType: event.eventType || event.fullCode || event.code || "",
-        });
-      }
-      if (result.action === "created")  created++;
-      if (result.action === "updated")  updated++;
-      if (result.action === "dispute")  disputes++;
-      if (result.action === "cancelled") cancelled++;
-    }
-
-    // Acknowledge
-    if (processedEvents.length > 0) {
+    after(async () => {
+      // Resolver storeId a partir do payload — tenta encontrar a loja dona dos pedidos
+      let resolvedStoreId: string | undefined;
       try {
-        await jotajaMutate("/v1/events/acknowledgment", {
-          method: "POST",
-          body: JSON.stringify(processedEvents),
-        }, resolvedStoreId);
-      } catch { /* não crítico */ }
-    }
+        const firstEvent = events[0];
+        const merchantId = firstEvent?.merchant?.id || firstEvent?.metadata?.merchantId;
+        if (merchantId) {
+          const store = await prisma.user.findFirst({
+            where: {
+              jotajaMerchantId: merchantId,
+              jotajaConnected: true,
+              NOT: { email: { startsWith: "deleted_" } },
+            },
+            select: { id: true, ownerId: true },
+          });
+          if (store) resolvedStoreId = store.ownerId || store.id;
+        }
+        if (!resolvedStoreId) {
+          console.warn("[Jotajá Webhook] ⚠️ merchantId não encontrado no payload — processJotajaEvent resolverá via orderData.merchant.id");
+        }
+      } catch {}
 
-    console.log(`[Jotajá Webhook] ${created} criados, ${updated} atualizados, ${disputes} disputas, ${cancelled} cancelados`);
-    return NextResponse.json({ ok: true, created, updated, disputes, cancelled, events: events.length });
+      const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
+      let created = 0, updated = 0, disputes = 0, cancelled = 0;
+
+      for (const event of events) {
+        const result = await processJotajaEvent(
+          event,
+          (path: string, opts?: RequestInit) => jotajaFetch(path, opts, resolvedStoreId),
+          (path: string, opts?: RequestInit) => jotajaMutate(path, opts, resolvedStoreId),
+          resolvedStoreId
+        );
+        console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
+
+        const eid = event.eventId || event.id;
+        if (result.action !== "error" && eid) {
+          processedEvents.push({
+            id: eid,
+            orderId: event.orderId || "",
+            eventType: event.eventType || event.fullCode || event.code || "",
+          });
+        }
+        if (result.action === "created")  created++;
+        if (result.action === "updated")  updated++;
+        if (result.action === "dispute")  disputes++;
+        if (result.action === "cancelled") cancelled++;
+      }
+
+      // Acknowledge
+      if (processedEvents.length > 0) {
+        try {
+          await jotajaMutate("/v1/events/acknowledgment", {
+            method: "POST",
+            body: JSON.stringify(processedEvents),
+          }, resolvedStoreId);
+        } catch { /* não crítico */ }
+      }
+
+      console.log(`[Jotajá Webhook] ${created} criados, ${updated} atualizados, ${disputes} disputas, ${cancelled} cancelados`);
+    });
+
+    return NextResponse.json({ ok: true, message: "Accepted for processing", events: events.length });
   } catch (err: any) {
     console.error("[Jotajá Webhook] Erro:", err);
     // Retorna 200 mesmo em erro para não fazer JotaJá desativar o webhook

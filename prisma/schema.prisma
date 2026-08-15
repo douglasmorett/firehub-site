@@ -602,6 +602,8 @@ model CustomerOrderItem {
   comboSelections Json?
   order           CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuProduct     MenuProduct?  @relation(fields: [menuProductId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
 }
 
 model StoreCustomer {

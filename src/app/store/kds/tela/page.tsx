@@ -395,8 +395,8 @@ export default function KDSTelaPage() {
         }
       };
 
-      // Dispara o polling de 2 em 2 segundos pelo Worker
-      worker.postMessage({ command: "start", interval: 2000 });
+      // Dispara o polling de 8 em 8 segundos pelo Worker (Smart Polling para poupar o banco)
+      worker.postMessage({ command: "start", interval: 8000 });
     } else {
       // Fallback para navegadores hiper-antigos sem suporte a Worker (fallback seguro)
       const fallbackPoll = setInterval(() => {
@@ -404,7 +404,7 @@ export default function KDSTelaPage() {
           isFetching = true;
           fetchOrders().finally(() => (isFetching = false));
         }
-      }, 2000);
+      }, 8000);
       return () => {
         clearInterval(fallbackPoll);
         document.removeEventListener(

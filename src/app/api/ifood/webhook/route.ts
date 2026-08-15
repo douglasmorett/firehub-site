@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
@@ -66,16 +66,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  // Processa eventos sincronicamente (Vercel serverless termina ao retornar response)
-  for (const event of events) {
-    try {
-      await processIfoodEvent(event);
-    } catch (err) {
-      console.error("[iFood Webhook] Erro ao processar evento:", event?.id, err);
+  // Processa eventos assincronicamente no background para não estourar o Timeout da Vercel
+  after(async () => {
+    for (const event of events) {
+      try {
+        await processIfoodEvent(event);
+      } catch (err) {
+        console.error("[iFood Webhook] Erro ao processar evento:", event?.id, err);
+      }
     }
-  }
+  });
 
-  // Responde 200 ao iFood (exige resposta em até 8 segundos)
+  // Responde 200 ao iFood (exige resposta em até 3 segundos para evitar retries infinitos)
   return NextResponse.json({ received: true });
 }
 
