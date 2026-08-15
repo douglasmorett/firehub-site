@@ -81,7 +81,7 @@ export async function GET(req: Request) {
         items: {
           include: {
             menuProduct: {
-              select: { name: true }
+              select: { name: true, isCombo: true }
             }
           }
         }
@@ -99,7 +99,7 @@ export async function GET(req: Request) {
         items: {
           include: {
             menuProduct: {
-              select: { name: true }
+              select: { name: true, isCombo: true }
             }
           }
         }
@@ -136,33 +136,106 @@ export async function GET(req: Request) {
       );
     };
 
-    ordersDay1.forEach(order => {
-      order.items.forEach(item => {
-        const name = item.menuProduct?.name || (item as any).name || "";
-        if (name && !isGenericName(name)) {
-          productQtyDay1[name] = (productQtyDay1[name] || 0) + item.quantity;
-        }
+    // ─── Função para extrair itens individuais de um combo ──────────────────
+    const extractItemsFromCombo = (item: any): { name: string; qty: number }[] => {
+      const results: { name: string; qty: number }[] = [];
+      if (!item.comboSelections) return results;
 
-        const base = classifyProduct(name);
-        if (base !== "outros") {
-          qtyDay1[base] = (qtyDay1[base] || 0) + item.quantity;
+      try {
+        const cs = typeof item.comboSelections === "string"
+          ? JSON.parse(item.comboSelections)
+          : item.comboSelections;
+
+        if (Array.isArray(cs)) {
+          // Formato: [{name: "Esfirra de Carne", quantity: 2}, ...] ou
+          //          [{title: "Grupo X", items: [{name: "...", qty: 1}]}] ou
+          //          [{groupTitle: "...", selections: [{name: "...", quantity: 1}]}]
+          for (const entry of cs) {
+            // Formato iFood: options array [{name, quantity, ...}]
+            if (entry.name && !entry.items && !entry.selections) {
+              results.push({ name: entry.name, qty: (entry.quantity || 1) * item.quantity });
+            }
+            // Formato combo groups: [{title, items: [...]}]
+            if (entry.items && Array.isArray(entry.items)) {
+              for (const subItem of entry.items) {
+                const subName = subItem.name || subItem.productName || "";
+                if (subName && !isGenericName(subName)) {
+                  results.push({ name: subName, qty: (subItem.quantity || subItem.qty || 1) * item.quantity });
+                }
+              }
+            }
+            // Formato com selections
+            if (entry.selections && Array.isArray(entry.selections)) {
+              for (const sel of entry.selections) {
+                const selName = sel.name || sel.productName || "";
+                if (selName && !isGenericName(selName)) {
+                  results.push({ name: selName, qty: (sel.quantity || 1) * item.quantity });
+                }
+              }
+            }
+          }
+        } else if (typeof cs === "object" && cs !== null) {
+          // Formato objeto: {name: "X", items: [...]}
+          if (cs.items && Array.isArray(cs.items)) {
+            for (const subItem of cs.items) {
+              const subName = subItem.name || subItem.productName || "";
+              if (subName && !isGenericName(subName)) {
+                results.push({ name: subName, qty: (subItem.quantity || 1) * item.quantity });
+              }
+            }
+          }
+        }
+      } catch {
+        // Se não conseguir parsear, ignora
+      }
+
+      return results;
+    };
+
+    // ─── Processar itens (explodindo combos) ───────────────────────────────
+    const processItems = (order: any, productQty: Record<string, number>, baseQty: Record<string, number>) => {
+      order.items.forEach((item: any) => {
+        const isCombo = item.menuProduct?.isCombo || false;
+        const name = item.menuProduct?.name || (item as any).name || "";
+
+        if (isCombo || (item.comboSelections && name.toLowerCase().includes("combo"))) {
+          // COMBO → explodir em itens individuais
+          const subItems = extractItemsFromCombo(item);
+          if (subItems.length > 0) {
+            for (const sub of subItems) {
+              if (!isGenericName(sub.name)) {
+                productQty[sub.name] = (productQty[sub.name] || 0) + sub.qty;
+              }
+              const base = classifyProduct(sub.name);
+              if (base !== "outros") {
+                baseQty[base] = (baseQty[base] || 0) + sub.qty;
+              }
+            }
+          } else {
+            // Se não conseguiu explodir (combo sem comboSelections), conta normalmente
+            if (name && !isGenericName(name)) {
+              productQty[name] = (productQty[name] || 0) + item.quantity;
+            }
+            const base = classifyProduct(name);
+            if (base !== "outros") {
+              baseQty[base] = (baseQty[base] || 0) + item.quantity;
+            }
+          }
+        } else {
+          // ITEM NORMAL → contar diretamente
+          if (name && !isGenericName(name)) {
+            productQty[name] = (productQty[name] || 0) + item.quantity;
+          }
+          const base = classifyProduct(name);
+          if (base !== "outros") {
+            baseQty[base] = (baseQty[base] || 0) + item.quantity;
+          }
         }
       });
-    });
+    };
 
-    ordersDay2.forEach(order => {
-      order.items.forEach(item => {
-        const name = item.menuProduct?.name || (item as any).name || "";
-        if (name && !isGenericName(name)) {
-          productQtyDay2[name] = (productQtyDay2[name] || 0) + item.quantity;
-        }
-
-        const base = classifyProduct(name);
-        if (base !== "outros") {
-          qtyDay2[base] = (qtyDay2[base] || 0) + item.quantity;
-        }
-      });
-    });
+    ordersDay1.forEach(order => processItems(order, productQtyDay1, qtyDay1));
+    ordersDay2.forEach(order => processItems(order, productQtyDay2, qtyDay2));
 
     // Calcular médias de produtos do cardápio (ordenados do mais vendido para o menos vendido)
     const allProductNames = Array.from(new Set([...Object.keys(productQtyDay1), ...Object.keys(productQtyDay2)]));
