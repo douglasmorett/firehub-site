@@ -60,3 +60,27 @@ export async function POST(req: Request) {
     orders
   });
 }
+
+// GET: Quick lookup by phone for order tracking & history
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const phone = searchParams.get("phone");
+  if (!phone) return NextResponse.json({ error: "Telefone obrigatório" }, { status: 400 });
+  const cleanPhone = phone.replace(/\D/g, "");
+  if (cleanPhone.length < 8) return NextResponse.json({ orders: [] });
+
+  const orders = await prisma.customerOrder.findMany({
+    where: {
+      OR: [
+        { customerPhone: { contains: cleanPhone.slice(-8) } },
+        { customerPhone: cleanPhone }
+      ]
+    },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    include: { items: { include: { menuProduct: { select: { id: true, name: true, price: true, imageUrl: true, isCombo: true } } } } }
+  });
+
+  return NextResponse.json({ orders });
+}
+

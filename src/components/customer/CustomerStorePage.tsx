@@ -1,16 +1,84 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
-import { ShoppingCart, Plus, Minus, X, MapPin, Search, Clock, Store, Truck, User, Lock, LogIn, History, Star, ChevronRight } from "lucide-react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import {
+  ShoppingCart,
+  Plus,
+  Minus,
+  X,
+  MapPin,
+  Search,
+  Clock,
+  Store,
+  Truck,
+  User,
+  LogIn,
+  History,
+  Star,
+  Flame,
+  Gift,
+  Package,
+  Sparkles,
+  Tag,
+  ArrowRight,
+  Check,
+  ChevronRight,
+  ShieldCheck
+} from "lucide-react";
 import ComboModal from "./ComboModal";
 import PaymentGateway from "./PaymentGateway";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import "./store.css";
 
-type MenuProduct = { id: string; name: string; description: string; price: number; imageUrl: string | null; category: string; isCombo?: boolean; comboConfig?: any; comboGroups?: any[] };
-type CartItem = MenuProduct & { quantity: number; comboSelections?: any };
-type Franchisee = { id: string; name: string; storeName: string | null; storePhone: string | null; storeAddress: string | null; storeBanner: string | null; storeLogo?: string | null; storeHours?: any; storeDeliveryOnly?: boolean; paymentFees?: any; deliveryZoneType?: string | null; deliveryZones?: any; city: string | null; slug: string | null; storeOpen?: boolean; storePause?: any; facebookPixelId?: string | null; ifoodMerchantId?: string | null; ifoodConnected?: boolean; ifoodWidgetId?: string | null; mpSellerId?: string | null; mpAccessToken?: string | null; hasOnlinePayment?: boolean };
-type StoreRating = { average: number; count: number; reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[] };
+type MenuProduct = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  imageUrl: string | null;
+  category: string;
+  isCombo?: boolean;
+  comboConfig?: any;
+  comboGroups?: any[];
+};
+
+type CartItem = MenuProduct & {
+  quantity: number;
+  comboSelections?: any;
+  notes?: string;
+};
+
+type Franchisee = {
+  id: string;
+  name: string;
+  storeName: string | null;
+  storePhone: string | null;
+  storeAddress: string | null;
+  storeBanner: string | null;
+  storeLogo?: string | null;
+  storeHours?: any;
+  storeDeliveryOnly?: boolean;
+  paymentFees?: any;
+  deliveryZoneType?: string | null;
+  deliveryZones?: any;
+  city: string | null;
+  slug: string | null;
+  storeOpen?: boolean;
+  storePause?: any;
+  facebookPixelId?: string | null;
+  ifoodMerchantId?: string | null;
+  ifoodConnected?: boolean;
+  ifoodWidgetId?: string | null;
+  mpSellerId?: string | null;
+  mpAccessToken?: string | null;
+  hasOnlinePayment?: boolean;
+};
+
+type StoreRating = {
+  average: number;
+  count: number;
+  reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[];
+};
 
 function isStoreOpen(hours: any[]): { open: boolean; text: string } {
   if (!hours || !Array.isArray(hours)) return { open: true, text: "Horário não definido" };
@@ -44,7 +112,15 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
   return { open: true, text: "Aberto" };
 }
 
-export default function CustomerStorePage({ franchisee, menuProducts, storeRating }: { franchisee: Franchisee; menuProducts: MenuProduct[]; storeRating?: StoreRating }) {
+export default function CustomerStorePage({
+  franchisee,
+  menuProducts,
+  storeRating
+}: {
+  franchisee: Franchisee;
+  menuProducts: MenuProduct[];
+  storeRating?: StoreRating;
+}) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCheckout, setIsCheckout] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
@@ -60,12 +136,25 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
 
   const hasOnlinePayment = franchisee.hasOnlinePayment !== false;
   const [paymentMethod, setPaymentMethod] = useState(() => (hasOnlinePayment ? "PIX" : "DINHEIRO"));
-  
+
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  
+
+  // Modais especiais de alto engajamento
+  const [showReviewsModal, setShowReviewsModal] = useState(false);
+  const [showPromotionsModal, setShowPromotionsModal] = useState(false);
+  const [showMyOrdersModal, setShowMyOrdersModal] = useState(false);
+  const [showBairroCalcModal, setShowBairroCalcModal] = useState(false);
+  const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
+
+  // Busca rápida de pedidos
+  const [myOrdersPhone, setMyOrdersPhone] = useState("");
+  const [myOrdersLoading, setMyOrdersLoading] = useState(false);
+  const [myOrdersList, setMyOrdersList] = useState<any[]>([]);
+  const [myOrdersSearched, setMyOrdersSearched] = useState(false);
+
   // Customer login
   const [customer, setCustomer] = useState<any>(null);
   const [showAuth, setShowAuth] = useState(false);
@@ -76,18 +165,19 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+
   // Delivery fee
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryAvailable, setDeliveryAvailable] = useState(true);
   const [customerNeighborhood, setCustomerNeighborhood] = useState("");
-  // Meus Pedidos
-  const [showMyOrders, setShowMyOrders] = useState(false);
+
   // Rating
   const [showRating, setShowRating] = useState(false);
   const [ratingValue, setRatingValue] = useState(5);
   const [ratingComment, setRatingComment] = useState("");
   const [ratingOrderId, setRatingOrderId] = useState<string | null>(null);
-  // Pagamento Online (Pagar.me)
+
+  // Pagamento Online
   const [showPayment, setShowPayment] = useState(false);
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
   const [pendingAmount, setPendingAmount] = useState(0);
@@ -106,7 +196,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   })();
   const pauseInfo = franchisee.storePause as any;
 
-  const isStoreEffectivelyClosed = isPaused || franchisee.storeOpen === false || !storeStatus.open;
   const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
   const currentDayCode = DAYS_MAP[new Date().getDay()];
 
@@ -136,35 +225,61 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     return c === "jotajá" || c === "jotaja" || c === "jota já" || c === "ifood" || c.includes("jotajá") || c.includes("jotaja") || c.includes("ifood");
   };
 
-  const activeTodayProducts = menuProducts.filter(p => isAvailableToday(p, currentDayCode) && !isIntegrationCategory(p.category));
+  const activeTodayProducts = useMemo(() => {
+    return menuProducts.filter(p => isAvailableToday(p, currentDayCode) && !isIntegrationCategory(p.category));
+  }, [menuProducts, currentDayCode]);
 
-  const categories = [
-    "Todos",
-    ...Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))))
-  ];
+  const categories = useMemo(() => {
+    return [
+      "Todos",
+      ...Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))))
+    ];
+  }, [activeTodayProducts]);
 
-  const filtered = activeTodayProducts.filter(p => {
-    const pCat = (p.category || "").trim();
-    const mc = selectedCategory === "Todos" || pCat.toLowerCase() === selectedCategory.trim().toLowerCase();
-    const ms = !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    return mc && ms;
-  });
+  const promoProducts = useMemo(() => {
+    return activeTodayProducts.filter(p => {
+      const tags = (p as any).tags || "";
+      const name = p.name.toLowerCase();
+      const cat = (p.category || "").toLowerCase();
+      return tags.includes("Promoção") || tags.includes("Oferta") || name.includes("promo") || cat.includes("promo");
+    });
+  }, [activeTodayProducts]);
 
-  const grouped: Record<string, MenuProduct[]> = {};
-  filtered.forEach(p => {
-    const cat = (p.category || "").trim();
-    if (!cat) return;
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push(p);
-  });
+  const highlightProducts = useMemo(() => {
+    return activeTodayProducts.filter(p => {
+      const tags = (p as any).tags || "";
+      return tags.includes("Mais Vendido") || tags.includes("Destaque") || tags.includes("Promoção") || p.isCombo;
+    }).slice(0, 4);
+  }, [activeTodayProducts]);
+
+  const filtered = useMemo(() => {
+    return activeTodayProducts.filter(p => {
+      const pCat = (p.category || "").trim();
+      const mc = selectedCategory === "Todos" || pCat.toLowerCase() === selectedCategory.trim().toLowerCase();
+      const ms = !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      return mc && ms;
+    });
+  }, [activeTodayProducts, selectedCategory, searchTerm]);
+
+  const grouped: Record<string, MenuProduct[]> = useMemo(() => {
+    const g: Record<string, MenuProduct[]> = {};
+    filtered.forEach(p => {
+      const cat = (p.category || "").trim();
+      if (!cat) return;
+      if (!g[cat]) g[cat] = [];
+      g[cat].push(p);
+    });
+    return g;
+  }, [filtered]);
 
   const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const isFreeShippingByMin = Boolean(
-    delivConfig.freeShippingActive &&
-    delivConfig.freeShippingMinValue &&
-    cartTotal >= Number(delivConfig.freeShippingMinValue)
-  );
+
+  const freeShippingThreshold = delivConfig.freeShippingActive && delivConfig.freeShippingMinValue ? Number(delivConfig.freeShippingMinValue) : null;
+  const isFreeShippingByMin = Boolean(freeShippingThreshold && cartTotal >= freeShippingThreshold);
+  const remainingForFreeShipping = freeShippingThreshold ? Math.max(0, freeShippingThreshold - cartTotal) : 0;
+  const freeShippingProgress = freeShippingThreshold ? Math.min(100, (cartTotal / freeShippingThreshold) * 100) : 0;
+
   const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingByMin) ? deliveryFee : 0;
   const discount = couponApplied
     ? (couponApplied.isFreeShipping
@@ -174,17 +289,36 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   const finalTotal = Math.max(0, cartTotal - discount + (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0));
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
-  const addToCart = (product: MenuProduct, cs?: any) => {
-    if (product.isCombo && (product.comboGroups?.length || product.comboConfig) && !cs) { setComboProduct(product); return; }
+  const addToCart = (product: MenuProduct, cs?: any, extraSum: number = 0, qty: number = 1, itemNotes?: string) => {
+    if (product.isCombo && (product.comboGroups?.length || product.comboConfig) && !cs) {
+      setComboProduct(product);
+      return;
+    }
+    const finalPrice = product.price + extraSum;
     setCart(prev => {
-      if (cs) return [...prev, { ...product, id: product.id + '_' + Date.now(), quantity: 1, comboSelections: cs }];
-      const ex = prev.find(i => i.id === product.id);
-      if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { ...product, quantity: 1 }];
+      if (cs) {
+        return [...prev, {
+          ...product,
+          id: product.id + '_' + Date.now(),
+          price: finalPrice,
+          quantity: qty || 1,
+          comboSelections: cs,
+          notes: itemNotes || ""
+        }];
+      }
+      const ex = prev.find(i => i.id === product.id && !i.comboSelections);
+      if (ex) return prev.map(i => (i.id === product.id && !i.comboSelections) ? { ...i, quantity: i.quantity + (qty || 1) } : i);
+      return [...prev, { ...product, price: finalPrice, quantity: qty || 1 }];
     });
-    trackPixelEvent("AddToCart", { content_name: product.name, value: product.price, currency: "BRL" });
+    trackPixelEvent("AddToCart", { content_name: product.name, value: finalPrice * (qty || 1), currency: "BRL" });
   };
-  const removeFromCart = (id: string) => setCart(prev => { const e = prev.find(i => i.id === id); if (e && e.quantity > 1) return prev.map(i => i.id === id ? { ...i, quantity: i.quantity - 1 } : i); return prev.filter(i => i.id !== id); });
+
+  const removeFromCart = (id: string) => setCart(prev => {
+    const e = prev.find(i => i.id === id);
+    if (e && e.quantity > 1) return prev.map(i => i.id === id ? { ...i, quantity: i.quantity - 1 } : i);
+    return prev.filter(i => i.id !== id);
+  });
+
   const deleteFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
   const getQty = (id: string) => cart.find(i => i.id === id)?.quantity || 0;
 
@@ -202,6 +336,26 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         window.scrollTo({ top: y, behavior: "smooth" });
       }
     }, 50);
+  };
+
+  const fetchMyOrders = async (phoneToFetch?: string) => {
+    const raw = phoneToFetch || myOrdersPhone || customer?.phone || customerPhone;
+    if (!raw) return;
+    const clean = raw.replace(/\D/g, "");
+    if (clean.length < 8) return;
+    setMyOrdersLoading(true);
+    setMyOrdersSearched(true);
+    try {
+      const res = await fetch(`/api/store-customer?phone=${encodeURIComponent(clean)}`);
+      if (res.ok) {
+        const d = await res.json();
+        setMyOrdersList(d.orders || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setMyOrdersLoading(false);
+    }
   };
 
   const applyCoupon = async () => {
@@ -276,7 +430,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     localStorage.removeItem("storeCustomer");
   };
 
-  // Auto-login from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("storeCustomer");
     if (saved) {
@@ -287,7 +440,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     }
   }, []);
 
-  // ===== BODY SCROLL LOCK quando carrinho mobile abre =====
   useEffect(() => {
     if (mobileCartOpen) {
       const scrollY = window.scrollY;
@@ -305,25 +457,19 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     }
   }, [mobileCartOpen]);
 
-  // Build dynamic payment options (Online via Mercado Pago vs Na Entrega)
   const paymentOptions = (() => {
     const base: { k: string; l: string }[] = [];
-
-    // Pagamento Online: apenas se o lojista tiver credenciais conectadas do Mercado Pago
     if (hasOnlinePayment) {
       base.push(
         { k: "PIX", l: "💰 Pix (Online)" },
         { k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" }
       );
     }
-
-    // Pagamento na Entrega (sempre disponível)
     base.push(
       { k: "DINHEIRO", l: "💵 Dinheiro" },
       { k: "DEBITO", l: "💳 Débito (Entrega)" },
       { k: "CREDITO", l: "💳 Crédito (Entrega)" }
     );
-
     const fees = franchisee.paymentFees as any;
     if (fees?.VOUCHER?.active && fees.VOUCHER.brands) {
       const activeBrands = fees.VOUCHER.brands.filter((b: any) => b.active);
@@ -340,7 +486,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
     return base;
   })();
 
-  // Calculate delivery fee when neighborhood changes
   const calcDeliveryFee = (neighborhood: string) => {
     setCustomerNeighborhood(neighborhood);
     const zones = franchisee.deliveryZones as any[];
@@ -348,40 +493,49 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
       setDeliveryFee(0); setDeliveryAvailable(true); return;
     }
     const found = zones.find((z: any) => z.name.toLowerCase() === neighborhood.toLowerCase());
-    if (found) { setDeliveryFee(found.fee || 0); setDeliveryAvailable(true); }
-    else { setDeliveryFee(0); setDeliveryAvailable(false); }
+    if (found) {
+      setDeliveryFee(Number(found.fee) || 0);
+      setDeliveryAvailable(true);
+    } else {
+      setDeliveryFee(0);
+      setDeliveryAvailable(false);
+    }
   };
 
-  // Submit review
+  const ONLINE_METHODS = ["PIX", "CREDITO_ONLINE", "ONLINE", "MERCADOPAGO", "CARTAO_ONLINE"];
+
   const submitReview = async () => {
-    if (!ratingOrderId || !customer) return;
+    if (!ratingOrderId) return;
     try {
-      const res = await fetch("/api/store-reviews", {
+      const res = await fetch("/api/order-review", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: ratingOrderId, customerId: customer.id, rating: ratingValue, comment: ratingComment })
+        body: JSON.stringify({ orderId: ratingOrderId, rating: ratingValue, comment: ratingComment, customerName: customer?.name || customerName || "Cliente" })
       });
-      if (res.ok) { alert("Avaliação enviada! Obrigado! ⭐"); setShowRating(false); setRatingOrderId(null); setRatingComment(""); }
-      else { const d = await res.json(); alert(d.error || "Erro"); }
-    } catch { alert("Erro de conexão"); }
+      if (res.ok) {
+        alert("Obrigado pela sua avaliação! ⭐");
+        setShowRating(false);
+      }
+    } catch { alert("Erro ao enviar avaliação."); }
   };
-
-  // Métodos que exigem pagamento online via Mercado Pago
-  const ONLINE_METHODS = ["PIX", "PIX_ONLINE", "CREDITO_ONLINE", "DEBITO_ONLINE", "ONLINE"];
 
   const handleCheckout = async () => {
-    if (!customerName || !customerPhone) { alert("Preencha nome e telefone."); return; }
-    if (deliveryType === "DELIVERY" && !customerAddress) { alert("Preencha o endereço."); return; }
+    if (cart.length === 0) return;
+    if (!customerName.trim()) { alert("Informe seu nome."); return; }
+    if (!customerPhone.trim()) { alert("Informe seu telefone."); return; }
+    if (deliveryType === "DELIVERY" && !customerAddress.trim()) { alert("Informe seu endereço de entrega."); return; }
+    if (deliveryType === "DELIVERY" && !deliveryAvailable) { alert("Não entregamos no bairro selecionado."); return; }
     setLoading(true);
     try {
       const res = await fetch("/api/customer-order", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          franchiseeSlug: franchisee.slug, customerName, customerPhone,
+          franchiseeId: franchisee.id,
+          customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? customerAddress : null,
           deliveryType, paymentMethod, notes,
           deliveryFee: deliveryFee || 0,
           couponCode: couponApplied?.code || null,
-          items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null }))
+          items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" }))
         })
       });
       if (res.ok) {
@@ -390,7 +544,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         const pmUpper = (paymentMethod || "").toUpperCase();
         const isOnline = ONLINE_METHODS.some(m => pmUpper.includes(m));
         if (isOnline) {
-          // Pagamento online: mostrar gateway Mercado Pago antes de confirmar
           setPendingOrderId(d.orderId);
           setPendingAmount(finalTotal);
           setShowPayment(true);
@@ -398,7 +551,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           setMobileCartOpen(false);
           setCart([]);
         } else {
-          // Dinheiro/maquininha: confirma direto
           setOrderSuccess(d.orderId);
           setCart([]);
           setIsCheckout(false);
@@ -446,7 +598,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
             <p className="order-code">#{orderSuccess.slice(-6).toUpperCase()}</p>
           </div>
 
-          {/* TRACKER STEPS */}
           {!isCancelled && (
             <div style={{ margin: "1.25rem 0", textAlign: "left" }}>
               {STATUSES.filter(s => s.key !== "CANCELADO").map((s, i) => {
@@ -489,8 +640,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           )}
 
           {franchisee.storePhone && <a href={`https://wa.me/55${franchisee.storePhone.replace(/\D/g, "")}`} target="_blank" className="order-whatsapp">💬 Falar no WhatsApp</a>}
-          
-          {/* Link de rastreamento dedicado */}
+
           {!isCancelled && (
             <a
               href={`/loja/${franchisee.slug}/pedido/${orderSuccess}`}
@@ -517,16 +667,35 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         <h3>{isCheckout ? "Finalizar Pedido" : `Sua Sacola (${cartCount})`}</h3>
         <button className="mob-close-btn" onClick={() => setMobileCartOpen(false)} style={{ cursor: "pointer", background: "none", border: "none" }}><X size={22} /></button>
       </div>
+
+      {/* FREE SHIPPING PROGRESS BAR */}
+      {freeShippingThreshold && (
+        <div style={{ padding: "0.6rem 1.25rem", background: "#F0FDF4", borderBottom: "1px solid #DCFCE7" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", fontWeight: 700, marginBottom: "4px", color: isFreeShippingByMin ? "#15803D" : "#1E293B" }}>
+            <span>{isFreeShippingByMin ? "🎉 Parabéns! Você ganhou Frete Grátis!" : `Faltam R$ ${remainingForFreeShipping.toFixed(2).replace(".", ",")} para Frete Grátis`}</span>
+            <span>{freeShippingProgress.toFixed(0)}%</span>
+          </div>
+          <div style={{ width: "100%", height: "6px", backgroundColor: "#E2E8F0", borderRadius: "4px", overflow: "hidden" }}>
+            <div style={{ width: `${freeShippingProgress}%`, height: "100%", backgroundColor: isFreeShippingByMin ? "#16A34A" : "#F59E0B", transition: "width 0.3s ease" }} />
+          </div>
+        </div>
+      )}
+
       <div className="cart-body">
         {!isCheckout ? (
           cart.length === 0 ? (
-            <div className="cart-empty"><ShoppingCart size={40} /><p>Sacola vazia</p><p style={{ fontSize: "0.8rem" }}>Adicione itens do cardápio</p></div>
+            <div className="cart-empty">
+              <ShoppingCart size={40} />
+              <p>Sacola vazia</p>
+              <p style={{ fontSize: "0.8rem" }}>Adicione itens do cardápio</p>
+            </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               {cart.map(item => (
                 <div key={item.id} className="cart-item">
                   <div style={{ flex: 1 }}>
                     <p className="cart-item-name">{item.name}</p>
+                    {item.notes && <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "2px 0 0" }}>📝 {item.notes}</p>}
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "4px" }}>
                       <button onClick={() => removeFromCart(item.id)} className="qty-btn-minus" style={{ width: 24, height: 24 }}><Minus size={12} /></button>
                       <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>{item.quantity}</span>
@@ -539,6 +708,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                   </div>
                 </div>
               ))}
+
               {/* COUPON */}
               <div style={{ marginTop: "0.5rem" }}>
                 <div className="coupon-row">
@@ -557,7 +727,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           )
         ) : (
           <div className="checkout-form">
-            <div><label className="checkout-label">Seu Nome *</label><input className="checkout-input" value={customerName} onChange={e => setCustomerName(e.target.value)} /></div>
+            <div><label className="checkout-label">Seu Nome *</label><input className="checkout-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Como podemos te chamar?" /></div>
             <div><label className="checkout-label">WhatsApp *</label><input className="checkout-input" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="(21) 99999-9999" /></div>
             <div>
               <label className="checkout-label">Tipo de Pedido</label>
@@ -568,15 +738,15 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
             </div>
             {deliveryType === "DELIVERY" && (
               <div>
-                <label className="checkout-label">Endereço de Entrega *</label>
-                <input className="checkout-input" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
+                <label className="checkout-label">Endereço de Entrega (Rua e Número) *</label>
+                <input className="checkout-input" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="Ex: Av. Atlântica, 1500 - Apto 201" />
                 {franchisee.deliveryZoneType === "NEIGHBORHOOD" && franchisee.deliveryZones && (
                   <div style={{ marginTop: "0.5rem" }}>
-                    <label className="checkout-label">Bairro *</label>
+                    <label className="checkout-label">Seu Bairro *</label>
                     <select className="checkout-input" value={customerNeighborhood} onChange={e => calcDeliveryFee(e.target.value)} style={{ cursor: "pointer" }}>
                       <option value="">Selecione seu bairro</option>
                       {(franchisee.deliveryZones as any[]).map((z: any, i: number) => (
-                        <option key={i} value={z.name}>{z.name} — R$ {(z.fee || 0).toFixed(2)}</option>
+                        <option key={i} value={z.name}>{z.name} — R$ {(z.fee || 0).toFixed(2).replace(".", ",")}</option>
                       ))}
                     </select>
                     {!deliveryAvailable && customerNeighborhood && <p style={{ color: "#EF4444", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>❌ Bairro fora da área de entrega</p>}
@@ -616,7 +786,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                 ))}
               </div>
             </div>
-            <div><label className="checkout-label">Observações</label><textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} /></div>
+            <div><label className="checkout-label">Observações do Pedido</label><textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex: Sem talher, tocar interfone..." /></div>
             <div className="checkout-summary">
               {cart.map(i => <div key={i.id} className="checkout-summary-item"><span>{i.quantity}x {i.name}</span><span>R$ {(i.price * i.quantity).toFixed(2)}</span></div>)}
               {couponApplied && (
@@ -646,10 +816,10 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         <div className="cart-footer">
           <div className="cart-total-row"><span className="cart-total-label">Total</span><span className="cart-total-value">R$ {finalTotal.toFixed(2)}</span></div>
           {!isCheckout ? (
-            <button onClick={() => { setIsCheckout(true); trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" }); }} className="cart-checkout-btn">Continuar</button>
+            <button onClick={() => { setIsCheckout(true); trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" }); }} className="cart-checkout-btn">Continuar Pedido</button>
           ) : (
             <>
-              <button onClick={handleCheckout} disabled={loading} className="cart-checkout-btn">{loading ? "Enviando..." : `Enviar Pedido • R$ ${finalTotal.toFixed(2)}`}</button>
+              <button onClick={handleCheckout} disabled={loading} className="cart-checkout-btn">{loading ? "Enviando..." : `Confirmar Pedido • R$ ${finalTotal.toFixed(2)}`}</button>
               <button onClick={() => setIsCheckout(false)} className="cart-back-btn">← Voltar à Sacola</button>
             </>
           )}
@@ -661,8 +831,8 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
   // ===== MAIN RENDER =====
   return (
     <div className="saipos-store">
-      {/* FACEBOOK PIXEL — rastreamento automático por loja */}
       {franchisee.facebookPixelId && <FacebookPixel pixelId={franchisee.facebookPixelId} />}
+
       {/* BANNER DE PAUSA */}
       {isPaused && (
         <div style={{ background: "linear-gradient(135deg,#B91C1C,#DC2626)", color: "#fff", padding: "1rem 1.5rem", textAlign: "center" }}>
@@ -672,13 +842,15 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           </p>
         </div>
       )}
+
       {/* Loja manualmente fechada */}
       {!isPaused && franchisee.storeOpen === false && (
         <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
           🔴 Loja fechada no momento · Em breve voltamos!
         </div>
       )}
-      {/* BANNER */}
+
+      {/* BANNER PANORÂMICO */}
       {franchisee.storeBanner && (
         <div className="store-banner">
           <img src={franchisee.storeBanner} alt={storeName} />
@@ -694,6 +866,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           ) : (
             <div className="store-logo-placeholder"><Store size={28} color="white" /></div>
           )}
+
           <div className="store-info">
             <h1 className="store-name">{storeName}</h1>
             {franchisee.storeAddress && (
@@ -703,26 +876,105 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
               <span className={`store-status ${storeStatus.open ? "open" : "closed"}`}>
                 <Clock size={12} /> {storeStatus.text}
               </span>
+
+              {/* AVALIAÇÕES CLICÁVEIS */}
               {storeRating && storeRating.count > 0 && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.78rem", fontWeight: 700, color: "#F59E0B" }}>
-                  <Star size={13} fill="#F59E0B" /> {storeRating.average.toFixed(1)} <span style={{ fontWeight: 400, color: "#94A3B8" }}>({storeRating.count})</span>
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowReviewsModal(true)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    color: "#D97706",
+                    background: "#FFFBEB",
+                    border: "1px solid #FCD34D",
+                    padding: "2px 9px",
+                    borderRadius: "20px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                    transition: "transform 0.15s ease",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.transform = "scale(1.04)")}
+                  onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
+                  title="Clique para ver todas as avaliações dos clientes"
+                >
+                  <Star size={13} fill="#F59E0B" color="#F59E0B" />
+                  <span>{storeRating.average.toFixed(1)}</span>
+                  <span style={{ fontWeight: 600, color: "#92400E" }}>({storeRating.count})</span>
+                </button>
               )}
+
               {franchisee.storeDeliveryOnly && (
                 <span className="store-delivery-tag">• Somente Delivery</span>
               )}
             </div>
           </div>
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+
+          {/* HEADER ACTION BUTTONS */}
+          <div className="store-header-actions" style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+            {promoProducts.length > 0 && (
+              <button
+                onClick={() => setShowPromotionsModal(true)}
+                style={{
+                  background: "linear-gradient(135deg, #EF4444, #F97316)",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "6px 12px",
+                  cursor: "pointer",
+                  color: "white",
+                  fontSize: "0.78rem",
+                  fontWeight: 800,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  boxShadow: "0 2px 6px rgba(239, 68, 68, 0.3)"
+                }}
+              >
+                <Flame size={14} /> Ofertas
+                <span style={{ background: "white", color: "#DC2626", borderRadius: "10px", padding: "1px 6px", fontSize: "0.7rem", fontWeight: 900 }}>
+                  {promoProducts.length}
+                </span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                setShowMyOrdersModal(true);
+                if (customer?.phone || customerPhone) {
+                  fetchMyOrders(customer?.phone || customerPhone);
+                }
+              }}
+              style={{
+                background: "rgba(15, 23, 42, 0.06)",
+                border: "1px solid #E2E8F0",
+                borderRadius: "10px",
+                padding: "6px 12px",
+                cursor: "pointer",
+                color: "#1E293B",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "4px"
+              }}
+            >
+              <Package size={14} /> Pedidos
+            </button>
+
             {customer ? (
-              <button onClick={() => setShowHistory(!showHistory)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "10px", padding: "6px 12px", cursor: "pointer", color: "white", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "4px" }}>
+              <button onClick={() => setShowHistory(!showHistory)} style={{ background: "rgba(15, 23, 42, 0.06)", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "6px 12px", cursor: "pointer", color: "#1E293B", fontSize: "0.78rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
                 <User size={14} /> {customer.name.split(" ")[0]}
               </button>
             ) : (
-              <button onClick={() => setShowAuth(true)} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "10px", padding: "6px 12px", cursor: "pointer", color: "white", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "4px" }}>
+              <button onClick={() => setShowAuth(true)} style={{ background: "rgba(15, 23, 42, 0.06)", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "6px 12px", cursor: "pointer", color: "#1E293B", fontSize: "0.78rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
                 <LogIn size={14} /> Entrar
               </button>
             )}
+
             <button className="header-cart-btn" onClick={() => setMobileCartOpen(true)}>
               <ShoppingCart size={18} />{cartCount > 0 && <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>{cartCount}</span>}
             </button>
@@ -730,7 +982,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         </div>
       </div>
 
-      {/* SEARCH */}
+      {/* SEARCH BAR */}
       <div className="store-search-bar">
         <div className="store-search-inner">
           <div className="store-search-wrap">
@@ -742,6 +994,28 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
 
       {/* CATEGORY TABS */}
       <div className="store-cats">
+        {promoProducts.length > 0 && (
+          <button
+            onClick={() => setShowPromotionsModal(true)}
+            style={{
+              padding: "0.35rem 1rem",
+              borderRadius: "20px",
+              fontSize: "0.82rem",
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+              border: "none",
+              background: "linear-gradient(135deg, #EF4444, #F97316)",
+              color: "#FFFFFF",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              boxShadow: "0 2px 6px rgba(239, 68, 68, 0.25)"
+            }}
+          >
+            <Flame size={13} /> Ofertas do Dia
+          </button>
+        )}
         {categories.map(c => (
           <button key={c} onClick={() => scrollToCategory(c)} className={`store-cat-btn ${selectedCategory === c ? "active" : ""}`}>{c}</button>
         ))}
@@ -750,79 +1024,153 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
       {/* CONTENT */}
       <div className="store-content">
         <div className="store-products">
+
+          {/* ===== VITRINE DE DESTAQUES (High-Impact Hero Products) ===== */}
+          {selectedCategory === "Todos" && !searchTerm && highlightProducts.length > 0 && (
+            <div style={{ marginBottom: "2rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "0.85rem" }}>
+                <h2 style={{ fontSize: "1.15rem", fontWeight: 800, margin: 0, color: "#0F172A" }}>
+                  ⭐ Destaques da Casa
+                </h2>
+                <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#16A34A", backgroundColor: "#DCFCE7", padding: "2px 8px", borderRadius: "12px" }}>
+                  Mais pedidos
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px" }}>
+                {highlightProducts.map(p => {
+                  const q = getQty(p.id);
+                  return (
+                    <div
+                      key={`highlight_${p.id}`}
+                      onClick={() => p.isCombo ? setComboProduct(p) : q === 0 && addToCart(p)}
+                      style={{
+                        backgroundColor: "#FFFFFF",
+                        borderRadius: "14px",
+                        border: q > 0 ? "1.5px solid #16A34A" : "1px solid #E2E8F0",
+                        overflow: "hidden",
+                        display: "flex",
+                        flexDirection: "column",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                        transition: "all 0.2s ease"
+                      }}
+                    >
+                      {p.imageUrl && (
+                        <div style={{ width: "100%", height: "130px", overflow: "hidden", position: "relative" }}>
+                          <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          {p.isCombo && (
+                            <span style={{ position: "absolute", top: "8px", left: "8px", background: "rgba(15,23,42,0.85)", color: "#fff", padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800 }}>
+                              COMBO
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div style={{ padding: "0.85rem", display: "flex", flexDirection: "column", flex: 1 }}>
+                        <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: "4px" }}>
+                          {p.name}
+                        </div>
+                        {p.description && (
+                          <p style={{ fontSize: "0.76rem", color: "#64748B", margin: "0 0 8px 0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                            {p.description}
+                          </p>
+                        )}
+                        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "6px" }}>
+                          <span style={{ fontWeight: 800, fontSize: "1rem", color: "#059669" }}>
+                            {p.isCombo && <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
+                            R$ {p.price.toFixed(2).replace(".", ",")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              p.isCombo ? setComboProduct(p) : addToCart(p);
+                            }}
+                            style={{
+                              padding: "5px 12px",
+                              borderRadius: "8px",
+                              border: "none",
+                              backgroundColor: "#059669",
+                              color: "#fff",
+                              fontWeight: 700,
+                              fontSize: "0.78rem",
+                              cursor: "pointer"
+                            }}
+                          >
+                            {p.isCombo ? "Montar" : "+ Pedir"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* LISTAGEM DE CATEGORIAS & PRODUTOS */}
           {Object.keys(grouped).length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem 0", color: "#94A3B8" }}>Nenhum item encontrado.</div>
           ) : Object.entries(grouped).map(([cat, prods]) => (
             <div key={cat} className="store-section" ref={el => { sectionRefs.current[cat] = el; }}>
               <h2 className="store-section-title">{cat}</h2>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {prods.map(p => { const q = getQty(p.id); return (
-                  <div key={p.id} className={`product-card ${q > 0 ? "in-cart" : ""}`} onClick={() => p.isCombo ? setComboProduct(p) : q === 0 && addToCart(p)}>
-                    {p.imageUrl && <img src={p.imageUrl} alt="" className="product-img" />}
-                    <div className="product-info">
-                      <div className="product-name">
-                        {p.name}
-                        {p.isCombo && <span className="product-combo-tag">COMBO</span>}
+                {prods.map(p => {
+                  const q = getQty(p.id);
+                  return (
+                    <div key={p.id} className={`product-card ${q > 0 ? "in-cart" : ""}`} onClick={() => p.isCombo ? setComboProduct(p) : q === 0 && addToCart(p)}>
+                      {p.imageUrl && <img src={p.imageUrl} alt="" className="product-img" />}
+                      <div className="product-info">
+                        <div className="product-name">
+                          {p.name}
+                          {p.isCombo && <span className="product-combo-tag">COMBO</span>}
+                        </div>
+                        {p.description && <p className="product-desc">{p.description}</p>}
+                        {(p as any).tags && (() => {
+                          try {
+                            const t = JSON.parse((p as any).tags);
+                            return t.length > 0 ? (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", margin: "4px 0" }}>
+                                {t.map((tag: string) => {
+                                  const colorMap: Record<string, { bg: string; color: string }> = {
+                                    "🔥 Mais Vendido": { bg: "#FEF2F2", color: "#DC2626" },
+                                    "✨ Novo": { bg: "#F5F3FF", color: "#7C3AED" },
+                                    "🏷️ Promoção": { bg: "#F0FDF4", color: "#16A34A" },
+                                    "🌱 Vegano": { bg: "#DCFCE7", color: "#15803D" },
+                                    "🌶️ Picante": { bg: "#FEF3C7", color: "#D97706" },
+                                    "⭐ Destaque": { bg: "#FEFCE8", color: "#CA8A04" },
+                                    "❄️ Gelado": { bg: "#EFF6FF", color: "#2563EB" },
+                                    "🎉 Especial do Dia": { bg: "#FDF2F8", color: "#BE185D" },
+                                  };
+                                  const c = colorMap[tag] || { bg: "#F8FAFC", color: "#475569" };
+                                  return (
+                                    <span key={tag} style={{ fontSize: "0.65rem", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: c.bg, color: c.color }}>
+                                      {tag}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            ) : null;
+                          } catch { return null; }
+                        })()}
+                        <p className="product-price">
+                          {p.isCombo && <span className="product-price-from">A partir de </span>}
+                          R$ {p.price.toFixed(2)}
+                        </p>
                       </div>
-                      {p.description && <p className="product-desc">{p.description}</p>}
-                      {/* Tags do produto */}
-                      {(p as any).tags && (() => { try { const t = JSON.parse((p as any).tags); return t.length > 0 ? (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", margin: "4px 0" }}>
-                          {t.map((tag: string) => {
-                            const colorMap: Record<string, { bg: string; color: string }> = {
-                              "🔥 Mais Vendido": { bg: "#FEF2F2", color: "#DC2626" },
-                              "✨ Novo": { bg: "#F5F3FF", color: "#7C3AED" },
-                              "🏷️ Promoção": { bg: "#F0FDF4", color: "#16A34A" },
-                              "🌱 Vegano": { bg: "#DCFCE7", color: "#15803D" },
-                              "🌶️ Picante": { bg: "#FEF3C7", color: "#D97706" },
-                              "⭐ Destaque": { bg: "#FEFCE8", color: "#CA8A04" },
-                              "❄️ Gelado": { bg: "#EFF6FF", color: "#2563EB" },
-                              "🎉 Especial do Dia": { bg: "#FDF2F8", color: "#BE185D" },
-                            };
-                            const c = colorMap[tag] || { bg: "#F8FAFC", color: "#475569" };
-                            return (
-                              <span key={tag} style={{ fontSize: "0.65rem", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: c.bg, color: c.color }}>
-                                {tag}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      ) : null; } catch { return null; } })()}
-
-                      {/* Dias Disponíveis */}
-                      {(p as any).availableDays && (() => {
-                        try {
-                          const days = typeof (p as any).availableDays === "string" ? JSON.parse((p as any).availableDays) : (p as any).availableDays;
-                          if (Array.isArray(days) && days.length > 0) {
-                            const labels: Record<string, string> = { SEG: "Seg", TER: "Ter", QUA: "Qua", QUI: "Qui", SEX: "Sex", SAB: "Sáb", DOM: "Dom" };
-                            const dayStr = days.map((d: string) => labels[d] || d).join(", ");
-                            return (
-                              <span style={{ fontSize: "0.68rem", fontWeight: 700, padding: "2px 8px", borderRadius: "12px", background: "#FEF3C7", color: "#92400E", display: "inline-flex", alignItems: "center", gap: "3px", marginTop: "2px" }}>
-                                📅 Válido: {dayStr}
-                              </span>
-                            );
-                          }
-                        } catch {}
-                        return null;
-                      })()}
-                      <p className="product-price">
-                        {p.isCombo && <span className="product-price-from">A partir de </span>}
-                        R$ {p.price.toFixed(2)}
-                      </p>
+                      <div className="product-actions">
+                        {q === 0 ? (
+                          <button className="add-btn" onClick={e => { e.stopPropagation(); p.isCombo ? setComboProduct(p) : addToCart(p); }}><Plus size={18} /></button>
+                        ) : (
+                          <div className="qty-controls">
+                            <button className="qty-btn-minus" onClick={e => { e.stopPropagation(); removeFromCart(p.id); }}><Minus size={14} /></button>
+                            <span className="qty-num">{q}</span>
+                            <button className="qty-btn-plus" onClick={e => { e.stopPropagation(); addToCart(p); }}><Plus size={14} /></button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="product-actions">
-                      {q === 0 ? (
-                        <button className="add-btn" onClick={e => { e.stopPropagation(); p.isCombo ? setComboProduct(p) : addToCart(p); }}><Plus size={18} /></button>
-                      ) : (
-                        <div className="qty-controls">
-                          <button className="qty-btn-minus" onClick={e => { e.stopPropagation(); removeFromCart(p.id); }}><Minus size={14} /></button>
-                          <span className="qty-num">{q}</span>
-                          <button className="qty-btn-plus" onClick={e => { e.stopPropagation(); addToCart(p); }}><Plus size={14} /></button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ); })}
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -832,13 +1180,28 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
             <div style={{ marginTop: "2rem", paddingBottom: "2rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
                 <h2 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0 }}>⭐ Avaliações dos clientes</h2>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: "#FFF7ED", border: "1px solid #FCD34D", borderRadius: "20px", padding: "3px 12px", fontSize: "0.82rem", fontWeight: 700, color: "#92400E" }}>
+                <div
+                  onClick={() => setShowReviewsModal(true)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    background: "#FFF7ED",
+                    border: "1px solid #FCD34D",
+                    borderRadius: "20px",
+                    padding: "3px 12px",
+                    fontSize: "0.82rem",
+                    fontWeight: 700,
+                    color: "#92400E",
+                    cursor: "pointer"
+                  }}
+                >
                   <Star size={12} fill="#F59E0B" color="#F59E0B" />
                   {storeRating.average.toFixed(1)} ({storeRating.count} avaliações)
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px" }}>
-                {storeRating.reviews.map((r, i) => (
+                {storeRating.reviews.slice(0, 6).map((r, i) => (
                   <div key={i} style={{ background: "#fff", borderRadius: "14px", padding: "1rem 1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
                       <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C62828)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}>
@@ -860,15 +1223,80 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
           )}
         </div>
 
-        {/* DESKTOP CART SIDEBAR */}
-        <div className="desk-cart">{cartContentJSX}</div>
+        {/* ===== DESKTOP SIDEBAR ===== */}
+        <div className="desk-cart" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {/* CARD 1: FIDELIDADE & RECOMPENSAS */}
+          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span style={{ fontSize: "1.2rem" }}>🎁</span>
+              <span style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>Troque pontos por recompensas</span>
+            </div>
+            <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 6px 0", lineHeight: 1.4 }}>
+              A cada R$ 1,00 em compras você ganha pontos para trocar por cupons e itens grátis.
+            </p>
+            <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#059669", margin: 0 }}>
+              ✨ Novos clientes ganham 5 pontos de boas-vindas!
+            </p>
+          </div>
+
+          {/* CARD 2: CALCULADORA DE FRETE POR BAIRRO (SEM CEP) */}
+          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Truck size={16} color="#2563EB" />
+                <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>Taxa e tempo de entrega</span>
+              </div>
+            </div>
+
+            {franchisee.deliveryZones && (
+              <select
+                value={customerNeighborhood}
+                onChange={e => calcDeliveryFee(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  outline: "none",
+                  backgroundColor: "#F8FAFC",
+                  cursor: "pointer",
+                  marginBottom: "6px"
+                }}
+              >
+                <option value="">Selecione seu bairro...</option>
+                {(franchisee.deliveryZones as any[]).map((z: any, i: number) => (
+                  <option key={i} value={z.name}>{z.name}</option>
+                ))}
+              </select>
+            )}
+
+            {customerNeighborhood && deliveryAvailable && (
+              <div style={{ fontSize: "0.78rem", color: "#15803D", fontWeight: 700, marginTop: "4px" }}>
+                🛵 Taxa: {deliveryFee === 0 || isFreeShippingByMin ? "GRÁTIS" : `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`}
+              </div>
+            )}
+
+            {freeShippingThreshold && (
+              <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#D97706", marginTop: "4px" }}>
+                🎉 Entrega grátis a partir de R$ {freeShippingThreshold.toFixed(2).replace(".", ",")}
+              </div>
+            )}
+          </div>
+
+          {/* CARD 3: SACOLA / CARRINHO */}
+          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1px solid #E2E8F0", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+            {cartContentJSX}
+          </div>
+        </div>
       </div>
 
       {/* MOBILE BOTTOM BAR */}
       {cartCount > 0 && !mobileCartOpen && (
         <div className="mob-bar">
           <button className="mob-bar-btn" onClick={() => setMobileCartOpen(true)}>
-            <span>🛒 Sacola ({cartCount})</span>
+            <span>🛒 Ver sacola ({cartCount})</span>
             <span>R$ {finalTotal.toFixed(2)}</span>
           </button>
         </div>
@@ -883,10 +1311,231 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         </div>
       )}
 
-      {/* COMBO MODAL */}
+      {/* COMBO MODAL COM PADRÃO IFOOD */}
       {comboProduct && comboProduct.isCombo && (comboProduct.comboGroups?.length || comboProduct.comboConfig) && (
-        <ComboModal product={{ id: comboProduct.id, name: comboProduct.name, price: comboProduct.price, imageUrl: comboProduct.imageUrl, comboGroups: comboProduct.comboGroups || [] }} onClose={() => setComboProduct(null)} onConfirm={s => { addToCart(comboProduct, s); setComboProduct(null); }} />
+        <ComboModal
+          product={{
+            id: comboProduct.id,
+            name: comboProduct.name,
+            description: comboProduct.description,
+            price: comboProduct.price,
+            imageUrl: comboProduct.imageUrl,
+            comboGroups: comboProduct.comboGroups || []
+          }}
+          onClose={() => setComboProduct(null)}
+          onConfirm={(selections, extraSum, qty, comboNotes) => {
+            addToCart(comboProduct, selections, extraSum, qty, comboNotes);
+            setComboProduct(null);
+          }}
+        />
       )}
+
+      {/* MODAL DE AVALIAÇÕES COMPLETAS */}
+      {showReviewsModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowReviewsModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "24px", maxWidth: "520px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F1F5F9", paddingBottom: "12px", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "1.4rem" }}>⭐</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#0F172A" }}>Avaliações dos Clientes</h3>
+                  {storeRating && (
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>
+                      Média: <strong>{storeRating.average.toFixed(1)}</strong> ({storeRating.count} avaliações registradas)
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button onClick={() => setShowReviewsModal(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontWeight: 800 }}>✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", paddingRight: "4px" }}>
+              {storeRating?.reviews && storeRating.reviews.length > 0 ? (
+                storeRating.reviews.map((r, i) => (
+                  <div key={i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C62828)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: "0.8rem" }}>
+                          {r.customerName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: "0.84rem", color: "#0F172A" }}>{r.customerName}</div>
+                          <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{new Date(r.createdAt).toLocaleDateString("pt-BR")}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: "2px" }}>
+                        {[1,2,3,4,5].map(n => (
+                          <Star key={n} size={13} fill={n <= r.rating ? "#F59E0B" : "none"} color={n <= r.rating ? "#F59E0B" : "#CBD5E1"} />
+                        ))}
+                      </div>
+                    </div>
+                    {r.comment && (
+                      <p style={{ fontSize: "0.82rem", color: "#334155", margin: "4px 0 0", lineHeight: 1.45 }}>
+                        "{r.comment}"
+                      </p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
+                  <Star size={40} style={{ opacity: 0.2, marginBottom: "8px" }} />
+                  <p style={{ fontSize: "0.9rem" }}>Esta loja ainda não possui avaliações públicas.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE PROMOÇÕES / OFERTAS DO DIA */}
+      {showPromotionsModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowPromotionsModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "24px", maxWidth: "680px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F1F5F9", paddingBottom: "12px", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "1.4rem" }}>🔥</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#0F172A" }}>Ofertas & Promoções</h3>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Descontos e combos especiais selecionados para você</p>
+                </div>
+              </div>
+              <button onClick={() => setShowPromotionsModal(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontWeight: 800 }}>✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px", paddingRight: "4px" }}>
+              {promoProducts.length > 0 ? (
+                promoProducts.map(p => {
+                  const q = getQty(p.id);
+                  return (
+                    <div
+                      key={`promo_${p.id}`}
+                      onClick={() => {
+                        setShowPromotionsModal(false);
+                        p.isCombo ? setComboProduct(p) : addToCart(p);
+                      }}
+                      style={{
+                        background: "#FFFFFF",
+                        border: "1.5px solid #FCA5A5",
+                        borderRadius: "14px",
+                        padding: "12px",
+                        display: "flex",
+                        gap: "10px",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 8px rgba(239,68,68,0.06)",
+                        position: "relative"
+                      }}
+                    >
+                      {p.imageUrl && (
+                        <img src={p.imageUrl} alt={p.name} style={{ width: "65px", height: "65px", borderRadius: "10px", objectFit: "cover" }} />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ background: "#FEE2E2", color: "#DC2626", padding: "1px 6px", borderRadius: "4px", fontSize: "0.65rem", fontWeight: 800 }}>
+                          🔥 OFERTA
+                        </span>
+                        <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginTop: "2px" }}>{p.name}</div>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
+                          <span style={{ fontWeight: 900, fontSize: "0.95rem", color: "#059669" }}>
+                            R$ {p.price.toFixed(2).replace(".", ",")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8", gridColumn: "1 / -1" }}>
+                  <Flame size={40} style={{ opacity: 0.2, marginBottom: "8px" }} />
+                  <p>Nenhuma promoção ativa no momento.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE MEUS PEDIDOS & ACOMPANHAMENTO */}
+      {showMyOrdersModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowMyOrdersModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "24px", maxWidth: "480px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F1F5F9", paddingBottom: "12px", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "1.4rem" }}>📦</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#0F172A" }}>Meus Pedidos</h3>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Consulte o status e histórico de pedidos</p>
+                </div>
+              </div>
+              <button onClick={() => setShowMyOrdersModal(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontWeight: 800 }}>✕</button>
+            </div>
+
+            {/* BUSCADOR POR WHATSAPP */}
+            <div style={{ marginBottom: "16px", background: "#F8FAFC", padding: "12px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <label style={{ fontSize: "0.76rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>
+                Digite seu WhatsApp para buscar seus pedidos:
+              </label>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  type="text"
+                  placeholder="(21) 99999-9999"
+                  value={myOrdersPhone}
+                  onChange={e => setMyOrdersPhone(e.target.value)}
+                  style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", outline: "none" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fetchMyOrders(myOrdersPhone)}
+                  disabled={myOrdersLoading}
+                  style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#0F172A", color: "#fff", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}
+                >
+                  {myOrdersLoading ? "Buscando..." : "Buscar"}
+                </button>
+              </div>
+            </div>
+
+            {/* LISTA DE PEDIDOS */}
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
+              {myOrdersList.length > 0 ? (
+                myOrdersList.map(o => (
+                  <div key={o.id} style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", borderRadius: "14px", padding: "14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>#{o.id.slice(-6).toUpperCase()}</span>
+                      <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 800, background: o.status === "ENTREGUE" ? "#DCFCE7" : "#FEF3C7", color: o.status === "ENTREGUE" ? "#15803D" : "#B45309" }}>
+                        {o.status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "8px" }}>
+                      {o.items?.map((it: any) => `${it.quantity}x ${it.menuProduct?.name || "Item"}`).join(", ")}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #F1F5F9", paddingTop: "8px" }}>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>R$ {Number(o.totalAmount || 0).toFixed(2).replace(".", ",")}</span>
+                      <button
+                        onClick={() => {
+                          setOrderSuccess(o.id);
+                          setTrackingStatus(o.status);
+                          setShowMyOrdersModal(false);
+                        }}
+                        style={{ padding: "5px 12px", borderRadius: "8px", border: "1px solid #3B82F6", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}
+                      >
+                        Acompanhar Rota →
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : myOrdersSearched ? (
+                <div style={{ textAlign: "center", padding: "2rem 1rem", color: "#94A3B8" }}>
+                  <Package size={36} style={{ opacity: 0.3, marginBottom: "6px" }} />
+                  <p style={{ fontSize: "0.85rem" }}>Nenhum pedido encontrado para este telefone.</p>
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", padding: "2rem 1rem", color: "#94A3B8" }}>
+                  <p style={{ fontSize: "0.85rem" }}>Digite seu número acima para ver seus pedidos recentes.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* AUTH MODAL */}
       {showAuth && (
         <div className="mob-cart-overlay" onClick={() => setShowAuth(false)} style={{ zIndex: 9999 }}>
@@ -934,43 +1583,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
             </div>
             <p style={{ fontSize: "0.8rem", color: "#666", marginBottom: "0.5rem" }}>📱 {customer.phone}</p>
             {customer.address && <p style={{ fontSize: "0.8rem", color: "#666", marginBottom: "0.75rem" }}>📍 {customer.address}</p>}
-            <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", marginBottom: "0.75rem" }}>
-              <h4 style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.5rem" }}><History size={14} style={{ marginRight: "4px" }} /> Meus Pedidos</h4>
-              {customer.orders?.length > 0 ? customer.orders.slice(0, 8).map((o: any) => {
-                const statusColors: Record<string, string> = { NOVO: "#3B82F6", ACEITO: "#16A34A", PREPARANDO: "#F59E0B", SAIU_ENTREGA: "#8B5CF6", ENTREGUE: "#22C55E", CANCELADO: "#EF4444" };
-                const statusLabels: Record<string, string> = { NOVO: "Enviado", ACEITO: "Aceito", PREPARANDO: "Preparando", SAIU_ENTREGA: "A caminho", ENTREGUE: "Entregue", CANCELADO: "Cancelado" };
-                return (
-                  <div key={o.id} style={{ padding: "0.6rem", background: "#F7F7F7", borderRadius: "10px", marginBottom: "6px", fontSize: "0.78rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontWeight: 600 }}>#{o.id.slice(-6).toUpperCase()}</span>
-                      <span style={{ padding: "2px 8px", borderRadius: "6px", fontWeight: 700, fontSize: "0.68rem", color: "white", background: statusColors[o.status] || "#94A3B8" }}>
-                        {statusLabels[o.status] || o.status}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px" }}>
-                      <span style={{ color: "#999", fontSize: "0.7rem" }}>{new Date(o.createdAt).toLocaleDateString("pt-BR")}</span>
-                      <span style={{ fontWeight: 700, color: "#E63946" }}>R$ {o.totalAmount.toFixed(2)}</span>
-                    </div>
-                    <p style={{ color: "#999", fontSize: "0.68rem", marginTop: "2px" }}>{o.items?.map((i: any) => i.menuProduct?.name).join(", ")}</p>
-                    <div style={{ display: "flex", gap: "4px", marginTop: "6px" }}>
-                      {o.status !== "ENTREGUE" && o.status !== "CANCELADO" && (
-                        <button onClick={() => { setOrderSuccess(o.id); setTrackingStatus(o.status); setShowHistory(false); }} style={{ flex: 1, padding: "4px 8px", borderRadius: "6px", border: "1px solid #3B82F6", background: "none", color: "#3B82F6", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}>
-                          📦 Acompanhar
-                        </button>
-                      )}
-                      {o.status === "ENTREGUE" && !o.rating && (
-                        <button onClick={() => { setRatingOrderId(o.id); setShowRating(true); setShowHistory(false); }} style={{ flex: 1, padding: "4px 8px", borderRadius: "6px", border: "1px solid #F59E0B", background: "none", color: "#F59E0B", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}>
-                          ⭐ Avaliar
-                        </button>
-                      )}
-                      {o.rating && (
-                        <span style={{ fontSize: "0.7rem", color: "#F59E0B", fontWeight: 600 }}>{"⭐".repeat(o.rating)}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              }) : <p style={{ fontSize: "0.78rem", color: "#999" }}>Nenhum pedido ainda.</p>}
-            </div>
             <button onClick={handleLogout} style={{ width: "100%", padding: "8px", borderRadius: "10px", border: "1.5px solid #EF4444", background: "none", color: "#EF4444", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
               Sair da Conta
             </button>
@@ -989,9 +1601,6 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
                 <button key={n} onClick={() => setRatingValue(n)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "2rem", opacity: n <= ratingValue ? 1 : 0.3, transition: "all 0.15s", transform: n <= ratingValue ? "scale(1.1)" : "scale(0.9)" }}>⭐</button>
               ))}
             </div>
-            <p style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.75rem" }}>
-              {ratingValue === 1 ? "😞 Ruim" : ratingValue === 2 ? "😐 Regular" : ratingValue === 3 ? "🙂 Bom" : ratingValue === 4 ? "😄 Ótimo" : "🤩 Excelente!"}
-            </p>
             <textarea value={ratingComment} onChange={e => setRatingComment(e.target.value)} placeholder="Deixe um comentário (opcional)..." rows={3} style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.85rem", boxSizing: "border-box", resize: "vertical", marginBottom: "1rem" }} />
             <button onClick={submitReview} style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #F59E0B, #EF4444)", color: "white", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer" }}>
               Enviar Avaliação
@@ -1000,47 +1609,17 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         </div>
       )}
 
-      {/* PAYMENT GATEWAY MODAL — Mercado Pago (PIX / Cartão) */}
+      {/* PAYMENT GATEWAY MODAL */}
       {showPayment && pendingOrderId && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.65)",
-            zIndex: 99999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-            backdropFilter: "blur(4px)"
-          }}
-          onClick={() => setShowPayment(false)}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: "white",
-              borderRadius: "24px",
-              padding: "1.75rem",
-              maxWidth: "440px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 25px 60px rgba(0,0,0,0.3)",
-              position: "relative"
-            }}
-          >
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(4px)" }} onClick={() => setShowPayment(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "24px", padding: "1.75rem", maxWidth: "440px", width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)", position: "relative" }}>
             <PaymentGateway
               orderId={pendingOrderId}
               amount={pendingAmount}
               initialMethod={paymentMethod === "CREDITO_ONLINE" ? "credit_card" : "pix"}
               onPaid={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
               onError={(msg) => {
-                const isMerchantConfigError = msg.includes("Credenciais") || msg.includes("Mercado Pago") || msg.includes("não configuradas");
-                const cleanMsg = isMerchantConfigError
-                  ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, selecione outra forma de pagamento na entrega (como Dinheiro ou Cartão)."
-                  : msg;
-                alert(`❌ ${cleanMsg}`);
+                alert(`❌ ${msg}`);
               }}
               onCancel={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
             />
@@ -1048,7 +1627,7 @@ export default function CustomerStorePage({ franchisee, menuProducts, storeRatin
         </div>
       )}
 
-      {/* Per-store FloatingContactWidget with iFood chat support */}
+      {/* CONTACT WIDGET */}
       {franchisee.ifoodWidgetId && franchisee.ifoodMerchantId && (
         <FloatingContactWidget
           ifoodWidgetId={franchisee.ifoodWidgetId}
