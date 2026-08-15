@@ -791,6 +791,9 @@ export default function KDSTelaPage() {
               background: "#1a1a2e",
               borderRadius: 12,
               padding: 5,
+              position: "relative",
+              zIndex: 5,
+              marginRight: 8,
             }}
           >
             {(
@@ -827,6 +830,7 @@ export default function KDSTelaPage() {
           <div
             style={{
               position: "relative",
+              zIndex: 2,
               display: "flex",
               alignItems: "center",
               gap: 8,
