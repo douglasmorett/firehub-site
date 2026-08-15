@@ -99,6 +99,7 @@ export async function GET(req: NextRequest) {
         where,
         select: {
           id: true,
+          dailyOrderNumber: true,
           customerName: true,
           customerPhone: true,
           customerAddress: true,

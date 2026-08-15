@@ -393,7 +393,7 @@ export async function processJotajaEvent(
 
       const notesArr = [
         `Pedido Jotajá #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-        scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+        (scheduledDatetime && isExplicitScheduled) ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
         discountTotal > 0
           ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (Plataforma: R$${discountPlatform.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})`
           : null,
