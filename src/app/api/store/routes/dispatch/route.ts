@@ -67,6 +67,45 @@ export async function POST(req: NextRequest) {
 
     const targetFranchiseeId = route.franchiseeId || "";
 
+    // 2.5 Sync com plataformas externas (Jotajá + iFood) — assíncrono, não bloqueia resposta
+    (async () => {
+      for (const ord of route.orders) {
+        // ── Sync Jotajá (Open Delivery) ──
+        if (ord.openDeliveryOrderId) {
+          try {
+            const { jotajaMutate } = await import("@/lib/jotaja-api");
+            const odId = ord.openDeliveryOrderId;
+            // Garantir startPreparation antes do dispatch
+            if (ord.status === "ACEITO" || ord.status === "NOVO") {
+              await jotajaMutate(`/v1/orders/${odId}/startPreparation`, { method: "POST" }, targetFranchiseeId).catch(() => {});
+            }
+            const r = await jotajaMutate(`/v1/orders/${odId}/dispatch`, { method: "POST" }, targetFranchiseeId);
+            console.log(`[Route Dispatch → Jotajá] dispatch ${odId}: ${r.status}`);
+          } catch (err: any) {
+            console.warn(`[Route Dispatch → Jotajá] Erro sync ${ord.openDeliveryOrderId}:`, err?.message);
+          }
+        }
+        // ── Sync iFood ──
+        if (ord.ifoodOrderId) {
+          try {
+            const { getIfoodToken } = await import("@/lib/ifood-api");
+            const token = await getIfoodToken();
+            const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+            const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${ord.ifoodOrderId}`;
+            if (ord.status === "ACEITO" || ord.status === "NOVO") {
+              await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers }).catch(() => {});
+            }
+            await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
+            const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
+            console.log(`[Route Dispatch → iFood] dispatch ${ord.ifoodOrderId}: ${r.status}`);
+          } catch (err: any) {
+            console.warn(`[Route Dispatch → iFood] Erro sync ${ord.ifoodOrderId}:`, err?.message);
+          }
+        }
+      }
+    })();
+
+
     // 3. Notifica cada cliente via WhatsApp que o pedido saiu para entrega
     for (const ord of route.orders) {
       if (ord.customerPhone) {

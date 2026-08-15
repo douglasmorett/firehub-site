@@ -1876,49 +1876,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const orderNumberMap = useMemo(() => {
     const map = persistentOrderNumMapRef.current;
 
-    // 1. Respeita dailyOrderNumber se veio da API/banco e fixa no mapa permanente
     orders.forEach((o: any) => {
       if (o.dailyOrderNumber && typeof o.dailyOrderNumber === "number") {
         map.set(o.id, o.dailyOrderNumber);
-      }
-    });
-
-    const sortedOrders = [...orders].sort(
-      (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    const openSessionStart = cashOpenedAt ? new Date(cashOpenedAt).getTime() : null;
-
-    const pastOrders = openSessionStart
-      ? sortedOrders.filter((o: any) => new Date(o.createdAt).getTime() < openSessionStart)
-      : sortedOrders;
-
-    const currentSessionOrders = openSessionStart
-      ? sortedOrders.filter((o: any) => new Date(o.createdAt).getTime() >= openSessionStart)
-      : [];
-
-    // Mapear pedidos passados contínuos do turno
-    const shiftCounters = new Map<string, number>();
-    pastOrders.forEach((o: any) => {
-      if (!map.has(o.id)) {
-        const shiftTime = new Date(new Date(o.createdAt).getTime() - 5 * 60 * 60 * 1000);
-        const tz = user?.storeTimezone || "America/Sao_Paulo";
-        const shiftKey = shiftTime.toLocaleString("en-US", { timeZone: tz }).split(",")[0];
-        const nextSeq = (shiftCounters.get(shiftKey) || 0) + 1;
-        shiftCounters.set(shiftKey, nextSeq);
-        map.set(o.id, nextSeq);
-      }
-    });
-
-    // Mapear pedidos da sessão atual a partir de #1, #2, #3...
-    currentSessionOrders.forEach((o: any, idx: number) => {
-      if (!map.has(o.id)) {
-        map.set(o.id, idx + 1);
+      } else if (!map.has(o.id)) {
+        // Fallback visual para pedidos legados de ontem sem numeração no DB
+        const fallbackNum = parseInt(o.id.slice(-4), 16) % 10000;
+        map.set(o.id, fallbackNum);
       }
     });
 
     return map;
-  }, [orders, cashOpenedAt]);
+  }, [orders]);
 
   // scheduledOrders e scheduledOrderIds já calculados acima (antes do useEffect do som)
 

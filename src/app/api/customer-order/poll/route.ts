@@ -687,32 +687,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Buscar data de abertura do caixa ativo para calcular a sequência do dia/sessão
-    const activeSession = await withRetry(() => prisma.cashSession.findFirst({
-      where: { franchiseeId: targetFranchiseeId, status: "OPEN" },
-      orderBy: { openedAt: "desc" },
-      select: { openedAt: true }
-    }));
-
-    // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
-    const allRecentOrders = await withRetry(() => prisma.customerOrder.findMany({
-      where: {
-        franchiseeId: targetFranchiseeId,
-        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-      },
-      select: { id: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
-    }));
-
-    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-    const tz = user?.storeTimezone || "America/Sao_Paulo";
-    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, activeSession?.openedAt, tz);
-
     const ordersWithDailyNum = orders.map((o: any) => ({
       ...o,
-      dailyOrderNumber: o.dailyOrderNumber || dailyNumMap.get(o.id) || null,
+      dailyOrderNumber: o.dailyOrderNumber || parseInt(o.id.slice(-4), 16) % 10000 || null,
     }));
-
 
     // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
     try {

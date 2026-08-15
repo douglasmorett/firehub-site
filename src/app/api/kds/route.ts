@@ -147,34 +147,9 @@ export async function GET(req: NextRequest) {
       })
     ).catch(() => []);
 
-    const allCashSessions = await withRetry(() =>
-      prisma.cashSession.findMany({
-        where: { franchiseeId: { in: userStoreIds } },
-        select: { id: true, openedAt: true, closedAt: true, status: true },
-        orderBy: { openedAt: "asc" },
-        take: 100,
-      })
-    );
-
-    // Numeração PERMANENTE E IMUTÁVEL baseada na Sessão de Caixa Ativa / Turno Operacional
-    const allRecentOrders = await withRetry(() =>
-      prisma.customerOrder.findMany({
-        where: {
-          franchiseeId: { in: userStoreIds },
-          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        },
-        select: { id: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
-      })
-    );
-
-    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-    const tz = user?.storeTimezone || "America/Sao_Paulo";
-    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions, tz);
-
     const ordersWithDailyNum = orders.map((o: any) => ({
       ...o,
-      dailyOrderNumber: dailyNumMap.get(o.id) || null,
+      dailyOrderNumber: o.dailyOrderNumber || parseInt(o.id.slice(-4), 16) % 10000 || null,
     }));
 
     return NextResponse.json(ordersWithDailyNum, {
@@ -289,7 +264,7 @@ export async function PUT(req: NextRequest) {
       if (order.openDeliveryOrderId) {
         try {
           const { jotajaFetch } = await import("@/lib/jotaja-api");
-          await jotajaFetch(`/v1/orders/${order.openDeliveryOrderId}/readyToPickup`, { method: "POST" });
+          await jotajaFetch(`/v1/orders/${order.openDeliveryOrderId}/readyToPickup`, { method: "POST" }, order.franchiseeId);
         } catch (errOd) {
           console.warn("[KDS Jotajá Sync Error]:", errOd);
         }

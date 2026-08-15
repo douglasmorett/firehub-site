@@ -2,6 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 
+export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
+
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const franchisee = await prisma.user.findUnique({

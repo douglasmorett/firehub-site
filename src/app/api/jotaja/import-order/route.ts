@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,6 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanRef = String(orderIdInput || "").replace(/#/g, "").trim();
-    const orderKey = `manual_jotaja_${cleanRef || Date.now()}_${targetFranchiseeId}`;
 
     // Tentar buscar na API oficial do JotaJá via Open Delivery se tiver id numérico/UUID
     if (cleanRef) {
@@ -44,18 +44,22 @@ export async function POST(req: NextRequest) {
         const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
         const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
 
+        // Wrapper para garantir que as chamadas usem as credenciais da loja correta
+        const storeFetch = (path: string, opts?: RequestInit) => jotajaFetch(path, opts, targetFranchiseeId);
+        const storeMutate = (path: string, opts?: RequestInit) => jotajaMutate(path, opts, targetFranchiseeId);
+
         let targetId = cleanRef;
 
         // Se o usuário digitou um ID numérico (ex: 32766118 ou 4498), tenta resolver o UUID oficial correspondente
         if (/^\d+$/.test(cleanRef)) {
           try {
-            const evRes = await jotajaFetch("/v1/events:polling");
+            const evRes = await storeFetch("/v1/events:polling");
             if (evRes.ok) {
               const evsText = await evRes.text();
               const evs = evsText ? JSON.parse(evsText) : [];
               for (const ev of evs) {
                 if (ev.orderId) {
-                  const checkRes = await jotajaFetch(`/v1/orders/${ev.orderId}`);
+                  const checkRes = await storeFetch(`/v1/orders/${ev.orderId}`);
                   if (checkRes.ok) {
                     const checkData = await checkRes.json();
                     if (
@@ -75,7 +79,8 @@ export async function POST(req: NextRequest) {
         }
 
         const eventFake = { orderId: targetId, eventType: "CREATED", code: "PLC", displayId: cleanRef };
-        const result = await processJotajaEvent(eventFake, jotajaFetch, jotajaMutate, targetFranchiseeId);
+        const result = await processJotajaEvent(eventFake, storeFetch, storeMutate, targetFranchiseeId);
+
 
         if (result.action === "created" || result.action === "updated") {
           return NextResponse.json({
@@ -91,12 +96,33 @@ export async function POST(req: NextRequest) {
 
     // Fallback: criação direta resiliente no banco com os dados informados
     const refTag = cleanRef || "MANUAL";
+
+    // ANTI-DUPLICATA: Verifica se o pedido já existe antes de criar (evita duplicação quando cron/webhook importa depois)
+    const alreadyExists = await prisma.customerOrder.findFirst({
+      where: {
+        OR: [
+          cleanRef ? { openDeliveryOrderId: cleanRef } : undefined,
+          cleanRef ? { openDeliveryReference: cleanRef } : undefined,
+          cleanRef ? { openDeliveryOrderId: { startsWith: `manual_jotaja_${cleanRef}` } } : undefined,
+        ].filter(Boolean) as any[],
+      },
+    });
+    if (alreadyExists) {
+      return NextResponse.json({
+        ok: true,
+        message: `ℹ️ Pedido #${refTag} já existe no sistema (id=${alreadyExists.id}) — não foi duplicado.`,
+        order: alreadyExists,
+      });
+    }
+
+    const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
     const ord = await prisma.customerOrder.create({
       data: {
         franchiseeId: targetFranchiseeId,
+        dailyOrderNumber,
         source: "JOTAJA",
         openDeliveryChannel: "JOTAJA",
-        openDeliveryOrderId: orderKey,
+        openDeliveryOrderId: cleanRef || `manual_${Date.now()}`,
         openDeliveryReference: refTag,
         customerName: customerName || `Cliente JotaJá #${refTag}`,
         customerPhone: customerPhone || "",

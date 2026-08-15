@@ -11,8 +11,19 @@ import { prisma } from "./prisma";
 
 const JOTAJA_BASE = process.env.JOTAJA_BASE_URL || "https://api.jotaja.com/openDelivery";
 
-// Cache de token PER-STORE (chave = storeUserId ou "global")
 const _tokenCache = new Map<string, { token: string; exp: number; clientId: string }>();
+const _pendingTokenFetches = new Map<string, Promise<string>>();
+
+function invalidateTokenCache(storeUserId?: string) {
+  if (storeUserId) {
+    _tokenCache.delete(`store_${storeUserId}`);
+  } else {
+    // Clear all env-based caches
+    for (const [key] of _tokenCache) {
+      if (key.startsWith('env_') || key === 'global') _tokenCache.delete(key);
+    }
+  }
+}
 
 interface JotajaCredentials {
   clientId: string;
@@ -63,6 +74,21 @@ export async function getJotajaToken(storeUserId?: string): Promise<string> {
     return cached.token;
   }
 
+  // Promise-sharing: se já tem uma requisição em andamento para essa loja, reutiliza
+  const pendingKey = creds.cacheKey;
+  const pending = _pendingTokenFetches.get(pendingKey);
+  if (pending) return pending;
+  
+  const tokenPromise = fetchNewToken(creds);
+  _pendingTokenFetches.set(pendingKey, tokenPromise);
+  try {
+    return await tokenPromise;
+  } finally {
+    _pendingTokenFetches.delete(pendingKey);
+  }
+}
+
+async function fetchNewToken(creds: JotajaCredentials): Promise<string> {
   if (!creds.clientId || !creds.clientSecret) {
     throw new Error("Jotajá: credenciais não configuradas para esta loja");
   }
@@ -97,16 +123,26 @@ export async function jotajaFetch(
   options: RequestInit = {},
   storeUserId?: string
 ): Promise<Response> {
-  const token = await getJotajaToken(storeUserId);
-  return fetch(`${JOTAJA_BASE}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...(options.headers ?? {}),
-    },
-  });
+  const doFetch = async () => {
+    const token = await getJotajaToken(storeUserId);
+    return fetch(`${JOTAJA_BASE}${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(options.headers ?? {}),
+      },
+    });
+  };
+  
+  const res = await doFetch();
+  if (res.status === 401) {
+    // Token expirou ou foi revogado — invalidar cache e retry
+    invalidateTokenCache(storeUserId);
+    return doFetch();
+  }
+  return res;
 }
 
 /**
@@ -118,16 +154,26 @@ export async function jotajaMutate(
   options: RequestInit = {},
   storeUserId?: string
 ): Promise<Response> {
-  const token = await getJotajaToken(storeUserId);
-  return fetch(`${JOTAJA_BASE}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...(options.headers ?? {}),
-    },
-  });
+  const doFetch = async () => {
+    const token = await getJotajaToken(storeUserId);
+    return fetch(`${JOTAJA_BASE}${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(options.headers ?? {}),
+      },
+    });
+  };
+  
+  const res = await doFetch();
+  if (res.status === 401) {
+    // Token expirou ou foi revogado — invalidar cache e retry
+    invalidateTokenCache(storeUserId);
+    return doFetch();
+  }
+  return res;
 }
 
 

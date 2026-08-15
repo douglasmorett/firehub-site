@@ -5,6 +5,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { isBeverageName } from "@/lib/beverage";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export interface JotajaEvent {
   id?: string;
@@ -33,7 +34,7 @@ export async function processJotajaEvent(
   jotajaMutate: (path: string, options?: RequestInit) => Promise<Response>,
   targetFranchiseeId?: string,
 ): Promise<ProcessResult> {
-  const { code, orderId } = event;
+  const { code, orderId } = event || {} as JotajaEvent;
   if (!orderId) return { action: "skipped", orderId: "", message: "sem orderId" };
 
   // Jotajá uses eventType (CREATED, CONFIRMED, etc.) in addition to code/fullCode
@@ -91,15 +92,21 @@ export async function processJotajaEvent(
     }
 
     // ── Verifica idempotência ──────────────────────────────────────────────
+    // openDeliveryOrderId é globalmente único (@unique no schema) — busca global
+    // openDeliveryReference é número curto (ex: "1234") que pode repetir entre lojas — DEVE filtrar por franchiseeId
+    const idempotencyConditions: any[] = [
+      { openDeliveryOrderId: orderId },
+      { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+    ];
+    if (targetFranchiseeId) {
+      idempotencyConditions.push({ openDeliveryReference: orderId, franchiseeId: targetFranchiseeId });
+      const displayRef = (event as any).displayId || (event as any).orderSeqNumber;
+      if (displayRef) {
+        idempotencyConditions.push({ openDeliveryReference: displayRef, franchiseeId: targetFranchiseeId });
+      }
+    }
     const existing = await prisma.customerOrder.findFirst({
-      where: {
-        OR: [
-          { openDeliveryOrderId: orderId },
-          { openDeliveryOrderId: { startsWith: `${orderId}_` } },
-          { openDeliveryReference: orderId },
-          { openDeliveryReference: (event as any).displayId || (event as any).orderSeqNumber }
-        ].filter(Boolean)
-      } as any,
+      where: { OR: idempotencyConditions } as any,
     });
 
     if (!existing) {
@@ -141,6 +148,9 @@ export async function processJotajaEvent(
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
+
+      // REGRA DE OURO: Gerar dailyOrderNumber sequencial — entra no FINAL da fila sem mexer em nada existente
+      const dailyOrderNumber = await generateDailyOrderNumber(franchiseeIdToUse);
 
       // Helper: extract numeric value from price (handles {value, currency} objects or plain numbers)
       const priceVal = (p: any): number => typeof p === "object" && p !== null ? (p.value ?? 0) : (p ?? 0);
@@ -200,20 +210,28 @@ export async function processJotajaEvent(
         const qty = i.quantity ?? i.qty ?? 1;
         const rawUnit = priceVal(i.unitPrice) || priceVal(i.price) || 0;
         const rawTotal = priceVal(i.totalPrice) || priceVal(i.total) || 0;
-        const optionsSum = options.reduce(
-          (sum: number, o: any) => sum + (priceVal(o.price) || priceVal(o.addition) || priceVal(o.unitPrice) || 0) * (o.quantity || 1),
-          0
-        );
 
-        // Se o payload informar totalPrice da linha (incluindo subitens e acréscimos), ele tem prioridade se for maior que o preço base.
-        // Caso contrário, soma o unitPrice base do item aos acréscimos das opções/sabores adicionais.
+        // Preço do item:
+        // 1. Se totalPrice disponível → usar direto (já inclui opções pagas corretamente)
+        // 2. Senão, calcular: unitPrice base + soma de opções que são ADIÇÕES
         let itemPrice = 0;
-        if (rawTotal > 0 && qty > 0 && (rawTotal / qty) > rawUnit) {
+        if (rawTotal > 0 && qty > 0) {
+          // totalPrice do JotaJá já inclui tudo (base + opções cobradas)
           itemPrice = rawTotal / qty;
-        } else if (rawUnit > 0 || optionsSum > 0) {
-          itemPrice = rawUnit + optionsSum;
-        } else if (rawTotal > 0 && qty > 0) {
-          itemPrice = rawTotal / qty;
+        } else if (rawUnit > 0) {
+          // Sem totalPrice — somar manualmente apenas adições
+          const additionsSum = options.reduce(
+            (sum: number, o: any) => sum + (priceVal(o.addition) || 0) * (o.quantity || 1),
+            0
+          );
+          itemPrice = rawUnit + additionsSum;
+        } else {
+          // Fallback: usar soma de opções como preço total
+          const optionsSum = options.reduce(
+            (sum: number, o: any) => sum + (priceVal(o.price) || priceVal(o.addition) || priceVal(o.unitPrice) || 0) * (o.quantity || 1),
+            0
+          );
+          itemPrice = optionsSum;
         }
 
         const comboSelsList = options.length > 0 ? options.map((o: any) => ({
@@ -227,8 +245,9 @@ export async function processJotajaEvent(
         const itemId = i.id || i.externalId || `item-${Math.random().toString(36).slice(2)}`;
 
         return {
-          price: itemPrice,
+          price: Math.round(itemPrice * 100) / 100,
           quantity: qty,
+          productName: fullName,
           comboSelections: comboSelectionsJson,
           menuProduct: {
             connectOrCreate: {
@@ -368,9 +387,9 @@ export async function processJotajaEvent(
       const phoneLocalizer = phone?.localizer;
 
       // Collect item-level special instructions
-      const itemNotes = (orderData.items ?? [])
+      const itemNotes = rawItemsList
         .filter((i: any) => i.specialInstructions?.trim())
-        .map((i: any) => `${i.name}: ${i.specialInstructions.trim()}`);
+        .map((i: any) => `${i.name || i.productName || 'Item'}: ${i.specialInstructions.trim()}`);
 
       const notesArr = [
         `Pedido Jotajá #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
@@ -398,6 +417,9 @@ export async function processJotajaEvent(
           await (prisma.customerOrder as any).create({
             data: {
               franchiseeId: franchiseeIdToUse,
+              dailyOrderNumber,
+              kdsStage: "PRODUCTION",
+              kdsProductionAt: new Date(),
               openDeliveryOrderId: orderId,
               openDeliveryReference: orderData.displayId ?? undefined,
               openDeliveryChannel: "JOTAJA",
@@ -440,9 +462,10 @@ export async function processJotajaEvent(
                 return isTakeout ? "RETIRADA" : "DELIVERY";
               })(),
               paymentMethod: resolvedPaymentMethod,
-              totalAmount: total,
-              deliveryFee: deliveryFeeValue,
+              totalAmount: Math.round(total * 100) / 100,
+              deliveryFee: Math.round(deliveryFeeValue * 100) / 100,
               status: initialStatus,
+              notes: notesArr || undefined,
               createdAt: new Date(),
               items: {
                 create: items,
@@ -470,9 +493,14 @@ export async function processJotajaEvent(
         console.error(`[Jotaja] 🚨 PEDIDO PERDIDO APÓS 3 TENTATIVAS — orderId=${orderId}, cliente=${orderData.customer?.name}, total=${total}`);
         try {
           // Tenta criar com dados mínimos (sem itens complexos) como última barreira
+          // Gerar novo número sequencial para o fallback (pode ter mudado desde o primeiro try)
+          const recoveryDailyNumber = await generateDailyOrderNumber(franchiseeIdToUse);
           await (prisma.customerOrder as any).create({
             data: {
               franchiseeId: franchiseeIdToUse,
+              dailyOrderNumber: recoveryDailyNumber,
+              kdsStage: "PRODUCTION",
+              kdsProductionAt: new Date(),
               openDeliveryOrderId: `${orderId}_recovered`,
               openDeliveryReference: orderData.displayId ?? undefined,
               openDeliveryChannel: "JOTAJA",
@@ -569,14 +597,15 @@ export async function processJotajaEvent(
         const newRank = STATUS_RANK[newStatus] || 0;
 
         if (newRank >= currentRank) {
+          const updateConditions: any[] = [
+            { openDeliveryOrderId: orderId },
+            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+          ];
+          if (targetFranchiseeId) {
+            updateConditions.push({ openDeliveryReference: orderId, franchiseeId: targetFranchiseeId });
+          }
           await (prisma.customerOrder as any).updateMany({
-            where: {
-              OR: [
-                { openDeliveryOrderId: orderId },
-                { openDeliveryOrderId: { startsWith: `${orderId}_` } },
-                { openDeliveryReference: orderId }
-              ]
-            } as any,
+            where: { OR: updateConditions } as any,
             data: { status: newStatus },
           });
           return { action: "updated", orderId, message: `→ ${newStatus}` };

@@ -54,14 +54,44 @@ export async function POST(req: NextRequest) {
 
   try {
     const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+    const { prisma } = await import("@/lib/prisma");
     const rawEvents = JSON.parse(bodyText);
     const events = Array.isArray(rawEvents) ? rawEvents : [rawEvents];
+
+    // Resolver storeId a partir do payload — tenta encontrar a loja dona dos pedidos
+    let resolvedStoreId: string | undefined;
+    try {
+      // Tenta extrair merchantId do primeiro evento que tenha dados de merchant
+      const firstEvent = events[0];
+      const merchantId = firstEvent?.merchant?.id || firstEvent?.metadata?.merchantId;
+      if (merchantId) {
+        const store = await prisma.user.findFirst({
+          where: {
+            jotajaMerchantId: merchantId,
+            jotajaConnected: true,
+            NOT: { email: { startsWith: "deleted_" } },
+          },
+          select: { id: true, ownerId: true },
+        });
+        if (store) resolvedStoreId = store.ownerId || store.id;
+      }
+      // Fallback: SEM storeId — processJotajaEvent resolverá via merchantId do payload do pedido
+      // ⚠️ NÃO atribuir a uma loja aleatória para evitar vazamento de dados entre lojas
+      if (!resolvedStoreId) {
+        console.warn("[Jotajá Webhook] ⚠️ merchantId não encontrado no payload — processJotajaEvent resolverá via orderData.merchant.id");
+      }
+    } catch {}
 
     const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
     let created = 0, updated = 0, disputes = 0, cancelled = 0;
 
     for (const event of events) {
-      const result = await processJotajaEvent(event, jotajaFetch, jotajaMutate);
+      const result = await processJotajaEvent(
+        event,
+        (path: string, opts?: RequestInit) => jotajaFetch(path, opts, resolvedStoreId),
+        (path: string, opts?: RequestInit) => jotajaMutate(path, opts, resolvedStoreId),
+        resolvedStoreId
+      );
       console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
       const eid = event.eventId || event.id;
@@ -84,7 +114,7 @@ export async function POST(req: NextRequest) {
         await jotajaMutate("/v1/events/acknowledgment", {
           method: "POST",
           body: JSON.stringify(processedEvents),
-        });
+        }, resolvedStoreId);
       } catch { /* não crítico */ }
     }
 

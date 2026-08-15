@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
 import { prisma } from "@/lib/prisma";
-import { jotajaFetch, jotajaMutate } from "@/lib/jotaja-api";
 
 /**
  * GET /api/cron/jotaja-poll
@@ -11,7 +10,7 @@ import { jotajaFetch, jotajaMutate } from "@/lib/jotaja-api";
  * Protected by CRON_SECRET.
  */
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 55;
 
 export async function GET(req: NextRequest) {
   // Verify cron secret (only if CRON_SECRET is configured)
@@ -24,6 +23,8 @@ export async function GET(req: NextRequest) {
   }
 
   const startTime = Date.now();
+  const MAX_SAFE_MS = 50_000; // leave 5s buffer for cleanup
+  const hasTimeLeft = () => Date.now() - startTime < MAX_SAFE_MS;
   const log: string[] = [];
 
   try {
@@ -71,133 +72,151 @@ export async function GET(req: NextRequest) {
     log.push(`ℹ️ ${stores.length} loja(s) ativa(s) com Jotajá`);
 
     let totalCreated = 0, totalUpdated = 0, totalDisputes = 0, totalCancelled = 0;
-    let totalEvents = 0, totalAcknowledged = 0;
+    let totalEvents = 0, totalAcknowledged = 0, reconciled = 0;
 
-    // ── Polling PER-STORE ──────────────────────────────────────────────
-    for (const store of stores) {
-      const storeId = store.ownerId || store.id;
-      const storeName = store.storeName || store.email;
+    // ── Polling PARALELO PER-STORE ───────────────────────────────────
+    const CHUNK_SIZE = 5;
+    for (let i = 0; i < stores.length; i += CHUNK_SIZE) {
+      if (!hasTimeLeft()) {
+        log.push(`⏱️ Timeout guard — ${stores.length - i} loja(s) restantes serão processadas no próximo ciclo`);
+        break;
+      }
+      const chunk = stores.slice(i, i + CHUNK_SIZE);
+      const results = await Promise.allSettled(chunk.map(async (store) => {
+        const storeId = store.ownerId || store.id;
+        const storeName = store.storeName || store.email;
 
-      try {
-        const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
-
-        // Autenticar com as credenciais DESTA loja
-        let res: Response;
         try {
-          res = await jotajaFetch("/v1/events:polling", { method: "GET" }, storeId);
-        } catch (err: any) {
-          log.push(`❌ [${storeName}] Polling falhou: ${err.message}`);
-          continue;
-        }
+          const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
 
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => "");
-          log.push(`❌ [${storeName}] events:polling: ${res.status} — ${errBody.slice(0, 200)}`);
-          continue;
-        }
-
-        const eventsText = await res.text();
-        const events = eventsText ? JSON.parse(eventsText) : [];
-
-        if (!events || events.length === 0) {
-          log.push(`✅ [${storeName}] 0 eventos`);
-          continue;
-        }
-
-        totalEvents += events.length;
-        log.push(`📥 [${storeName}] ${events.length} evento(s)`);
-
-        // Process events for THIS store
-        const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
-
-        for (const event of events) {
-          const result = await processJotajaEvent(event, 
-            (path: string, opts?: RequestInit) => jotajaFetch(path, opts, storeId),
-            (path: string, opts?: RequestInit) => jotajaMutate(path, opts, storeId),
-            storeId
-          );
-          log.push(`  ${result.action === "error" ? "❌" : result.action === "created" ? "✅" : "🔄"} ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
-
-          const eid = event.eventId || event.id;
-          if (result.action !== "error" && eid) {
-            processedEventIds.push({
-              id: eid,
-              orderId: event.orderId || "",
-              eventType: event.eventType || event.fullCode || event.code || "",
-            });
-          }
-          if (result.action === "created")   totalCreated++;
-          if (result.action === "updated")   totalUpdated++;
-          if (result.action === "dispute")   totalDisputes++;
-          if (result.action === "cancelled") totalCancelled++;
-        }
-
-        // Acknowledge processed events for THIS store
-        if (processedEventIds.length > 0) {
+          // Autenticar com as credenciais DESTA loja
+          let res: Response;
           try {
-            const ackRes = await jotajaMutate("/v1/events/acknowledgment", {
-              method: "POST",
-              body: JSON.stringify(processedEventIds),
-            }, storeId);
-            if (ackRes.ok) {
-              log.push(`✅ [${storeName}] ${processedEventIds.length} acknowledged`);
-              totalAcknowledged += processedEventIds.length;
-            } else {
-              const ackBody = await ackRes.text().catch(() => "");
-              log.push(`⚠️ [${storeName}] Acknowledge ${ackRes.status}: ${ackBody.slice(0, 200)}`);
-            }
-          } catch (ackErr: any) {
-            log.push(`⚠️ [${storeName}] Acknowledge falhou: ${ackErr.message}`);
+            res = await jotajaFetch("/v1/events:polling", { method: "GET" }, storeId);
+          } catch (err: any) {
+            log.push(`❌ [${storeName}] Polling falhou: ${err.message}`);
+            return;
           }
-        }
-      } catch (storeErr: any) {
-        log.push(`❌ [${storeName}] Erro geral: ${storeErr.message}`);
-      }
-    }
 
-    // ── RECONCILIAÇÃO PROATIVA: busca pedidos ativos no JotaJá que podem ter sido perdidos ──
-    let reconciled = 0;
-    try {
-      const activeRes = await jotajaFetch("/v1/orders?status=CONFIRMED,PLACED,IN_PREPARATION,READY_TO_PICKUP,DISPATCHED").catch(() => null);
-      if (activeRes && activeRes.ok) {
-        const activeText = await activeRes.text().catch(() => "");
-        const activeOrders = activeText ? JSON.parse(activeText) : [];
-        const orderList = Array.isArray(activeOrders) ? activeOrders : (activeOrders.orders ?? activeOrders.data ?? []);
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => "");
+            log.push(`❌ [${storeName}] events:polling: ${res.status} — ${errBody.slice(0, 200)}`);
+            return;
+          }
 
-        for (const jjOrder of orderList) {
-          const jjId = jjOrder.id || jjOrder.orderId;
-          if (!jjId) continue;
+          const eventsText = await res.text();
+          let events: any[] = [];
+          try {
+            events = eventsText ? JSON.parse(eventsText) : [];
+            if (!Array.isArray(events)) events = [events];
+          } catch (parseErr) {
+            log.push(`❌ [${storeName}] Resposta inválida (não é JSON): ${eventsText.slice(0, 100)}`);
+            return;
+          }
 
-          // Verifica se já existe localmente
-          const existsLocally = await prisma.customerOrder.findFirst({
-            where: {
-              OR: [
-                { openDeliveryOrderId: jjId },
-                { openDeliveryOrderId: { startsWith: `${jjId}_` } },
-                { openDeliveryReference: jjOrder.displayId || jjOrder.orderSeqNumber }
-              ].filter(Boolean)
-            } as any,
-            select: { id: true },
-          });
+          if (!events || events.length === 0) {
+            log.push(`✅ [${storeName}] 0 eventos`);
+          } else {
+            totalEvents += events.length;
+            log.push(`📥 [${storeName}] ${events.length} evento(s)`);
 
-          if (!existsLocally) {
-            // Pedido existe no JotaJá mas NÃO no banco local — IMPORTAR!
-            log.push(`🛟 RECONCILIAÇÃO: Pedido ${jjId} encontrado no JotaJá mas ausente localmente — importando...`);
-            const syntheticEvent = { orderId: jjId, eventType: "CREATED", code: "PLC" };
-            const result = await processJotajaEvent(syntheticEvent, jotajaFetch, jotajaMutate);
-            if (result.action === "created") {
-              reconciled++;
-              log.push(`  ✅ Pedido ${jjId} RECUPERADO com sucesso!`);
-            } else {
-              log.push(`  ⚠️ Pedido ${jjId}: ${result.action} — ${result.message}`);
+            // Process events for THIS store — acknowledge IMMEDIATELY per-event
+            for (const event of events) {
+              if (!hasTimeLeft()) {
+                log.push(`⏱️ [${storeName}] Timeout guard — parando processamento (${events.length - events.indexOf(event)} eventos restantes)`);
+                break;
+              }
+
+              const result = await processJotajaEvent(event, 
+                (path: string, opts?: RequestInit) => jotajaFetch(path, opts, storeId),
+                (path: string, opts?: RequestInit) => jotajaMutate(path, opts, storeId),
+                storeId
+              );
+              log.push(`  ${result.action === "error" ? "❌" : result.action === "created" ? "✅" : "🔄"} ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
+
+              // Acknowledge IMEDIATAMENTE após sucesso — impede acúmulo de eventos
+              const eid = event.eventId || event.id;
+              if (result.action !== "error" && eid) {
+                try {
+                  await jotajaMutate("/v1/events/acknowledgment", {
+                    method: "POST",
+                    body: JSON.stringify([{
+                      id: eid,
+                      orderId: event.orderId || "",
+                      eventType: event.eventType || event.fullCode || event.code || "",
+                    }]),
+                  }, storeId);
+                  totalAcknowledged++;
+                } catch {}
+              }
+              if (result.action === "created")   totalCreated++;
+              if (result.action === "updated")   totalUpdated++;
+              if (result.action === "dispute")   totalDisputes++;
+              if (result.action === "cancelled") totalCancelled++;
+            }
+
+            // ── RECONCILIAÇÃO PROATIVA PER-STORE ──────────────────────────
+            if (hasTimeLeft()) {
+              try {
+                const activeRes = await jotajaFetch("/v1/orders?status=CONFIRMED,PLACED,IN_PREPARATION,READY_TO_PICKUP,DISPATCHED", {}, storeId);
+                if (activeRes.ok) {
+                  const activeText = await activeRes.text().catch(() => "");
+                  const activeOrders = activeText ? JSON.parse(activeText) : [];
+                  const orderList = Array.isArray(activeOrders) ? activeOrders : (activeOrders.orders ?? activeOrders.data ?? []);
+
+                  for (const jjOrder of orderList) {
+                    if (!hasTimeLeft()) break;
+                    const jjId = jjOrder.id || jjOrder.orderId;
+                    if (!jjId) continue;
+
+                    const existsLocally = await prisma.customerOrder.findFirst({
+                      where: {
+                        OR: [
+                          { openDeliveryOrderId: jjId },
+                          { openDeliveryOrderId: { startsWith: `${jjId}_` } },
+                          (jjOrder.displayId || jjOrder.orderSeqNumber)
+                            ? { openDeliveryReference: jjOrder.displayId || jjOrder.orderSeqNumber, franchiseeId: storeId }
+                            : undefined,
+                        ].filter(Boolean)
+                      } as any,
+                      select: { id: true },
+                    });
+
+                    if (!existsLocally) {
+                      log.push(`🛟 [${storeName}] RECONCILIAÇÃO: Pedido ${jjId} ausente — importando...`);
+                      const syntheticEvent = { orderId: jjId, eventType: "CREATED", code: "PLC" };
+                      const result = await processJotajaEvent(
+                        syntheticEvent,
+                        (path: string, opts?: RequestInit) => jotajaFetch(path, opts, storeId),
+                        (path: string, opts?: RequestInit) => jotajaMutate(path, opts, storeId),
+                        storeId
+                      );
+                      if (result.action === "created") {
+                        reconciled++;
+                        log.push(`  ✅ [${storeName}] Pedido ${jjId} RECUPERADO!`);
+                      } else {
+                        log.push(`  ⚠️ [${storeName}] Pedido ${jjId}: ${result.action} — ${result.message}`);
+                      }
+                    }
+                  }
+                } else {
+                  log.push(`⚠️ [${storeName}] Reconciliação: GET /v1/orders retornou ${activeRes.status}`);
+                }
+              } catch (reconcileErr: any) {
+                log.push(`⚠️ [${storeName}] Reconciliação falhou: ${reconcileErr.message}`);
+              }
             }
           }
+        } catch (storeErr: any) {
+          log.push(`❌ [${storeName}] Erro geral: ${storeErr.message}`);
         }
-      } else if (activeRes) {
-        log.push(`⚠️ Reconciliação: GET /v1/orders retornou ${activeRes.status}`);
+      }));
+      // Collect results from settled promises
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          log.push(`❌ Erro assíncrono em loja: ${result.reason?.message}`);
+        }
       }
-    } catch (reconcileErr: any) {
-      log.push(`⚠️ Reconciliação falhou: ${reconcileErr.message}`);
     }
 
     return NextResponse.json({

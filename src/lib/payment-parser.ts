@@ -21,69 +21,86 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
   const paymentsObj = orderData?.payments || {};
   const paymentMethods = paymentsObj.methods ?? (Array.isArray(paymentsObj) ? paymentsObj : []);
   const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
-  const firstPayment = paymentList[0] || {};
+  const listToIterate = paymentList.length > 0 ? paymentList : [{}];
 
   const totalPrepaid = typeof paymentsObj.prepaid === 'number' ? paymentsObj.prepaid : priceVal(paymentsObj.prepaid);
   const totalPending = typeof paymentsObj.pending === 'number' ? paymentsObj.pending : priceVal(paymentsObj.pending);
 
-  // Cash payment & change calculation
-  const cashPayment = paymentList.find((p: any) =>
-    p.method === 'CASH' || (p.name && p.name.toLowerCase().includes('dinheir'))
-  );
-  const changeAmount = cashPayment?.changeFor ?? cashPayment?.cash?.changeFor ?? null;
+  let changeAmountTotal = 0;
+  let hasChange = false;
 
-  // STRICT EXPLICIT OFFLINE FLAG:
-  // If platform says prepaid is false, or type is OFFLINE / PENDING, or pending amount > 0, or cash payment:
-  const isExplicitOffline =
-    firstPayment.prepaid === false ||
-    firstPayment.type === 'OFFLINE' ||
-    firstPayment.type === 'PENDING' ||
-    totalPending > 0 ||
-    Boolean(cashPayment);
+  let anyExplicitOffline = totalPending > 0;
+  let anyOnlinePrepaid = totalPrepaid > 0;
 
-  const isPrepaid = !isExplicitOffline && (
-    totalPrepaid > 0 ||
-    firstPayment.prepaid === true ||
-    firstPayment.type === 'ONLINE' ||
-    firstPayment.type === 'PREPAID' ||
-    firstPayment.method === 'DIGITAL_WALLET' ||
-    firstPayment.method === 'ONLINE' ||
-    firstPayment.method === 'IFOOD_PAY'
-  );
+  const methodNames: string[] = [];
 
-  const rawName = (firstPayment.name || firstPayment.description || '').toString().trim();
-  const rawMethod = (firstPayment.method || '').toString().toUpperCase();
+  for (const payment of listToIterate) {
+    const rawName = (payment.name || payment.description || '').toString().trim();
+    const rawMethod = (payment.method || '').toString().toUpperCase();
 
-  let baseName = 'Cartão';
-  if (cashPayment || rawMethod === 'CASH' || rawMethod.includes('DINHEIR') || rawName.toLowerCase().includes('dinheir')) {
-    baseName = 'Dinheiro';
-  } else if (rawMethod === 'DEBIT' || rawMethod.includes('DEBITO') || rawName.toLowerCase().includes('débit') || rawName.toLowerCase().includes('debit')) {
-    baseName = 'Débito';
-  } else if (rawMethod.includes('MEAL_VOUCHER') || rawMethod.includes('FOOD_VOUCHER') || rawMethod.includes('VALE') || rawMethod.includes('VR') || rawMethod.includes('VA') || rawMethod.includes('VOUCHER') || rawName.toLowerCase().includes('vale')) {
-    baseName = 'Vale Refeição';
-  } else if (rawMethod.includes('CREDIT') || rawMethod.includes('CREDITO') || rawName.toLowerCase().includes('crédit') || rawName.toLowerCase().includes('credit')) {
-    baseName = 'Crédito';
-  } else if (rawMethod.includes('PIX') || rawName.toLowerCase().includes('pix')) {
-    baseName = 'Pix';
-  } else if (rawMethod === 'DIGITAL_WALLET' || rawMethod === 'ONLINE' || rawMethod === 'IFOOD_PAY' || rawMethod === 'APP') {
-    baseName = source === 'JOTAJA' ? 'JotaJá App' : 'iFood App';
+    const isCash = rawMethod === 'CASH' || rawMethod.includes('DINHEIR') || rawName.toLowerCase().includes('dinheir');
+
+    const pChange = payment.changeFor ?? payment.cash?.changeFor;
+    if (pChange !== undefined && pChange !== null) {
+      changeAmountTotal += Number(pChange);
+      hasChange = true;
+    }
+
+    const pOffline = payment.prepaid === false ||
+      payment.type === 'OFFLINE' ||
+      payment.type === 'PENDING' ||
+      isCash;
+
+    const pOnline = payment.prepaid === true ||
+      payment.type === 'ONLINE' ||
+      payment.type === 'PREPAID' ||
+      payment.method === 'DIGITAL_WALLET' ||
+      payment.method === 'ONLINE' ||
+      payment.method === 'IFOOD_PAY';
+
+    if (pOffline) anyExplicitOffline = true;
+    if (pOnline) anyOnlinePrepaid = true;
+
+    let baseName = 'Cartão';
+    if (isCash) {
+      baseName = 'Dinheiro';
+    } else if (rawMethod === 'DEBIT' || rawMethod.includes('DEBITO') || rawName.toLowerCase().includes('débit') || rawName.toLowerCase().includes('debit')) {
+      baseName = 'Débito';
+    } else if (rawMethod.includes('MEAL_VOUCHER') || rawMethod.includes('FOOD_VOUCHER') || rawMethod.includes('VALE') || rawMethod.includes('VR') || rawMethod.includes('VA') || rawMethod.includes('VOUCHER') || rawName.toLowerCase().includes('vale')) {
+      baseName = 'Vale Refeição';
+    } else if (rawMethod.includes('CREDIT') || rawMethod.includes('CREDITO') || rawName.toLowerCase().includes('crédit') || rawName.toLowerCase().includes('credit')) {
+      baseName = 'Crédito';
+    } else if (rawMethod.includes('PIX') || rawName.toLowerCase().includes('pix')) {
+      baseName = 'Pix';
+    } else if (rawMethod === 'DIGITAL_WALLET' || rawMethod === 'ONLINE' || rawMethod === 'IFOOD_PAY' || rawMethod === 'APP') {
+      baseName = source === 'JOTAJA' ? 'JotaJá App' : 'iFood App';
+    }
+
+    let displayMethod = rawName || baseName;
+    displayMethod = displayMethod.replace(/\s*\((cobrar na entrega|pago online|online)\)/gi, '').trim();
+    if (displayMethod) {
+      methodNames.push(displayMethod);
+    }
   }
 
-  // Use the exact descriptive name if available (e.g. "Pix qrcode (feito na maquina de cartão)"), otherwise baseName
-  let displayMethod = rawName || baseName;
-  displayMethod = displayMethod.replace(/\s*\((cobrar na entrega|pago online|online)\)/gi, '').trim();
+  const isPrepaid = !anyExplicitOffline && anyOnlinePrepaid;
+
+  const uniqueMethods = Array.from(new Set(methodNames));
+  const finalMethodString = uniqueMethods.length > 0 ? uniqueMethods.join(' + ') : 'Cartão';
 
   let paymentMethod = '';
   if (isPrepaid) {
-    paymentMethod = `${displayMethod} (${source === 'JOTAJA' ? 'JotaJá' : 'iFood'} Pago Online)`;
+    paymentMethod = `${finalMethodString} (Pago Online)`;
   } else {
-    paymentMethod = `${displayMethod} (Cobrar na Entrega)`;
+    paymentMethod = `${finalMethodString} (Cobrar na Entrega)`;
   }
+
+  const changeAmount = hasChange ? changeAmountTotal : null;
 
   return {
     paymentMethod,
     isPrepaid,
     changeAmount,
-    payMethodClean: displayMethod,
+    payMethodClean: finalMethodString,
   };
 }

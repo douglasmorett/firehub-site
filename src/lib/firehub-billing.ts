@@ -6,7 +6,7 @@
  *  - Faturamento > 0               → mínimo de R$50/mês
  *  - Faturamento < R$40.000/mês    → 1% do faturamento (mín R$50)
  *  - Faturamento ≥ R$40.000/mês    → R$400 fixo (teto máximo)
- *  - Apenas pedidos FireHub contam (iFood, 99Food, Rappi = fora)
+ *  - Apenas pedidos FireHub contam (iFood, 99Food, Jotajá = fora)
  *  - 1ª cobrança: após trial de 15 dias
  *  - Abatimento automático dos pagamentos online recebidos
  *  - Se saldo insuficiente: gera link boleto/PIX dia 1 do mês seguinte

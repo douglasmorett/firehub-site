@@ -222,7 +222,7 @@ export async function PUT(req: Request) {
       const jotajaCall = async (path: string, label: string): Promise<Response> => {
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
-            const r = await jotajaMutate(path, { method: "POST" });
+            const r = await jotajaMutate(path, { method: "POST" }, order.franchiseeId);
             if (r.ok || r.status === 409) {
               console.log(`[Jotajá Sync] ✅ ${label} ${odId}: ${r.status}`);
               return r;
@@ -273,7 +273,7 @@ export async function PUT(req: Request) {
         const cancelRes = await jotajaMutate(`/v1/orders/${odId}/requestCancellation`, {
           method: "POST",
           body: JSON.stringify({ code: String(codeToUse), mode: "MANUAL", reason: cancelReason || "CANCELLED_BY_RESTAURANT" }),
-        });
+        }, order.franchiseeId);
         if (!cancelRes.ok) {
           const errBody = await cancelRes.text().catch(() => "");
           syncErrors.push(`cancel: ${cancelRes.status} ${errBody.slice(0, 100)}`);

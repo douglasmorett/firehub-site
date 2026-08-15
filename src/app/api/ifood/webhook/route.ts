@@ -369,6 +369,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           kdsStage:         "PRODUCTION",
           kdsProductionAt:  new Date(),
           notes:            notesArr,
+          dailyOrderNumber: await (async () => {
+            const { generateDailyOrderNumber } = await import("@/lib/order-number");
+            return generateDailyOrderNumber(franchisee.id);
+          })(),
           items:            { create: items },
         },
       });
@@ -376,16 +380,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
 
       // 🖨️ AUTO-PRINT: Enfileira na Fila de Impressão na Nuvem para impressão automática imediata!
       try {
-        const tz = franchisee.storeTimezone || "America/Sao_Paulo";
-        const startOfTodayStore = getStartOfDayUTC(toLocalISODate(new Date(), tz), tz);
-        const countToday = await prisma.customerOrder.count({
-          where: { franchiseeId: franchisee.id, createdAt: { gte: startOfTodayStore } }
-        });
-
         const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
         const formattedForPrint = {
           id: createdOrder.id,
-          dailyOrderNumber: countToday,
+          dailyOrderNumber: createdOrder.dailyOrderNumber,
           customerName: createdOrder.customerName,
           customerPhone: createdOrder.customerPhone,
           customerAddress: createdOrder.customerAddress,

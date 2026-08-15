@@ -70,7 +70,7 @@ export default async function FranchiseeCustomerOrdersPage() {
   let activeCashSessionOpenedAt: string | null = null;
   let motoboys: any[] = [];
   try {
-    const [ordersRes, cashSessionRes, motoboysRes, allRecentOrders, allCashSessions] = await Promise.all([
+    let [ordersRes, cashSessionRes, motoboysRes] = await Promise.all([
       prisma.customerOrder.findMany({
         where: {
           franchiseeId: { in: franchiseeIds },
@@ -113,21 +113,11 @@ export default async function FranchiseeCustomerOrdersPage() {
         select: { id: true, createdAt: true },
         orderBy: { createdAt: "asc" },
       }),
-      prisma.cashSession.findMany({
-        where: { franchiseeId: { in: franchiseeIds } },
-        select: { id: true, openedAt: true, closedAt: true, status: true },
-        orderBy: { openedAt: "asc" },
-        take: 100,
-      }),
     ]);
-
-    const { buildSessionOrderNumberMap } = await import("@/lib/order-sequence");
-    const tz = (user as any)?.storeTimezone || "America/Sao_Paulo";
-    const dailyNumMap = buildSessionOrderNumberMap(allRecentOrders, allCashSessions, tz);
 
     orders = ordersRes.map((o: any) => ({
       ...o,
-      dailyOrderNumber: o.dailyOrderNumber || dailyNumMap.get(o.id) || null,
+      dailyOrderNumber: o.dailyOrderNumber || parseInt(o.id.slice(-4), 16) % 10000 || null,
     }));
 
     motoboys = motoboysRes;

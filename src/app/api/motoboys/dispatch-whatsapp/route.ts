@@ -54,6 +54,38 @@ export async function POST(req: NextRequest) {
         for (const orderId of orderIds) {
           sendOrderNotification(orderId, "SAIU_ENTREGA").catch(() => {});
         }
+
+        // Sync com Jotajá e iFood (assíncrono, não bloqueia resposta)
+        (async () => {
+          const orders = await prisma.customerOrder.findMany({
+            where: { id: { in: orderIds } },
+            select: { id: true, openDeliveryOrderId: true, ifoodOrderId: true, status: true, franchiseeId: true },
+          });
+          for (const ord of orders) {
+            if (ord.openDeliveryOrderId) {
+              try {
+                const { jotajaMutate } = await import("@/lib/jotaja-api");
+                const r = await jotajaMutate(`/v1/orders/${ord.openDeliveryOrderId}/dispatch`, { method: "POST" }, ord.franchiseeId);
+                console.log(`[Motoboy Dispatch → Jotajá] dispatch ${ord.openDeliveryOrderId}: ${r.status}`);
+              } catch (err: any) {
+                console.warn(`[Motoboy Dispatch → Jotajá] Erro sync ${ord.openDeliveryOrderId}:`, err?.message);
+              }
+            }
+            if (ord.ifoodOrderId) {
+              try {
+                const { getIfoodToken } = await import("@/lib/ifood-api");
+                const token = await getIfoodToken();
+                const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+                const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${ord.ifoodOrderId}`;
+                await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
+                const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
+                console.log(`[Motoboy Dispatch → iFood] dispatch ${ord.ifoodOrderId}: ${r.status}`);
+              } catch (err: any) {
+                console.warn(`[Motoboy Dispatch → iFood] Erro sync ${ord.ifoodOrderId}:`, err?.message);
+              }
+            }
+          }
+        })();
       } catch (errSync) {
         console.warn("[dispatch-whatsapp] Erro ao sincronizar status/notificações dos pedidos da rota:", errSync);
       }

@@ -523,7 +523,7 @@ model CustomerOrder {
   // === TOTEM ===
   totemLicenseId    String?   // ID do totem que gerou o pedido
 
-  franchisee       User                @relation(fields: [franchiseeId], references: [id])
+  franchisee       User                @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
   customer         StoreCustomer?      @relation(fields: [customerId], references: [id])
   motoboy          Motoboy?            @relation(fields: [motoboyId], references: [id])
   items            CustomerOrderItem[]
@@ -535,6 +535,7 @@ model CustomerOrder {
   @@index([motoboyId])
   @@index([routeId])
   @@index([employeeId])
+  @@index([openDeliveryReference])
 }
 
 model StoreEmployee {
@@ -595,10 +596,11 @@ model CustomerOrderItem {
   id              String        @id @default(cuid())
   orderId         String
   menuProductId   String?
+  productName     String?       // Nome do produto na hora do pedido (preserva histórico se menu product for deletado)
   quantity        Int
   price           Float
   comboSelections Json?
-  order           CustomerOrder @relation(fields: [orderId], references: [id])
+  order           CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuProduct     MenuProduct?  @relation(fields: [menuProductId], references: [id], onDelete: SetNull)
 }
 
@@ -633,11 +635,11 @@ model StoreReview {
 
 // ========== MÓDULO DE GESTÃO FINANCEIRA AVANÇADA ==========
 
-// Taxa cobrada por plataforma (iFood, Rappi, etc)
+// Taxa cobrada por plataforma (iFood, 99Food, Jotajá, etc)
 model PlatformFee {
   id         String   @id @default(cuid())
-  platform   String   // "IFOOD" | "RAPPI" | "AIQFOME" | "OWN"
-  label      String   // "iFood" | "Rappi" | "Loja Própria"
+  platform   String   // "IFOOD" | "99FOOD" | "JOTAJA" | "OWN"
+  label      String   // "iFood" | "99Food" | "Jotajá" | "Loja Própria"
   feePercent Float    @default(0)
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())

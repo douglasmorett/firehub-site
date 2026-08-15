@@ -49,7 +49,7 @@ export default function TermosPage() {
           <li>O mês de referência vai do <strong>dia 1 ao último dia do mês</strong>, no horário de Brasília</li>
           <li>A fatura é gerada automaticamente no <strong>dia 1 do mês seguinte, à meia-noite de Brasília</strong></li>
           <li>A primeira cobrança acontece <strong>30 dias após o fim do período de teste</strong> (15 dias)</li>
-          <li>Apenas pedidos feitos pela plataforma FireHub contam — vendas iFood, 99Food, Rappi etc. <strong>não</strong> são contabilizadas</li>
+          <li>Apenas pedidos feitos pela plataforma FireHub contam — vendas iFood, 99Food, Jotajá etc. <strong>não</strong> são contabilizadas</li>
         </ul>
       </section>
 
