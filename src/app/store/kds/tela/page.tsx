@@ -787,10 +787,10 @@ export default function KDSTelaPage() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 6,
+              gap: 8,
               background: "#1a1a2e",
-              borderRadius: 10,
-              padding: 4,
+              borderRadius: 12,
+              padding: 5,
             }}
           >
             {(
@@ -804,16 +804,19 @@ export default function KDSTelaPage() {
                 key={opt.value}
                 onClick={() => setFilter(opt.value)}
                 style={{
-                  padding: "6px 16px",
-                  borderRadius: 8,
+                  padding: "10px 22px",
+                  borderRadius: 10,
                   border: "none",
                   fontWeight: 700,
-                  fontSize: 14,
+                  fontSize: 15,
                   cursor: "pointer",
                   fontFamily: FONT,
                   transition: "all 0.15s",
                   background: filter === opt.value ? accent : "transparent",
                   color: filter === opt.value ? "#fff" : "#9ca3af",
+                  minWidth: 70,
+                  minHeight: 42,
+                  touchAction: "manipulation",
                 }}
               >
                 {opt.label}
