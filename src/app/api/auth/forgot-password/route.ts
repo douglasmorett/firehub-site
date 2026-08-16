@@ -49,34 +49,46 @@ export async function POST(req: NextRequest) {
 
     const resetUrl = `${APP_URL}/redefinir-senha?token=${resetToken}`;
 
-    await resend.emails.send({
-      from: "FireHub <onboarding@resend.dev>",
-      to: email,
-      subject: "🔥 Redefinição de senha — FireHub",
-      html: `
-        <div style="font-family: Inter, sans-serif; max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
-          <div style="background: linear-gradient(135deg, #DC2626, #B91C1C); padding: 32px; text-align: center;">
-            <h1 style="color: #fff; font-size: 1.8rem; font-weight: 800; margin: 0;">🔥 FIRE<span style="font-weight: 400;">HUB</span></h1>
+    const fromAddress = process.env.RESEND_FROM_EMAIL || "FireHub <noreply@firehubfood.com.br>";
+
+    try {
+      const { data: sendData, error: sendError } = await resend.emails.send({
+        from: fromAddress,
+        to: email,
+        subject: "🔥 Redefinição de senha — FireHub",
+        html: `
+          <div style="font-family: Inter, sans-serif; max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
+            <div style="background: linear-gradient(135deg, #DC2626, #B91C1C); padding: 32px; text-align: center;">
+              <h1 style="color: #fff; font-size: 1.8rem; font-weight: 800; margin: 0;">🔥 FIRE<span style="font-weight: 400;">HUB</span></h1>
+            </div>
+            <div style="padding: 40px 32px;">
+              <h2 style="color: #1E293B; font-size: 1.2rem; margin: 0 0 12px;">Redefinição de senha</h2>
+              <p style="color: #64748B; font-size: 0.95rem; line-height: 1.6; margin: 0 0 28px;">
+                Recebemos uma solicitação para redefinir a senha da sua conta FireHub.<br>
+                Clique no botão abaixo para criar uma nova senha.
+              </p>
+              <a href="${resetUrl}" style="display: block; background: linear-gradient(135deg, #DC2626, #B91C1C); color: #fff; text-decoration: none; padding: 14px 24px; border-radius: 10px; font-weight: 700; font-size: 1rem; text-align: center; margin-bottom: 24px;">
+                🔐 Redefinir minha senha
+              </a>
+              <p style="color: #94A3B8; font-size: 0.78rem; text-align: center; margin: 0;">
+                Este link expira em <strong>1 hora</strong>. Se você não solicitou a redefinição, ignore este e-mail.
+              </p>
+            </div>
+            <div style="background: #F8FAFC; padding: 16px 32px; text-align: center;">
+              <p style="color: #CBD5E1; font-size: 0.72rem; margin: 0;">FireHub · Sistema de gestão para restaurantes</p>
+            </div>
           </div>
-          <div style="padding: 40px 32px;">
-            <h2 style="color: #1E293B; font-size: 1.2rem; margin: 0 0 12px;">Redefinição de senha</h2>
-            <p style="color: #64748B; font-size: 0.95rem; line-height: 1.6; margin: 0 0 28px;">
-              Recebemos uma solicitação para redefinir a senha da sua conta FireHub.<br>
-              Clique no botão abaixo para criar uma nova senha.
-            </p>
-            <a href="${resetUrl}" style="display: block; background: linear-gradient(135deg, #DC2626, #B91C1C); color: #fff; text-decoration: none; padding: 14px 24px; border-radius: 10px; font-weight: 700; font-size: 1rem; text-align: center; margin-bottom: 24px;">
-              🔐 Redefinir minha senha
-            </a>
-            <p style="color: #94A3B8; font-size: 0.78rem; text-align: center; margin: 0;">
-              Este link expira em <strong>1 hora</strong>. Se você não solicitou a redefinição, ignore este e-mail.
-            </p>
-          </div>
-          <div style="background: #F8FAFC; padding: 16px 32px; text-align: center;">
-            <p style="color: #CBD5E1; font-size: 0.72rem; margin: 0;">FireHub · Sistema de gestão para restaurantes</p>
-          </div>
-        </div>
-      `,
-    });
+        `,
+      });
+
+      if (sendError) {
+        console.error("[forgot-password] Resend delivery error:", sendError);
+      } else {
+        console.log("[forgot-password] Email successfully dispatched to:", email, sendData?.id);
+      }
+    } catch (err) {
+      console.error("[forgot-password] Exception during email send:", err);
+    }
 
     return NextResponse.json({ ok: true });
   }
