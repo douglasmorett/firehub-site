@@ -73,10 +73,11 @@ export default function PaymentGateway({
       const data = await res.json();
       if (!res.ok) {
         const rawErr = data.error || "Erro ao gerar PIX";
-        const isMerchantConfigError = rawErr.includes("Credenciais") || rawErr.includes("Mercado Pago") || rawErr.includes("não configuradas");
+        const isMerchantConfigError = rawErr.includes("Credenciais") || rawErr.includes("Mercado Pago") || rawErr.includes("não configuradas") || rawErr.includes("Unauthorized");
         const cleanMsg = isMerchantConfigError
-          ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, escolha pagamento na entrega."
+          ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, tente novamente ou escolha pagamento na entrega."
           : rawErr;
+        setErrorMessage(cleanMsg);
         onError(cleanMsg);
         return;
       }
@@ -90,7 +91,9 @@ export default function PaymentGateway({
         if (ms > 0) setTimeout(() => setPixExpired(true), ms);
       }
     } catch (e: any) {
-      onError(e.message || "Erro de rede");
+      const msg = e.message || "Erro de rede";
+      setErrorMessage(msg);
+      onError(msg);
     } finally {
       setLoading(false);
     }
@@ -225,25 +228,43 @@ export default function PaymentGateway({
           marginBottom: "16px",
           textAlign: "center"
         }}>
-          <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#DC2626", margin: "0 0 10px" }}>
+          <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#DC2626", margin: "0 0 12px" }}>
             ❌ {errorMessage}
           </p>
-          <button
-            onClick={handlePixPay}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "8px",
-              border: "none",
-              background: "#DC2626",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: "0.8rem",
-              cursor: "pointer",
-              fontFamily: "inherit"
-            }}
-          >
-            🔄 Tentar Gerar Novamente
-          </button>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "center", flexWrap: "wrap" }}>
+            <button
+              onClick={() => { setErrorMessage(null); handlePixPay(); }}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "none",
+                background: "#DC2626",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: "0.8rem",
+                cursor: "pointer",
+                fontFamily: "inherit"
+              }}
+            >
+              🔄 Tentar Novamente
+            </button>
+            <button
+              onClick={onCancel}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1.5px solid #CBD5E1",
+                background: "#fff",
+                color: "#475569",
+                fontWeight: 700,
+                fontSize: "0.8rem",
+                cursor: "pointer",
+                fontFamily: "inherit"
+              }}
+            >
+              🛵 Pagar na Entrega
+            </button>
+          </div>
         </div>
       )}
 

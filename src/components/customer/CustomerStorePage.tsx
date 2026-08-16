@@ -176,7 +176,11 @@ export default function CustomerStorePage({
   const [showHistory, setShowHistory] = useState(false);
 
   // Delivery fee & Address fields
-  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [deliveryFee, setDeliveryFee] = useState(() => {
+    const dConf = (franchisee as any)?.deliveryConfig || {};
+    const dZones = (franchisee as any)?.deliveryZones || [];
+    return Number(dConf.deliveryFee || dConf.defaultFee || (Array.isArray(dZones) && dZones[0]?.fee) || 5);
+  });
   const [deliveryAvailable, setDeliveryAvailable] = useState(true);
   const [customerStreet, setCustomerStreet] = useState("");
   const [customerNumber, setCustomerNumber] = useState("");
@@ -657,69 +661,88 @@ export default function CustomerStorePage({
 
   const isNeighborhoodType = (!franchisee.deliveryZoneType || franchisee.deliveryZoneType === "NEIGHBORHOOD") && Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.length > 0;
 
-  const calcDeliveryFee = async (neighborhood: string, customAddress?: string) => {
-    setCustomerNeighborhood(neighborhood);
-    const zones = (franchisee.deliveryZones as any[]) || [];
-    const zoneType = franchisee.deliveryZoneType || "NEIGHBORHOOD";
-    const defaultStoreFee = Number(delivConfig.deliveryFee || delivConfig.defaultFee || 0);
+  const calcDeliveryFee = async (neighborhood?: string, customAddress?: string) => {
+    const neigh = neighborhood !== undefined ? neighborhood : customerNeighborhood;
+    if (neighborhood !== undefined) setCustomerNeighborhood(neighborhood);
 
-    if (zoneType === "NEIGHBORHOOD") {
-      if (zones.length > 0) {
-        if (!neighborhood) {
-          setDeliveryFee(defaultStoreFee);
-          setDeliveryAvailable(false);
-          setDeliveryMessage("Selecione um bairro atendido pela loja.");
-          return;
-        }
-        const found = zones.find((z: any) => z.name && z.name.trim().toLowerCase() === neighborhood.trim().toLowerCase());
-        if (found) {
-          setDeliveryFee(Number(found.fee) || 0);
-          setDeliveryAvailable(true);
-          setDeliveryMessage("");
-        } else {
-          setDeliveryFee(0);
-          setDeliveryAvailable(false);
-          setDeliveryMessage("Não atendemos neste bairro no momento.");
-        }
-      } else {
-        // Sem restrição de bairros específicos: usa taxa padrão
+    const zones = (franchisee.deliveryZones as any[]) || [];
+    const zoneType = franchisee.deliveryZoneType || "RADIUS";
+    const defaultStoreFee = Number(delivConfig.deliveryFee || delivConfig.defaultFee || (Array.isArray(zones) && zones[0]?.fee) || 5);
+
+    if (zoneType === "NEIGHBORHOOD" && zones.length > 0) {
+      if (!neigh) {
         setDeliveryFee(defaultStoreFee);
         setDeliveryAvailable(true);
         setDeliveryMessage("");
-      }
-    } else if (zoneType === "RADIUS" || zoneType === "DISTANCE") {
-      const addrQuery = customAddress || `${customerStreet} ${customerNumber}, ${neighborhood || customerNeighborhood}, ${franchisee.city || ""}`.trim();
-      if (addrQuery.length < 5) {
-        setDeliveryFee(defaultStoreFee);
         return;
       }
-      setDeliveryCalculating(true);
-      try {
-        const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&address=${encodeURIComponent(addrQuery)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.available === false) {
-            setDeliveryFee(0);
-            setDeliveryAvailable(false);
-            setDeliveryMessage(data.message || "Endereço fora do raio de entrega da loja.");
-          } else {
-            setDeliveryFee(Number(data.fee) || defaultStoreFee);
-            setDeliveryAvailable(true);
-            setDeliveryMessage(data.message || "");
-          }
-        }
-      } catch {
+      const searchTarget = neigh.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const found = zones.find((z: any) => {
+        if (!z.name) return false;
+        const zClean = String(z.name).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return zClean === searchTarget || searchTarget.includes(zClean) || zClean.includes(searchTarget);
+      });
+
+      if (found) {
+        setDeliveryFee(Number(found.fee) || 0);
+        setDeliveryAvailable(true);
+        setDeliveryMessage(`Bairro atendido: ${found.name}`);
+      } else {
         setDeliveryFee(defaultStoreFee);
         setDeliveryAvailable(true);
-      } finally {
-        setDeliveryCalculating(false);
+        setDeliveryMessage(`Bairro com taxa padrão: R$ ${defaultStoreFee.toFixed(2).replace(".", ",")}`);
       }
-    } else {
+      return;
+    }
+
+    const fullStreet = customerStreet.trim();
+    const fullNum = customerNumber.trim();
+    const fullNeigh = (neigh || customerNeighborhood || "").trim();
+    const addrQuery = customAddress || `${fullStreet} ${fullNum}, ${fullNeigh}, ${franchisee.city || ""}`.trim();
+
+    if (addrQuery.length < 4 || (!fullStreet && !fullNeigh)) {
       setDeliveryFee(defaultStoreFee);
       setDeliveryAvailable(true);
-      setDeliveryMessage("");
+      return;
+    }
+
+    setDeliveryCalculating(true);
+    try {
+      const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&address=${encodeURIComponent(addrQuery)}&neighborhood=${encodeURIComponent(fullNeigh)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.available === false) {
+          setDeliveryFee(0);
+          setDeliveryAvailable(false);
+          setDeliveryMessage(data.message || "Endereço fora da área de entrega.");
+        } else {
+          setDeliveryFee(data.fee !== undefined ? Number(data.fee) : defaultStoreFee);
+          setDeliveryAvailable(true);
+          setDeliveryMessage(data.message || "");
+        }
+      } else {
+        setDeliveryFee(defaultStoreFee);
+        setDeliveryAvailable(true);
+      }
+    } catch {
+      setDeliveryFee(defaultStoreFee);
+      setDeliveryAvailable(true);
+    } finally {
+      setDeliveryCalculating(false);
     }
   };
+
+  // Cálculo automático ao preencher Rua, Número ou Bairro
+  useEffect(() => {
+    if (deliveryType !== "DELIVERY") return;
+    if (customerStreet.trim().length < 3 && customerNeighborhood.trim().length < 3) return;
+
+    const timer = setTimeout(() => {
+      calcDeliveryFee(customerNeighborhood, `${customerStreet} ${customerNumber}, ${customerNeighborhood}, ${franchisee.city || ""}`.trim());
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [customerStreet, customerNumber, customerNeighborhood, deliveryType]);
 
   const ONLINE_METHODS = ["PIX", "CREDITO_ONLINE", "ONLINE", "MERCADOPAGO", "CARTAO_ONLINE"];
 
@@ -784,9 +807,7 @@ export default function CustomerStorePage({
           setPendingOrderId(d.orderId);
           setPendingAmount(finalTotal);
           setShowPayment(true);
-          setIsCheckout(false);
-          setMobileCartOpen(false);
-          setCart([]);
+          // Mantém os itens no carrinho até a confirmação do pagamento
         } else {
           setOrderSuccess(d.orderId);
           setCart([]);
@@ -1214,12 +1235,12 @@ export default function CustomerStorePage({
                       "Grátis (Cupom) 🎉"
                     ) : deliveryCalculating ? (
                       "Calculando..."
+                    ) : effectiveDeliveryFee > 0 ? (
+                      `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
                     ) : deliveryFee > 0 ? (
                       `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
-                    ) : (customerNeighborhood || customerStreet) ? (
-                      isNeighborhoodType ? "A definir" : "A calcular no endereço"
                     ) : (
-                      "A definir"
+                      "Grátis 🎉"
                     )}
                   </span>
                 </div>
@@ -1364,11 +1385,62 @@ export default function CustomerStorePage({
                   />
                 </div>
 
-                {deliveryMessage && (
-                  <div style={{ padding: "6px 10px", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 600, background: deliveryAvailable ? "#EFF6FF" : "#FEF2F2", color: deliveryAvailable ? "#1E40AF" : "#DC2626", border: `1px solid ${deliveryAvailable ? "#BFDBFE" : "#FECDD3"}` }}>
-                    {deliveryMessage}
+                {/* STATUS TAXA DE ENTREGA EM TEMPO REAL */}
+                <div style={{
+                  padding: "8px 12px",
+                  borderRadius: "10px",
+                  background: isFreeShippingByMin ? "#ECFDF5" : effectiveDeliveryFee > 0 ? "#F0FDF4" : deliveryCalculating ? "#EFF6FF" : "#F8FAFC",
+                  border: `1px solid ${isFreeShippingByMin ? "#86EFAC" : effectiveDeliveryFee > 0 ? "#86EFAC" : deliveryCalculating ? "#BFDBFE" : "#E2E8F0"}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "8px",
+                  marginTop: "2px"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "1rem" }}>
+                      {deliveryCalculating ? "⏳" : isFreeShippingByMin ? "🎉" : effectiveDeliveryFee > 0 ? "🚚" : "📍"}
+                    </span>
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: isFreeShippingByMin ? "#166534" : effectiveDeliveryFee > 0 ? "#166534" : "#475569" }}>
+                        {deliveryCalculating ? (
+                          "Calculando taxa de entrega..."
+                        ) : isFreeShippingByMin ? (
+                          "Frete Grátis Aplicado! 🎉"
+                        ) : effectiveDeliveryFee > 0 ? (
+                          `Taxa de Entrega: R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
+                        ) : (
+                          "Taxa de entrega calculada"
+                        )}
+                      </span>
+                      {deliveryMessage && (
+                        <span style={{ fontSize: "0.70rem", color: deliveryAvailable ? "#15803D" : "#DC2626", fontWeight: 600 }}>
+                          {deliveryMessage}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
+                  {deliveryCalculating ? (
+                    <span style={{ fontSize: "0.70rem", color: "#3B82F6", fontWeight: 700 }}>Buscando...</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => calcDeliveryFee(customerNeighborhood, `${customerStreet} ${customerNumber}, ${customerNeighborhood}, ${franchisee.city || ""}`.trim())}
+                      style={{
+                        background: "#FFFFFF",
+                        border: "1px solid #CBD5E1",
+                        padding: "3px 8px",
+                        borderRadius: "6px",
+                        fontSize: "0.70rem",
+                        fontWeight: 700,
+                        color: "#475569",
+                        cursor: "pointer"
+                      }}
+                    >
+                      🔄 Recalcular
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1403,12 +1475,12 @@ export default function CustomerStorePage({
                     "Grátis (Cupom) 🎉"
                   ) : deliveryCalculating ? (
                     "Calculando..."
+                  ) : effectiveDeliveryFee > 0 ? (
+                    `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
                   ) : deliveryFee > 0 ? (
                     `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
-                  ) : (customerNeighborhood || customerStreet) ? (
-                    "A calcular no endereço"
                   ) : (
-                    "A calcular"
+                    "Grátis 🎉"
                   )}
                 </span>
               </div>
@@ -2593,17 +2665,52 @@ export default function CustomerStorePage({
 
       {/* PAYMENT GATEWAY MODAL */}
       {showPayment && pendingOrderId && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(4px)" }} onClick={() => setShowPayment(false)}>
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(4px)" }}
+          onClick={async () => {
+            setShowPayment(false);
+            if (pendingOrderId) {
+              try {
+                await fetch(`/api/customer-order/${pendingOrderId}/status`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ status: "CANCELADO", cancellationReason: "Pagamento fechado pelo cliente" })
+                });
+              } catch {}
+            }
+            setPendingOrderId(null);
+            setIsCheckout(true);
+          }}
+        >
           <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "24px", padding: "1.75rem", maxWidth: "440px", width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)", position: "relative" }}>
             <PaymentGateway
               orderId={pendingOrderId}
               amount={pendingAmount}
               initialMethod={paymentMethod === "CREDITO_ONLINE" ? "credit_card" : "pix"}
-              onPaid={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
-              onError={(msg) => {
-                alert(`❌ ${msg}`);
+              onPaid={() => {
+                setShowPayment(false);
+                setCart([]); // Carrinho é limpo APENAS após pagamento aprovado!
+                setIsCheckout(false);
+                setMobileCartOpen(false);
+                setOrderSuccess(pendingOrderId);
               }}
-              onCancel={() => { setShowPayment(false); setOrderSuccess(pendingOrderId); }}
+              onError={(msg) => {
+                console.warn("Payment error:", msg);
+              }}
+              onCancel={async () => {
+                setShowPayment(false);
+                if (pendingOrderId) {
+                  try {
+                    await fetch(`/api/customer-order/${pendingOrderId}/status`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status: "CANCELADO", cancellationReason: "Pagamento online cancelado pelo cliente" })
+                    });
+                  } catch {}
+                }
+                setPendingOrderId(null);
+                setIsCheckout(true);
+              }}
             />
           </div>
         </div>

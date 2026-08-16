@@ -49,23 +49,33 @@ export async function POST(req: NextRequest) {
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos
 
-    const result = await payment.create({
-      body: {
-        transaction_amount: order.totalAmount,
-        payment_method_id:  "pix",
-        description:        `Pedido #${order.id.slice(-6).toUpperCase()} — ${order.franchisee.storeName || "FireHub"}`,
-        payer: {
-          email:    `${order.customerPhone.replace(/\D/g, "")}@firehub.com.br`,
-          first_name: order.customerName.split(" ")[0],
-          last_name:  order.customerName.split(" ").slice(1).join(" ") || "Cliente",
-        },
-        external_reference: order.id,
-        date_of_expiration: expiresAt.toISOString(),
-        // Marketplace fee (nossa taxa): 0,5% + R$0,40
-        ...(order.franchisee.mpSellerId && {
-          marketplace_fee: parseFloat((order.totalAmount * 0.005 + 0.40).toFixed(2)),
-        }),
+    const cleanPhone = (order.customerPhone || "").replace(/\D/g, "") || "21999999999";
+    const nameParts = (order.customerName || "Cliente").trim().split(" ");
+    const firstName = nameParts[0] || "Cliente";
+    const lastName = nameParts.slice(1).join(" ") || "Consumidor";
+
+    const isPlatformToken = !order.franchisee?.mpAccessToken && !!process.env.MP_ACCESS_TOKEN;
+
+    const paymentBody: any = {
+      transaction_amount: Number(order.totalAmount),
+      payment_method_id:  "pix",
+      description:        `Pedido #${order.id.slice(-6).toUpperCase()} — ${order.franchisee?.storeName || "FireHub"}`,
+      payer: {
+        email:      `cliente_${cleanPhone}@firehubfood.com.br`,
+        first_name: firstName,
+        last_name:  lastName,
       },
+      external_reference: order.id,
+      date_of_expiration: expiresAt.toISOString(),
+    };
+
+    // Marketplace fee SOMENTE quando usando credenciais mestre da plataforma
+    if (isPlatformToken && order.franchisee?.mpSellerId) {
+      paymentBody.marketplace_fee = parseFloat((order.totalAmount * 0.005 + 0.40).toFixed(2));
+    }
+
+    const result = await payment.create({
+      body: paymentBody,
     });
 
     const pixData = result.point_of_interaction?.transaction_data;

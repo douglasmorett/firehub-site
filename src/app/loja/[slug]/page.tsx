@@ -36,6 +36,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       storeLogo: true,
       storeHours: true,
       storeDeliveryOnly: true,
+      storeLatLng: true,
       paymentFees: true,
       deliveryZoneType: true,
       deliveryZones: true,
