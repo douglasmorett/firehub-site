@@ -39,6 +39,9 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       paymentFees: true,
       deliveryZoneType: true,
       deliveryZones: true,
+      deliveryConfig: true,
+      storeLoyalty: true,
+      storeCoupons: true,
       city: true,
       slug: true,
       storeOpen: true,
@@ -49,6 +52,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       ifoodWidgetId: true,
       mpSellerId: true,
       showReviewsOnMenu: true,
+      showAddressOnMenu: true,
       allowScheduledOrders: true,
     }
   });
@@ -84,7 +88,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
     const recentReviews = await prisma.storeReview.findMany({
       where: { franchiseeId: franchisee.id, comment: { not: null } },
       orderBy: { createdAt: "desc" },
-      take: 6,
+      take: 30,
       include: {
         customer: { select: { name: true } },
         order: { select: { customerName: true } },

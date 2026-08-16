@@ -34,6 +34,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [storeBanner, setStoreBanner] = useState(user.storeBanner || "");
   const [storeLogo, setStoreLogo] = useState(user.storeLogo || "");
   const [storeDeliveryOnly, setStoreDeliveryOnly] = useState(user.storeDeliveryOnly || false);
+  const [showAddressOnMenu, setShowAddressOnMenu] = useState<boolean>(user.showAddressOnMenu !== false);
   const [storeHours, setStoreHours] = useState<any[]>(user.storeHours || defaultHours());
   const [coupons, setCoupons] = useState<Coupon[]>(user.storeCoupons || []);
   // Agendar Pausa
@@ -165,7 +166,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     "Quinta": "THURSDAY", "Sexta": "FRIDAY", "Sábado": "SATURDAY", "Domingo": "SUNDAY"
   };
 
-  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, notificationPhone, storeAddress, storeDeliveryOnly, city, storeTimezone }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
+  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, notificationPhone, storeAddress, storeDeliveryOnly, showAddressOnMenu, city, storeTimezone }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
 
   // Valida sobreposição de turnos no mesmo dia
   const validateShifts = (): string | null => {
@@ -430,7 +431,21 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               <option value="America/Noronha">🇧🇷 Fernando de Noronha (GMT-2)</option>
             </select>
           </div>
-          <div className="input-group" style={{ gridColumn: "span 2" }}><label>Endereço Completo</label><input className="input-field" value={storeAddress} onChange={e => { setStoreAddress(e.target.value); setDirtyInfo(true); }} /></div>
+          <div className="input-group" style={{ gridColumn: "span 2" }}>
+            <label>Endereço Completo</label>
+            <input className="input-field" value={storeAddress} onChange={e => { setStoreAddress(e.target.value); setDirtyInfo(true); }} />
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "0.6rem", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={showAddressOnMenu}
+                onChange={e => { setShowAddressOnMenu(e.target.checked); setDirtyInfo(true); }}
+                style={{ transform: "scale(1.2)", cursor: "pointer" }}
+              />
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>
+                📍 Mostrar endereço da loja no cardápio para o cliente?
+              </span>
+            </label>
+          </div>
           
           <div className="input-group" style={{ background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
             <label style={{ color: "#334155", fontWeight: 700 }}>🛒 Pedido Mínimo (R$)</label>

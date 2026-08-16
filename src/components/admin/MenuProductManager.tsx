@@ -288,6 +288,29 @@ export default function MenuProductManager({
     }
   };
 
+  const handleToggleDestaque = async (p: any) => {
+    try {
+      let currentTags: string[] = [];
+      try { currentTags = p.tags ? JSON.parse(p.tags) : []; } catch { currentTags = []; }
+      const hasDestaque = currentTags.some(t => t.includes("Destaque"));
+      const newTags = hasDestaque
+        ? currentTags.filter(t => !t.includes("Destaque"))
+        : [...currentTags, "⭐ Destaque"];
+
+      const res = await fetch("/api/admin/menu-products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: p.id, tags: newTags.length > 0 ? newTags : null }),
+      });
+      if (res.ok) {
+        showToast(hasDestaque ? `Item removido dos destaques` : `⭐ "${p.name}" marcado como Destaque da Casa!`);
+        router.refresh();
+      }
+    } catch {
+      showToast("Erro ao atualizar destaque", "#EF4444");
+    }
+  };
+
 
   const resetForm = () => {
     setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]);
@@ -1516,6 +1539,21 @@ export default function MenuProductManager({
 
                     <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
                       <button onClick={() => openEdit(p)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}><Edit3 size={10} /> Editar</button>
+                      <button
+                        onClick={() => handleToggleDestaque(p)}
+                        className="btn btn-outline"
+                        style={{
+                          padding: "0.2rem 0.5rem",
+                          fontSize: "0.7rem",
+                          borderColor: (p.tags && p.tags.includes("Destaque")) ? "#F59E0B" : "#CBD5E1",
+                          background: (p.tags && p.tags.includes("Destaque")) ? "#FEF3C7" : "#FFF",
+                          color: (p.tags && p.tags.includes("Destaque")) ? "#92400E" : "#64748B",
+                          fontWeight: (p.tags && p.tags.includes("Destaque")) ? 800 : 600,
+                        }}
+                        title="Exibir este item na vitrine de Destaques da Casa no topo do cardápio"
+                      >
+                        ⭐ {(p.tags && p.tags.includes("Destaque")) ? "Destacado" : "Destacar"}
+                      </button>
                       <button onClick={() => openRecipeModal(p.id, p.name)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", borderColor: productsWithRecipe.has(p.id) ? "#10B981" : "#F59E0B", color: productsWithRecipe.has(p.id) ? "#10B981" : "#92400E", background: productsWithRecipe.has(p.id) ? "#F0FDF4" : "#FFFBEB" }}>
                         <ClipboardList size={10} /> {productsWithRecipe.has(p.id) ? "✅ Ficha" : "📋 Ficha"}
                       </button>

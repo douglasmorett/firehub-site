@@ -45,6 +45,7 @@ export default async function StoreSettingsPage() {
       storeLoyalty: (storeOwner as any).storeLoyalty || null,
       deliveryConfig: (storeOwner as any).deliveryConfig || null,
       storeTimezone: (storeOwner as any).storeTimezone || "America/Sao_Paulo",
+      showAddressOnMenu: (storeOwner as any).showAddressOnMenu !== false,
     }} />
   );
 }

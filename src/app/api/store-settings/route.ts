@@ -50,6 +50,8 @@ export async function PUT(req: Request) {
     if (body[key] !== undefined) data[key] = body[key];
   }
   if (body.storeDeliveryOnly !== undefined) data.storeDeliveryOnly = body.storeDeliveryOnly;
+  if (body.showAddressOnMenu !== undefined) data.showAddressOnMenu = Boolean(body.showAddressOnMenu);
+  if (body.showReviewsOnMenu !== undefined) data.showReviewsOnMenu = Boolean(body.showReviewsOnMenu);
   if (body.autoAcceptOrders !== undefined) data.autoAcceptOrders = Boolean(body.autoAcceptOrders);
   if (body.allowScheduledOrders !== undefined) data.allowScheduledOrders = Boolean(body.allowScheduledOrders);
   if (body.storeAlertSound !== undefined) data.storeAlertSound = body.storeAlertSound;

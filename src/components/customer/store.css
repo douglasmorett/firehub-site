@@ -190,6 +190,9 @@
 .store-cats {
   overflow-x: auto;
   display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: nowrap;
   gap: 0.5rem;
   background: #fff;
   border-bottom: 1px solid #E2E8F0;
@@ -198,6 +201,12 @@
   z-index: 40;
   padding: 0.6rem 1.25rem;
   scrollbar-width: none;
+}
+
+@media (max-width: 768px) {
+  .store-cats {
+    justify-content: flex-start;
+  }
 }
 
 .store-cats::-webkit-scrollbar {

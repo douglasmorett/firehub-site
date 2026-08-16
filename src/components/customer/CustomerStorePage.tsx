@@ -62,6 +62,10 @@ type Franchisee = {
   paymentFees?: any;
   deliveryZoneType?: string | null;
   deliveryZones?: any;
+  deliveryConfig?: any;
+  storeLoyalty?: any;
+  storeCoupons?: any;
+  showAddressOnMenu?: boolean;
   city: string | null;
   slug: string | null;
   storeOpen?: boolean;
@@ -148,7 +152,6 @@ export default function CustomerStorePage({
   const [showReviewsModal, setShowReviewsModal] = useState(false);
   const [showPromotionsModal, setShowPromotionsModal] = useState(false);
   const [showMyOrdersModal, setShowMyOrdersModal] = useState(false);
-  const [showBairroCalcModal, setShowBairroCalcModal] = useState(false);
 
   // Busca rápida de pedidos
   const [myOrdersPhone, setMyOrdersPhone] = useState("");
@@ -246,16 +249,17 @@ export default function CustomerStorePage({
     });
   }, [activeTodayProducts]);
 
+  // DESTAQUES DA CASA: Apenas os marcados explicitamente pelo lojista
   const highlightProducts = useMemo(() => {
     return activeTodayProducts.filter(p => {
       const tags = (p as any).tags || "";
-      return tags.includes("Mais Vendido") || tags.includes("Destaque") || tags.includes("Promoção") || p.isCombo;
-    }).slice(0, 4);
+      return tags.includes("⭐ Destaque") || tags.includes("Destaque") || tags.includes("Destaque da Casa");
+    });
   }, [activeTodayProducts]);
 
-  // FILTRO OBRIGATÓRIO DE 5 ESTRELAS (Para proteger a conversão de vendas)
-  const fiveStarReviews = useMemo(() => {
-    return (storeRating?.reviews || []).filter(r => r.rating >= 5);
+  // AVALIAÇÕES PARA O RODAPÉ (Avaliações positivas de 4 e 5 estrelas)
+  const positiveReviews = useMemo(() => {
+    return (storeRating?.reviews || []).filter(r => r.rating >= 4);
   }, [storeRating]);
 
   const filtered = useMemo(() => {
@@ -530,7 +534,7 @@ export default function CustomerStorePage({
     if (!customerName.trim()) { alert("Informe seu nome."); return; }
     if (!customerPhone.trim()) { alert("Informe seu telefone."); return; }
     if (deliveryType === "DELIVERY" && !customerAddress.trim()) { alert("Informe seu endereço de entrega."); return; }
-    if (deliveryType === "DELIVERY" && !deliveryAvailable) { alert("Não entregamos no bairro selecionado."); return; }
+    if (deliveryType === "DELIVERY" && !deliveryAvailable) { alert("Não entregamos no endereço selecionado."); return; }
     setLoading(true);
     try {
       const res = await fetch("/api/customer-order", {
@@ -667,7 +671,7 @@ export default function CustomerStorePage({
     );
   }
 
-  // ===== CART SIDEBAR CONTENT (LIMPO, FOCO TOTAL NOS PRODUTOS SEM UPSELL) =====
+  // ===== CART SIDEBAR CONTENT =====
   const cartContentJSX = (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* HEADER DA SACOLA */}
@@ -689,11 +693,19 @@ export default function CustomerStorePage({
         </div>
       </div>
 
-      {/* AVISO DE FRETE GRÁTIS */}
+      {/* BARRA DINÂMICA DE FRETE GRÁTIS */}
       {freeShippingThreshold && (
-        <div style={{ padding: "0.6rem 1.25rem", background: isFreeShippingByMin ? "#F0FDF4" : "#FFFBEB", borderBottom: "1px solid #E2E8F0" }}>
-          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: isFreeShippingByMin ? "#15803D" : "#B45309", textAlign: "center" }}>
-            {isFreeShippingByMin ? "🎉 Você ganhou Frete Grátis!" : `Entrega grátis em pedidos a partir de R$ ${freeShippingThreshold.toFixed(2).replace(".", ",")}`}
+        <div style={{ padding: "0.65rem 1.25rem", background: isFreeShippingByMin ? "#F0FDF4" : "#FFFBEB", borderBottom: "1px solid #E2E8F0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.76rem", fontWeight: 800, marginBottom: "4px", color: isFreeShippingByMin ? "#15803D" : "#B45309" }}>
+            <span>
+              {isFreeShippingByMin
+                ? "🎉 Parabéns! Você garantiu FRETE GRÁTIS!"
+                : `🚚 Falta só R$ ${remainingForFreeShipping.toFixed(2).replace(".", ",")} para garantir frete grátis!`}
+            </span>
+            <span>{freeShippingProgress.toFixed(0)}%</span>
+          </div>
+          <div style={{ width: "100%", height: "6px", backgroundColor: "#E2E8F0", borderRadius: "4px", overflow: "hidden" }}>
+            <div style={{ width: `${freeShippingProgress}%`, height: "100%", backgroundColor: isFreeShippingByMin ? "#16A34A" : "#F59E0B", transition: "width 0.3s ease" }} />
           </div>
         </div>
       )}
@@ -989,7 +1001,7 @@ export default function CustomerStorePage({
 
           <div className="store-info">
             <h1 className="store-name">{storeName}</h1>
-            {franchisee.storeAddress && (
+            {franchisee.showAddressOnMenu !== false && franchisee.storeAddress && (
               <div className="store-address"><MapPin size={13} /><span>{franchisee.storeAddress}</span></div>
             )}
             <div className="store-meta">
@@ -1145,7 +1157,7 @@ export default function CustomerStorePage({
       <div className="store-content">
         <div className="store-products">
 
-          {/* ===== VITRINE DE DESTAQUES (High-Impact Hero Products) ===== */}
+          {/* ===== VITRINE DE DESTAQUES (Apenas produtos marcados como Destaque) ===== */}
           {selectedCategory === "Todos" && !searchTerm && highlightProducts.length > 0 && (
             <div style={{ marginBottom: "2rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "0.85rem" }}>
@@ -1156,7 +1168,7 @@ export default function CustomerStorePage({
                   Mais pedidos
                 </span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "14px" }}>
                 {highlightProducts.map(p => {
                   const q = getQty(p.id);
                   return (
@@ -1165,37 +1177,37 @@ export default function CustomerStorePage({
                       onClick={() => p.isCombo ? setComboProduct(p) : q === 0 && addToCart(p)}
                       style={{
                         backgroundColor: "#FFFFFF",
-                        borderRadius: "14px",
+                        borderRadius: "16px",
                         border: q > 0 ? "1.5px solid #16A34A" : "1px solid #E2E8F0",
                         overflow: "hidden",
                         display: "flex",
                         flexDirection: "column",
                         cursor: "pointer",
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                        boxShadow: "0 4px 14px rgba(0,0,0,0.04)",
                         transition: "all 0.2s ease"
                       }}
                     >
                       {p.imageUrl && (
-                        <div style={{ width: "100%", height: "130px", overflow: "hidden", position: "relative" }}>
-                          <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <div style={{ width: "100%", height: "180px", overflow: "hidden", position: "relative", backgroundColor: "#F8FAFC" }}>
+                          <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain", padding: "4px" }} />
                           {p.isCombo && (
-                            <span style={{ position: "absolute", top: "8px", left: "8px", background: "rgba(15,23,42,0.85)", color: "#fff", padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800 }}>
+                            <span style={{ position: "absolute", top: "10px", left: "10px", background: "rgba(15,23,42,0.85)", color: "#fff", padding: "3px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800 }}>
                               COMBO
                             </span>
                           )}
                         </div>
                       )}
-                      <div style={{ padding: "0.85rem", display: "flex", flexDirection: "column", flex: 1 }}>
-                        <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: "4px" }}>
+                      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", flex: 1 }}>
+                        <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", marginBottom: "4px" }}>
                           {p.name}
                         </div>
                         {p.description && (
-                          <p style={{ fontSize: "0.76rem", color: "#64748B", margin: "0 0 8px 0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 8px 0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                             {p.description}
                           </p>
                         )}
-                        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "6px" }}>
-                          <span style={{ fontWeight: 800, fontSize: "1rem", color: "#059669" }}>
+                        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "8px" }}>
+                          <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#059669" }}>
                             {p.isCombo && <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
                             R$ {p.price.toFixed(2).replace(".", ",")}
                           </span>
@@ -1206,13 +1218,13 @@ export default function CustomerStorePage({
                               p.isCombo ? setComboProduct(p) : addToCart(p);
                             }}
                             style={{
-                              padding: "5px 12px",
+                              padding: "6px 14px",
                               borderRadius: "8px",
                               border: "none",
                               backgroundColor: "#059669",
                               color: "#fff",
                               fontWeight: 700,
-                              fontSize: "0.78rem",
+                              fontSize: "0.8rem",
                               cursor: "pointer"
                             }}
                           >
@@ -1295,8 +1307,8 @@ export default function CustomerStorePage({
             </div>
           ))}
 
-          {/* ===== SEÇÃO DE AVALIAÇÕES (EXIBINDO APENAS AS DE 5 ESTRELAS) ===== */}
-          {fiveStarReviews.length > 0 && (
+          {/* ===== SEÇÃO DE AVALIAÇÕES POSITIVAS NO FINAL ===== */}
+          {positiveReviews.length > 0 && (
             <div style={{ marginTop: "2rem", paddingBottom: "2rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
                 <h2 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0 }}>⭐ Avaliações dos clientes</h2>
@@ -1321,7 +1333,7 @@ export default function CustomerStorePage({
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px" }}>
-                {fiveStarReviews.slice(0, 6).map((r, i) => (
+                {positiveReviews.slice(0, 6).map((r, i) => (
                   <div key={i} style={{ background: "#fff", borderRadius: "14px", padding: "1rem 1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
                       <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C62828)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}>
@@ -1332,7 +1344,7 @@ export default function CustomerStorePage({
                         <p style={{ fontSize: "0.65rem", color: "#94A3B8", margin: 0 }}>{new Date(r.createdAt).toLocaleDateString("pt-BR")}</p>
                       </div>
                       <div style={{ marginLeft: "auto", display: "flex", gap: "2px" }}>
-                        {[1,2,3,4,5].map(n => <Star key={n} size={11} fill="#F59E0B" color="#F59E0B" />)}
+                        {[1,2,3,4,5].map(n => <Star key={n} size={11} fill={n <= r.rating ? "#F59E0B" : "none"} color={n <= r.rating ? "#F59E0B" : "#CBD5E1"} />)}
                       </div>
                     </div>
                     <p style={{ fontSize: "0.82rem", color: "#475569", margin: 0, lineHeight: 1.5 }}>"{r.comment}"</p>
@@ -1345,67 +1357,42 @@ export default function CustomerStorePage({
 
         {/* ===== DESKTOP SIDEBAR ===== */}
         <div className="desk-cart" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {/* CARD 1: FIDELIDADE & RECOMPENSAS */}
-          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-              <span style={{ fontSize: "1.2rem" }}>🎁</span>
-              <span style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>Troque pontos por recompensas</span>
-            </div>
-            <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 6px 0", lineHeight: 1.4 }}>
-              A cada R$ 1,00 em compras você ganha pontos para trocar por cupons e itens grátis.
-            </p>
-            <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#059669", margin: 0 }}>
-              ✨ Novos clientes ganham 5 pontos de boas-vindas!
-            </p>
-          </div>
+          {/* CARD DINÂMICO DE PROMOÇÃO / FIDELIDADE / CASHBACK DA LOJA */}
+          {(() => {
+            const loyalty = franchisee.storeLoyalty as any;
+            const coupons = (franchisee.storeCoupons as any[]) || [];
+            const isCashback = loyalty?.active && loyalty?.cashbackActive;
+            const isStamps = loyalty?.active && loyalty?.stampsActive;
 
-          {/* CARD 2: CALCULADORA DE FRETE POR BAIRRO (SEM CEP) */}
-          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <Truck size={16} color="#2563EB" />
-                <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>Taxa e tempo de entrega</span>
+            return (
+              <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "1.3rem" }}>{isCashback ? "💰" : isStamps ? "🎫" : "🎁"}</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>
+                    {isCashback
+                      ? "Ganhe Cashback em todas as compras"
+                      : isStamps
+                      ? "Cartão Fidelidade por Pedidos"
+                      : "Programa de Benefícios & Fidelidade"}
+                  </span>
+                </div>
+                <p style={{ fontSize: "0.8rem", color: "#64748B", margin: "0 0 8px 0", lineHeight: 1.45 }}>
+                  {isCashback
+                    ? `Receba ${loyalty.rate || 5}% de volta em saldo para economizar no seu próximo pedido!`
+                    : isStamps
+                    ? `A cada ${loyalty.stampGoal || 5} pedidos na loja, você ganha um cupom de R$ ${Number(loyalty.stampRewardValue || 15).toFixed(2).replace(".", ",")} para sua próxima compra!`
+                    : coupons.length > 0
+                    ? "Aproveite cupons de desconto exclusivos da nossa loja aplicando diretamente na sacola."
+                    : "Acumule vantagens e benefícios especiais comprando diretamente pelo nosso site!"}
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.74rem", fontWeight: 700, color: "#059669" }}>
+                  <Sparkles size={14} /> Benefício ativo garantido para você
+                </div>
               </div>
-            </div>
+            );
+          })()}
 
-            {franchisee.deliveryZones && (
-              <select
-                value={customerNeighborhood}
-                onChange={e => calcDeliveryFee(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "8px",
-                  border: "1px solid #CBD5E1",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  outline: "none",
-                  backgroundColor: "#F8FAFC",
-                  cursor: "pointer",
-                  marginBottom: "6px"
-                }}
-              >
-                <option value="">Selecione seu bairro...</option>
-                {(franchisee.deliveryZones as any[]).map((z: any, i: number) => (
-                  <option key={i} value={z.name}>{z.name}</option>
-                ))}
-              </select>
-            )}
-
-            {customerNeighborhood && deliveryAvailable && (
-              <div style={{ fontSize: "0.78rem", color: "#15803D", fontWeight: 700, marginTop: "4px" }}>
-                🛵 Taxa: {deliveryFee === 0 || isFreeShippingByMin ? "GRÁTIS" : `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`}
-              </div>
-            )}
-
-            {freeShippingThreshold && (
-              <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "#D97706", marginTop: "4px" }}>
-                🎉 Entrega grátis a partir de R$ {freeShippingThreshold.toFixed(2).replace(".", ",")}
-              </div>
-            )}
-          </div>
-
-          {/* CARD 3: SACOLA / CARRINHO */}
+          {/* CARD DA SACOLA */}
           <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1px solid #E2E8F0", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
             {cartContentJSX}
           </div>
@@ -1450,7 +1437,7 @@ export default function CustomerStorePage({
         />
       )}
 
-      {/* MODAL DE AVALIAÇÕES COMPLETAS (APENAS 5 ESTRELAS) */}
+      {/* MODAL DE AVALIAÇÕES COMPLETAS (Mostra todas as avaliações no popup) */}
       {showReviewsModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowReviewsModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "24px", maxWidth: "520px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
@@ -1470,8 +1457,8 @@ export default function CustomerStorePage({
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", paddingRight: "4px" }}>
-              {fiveStarReviews.length > 0 ? (
-                fiveStarReviews.map((r, i) => (
+              {storeRating?.reviews && storeRating.reviews.length > 0 ? (
+                storeRating.reviews.map((r, i) => (
                   <div key={i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1485,7 +1472,7 @@ export default function CustomerStorePage({
                       </div>
                       <div style={{ display: "flex", gap: "2px" }}>
                         {[1,2,3,4,5].map(n => (
-                          <Star key={n} size={13} fill="#F59E0B" color="#F59E0B" />
+                          <Star key={n} size={13} fill={n <= r.rating ? "#F59E0B" : "none"} color={n <= r.rating ? "#F59E0B" : "#CBD5E1"} />
                         ))}
                       </div>
                     </div>
@@ -1499,7 +1486,7 @@ export default function CustomerStorePage({
               ) : (
                 <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
                   <Star size={40} style={{ opacity: 0.2, marginBottom: "8px" }} />
-                  <p style={{ fontSize: "0.9rem" }}>Esta loja ainda não possui avaliações públicas 5 estrelas.</p>
+                  <p style={{ fontSize: "0.9rem" }}>Esta loja ainda não possui avaliações registradas.</p>
                 </div>
               )}
             </div>
@@ -1578,7 +1565,7 @@ export default function CustomerStorePage({
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowMyOrdersModal(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "24px", maxWidth: "480px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #F1F5F9", paddingBottom: "12px", marginBottom: "16px" }}>
-              <div style={{ display: "center", alignItems: "center", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "1.4rem" }}>📦</span>
                 <div>
                   <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#0F172A" }}>Meus Pedidos</h3>
