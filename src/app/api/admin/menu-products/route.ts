@@ -14,7 +14,12 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = user.ownerId || user.id;
-  const where = user.role === "ADMIN" ? {} : { franchiseeId: targetFranchiseeId };
+  const where = {
+    franchiseeId: targetFranchiseeId,
+    NOT: {
+      category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
+    }
+  };
 
   const products = await prisma.menuProduct.findMany({
     where,

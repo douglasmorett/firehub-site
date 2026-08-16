@@ -173,10 +173,13 @@ export default function CustomerStorePage({
   const [authError, setAuthError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
-  // Delivery fee
+  // Delivery fee & Address fields
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryAvailable, setDeliveryAvailable] = useState(true);
+  const [customerStreet, setCustomerStreet] = useState("");
+  const [customerNumber, setCustomerNumber] = useState("");
   const [customerNeighborhood, setCustomerNeighborhood] = useState("");
+  const [customerComplement, setCustomerComplement] = useState("");
 
   // Rating
   const [showRating, setShowRating] = useState(false);
@@ -559,10 +562,16 @@ export default function CustomerStorePage({
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
-    if (!customerName.trim()) { alert("Informe seu nome."); return; }
-    if (!customerPhone.trim()) { alert("Informe seu telefone."); return; }
-    if (deliveryType === "DELIVERY" && !customerAddress.trim()) { alert("Informe seu endereço de entrega."); return; }
-    if (deliveryType === "DELIVERY" && !deliveryAvailable) { alert("Não entregamos no endereço selecionado."); return; }
+    if (!customerName.trim()) { alert("Por favor, informe seu nome."); return; }
+    if (!customerPhone.trim()) { alert("Por favor, informe seu WhatsApp / telefone."); return; }
+    let finalAddress = "";
+    if (deliveryType === "DELIVERY") {
+      if (!customerStreet.trim()) { alert("Por favor, informe a Rua / Logradouro de entrega."); return; }
+      if (!customerNumber.trim()) { alert("Por favor, informe o Número do endereço."); return; }
+      if (!customerNeighborhood.trim()) { alert("Por favor, informe ou selecione o Bairro de entrega."); return; }
+      if (!deliveryAvailable) { alert("Não entregamos no endereço ou bairro selecionado."); return; }
+      finalAddress = `${customerStreet.trim()}, ${customerNumber.trim()} - ${customerNeighborhood.trim()}${customerComplement.trim() ? ` (${customerComplement.trim()})` : ""}`;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/customer-order", {
@@ -570,9 +579,9 @@ export default function CustomerStorePage({
         body: JSON.stringify({
           franchiseeId: franchisee.id,
           customerName, customerPhone,
-          customerAddress: deliveryType === "DELIVERY" ? customerAddress : null,
+          customerAddress: deliveryType === "DELIVERY" ? finalAddress : null,
           deliveryType, paymentMethod, notes,
-          deliveryFee: deliveryFee || 0,
+          deliveryFee: (deliveryType === "DELIVERY" && !isFreeShippingByMin) ? (deliveryFee || 0) : 0,
           couponCode: couponApplied?.code || null,
           items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" }))
         })
@@ -701,12 +710,46 @@ export default function CustomerStorePage({
 
   // ===== CART SIDEBAR CONTENT =====
   const cartContentJSX = (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", overflow: "hidden" }}>
+      {/* BANNER DINÂMICO DE FRETE GRÁTIS (IGUAL AO EXEMPLO) */}
+      {freeShippingThreshold && (
+        <div style={{
+          padding: "0.6rem 1rem",
+          background: isFreeShippingByMin ? "#F0FDF4" : "#F8FAFC",
+          borderBottom: "1px dashed #CBD5E1",
+          flexShrink: 0,
+          textAlign: "left",
+        }}>
+          <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "#1E293B" }}>
+            {isFreeShippingByMin ? (
+              <span style={{ color: "#15803D" }}>🎉 <strong style={{ color: "#16A34A" }}>Entrega grátis</strong> garantida para o seu pedido!</span>
+            ) : (
+              <span><strong style={{ color: "#16A34A" }}>Entrega grátis</strong> em pedidos a partir de R$ {freeShippingThreshold.toFixed(2).replace(".", ",")}</span>
+            )}
+          </div>
+          <div style={{ width: "100%", height: "4px", backgroundColor: "#E2E8F0", borderRadius: "4px", overflow: "hidden", marginTop: "4px" }}>
+            <div style={{ width: `${freeShippingProgress}%`, height: "100%", backgroundColor: isFreeShippingByMin ? "#16A34A" : "#10B981", transition: "width 0.3s ease" }} />
+          </div>
+        </div>
+      )}
+
       {/* HEADER DA SACOLA */}
-      <div style={{ padding: "1rem 1.25rem 0.75rem", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>
-          {isCheckout ? "Finalizar Pedido" : "Sua sacola"}
-        </h3>
+      <div style={{ padding: "0.75rem 1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {isCheckout && (
+            <button
+              type="button"
+              onClick={() => setIsCheckout(false)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B", padding: "2px 4px", fontSize: "0.82rem", fontWeight: 700, display: "flex", alignItems: "center" }}
+              title="Voltar para a sacola"
+            >
+              ← Voltar
+            </button>
+          )}
+          <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>
+            {isCheckout ? "Finalizar Pedido" : "Sua sacola"}
+          </h3>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {!isCheckout && cart.length > 0 && (
             <button
@@ -721,25 +764,8 @@ export default function CustomerStorePage({
         </div>
       </div>
 
-      {/* BARRA DINÂMICA DE FRETE GRÁTIS */}
-      {freeShippingThreshold && (
-        <div style={{ padding: "0.65rem 1.25rem", background: isFreeShippingByMin ? "#F0FDF4" : "#FFFBEB", borderBottom: "1px solid #E2E8F0" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.76rem", fontWeight: 800, marginBottom: "4px", color: isFreeShippingByMin ? "#15803D" : "#B45309" }}>
-            <span>
-              {isFreeShippingByMin
-                ? "🎉 Parabéns! Você garantiu FRETE GRÁTIS!"
-                : `🚚 Falta só R$ ${remainingForFreeShipping.toFixed(2).replace(".", ",")} para garantir frete grátis!`}
-            </span>
-            <span>{freeShippingProgress.toFixed(0)}%</span>
-          </div>
-          <div style={{ width: "100%", height: "6px", backgroundColor: "#E2E8F0", borderRadius: "4px", overflow: "hidden" }}>
-            <div style={{ width: `${freeShippingProgress}%`, height: "100%", backgroundColor: isFreeShippingByMin ? "#16A34A" : "#F59E0B", transition: "width 0.3s ease" }} />
-          </div>
-        </div>
-      )}
-
-      {/* CORPO DA SACOLA */}
-      <div className="cart-body" style={{ flex: 1, overflowY: "auto", padding: "1rem 1.25rem" }}>
+      {/* CORPO DA SACOLA COM ROLAGEM INDEPENDENTE */}
+      <div className="cart-body" style={{ flex: 1, overflowY: "auto", padding: "1rem 1.25rem", minHeight: 0 }}>
         {!isCheckout ? (
           cart.length === 0 ? (
             <div className="cart-empty" style={{ padding: "3rem 1rem", textAlign: "center", color: "#94A3B8" }}>
@@ -791,36 +817,32 @@ export default function CustomerStorePage({
                           R$ {itemTotal.toFixed(2).replace(".", ",")}
                         </div>
                         {item.imageUrl && (
-                          <img src={item.imageUrl} alt="" style={{ width: "42px", height: "42px", borderRadius: "8px", objectFit: "cover", marginTop: "4px" }} />
+                          <img src={item.imageUrl} alt={item.name} style={{ width: "38px", height: "38px", objectFit: "cover", borderRadius: "8px", marginTop: "4px" }} />
                         )}
                       </div>
                     </div>
 
-                    {/* BOTÕES DE QUANTIDADE E REMOVER */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #F1F5F9", paddingTop: "8px", marginTop: "4px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "4px", borderTop: "1px dashed #F1F5F9" }}>
                       <button
-                        type="button"
-                        onClick={() => deleteFromCart(item.id)}
-                        style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "0.74rem", fontWeight: 700, cursor: "pointer" }}
+                        onClick={() => removeFromCart(item.id)}
+                        style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "0.75rem", cursor: "pointer", padding: "2px 0", fontWeight: 600 }}
                       >
                         Remover
                       </button>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "20px", padding: "2px 6px" }}>
                         <button
-                          type="button"
                           onClick={() => removeFromCart(item.id)}
-                          style={{ width: 24, height: 24, borderRadius: "50%", border: "1px solid #CBD5E1", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          style={{ width: "20px", height: "20px", borderRadius: "50%", background: "#FFFFFF", border: "1px solid #CBD5E1", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.8rem", color: "#475569" }}
                         >
-                          <Minus size={11} strokeWidth={2.5} />
+                          -
                         </button>
-                        <span style={{ fontWeight: 800, fontSize: "0.85rem", minWidth: "16px", textAlign: "center" }}>{item.quantity}</span>
+                        <span style={{ fontSize: "0.82rem", fontWeight: 800, minWidth: "16px", textAlign: "center" }}>{item.quantity}</span>
                         <button
-                          type="button"
-                          onClick={() => addToCart(item)}
-                          style={{ width: 24, height: 24, borderRadius: "50%", border: "none", background: "#059669", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          onClick={() => addToCart(item, item.comboSelections, 0, 1, item.notes)}
+                          style={{ width: "20px", height: "20px", borderRadius: "50%", background: "#059669", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.8rem", color: "#FFFFFF" }}
                         >
-                          <Plus size={11} strokeWidth={2.5} />
+                          +
                         </button>
                       </div>
                     </div>
@@ -829,12 +851,11 @@ export default function CustomerStorePage({
               })}
 
               {/* CUPOM DE DESCONTO */}
-              <div style={{ marginTop: "0.5rem", borderTop: "1px solid #F1F5F9", paddingTop: "0.75rem" }}>
+              <div style={{ marginTop: "0.25rem", padding: "0.75rem 0" }}>
                 {!showCouponInput && !couponApplied ? (
                   <button
-                    type="button"
                     onClick={() => setShowCouponInput(true)}
-                    style={{ background: "none", border: "none", padding: 0, color: "#2563EB", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                    style={{ background: "none", border: "none", color: "#2563EB", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px", padding: 0 }}
                   >
                     🏷️ Que tal usar um cupom de desconto?
                   </button>
@@ -855,16 +876,24 @@ export default function CustomerStorePage({
                 )}
               </div>
 
-              {/* RESUMO DOS VALORES */}
-              <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "4px", fontSize: "0.82rem", color: "#64748B" }}>
+              {/* RESUMO DOS VALORES (IGUAL AO EXEMPLO) */}
+              <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "5px", fontSize: "0.84rem", color: "#64748B" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Subtotal</span>
                   <span style={{ fontWeight: 700, color: "#0F172A" }}>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Taxa de entrega</span>
-                  <span style={{ fontWeight: 700, color: deliveryFee === 0 || isFreeShippingByMin ? "#16A34A" : "#0F172A" }}>
-                    {deliveryType === "PICKUP" ? "Retirada no local" : deliveryFee === 0 || isFreeShippingByMin ? "Grátis" : `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`}
+                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin) ? "#16A34A" : "#64748B" }}>
+                    {deliveryType === "PICKUP" ? (
+                      "Retirada no local"
+                    ) : isFreeShippingByMin ? (
+                      "Grátis"
+                    ) : (deliveryFee > 0 && customerNeighborhood) ? (
+                      `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
+                    ) : (
+                      "A definir"
+                    )}
                   </span>
                 </div>
                 {discount > 0 && (
@@ -873,7 +902,7 @@ export default function CustomerStorePage({
                     <span style={{ fontWeight: 700 }}>- R$ {discount.toFixed(2).replace(".", ",")}</span>
                   </div>
                 )}
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1rem", fontWeight: 900, color: "#0F172A", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #E2E8F0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", marginTop: "4px", paddingTop: "6px", borderTop: "1px dashed #E2E8F0" }}>
                   <span>Total</span>
                   <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
                 </div>
@@ -881,51 +910,139 @@ export default function CustomerStorePage({
             </div>
           )
         ) : (
-          /* TELA DE IDENTIFICAÇÃO E FINALIZAÇÃO */
-          <div className="checkout-form">
-            <div><label className="checkout-label">Seu Nome *</label><input className="checkout-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Como podemos te chamar?" /></div>
-            <div><label className="checkout-label">WhatsApp *</label><input className="checkout-input" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="(21) 99999-9999" /></div>
+          /* TELA DE IDENTIFICAÇÃO E FINALIZAÇÃO COM CAMPOS SEPARADOS */
+          <div className="checkout-form" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div>
+              <label className="checkout-label">Seu Nome *</label>
+              <input className="checkout-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Como podemos te chamar?" />
+            </div>
+
+            <div>
+              <label className="checkout-label">WhatsApp *</label>
+              <input className="checkout-input" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="(21) 99999-9999" />
+            </div>
+
             <div>
               <label className="checkout-label">Tipo de Pedido</label>
               <div className="checkout-type-row">
-                <button onClick={() => setDeliveryType("DELIVERY")} className={`checkout-type-btn ${deliveryType === "DELIVERY" ? "active" : ""}`}>🛵 Entrega</button>
-                <button onClick={() => setDeliveryType("PICKUP")} className={`checkout-type-btn ${deliveryType === "PICKUP" ? "active" : ""}`}>🏪 Retirada</button>
+                <button type="button" onClick={() => setDeliveryType("DELIVERY")} className={`checkout-type-btn ${deliveryType === "DELIVERY" ? "active" : ""}`}>🛵 Entrega</button>
+                <button type="button" onClick={() => setDeliveryType("PICKUP")} className={`checkout-type-btn ${deliveryType === "PICKUP" ? "active" : ""}`}>🏪 Retirada</button>
               </div>
             </div>
+
             {deliveryType === "DELIVERY" && (
-              <div>
-                <label className="checkout-label">Endereço de Entrega (Rua e Número) *</label>
-                <input className="checkout-input" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} placeholder="Ex: Av. Atlântica, 1500 - Apto 201" />
-                {franchisee.deliveryZoneType === "NEIGHBORHOOD" && franchisee.deliveryZones && (
-                  <div style={{ marginTop: "0.5rem" }}>
-                    <label className="checkout-label">Seu Bairro *</label>
-                    <select className="checkout-input" value={customerNeighborhood} onChange={e => calcDeliveryFee(e.target.value)} style={{ cursor: "pointer" }}>
-                      <option value="">Selecione seu bairro</option>
-                      {(franchisee.deliveryZones as any[]).map((z: any, i: number) => (
-                        <option key={i} value={z.name}>{z.name} — R$ {(z.fee || 0).toFixed(2).replace(".", ",")}</option>
-                      ))}
-                    </select>
-                    {!deliveryAvailable && customerNeighborhood && <p style={{ color: "#EF4444", fontSize: "0.78rem", fontWeight: 600, marginTop: "4px" }}>❌ Bairro fora da área de entrega</p>}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", background: "#F8FAFC", padding: "10px 12px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+                <div>
+                  <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Rua / Logradouro *</label>
+                  <input
+                    className="checkout-input"
+                    value={customerStreet}
+                    onChange={e => setCustomerStreet(e.target.value)}
+                    placeholder="Ex: Rua São Paulo, Av. Brasil"
+                  />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: "0.5rem" }}>
+                  <div>
+                    <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Número *</label>
+                    <input
+                      className="checkout-input"
+                      value={customerNumber}
+                      onChange={e => setCustomerNumber(e.target.value)}
+                      placeholder="Ex: 98 ou S/N"
+                    />
                   </div>
+
+                  <div>
+                    <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Bairro *</label>
+                    {franchisee.deliveryZoneType === "NEIGHBORHOOD" && franchisee.deliveryZones && Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.length > 0 ? (
+                      <select
+                        className="checkout-input"
+                        value={customerNeighborhood}
+                        onChange={e => {
+                          setCustomerNeighborhood(e.target.value);
+                          calcDeliveryFee(e.target.value);
+                        }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <option value="">Selecione o bairro</option>
+                        {(franchisee.deliveryZones as any[]).map((z: any, i: number) => (
+                          <option key={i} value={z.name}>{z.name} — R$ {(z.fee || 0).toFixed(2).replace(".", ",")}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        className="checkout-input"
+                        value={customerNeighborhood}
+                        onChange={e => {
+                          setCustomerNeighborhood(e.target.value);
+                          calcDeliveryFee(e.target.value);
+                        }}
+                        placeholder="Ex: Centro"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                    <label className="checkout-label" style={{ fontSize: "0.82rem", margin: 0 }}>Complemento / Ponto de Referência</label>
+                    <span style={{ fontSize: "0.68rem", color: "#94A3B8" }}>Opcional</span>
+                  </div>
+                  <input
+                    className="checkout-input"
+                    value={customerComplement}
+                    onChange={e => setCustomerComplement(e.target.value)}
+                    placeholder="Ex: Apto 201, Casa dos fundos, Ao lado da padaria"
+                  />
+                </div>
+
+                {!deliveryAvailable && customerNeighborhood && (
+                  <p style={{ color: "#EF4444", fontSize: "0.76rem", fontWeight: 700, margin: "2px 0 0" }}>
+                    ❌ Bairro fora da área de entrega da loja
+                  </p>
                 )}
               </div>
             )}
+
             <div>
               <label className="checkout-label">Forma de Pagamento</label>
               <div className="checkout-type-row" style={{ flexWrap: "wrap" }}>
                 {paymentOptions.map(pm => (
-                  <button key={pm.k} onClick={() => setPaymentMethod(pm.k)} className={`checkout-type-btn ${paymentMethod === pm.k ? "active" : ""}`} style={{ flex: "1 1 30%", fontSize: "0.78rem" }}>{pm.l}</button>
+                  <button key={pm.k} type="button" onClick={() => setPaymentMethod(pm.k)} className={`checkout-type-btn ${paymentMethod === pm.k ? "active" : ""}`} style={{ flex: "1 1 30%", fontSize: "0.78rem" }}>{pm.l}</button>
                 ))}
               </div>
             </div>
-            <div><label className="checkout-label">Observações do Pedido</label><textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex: Sem talher, tocar interfone..." /></div>
+
+            <div>
+              <label className="checkout-label">Observações do Pedido</label>
+              <textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex: Sem cebola, caprichar no molho..." />
+            </div>
+
+            {/* Resumo no Checkout */}
+            <div style={{ padding: "8px 12px", background: "#F1F5F9", borderRadius: "10px", fontSize: "0.8rem", color: "#475569" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Subtotal:</span>
+                <span style={{ fontWeight: 700 }}>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Entrega:</span>
+                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin) ? "#16A34A" : "#0F172A" }}>
+                  {deliveryType === "PICKUP" ? "Retirada" : isFreeShippingByMin ? "Grátis 🎉" : (deliveryFee > 0 && customerNeighborhood) ? `R$ ${deliveryFee.toFixed(2).replace(".", ",")}` : "A consultar"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0F172A", fontSize: "0.92rem", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #CBD5E1" }}>
+                <span>Total a Pagar:</span>
+                <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* FOOTER DA SACOLA */}
+      {/* FOOTER FIXO DA SACOLA (SEMPRE VISÍVEL NO RODAPÉ) */}
       {cart.length > 0 && (
-        <div style={{ padding: "0.85rem 1.25rem", borderTop: "1px solid #E2E8F0", background: "#FFFFFF" }}>
+        <div style={{ padding: "0.85rem 1.25rem", borderTop: "1.5px solid #E2E8F0", background: "#FFFFFF", flexShrink: 0, boxShadow: "0 -4px 12px rgba(0,0,0,0.03)" }}>
           {!isCheckout ? (
             <button
               type="button"
@@ -935,7 +1052,7 @@ export default function CustomerStorePage({
               }}
               style={{
                 width: "100%",
-                padding: "12px",
+                padding: "13px",
                 borderRadius: "12px",
                 border: "none",
                 background: "#0F172A",
@@ -946,7 +1063,7 @@ export default function CustomerStorePage({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                boxShadow: "0 4px 12px rgba(15, 23, 42, 0.25)",
+                boxShadow: "0 4px 14px rgba(15, 23, 42, 0.25)",
                 transition: "all 0.2s ease"
               }}
             >
@@ -961,25 +1078,22 @@ export default function CustomerStorePage({
                 disabled={loading}
                 style={{
                   width: "100%",
-                  padding: "12px",
+                  padding: "13px",
                   borderRadius: "12px",
                   border: "none",
-                  background: "#059669",
+                  background: "linear-gradient(135deg, #059669, #047857)",
                   color: "#FFFFFF",
-                  fontWeight: 800,
+                  fontWeight: 900,
                   fontSize: "0.95rem",
                   cursor: loading ? "not-allowed" : "pointer",
-                  boxShadow: "0 4px 12px rgba(5, 150, 105, 0.3)"
+                  boxShadow: "0 4px 14px rgba(5, 150, 105, 0.35)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px"
                 }}
               >
-                {loading ? "Enviando pedido..." : `Confirmar Pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsCheckout(false)}
-                style={{ width: "100%", padding: "6px", background: "none", border: "none", color: "#64748B", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}
-              >
-                ← Voltar para a sacola
+                {loading ? "Enviando pedido..." : `✓ Finalizar Pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`}
               </button>
             </div>
           )}
@@ -1420,8 +1534,19 @@ export default function CustomerStorePage({
             );
           })()}
 
-          {/* CARD DA SACOLA */}
-          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1px solid #E2E8F0", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+          {/* CARD DA SACOLA (STICKY COM ROLAGEM INTERNA PERFEITA) */}
+          <div style={{
+            background: "#FFFFFF",
+            borderRadius: "16px",
+            border: "1.5px solid #E2E8F0",
+            overflow: "hidden",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "calc(100vh - 100px)",
+            position: "sticky",
+            top: "80px",
+          }}>
             {cartContentJSX}
           </div>
         </div>

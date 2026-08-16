@@ -45,7 +45,7 @@ export default function MenuProductManager({
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"all" | "items" | "combos">("all");
+  const [tab, setTab] = useState<"items" | "combos">("items");
 
   // Categorias dinâmicas (inicia com as do servidor, pode adicionar novas)
   const [dynCategories, setDynCategories] = useState(initialCategories);
@@ -832,14 +832,11 @@ export default function MenuProductManager({
       {/* TABS E BOTÕES DE AÇÃO SUPERIOR (iFood style) */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-          <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.85rem" }}>
-            📋 Todos os Itens ({products.length})
-          </button>
-          <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.85rem" }}>
+          <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
             🍔 Itens Avulsos ({itemProducts.length})
           </button>
-          <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.85rem" }}>
-            <Package size={15} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
+          <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
+            <Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
           </button>
         </div>
 
@@ -1557,7 +1554,7 @@ export default function MenuProductManager({
 
       {/* PRODUCT LIST AGRUPADO POR CATEGORIAS (iFood style) */}
       {(() => {
-        const rawProducts = tab === "all" ? products : (tab === "items" ? itemProducts : comboProducts);
+        const rawProducts = tab === "items" ? itemProducts : comboProducts;
         const displayedProducts = rawProducts.filter(p => {
           // Ocultar produtos temporários de integração (iFood, Jotajá, ONLINE) do painel visual de cardápio
           const catUpper = (p.category || "").toUpperCase();
