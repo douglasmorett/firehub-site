@@ -1,114 +1,146 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { redirect } from "next/navigation";
 import AmbassadorDashboard from "@/components/ambassador/AmbassadorDashboard";
+import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
+import { calcMensalidade } from "@/lib/firehub-billing";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portal do Embaixador - FireHub" };
 
 export default async function EmbaixadorPage() {
   const session = await getServerSession(authOptions);
-  
-  // Apenas AMBASSADOR pode acessar
+
+  // Se não estiver autenticado ou não for AMBASSADOR, exibe tela de login do embaixador
   if (!session?.user?.email || (session.user as any).role !== "AMBASSADOR") {
-    return redirect("/login");
+    return <AmbassadorLoginForm />;
   }
 
-  const ambassador = await prisma.ambassador.findUnique({
-    where: { id: (session.user as any).id },
+  const sessionUser = session.user as any;
+
+  // Busca o embaixador por ID ou e-mail de forma resiliente
+  const ambassador = await prisma.ambassador.findFirst({
+    where: {
+      OR: [
+        ...(sessionUser.id ? [{ id: sessionUser.id }] : []),
+        ...(sessionUser.email ? [{ email: { equals: sessionUser.email, mode: "insensitive" as const } }] : [])
+      ]
+    },
     include: {
       referredStores: {
         select: {
           id: true,
+          name: true,
           storeName: true,
           storePhone: true,
           email: true,
           createdAt: true,
           trialEndsAt: true,
           slug: true,
+          city: true,
+          storeOpen: true,
+          planPercent: true,
         },
         orderBy: { createdAt: "desc" }
       }
     }
   });
 
-  if (!ambassador) return redirect("/login");
-
-  // Verificar status de cada loja
-  const referralIds = ambassador.referredStores.map(r => r.id);
-  
-  // Pega o ultimo ciclo de faturamento fechado pra cada loja
-  const lastBillings = await prisma.franchiseeBillingCycle.groupBy({
-    by: ['franchiseeId'],
-    _max: {
-      closedAt: true
-    },
-    where: {
-      franchiseeId: { in: referralIds },
-      status: "CLOSED"
-    }
-  });
-
-  const lastBillingsData = await prisma.franchiseeBillingCycle.findMany({
-    where: {
-      OR: lastBillings.map(b => ({
-        franchiseeId: b.franchiseeId,
-        closedAt: b._max.closedAt
-      }))
-    }
-  });
-
-  const billingStatusMap = new Map();
-  lastBillingsData.forEach(b => {
-    billingStatusMap.set(b.franchiseeId, b);
-  });
+  if (!ambassador) {
+    return <AmbassadorLoginForm />;
+  }
 
   const now = new Date();
-  
-  // Calcular comissão (income) apenas para os ativos/pagos deste mês (simplificado)
-  let currentMonthIncome = 0;
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  const storesWithStatus = ambassador.referredStores.map(r => {
-    let status: "TRIAL" | "ACTIVE" | "INACTIVE" = "INACTIVE";
-    let isTrial = r.trialEndsAt ? new Date(r.trialEndsAt) > now : false;
-    
-    if (isTrial) {
-      status = "TRIAL";
-    } else {
-      const billing = billingStatusMap.get(r.id);
-      if (billing) {
-        if (billing.amountPending <= 0) {
-          status = "ACTIVE";
-          // Se pagou, a comissão baseia-se no valor total faturado para aquela loja
-          currentMonthIncome += (billing.totalValue * (ambassador.commissionPercent / 100));
-        }
+  // Coleta dados de vendas de todas as lojas indicadas
+  const storesData = await Promise.all(
+    ambassador.referredStores.map(async (store) => {
+      // Vendas no mês atual
+      const monthAgg = await prisma.customerOrder.aggregate({
+        where: {
+          franchiseeId: store.id,
+          status: { not: "CANCELADO" },
+          createdAt: { gte: startOfMonth, lt: endOfMonth }
+        },
+        _sum: { totalAmount: true },
+        _count: true
+      });
+
+      const monthSales = monthAgg._sum.totalAmount || 0;
+      const monthOrdersCount = monthAgg._count || 0;
+
+      // Status da Loja
+      const isTrial = store.trialEndsAt ? new Date(store.trialEndsAt) > now : false;
+      const trialDaysRemaining = isTrial && store.trialEndsAt
+        ? Math.max(0, Math.ceil((new Date(store.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+        : 0;
+
+      let status: "TRIAL" | "ACTIVE" | "INACTIVE" = "INACTIVE";
+      if (isTrial) {
+        status = "TRIAL";
+      } else if (monthSales > 0 || store.storeOpen) {
+        status = "ACTIVE";
       } else {
         status = "INACTIVE";
       }
-    }
 
-    return {
-      id: r.id,
-      storeName: r.storeName,
-      storePhone: r.storePhone,
-      email: r.email,
-      createdAt: r.createdAt.toISOString(),
-      status
-    };
-  });
+      // Cálculo da mensalidade da plataforma
+      // Se tiver faturamento, aplica 1% (mín R$ 100, máx R$ 400)
+      let platformFee = 0;
+      if (monthSales > 0) {
+        const { mensalidade } = calcMensalidade(monthSales, true);
+        platformFee = mensalidade;
+      } else if (status === "ACTIVE" || status === "TRIAL") {
+        // Base estimada para lojas ativas
+        platformFee = 100;
+      }
+
+      // Comissão do embaixador
+      const ambassadorProfit = platformFee * (ambassador.commissionPercent / 100);
+
+      return {
+        id: store.id,
+        name: store.name,
+        storeName: store.storeName || store.name || "Restaurante sem nome",
+        storePhone: store.storePhone,
+        email: store.email,
+        slug: store.slug,
+        city: store.city,
+        createdAt: store.createdAt.toISOString(),
+        trialEndsAt: store.trialEndsAt ? store.trialEndsAt.toISOString() : null,
+        trialDaysRemaining,
+        status,
+        monthSales,
+        monthOrdersCount,
+        platformFee,
+        ambassadorProfit
+      };
+    })
+  );
+
+  // Totais consolidados da carteira
+  const currentMonthIncome = storesData.reduce((acc, s) => acc + s.ambassadorProfit, 0);
+  const totalPortfolioSales = storesData.reduce((acc, s) => acc + s.monthSales, 0);
+  const totalPlatformFees = storesData.reduce((acc, s) => acc + s.platformFee, 0);
 
   return (
-    <AmbassadorDashboard 
+    <AmbassadorDashboard
       ambassador={{
         id: ambassador.id,
         name: ambassador.name,
+        email: ambassador.email,
+        phone: ambassador.phone,
         code: ambassador.code,
         commissionPercent: ambassador.commissionPercent,
+        asaasWalletId: ambassador.asaasWalletId,
         active: ambassador.active
       }}
-      stores={storesWithStatus}
+      stores={storesData}
       currentMonthIncome={currentMonthIncome}
+      totalPortfolioSales={totalPortfolioSales}
+      totalPlatformFees={totalPlatformFees}
     />
   );
 }

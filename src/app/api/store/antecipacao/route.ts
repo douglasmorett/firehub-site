@@ -153,14 +153,14 @@ export async function GET(req: Request) {
           for (const entry of cs) {
             // Formato iFood: options array [{name, quantity, ...}]
             if (entry.name && !entry.items && !entry.selections) {
-              results.push({ name: entry.name, qty: (entry.quantity || 1) * item.quantity });
+              results.push({ name: entry.name, qty: entry.quantity || 1 });
             }
             // Formato combo groups: [{title, items: [...]}]
             if (entry.items && Array.isArray(entry.items)) {
               for (const subItem of entry.items) {
                 const subName = subItem.name || subItem.productName || "";
                 if (subName && !isGenericName(subName)) {
-                  results.push({ name: subName, qty: (subItem.quantity || subItem.qty || 1) * item.quantity });
+                  results.push({ name: subName, qty: subItem.quantity || subItem.qty || 1 });
                 }
               }
             }
@@ -169,7 +169,7 @@ export async function GET(req: Request) {
               for (const sel of entry.selections) {
                 const selName = sel.name || sel.productName || "";
                 if (selName && !isGenericName(selName)) {
-                  results.push({ name: selName, qty: (sel.quantity || 1) * item.quantity });
+                  results.push({ name: selName, qty: sel.quantity || 1 });
                 }
               }
             }

@@ -54,17 +54,17 @@ export function parseComboSelections(
       if (match) {
         list.push({
           name: match[2].trim(),
-          quantity: parseInt(match[1], 10) * (parentQuantity || 1),
+          quantity: parseInt(match[1], 10),
         });
       } else if (item.trim()) {
         list.push({
           name: item.trim(),
-          quantity: 1 * (parentQuantity || 1),
+          quantity: 1,
         });
       }
     } else if (item && typeof item === "object") {
       // Objeto com campos estruturados: { name, quantity, price }
-      // NUNCA extrair números do nome — o nome é o nome completo do produto
+      // A quantidade do sub-item já é a quantidade total selecionada pelo cliente no pedido
       const rawName = String(
         item.name || item.productName || item.label || item.description || "",
       );
@@ -74,7 +74,7 @@ export function parseComboSelections(
       if (rawName.trim()) {
         list.push({
           name: rawName.trim(),
-          quantity: qty * (parentQuantity || 1),
+          quantity: qty,
           ...(price !== undefined ? { price } : {}),
         });
       }

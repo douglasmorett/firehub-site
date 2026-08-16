@@ -406,6 +406,25 @@ export async function GET(req: NextRequest) {
             customerNote ? `💬 ${customerNote}` : null,
           ].filter(Boolean).join(" | ");
 
+          const deliveredByRaw = (
+            orderData.deliveredBy || orderData.deliveryBy ||
+            orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
+            orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
+            ""
+          ).toString().toUpperCase();
+
+          const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS") || deliveredByRaw.includes("PARTNER")) ? "IFOOD" : "MERCHANT";
+
+          const ifoodPickupCode = (
+            orderData.delivery?.pickupCode ||
+            orderData.pickupCode ||
+            orderData.driver?.pickupCode ||
+            orderData.logistics?.pickupCode ||
+            event?.pickupCode ||
+            event?.data?.pickupCode ||
+            null
+          )?.toString().trim() || null;
+
           let initialStatus = "NOVO";
           if (isConfirmed) initialStatus = "ACEITO";
           else if (isPreparation) initialStatus = "PREPARANDO";
@@ -418,9 +437,11 @@ export async function GET(req: NextRequest) {
               franchiseeId: eventFranchisee.id,
               ifoodOrderId: orderId,
               ifoodReference: orderData.displayId ?? undefined,
+              ifoodPickupCode: ifoodPickupCode ?? undefined,
               scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
               changeAmount,
               customerCpfCnpj,
+              deliveryBy,
               discountTotal: discountTotal > 0 ? discountTotal : null,
               discountIfood: discountIfood > 0 ? discountIfood : null,
               discountMerchant: discountMerchant > 0 ? discountMerchant : null,
@@ -513,6 +534,24 @@ export async function GET(req: NextRequest) {
                 if (updatedDeadline) {
                   updateData.scheduledDatetime = new Date(updatedDeadline);
                   log.push(`  ⏱️ Prazo atualizado: ${orderId} → ${updatedDeadline}`);
+                }
+                const dByRaw = (
+                  detailData.deliveredBy || detailData.deliveryBy ||
+                  detailData.delivery?.deliveredBy || detailData.delivery?.deliveryBy ||
+                  detailData.merchant?.deliveredBy || detailData.logistics?.deliveredBy ||
+                  ""
+                ).toString().toUpperCase();
+                if (dByRaw.includes("IFOOD") || dByRaw.includes("LOGISTICS") || dByRaw.includes("PARTNER")) {
+                  updateData.deliveryBy = "IFOOD";
+                }
+                const pCode = (
+                  detailData.delivery?.pickupCode ||
+                  detailData.pickupCode ||
+                  detailData.driver?.pickupCode ||
+                  detailData.logistics?.pickupCode
+                )?.toString().trim();
+                if (pCode) {
+                  updateData.ifoodPickupCode = pCode;
                 }
               }
             } catch (deadlineErr: any) {

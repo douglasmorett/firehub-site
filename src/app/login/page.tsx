@@ -248,6 +248,20 @@ export default function FireHubLoginPage() {
           </a>
         </div>
 
+        <div style={{ marginTop: "16px", textAlign: "center" }}>
+          <a
+            href="/embaixador"
+            style={{
+              fontSize: "0.8rem",
+              color: "#9CA3AF",
+              textDecoration: "none",
+              display: "inline-block",
+            }}
+          >
+            Você é embaixador(a)? <span style={{ color: "#DC2626", fontWeight: 600, textDecoration: "underline" }}>Acesse aqui</span>
+          </a>
+        </div>
+
         <a href="https://www.firehubfood.com.br" className="fhl-back">← Voltar para o site</a>
       </div>
     </div>

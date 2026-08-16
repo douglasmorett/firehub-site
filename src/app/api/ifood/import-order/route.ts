@@ -146,8 +146,22 @@ export async function POST(req: NextRequest) {
       .filter((b: any) => b.sponsorshipValues?.some?.((s: any) => s.name === "IFOOD"))
       .reduce((s: number, b: any) => s + (b.value || 0), 0);
 
-    const logistics = orderData.logistics || {};
-    const deliveryBy = logistics.deliveryBy || "MERCHANT";
+    const deliveredByRaw = (
+      orderData.deliveredBy || orderData.deliveryBy ||
+      orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
+      orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
+      ""
+    ).toString().toUpperCase();
+
+    const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS") || deliveredByRaw.includes("PARTNER")) ? "IFOOD" : "MERCHANT";
+
+    const ifoodPickupCode = (
+      orderData.delivery?.pickupCode ||
+      orderData.pickupCode ||
+      orderData.driver?.pickupCode ||
+      orderData.logistics?.pickupCode ||
+      null
+    )?.toString().trim() || null;
 
     const formattedAddress = [
       address.streetName,
@@ -170,6 +184,7 @@ export async function POST(req: NextRequest) {
         source: "IFOOD",
         ifoodOrderId: actualOrderId,
         ifoodReference: orderData.displayId || reference || "",
+        ifoodPickupCode: ifoodPickupCode ?? undefined,
         discountMerchant,
         discountIfood,
         deliveryBy,

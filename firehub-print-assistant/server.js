@@ -295,11 +295,49 @@ function buildEscPos(order, storeName, columns = 48) {
   const refTag = orderRef ? `#${orderRef}` : "";
   const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
 
-  const isIfoodDriver = order.deliveryBy === "IFOOD";
+  const dByStr = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
+  const srcStr = (order.source || "").toString().toUpperCase();
+  const odChannelStr = (order.openDeliveryChannel || "").toString().toUpperCase();
+
+  const is99FoodDriver = (
+    srcStr === "99FOOD" ||
+    odChannelStr === "99FOOD" ||
+    dByStr === "99FOOD" ||
+    dByStr.includes("99")
+  ) && (
+    dByStr === "99FOOD" ||
+    dByStr.includes("99") ||
+    dByStr === "LOGISTICS" ||
+    dByStr === "PARTNER" ||
+    Boolean(order.ifoodPickupCode) ||
+    Boolean(order.openDeliveryPickupCode)
+  );
+
+  const isIfoodDriver = (
+    srcStr === "IFOOD" ||
+    dByStr === "IFOOD" ||
+    dByStr.includes("IFOOD")
+  ) && (
+    dByStr === "IFOOD" ||
+    dByStr.includes("IFOOD") ||
+    dByStr === "LOGISTICS" ||
+    dByStr === "PARTNER" ||
+    Boolean(order.ifoodPickupCode)
+  );
+
+  const isPartnerDriver = is99FoodDriver || isIfoodDriver || (
+    (dByStr === "LOGISTICS" || dByStr === "PARTNER") && dByStr !== "MERCHANT"
+  );
+
+  const partnerLabel = is99FoodDriver ? "99FOOD" : (isIfoodDriver ? "IFOOD" : (srcStr || "PARCEIRO"));
+  const pCode = order.ifoodPickupCode || order.openDeliveryPickupCode || "";
 
   res += CENTER + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF;
-  if (isIfoodDriver) {
-    res += DOUBLE_HEIGHT + "*** MOTOBOY IFOOD (ENTREGA PARCEIRA) ***" + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + LF;
+  if (isPartnerDriver) {
+    res += DOUBLE_HEIGHT + `*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***` + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + LF;
+    if (pCode) {
+      res += DOUBLE_HEIGHT + `CODIGO DE COLETA: #${pCode}` + DOUBLE_OFF + LF;
+    }
   }
   res += LEFT + divider;
   res += "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + LF;
@@ -440,7 +478,7 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
 
       if (comboSels.length > 0) {
         comboSels.forEach((sel) => {
-          const totalQty = (sel.quantity || 1) * qty;
+          const totalQty = sel.quantity || 1;
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
           let selName = cleanAscii(sel.name || "");
           selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();

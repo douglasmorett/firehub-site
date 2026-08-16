@@ -409,6 +409,30 @@ export async function processJotajaEvent(
       else if (isDispatched)   initialStatus = "SAIU_ENTREGA";
       else if (isConcluded)    initialStatus = "ENTREGUE";
 
+      const dByRaw = (
+        orderData.delivery?.deliveredBy ||
+        orderData.delivery?.deliveryBy ||
+        orderData.deliveredBy ||
+        orderData.deliveryBy ||
+        orderData.logistics?.deliveryBy ||
+        orderData.logistics?.deliveredBy ||
+        ""
+      ).toString().toUpperCase();
+
+      const deliveryBy = (
+        dByRaw.includes("PARTNER") ||
+        dByRaw.includes("LOGISTICS") ||
+        dByRaw.includes("JOTAJA")
+      ) ? "JOTAJA" : "MERCHANT";
+
+      const pickupCode = (
+        orderData.delivery?.pickupCode ||
+        orderData.pickupCode ||
+        orderData.driver?.pickupCode ||
+        orderData.logistics?.pickupCode ||
+        null
+      )?.toString().trim() || null;
+
       // === CRIAR PEDIDO COM RETRY (barreira anti-perda) ===
       let createSuccess = false;
       let lastCreateError: any = null;
@@ -426,6 +450,8 @@ export async function processJotajaEvent(
               scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
               changeAmount,
               customerCpfCnpj,
+              deliveryBy,
+              ifoodPickupCode: pickupCode ?? undefined,
               discountTotal: discountTotal > 0 ? discountTotal : null,
               discountMerchant: discountMerchant > 0 ? discountMerchant : null,
               discountDetails: discountDetails.length > 0 ? discountDetails : undefined,

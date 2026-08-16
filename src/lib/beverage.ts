@@ -77,7 +77,7 @@ export function getBeveragesFromOrder(order: any, customKeywords?: string | stri
           for (const sel of comboSels) {
             const selName = sel.name || sel.productName || sel.title;
             if (selName && isBeverageName(selName, customKeywords)) {
-              const selQty = (sel.quantity || 1) * qty;
+              const selQty = sel.quantity || 1;
               beverages.push({ name: selName, quantity: selQty });
             }
             if (Array.isArray(sel.extras)) {

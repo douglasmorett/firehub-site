@@ -99,33 +99,61 @@ const cleanAddressForMap = (addr: string | null, city?: string): string => {
   return result || clean;
 };
 
-export const isIfoodMotoboy = (order: any): boolean => {
-  if (!order) return false;
+export interface PartnerDeliveryInfo {
+  isPartner: boolean;
+  partnerName: string;
+  pickupCode?: string;
+}
+
+export const getPartnerDeliveryInfo = (order: any): PartnerDeliveryInfo => {
+  if (!order) return { isPartner: false, partnerName: "" };
 
   const dBy = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase().trim();
   const dMode = (order.deliveryMode || "").toString().toUpperCase().trim();
+  const src = (order.source || "").toString().toUpperCase().trim();
+  const odChannel = (order.openDeliveryChannel || "").toString().toUpperCase().trim();
+  const pickupCode = order.ifoodPickupCode || order.openDeliveryPickupCode || undefined;
 
-  // 1. Se explicitamente for "MERCHANT", "LOJA", "PROPRIO", "MERCHANT_DELIVERY" -> É ENTREGA PRÓPRIA DA LOJA!
+  // 1. Se explicitamente marcado como entrega própria da loja
   if (dBy === "MERCHANT" || dBy === "LOJA" || dBy === "PROPRIO" || dBy === "MERCHANT_DELIVERY") {
-    return false;
+    return { isPartner: false, partnerName: "" };
   }
 
-  // 2. Se o modo de entrega for DEFAULT, ECONOMIC, MERCHANT_DELIVERY, TAKEOUT, PICKUP -> É ENTREGA PRÓPRIA DA LOJA!
-  if (dMode === "DEFAULT" || dMode === "ECONOMIC" || dMode === "MERCHANT_DELIVERY" || dMode === "TAKEOUT" || dMode === "PICKUP") {
-    return false;
+  // 2. 99Food
+  if (src === "99FOOD" || odChannel === "99FOOD" || src.includes("99") || dBy.includes("99")) {
+    const is99Partner = (
+      dBy === "99FOOD" || dBy === "99_FOOD" || dBy.includes("99") ||
+      dBy === "LOGISTICS" || dBy === "PARTNER" || dMode === "LOGISTIC" || dMode === "PARTNER" ||
+      Boolean(pickupCode)
+    );
+    if (is99Partner) {
+      return { isPartner: true, partnerName: "99Food", pickupCode };
+    }
   }
 
-  // 3. Apenas se explicitamente for "IFOOD" ou "IFOOD_LOGISTICS" ou "LOGISTICS" ou dMode === "LOGISTIC" / "PARTNER" -> É ENTREGA DO IFOOD
-  if (order.source === "IFOOD" && (dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy === "LOGISTICS" || dMode === "LOGISTIC" || dMode === "PARTNER")) {
-    return true;
+  // 3. iFood
+  if (src === "IFOOD" || dBy.includes("IFOOD")) {
+    const isIfoodPartner = (
+      dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy === "LOGISTICS" ||
+      dBy.includes("IFOOD") || dBy.includes("LOGISTICS") || dMode === "LOGISTIC" || dMode === "PARTNER" ||
+      Boolean(pickupCode) || Boolean(order.ifoodDriverName) || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")
+    );
+    if (isIfoodPartner) {
+      return { isPartner: true, partnerName: "iFood", pickupCode };
+    }
   }
 
-  // 4. Fallback: se houver motorista do iFood alocado
-  if (order.ifoodDriverName || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")) {
-    return true;
+  // 4. JotaJá ou outros canais Open Delivery com logística parceira
+  if (dBy === "LOGISTICS" || dBy === "PARTNER" || dMode === "LOGISTIC" || dMode === "PARTNER" || Boolean(pickupCode)) {
+    const pName = src === "JOTAJA" ? "JotaJá" : (odChannel || src || "Parceiro");
+    return { isPartner: true, partnerName: pName, pickupCode };
   }
 
-  return false;
+  return { isPartner: false, partnerName: "" };
+};
+
+export const isIfoodMotoboy = (order: any): boolean => {
+  return getPartnerDeliveryInfo(order).isPartner;
 };
 
 const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount: number = 0, deliveryFee: number = 0, discountTotal: number = 0): number => {
@@ -632,33 +660,37 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             )}
           </div>
 
-          {/* Banner de Alerta para Entrega Parceira iFood */}
-          {isIfoodMotoboy(order) && (
-            <div style={{
-              marginTop: "6px", padding: "6px 10px", borderRadius: "8px",
-              background: "#FEF2F2", border: "1.5px solid #FCA5A5",
-              color: "#DC2626", fontWeight: 800, fontSize: "0.75rem",
-              display: "flex", flexDirection: "column", gap: "4px"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span>🛵</span>
-                <span>ENTREGA PARCEIRA IFOOD — Entregador do iFood (Não enviar motoboy da loja!)</span>
-              </div>
-              {order.ifoodPickupCode && (
-                <div style={{
-                  marginTop: "2px", padding: "5px 10px", borderRadius: "6px",
-                  background: "#FFF", border: "2px dashed #7C3AED",
-                  color: "#581C87", fontWeight: 800, fontSize: "0.85rem",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: "2px"
-                }}>
-                  <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR:</span>
-                  <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
-                    #{order.ifoodPickupCode}
-                  </span>
+          {/* Banner de Alerta para Entrega Parceira (iFood / 99Food / Parceiros) */}
+          {(() => {
+            const pInfo = getPartnerDeliveryInfo(order);
+            if (!pInfo.isPartner) return null;
+            return (
+              <div style={{
+                marginTop: "6px", padding: "6px 10px", borderRadius: "8px",
+                background: "#FEF2F2", border: "1.5px solid #FCA5A5",
+                color: "#DC2626", fontWeight: 800, fontSize: "0.75rem",
+                display: "flex", flexDirection: "column", gap: "4px"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>🛵</span>
+                  <span>ENTREGA PARCEIRA {pInfo.partnerName.toUpperCase()} — Entregador da {pInfo.partnerName} (Não enviar motoboy da loja!)</span>
                 </div>
-              )}
-            </div>
-          )}
+                {pInfo.pickupCode && (
+                  <div style={{
+                    marginTop: "2px", padding: "5px 10px", borderRadius: "6px",
+                    background: "#FFF", border: "2px dashed #7C3AED",
+                    color: "#581C87", fontWeight: 800, fontSize: "0.85rem",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: "2px"
+                  }}>
+                    <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR {pInfo.partnerName.toUpperCase()}:</span>
+                    <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
+                      #{pInfo.pickupCode}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Action Bar (Botões + Motoboy Dropdown Inline + WhatsApp + Print + Receipt) */}
@@ -696,9 +728,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
             )}
 
-            {/* Motoboy select / iFood Motoboy Badge */}
-            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
-              isIfoodMotoboy(order) ? (
+            {/* Motoboy select / Partner Motoboy Badge */}
+            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (() => {
+              const pInfo = getPartnerDeliveryInfo(order);
+              return pInfo.isPartner ? (
                 <select
                   onClick={e => e.stopPropagation()}
                   onChange={async (e) => {
@@ -709,12 +742,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                     padding: "4px 8px", borderRadius: "6px", border: "2px solid #EF4444",
                     fontSize: "0.75rem", fontWeight: 800, color: "#DC2626",
                     background: "#FEF2F2", fontFamily: "inherit",
-                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "135px",
+                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "140px",
                     boxShadow: "0 0 0 1px #FCA5A5"
                   }}
-                  title="O sistema detectou como Entrega Parceira iFood. Você pode alterar se estiver incorreto."
+                  title={`O sistema detectou como Entrega Parceira ${pInfo.partnerName}. Você pode alterar se estiver incorreto.`}
                 >
-                  <option value="">🛵 Motoboy iFood</option>
+                  <option value="">🛵 Motoboy {pInfo.partnerName}</option>
                   {motoboys?.map((m: any) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
@@ -741,8 +774,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
-              )
-            )}
+              );
+            })()}
           </div>
 
           {/* Right: Icon buttons */}
@@ -1198,6 +1231,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       discountMerchant: order.discountMerchant,
       changeAmount: order.changeAmount,
       ifoodReference: order.ifoodReference,
+      ifoodPickupCode: order.ifoodPickupCode,
       openDeliveryReference: order.openDeliveryReference,
       source: order.source,
       notes: order.notes,
@@ -2136,24 +2170,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       Entregador
                     </label>
                   </div>
-                  {isIfoodMotoboy(order) ? (
-                    <div
-                      style={{
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        border: "2px solid #EF4444",
-                        background: "#FEF2F2",
-                        color: "#DC2626",
-                        fontWeight: 800,
-                        fontSize: "0.88rem",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                      }}
-                    >
-                      🛵 Motoboy iFood (Entrega Parceira Bloqueada)
-                    </div>
-                  ) : (
+                  {(() => {
+                    const pInfo = getPartnerDeliveryInfo(order);
+                    return pInfo.isPartner ? (
+                      <div
+                        style={{
+                          padding: "10px 12px",
+                          borderRadius: "8px",
+                          border: "2px solid #EF4444",
+                          background: "#FEF2F2",
+                          color: "#DC2626",
+                          fontWeight: 800,
+                          fontSize: "0.88rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        🛵 Motoboy {pInfo.partnerName} (Entrega Parceira Bloqueada)
+                      </div>
+                    ) : (
                     <select
                       value={order.motoboyId || ""}
                       onChange={e => {
@@ -2179,7 +2215,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         </option>
                       ))}
                     </select>
-                  )}
+                  );
+                })()}
                 </div>
 
                 {/* Rota de Entrega */}
@@ -2335,12 +2372,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <div>N° do Pedido: {order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "")}</div>
                 </div>
 
-                {isIfoodMotoboy(order) && order.ifoodPickupCode && (
-                  <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
-                    <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR IFOOD</div>
-                    <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{order.ifoodPickupCode}</div>
-                  </div>
-                )}
+                {(() => {
+                  const pInfo = getPartnerDeliveryInfo(order);
+                  if (!pInfo.isPartner || !pInfo.pickupCode) return null;
+                  return (
+                    <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
+                      <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR {pInfo.partnerName.toUpperCase()}</div>
+                      <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{pInfo.pickupCode}</div>
+                    </div>
+                  );
+                })()}
 
                 <div style={{ textAlign: "center", margin: "14px 0 8px 0", position: "relative" }}>
                   <span style={{ background: "#FFF", padding: "0 10px", fontWeight: "bold", position: "relative", zIndex: 2 }}>CLIENTE</span>
@@ -2419,7 +2460,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         {comboSels.length > 0 && (
                           <div style={{ paddingLeft: "10px", fontSize: "11px" }}>
                             {comboSels.map((sel: any, i: number) => {
-                              const totalQty = (sel.quantity || 1) * (item.quantity || 1);
+                              const totalQty = sel.quantity || 1;
                               const isSubBeverage = isBeverageName(sel.name);
                               return (
                                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "3px 0" }}>

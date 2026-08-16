@@ -172,6 +172,7 @@ export default function GlobalPrintListener() {
                     discountMerchant: order.discountMerchant,
                     changeAmount: order.changeAmount,
                     ifoodReference: order.ifoodReference,
+                    ifoodPickupCode: order.ifoodPickupCode,
                     printerConfig: activePrinterConfig,
                     customBeverageKeywords: activePrinterConfig?.customBeverageKeywords || "",
                     autoBeverageTag: activePrinterConfig?.autoBeverageTag !== false,

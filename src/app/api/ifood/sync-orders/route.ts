@@ -244,18 +244,26 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
   const deliveredByRaw = (
     orderData.deliveredBy || orderData.deliveryBy ||
     orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
-    orderData.delivery?.mode ||
     orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
     ""
   ).toString().toUpperCase();
 
-  const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS")) ? "IFOOD" : "MERCHANT";
+  const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS") || deliveredByRaw.includes("PARTNER")) ? "IFOOD" : "MERCHANT";
+
+  const ifoodPickupCode = (
+    orderData.delivery?.pickupCode ||
+    orderData.pickupCode ||
+    orderData.driver?.pickupCode ||
+    orderData.logistics?.pickupCode ||
+    null
+  )?.toString().trim() || null;
 
   await (prisma.customerOrder as any).create({
     data: {
       franchiseeId: franchisee.id,
       ifoodOrderId: orderId,
       ifoodReference: orderData.displayId ?? undefined,
+      ifoodPickupCode: ifoodPickupCode ?? undefined,
       scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
       changeAmount,
       customerCpfCnpj,

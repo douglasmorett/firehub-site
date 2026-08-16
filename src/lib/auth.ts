@@ -15,7 +15,9 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Senha", type: "password" },
-        impersonateId: { label: "Impersonate", type: "text" }
+        impersonateId: { label: "Impersonate", type: "text" },
+        isAmbassador: { label: "IsAmbassador", type: "text" },
+        loginType: { label: "LoginType", type: "text" }
       },
       async authorize(credentials, req) {
         if (credentials?.impersonateId) {
@@ -48,14 +50,10 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials?.password) return null;
 
         const emailInput = credentials.email.trim();
+        const wantsAmbassador = credentials.isAmbassador === "true" || credentials.loginType === "ambassador";
 
-        const user = await prisma.user.findFirst({
-          where: {
-            email: { equals: emailInput, mode: "insensitive" }
-          }
-        });
-
-        if (!user) {
+        // Se veio do portal do embaixador, prioriza a busca na tabela Ambassador
+        if (wantsAmbassador) {
           const ambassador = await prisma.ambassador.findFirst({
             where: { email: { equals: emailInput, mode: "insensitive" } }
           });
@@ -75,23 +73,53 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const passwordMatch = await bcrypt.compare(credentials.password.trim(), user.password);
-        if (!passwordMatch) return null;
+        // Fluxo padrão: busca primeiro na tabela User
+        const user = await prisma.user.findFirst({
+          where: {
+            email: { equals: emailInput, mode: "insensitive" }
+          }
+        });
 
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role as string,
-          city: user.city as string | null,
-          permissions: user.permissions as string
-        };
+        if (user) {
+          const passwordMatch = await bcrypt.compare(credentials.password.trim(), user.password);
+          if (passwordMatch) {
+            return {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role as string,
+              city: user.city as string | null,
+              permissions: user.permissions as string
+            };
+          }
+        }
+
+        // Se não encontrou em User ou senha não bateu em User, tenta Ambassador
+        const fallbackAmbassador = await prisma.ambassador.findFirst({
+          where: { email: { equals: emailInput, mode: "insensitive" } }
+        });
+        if (fallbackAmbassador && fallbackAmbassador.password) {
+          const ambPasswordMatch = await bcrypt.compare(credentials.password.trim(), fallbackAmbassador.password);
+          if (ambPasswordMatch) {
+            return {
+              id: fallbackAmbassador.id,
+              name: fallbackAmbassador.name,
+              email: fallbackAmbassador.email,
+              role: "AMBASSADOR",
+              city: null,
+              permissions: "[]"
+            };
+          }
+        }
+
+        return null;
       }
     })
   ],
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        token.id = user.id;
         token.role = (user as any).role;
         token.city = (user as any).city;
         token.permissions = (user as any).permissions;
@@ -100,6 +128,7 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
+        (session.user as any).id = token.id || token.sub;
         (session.user as any).role = token.role;
         (session.user as any).city = token.city;
         (session.user as any).permissions = token.permissions;

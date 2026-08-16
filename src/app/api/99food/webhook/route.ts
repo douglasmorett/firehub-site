@@ -114,6 +114,27 @@ export async function POST(req: NextRequest) {
             address.city,
           ].filter(Boolean).join(", ") || address.formattedAddress || "";
 
+          const dByRaw = (
+            delivery.deliveredBy || delivery.deliveryBy ||
+            oData.deliveredBy || oData.deliveryBy ||
+            oData.logistics?.deliveryBy || oData.logistics?.deliveredBy ||
+            ""
+          ).toString().toUpperCase();
+
+          const deliveryBy = (
+            dByRaw.includes("99") ||
+            dByRaw.includes("LOGISTICS") ||
+            dByRaw.includes("PARTNER")
+          ) ? "99FOOD" : "MERCHANT";
+
+          const pickupCode = (
+            delivery.pickupCode ||
+            oData.pickupCode ||
+            oData.driver?.pickupCode ||
+            oData.logistics?.pickupCode ||
+            null
+          )?.toString().trim() || null;
+
           await (prisma.customerOrder as any).create({
             data: {
               franchiseeId: franchisee.id,
@@ -129,7 +150,8 @@ export async function POST(req: NextRequest) {
               openDeliveryOrderId: orderId,
               openDeliveryReference: displayId || "",
               openDeliveryChannel: "99FOOD",
-              deliveryBy: oData.logistics?.deliveryBy || "MERCHANT",
+              deliveryBy,
+              ifoodPickupCode: pickupCode ?? undefined,
               items: { create: items },
             },
           });

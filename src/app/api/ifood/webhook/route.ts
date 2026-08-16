@@ -293,13 +293,12 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
     const deliveredByRaw = (
       orderData.deliveredBy || orderData.deliveryBy ||
       orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
-      orderData.delivery?.mode ||
       orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
       ""
     ).toString().toUpperCase();
 
     // "IFOOD" = entrega parceira iFood (motoboy iFood). "MERCHANT" = entrega própria da loja.
-    const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS")) ? "IFOOD" : "MERCHANT";
+    const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS") || deliveredByRaw.includes("PARTNER")) ? "IFOOD" : "MERCHANT";
 
     const ifoodPickupCode = (
       orderData.delivery?.pickupCode ||
