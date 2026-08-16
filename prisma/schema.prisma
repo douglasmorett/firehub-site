@@ -664,6 +664,7 @@ model StoreCustomer {
   phone            String          @unique
   password         String
   address          String?
+  birthDate        String?         // Data de aniversário (para mimos e cupons automáticos)
   cashbackBalance  Float           @default(0) // Saldo atual de cashback (R$)
   cashbackHistory  Json?           // Array: [{ orderId, amount, type: earn|redeem, date, storeId }]
   createdAt        DateTime        @default(now())

@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
+  { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "IA" },
   { href: "/store/trafego", label: "Tráfego Pago", icon: PieChart, badge: "EM TESTES" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
   { href: "/store/garcons", label: "Garçons", icon: Users },

@@ -6,7 +6,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 // POST: Login or Register
 export async function POST(req: Request) {
   const body = await req.json();
-  const { action, phone, password, name, address } = body;
+  const { action, phone, password, name, address, birthDate } = body;
 
   // Rate limiting: 5 tentativas por minuto por IP
   const ip = getClientIp(req);
@@ -31,10 +31,16 @@ export async function POST(req: Request) {
 
     const hashedPw = await bcrypt.hash(password, 12);
     const customer = await prisma.storeCustomer.create({
-      data: { name, phone: cleanPhone, password: hashedPw, address: address || null }
+      data: {
+        name,
+        phone: cleanPhone,
+        password: hashedPw,
+        address: address || null,
+        birthDate: birthDate ? String(birthDate).trim() : null,
+      }
     });
 
-    return NextResponse.json({ id: customer.id, name: customer.name, phone: customer.phone, address: customer.address });
+    return NextResponse.json({ id: customer.id, name: customer.name, phone: customer.phone, address: customer.address, birthDate: customer.birthDate });
   }
 
   // LOGIN

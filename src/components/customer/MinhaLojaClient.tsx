@@ -219,11 +219,11 @@ export default function MinhaLojaClient({ user }: { user: any }) {
     );
   }
 
-  // ── Seção de Fidelidade ──────────────────────────────────────────────────────
+  // ── Seção de Fidelidade & Promoções ─────────────────────────────────────────
   if (section === "loyalty") {
     return (
-      <div style={{ maxWidth: 700, margin: "0 auto", padding: "1.5rem 1rem" }}>
-        <BackBtn onClick={() => setSection("menu")} title="🎁 Programa de Fidelidade" />
+      <div style={{ maxWidth: 1050, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="🎁 Promoções & Fidelização" />
         <LoyaltyConfigForm
           initialConfig={user.storeLoyalty || {}}
           onSave={saveLoyalty}

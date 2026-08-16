@@ -154,6 +154,14 @@ const PHASES: Phase[] = [
     icon: "📈",
     tasks: [
       {
+        id: "loyalty_program",
+        icon: "🎁",
+        title: "Ative o Programa de Fidelidade & Cashback",
+        description: "Aumente suas vendas recorrentes e retenha clientes com cashback, cartão de carimbos e promoções automáticas.",
+        minutes: 3,
+        href: "/store/minha-loja#loyalty",
+      },
+      {
         id: "meta_ads",
         icon: "🎯",
         title: "Ative o tráfego pago com IA",

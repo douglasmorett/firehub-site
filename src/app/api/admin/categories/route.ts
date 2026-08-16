@@ -89,6 +89,31 @@ export async function PUT(req: Request) {
   return NextResponse.json(updated);
 }
 
+// PATCH — reordenar categorias em lote
+export async function PATCH(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const user = await getUser(session);
+  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+  const { orderedIds } = await req.json();
+  if (!Array.isArray(orderedIds)) {
+    return NextResponse.json({ error: "orderedIds deve ser um array" }, { status: 400 });
+  }
+
+  await prisma.$transaction(
+    orderedIds.map((id: string, index: number) =>
+      prisma.menuCategory.update({
+        where: { id },
+        data: { sortOrder: index }
+      })
+    )
+  );
+
+  return NextResponse.json({ success: true });
+}
+
 // DELETE — excluir categoria
 export async function DELETE(req: Request) {
   const session = await getServerSession(authOptions);

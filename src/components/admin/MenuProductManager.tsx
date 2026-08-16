@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, Layers, Check } from "lucide-react";
 
 const CHANNELS = [
   { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#3B82F6", desc: "Atendimento no balcão/caixa" },
@@ -45,10 +45,18 @@ export default function MenuProductManager({
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"items" | "combos">("items");
+  const [tab, setTab] = useState<"all" | "items" | "combos">("all");
 
   // Categorias dinâmicas (inicia com as do servidor, pode adicionar novas)
   const [dynCategories, setDynCategories] = useState(initialCategories);
+
+  // Reordenação de Categorias (Modal & Inline)
+  const [showReorderModal, setShowReorderModal] = useState(false);
+  const [reorderList, setReorderList] = useState<any[]>([]);
+  const [savingReorder, setSavingReorder] = useState(false);
+  const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
+  const [editingCat, setEditingCat] = useState<{ id: string; name: string } | null>(null);
+  const [savingRename, setSavingRename] = useState(false);
 
   // Mini-modal de nova categoria
   const [showNewCat, setShowNewCat] = useState(false);
@@ -137,6 +145,81 @@ export default function MenuProductManager({
     } finally {
       setDeletingCatId(null);
     }
+  };
+
+  const openReorderModal = () => {
+    setReorderList([...dynCategories]);
+    setShowReorderModal(true);
+  };
+
+  const moveReorderItem = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= reorderList.length) return;
+    const updated = [...reorderList];
+    const item = updated.splice(fromIdx, 1)[0];
+    updated.splice(toIdx, 0, item);
+    setReorderList(updated);
+  };
+
+  const handleSaveReorder = async (listToSave = reorderList) => {
+    setSavingReorder(true);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedIds: listToSave.map(c => c.id) }),
+      });
+      if (res.ok) {
+        setDynCategories(listToSave);
+        setShowReorderModal(false);
+        showToast("✅ Ordem das categorias salva com sucesso!");
+        router.refresh();
+      } else {
+        showToast("Erro ao salvar ordem", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao salvar ordem", "#EF4444");
+    } finally {
+      setSavingReorder(false);
+    }
+  };
+
+  const handleMoveCategoryDirect = async (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= dynCategories.length) return;
+    const newCats = [...dynCategories];
+    const temp = newCats[index];
+    newCats[index] = newCats[targetIndex];
+    newCats[targetIndex] = temp;
+    setDynCategories(newCats);
+    await handleSaveReorder(newCats);
+  };
+
+  const handleRenameCategory = async () => {
+    if (!editingCat || !editingCat.name.trim()) return;
+    setSavingRename(true);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingCat.id, name: editingCat.name.trim() }),
+      });
+      if (res.ok) {
+        setDynCategories(prev => prev.map(c => c.id === editingCat.id ? { ...c, name: editingCat.name.trim() } : c));
+        setEditingCat(null);
+        showToast("✅ Categoria renomeada com sucesso!");
+        router.refresh();
+      } else {
+        showToast("Erro ao renomear", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao renomear", "#EF4444");
+    } finally {
+      setSavingRename(false);
+    }
+  };
+
+  const toggleCollapse = (catId: string) => {
+    setCollapsedCats(prev => ({ ...prev, [catId]: !prev[catId] }));
   };
 
   // Modal de confirmação customizado
@@ -746,16 +829,49 @@ export default function MenuProductManager({
         </div>
       )}
 
-      {/* TABS E BUSCA */}
+      {/* TABS E BOTÕES DE AÇÃO SUPERIOR (iFood style) */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`}>Itens Avulsos ({itemProducts.length})</button>
-          <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`}><Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})</button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.85rem" }}>
+            📋 Todos os Itens ({products.length})
+          </button>
+          <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.85rem" }}>
+            🍔 Itens Avulsos ({itemProducts.length})
+          </button>
+          <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.85rem" }}>
+            <Package size={15} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
+          </button>
         </div>
 
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <button onClick={() => { resetForm(); setIsCombo(tab === "combos"); setCategory(tab === "combos" ? (dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || "") : (dynCategories[0]?.name || "")); setShowForm(true); }} className="btn btn-primary">
-            <Plus size={18} style={{ marginRight: "4px" }} /> {tab === "combos" ? "Novo Combo" : "Novo Produto"}
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setShowNewCat(true)}
+            className="btn btn-outline"
+            style={{ fontSize: "0.85rem", background: "#FFF", borderColor: "#CBD5E1", color: "#334155", fontWeight: 700 }}
+          >
+            <Plus size={16} style={{ marginRight: "4px" }} /> Adicionar Categoria
+          </button>
+          <button
+            onClick={openReorderModal}
+            className="btn btn-outline"
+            style={{ fontSize: "0.85rem", background: "#FFF", borderColor: "#7C3AED", color: "#6D28D9", fontWeight: 700 }}
+            title="Reordenar a ordem de exibição das categorias no cardápio"
+          >
+            <ArrowUpDown size={15} style={{ marginRight: "4px" }} /> Reordenar Categorias
+          </button>
+          <button
+            onClick={() => { resetForm(); setIsCombo(false); setCategory(dynCategories[0]?.name || ""); setShowForm(true); }}
+            className="btn btn-outline"
+            style={{ fontSize: "0.85rem", background: "#FFF", borderColor: "#E8360C", color: "#E8360C", fontWeight: 700 }}
+          >
+            <Plus size={16} style={{ marginRight: "4px" }} /> Novo Item
+          </button>
+          <button
+            onClick={() => { resetForm(); setIsCombo(true); setCategory(dynCategories.find(c => c.name === "Combos")?.name || dynCategories[0]?.name || ""); setShowForm(true); }}
+            className="btn btn-primary"
+            style={{ fontSize: "0.85rem" }}
+          >
+            <Plus size={16} style={{ marginRight: "4px" }} /> Novo Combo
           </button>
         </div>
       </div>
@@ -797,11 +913,11 @@ export default function MenuProductManager({
               fontSize: "0.85rem", fontWeight: 700, backgroundColor: "#FFF", color: "#1E293B", cursor: "pointer"
             }}
           >
-            <option value="TODAS">📁 Todas Categorias</option>
+            <option value="TODAS">📁 Todas Categorias ({dynCategories.length})</option>
             {dynCategories
               .filter(c => !["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"].includes(c.name.toUpperCase()))
               .map(c => (
-                <option key={c.id} value={c.name}>{c.name}</option>
+                <option key={c.id} value={c.name}>{c.emoji || "🍽️"} {c.name}</option>
               ))}
           </select>
         </div>
@@ -1439,9 +1555,9 @@ export default function MenuProductManager({
         </div>
       )}
 
-      {/* PRODUCT LIST */}
+      {/* PRODUCT LIST AGRUPADO POR CATEGORIAS (iFood style) */}
       {(() => {
-        const rawProducts = tab === "items" ? itemProducts : comboProducts;
+        const rawProducts = tab === "all" ? products : (tab === "items" ? itemProducts : comboProducts);
         const displayedProducts = rawProducts.filter(p => {
           // Ocultar produtos temporários de integração (iFood, Jotajá, ONLINE) do painel visual de cardápio
           const catUpper = (p.category || "").toUpperCase();
@@ -1480,95 +1596,420 @@ export default function MenuProductManager({
           );
         }
 
+        // Filtra as categorias ativas a exibir
+        const categoriesToDisplay = dynCategories
+          .filter(c => !["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"].includes(c.name.toUpperCase()))
+          .filter(c => selectedCategoryFilter === "TODAS" || c.name === selectedCategoryFilter);
+
+        // Produtos sem categoria cadastrada ou em categoria avulsa
+        const knownCatNames = new Set(dynCategories.map(c => c.name.toLowerCase().trim()));
+        const uncategorizedProducts = displayedProducts.filter(p => !knownCatNames.has((p.category || "").toLowerCase().trim()));
+
         return (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "0.75rem" }}>
-            {displayedProducts.map(p => (
-              <div key={p.id} className="card" style={{ padding: "0.75rem", opacity: p.active ? 1 : 0.55, border: !p.active ? "2px dashed #EF4444" : undefined }}>
-                <div style={{ display: "flex", gap: "0.75rem", alignItems: "start" }}>
-                  {p.imageUrl ? (
-                    <img src={p.imageUrl} alt={p.name} style={{ width: "70px", height: "70px", objectFit: "cover", borderRadius: "8px", flexShrink: 0 }} />
-                  ) : (
-                    <div style={{ width: "70px", height: "70px", backgroundColor: "var(--bg-color)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <ImageIcon size={20} color="var(--text-muted)" />
-                    </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <div>
-                        <h3 className="font-bold" style={{ fontSize: "0.9rem" }}>{p.name}</h3>
-                        <p className="text-muted" style={{ fontSize: "0.7rem" }}>{p.category}{p.isCombo && " • COMBO"}</p>
-                        {/* Custo e margem */}
-                        {!p.isCombo && (
-                          <div style={{ display: "flex", gap: "5px", marginTop: "3px", flexWrap: "wrap" }}>
-                            {p.cost > 0 ? (
-                              <>
-                                <span style={{ fontSize: "0.63rem", background: "#F0FDF4", color: "#16A34A", border: "1px solid #BBF7D0", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
-                                  Custo: R${p.cost.toFixed(2)}
-                                </span>
-                                <span style={{ fontSize: "0.63rem", background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>
-                                  Margem: {(((p.price - p.cost) / p.price) * 100).toFixed(0)}%
-                                </span>
-                              </>
-                            ) : (
-                              <button
-                                onClick={() => openEdit(p)}
-                                style={{ fontSize: "0.63rem", background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D", borderRadius: "4px", padding: "1px 8px", fontWeight: 700, cursor: "pointer" }}>
-                                ⚠️ Sem custo — clique para cadastrar
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <span className="font-extrabold gradient-text">R$ {p.price.toFixed(2)}</span>
-                    </div>
-                    {!p.active && <span style={{ fontSize: "0.7rem", color: "#EF4444", fontWeight: 700 }}>⏸️ PAUSADO</span>}
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {categoriesToDisplay.map((cat, catIdx) => {
+              const catProds = displayedProducts.filter(p => (p.category || "").toLowerCase().trim() === cat.name.toLowerCase().trim());
+              if (selectedCategoryFilter === "TODAS" && searchTerm.trim() && catProds.length === 0) {
+                return null; // Oculta categoria vazia durante busca específica
+              }
 
-                    {/* Tags do produto */}
-                    {p.tags && (() => { try { const t = JSON.parse(p.tags); return t.length > 0 ? (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
-                        {t.map((tag: string) => (
-                          <span key={tag} style={{ fontSize: "0.62rem", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}>
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null; } catch { return null; } })()}
+              const isCollapsed = !!collapsedCats[cat.id];
 
-                    {/* Badges de canais inline — clicáveis */}
-                    <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
-
-                    <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                      <button onClick={() => openEdit(p)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}><Edit3 size={10} /> Editar</button>
+              return (
+                <div
+                  key={cat.id}
+                  style={{
+                    background: "#FFFFFF",
+                    borderRadius: "16px",
+                    border: "1.5px solid #E2E8F0",
+                    overflow: "hidden",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.03)",
+                  }}
+                >
+                  {/* Cabeçalho da Categoria (iFood style) */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "12px 18px",
+                      background: "#F8FAFC",
+                      borderBottom: isCollapsed ? "none" : "1.5px solid #E2E8F0",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       <button
-                        onClick={() => handleToggleDestaque(p)}
-                        className="btn btn-outline"
-                        style={{
-                          padding: "0.2rem 0.5rem",
-                          fontSize: "0.7rem",
-                          borderColor: (p.tags && p.tags.includes("Destaque")) ? "#F59E0B" : "#CBD5E1",
-                          background: (p.tags && p.tags.includes("Destaque")) ? "#FEF3C7" : "#FFF",
-                          color: (p.tags && p.tags.includes("Destaque")) ? "#92400E" : "#64748B",
-                          fontWeight: (p.tags && p.tags.includes("Destaque")) ? 800 : 600,
-                        }}
-                        title="Exibir este item na vitrine de Destaques da Casa no topo do cardápio"
+                        onClick={() => toggleCollapse(cat.id)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B", display: "flex", alignItems: "center", padding: 0 }}
+                        title={isCollapsed ? "Expandir itens" : "Recolher itens"}
                       >
-                        ⭐ {(p.tags && p.tags.includes("Destaque")) ? "Destacado" : "Destacar"}
+                        {isCollapsed ? <ChevronDown size={22} color="#0F172A" /> : <ChevronUp size={22} color="#0F172A" />}
                       </button>
-                      <button onClick={() => openRecipeModal(p.id, p.name)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", borderColor: productsWithRecipe.has(p.id) ? "#10B981" : "#F59E0B", color: productsWithRecipe.has(p.id) ? "#10B981" : "#92400E", background: productsWithRecipe.has(p.id) ? "#F0FDF4" : "#FFFBEB" }}>
-                        <ClipboardList size={10} /> {productsWithRecipe.has(p.id) ? "✅ Ficha" : "📋 Ficha"}
+
+                      <div
+                        onClick={() => setEditingCat({ id: cat.id, name: cat.name })}
+                        style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}
+                        title="Clique para renomear esta categoria"
+                      >
+                        <span style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A" }}>
+                          {cat.emoji || "🍽️"} {cat.name}
+                        </span>
+                        <span style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600 }}>
+                          ({catProds.length} {catProds.length === 1 ? "item" : "itens"})
+                        </span>
+                        <Edit3 size={13} color="#94A3B8" />
+                      </div>
+                    </div>
+
+                    {/* Ações da Categoria */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => { resetForm(); setIsCombo(true); setCategory(cat.name); setShowForm(true); }}
+                        style={{ padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", background: "#FFF", fontSize: "0.78rem", fontWeight: 700, color: "#334155", cursor: "pointer" }}
+                      >
+                        + Criar combo
                       </button>
-                      <button onClick={() => handleToggle(p.id, p.active)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem" }}>
-                        {p.active ? <><Pause size={10} /> Pausar</> : <><Play size={10} /> Ativar</>}
+                      <button
+                        onClick={() => { resetForm(); setIsCombo(false); setCategory(cat.name); setShowForm(true); }}
+                        style={{ padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", background: "#FFF", fontSize: "0.78rem", fontWeight: 700, color: "#334155", cursor: "pointer" }}
+                      >
+                        + Criar item
                       </button>
-                      <button onClick={() => handleDelete(p.id, p.name)} className="btn btn-outline" style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", color: "var(--danger)" }}><Trash2 size={10} /></button>
+
+                      <div style={{ display: "flex", gap: "3px", marginLeft: "4px" }}>
+                        <button
+                          onClick={() => handleMoveCategoryDirect(catIdx, "up")}
+                          disabled={catIdx === 0}
+                          style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: catIdx === 0 ? "not-allowed" : "pointer", opacity: catIdx === 0 ? 0.3 : 1 }}
+                          title="Mover categoria para cima"
+                        >
+                          <ArrowUp size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleMoveCategoryDirect(catIdx, "down")}
+                          disabled={catIdx === categoriesToDisplay.length - 1}
+                          style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: catIdx === categoriesToDisplay.length - 1 ? "not-allowed" : "pointer", opacity: catIdx === categoriesToDisplay.length - 1 ? 0.3 : 1 }}
+                          title="Mover categoria para baixo"
+                        >
+                          <ArrowDown size={13} />
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                        style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#EF4444", cursor: "pointer" }}
+                        title="Excluir categoria"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   </div>
+
+                  {/* Lista de Itens da Categoria */}
+                  {!isCollapsed && (
+                    <div style={{ padding: "10px 14px" }}>
+                      {catProds.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: "1.5rem", color: "#94A3B8", fontSize: "0.85rem", fontStyle: "italic" }}>
+                          Nenhum produto cadastrado em <strong>"{cat.name}"</strong> ainda. Clique nos botões acima para cadastrar.
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {catProds.map(p => (
+                            <div
+                              key={p.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "10px 14px",
+                                background: p.active ? "#FFFFFF" : "#F8FAFC",
+                                borderRadius: "12px",
+                                border: !p.active ? "1.5px dashed #EF4444" : "1px solid #E2E8F0",
+                                opacity: p.active ? 1 : 0.65,
+                                gap: "12px",
+                                flexWrap: "wrap",
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              {/* Imagem e Detalhes */}
+                              <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 280px", minWidth: 0 }}>
+                                {p.imageUrl ? (
+                                  <img src={p.imageUrl} alt={p.name} style={{ width: "56px", height: "56px", objectFit: "cover", borderRadius: "10px", flexShrink: 0, border: "1px solid #E2E8F0" }} />
+                                ) : (
+                                  <div style={{ width: "56px", height: "56px", backgroundColor: "#F1F5F9", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                    <ImageIcon size={20} color="#94A3B8" />
+                                  </div>
+                                )}
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                    <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 800, color: "#0F172A" }}>{p.name}</h4>
+                                    {p.isCombo && (
+                                      <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "1px 6px", borderRadius: "4px", background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}>
+                                        COMBO {p.comboGroups?.length ? `• ${p.comboGroups.length} grupos` : ""}
+                                      </span>
+                                    )}
+                                    {!p.active && (
+                                      <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "1px 6px", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA" }}>
+                                        ⏸️ PAUSADO
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {p.description && (
+                                    <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "450px" }}>
+                                      {p.description}
+                                    </p>
+                                  )}
+
+                                  {/* Tags e margem */}
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
+                                    {p.tags && (() => { try { const t = JSON.parse(p.tags); return t.map((tag: string) => (
+                                      <span key={tag} style={{ fontSize: "0.62rem", fontWeight: 700, padding: "1px 6px", borderRadius: "12px", background: tag.includes("Destaque") ? "#FEF3C7" : "#F1F5F9", color: tag.includes("Destaque") ? "#92400E" : "#475569", border: `1px solid ${tag.includes("Destaque") ? "#FCD34D" : "#CBD5E1"}` }}>
+                                        {tag}
+                                      </span>
+                                    )); } catch { return null; } })()}
+                                    
+                                    {p.cost > 0 && !p.isCombo && (
+                                      <span style={{ fontSize: "0.62rem", background: "#F0FDF4", color: "#16A34A", border: "1px solid #BBF7D0", borderRadius: "4px", padding: "1px 5px", fontWeight: 700 }}>
+                                        Margem: {(((p.price - p.cost) / p.price) * 100).toFixed(0)}%
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Canais */}
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
+                              </div>
+
+                              {/* Preço e Botões */}
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+                                <span style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C", whiteSpace: "nowrap", marginRight: "6px" }}>
+                                  R$ {p.price.toFixed(2).replace(".", ",")}
+                                </span>
+
+                                <button
+                                  onClick={() => handleToggleDestaque(p)}
+                                  className="btn btn-outline"
+                                  style={{
+                                    padding: "4px 8px",
+                                    fontSize: "0.72rem",
+                                    borderColor: (p.tags && p.tags.includes("Destaque")) ? "#F59E0B" : "#CBD5E1",
+                                    background: (p.tags && p.tags.includes("Destaque")) ? "#FEF3C7" : "#FFF",
+                                    color: (p.tags && p.tags.includes("Destaque")) ? "#92400E" : "#64748B",
+                                    fontWeight: (p.tags && p.tags.includes("Destaque")) ? 800 : 600,
+                                    borderRadius: "8px",
+                                  }}
+                                  title="Exibir na vitrine de Destaques da Casa"
+                                >
+                                  ⭐ {(p.tags && p.tags.includes("Destaque")) ? "Destacado" : "Destacar"}
+                                </button>
+
+                                <button
+                                  onClick={() => openRecipeModal(p.id, p.name)}
+                                  className="btn btn-outline"
+                                  style={{
+                                    padding: "4px 8px",
+                                    fontSize: "0.72rem",
+                                    borderRadius: "8px",
+                                    borderColor: productsWithRecipe.has(p.id) ? "#10B981" : "#F59E0B",
+                                    color: productsWithRecipe.has(p.id) ? "#10B981" : "#92400E",
+                                    background: productsWithRecipe.has(p.id) ? "#F0FDF4" : "#FFFBEB",
+                                    fontWeight: 700,
+                                  }}
+                                  title="Ficha técnica do produto"
+                                >
+                                  <ClipboardList size={12} style={{ marginRight: 2 }} /> {productsWithRecipe.has(p.id) ? "Ficha" : "Ficha"}
+                                </button>
+
+                                <button
+                                  onClick={() => handleToggle(p.id, p.active)}
+                                  className="btn btn-outline"
+                                  style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px" }}
+                                  title={p.active ? "Pausar vendas" : "Ativar vendas"}
+                                >
+                                  {p.active ? <Pause size={12} color="#64748B" /> : <Play size={12} color="#16A34A" />}
+                                </button>
+
+                                <button
+                                  onClick={() => openEdit(p)}
+                                  className="btn btn-outline"
+                                  style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px" }}
+                                  title="Editar produto"
+                                >
+                                  <Edit3 size={12} />
+                                </button>
+
+                                <button
+                                  onClick={() => handleDelete(p.id, p.name)}
+                                  className="btn btn-outline"
+                                  style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px", color: "var(--danger)" }}
+                                  title="Excluir produto"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Se houver produtos sem categoria correspondente */}
+            {uncategorizedProducts.length > 0 && (
+              <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", overflow: "hidden" }}>
+                <div style={{ padding: "12px 18px", background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0" }}>
+                  <h4 style={{ margin: 0, fontWeight: 800, color: "#475569" }}>Outros Produtos ({uncategorizedProducts.length})</h4>
+                </div>
+                <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {uncategorizedProducts.map(p => (
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#FFF", borderRadius: "12px", border: "1px solid #E2E8F0", gap: "12px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        {p.imageUrl ? <img src={p.imageUrl} alt={p.name} style={{ width: "50px", height: "50px", objectFit: "cover", borderRadius: "8px" }} /> : null}
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: "0.9rem", fontWeight: 800 }}>{p.name}</h4>
+                          <span style={{ fontSize: "0.75rem", color: "#64748B" }}>{p.category || "Sem categoria"}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontWeight: 900, color: "#E8360C" }}>R$ {p.price.toFixed(2)}</span>
+                        <button onClick={() => openEdit(p)} className="btn btn-outline" style={{ padding: "4px 8px", fontSize: "0.72rem" }}><Edit3 size={12} /></button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
         );
       })()}
+
+      {/* MODAL: REORDENAR CATEGORIAS */}
+      {showReorderModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(6px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div style={{ background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "520px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)", position: "relative" }}>
+            <button onClick={() => setShowReorderModal(false)} style={{ position: "absolute", top: "1rem", right: "1rem", background: "none", border: "none", cursor: "pointer", color: "#64748B" }}>
+              <X size={20} />
+            </button>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.5rem" }}>
+              <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "#EDE9FE", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <ArrowUpDown size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 800, color: "#0F172A" }}>Reordenar Categorias</h3>
+                <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
+                  Ajuste a ordem em que as categorias aparecem no cardápio do seu cliente.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ margin: "1.25rem 0", display: "flex", flexDirection: "column", gap: "6px", maxHeight: "50vh", overflowY: "auto", paddingRight: "4px" }}>
+              {reorderList.map((cat, idx) => (
+                <div
+                  key={cat.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 14px",
+                    background: "#F8FAFC",
+                    borderRadius: "10px",
+                    border: "1.5px solid #E2E8F0",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "0.8rem", fontWeight: 800, color: "#7C3AED", width: "24px" }}>
+                      {idx + 1}º
+                    </span>
+                    <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "#1E293B" }}>
+                      {cat.emoji || "🍽️"} {cat.name}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button
+                      onClick={() => moveReorderItem(idx, idx - 1)}
+                      disabled={idx === 0}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1 }}
+                      title="Subir"
+                    >
+                      <ArrowUp size={14} />
+                    </button>
+                    <button
+                      onClick={() => moveReorderItem(idx, idx + 1)}
+                      disabled={idx === reorderList.length - 1}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === reorderList.length - 1 ? "not-allowed" : "pointer", opacity: idx === reorderList.length - 1 ? 0.3 : 1 }}
+                      title="Descer"
+                    >
+                      <ArrowDown size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", marginTop: "1.5rem" }}>
+              <button
+                onClick={() => setShowReorderModal(false)}
+                style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "1.5px solid #CBD5E1", background: "#FFF", fontWeight: 700, color: "#64748B", cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleSaveReorder()}
+                disabled={savingReorder}
+                style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #7C3AED, #6D28D9)", color: "#FFF", fontWeight: 800, cursor: savingReorder ? "not-allowed" : "pointer" }}
+              >
+                {savingReorder ? "Salvando..." : "💾 Salvar Ordem do Cardápio"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RENOMEAR CATEGORIA */}
+      {editingCat && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(6px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div style={{ background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "420px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ margin: "0 0 1rem", fontSize: "1.15rem", fontWeight: 800, color: "#0F172A" }}>
+              ✏️ Renomear Categoria
+            </h3>
+            <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>
+              Nome da Categoria
+            </label>
+            <input
+              type="text"
+              value={editingCat.name}
+              onChange={e => setEditingCat({ ...editingCat, name: e.target.value })}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontWeight: 700, outline: "none", boxSizing: "border-box" }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: "10px", marginTop: "1.5rem" }}>
+              <button
+                onClick={() => setEditingCat(null)}
+                style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "1.5px solid #CBD5E1", background: "#FFF", fontWeight: 700, color: "#64748B", cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleRenameCategory}
+                disabled={savingRename}
+                style={{ flex: 1.5, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #E8360C, #C62828)", color: "#FFF", fontWeight: 800, cursor: savingRename ? "not-allowed" : "pointer" }}
+              >
+                {savingRename ? "Salvando..." : "Salvar Nome"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: FICHA TÉCNICA (Recipe Editor) */}
       {showRecipeModal && recipeProductId && (

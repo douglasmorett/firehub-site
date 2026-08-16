@@ -120,10 +120,12 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
 export default function CustomerStorePage({
   franchisee,
   menuProducts,
+  storeCategories,
   storeRating
 }: {
   franchisee: Franchisee;
   menuProducts: MenuProduct[];
+  storeCategories?: { id: string; name: string; sortOrder: number }[];
   storeRating?: StoreRating;
 }) {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -166,6 +168,7 @@ export default function CustomerStorePage({
   const [authPhone, setAuthPhone] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authName, setAuthName] = useState("");
+  const [authBirthDate, setAuthBirthDate] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
@@ -234,11 +237,22 @@ export default function CustomerStorePage({
   }, [menuProducts, currentDayCode]);
 
   const categories = useMemo(() => {
-    return [
-      "Todos",
-      ...Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))))
-    ];
-  }, [activeTodayProducts]);
+    const activeCats = Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))));
+    
+    if (storeCategories && storeCategories.length > 0) {
+      const orderMap = new Map<string, number>();
+      storeCategories.forEach((sc, idx) => {
+        orderMap.set(sc.name.toLowerCase().trim(), sc.sortOrder ?? idx);
+      });
+      activeCats.sort((a, b) => {
+        const orderA = orderMap.has(a.toLowerCase().trim()) ? orderMap.get(a.toLowerCase().trim())! : 999;
+        const orderB = orderMap.has(b.toLowerCase().trim()) ? orderMap.get(b.toLowerCase().trim())! : 999;
+        return orderA - orderB;
+      });
+    }
+    
+    return ["Todos", ...activeCats];
+  }, [activeTodayProducts, storeCategories]);
 
   const promoProducts = useMemo(() => {
     return activeTodayProducts.filter(p => {
@@ -273,14 +287,22 @@ export default function CustomerStorePage({
 
   const grouped: Record<string, MenuProduct[]> = useMemo(() => {
     const g: Record<string, MenuProduct[]> = {};
+    // Garantir ordem correta das categorias
+    categories.filter(c => c !== "Todos").forEach(cat => {
+      g[cat] = [];
+    });
     filtered.forEach(p => {
       const cat = (p.category || "").trim();
       if (!cat) return;
       if (!g[cat]) g[cat] = [];
       g[cat].push(p);
     });
+    // Remove categorias vazias
+    Object.keys(g).forEach(cat => {
+      if (g[cat].length === 0) delete g[cat];
+    });
     return g;
-  }, [filtered]);
+  }, [filtered, categories]);
 
   const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -421,7 +443,13 @@ export default function CustomerStorePage({
     try {
       const res = await fetch("/api/store-customer", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: authMode, phone: authPhone, password: authPassword, name: authName })
+        body: JSON.stringify({
+          action: authMode,
+          phone: authPhone,
+          password: authPassword,
+          name: authName,
+          birthDate: authBirthDate || null,
+        })
       });
       const data = await res.json();
       if (res.ok) {
@@ -1654,10 +1682,27 @@ export default function CustomerStorePage({
             </p>
             {authError && <p style={{ color: "#EF4444", fontSize: "0.8rem", marginBottom: "0.5rem", fontWeight: 600 }}>❌ {authError}</p>}
             {authMode === "register" && (
-              <div style={{ marginBottom: "0.75rem" }}>
-                <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>Seu Nome</label>
-                <input value={authName} onChange={e => setAuthName(e.target.value)} placeholder="João Silva" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.9rem", boxSizing: "border-box" }} />
-              </div>
+              <>
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>Seu Nome</label>
+                  <input value={authName} onChange={e => setAuthName(e.target.value)} placeholder="João Silva" style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.9rem", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 600 }}>🎂 Data de Aniversário</label>
+                    <span style={{ fontSize: "0.68rem", color: "#64748B", fontWeight: 600 }}>Opcional</span>
+                  </div>
+                  <input 
+                    type="date"
+                    value={authBirthDate} 
+                    onChange={e => setAuthBirthDate(e.target.value)} 
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.85rem", boxSizing: "border-box", color: "#334155" }} 
+                  />
+                  <p style={{ fontSize: "0.7rem", color: "#7C3AED", margin: "4px 0 0", fontWeight: 600, lineHeight: 1.3 }}>
+                    🎁 Não é obrigatório, mas queremos lembrar do seu dia e te presentear!
+                  </p>
+                </div>
+              </>
             )}
             <div style={{ marginBottom: "0.75rem" }}>
               <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "4px" }}>WhatsApp / Telefone</label>

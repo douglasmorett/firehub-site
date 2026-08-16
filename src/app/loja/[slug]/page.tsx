@@ -59,22 +59,28 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
 
   if (!franchisee) notFound();
 
-  const menuProducts = await prisma.menuProduct.findMany({
-    where: { active: true, franchiseeId: franchisee.id },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
-    include: {
-      comboGroups: {
-        orderBy: { sortOrder: 'asc' },
-        include: {
-          items: {
-            include: {
-              menuProduct: { select: { id: true, name: true, active: true, imageUrl: true } }
+  const [menuProducts, storeCategories] = await Promise.all([
+    prisma.menuProduct.findMany({
+      where: { active: true, franchiseeId: franchisee.id },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      include: {
+        comboGroups: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            items: {
+              include: {
+                menuProduct: { select: { id: true, name: true, active: true, imageUrl: true } }
+              }
             }
           }
         }
       }
-    }
-  });
+    }),
+    prisma.menuCategory.findMany({
+      where: { franchiseeId: franchisee.id },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+  ]);
 
   // Get store reviews if enabled
   let storeRating = undefined;
@@ -109,9 +115,14 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
 
   return (
     <>
-      {/* Mercado Pago SDK ÔÇö tokeniza├º├úo de cart├úo no cliente (PCI Compliant) */}
+      {/* Mercado Pago SDK — tokenização de cartão no cliente (PCI Compliant) */}
       <script src="https://sdk.mercadopago.com/js/v2" async />
-      <CustomerStorePage franchisee={franchisee} menuProducts={menuProducts} storeRating={storeRating} />
+      <CustomerStorePage 
+        franchisee={franchisee as any} 
+        menuProducts={menuProducts as any} 
+        storeCategories={storeCategories as any}
+        storeRating={storeRating} 
+      />
     </>
   );
 }

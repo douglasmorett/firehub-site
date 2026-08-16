@@ -137,30 +137,31 @@ export default function LoyaltyConfigForm({
       </div>
 
       {/* Navegação por Sub-Programas (Abas) */}
-      <div style={{ display: "flex", background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0", padding: "0 8px", overflowX: "auto" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0", padding: "6px 12px", gap: "6px" }}>
         {[
           { key: "cashback", label: "💸 Cashback Automático", badge: config.cashbackActive ? "Ativo" : null },
           { key: "stamps", label: "🎫 Cartão de Carimbos", badge: config.stampsActive ? "Ativo" : null },
           { key: "referral", label: "🎁 Indique e Ganhe", badge: config.referralActive ? "Ativo" : null },
-          { key: "birthday", label: "🎂 Aniversariantes", badge: config.birthdayActive ? "Ativo" : null },
+          { key: "birthday", label: "🎂 Aniversariantes & Chatbot", badge: config.birthdayActive ? "Ativo" : null },
           { key: "vip", label: "👑 Níveis VIP", badge: config.vipActive ? "Ativo" : null },
         ].map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as any)}
             style={{
-              padding: "12px 16px",
+              padding: "10px 14px",
+              borderRadius: "10px",
               border: "none",
-              background: "none",
+              background: activeTab === tab.key ? "#EDE9FE" : "transparent",
               fontSize: "0.85rem",
               fontWeight: activeTab === tab.key ? 800 : 600,
-              color: activeTab === tab.key ? "#7C3AED" : "#64748B",
-              borderBottom: activeTab === tab.key ? "3px solid #7C3AED" : "3px solid transparent",
+              color: activeTab === tab.key ? "#6D28D9" : "#64748B",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               gap: 6,
               whiteSpace: "nowrap",
+              transition: "all 0.15s ease",
             }}
           >
             {tab.label}
@@ -518,6 +519,17 @@ export default function LoyaltyConfigForm({
               >
                 {config.birthdayActive ? "🟢 Presente Habilitado" : "⚪ Desabilitado"}
               </button>
+            </div>
+
+            {/* Explicação Chatbot WhatsApp Aniversário */}
+            <div style={{ background: "#FDF2F8", border: "1.5px solid #FBCFE8", borderRadius: 14, padding: "14px 16px", marginBottom: 18, fontSize: "0.82rem", color: "#9D174D" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, marginBottom: 4 }}>
+                <span>🤖</span>
+                <span>Disparo Automático via Chatbot IA WhatsApp</span>
+              </div>
+              <p style={{ margin: 0, lineHeight: 1.45 }}>
+                Os clientes cadastram a data de aniversário no cardápio de forma sutil <em>("Não é obrigatório, mas queremos lembrar do seu dia e te presentear! 🎁")</em>. No dia do aniversário do cliente, nosso robô do WhatsApp envia uma mensagem carinhosa de parabéns com o cupom de desconto configurado aqui!
+              </p>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
