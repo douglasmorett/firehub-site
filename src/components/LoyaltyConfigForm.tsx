@@ -295,6 +295,120 @@ export default function LoyaltyConfigForm({
                 />
               </div>
             </div>
+
+            {/* Seção Integrada: Níveis VIP & Bônus de Cashback */}
+            <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1.5px dashed #CBD5E1" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Crown size={20} color="#CA8A04" />
+                    <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#0F172A" }}>
+                      👑 Níveis VIP & Bônus Extra de Cashback
+                    </h4>
+                  </div>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.76rem", color: "#64748B" }}>
+                    Os clientes sobem de nível conforme o gasto no mês e somam uma porcentagem extra ao cashback base ({config.rate}%).
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => update("vipActive", !config.vipActive)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 20,
+                    border: "none",
+                    background: config.vipActive ? "#DCFCE7" : "#F1F5F9",
+                    color: config.vipActive ? "#15803D" : "#64748B",
+                    fontWeight: 800,
+                    fontSize: "0.78rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {config.vipActive ? "🟢 Níveis VIP Ativos" : "⚪ Desativado"}
+                </button>
+              </div>
+
+              {/* Tabela Comparativa de Cashback Base + VIP Bônus */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+                {/* Bronze */}
+                <div style={{ background: "#FFF7ED", border: "1.5px solid #FFEDD5", borderRadius: 12, padding: "12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <strong style={{ color: "#C2410C", fontSize: "0.86rem" }}>🥉 Nível Bronze</strong>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#C2410C", background: "#FFEDD5", padding: "1px 6px", borderRadius: 4 }}>Iniciante</span>
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", display: "block", marginBottom: 8 }}>
+                    Gasto até {fmt(config.silverMinSpend)}/mês
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, fontSize: "0.76rem" }}>
+                    <span style={{ color: "#475569" }}>Bônus Extra:</span>
+                    <strong style={{ color: "#C2410C" }}>+{config.bronzeCashback}%</strong>
+                  </div>
+                  <div style={{ background: "#FFFFFF", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #FED7AA" }}>
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Total:</span>
+                    <strong style={{ fontSize: "0.85rem", color: "#C2410C" }}>{config.rate + config.bronzeCashback}%</strong>
+                  </div>
+                </div>
+
+                {/* Prata */}
+                <div style={{ background: "#F1F5F9", border: "1.5px solid #CBD5E1", borderRadius: 12, padding: "12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <strong style={{ color: "#475569", fontSize: "0.86rem" }}>🥈 Nível Prata</strong>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#475569", background: "#E2E8F0", padding: "1px 6px", borderRadius: 4 }}>Frequente</span>
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", display: "block", marginBottom: 8 }}>
+                    Gasto de {fmt(config.silverMinSpend)} a {fmt(config.goldMinSpend)}/mês
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, fontSize: "0.76rem" }}>
+                    <span style={{ color: "#475569" }}>Bônus Extra:</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <input
+                        type="number"
+                        step="0.5"
+                        placeholder="1"
+                        value={config.silverCashback === 0 ? "" : config.silverCashback}
+                        onChange={e => update("silverCashback", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+                        style={{ width: "45px", padding: "2px 4px", borderRadius: 4, border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 800, textAlign: "center" }}
+                      />
+                      <span style={{ fontWeight: 800, color: "#475569" }}>%</span>
+                    </div>
+                  </div>
+                  <div style={{ background: "#FFFFFF", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #CBD5E1" }}>
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Total:</span>
+                    <strong style={{ fontSize: "0.85rem", color: "#475569" }}>{config.rate + config.silverCashback}%</strong>
+                  </div>
+                </div>
+
+                {/* Ouro */}
+                <div style={{ background: "#FEF3C7", border: "1.5px solid #FCD34D", borderRadius: 12, padding: "12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <strong style={{ color: "#92400E", fontSize: "0.86rem" }}>🥇 Nível Ouro</strong>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#92400E", background: "#FDE68A", padding: "1px 6px", borderRadius: 4 }}>Top VIP</span>
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: "#78350F", display: "block", marginBottom: 8 }}>
+                    Gasto acima de {fmt(config.goldMinSpend)}/mês
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, fontSize: "0.76rem" }}>
+                    <span style={{ color: "#78350F" }}>Bônus Extra:</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <input
+                        type="number"
+                        step="0.5"
+                        placeholder="2"
+                        value={config.goldCashback === 0 ? "" : config.goldCashback}
+                        onChange={e => update("goldCashback", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+                        style={{ width: "45px", padding: "2px 4px", borderRadius: 4, border: "1px solid #FCD34D", fontSize: "0.8rem", fontWeight: 800, textAlign: "center" }}
+                      />
+                      <span style={{ fontWeight: 800, color: "#92400E" }}>%</span>
+                    </div>
+                  </div>
+                  <div style={{ background: "#FFFFFF", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #FCD34D" }}>
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#78350F" }}>Cashback Total:</span>
+                    <strong style={{ fontSize: "0.85rem", color: "#92400E" }}>{config.rate + config.goldCashback}%</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

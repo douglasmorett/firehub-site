@@ -182,6 +182,8 @@ export default function CustomerStorePage({
   const [customerComplement, setCustomerComplement] = useState("");
   const [deliveryCalculating, setDeliveryCalculating] = useState(false);
   const [deliveryMessage, setDeliveryMessage] = useState("");
+  const [copiedReferral, setCopiedReferral] = useState(false);
+  const [showVipTooltip, setShowVipTooltip] = useState(false);
 
   // Rating
   const [showRating, setShowRating] = useState(false);
@@ -317,12 +319,99 @@ export default function CustomerStorePage({
   const isBelowMinOrder = Boolean(storeMinOrder > 0 && cartTotal > 0 && cartTotal < storeMinOrder);
   const remainingForMinOrder = storeMinOrder > 0 ? Math.max(0, storeMinOrder - cartTotal) : 0;
 
-  // Fidelidade & Cashback
+  // Fidelidade, Cashback, Carimbos, Indicação & Níveis VIP
   const loyalty = (franchisee.storeLoyalty as any) || {};
   const isCashbackActive = Boolean(loyalty.cashbackActive !== false && Number(loyalty.rate || 5) > 0);
-  const cashbackRate = Number(loyalty.rate || 5);
+  const baseCashbackRate = Number(loyalty.rate || 5);
   const cashbackMinOrder = Number(loyalty.minOrderValue || 0);
   const cashbackMaxRedeemPercent = Number(loyalty.maxRedeemPercent || 50);
+
+  // Módulos adicionais
+  const isStampsActive = Boolean(loyalty.stampsActive);
+  const stampGoal = Number(loyalty.stampGoal || 10);
+  const stampMinOrder = Number(loyalty.stampMinOrder || 30);
+  const stampRewardValue = Number(loyalty.stampRewardValue || 25);
+
+  const isReferralActive = Boolean(loyalty.referralActive);
+  const friendDiscount = Number(loyalty.friendDiscount || 10);
+  const referrerReward = Number(loyalty.referrerReward || 10);
+
+  const isVipActive = Boolean(loyalty.vipActive);
+  const bronzeCashback = Number(loyalty.bronzeCashback || 0);
+  const silverMinSpend = Number(loyalty.silverMinSpend || 150);
+  const silverCashback = Number(loyalty.silverCashback || 1);
+  const goldMinSpend = Number(loyalty.goldMinSpend || 350);
+  const goldCashback = Number(loyalty.goldCashback || 2);
+
+  // Gastos do Cliente nos últimos 30 dias (Mês)
+  const customerOrdersList = myOrdersList || [];
+  const thirtyDaysAgo = useMemo(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), []);
+  const monthlySpent = useMemo(() => {
+    return customerOrdersList
+      .filter(o => new Date(o.createdAt) >= thirtyDaysAgo && o.status !== "CANCELADO")
+      .reduce((acc, o) => acc + (Number(o.totalAmount) || 0), 0);
+  }, [customerOrdersList, thirtyDaysAgo]);
+
+  // Carimbos acumulados
+  const validStampOrders = useMemo(() => {
+    return customerOrdersList.filter(o => o.status !== "CANCELADO" && (Number(o.totalAmount) >= stampMinOrder || !stampMinOrder)).length;
+  }, [customerOrdersList, stampMinOrder]);
+  const currentStamps = validStampOrders % stampGoal;
+  const remainingStamps = Math.max(0, stampGoal - currentStamps);
+
+  // Nível VIP do Cliente
+  const vipTier = useMemo(() => {
+    if (monthlySpent >= goldMinSpend && goldMinSpend > 0) {
+      return {
+        name: "Ouro",
+        icon: "🥇",
+        badge: "VIP Ouro",
+        bonus: goldCashback,
+        nextGoal: null,
+        remaining: 0,
+        nextSpend: goldMinSpend,
+        color: "#92400E",
+        bg: "#FEF3C7",
+        border: "#FCD34D",
+        progress: 100
+      };
+    }
+    if (monthlySpent >= silverMinSpend && silverMinSpend > 0) {
+      const needed = goldMinSpend - monthlySpent;
+      const progress = goldMinSpend > silverMinSpend ? Math.min(100, Math.round(((monthlySpent - silverMinSpend) / (goldMinSpend - silverMinSpend)) * 100)) : 100;
+      return {
+        name: "Prata",
+        icon: "🥈",
+        badge: "VIP Prata",
+        bonus: silverCashback,
+        nextGoal: "Ouro",
+        remaining: Math.max(0, needed),
+        nextSpend: goldMinSpend,
+        color: "#475569",
+        bg: "#F1F5F9",
+        border: "#CBD5E1",
+        progress
+      };
+    }
+    const needed = silverMinSpend - monthlySpent;
+    const progress = silverMinSpend > 0 ? Math.min(100, Math.round((monthlySpent / silverMinSpend) * 100)) : 0;
+    return {
+      name: "Bronze",
+      icon: "🥉",
+      badge: "VIP Bronze",
+      bonus: bronzeCashback,
+      nextGoal: "Prata",
+      remaining: Math.max(0, needed),
+      nextSpend: silverMinSpend,
+      color: "#C2410C",
+      bg: "#FFF7ED",
+      border: "#FFEDD5",
+      progress
+    };
+  }, [monthlySpent, goldMinSpend, silverMinSpend, goldCashback, silverCashback, bronzeCashback]);
+
+  // Taxa total de cashback somando o bônus VIP do cliente
+  const cashbackRate = baseCashbackRate + (customer && isVipActive ? vipTier.bonus : 0);
 
   const [useCashback, setUseCashback] = useState(false);
   const customerCashbackBalance = Number(customer?.cashbackBalance || 0);
@@ -555,35 +644,44 @@ export default function CustomerStorePage({
     return base;
   })();
 
-  const isNeighborhoodType = !franchisee.deliveryZoneType || franchisee.deliveryZoneType === "NEIGHBORHOOD";
+  const isNeighborhoodType = (!franchisee.deliveryZoneType || franchisee.deliveryZoneType === "NEIGHBORHOOD") && Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.length > 0;
 
   const calcDeliveryFee = async (neighborhood: string, customAddress?: string) => {
     setCustomerNeighborhood(neighborhood);
     const zones = (franchisee.deliveryZones as any[]) || [];
     const zoneType = franchisee.deliveryZoneType || "NEIGHBORHOOD";
+    const defaultStoreFee = Number(delivConfig.deliveryFee || delivConfig.defaultFee || 0);
 
     if (zoneType === "NEIGHBORHOOD") {
-      if (!neighborhood) {
-        setDeliveryFee(0);
-        setDeliveryAvailable(false);
-        setDeliveryMessage("Selecione um bairro atendido pela loja.");
-        return;
-      }
-      const found = Array.isArray(zones)
-        ? zones.find((z: any) => z.name && z.name.trim().toLowerCase() === neighborhood.trim().toLowerCase())
-        : null;
-      if (found) {
-        setDeliveryFee(Number(found.fee) || 0);
+      if (zones.length > 0) {
+        if (!neighborhood) {
+          setDeliveryFee(defaultStoreFee);
+          setDeliveryAvailable(false);
+          setDeliveryMessage("Selecione um bairro atendido pela loja.");
+          return;
+        }
+        const found = zones.find((z: any) => z.name && z.name.trim().toLowerCase() === neighborhood.trim().toLowerCase());
+        if (found) {
+          setDeliveryFee(Number(found.fee) || 0);
+          setDeliveryAvailable(true);
+          setDeliveryMessage("");
+        } else {
+          setDeliveryFee(0);
+          setDeliveryAvailable(false);
+          setDeliveryMessage("Não atendemos neste bairro no momento.");
+        }
+      } else {
+        // Sem restrição de bairros específicos: usa taxa padrão
+        setDeliveryFee(defaultStoreFee);
         setDeliveryAvailable(true);
         setDeliveryMessage("");
-      } else {
-        setDeliveryFee(0);
-        setDeliveryAvailable(false);
-        setDeliveryMessage("Não atendemos neste bairro no momento.");
       }
     } else if (zoneType === "RADIUS" || zoneType === "DISTANCE") {
       const addrQuery = customAddress || `${customerStreet} ${customerNumber}, ${neighborhood || customerNeighborhood}, ${franchisee.city || ""}`.trim();
-      if (addrQuery.length < 5) return;
+      if (addrQuery.length < 5) {
+        setDeliveryFee(defaultStoreFee);
+        return;
+      }
       setDeliveryCalculating(true);
       try {
         const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&address=${encodeURIComponent(addrQuery)}`);
@@ -594,18 +692,19 @@ export default function CustomerStorePage({
             setDeliveryAvailable(false);
             setDeliveryMessage(data.message || "Endereço fora do raio de entrega da loja.");
           } else {
-            setDeliveryFee(Number(data.fee) || 0);
+            setDeliveryFee(Number(data.fee) || defaultStoreFee);
             setDeliveryAvailable(true);
             setDeliveryMessage(data.message || "");
           }
         }
       } catch {
+        setDeliveryFee(defaultStoreFee);
         setDeliveryAvailable(true);
       } finally {
         setDeliveryCalculating(false);
       }
     } else {
-      setDeliveryFee(0);
+      setDeliveryFee(defaultStoreFee);
       setDeliveryAvailable(true);
       setDeliveryMessage("");
     }
@@ -655,6 +754,7 @@ export default function CustomerStorePage({
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           franchiseeId: franchisee.id,
+          franchiseeSlug: franchisee.slug,
           customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? finalAddress : null,
           deliveryType, paymentMethod, notes,
@@ -1003,13 +1103,15 @@ export default function CustomerStorePage({
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Taxa de entrega</span>
-                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin) ? "#16A34A" : "#64748B" }}>
+                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || (deliveryFee === 0 && (customerNeighborhood || customerStreet))) ? "#16A34A" : "#64748B" }}>
                     {deliveryType === "PICKUP" ? (
                       "Retirada no local"
                     ) : isFreeShippingByMin ? (
                       "Grátis 🎉"
-                    ) : (deliveryFee > 0 && customerNeighborhood) ? (
+                    ) : deliveryFee > 0 ? (
                       `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
+                    ) : (customerNeighborhood || customerStreet) ? (
+                      "Grátis 🎉"
                     ) : (
                       "A definir"
                     )}
@@ -1218,8 +1320,8 @@ export default function CustomerStorePage({
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Entrega:</span>
-                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin) ? "#16A34A" : "#0F172A" }}>
-                  {deliveryType === "PICKUP" ? "Retirada" : isFreeShippingByMin ? "Grátis 🎉" : (deliveryFee > 0 && customerNeighborhood) ? `R$ ${deliveryFee.toFixed(2).replace(".", ",")}` : "A consultar"}
+                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || (deliveryFee === 0 && (customerNeighborhood || customerStreet))) ? "#16A34A" : "#0F172A" }}>
+                  {deliveryType === "PICKUP" ? "Retirada" : isFreeShippingByMin ? "Grátis 🎉" : deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2).replace(".", ",")}` : (customerNeighborhood || customerStreet) ? "Grátis 🎉" : "A consultar"}
                 </span>
               </div>
               {cashbackDiscountApplied > 0 && (
@@ -1457,6 +1559,79 @@ export default function CustomerStorePage({
                 title="Seu saldo de cashback acumulado nesta loja"
               >
                 💰 R$ {customerCashbackBalance.toFixed(2).replace(".", ",")}
+              </div>
+            )}
+
+            {customer && isVipActive && (
+              <div
+                style={{
+                  position: "relative",
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+                onMouseEnter={() => setShowVipTooltip(true)}
+                onMouseLeave={() => setShowVipTooltip(false)}
+              >
+                <div
+                  style={{
+                    background: vipTier.bg,
+                    border: `1.5px solid ${vipTier.border}`,
+                    color: vipTier.color,
+                    borderRadius: "10px",
+                    padding: "5px 10px",
+                    fontSize: "0.76rem",
+                    fontWeight: 900,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    cursor: "pointer",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                    transition: "transform 0.15s ease"
+                  }}
+                  onClick={() => setShowVipTooltip(!showVipTooltip)}
+                >
+                  <span style={{ fontSize: "0.95rem" }}>{vipTier.icon}</span>
+                  <span>{vipTier.name}</span>
+                  {vipTier.bonus > 0 && (
+                    <span style={{ background: "rgba(0,0,0,0.08)", padding: "1px 5px", borderRadius: "6px", fontSize: "0.68rem" }}>
+                      +{vipTier.bonus}%
+                    </span>
+                  )}
+                </div>
+
+                {showVipTooltip && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      right: 0,
+                      width: "240px",
+                      background: "#0F172A",
+                      color: "#FFFFFF",
+                      borderRadius: "12px",
+                      padding: "10px 12px",
+                      fontSize: "0.75rem",
+                      lineHeight: 1.4,
+                      zIndex: 100,
+                      boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+                      border: "1px solid #334155"
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#FCD34D", marginBottom: "3px", display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span>{vipTier.icon}</span> Nível VIP {vipTier.name}
+                    </div>
+                    <div>
+                      {vipTier.bonus > 0
+                        ? `Você ganha +${vipTier.bonus}% de cashback extra em todos os seus pedidos (Total: ${cashbackRate}% de volta)!`
+                        : `Gaste mais este mês para subir para Prata 🥈 e ganhar mais cashback!`}
+                    </div>
+                    {vipTier.nextGoal && (
+                      <div style={{ marginTop: "6px", paddingTop: "6px", borderTop: "1px dashed #334155", color: "#94A3B8" }}>
+                        Faltam <strong style={{ color: "#38BDF8" }}>R$ {vipTier.remaining.toFixed(2).replace(".", ",")}</strong> em compras este mês para atingir o nível <strong style={{ color: "#FCD34D" }}>{vipTier.nextGoal}</strong>.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1756,40 +1931,168 @@ export default function CustomerStorePage({
 
         {/* ===== DESKTOP SIDEBAR ===== */}
         <div className="desk-cart" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {/* CARD DINÂMICO DE PROMOÇÃO / FIDELIDADE / CASHBACK DA LOJA */}
-          {(() => {
-            const loyalty = franchisee.storeLoyalty as any;
-            const coupons = (franchisee.storeCoupons as any[]) || [];
-            const isCashback = loyalty?.active && loyalty?.cashbackActive;
-            const isStamps = loyalty?.active && loyalty?.stampsActive;
+          {/* CARD DINÂMICO DE BENEFÍCIOS, VIP, CARIMBOS E INDIQUE & GANHE */}
+          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "10px" }}>
+            {/* Header Geral de Benefícios */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "1.3rem" }}>🎁</span>
+                <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>
+                  Benefícios & Fidelidade
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#ECFDF5", padding: "2px 8px", borderRadius: "12px" }}>
+                <Sparkles size={12} /> Ativo
+              </div>
+            </div>
 
-            return (
-              <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                  <span style={{ fontSize: "1.3rem" }}>{isCashback ? "💰" : isStamps ? "🎫" : "🎁"}</span>
-                  <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>
-                    {isCashback
-                      ? "Ganhe Cashback em todas as compras"
-                      : isStamps
-                      ? "Cartão Fidelidade por Pedidos"
-                      : "Programa de Benefícios & Fidelidade"}
+            {/* MÓDULO 1: NÍVEIS VIP */}
+            {isVipActive && (
+              <div style={{ background: vipTier.bg, border: `1px solid ${vipTier.border}`, borderRadius: "12px", padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.84rem", color: vipTier.color }}>
+                    <span>{vipTier.icon}</span>
+                    <span>{customer ? `Você é VIP ${vipTier.name}` : "Programa Níveis VIP"}</span>
+                  </div>
+                  {vipTier.bonus > 0 && (
+                    <span style={{ background: "rgba(0,0,0,0.08)", padding: "1px 6px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 800, color: vipTier.color }}>
+                      +{vipTier.bonus}% Cashback Extra
+                    </span>
+                  )}
+                </div>
+
+                {customer ? (
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "#475569", lineHeight: 1.35 }}>
+                      Gasto no mês (30 dias): <strong>R$ {monthlySpent.toFixed(2).replace(".", ",")}</strong>
+                    </div>
+                    {vipTier.nextGoal ? (
+                      <div style={{ marginTop: "6px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", fontWeight: 700, color: "#475569", marginBottom: "3px" }}>
+                          <span>Próximo nível: <strong>{vipTier.nextGoal} {vipTier.nextGoal === "Ouro" ? "🥇" : "🥈"}</strong></span>
+                          <span>Faltam R$ {vipTier.remaining.toFixed(2).replace(".", ",")}</span>
+                        </div>
+                        <div style={{ width: "100%", height: "5px", background: "rgba(0,0,0,0.08)", borderRadius: "6px", overflow: "hidden" }}>
+                          <div style={{ width: `${vipTier.progress}%`, height: "100%", background: vipTier.color, borderRadius: "6px", transition: "width 0.3s ease" }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "0.73rem", color: "#92400E", fontWeight: 700, marginTop: "4px" }}>
+                        🎉 Parabéns! Você atingiu o nível máximo VIP da loja!
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "0.75rem", color: "#64748B", lineHeight: 1.35 }}>
+                    Suba de nível conforme suas compras no mês e ganhe até +{goldCashback}% de cashback extra! <button type="button" onClick={() => setShowAuth(true)} style={{ background: "none", border: "none", color: "#7C3AED", fontWeight: 800, padding: 0, cursor: "pointer" }}>Faça login</button> para ver seu nível.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* MÓDULO 2: CARTÃO DE CARIMBOS (DIGITAL) */}
+            {isStampsActive && (
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.82rem", color: "#0F172A" }}>
+                    <span>🎫</span>
+                    <span>Cartão Fidelidade</span>
+                  </div>
+                  <span style={{ fontSize: "0.74rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "1px 6px", borderRadius: "6px" }}>
+                    {currentStamps} / {stampGoal} Carimbos
                   </span>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#64748B", margin: "0 0 8px 0", lineHeight: 1.45 }}>
-                  {isCashback
-                    ? `Receba ${loyalty.rate || 5}% de volta em saldo para economizar no seu próximo pedido!`
-                    : isStamps
-                    ? `A cada ${loyalty.stampGoal || 5} pedidos na loja, você ganha um cupom de R$ ${Number(loyalty.stampRewardValue || 15).toFixed(2).replace(".", ",")} para sua próxima compra!`
-                    : coupons.length > 0
-                    ? "Aproveite cupons de desconto exclusivos da nossa loja aplicando diretamente na sacola."
-                    : "Acumule vantagens e benefícios especiais comprando diretamente pelo nosso site!"}
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.74rem", fontWeight: 700, color: "#059669" }}>
-                  <Sparkles size={14} /> Benefício ativo garantido para você
+
+                {/* Grade de Carimbos */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", margin: "8px 0" }}>
+                  {Array.from({ length: stampGoal }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        width: "26px",
+                        height: "26px",
+                        borderRadius: "50%",
+                        background: idx < currentStamps ? "#7C3AED" : "#FFFFFF",
+                        border: idx < currentStamps ? "2px solid #6D28D9" : "1.5px dashed #CBD5E1",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.68rem",
+                        fontWeight: 800,
+                        color: idx < currentStamps ? "#FFFFFF" : "#94A3B8",
+                        boxShadow: idx < currentStamps ? "0 1px 4px rgba(124, 58, 237, 0.3)" : "none"
+                      }}
+                      title={idx < currentStamps ? `Carimbo ${idx + 1} Conquistado! 🪙` : `Carimbo ${idx + 1}`}
+                    >
+                      {idx < currentStamps ? "🪙" : (idx + 1)}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ fontSize: "0.74rem", color: "#475569", lineHeight: 1.35 }}>
+                  {customer ? (
+                    remainingStamps === 0 ? (
+                      <span style={{ color: "#16A34A", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</span>
+                    ) : (
+                      <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} OFF`}</strong>!</span>
+                    )
+                  ) : (
+                    <span>Ganhe 1 carimbo a cada pedido acima de R$ {stampMinOrder.toFixed(2).replace(".", ",")}. Complete {stampGoal} e ganhe seu prêmio!</span>
+                  )}
                 </div>
               </div>
-            );
-          })()}
+            )}
+
+            {/* MÓDULO 3: INDIQUE E GANHE */}
+            {isReferralActive && (
+              <div style={{ background: "#FAF5FF", border: "1px solid #E9D5FF", borderRadius: "12px", padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.82rem", color: "#6B21A8", marginBottom: "4px" }}>
+                  <span>🎁</span>
+                  <span>Indique e Ganhe R$ {referrerReward.toFixed(2).replace(".", ",")}</span>
+                </div>
+                <p style={{ fontSize: "0.74rem", color: "#7E22CE", margin: "0 0 6px 0", lineHeight: 1.35 }}>
+                  Seus amigos ganham <strong>R$ {friendDiscount.toFixed(2).replace(".", ",")} OFF</strong> no 1º pedido e você ganha <strong>R$ {referrerReward.toFixed(2).replace(".", ",")}</strong> de volta em saldo!
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = typeof window !== 'undefined' ? `${window.location.origin}/loja/${franchisee.slug}?ref=${customer?.phone || 'amigo'}` : '';
+                    navigator.clipboard?.writeText(link);
+                    setCopiedReferral(true);
+                    setTimeout(() => setCopiedReferral(false), 2500);
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "6px 10px",
+                    borderRadius: "8px",
+                    border: "1px solid #D8B4FE",
+                    background: copiedReferral ? "#DCFCE7" : "#FFFFFF",
+                    color: copiedReferral ? "#15803D" : "#7C3AED",
+                    fontSize: "0.75rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  {copiedReferral ? "✅ Link de Indicação Copiado!" : "📋 Copiar Link de Indicação"}
+                </button>
+              </div>
+            )}
+
+            {/* MÓDULO 4: CASHBACK PADRÃO */}
+            {isCashbackActive && (
+              <div style={{ fontSize: "0.75rem", color: "#059669", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "8px 10px", lineHeight: 1.35, display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>💰</span>
+                <span>
+                  Ganhe <strong>{cashbackRate}% de volta</strong> em saldo em todos os seus pedidos acima de R$ {cashbackMinOrder.toFixed(2).replace(".", ",")}.
+                </span>
+              </div>
+            )}
+          </div>
 
           {/* CARD DA SACOLA (STICKY COM ROLAGEM INTERNA PERFEITA) */}
           <div style={{
@@ -1918,6 +2221,57 @@ export default function CustomerStorePage({
               </div>
               <button onClick={() => setShowPromotionsModal(false)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontWeight: 800 }}>✕</button>
             </div>
+
+            {/* CARTÃO DE CARIMBOS DENTRO DO MODAL DE OFERTAS / PROMOÇÕES */}
+            {isStampsActive && (
+              <div style={{ background: "#FAF5FF", border: "1.5px solid #E9D5FF", borderRadius: "14px", padding: "12px 16px", marginBottom: "16px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.86rem", color: "#6B21A8" }}>
+                    <span>🎫</span>
+                    <span>Seu Cartão Fidelidade de Carimbos</span>
+                  </div>
+                  <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "2px 8px", borderRadius: "8px" }}>
+                    {currentStamps} de {stampGoal} Carimbos
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", margin: "4px 0" }}>
+                  {Array.from({ length: stampGoal }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        width: "30px",
+                        height: "30px",
+                        borderRadius: "50%",
+                        background: idx < currentStamps ? "#7C3AED" : "#FFFFFF",
+                        border: idx < currentStamps ? "2px solid #6D28D9" : "1.5px dashed #CBD5E1",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.75rem",
+                        fontWeight: 800,
+                        color: idx < currentStamps ? "#FFFFFF" : "#94A3B8",
+                        boxShadow: idx < currentStamps ? "0 1px 4px rgba(124, 58, 237, 0.3)" : "none"
+                      }}
+                    >
+                      {idx < currentStamps ? "🪙" : (idx + 1)}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ fontSize: "0.78rem", color: "#7E22CE", lineHeight: 1.35 }}>
+                  {customer ? (
+                    remainingStamps === 0 ? (
+                      <strong style={{ color: "#15803D" }}>🎉 Parabéns! Cartela completa! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Grátis" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</strong>
+                    ) : (
+                      <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{loyalty.stampRewardType === "product" ? "1 Prêmio Grátis" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}</strong>!</span>
+                    )
+                  ) : (
+                    <span>Ganhe 1 carimbo a cada pedido acima de R$ {stampMinOrder.toFixed(2).replace(".", ",")}. Complete {stampGoal} e ganhe seu prêmio!</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div style={{ flex: 1, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px", paddingRight: "4px" }}>
               {promoProducts.length > 0 ? (

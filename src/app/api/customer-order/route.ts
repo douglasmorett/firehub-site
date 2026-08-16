@@ -14,17 +14,17 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { franchiseeSlug, customerName, customerPhone, customerAddress, deliveryType, paymentMethod, notes, items, couponCode, deliveryFee } = body;
+    const { franchiseeSlug, franchiseeId, customerName, customerPhone, customerAddress, deliveryType, paymentMethod, notes, items, couponCode, deliveryFee } = body;
 
-    if (!franchiseeSlug || !customerName || !customerPhone || !items || items.length === 0) {
+    if ((!franchiseeSlug && !franchiseeId) || !customerName || !customerPhone || !items || items.length === 0) {
       return NextResponse.json({ error: "Dados incompletos." }, { status: 400 });
     }
 
-    // Buscar franqueado com config
-    const franchisee = await prisma.user.findUnique({
-      where: { slug: franchiseeSlug },
+    // Buscar franqueado com config por ID ou Slug
+    const franchisee = await prisma.user.findFirst({
+      where: franchiseeId ? { id: franchiseeId } : { slug: franchiseeSlug },
       select: {
-        id: true, storeName: true, storeOpen: true, storePause: true,
+        id: true, slug: true, storeName: true, storeOpen: true, storePause: true,
         autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true
       }
     });
