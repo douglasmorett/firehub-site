@@ -148,6 +148,8 @@ export default function CustomerStorePage({
   const [couponCode, setCouponCode] = useState("");
   const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
   const [showCouponInput, setShowCouponInput] = useState(false);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Modais especiais de alto engajamento
@@ -426,15 +428,17 @@ export default function CustomerStorePage({
     ? (cartTotal * (cashbackRate / 100))
     : 0;
 
-  const freeShippingThreshold = delivConfig.freeShippingActive && delivConfig.freeShippingMinValue ? Number(delivConfig.freeShippingMinValue) : null;
+  const isFreeShippingConfigActive = Boolean(delivConfig.freeShippingActive === true || delivConfig.freeShippingActive === "true");
+  const freeShippingThreshold = isFreeShippingConfigActive && Number(delivConfig.freeShippingMinValue) > 0 ? Number(delivConfig.freeShippingMinValue) : null;
   const isFreeShippingByMin = Boolean(freeShippingThreshold && cartTotal >= freeShippingThreshold);
   const remainingForFreeShipping = freeShippingThreshold ? Math.max(0, freeShippingThreshold - cartTotal) : 0;
   const freeShippingProgress = freeShippingThreshold ? Math.min(100, (cartTotal / freeShippingThreshold) * 100) : 0;
 
-  const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingByMin) ? deliveryFee : 0;
+  const isFreeShippingEffective = Boolean(isFreeShippingByMin || couponApplied?.isFreeShipping);
+  const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingEffective) ? deliveryFee : 0;
   const discount = couponApplied
     ? (couponApplied.isFreeShipping
-        ? (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0)
+        ? 0
         : couponApplied.discount)
     : 0;
   const finalTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied + (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0));
@@ -512,14 +516,17 @@ export default function CustomerStorePage({
 
   const applyCoupon = async () => {
     if (!couponCode.trim()) return;
+    setCouponLoading(true);
+    setCouponError("");
     const cleanCode = couponCode.trim().toUpperCase();
     const storeCoupons = (franchisee as any).storeCoupons || [];
     const found = storeCoupons.find((c: any) => c.code?.toUpperCase() === cleanCode && c.active !== false);
 
     if (found) {
       if (found.minOrderValue && cartTotal < found.minOrderValue) {
-        alert(`⚠️ Este cupom é válido apenas para pedidos a partir de R$ ${Number(found.minOrderValue).toFixed(2)}.`);
+        setCouponError(`⚠️ Válido para pedidos a partir de R$ ${Number(found.minOrderValue).toFixed(2).replace(".", ",")}.`);
         setCouponApplied(null);
+        setCouponLoading(false);
         return;
       }
       if (found.type === "free_shipping") {
@@ -531,14 +538,16 @@ export default function CustomerStorePage({
         const pct = typeof found.discount === "number" ? found.discount : 10;
         setCouponApplied({ code: found.code, discount: cartTotal * (pct / 100), isFreeShipping: false });
       }
+      setCouponLoading(false);
     } else {
       try {
         const res = await fetch(`/api/validate-coupon?code=${cleanCode}&franchiseeId=${franchisee.id}`);
         if (res.ok) {
           const d = await res.json();
           if (d.minOrderValue && cartTotal < d.minOrderValue) {
-            alert(`⚠️ Este cupom é válido apenas para pedidos a partir de R$ ${Number(d.minOrderValue).toFixed(2)}.`);
+            setCouponError(`⚠️ Válido para pedidos a partir de R$ ${Number(d.minOrderValue).toFixed(2).replace(".", ",")}.`);
             setCouponApplied(null);
+            setCouponLoading(false);
             return;
           }
           const isFree = d.type === "free_shipping";
@@ -546,12 +555,14 @@ export default function CustomerStorePage({
           const calcDiscount = isFree ? deliveryFee : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);
           setCouponApplied({ code: cleanCode, discount: calcDiscount, isFreeShipping: isFree });
         } else {
-          alert("Cupom inválido ou expirado.");
+          setCouponError("Cupom inválido ou expirado.");
           setCouponApplied(null);
         }
       } catch {
-        alert("Cupom inválido ou expirado.");
+        setCouponError("Cupom inválido ou expirado.");
         setCouponApplied(null);
+      } finally {
+        setCouponLoading(false);
       }
     }
   };
@@ -758,7 +769,7 @@ export default function CustomerStorePage({
           customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? finalAddress : null,
           deliveryType, paymentMethod, notes,
-          deliveryFee: (deliveryType === "DELIVERY" && !isFreeShippingByMin) ? (deliveryFee || 0) : 0,
+          deliveryFee: effectiveDeliveryFee,
           couponCode: couponApplied?.code || null,
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
           items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" }))
@@ -889,24 +900,36 @@ export default function CustomerStorePage({
   // ===== CART SIDEBAR CONTENT =====
   const cartContentJSX = (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", overflow: "hidden" }}>
-      {/* BANNER DINÂMICO DE FRETE GRÁTIS (IGUAL AO EXEMPLO) */}
+      {/* BANNER GAMIFICADO DE FRETE GRÁTIS */}
       {freeShippingThreshold && (
         <div style={{
-          padding: "0.6rem 1rem",
-          background: isFreeShippingByMin ? "#F0FDF4" : "#F8FAFC",
-          borderBottom: "1px dashed #CBD5E1",
+          padding: "10px 14px",
+          background: isFreeShippingByMin ? "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)" : "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",
+          borderBottom: isFreeShippingByMin ? "1.5px solid #86EFAC" : "1.5px dashed #FDE68A",
           flexShrink: 0,
           textAlign: "left",
         }}>
-          <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "#1E293B" }}>
-            {isFreeShippingByMin ? (
-              <span style={{ color: "#15803D" }}>🎉 <strong style={{ color: "#16A34A" }}>Entrega grátis</strong> garantida para o seu pedido!</span>
-            ) : (
-              <span><strong style={{ color: "#16A34A" }}>Entrega grátis</strong> em pedidos a partir de R$ {freeShippingThreshold.toFixed(2).replace(".", ",")}</span>
-            )}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px", marginBottom: "5px" }}>
+            <div style={{ fontSize: "0.82rem", fontWeight: 800, color: isFreeShippingByMin ? "#166534" : "#92400E", display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>{isFreeShippingByMin ? "🎉" : "🚚"}</span>
+              {isFreeShippingByMin ? (
+                <span><strong>PARABÉNS!</strong> Você ganhou <strong style={{ color: "#16A34A" }}>FRETE GRÁTIS!</strong></span>
+              ) : (
+                <span>Faltam <strong style={{ color: "#D97706", fontSize: "0.9rem" }}>R$ {remainingForFreeShipping.toFixed(2).replace(".", ",")}</strong> para <strong style={{ color: "#16A34A" }}>FRETE GRÁTIS!</strong></span>
+              )}
+            </div>
+            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: isFreeShippingByMin ? "#166534" : "#B45309", background: isFreeShippingByMin ? "#BBF7D0" : "#FEF08A", padding: "2px 6px", borderRadius: "10px" }}>
+              {Math.round(freeShippingProgress)}%
+            </span>
           </div>
-          <div style={{ width: "100%", height: "4px", backgroundColor: "#E2E8F0", borderRadius: "4px", overflow: "hidden", marginTop: "4px" }}>
-            <div style={{ width: `${freeShippingProgress}%`, height: "100%", backgroundColor: isFreeShippingByMin ? "#16A34A" : "#10B981", transition: "width 0.3s ease" }} />
+          <div style={{ width: "100%", height: "6px", backgroundColor: isFreeShippingByMin ? "#BBF7D0" : "#FDE68A", borderRadius: "999px", overflow: "hidden" }}>
+            <div style={{
+              width: `${Math.max(4, freeShippingProgress)}%`,
+              height: "100%",
+              background: isFreeShippingByMin ? "linear-gradient(90deg, #22C55E 0%, #16A34A 100%)" : "linear-gradient(90deg, #F59E0B 0%, #10B981 100%)",
+              borderRadius: "999px",
+              transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
+            }} />
           </div>
         </div>
       )}
@@ -1008,17 +1031,69 @@ export default function CustomerStorePage({
                         Remover
                       </button>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "20px", padding: "2px 6px" }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", backgroundColor: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: "999px", padding: "3px 6px" }}>
                         <button
+                          type="button"
                           onClick={() => removeFromCart(item.id)}
-                          style={{ width: "20px", height: "20px", borderRadius: "50%", background: "#FFFFFF", border: "1px solid #CBD5E1", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.8rem", color: "#475569" }}
+                          style={{
+                            width: "22px",
+                            height: "22px",
+                            minWidth: "22px",
+                            minHeight: "22px",
+                            maxWidth: "22px",
+                            maxHeight: "22px",
+                            borderRadius: "50%",
+                            background: "#FFFFFF",
+                            border: "1.5px solid #CBD5E1",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            padding: 0,
+                            margin: 0,
+                            flexShrink: 0,
+                            lineHeight: 1,
+                            boxSizing: "border-box",
+                            color: "#475569",
+                            fontWeight: 800,
+                            fontSize: "0.85rem",
+                            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                          }}
+                          title="Diminuir"
                         >
                           -
                         </button>
-                        <span style={{ fontSize: "0.82rem", fontWeight: 800, minWidth: "16px", textAlign: "center" }}>{item.quantity}</span>
+                        <span style={{ fontSize: "0.88rem", fontWeight: 800, minWidth: "18px", textAlign: "center", color: "#0F172A" }}>
+                          {item.quantity}
+                        </span>
                         <button
+                          type="button"
                           onClick={() => addToCart(item, item.comboSelections, 0, 1, item.notes)}
-                          style={{ width: "20px", height: "20px", borderRadius: "50%", background: "#059669", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: "0.8rem", color: "#FFFFFF" }}
+                          style={{
+                            width: "22px",
+                            height: "22px",
+                            minWidth: "22px",
+                            minHeight: "22px",
+                            maxWidth: "22px",
+                            maxHeight: "22px",
+                            borderRadius: "50%",
+                            background: "#16A34A",
+                            border: "none",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            padding: 0,
+                            margin: 0,
+                            flexShrink: 0,
+                            lineHeight: 1,
+                            boxSizing: "border-box",
+                            color: "#FFFFFF",
+                            fontWeight: 800,
+                            fontSize: "0.95rem",
+                            boxShadow: "0 2px 4px rgba(22,163,74,0.3)"
+                          }}
+                          title="Aumentar"
                         >
                           +
                         </button>
@@ -1038,58 +1113,85 @@ export default function CustomerStorePage({
                     🏷️ Que tal usar um cupom de desconto?
                   </button>
                 ) : (
-                  <div>
-                    <div className="coupon-row">
-                      <input className="coupon-input" placeholder="Digite seu cupom" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
-                      <button className="coupon-btn" onClick={applyCoupon}>Aplicar</button>
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569" }}>Cupom de Desconto</span>
+                      {!couponApplied && (
+                        <button onClick={() => setShowCouponInput(false)} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "0.72rem", cursor: "pointer" }}>Cancelar</button>
+                      )}
                     </div>
-                    {couponApplied && (
-                      <p style={{ fontSize: "0.76rem", color: "#16A34A", fontWeight: 700, margin: "4px 0 0" }}>
-                        {couponApplied.isFreeShipping
-                          ? `✅ Cupom "${couponApplied.code}" aplicado! Frete Grátis 🚚`
-                          : `✅ Cupom "${couponApplied.code}" aplicado! -R$ ${discount.toFixed(2)}`}
-                      </p>
+                    {couponApplied ? (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#DCFCE7", border: "1px solid #86EFAC", padding: "6px 10px", borderRadius: "8px" }}>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#166534" }}>🏷️ {couponApplied.code}</div>
+                          <div style={{ fontSize: "0.72rem", color: "#15803D" }}>
+                            {couponApplied.isFreeShipping
+                              ? "Frete Grátis Aplicado!"
+                              : `Desconto de R$ ${couponApplied.discount.toFixed(2).replace(".", ",")}`}
+                          </div>
+                        </div>
+                        <button onClick={() => setCouponApplied(null)} style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>Remover</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <input
+                          type="text"
+                          placeholder="Digite seu cupom"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          style={{ flex: 1, padding: "6px 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", textTransform: "uppercase", fontWeight: 700 }}
+                        />
+                        <button
+                          onClick={applyCoupon}
+                          disabled={couponLoading || !couponCode.trim()}
+                          style={{ padding: "6px 12px", borderRadius: "8px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", opacity: couponLoading || !couponCode.trim() ? 0.6 : 1 }}
+                        >
+                          {couponLoading ? "..." : "Aplicar"}
+                        </button>
+                      </div>
                     )}
+                    {couponError && <p style={{ margin: "4px 0 0", color: "#DC2626", fontSize: "0.72rem", fontWeight: 600 }}>{couponError}</p>}
                   </div>
                 )}
               </div>
 
-              {/* AVISO DE PEDIDO MÍNIMO */}
+              {/* AVISO DE PEDIDO MÍNIMO (SE HOUVER) */}
               {isBelowMinOrder && (
                 <div style={{
-                  padding: "8px 12px",
+                  padding: "10px 12px",
                   background: "#FFFBEB",
                   border: "1px solid #FDE68A",
-                  borderRadius: "10px",
+                  borderRadius: "12px",
                   display: "flex",
                   alignItems: "center",
-                  gap: "8px",
-                  marginBottom: "8px"
+                  gap: "10px",
+                  margin: "4px 0"
                 }}>
-                  <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+                  <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
                   <div style={{ fontSize: "0.78rem", color: "#92400E", lineHeight: 1.35 }}>
-                    <strong>Pedido Mínimo da Loja: R$ {storeMinOrder.toFixed(2).replace(".", ",")}</strong>
+                    <div style={{ fontWeight: 800 }}>Pedido Mínimo da Loja: R$ {storeMinOrder.toFixed(2).replace(".", ",")}</div>
                     <div>Adicione mais <strong>R$ {remainingForMinOrder.toFixed(2).replace(".", ",")}</strong> para continuar.</div>
                   </div>
                 </div>
               )}
 
-              {/* GANHO DE CASHBACK NESTE PEDIDO */}
-              {isCashbackActive && cart.length > 0 && (
+              {/* CARD DE BENEFÍCIO CASHBACK SE ATIVO */}
+              {isCashbackActive && cashbackEarnedOnOrder > 0 && (
                 <div style={{
                   padding: "8px 12px",
-                  background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)",
-                  borderRadius: "10px",
-                  border: "1px solid #86EFAC",
+                  background: "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)",
+                  border: "1px solid #A7F3D0",
+                  borderRadius: "12px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  marginBottom: "8px"
+                  margin: "4px 0"
                 }}>
-                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#166534", display: "flex", alignItems: "center", gap: "4px" }}>
-                    🎁 Cashback neste pedido:
-                  </span>
-                  <span style={{ fontSize: "0.85rem", fontWeight: 900, color: "#15803D" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.78rem", fontWeight: 700, color: "#065F46" }}>
+                    <span>🎁</span>
+                    <span>Cashback neste pedido:</span>
+                  </div>
+                  <span style={{ fontSize: "0.82rem", fontWeight: 900, color: "#059669" }}>
                     +R$ {cashbackEarnedOnOrder.toFixed(2).replace(".", ",")}
                   </span>
                 </div>
@@ -1103,21 +1205,25 @@ export default function CustomerStorePage({
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Taxa de entrega</span>
-                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || (deliveryFee === 0 && (customerNeighborhood || customerStreet))) ? "#16A34A" : "#64748B" }}>
+                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : "#64748B" }}>
                     {deliveryType === "PICKUP" ? (
                       "Retirada no local"
                     ) : isFreeShippingByMin ? (
                       "Grátis 🎉"
+                    ) : couponApplied?.isFreeShipping ? (
+                      "Grátis (Cupom) 🎉"
+                    ) : deliveryCalculating ? (
+                      "Calculando..."
                     ) : deliveryFee > 0 ? (
                       `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
                     ) : (customerNeighborhood || customerStreet) ? (
-                      "Grátis 🎉"
+                      isNeighborhoodType ? "A definir" : "A calcular no endereço"
                     ) : (
                       "A definir"
                     )}
                   </span>
                 </div>
-                {discount > 0 && (
+                {discount > 0 && !couponApplied?.isFreeShipping && (
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A" }}>
                     <span>Desconto</span>
                     <span style={{ fontWeight: 700 }}>- R$ {discount.toFixed(2).replace(".", ",")}</span>
@@ -1138,65 +1244,49 @@ export default function CustomerStorePage({
           )
         ) : (
           /* TELA DE IDENTIFICAÇÃO E FINALIZAÇÃO COM CAMPOS SEPARADOS */
-          <div className="checkout-form" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {/* TIPO DE ENTREGA */}
             <div>
-              <label className="checkout-label">Seu Nome *</label>
-              <input className="checkout-input" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Como podemos te chamar?" />
+              <label className="checkout-label">Como deseja receber seu pedido? *</label>
+              <div className="checkout-type-row">
+                <button
+                  type="button"
+                  onClick={() => { setDeliveryType("DELIVERY"); if (customerStreet || customerNeighborhood) calcDeliveryFee(customerNeighborhood); }}
+                  className={`checkout-type-btn ${deliveryType === "DELIVERY" ? "active" : ""}`}
+                >
+                  🛵 Entrega (Delivery)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeliveryType("PICKUP")}
+                  className={`checkout-type-btn ${deliveryType === "PICKUP" ? "active" : ""}`}
+                >
+                  🛍️ Retirar no Balcão
+                </button>
+              </div>
             </div>
 
+            {/* SEU NOME */}
             <div>
-              <label className="checkout-label">WhatsApp *</label>
+              <label className="checkout-label">Seu Nome Completo *</label>
               <input
                 className="checkout-input"
-                value={customerPhone}
-                onChange={e => {
-                  setCustomerPhone(e.target.value);
-                  const clean = e.target.value.replace(/\D/g, "");
-                  if (clean.length >= 10 && !customer) {
-                    fetch(`/api/store-customer?phone=${clean}`)
-                      .then(r => r.json())
-                      .then(d => {
-                        if (d.customer) {
-                          setCustomer(d.customer);
-                          if (d.customer.name && !customerName) setCustomerName(d.customer.name);
-                        }
-                      })
-                      .catch(() => {});
-                  }
-                }}
-                placeholder="(21) 99999-9999"
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                placeholder="Ex: Maria Silva"
               />
             </div>
 
-            {/* RESGATE DE CASHBACK DISPONÍVEL */}
-            {customerCashbackBalance > 0 && (
-              <div style={{ padding: "10px 12px", background: "#F5F3FF", borderRadius: "12px", border: "1.5px solid #DDD6FE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#5B21B6" }}>
-                    💰 Saldo de Cashback: R$ {customerCashbackBalance.toFixed(2).replace(".", ",")}
-                  </div>
-                  <div style={{ fontSize: "0.72rem", color: "#6D28D9" }}>
-                    Resgate de até {cashbackMaxRedeemPercent}% do pedido
-                  </div>
-                </div>
-                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontWeight: 800, fontSize: "0.82rem", color: "#6D28D9" }}>
-                  <input
-                    type="checkbox"
-                    checked={useCashback}
-                    onChange={e => setUseCashback(e.target.checked)}
-                    style={{ width: "16px", height: "16px", accentColor: "#7C3AED", cursor: "pointer" }}
-                  />
-                  Usar R$ {maxCashbackDiscount.toFixed(2).replace(".", ",")}
-                </label>
-              </div>
-            )}
-
+            {/* SEU WHATSAPP */}
             <div>
-              <label className="checkout-label">Tipo de Pedido</label>
-              <div className="checkout-type-row">
-                <button type="button" onClick={() => setDeliveryType("DELIVERY")} className={`checkout-type-btn ${deliveryType === "DELIVERY" ? "active" : ""}`}>🛵 Entrega</button>
-                <button type="button" onClick={() => setDeliveryType("PICKUP")} className={`checkout-type-btn ${deliveryType === "PICKUP" ? "active" : ""}`}>🏪 Retirada</button>
-              </div>
+              <label className="checkout-label">Seu WhatsApp (com DDD) *</label>
+              <input
+                className="checkout-input"
+                type="tel"
+                value={customerPhone}
+                onChange={e => setCustomerPhone(e.target.value)}
+                placeholder="Ex: (11) 99999-9999"
+              />
             </div>
 
             {deliveryType === "DELIVERY" && (
@@ -1270,29 +1360,13 @@ export default function CustomerStorePage({
                     className="checkout-input"
                     value={customerComplement}
                     onChange={e => setCustomerComplement(e.target.value)}
-                    placeholder="Ex: Apto 201, Casa dos fundos, Ao lado da padaria"
+                    placeholder="Ex: Apto 12, Bloco B, Próximo à padaria"
                   />
                 </div>
 
-                {deliveryCalculating && (
-                  <p style={{ color: "#2563EB", fontSize: "0.76rem", fontWeight: 700, margin: "2px 0 0" }}>
-                    🔄 Calculando taxa e raio de entrega...
-                  </p>
-                )}
-
-                {!deliveryCalculating && !deliveryAvailable && (customerNeighborhood || customerStreet) && (
-                  <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "6px 10px", marginTop: "2px" }}>
-                    <p style={{ color: "#DC2626", fontSize: "0.76rem", fontWeight: 800, margin: 0 }}>
-                      ❌ {deliveryMessage || "Não atendemos neste bairro ou endereço no momento."}
-                    </p>
-                  </div>
-                )}
-
-                {!deliveryCalculating && deliveryAvailable && deliveryFee > 0 && customerNeighborhood && (
-                  <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "5px 10px", marginTop: "2px" }}>
-                    <p style={{ color: "#15803D", fontSize: "0.76rem", fontWeight: 700, margin: 0 }}>
-                      🛵 Taxa de entrega para seu endereço: <strong>R$ {deliveryFee.toFixed(2).replace(".", ",")}</strong> {deliveryMessage ? `(${deliveryMessage})` : ""}
-                    </p>
+                {deliveryMessage && (
+                  <div style={{ padding: "6px 10px", borderRadius: "8px", fontSize: "0.75rem", fontWeight: 600, background: deliveryAvailable ? "#EFF6FF" : "#FEF2F2", color: deliveryAvailable ? "#1E40AF" : "#DC2626", border: `1px solid ${deliveryAvailable ? "#BFDBFE" : "#FECDD3"}` }}>
+                    {deliveryMessage}
                   </div>
                 )}
               </div>
@@ -1320,14 +1394,34 @@ export default function CustomerStorePage({
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Entrega:</span>
-                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || (deliveryFee === 0 && (customerNeighborhood || customerStreet))) ? "#16A34A" : "#0F172A" }}>
-                  {deliveryType === "PICKUP" ? "Retirada" : isFreeShippingByMin ? "Grátis 🎉" : deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2).replace(".", ",")}` : (customerNeighborhood || customerStreet) ? "Grátis 🎉" : "A consultar"}
+                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : "#0F172A" }}>
+                  {deliveryType === "PICKUP" ? (
+                    "Retirada"
+                  ) : isFreeShippingByMin ? (
+                    "Grátis 🎉"
+                  ) : couponApplied?.isFreeShipping ? (
+                    "Grátis (Cupom) 🎉"
+                  ) : deliveryCalculating ? (
+                    "Calculando..."
+                  ) : deliveryFee > 0 ? (
+                    `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
+                  ) : (customerNeighborhood || customerStreet) ? (
+                    "A calcular no endereço"
+                  ) : (
+                    "A calcular"
+                  )}
                 </span>
               </div>
               {cashbackDiscountApplied > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
                   <span>Desconto Cashback:</span>
                   <span>- R$ {cashbackDiscountApplied.toFixed(2).replace(".", ",")}</span>
+                </div>
+              )}
+              {discount > 0 && !couponApplied?.isFreeShipping && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A", fontWeight: 700 }}>
+                  <span>Desconto (Cupom):</span>
+                  <span>- R$ {discount.toFixed(2).replace(".", ",")}</span>
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0F172A", fontSize: "0.92rem", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #CBD5E1" }}>

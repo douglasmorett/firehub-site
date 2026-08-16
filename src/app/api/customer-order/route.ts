@@ -70,8 +70,9 @@ export async function POST(req: Request) {
     const delivConfig = (franchisee.deliveryConfig as any) || {};
     const isFreeShippingMin = Boolean(
       deliveryType === "DELIVERY" &&
-      delivConfig.freeShippingActive &&
+      (delivConfig.freeShippingActive === true || delivConfig.freeShippingActive === "true") &&
       delivConfig.freeShippingMinValue &&
+      Number(delivConfig.freeShippingMinValue) > 0 &&
       totalAmount >= Number(delivConfig.freeShippingMinValue)
     );
 
