@@ -40,7 +40,14 @@ export async function POST(req: Request) {
       }
     });
 
-    return NextResponse.json({ id: customer.id, name: customer.name, phone: customer.phone, address: customer.address, birthDate: customer.birthDate });
+    return NextResponse.json({
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      address: customer.address,
+      birthDate: customer.birthDate,
+      cashbackBalance: customer.cashbackBalance || 0,
+    });
   }
 
   // LOGIN
@@ -63,30 +70,52 @@ export async function POST(req: Request) {
     name: customer.name,
     phone: customer.phone,
     address: customer.address,
+    birthDate: customer.birthDate,
+    cashbackBalance: customer.cashbackBalance || 0,
     orders
   });
 }
 
-// GET: Quick lookup by phone for order tracking & history
+// GET: Quick lookup by phone for order tracking & history & cashback
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const phone = searchParams.get("phone");
   if (!phone) return NextResponse.json({ error: "Telefone obrigatório" }, { status: 400 });
   const cleanPhone = phone.replace(/\D/g, "");
-  if (cleanPhone.length < 8) return NextResponse.json({ orders: [] });
+  if (cleanPhone.length < 8) return NextResponse.json({ orders: [], customer: null });
 
-  const orders = await prisma.customerOrder.findMany({
-    where: {
-      OR: [
-        { customerPhone: { contains: cleanPhone.slice(-8) } },
-        { customerPhone: cleanPhone }
-      ]
-    },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-    include: { items: { include: { menuProduct: { select: { id: true, name: true, price: true, imageUrl: true, isCombo: true } } } } }
+  const [customer, orders] = await Promise.all([
+    prisma.storeCustomer.findFirst({
+      where: {
+        OR: [
+          { phone: cleanPhone },
+          { phone: { contains: cleanPhone.slice(-8) } }
+        ]
+      },
+      select: { id: true, name: true, phone: true, cashbackBalance: true, address: true }
+    }),
+    prisma.customerOrder.findMany({
+      where: {
+        OR: [
+          { customerPhone: { contains: cleanPhone.slice(-8) } },
+          { customerPhone: cleanPhone }
+        ]
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      include: { items: { include: { menuProduct: { select: { id: true, name: true, price: true, imageUrl: true, isCombo: true } } } } }
+    })
+  ]);
+
+  return NextResponse.json({
+    customer: customer ? {
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      address: customer.address,
+      cashbackBalance: customer.cashbackBalance || 0
+    } : null,
+    orders
   });
-
-  return NextResponse.json({ orders });
 }
 

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  Gift, ToggleLeft, ToggleRight, Info, TrendingUp, Award, Users, Cake, Crown, Check, Sparkles, AlertCircle
+  Gift, Info, TrendingUp, Award, Users, Cake, Crown, Check, Sparkles, AlertCircle, HelpCircle
 } from "lucide-react";
 
 export type LoyaltyConfig = {
@@ -30,15 +30,15 @@ export type LoyaltyConfig = {
   birthdayMinOrder: number; // Ex: R$ 40
   // Program 5: Níveis VIP
   vipActive: boolean;
-  bronzeCashback: number; // Ex: 3%
+  bronzeCashback: number; // Ex: 1%
   silverMinSpend: number; // Ex: R$ 150/mês
-  silverCashback: number; // Ex: 7%
+  silverCashback: number; // Ex: 2%
   goldMinSpend: number; // Ex: R$ 350/mês
-  goldCashback: number; // Ex: 12%
+  goldCashback: number; // Ex: 3%
 };
 
 const DEFAULT_LOYALTY: LoyaltyConfig = {
-  active: false,
+  active: true,
   cashbackActive: true,
   rate: 5,
   minOrderValue: 20,
@@ -69,7 +69,7 @@ const DEFAULT_LOYALTY: LoyaltyConfig = {
   goldCashback: 3,
 };
 
-const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+const fmt = (v: number) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
 
 export default function LoyaltyConfigForm({
   initialConfig,
@@ -100,11 +100,11 @@ export default function LoyaltyConfigForm({
 
   return (
     <div style={{ background: "#fff", borderRadius: "20px", border: "1.5px solid #E2E8F0", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.05)" }}>
-      {/* Banner Topo */}
+      {/* Banner Topo Limpo e Informativo (Sem botão redundante) */}
       <div
         style={{
           padding: "1.25rem 1.5rem",
-          background: config.active ? "linear-gradient(135deg, #6D28D9, #4C1D95)" : "linear-gradient(135deg, #0F172A, #1E293B)",
+          background: "linear-gradient(135deg, #6D28D9, #4C1D95)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -117,23 +117,17 @@ export default function LoyaltyConfigForm({
           </div>
           <div>
             <h2 style={{ color: "#fff", fontWeight: 900, fontSize: "1.1rem", margin: 0 }}>
-              Programa de Fidelidade da Loja
+              🎁 Promoções & Fidelidade da Loja
             </h2>
-            <p style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.78rem", margin: "2px 0 0" }}>
-              Ative e personalize cashback, selos, indicações, presentes de aniversário e níveis VIP.
+            <p style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.78rem", margin: "2px 0 0" }}>
+              Cada programa pode ser ativado individualmente e já passa a funcionar no seu cardápio.
             </p>
           </div>
         </div>
 
-        <button
-          onClick={() => update("active", !config.active)}
-          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
-        >
-          {config.active ? <ToggleRight size={38} color="#C4B5FD" /> : <ToggleLeft size={38} color="rgba(255,255,255,0.4)" />}
-          <span style={{ color: config.active ? "#C4B5FD" : "rgba(255,255,255,0.5)", fontSize: "0.82rem", fontWeight: 800 }}>
-            {config.active ? "SISTEMA ATIVO" : "INATIVO"}
-          </span>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.12)", padding: "6px 14px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700 }}>
+          <Sparkles size={14} color="#FDE047" /> Controle por Módulo
+        </div>
       </div>
 
       {/* Navegação por Sub-Programas (Abas) */}
@@ -190,6 +184,7 @@ export default function LoyaltyConfigForm({
               </div>
 
               <button
+                type="button"
                 onClick={() => update("cashbackActive", !config.cashbackActive)}
                 style={{
                   padding: "6px 14px",
@@ -200,6 +195,7 @@ export default function LoyaltyConfigForm({
                   fontWeight: 800,
                   fontSize: "0.78rem",
                   cursor: "pointer",
+                  transition: "all 0.2s ease"
                 }}
               >
                 {config.cashbackActive ? "🟢 Cashback Habilitado" : "⚪ Desabilitado"}
@@ -243,11 +239,12 @@ export default function LoyaltyConfigForm({
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <input
                     type="number"
-                    min="0.5"
-                    max="30"
+                    min="0"
+                    max="100"
                     step="0.5"
-                    value={config.rate}
-                    onChange={e => update("rate", parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    value={config.rate === 0 ? "" : config.rate}
+                    onChange={e => update("rate", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                     style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                   />
                   <span style={{ fontWeight: 800, color: "#7C3AED" }}>%</span>
@@ -261,8 +258,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="5"
-                  value={config.minOrderValue}
-                  onChange={e => update("minOrderValue", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.minOrderValue === 0 ? "" : config.minOrderValue}
+                  onChange={e => update("minOrderValue", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -275,8 +273,9 @@ export default function LoyaltyConfigForm({
                   <input
                     type="number"
                     step="5"
-                    value={config.maxRedeemPercent}
-                    onChange={e => update("maxRedeemPercent", parseFloat(e.target.value) || 0)}
+                    placeholder="50"
+                    value={config.maxRedeemPercent === 0 ? "" : config.maxRedeemPercent}
+                    onChange={e => update("maxRedeemPercent", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                     style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                   />
                   <span style={{ fontWeight: 800, color: "#7C3AED" }}>%</span>
@@ -289,9 +288,9 @@ export default function LoyaltyConfigForm({
                 </label>
                 <input
                   type="number"
-                  value={config.expiresInDays}
-                  onChange={e => update("expiresInDays", parseInt(e.target.value) || 0)}
-                  placeholder="0 = nunca expira"
+                  placeholder="0 (nunca expira)"
+                  value={config.expiresInDays === 0 ? "" : config.expiresInDays}
+                  onChange={e => update("expiresInDays", e.target.value === "" ? 0 : parseInt(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -313,6 +312,7 @@ export default function LoyaltyConfigForm({
               </div>
 
               <button
+                type="button"
                 onClick={() => update("stampsActive", !config.stampsActive)}
                 style={{
                   padding: "6px 14px",
@@ -352,10 +352,10 @@ export default function LoyaltyConfigForm({
                       fontSize: "0.85rem",
                     }}
                   >
-                    {idx < 4 ? "⭐" : idx + 1}
+                    {idx < 4 ? <Award size={20} /> : idx + 1}
                   </div>
                 ))}
-                <div style={{ marginLeft: 10, padding: "8px 12px", background: "#FEF3C7", border: "1px solid #FCD34D", borderRadius: 10, fontSize: "0.78rem", fontWeight: 800, color: "#92400E" }}>
+                <div style={{ marginLeft: "auto", background: "#FEF3C7", border: "1.5px solid #FCD34D", padding: "8px 14px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 800, color: "#92400E" }}>
                   🎁 Prêmio Final: {fmt(config.stampRewardValue)} OFF
                 </div>
               </div>
@@ -386,8 +386,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="5"
-                  value={config.stampMinOrder}
-                  onChange={e => update("stampMinOrder", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.stampMinOrder === 0 ? "" : config.stampMinOrder}
+                  onChange={e => update("stampMinOrder", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -399,8 +400,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="5"
-                  value={config.stampRewardValue}
-                  onChange={e => update("stampRewardValue", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.stampRewardValue === 0 ? "" : config.stampRewardValue}
+                  onChange={e => update("stampRewardValue", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -422,6 +424,7 @@ export default function LoyaltyConfigForm({
               </div>
 
               <button
+                type="button"
                 onClick={() => update("referralActive", !config.referralActive)}
                 style={{
                   padding: "6px 14px",
@@ -456,8 +459,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="2"
-                  value={config.friendDiscount}
-                  onChange={e => update("friendDiscount", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.friendDiscount === 0 ? "" : config.friendDiscount}
+                  onChange={e => update("friendDiscount", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -469,8 +473,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="2"
-                  value={config.referrerReward}
-                  onChange={e => update("referrerReward", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.referrerReward === 0 ? "" : config.referrerReward}
+                  onChange={e => update("referrerReward", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -482,8 +487,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="5"
-                  value={config.referralMinOrder}
-                  onChange={e => update("referralMinOrder", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.referralMinOrder === 0 ? "" : config.referralMinOrder}
+                  onChange={e => update("referralMinOrder", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -505,6 +511,7 @@ export default function LoyaltyConfigForm({
               </div>
 
               <button
+                type="button"
                 onClick={() => update("birthdayActive", !config.birthdayActive)}
                 style={{
                   padding: "6px 14px",
@@ -521,40 +528,59 @@ export default function LoyaltyConfigForm({
               </button>
             </div>
 
-            {/* Explicação Chatbot WhatsApp Aniversário */}
-            <div style={{ background: "#FDF2F8", border: "1.5px solid #FBCFE8", borderRadius: 14, padding: "14px 16px", marginBottom: 18, fontSize: "0.82rem", color: "#9D174D" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, marginBottom: 4 }}>
-                <span>🤖</span>
-                <span>Disparo Automático via Chatbot IA WhatsApp</span>
+            <div style={{ background: "#FDF2F8", border: "1.5px solid #FBCFE8", borderRadius: 14, padding: "14px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#DB2777", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Cake size={24} color="#fff" />
               </div>
-              <p style={{ margin: 0, lineHeight: 1.45 }}>
-                Os clientes cadastram a data de aniversário no cardápio de forma sutil <em>("Não é obrigatório, mas queremos lembrar do seu dia e te presentear! 🎁")</em>. No dia do aniversário do cliente, nosso robô do WhatsApp envia uma mensagem carinhosa de parabéns com o cupom de desconto configurado aqui!
-              </p>
+              <div>
+                <strong style={{ fontSize: "0.9rem", color: "#831843", display: "block" }}>
+                  Disparo Automático via Chatbot & WhatsApp
+                </strong>
+                <span style={{ fontSize: "0.78rem", color: "#9D174D" }}>
+                  No dia do aniversário do cliente cadastrado, o Chatbot IA envia automaticamente os parabéns com um cupom especial de presente!
+                </span>
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
               <div>
                 <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
-                  Desconto de Aniversariante (R$)
+                  Tipo de Recompensa
+                </label>
+                <select
+                  value={config.birthdayRewardType}
+                  onChange={e => update("birthdayRewardType", e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
+                >
+                  <option value="coupon">Cupom de Desconto em R$</option>
+                  <option value="double_cashback">Cashback em Dobro no Mês</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
+                  Valor do Cupom de Presente (R$)
                 </label>
                 <input
                   type="number"
                   step="5"
-                  value={config.birthdayDiscount}
-                  onChange={e => update("birthdayDiscount", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.birthdayDiscount === 0 ? "" : config.birthdayDiscount}
+                  onChange={e => update("birthdayDiscount", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
 
               <div>
                 <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
-                  Pedido Mínimo (R$)
+                  Pedido Mínimo para Usar (R$)
                 </label>
                 <input
                   type="number"
                   step="5"
-                  value={config.birthdayMinOrder}
-                  onChange={e => update("birthdayMinOrder", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.birthdayMinOrder === 0 ? "" : config.birthdayMinOrder}
+                  onChange={e => update("birthdayMinOrder", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
               </div>
@@ -562,20 +588,21 @@ export default function LoyaltyConfigForm({
           </div>
         )}
 
-        {/* TAB 5: NÍVEIS VIP */}
+        {/* TAB 5: NÍVEIS VIP (CLUBE DE MEMBROS) */}
         {activeTab === "vip" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#0F172A" }}>
-                  👑 Níveis de Clientes VIP (Clube de Membros)
+                  👑 Níveis de Clientes VIP (Clube de Membros por Gasto Mensal)
                 </h3>
                 <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
-                  Recompense clientes recorrentes com categorias Bronze, Prata e Ouro VIP.
+                  Recompense clientes fiéis com medalhas e vantagens baseadas no quanto eles gastam no mês com você.
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={() => update("vipActive", !config.vipActive)}
                 style={{
                   padding: "6px 14px",
@@ -592,20 +619,51 @@ export default function LoyaltyConfigForm({
               </button>
             </div>
 
-            {/* VIP Tiers Grid */}
+            {/* Box Didático Explicativo de Como Funciona o Nível VIP */}
+            <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: "14px", padding: "16px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <HelpCircle size={20} color="#7C3AED" />
+                <strong style={{ color: "#0F172A", fontSize: "0.92rem" }}>
+                  Como funciona a medalha e o cálculo dos Níveis VIP?
+                </strong>
+              </div>
+              <p style={{ fontSize: "0.82rem", color: "#475569", lineHeight: 1.5, margin: "0 0 10px 0" }}>
+                O sistema calcula <strong>automaticamente todo dia a soma dos gastos que cada cliente realizou nos últimos 30 dias (último mês)</strong> com a sua loja:
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "0.78rem" }}>
+                <div style={{ background: "#FFF7ED", border: "1px solid #FFEDD5", borderRadius: "10px", padding: "10px" }}>
+                  <strong style={{ color: "#C2410C", display: "block", marginBottom: "3px" }}>🥉 Nível Bronze (Iniciante)</strong>
+                  <span>Cliente que gastou até <strong>{fmt(config.silverMinSpend)}</strong> no mês. Recebe o cashback padrão da categoria.</span>
+                </div>
+                <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "10px" }}>
+                  <strong style={{ color: "#475569", display: "block", marginBottom: "3px" }}>🥈 Nível Prata (Frequente)</strong>
+                  <span>Cliente que somou entre <strong>{fmt(config.silverMinSpend)}</strong> e <strong>{fmt(config.goldMinSpend)}</strong> no mês. Ganha mais cashback!</span>
+                </div>
+                <div style={{ background: "#FEF3C7", border: "1px solid #FCD34D", borderRadius: "10px", padding: "10px" }}>
+                  <strong style={{ color: "#92400E", display: "block", marginBottom: "3px" }}>🥇 Nível Ouro / VIP (Top Clientes)</strong>
+                  <span>Cliente que superou <strong>{fmt(config.goldMinSpend)}</strong> no mês. Ganha a medalha de Ouro e o maior benefício!</span>
+                </div>
+              </div>
+              <p style={{ fontSize: "0.74rem", color: "#64748B", margin: "10px 0 0 0" }}>
+                💡 <em>Vantagem para a sua loja: Estimula o cliente a comprar toda semana para manter a medalha e não perder o cashback VIP!</em>
+              </p>
+            </div>
+
+            {/* VIP Tiers Config Grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
               {/* Bronze */}
               <div style={{ background: "#FFF7ED", border: "1.5px solid #FFEDD5", borderRadius: 12, padding: "14px" }}>
                 <strong style={{ color: "#C2410C", fontSize: "0.9rem", display: "block" }}>🥉 Nível Bronze</strong>
                 <span style={{ fontSize: "0.75rem", color: "#64748B", display: "block", marginBottom: 10 }}>
-                  Gasto mensal até {fmt(config.silverMinSpend)}
+                  Gasto acumulado no mês até {fmt(config.silverMinSpend)}
                 </span>
                 <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Bronze (%)</label>
                 <input
                   type="number"
                   step="0.5"
-                  value={config.bronzeCashback}
-                  onChange={e => update("bronzeCashback", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.bronzeCashback === 0 ? "" : config.bronzeCashback}
+                  onChange={e => update("bronzeCashback", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: 800, marginTop: 2 }}
                 />
               </div>
@@ -621,8 +679,9 @@ export default function LoyaltyConfigForm({
                   <input
                     type="number"
                     step="10"
-                    value={config.silverMinSpend}
-                    onChange={e => update("silverMinSpend", parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    value={config.silverMinSpend === 0 ? "" : config.silverMinSpend}
+                    onChange={e => update("silverMinSpend", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                     style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 700, marginTop: 2 }}
                   />
                 </div>
@@ -630,8 +689,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="0.5"
-                  value={config.silverCashback}
-                  onChange={e => update("silverCashback", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.silverCashback === 0 ? "" : config.silverCashback}
+                  onChange={e => update("silverCashback", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: 800, marginTop: 2 }}
                 />
               </div>
@@ -647,8 +707,9 @@ export default function LoyaltyConfigForm({
                   <input
                     type="number"
                     step="10"
-                    value={config.goldMinSpend}
-                    onChange={e => update("goldMinSpend", parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    value={config.goldMinSpend === 0 ? "" : config.goldMinSpend}
+                    onChange={e => update("goldMinSpend", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                     style={{ width: "100%", padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 700, marginTop: 2 }}
                   />
                 </div>
@@ -656,8 +717,9 @@ export default function LoyaltyConfigForm({
                 <input
                   type="number"
                   step="0.5"
-                  value={config.goldCashback}
-                  onChange={e => update("goldCashback", parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  value={config.goldCashback === 0 ? "" : config.goldCashback}
+                  onChange={e => update("goldCashback", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                   style={{ width: "100%", padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontWeight: 800, marginTop: 2 }}
                 />
               </div>
@@ -667,6 +729,7 @@ export default function LoyaltyConfigForm({
 
         {/* Action Button Footer */}
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving}
           style={{
@@ -682,6 +745,7 @@ export default function LoyaltyConfigForm({
             cursor: saving ? "not-allowed" : "pointer",
             fontFamily: "inherit",
             transition: "all 0.3s",
+            boxShadow: "0 4px 14px rgba(109, 40, 217, 0.25)"
           }}
         >
           {saved ? "✅ Configurações de Fidelidade Salvas!" : saving ? "Salvando..." : "💾 Salvar Programa de Fidelidade"}

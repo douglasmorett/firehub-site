@@ -180,6 +180,8 @@ export default function CustomerStorePage({
   const [customerNumber, setCustomerNumber] = useState("");
   const [customerNeighborhood, setCustomerNeighborhood] = useState("");
   const [customerComplement, setCustomerComplement] = useState("");
+  const [deliveryCalculating, setDeliveryCalculating] = useState(false);
+  const [deliveryMessage, setDeliveryMessage] = useState("");
 
   // Rating
   const [showRating, setShowRating] = useState(false);
@@ -310,6 +312,31 @@ export default function CustomerStorePage({
   const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
 
+  // Pedido Mínimo da Loja
+  const storeMinOrder = Number(delivConfig.minimumOrderValue || 0);
+  const isBelowMinOrder = Boolean(storeMinOrder > 0 && cartTotal > 0 && cartTotal < storeMinOrder);
+  const remainingForMinOrder = storeMinOrder > 0 ? Math.max(0, storeMinOrder - cartTotal) : 0;
+
+  // Fidelidade & Cashback
+  const loyalty = (franchisee.storeLoyalty as any) || {};
+  const isCashbackActive = Boolean(loyalty.cashbackActive !== false && Number(loyalty.rate || 5) > 0);
+  const cashbackRate = Number(loyalty.rate || 5);
+  const cashbackMinOrder = Number(loyalty.minOrderValue || 0);
+  const cashbackMaxRedeemPercent = Number(loyalty.maxRedeemPercent || 50);
+
+  const [useCashback, setUseCashback] = useState(false);
+  const customerCashbackBalance = Number(customer?.cashbackBalance || 0);
+
+  const maxCashbackDiscount = Math.min(
+    customerCashbackBalance,
+    (cartTotal * cashbackMaxRedeemPercent) / 100
+  );
+  const cashbackDiscountApplied = useCashback ? maxCashbackDiscount : 0;
+
+  const cashbackEarnedOnOrder = isCashbackActive && cartTotal >= cashbackMinOrder
+    ? (cartTotal * (cashbackRate / 100))
+    : 0;
+
   const freeShippingThreshold = delivConfig.freeShippingActive && delivConfig.freeShippingMinValue ? Number(delivConfig.freeShippingMinValue) : null;
   const isFreeShippingByMin = Boolean(freeShippingThreshold && cartTotal >= freeShippingThreshold);
   const remainingForFreeShipping = freeShippingThreshold ? Math.max(0, freeShippingThreshold - cartTotal) : 0;
@@ -321,7 +348,7 @@ export default function CustomerStorePage({
         ? (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0)
         : couponApplied.discount)
     : 0;
-  const finalTotal = Math.max(0, cartTotal - discount + (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0));
+  const finalTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied + (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0));
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   const addToCart = (product: MenuProduct, cs?: any, extraSum: number = 0, qty: number = 1, itemNotes?: string) => {
@@ -528,19 +555,59 @@ export default function CustomerStorePage({
     return base;
   })();
 
-  const calcDeliveryFee = (neighborhood: string) => {
+  const isNeighborhoodType = !franchisee.deliveryZoneType || franchisee.deliveryZoneType === "NEIGHBORHOOD";
+
+  const calcDeliveryFee = async (neighborhood: string, customAddress?: string) => {
     setCustomerNeighborhood(neighborhood);
-    const zones = franchisee.deliveryZones as any[];
-    if (!zones || !franchisee.deliveryZoneType || franchisee.deliveryZoneType !== "NEIGHBORHOOD") {
-      setDeliveryFee(0); setDeliveryAvailable(true); return;
-    }
-    const found = zones.find((z: any) => z.name.toLowerCase() === neighborhood.toLowerCase());
-    if (found) {
-      setDeliveryFee(Number(found.fee) || 0);
-      setDeliveryAvailable(true);
+    const zones = (franchisee.deliveryZones as any[]) || [];
+    const zoneType = franchisee.deliveryZoneType || "NEIGHBORHOOD";
+
+    if (zoneType === "NEIGHBORHOOD") {
+      if (!neighborhood) {
+        setDeliveryFee(0);
+        setDeliveryAvailable(false);
+        setDeliveryMessage("Selecione um bairro atendido pela loja.");
+        return;
+      }
+      const found = Array.isArray(zones)
+        ? zones.find((z: any) => z.name && z.name.trim().toLowerCase() === neighborhood.trim().toLowerCase())
+        : null;
+      if (found) {
+        setDeliveryFee(Number(found.fee) || 0);
+        setDeliveryAvailable(true);
+        setDeliveryMessage("");
+      } else {
+        setDeliveryFee(0);
+        setDeliveryAvailable(false);
+        setDeliveryMessage("Não atendemos neste bairro no momento.");
+      }
+    } else if (zoneType === "RADIUS" || zoneType === "DISTANCE") {
+      const addrQuery = customAddress || `${customerStreet} ${customerNumber}, ${neighborhood || customerNeighborhood}, ${franchisee.city || ""}`.trim();
+      if (addrQuery.length < 5) return;
+      setDeliveryCalculating(true);
+      try {
+        const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&address=${encodeURIComponent(addrQuery)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.available === false) {
+            setDeliveryFee(0);
+            setDeliveryAvailable(false);
+            setDeliveryMessage(data.message || "Endereço fora do raio de entrega da loja.");
+          } else {
+            setDeliveryFee(Number(data.fee) || 0);
+            setDeliveryAvailable(true);
+            setDeliveryMessage(data.message || "");
+          }
+        }
+      } catch {
+        setDeliveryAvailable(true);
+      } finally {
+        setDeliveryCalculating(false);
+      }
     } else {
       setDeliveryFee(0);
-      setDeliveryAvailable(false);
+      setDeliveryAvailable(true);
+      setDeliveryMessage("");
     }
   };
 
@@ -562,14 +629,24 @@ export default function CustomerStorePage({
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
+      alert(`⚠️ O pedido mínimo desta loja é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.`);
+      return;
+    }
     if (!customerName.trim()) { alert("Por favor, informe seu nome."); return; }
     if (!customerPhone.trim()) { alert("Por favor, informe seu WhatsApp / telefone."); return; }
     let finalAddress = "";
     if (deliveryType === "DELIVERY") {
       if (!customerStreet.trim()) { alert("Por favor, informe a Rua / Logradouro de entrega."); return; }
       if (!customerNumber.trim()) { alert("Por favor, informe o Número do endereço."); return; }
-      if (!customerNeighborhood.trim()) { alert("Por favor, informe ou selecione o Bairro de entrega."); return; }
-      if (!deliveryAvailable) { alert("Não entregamos no endereço ou bairro selecionado."); return; }
+      if (!customerNeighborhood.trim()) {
+        alert(isNeighborhoodType ? "Por favor, selecione seu Bairro de entrega." : "Por favor, informe seu Bairro de entrega.");
+        return;
+      }
+      if (!deliveryAvailable) {
+        alert(deliveryMessage || "Não atendemos no endereço ou bairro selecionado no momento.");
+        return;
+      }
       finalAddress = `${customerStreet.trim()}, ${customerNumber.trim()} - ${customerNeighborhood.trim()}${customerComplement.trim() ? ` (${customerComplement.trim()})` : ""}`;
     }
     setLoading(true);
@@ -583,6 +660,7 @@ export default function CustomerStorePage({
           deliveryType, paymentMethod, notes,
           deliveryFee: (deliveryType === "DELIVERY" && !isFreeShippingByMin) ? (deliveryFee || 0) : 0,
           couponCode: couponApplied?.code || null,
+          cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
           items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" }))
         })
       });
@@ -876,7 +954,48 @@ export default function CustomerStorePage({
                 )}
               </div>
 
-              {/* RESUMO DOS VALORES (IGUAL AO EXEMPLO) */}
+              {/* AVISO DE PEDIDO MÍNIMO */}
+              {isBelowMinOrder && (
+                <div style={{
+                  padding: "8px 12px",
+                  background: "#FFFBEB",
+                  border: "1px solid #FDE68A",
+                  borderRadius: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "8px"
+                }}>
+                  <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+                  <div style={{ fontSize: "0.78rem", color: "#92400E", lineHeight: 1.35 }}>
+                    <strong>Pedido Mínimo da Loja: R$ {storeMinOrder.toFixed(2).replace(".", ",")}</strong>
+                    <div>Adicione mais <strong>R$ {remainingForMinOrder.toFixed(2).replace(".", ",")}</strong> para continuar.</div>
+                  </div>
+                </div>
+              )}
+
+              {/* GANHO DE CASHBACK NESTE PEDIDO */}
+              {isCashbackActive && cart.length > 0 && (
+                <div style={{
+                  padding: "8px 12px",
+                  background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)",
+                  borderRadius: "10px",
+                  border: "1px solid #86EFAC",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "8px"
+                }}>
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#166534", display: "flex", alignItems: "center", gap: "4px" }}>
+                    🎁 Cashback neste pedido:
+                  </span>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 900, color: "#15803D" }}>
+                    +R$ {cashbackEarnedOnOrder.toFixed(2).replace(".", ",")}
+                  </span>
+                </div>
+              )}
+
+              {/* RESUMO DOS VALORES */}
               <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "5px", fontSize: "0.84rem", color: "#64748B" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Subtotal</span>
@@ -888,7 +1007,7 @@ export default function CustomerStorePage({
                     {deliveryType === "PICKUP" ? (
                       "Retirada no local"
                     ) : isFreeShippingByMin ? (
-                      "Grátis"
+                      "Grátis 🎉"
                     ) : (deliveryFee > 0 && customerNeighborhood) ? (
                       `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
                     ) : (
@@ -900,6 +1019,12 @@ export default function CustomerStorePage({
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A" }}>
                     <span>Desconto</span>
                     <span style={{ fontWeight: 700 }}>- R$ {discount.toFixed(2).replace(".", ",")}</span>
+                  </div>
+                )}
+                {cashbackDiscountApplied > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
+                    <span>Desconto Cashback</span>
+                    <span style={{ fontWeight: 700 }}>- R$ {cashbackDiscountApplied.toFixed(2).replace(".", ",")}</span>
                   </div>
                 )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", marginTop: "4px", paddingTop: "6px", borderTop: "1px dashed #E2E8F0" }}>
@@ -919,8 +1044,50 @@ export default function CustomerStorePage({
 
             <div>
               <label className="checkout-label">WhatsApp *</label>
-              <input className="checkout-input" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="(21) 99999-9999" />
+              <input
+                className="checkout-input"
+                value={customerPhone}
+                onChange={e => {
+                  setCustomerPhone(e.target.value);
+                  const clean = e.target.value.replace(/\D/g, "");
+                  if (clean.length >= 10 && !customer) {
+                    fetch(`/api/store-customer?phone=${clean}`)
+                      .then(r => r.json())
+                      .then(d => {
+                        if (d.customer) {
+                          setCustomer(d.customer);
+                          if (d.customer.name && !customerName) setCustomerName(d.customer.name);
+                        }
+                      })
+                      .catch(() => {});
+                  }
+                }}
+                placeholder="(21) 99999-9999"
+              />
             </div>
+
+            {/* RESGATE DE CASHBACK DISPONÍVEL */}
+            {customerCashbackBalance > 0 && (
+              <div style={{ padding: "10px 12px", background: "#F5F3FF", borderRadius: "12px", border: "1.5px solid #DDD6FE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#5B21B6" }}>
+                    💰 Saldo de Cashback: R$ {customerCashbackBalance.toFixed(2).replace(".", ",")}
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: "#6D28D9" }}>
+                    Resgate de até {cashbackMaxRedeemPercent}% do pedido
+                  </div>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontWeight: 800, fontSize: "0.82rem", color: "#6D28D9" }}>
+                  <input
+                    type="checkbox"
+                    checked={useCashback}
+                    onChange={e => setUseCashback(e.target.checked)}
+                    style={{ width: "16px", height: "16px", accentColor: "#7C3AED", cursor: "pointer" }}
+                  />
+                  Usar R$ {maxCashbackDiscount.toFixed(2).replace(".", ",")}
+                </label>
+              </div>
+            )}
 
             <div>
               <label className="checkout-label">Tipo de Pedido</label>
@@ -938,6 +1105,11 @@ export default function CustomerStorePage({
                     className="checkout-input"
                     value={customerStreet}
                     onChange={e => setCustomerStreet(e.target.value)}
+                    onBlur={() => {
+                      if (!isNeighborhoodType) {
+                        calcDeliveryFee(customerNeighborhood);
+                      }
+                    }}
                     placeholder="Ex: Rua São Paulo, Av. Brasil"
                   />
                 </div>
@@ -949,13 +1121,18 @@ export default function CustomerStorePage({
                       className="checkout-input"
                       value={customerNumber}
                       onChange={e => setCustomerNumber(e.target.value)}
+                      onBlur={() => {
+                        if (!isNeighborhoodType) {
+                          calcDeliveryFee(customerNeighborhood);
+                        }
+                      }}
                       placeholder="Ex: 98 ou S/N"
                     />
                   </div>
 
                   <div>
                     <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Bairro *</label>
-                    {franchisee.deliveryZoneType === "NEIGHBORHOOD" && franchisee.deliveryZones && Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.length > 0 ? (
+                    {isNeighborhoodType && Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.length > 0 ? (
                       <select
                         className="checkout-input"
                         value={customerNeighborhood}
@@ -963,9 +1140,9 @@ export default function CustomerStorePage({
                           setCustomerNeighborhood(e.target.value);
                           calcDeliveryFee(e.target.value);
                         }}
-                        style={{ cursor: "pointer" }}
+                        style={{ cursor: "pointer", fontWeight: customerNeighborhood ? 700 : 400 }}
                       >
-                        <option value="">Selecione o bairro</option>
+                        <option value="">Selecione seu bairro...</option>
                         {(franchisee.deliveryZones as any[]).map((z: any, i: number) => (
                           <option key={i} value={z.name}>{z.name} — R$ {(z.fee || 0).toFixed(2).replace(".", ",")}</option>
                         ))}
@@ -974,10 +1151,8 @@ export default function CustomerStorePage({
                       <input
                         className="checkout-input"
                         value={customerNeighborhood}
-                        onChange={e => {
-                          setCustomerNeighborhood(e.target.value);
-                          calcDeliveryFee(e.target.value);
-                        }}
+                        onChange={e => setCustomerNeighborhood(e.target.value)}
+                        onBlur={() => calcDeliveryFee(customerNeighborhood)}
                         placeholder="Ex: Centro"
                       />
                     )}
@@ -997,10 +1172,26 @@ export default function CustomerStorePage({
                   />
                 </div>
 
-                {!deliveryAvailable && customerNeighborhood && (
-                  <p style={{ color: "#EF4444", fontSize: "0.76rem", fontWeight: 700, margin: "2px 0 0" }}>
-                    ❌ Bairro fora da área de entrega da loja
+                {deliveryCalculating && (
+                  <p style={{ color: "#2563EB", fontSize: "0.76rem", fontWeight: 700, margin: "2px 0 0" }}>
+                    🔄 Calculando taxa e raio de entrega...
                   </p>
+                )}
+
+                {!deliveryCalculating && !deliveryAvailable && (customerNeighborhood || customerStreet) && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "6px 10px", marginTop: "2px" }}>
+                    <p style={{ color: "#DC2626", fontSize: "0.76rem", fontWeight: 800, margin: 0 }}>
+                      ❌ {deliveryMessage || "Não atendemos neste bairro ou endereço no momento."}
+                    </p>
+                  </div>
+                )}
+
+                {!deliveryCalculating && deliveryAvailable && deliveryFee > 0 && customerNeighborhood && (
+                  <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "8px", padding: "5px 10px", marginTop: "2px" }}>
+                    <p style={{ color: "#15803D", fontSize: "0.76rem", fontWeight: 700, margin: 0 }}>
+                      🛵 Taxa de entrega para seu endereço: <strong>R$ {deliveryFee.toFixed(2).replace(".", ",")}</strong> {deliveryMessage ? `(${deliveryMessage})` : ""}
+                    </p>
+                  </div>
                 )}
               </div>
             )}
@@ -1031,6 +1222,12 @@ export default function CustomerStorePage({
                   {deliveryType === "PICKUP" ? "Retirada" : isFreeShippingByMin ? "Grátis 🎉" : (deliveryFee > 0 && customerNeighborhood) ? `R$ ${deliveryFee.toFixed(2).replace(".", ",")}` : "A consultar"}
                 </span>
               </div>
+              {cashbackDiscountApplied > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
+                  <span>Desconto Cashback:</span>
+                  <span>- R$ {cashbackDiscountApplied.toFixed(2).replace(".", ",")}</span>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0F172A", fontSize: "0.92rem", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #CBD5E1" }}>
                 <span>Total a Pagar:</span>
                 <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
@@ -1047,6 +1244,10 @@ export default function CustomerStorePage({
             <button
               type="button"
               onClick={() => {
+                if (isBelowMinOrder) {
+                  alert(`⚠️ O pedido mínimo desta loja é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.`);
+                  return;
+                }
                 setIsCheckout(true);
                 trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
               }}
@@ -1055,19 +1256,19 @@ export default function CustomerStorePage({
                 padding: "13px",
                 borderRadius: "12px",
                 border: "none",
-                background: "#0F172A",
+                background: isBelowMinOrder ? "#94A3B8" : "#0F172A",
                 color: "#FFFFFF",
                 fontWeight: 800,
                 fontSize: "0.95rem",
-                cursor: "pointer",
+                cursor: isBelowMinOrder ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                boxShadow: "0 4px 14px rgba(15, 23, 42, 0.25)",
+                boxShadow: isBelowMinOrder ? "none" : "0 4px 14px rgba(15, 23, 42, 0.25)",
                 transition: "all 0.2s ease"
               }}
             >
-              <span>Continuar pedido</span>
+              <span>{isBelowMinOrder ? `Falta R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")}` : "Continuar pedido"}</span>
               <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
             </button>
           ) : (
@@ -1239,6 +1440,26 @@ export default function CustomerStorePage({
               <Package size={14} /> Pedidos
             </button>
 
+            {customer && customerCashbackBalance > 0 && (
+              <div
+                style={{
+                  background: "linear-gradient(135deg, #10B981, #059669)",
+                  color: "#FFFFFF",
+                  borderRadius: "10px",
+                  padding: "5px 9px",
+                  fontSize: "0.76rem",
+                  fontWeight: 800,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  boxShadow: "0 2px 6px rgba(16, 185, 129, 0.25)"
+                }}
+                title="Seu saldo de cashback acumulado nesta loja"
+              >
+                💰 R$ {customerCashbackBalance.toFixed(2).replace(".", ",")}
+              </div>
+            )}
+
             {customer ? (
               <button onClick={() => setShowHistory(!showHistory)} style={{ background: "rgba(15, 23, 42, 0.06)", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "6px 12px", cursor: "pointer", color: "#1E293B", fontSize: "0.78rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
                 <User size={14} /> {customer.name.split(" ")[0]}
@@ -1348,6 +1569,24 @@ export default function CustomerStorePage({
                             {p.description}
                           </p>
                         )}
+                        {isCashbackActive && (
+                          <div style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            background: "linear-gradient(135deg, #ECFDF5, #DCFCE7)",
+                            border: "1px solid #A7F3D0",
+                            borderRadius: "8px",
+                            padding: "3px 8px",
+                            fontSize: "0.72rem",
+                            fontWeight: 800,
+                            color: "#047857",
+                            marginBottom: "6px",
+                            width: "fit-content"
+                          }}>
+                            💸 Ganhe R$ {((p.price * cashbackRate) / 100).toFixed(2).replace(".", ",")} de volta ({cashbackRate}%)
+                          </div>
+                        )}
                         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "8px" }}>
                           <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#059669" }}>
                             {p.isCombo && <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
@@ -1426,6 +1665,24 @@ export default function CustomerStorePage({
                             ) : null;
                           } catch { return null; }
                         })()}
+                        {isCashbackActive && (
+                          <div style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
+                            background: "#F0FDF4",
+                            border: "1px solid #BBF7D0",
+                            borderRadius: "6px",
+                            padding: "1px 6px",
+                            fontSize: "0.68rem",
+                            fontWeight: 800,
+                            color: "#15803D",
+                            margin: "3px 0 2px 0",
+                            width: "fit-content"
+                          }}>
+                            💸 +R$ {((p.price * cashbackRate) / 100).toFixed(2).replace(".", ",")} de cashback
+                          </div>
+                        )}
                         <p className="product-price">
                           {p.isCombo && <span className="product-price-from">A partir de </span>}
                           R$ {p.price.toFixed(2)}
