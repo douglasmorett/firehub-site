@@ -858,6 +858,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedChannels, setSelectedChannels] = useState<{
+    ifood: boolean;
+    "99food": boolean;
+    jotaja: boolean;
+    retirada: boolean;
+    site: boolean;
+  }>({
+    ifood: true,
+    "99food": true,
+    jotaja: true,
+    retirada: true,
+    site: true,
+  });
+
+  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "retirada" | "site") => {
+    setSelectedChannels(prev => ({
+      ...prev,
+      [ch]: !prev[ch]
+    }));
+  };
+
   const [now, setNow] = useState(new Date());
   const [motoboys, setMotoboys] = useState<any[]>(initialMotoboys || []);
   const [assigningId, setAssigningId] = useState<string | null>(null);
@@ -1847,8 +1868,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const fromDate = new Date(dateFrom);
   const toDate = new Date(dateTo);
 
+  const matchesChannelFilter = (o: any) => {
+    const isIfood = o.source === "IFOOD" || Boolean(o.ifoodOrderId) || Boolean(o.ifoodReference);
+    const is99Food = o.source === "99FOOD" || o.openDeliveryChannel === "99FOOD" || (o.source === "OPEN_DELIVERY" && String(o.openDeliveryChannel).includes("99"));
+    const isJotaja = o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD");
+    const isRetirada = o.deliveryType === "PICKUP" || o.deliveryType === "TAKEOUT" || o.deliveryType === "BALCAO" || o.source === "PDV" || Boolean(o.tableNumber);
+    const isSite = !isIfood && !is99Food && !isJotaja && !isRetirada;
+
+    if (isIfood && selectedChannels.ifood) return true;
+    if (is99Food && selectedChannels["99food"]) return true;
+    if (isJotaja && selectedChannels.jotaja) return true;
+    if (isRetirada && selectedChannels.retirada) return true;
+    if (isSite && selectedChannels.site) return true;
+
+    return false;
+  };
+
   const filteredOrders = orders.filter(o => {
     if (o.status === "ENCERRADO") return false;
+    if (!matchesChannelFilter(o)) return false;
     
     // Pedidos de integrações (iFood/Jotajá) que estão EM ANDAMENTO ignoram filtro de data,
     // garantindo que pedidos ativos fiquem sempre visíveis.
@@ -3278,6 +3316,137 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <input type="datetime-local" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
               <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>Até</span>
               <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+            </div>
+
+            {/* Filtro de pedidos por canais / integrações */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
+              <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
+                Filtro de pedidos
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
+                {/* iFood */}
+                <button
+                  type="button"
+                  onClick={() => toggleChannel("ifood")}
+                  title={selectedChannels.ifood ? "iFood: Ativo (Clique para filtrar)" : "iFood: Oculto (Clique para exibir)"}
+                  style={{
+                    height: "26px",
+                    padding: "2px 6px",
+                    borderRadius: "6px",
+                    border: selectedChannels.ifood ? "1.5px solid #EF4444" : "1.5px solid #CBD5E1",
+                    background: selectedChannels.ifood ? "#FFFFFF" : "#F1F5F9",
+                    filter: selectedChannels.ifood ? "none" : "grayscale(100%) opacity(0.35)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: selectedChannels.ifood ? "0 1px 3px rgba(239,68,68,0.15)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <img src="/images/logos/ifood.png" alt="iFood" style={{ height: "15px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                </button>
+
+                {/* 99Food */}
+                <button
+                  type="button"
+                  onClick={() => toggleChannel("99food")}
+                  title={selectedChannels["99food"] ? "99Food: Ativo (Clique para filtrar)" : "99Food: Oculto (Clique para exibir)"}
+                  style={{
+                    height: "26px",
+                    padding: "2px 5px",
+                    borderRadius: "6px",
+                    border: selectedChannels["99food"] ? "1.5px solid #F59E0B" : "1.5px solid #CBD5E1",
+                    background: selectedChannels["99food"] ? "#FFFFFF" : "#F1F5F9",
+                    filter: selectedChannels["99food"] ? "none" : "grayscale(100%) opacity(0.35)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: selectedChannels["99food"] ? "0 1px 3px rgba(245,158,11,0.15)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <img src="/images/logos/99.svg" alt="99Food" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                </button>
+
+                {/* Jotajá */}
+                <button
+                  type="button"
+                  onClick={() => toggleChannel("jotaja")}
+                  title={selectedChannels.jotaja ? "Jotajá: Ativo (Clique para filtrar)" : "Jotajá: Oculto (Clique para exibir)"}
+                  style={{
+                    height: "26px",
+                    padding: "2px 5px",
+                    borderRadius: "6px",
+                    border: selectedChannels.jotaja ? "1.5px solid #DC2626" : "1.5px solid #CBD5E1",
+                    background: selectedChannels.jotaja ? "#FFFFFF" : "#F1F5F9",
+                    filter: selectedChannels.jotaja ? "none" : "grayscale(100%) opacity(0.35)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: selectedChannels.jotaja ? "0 1px 3px rgba(220,38,38,0.15)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <img src="/images/logos/jotaja.png" alt="Jotajá" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                </button>
+
+                {/* Retirada / Balcão */}
+                <button
+                  type="button"
+                  onClick={() => toggleChannel("retirada")}
+                  title={selectedChannels.retirada ? "Retirada: Ativo (Clique para filtrar)" : "Retirada: Oculto (Clique para exibir)"}
+                  style={{
+                    height: "26px",
+                    padding: "2px 7px",
+                    borderRadius: "6px",
+                    border: selectedChannels.retirada ? "1.5px solid #10B981" : "1.5px solid #CBD5E1",
+                    background: selectedChannels.retirada ? "#ECFDF5" : "#F1F5F9",
+                    color: selectedChannels.retirada ? "#065F46" : "#64748B",
+                    filter: selectedChannels.retirada ? "none" : "grayscale(100%) opacity(0.35)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "3px",
+                    fontSize: "0.72rem",
+                    fontWeight: 800,
+                    boxShadow: selectedChannels.retirada ? "0 1px 3px rgba(16,185,129,0.15)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "0.82rem" }}>🛍️</span>
+                  <span>Retirada</span>
+                </button>
+
+                {/* Loja / Site */}
+                <button
+                  type="button"
+                  onClick={() => toggleChannel("site")}
+                  title={selectedChannels.site ? "Cardápio/WhatsApp: Ativo (Clique para filtrar)" : "Cardápio/WhatsApp: Oculto (Clique para exibir)"}
+                  style={{
+                    height: "26px",
+                    padding: "2px 7px",
+                    borderRadius: "6px",
+                    border: selectedChannels.site ? "1.5px solid #3B82F6" : "1.5px solid #CBD5E1",
+                    background: selectedChannels.site ? "#EFF6FF" : "#F1F5F9",
+                    color: selectedChannels.site ? "#1E40AF" : "#64748B",
+                    filter: selectedChannels.site ? "none" : "grayscale(100%) opacity(0.35)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "3px",
+                    fontSize: "0.72rem",
+                    fontWeight: 800,
+                    boxShadow: selectedChannels.site ? "0 1px 3px rgba(59,130,246,0.15)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "0.82rem" }}>🌐</span>
+                  <span>Site</span>
+                </button>
+              </div>
             </div>
 
             {/* Weather + Clock — right aligned */}
