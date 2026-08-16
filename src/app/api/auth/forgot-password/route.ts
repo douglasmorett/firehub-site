@@ -32,18 +32,27 @@ export async function POST(req: NextRequest) {
 
   // FLUXO 1 — Solicitar recuperação de senha
   if (email && !token) {
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const cleanEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findFirst({
+      where: {
+        email: { equals: cleanEmail, mode: "insensitive" }
+      },
       select: { id: true, email: true, name: true },
     });
-    // Mesmo que não encontre, retorna sucesso (segurança)
-    if (!user) return NextResponse.json({ ok: true });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "E-mail não cadastrado em nosso sistema." },
+        { status: 400 }
+      );
+    }
 
     const resetToken = crypto.randomBytes(32).toString("hex");
     const resetTokenExp = new Date(Date.now() + 1000 * 60 * 60); // 1 hora
 
     await prisma.user.update({
-      where: { email },
+      where: { id: user.id },
       data: { resetToken, resetTokenExp },
     });
 

@@ -16,9 +16,13 @@ export default function ForgotPasswordPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
     });
+    const data = await res.json().catch(() => ({}));
     setLoading(false);
-    if (res.ok) setSent(true);
-    else setError("Erro ao enviar. Tente novamente.");
+    if (res.ok) {
+      setSent(true);
+    } else {
+      setError(data.error || "Erro ao enviar. Tente novamente.");
+    }
   };
 
   return (
