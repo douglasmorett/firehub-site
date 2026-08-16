@@ -181,6 +181,7 @@ export default function VendaPresencialPage() {
       customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? `Mesa ${tableNum}` : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       paymentMethod,
+      change: paymentMethod === "Dinheiro" && change ? Number(change) : null,
       employeeId: selectedEmployeeId || null,
       employeeName: selectedEmployeeName || null,
       notes,

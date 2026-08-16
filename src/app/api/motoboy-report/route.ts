@@ -71,8 +71,12 @@ export async function GET(req: Request) {
       status: true,
       motoboyId: true,
       paymentMethod: true,
+      changeAmount: true,
       items: true,
       notes: true,
+      dailyOrderNumber: true,
+      ifoodReference: true,
+      openDeliveryReference: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -105,18 +109,48 @@ export async function GET(req: Request) {
     const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
 
     // Classificação de pagamentos recebidos pelo motoboy na entrega vs online
-    let cashCollectedSum = 0, cashOrdersCount = 0;
+    let cashCollectedSum = 0, cashOrdersCount = 0, changeGivenSum = 0, cashOrdersValueSum = 0;
     let debitTotal = 0, debitCount = 0;
     let creditTotal = 0, creditCount = 0;
     let voucherTotal = 0, voucherCount = 0;
     let onlineTotal = 0, onlineCount = 0;
 
     for (const o of orders) {
-      if (o.status === "CANCELADO") continue; // Pedido cancelado: não cobrar prestação de contas do motoboy
+      const st = (o.status || "").toUpperCase();
+      if (st.includes("CANCEL")) continue; // Pedido cancelado: não cobrar prestação de contas do motoboy
+
       const pm = (o.paymentMethod || "").toUpperCase();
-      if (pm === "CASH" || pm.includes("DINHEIR")) {
-        cashCollectedSum += o.totalAmount;
+      const isCash = pm === "CASH" || pm.includes("DINHEIR") || pm.includes("DINHEIRO");
+
+      if (isCash) {
+        const orderTotal = Number(o.totalAmount || 0);
+        let changeFor: number | null = null;
+
+        // 1. Verificar se há valor de troco estruturado (changeAmount)
+        if (typeof o.changeAmount === "number" && o.changeAmount > orderTotal) {
+          changeFor = o.changeAmount;
+        } else if (o.notes) {
+          // 2. Extrair troco de notas/observações (ex: "Troco para 100", "Troco p/ 100", "Troco para R$ 100,00", "Troco: 100", "Levar troco para 50")
+          const notesUpper = String(o.notes).toUpperCase();
+          const match =
+            notesUpper.match(/TROCO\s*(?:PARA|P\/|DE|PRA)?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i) ||
+            notesUpper.match(/TROCO\s*[:=]?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i);
+          if (match && match[1]) {
+            const parsed = parseFloat(match[1].replace(",", "."));
+            if (!isNaN(parsed) && parsed > orderTotal) {
+              changeFor = parsed;
+            }
+          }
+        }
+
+        // O valor que o motoboy recebe fisicamente do cliente e entrega para a loja
+        const cashCollected = changeFor ? changeFor : orderTotal;
+        const changeGiven = changeFor ? (changeFor - orderTotal) : 0;
+
+        cashCollectedSum += cashCollected;
         cashOrdersCount++;
+        changeGivenSum += changeGiven;
+        cashOrdersValueSum += orderTotal;
       } else if (pm.includes("DEBIT") || pm.includes("DEBITO") || pm.includes("DÉBITO")) {
         debitTotal += o.totalAmount;
         debitCount++;
@@ -196,6 +230,8 @@ export async function GET(req: Request) {
         motoboyFeeSum,
         cashCollectedSum,
         cashOrdersCount,
+        cashOrdersValueSum,
+        changeGivenSum,
         cardPosTotal,
         cardPosCount,
         debitTotal,
@@ -211,17 +247,52 @@ export async function GET(req: Request) {
         totalWithDaily,
         totalFeeOnly,
       },
-      orders: orders.map(o => ({
-        id: o.id,
-        createdAt: o.createdAt,
-        totalAmount: o.totalAmount,
-        deliveryFee: o.deliveryFee,
-        motoboyFee: o.motoboyFee,
-        customerName: o.customerName,
-        customerAddress: o.customerAddress,
-        paymentMethod: o.paymentMethod,
-        status: o.status,
-      })),
+      orders: orders.map(o => {
+        const pm = (o.paymentMethod || "").toUpperCase();
+        const isCash = pm === "CASH" || pm.includes("DINHEIR") || pm.includes("DINHEIRO");
+        const orderTotal = Number(o.totalAmount || 0);
+        let changeFor: number | null = null;
+        if (typeof o.changeAmount === "number" && o.changeAmount > orderTotal) {
+          changeFor = o.changeAmount;
+        } else if (o.notes) {
+          const notesUpper = String(o.notes).toUpperCase();
+          const match =
+            notesUpper.match(/TROCO\s*(?:PARA|P\/|DE|PRA)?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i) ||
+            notesUpper.match(/TROCO\s*[:=]?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i);
+          if (match && match[1]) {
+            const parsed = parseFloat(match[1].replace(",", "."));
+            if (!isNaN(parsed) && parsed > orderTotal) {
+              changeFor = parsed;
+            }
+          }
+        }
+        const cashToDeliver = isCash ? (changeFor || orderTotal) : 0;
+        const changeGiven = isCash && changeFor ? (changeFor - orderTotal) : 0;
+
+        return {
+          id: o.id,
+          createdAt: o.createdAt,
+          date: o.createdAt,
+          totalAmount: o.totalAmount,
+          changeAmount: o.changeAmount,
+          changeFor,
+          changeGiven,
+          cashToDeliver,
+          deliveryFee: o.deliveryFee,
+          motoboyFee: o.motoboyFee,
+          deliveryDistance: o.deliveryDistance,
+          customerName: o.customerName,
+          customerPhone: o.customerPhone,
+          customerAddress: o.customerAddress,
+          paymentMethod: o.paymentMethod,
+          status: o.status,
+          notes: o.notes,
+          items: o.items,
+          dailyOrderNumber: o.dailyOrderNumber,
+          ifoodReference: o.ifoodReference,
+          openDeliveryReference: o.openDeliveryReference,
+        };
+      }),
     };
   });
 

@@ -11,6 +11,7 @@ const SOLUTIONS = [
     items: [
       { t: "Cardápio Digital Inteligente", d: "Delivery, mesa e balcão sem app" },
       { t: "Chatbot WhatsApp com IA", d: "Atendimento 24h sem perder pedido" },
+      { t: "Alerta Automático de Bebidas", d: "Zero esquecimento de refrigerantes na expedição" },
       { t: "Gestão de Pedidos", d: "Tudo centralizado em tempo real" },
       { t: "Pagamento Online", d: "Cartão de crédito e Pix integrados" },
     ]
@@ -46,6 +47,7 @@ const COMPARE = [
   ["Cardápio digital sem taxa", true, true, false],
   ["Delivery, Mesas e Balcão", true, true, false],
   ["Chatbot WhatsApp com IA", true, true, false],
+  ["Alerta de bebida na nota (zero esquecimento) 🏆", true, false, false],
   ["Auditoria operacional com IA 🏆", true, false, false],
   ["Controle financeiro completo 🏆", true, false, false],
   ["Checklist auditado por IA 🏆", true, false, false],
@@ -100,6 +102,7 @@ export default function Home() {
         <a href={LOGIN} className="btn-cta nav-mobile-cta">Acessar</a>
         <div className="nav-links">
           <a href="#funcionalidades">Funcionalidades</a>
+          <a href="#alerta-bebidas">Alerta Bebidas</a>
           <a href="#como-funciona">Como funciona</a>
           <a href="#planos">Planos</a>
           <a href="#comparativo">Comparativo</a>
@@ -326,6 +329,84 @@ export default function Home() {
                 Fale com nossa equipe aí no nosso WhatsApp!
               </a>
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* SEÇÃO ALERTA DE BEBIDAS NA NOTINHA TÉRMICA */}
+      <section className="sec" id="alerta-bebidas" style={{ background: "linear-gradient(135deg, #0A1128 0%, #1C2541 100%)", color: "#FFF", padding: "5.5rem 0", position: "relative", overflow: "hidden", borderTop: "1px solid rgba(56,189,248,0.15)" }}>
+        <div style={{ position: "absolute", top: -100, left: -100, width: 500, height: 500, background: "radial-gradient(circle, rgba(56,189,248,0.18) 0%, rgba(0,0,0,0) 70%)", borderRadius: "50%", pointerEvents: "none" }} />
+        <div className="w">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4rem", alignItems: "center" }} className="responsive-grid-bebida">
+            <style>{`
+              @media (min-width: 900px) {
+                .responsive-grid-bebida { grid-template-columns: 1.05fr 0.95fr !important; }
+              }
+            `}</style>
+            <div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(56,189,248,0.15)", border: "1px solid rgba(56,189,248,0.4)", color: "#38BDF8", fontSize: "0.82rem", fontWeight: 900, padding: "6px 16px", borderRadius: 20, marginBottom: 16 }}>
+                🥤 REVOLUÇÃO NA EXPEDIÇÃO · ZERO ESQUECIMENTO
+              </div>
+              <h2 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.15, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
+                Nunca mais mande um pedido sem a <span style={{ color: "#38BDF8" }}>bebida gelada</span>
+              </h2>
+              <p style={{ fontSize: "1.05rem", color: "#94A3B8", lineHeight: 1.6, margin: "0 0 24px" }}>
+                O maior motivo de <strong>avaliações 1 estrela, estornos e prejuízo</strong> no delivery é a bebida esquecida na geladeira enquanto o lanche quente é embalado na pressa. O FireHub <strong style={{ color: "#FFF" }}>detecta automaticamente qualquer bebida ou refrigerante</strong> (mesmo dentro de combos) e carimba a notinha impressa com destaque inconfundível para sua equipe!
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: 28 }} className="bebida-features-grid">
+                <style>{`
+                  @media (max-width: 600px) {
+                    .bebida-features-grid { grid-template-columns: 1fr !important; }
+                  }
+                `}</style>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🏷️ Carimbo &lt;=== BEBIDA</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Marcação clara e direta ao lado de cada refrigerante ou suco na comanda</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⬛ Faixa de Alerta em Negrito</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Imprime faixa de aviso em preto invertido: "ATENÇÃO: POSSUI BEBIDA"</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>🍔 Detecta Itens de Combos</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Se o cliente escolheu Coca-Cola ou Guaraná no combo, a nota destaca!</div>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#FFF", margin: "0 0 4px" }}>⭐ Zero Retrabalho & Reclamação</div>
+                  <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>Acabe com motoboy voltando para levar refrigerante e avaliações negativas</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg, #0284C7, #0369A1)" }}>
+                  🔥 Experimentar no Meu Restaurante
+                </a>
+                <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>
+                  Funciona em impressoras térmicas 80mm e 58mm
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ borderRadius: 24, overflow: "hidden", border: "1.5px solid rgba(56,189,248,0.3)", boxShadow: "0 25px 50px rgba(0,0,0,0.8), 0 0 35px rgba(56,189,248,0.15)", background: "#000", position: "relative" }}>
+                <img
+                  src="/images/alerta_bebida_cupom.jpg"
+                  alt="Alerta Automático de Bebidas na Impressão Térmica FireHub"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
+                <div style={{ position: "absolute", bottom: 14, left: 14, right: 14, background: "rgba(10,17,40,0.85)", backdropFilter: "blur(8px)", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: "1.2rem" }}>🖨️</span>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#FFF" }}>Impressão Térmica com Tag de Bebida</div>
+                      <div style={{ fontSize: "0.72rem", color: "#38BDF8" }}>Identificação visual automática em 100% dos cupons</div>
+                    </div>
+                  </div>
+                  <span style={{ background: "#0284C7", color: "#FFF", fontSize: "0.7rem", fontWeight: 800, padding: "4px 8px", borderRadius: 6 }}>Exclusivo</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

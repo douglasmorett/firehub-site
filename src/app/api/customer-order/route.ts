@@ -148,6 +148,7 @@ export async function POST(req: Request) {
         customerAddress: customerAddress || null,
         deliveryType: deliveryType || "DELIVERY",
         paymentMethod: paymentMethod || null,
+        changeAmount: body.changeAmount ? Number(body.changeAmount) : (body.changeFor ? Number(body.changeFor) : null),
         notes: finalNotes,
         totalAmount: finalTotal,
         deliveryFee: fee,

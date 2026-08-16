@@ -234,7 +234,14 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                     <div style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#F0FDF4" : "#fff", border: `1.5px solid ${(r.stats.cashCollectedSum || 0) > 0 ? "#86EFAC" : "#CBD5E1"}`, borderRadius: 10, padding: "10px 12px" }}>
                       <div style={{ fontSize: "0.72rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#64748B", fontWeight: 700 }}>💵 Dinheiro (em mãos)</div>
                       <div style={{ fontWeight: 900, fontSize: "1.05rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#15803D" : "#0F172A", marginTop: 2 }}>{fmt(r.stats.cashCollectedSum || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#94A3B8", marginTop: 2 }}>{r.stats.cashOrdersCount || 0} pedido(s)</div>
+                      <div style={{ fontSize: "0.68rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#94A3B8", marginTop: 2 }}>
+                        {r.stats.cashOrdersCount || 0} pedido(s)
+                      </div>
+                      {(r.stats.changeGivenSum || 0) > 0 && (
+                        <div style={{ fontSize: "0.65rem", color: "#15803D", marginTop: 3, fontWeight: 600, borderTop: "1px dashed #86EFAC", paddingTop: 3 }}>
+                          {fmt(r.stats.cashOrdersValueSum || 0)} ped. + {fmt(r.stats.changeGivenSum || 0)} troco
+                        </div>
+                      )}
                     </div>
 
                     {/* Quadrado Débito */}
@@ -310,18 +317,36 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                     </summary>
                     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
                       {r.orders.map((o: any) => {
-                        const isCash = (o.paymentMethod || "").toUpperCase() === "CASH" || (o.paymentMethod || "").toUpperCase() === "DINHEIRO";
+                        const isCash = (o.paymentMethod || "").toUpperCase() === "CASH" || (o.paymentMethod || "").toUpperCase().includes("DINHEIR");
+                        const dateStr = o.createdAt || o.date;
+                        const numDisplay = o.dailyOrderNumber ? `#${o.dailyOrderNumber}` : o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : "";
                         return (
-                          <div key={o.id} style={{ display: "grid", gridTemplateColumns: "85px 1fr 130px auto auto auto", gap: 8, padding: "8px 10px", background: "#F8FAFC", borderRadius: 8, fontSize: "0.78rem", alignItems: "center" }}>
-                            <span style={{ color: "#64748B" }}>{new Date(o.date).toLocaleDateString("pt-BR")}</span>
-                            <span style={{ fontWeight: 600 }}>{o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 20)}...` : ""}</span>
+                          <div key={o.id} style={{ display: "grid", gridTemplateColumns: "85px 1fr auto auto auto auto", gap: 8, padding: "8px 10px", background: "#F8FAFC", borderRadius: 8, fontSize: "0.78rem", alignItems: "center" }}>
+                            <span style={{ color: "#64748B" }}>{dateStr ? new Date(dateStr).toLocaleDateString("pt-BR") : "-"}</span>
+                            <span style={{ fontWeight: 600 }}>
+                              {numDisplay ? <strong style={{ color: "#0F172A", marginRight: 4 }}>{numDisplay}</strong> : null}
+                              {o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 20)}...` : ""}
+                            </span>
                             <span>
-                              <span style={{ background: isCash ? "#FEF3C7" : "#E2E8F0", color: isCash ? "#B45309" : "#475569", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
-                                {isCash ? `💵 Dinheiro (${fmt(o.totalAmount)})` : `💳 ${o.paymentMethod}`}
-                              </span>
+                              {isCash ? (
+                                (o.changeGiven || 0) > 0 ? (
+                                  <span style={{ background: "#DCFCE7", color: "#166534", border: "1px solid #86EFAC", padding: "2px 8px", borderRadius: 6, fontWeight: 800, fontSize: "0.72rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                    💵 Entregar: {fmt(o.cashToDeliver || o.totalAmount)}
+                                    <span style={{ fontWeight: 600, color: "#15803D", fontSize: "0.68rem" }}>(Ped: {fmt(o.totalAmount)} + Troco: {fmt(o.changeGiven)})</span>
+                                  </span>
+                                ) : (
+                                  <span style={{ background: "#FEF3C7", color: "#B45309", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
+                                    💵 Dinheiro ({fmt(o.totalAmount)})
+                                  </span>
+                                )
+                              ) : (
+                                <span style={{ background: "#E2E8F0", color: "#475569", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
+                                  💳 {o.paymentMethod}
+                                </span>
+                              )}
                             </span>
                             {o.deliveryDistance ? <span style={{ color: "#3B82F6", fontWeight: 600 }}>{o.deliveryDistance} km</span> : <span />}
-                            <span style={{ fontWeight: 700, color: "#16A34A" }}>Taxa: {fmt(o.deliveryFee)}</span>
+                            <span style={{ fontWeight: 700, color: "#16A34A" }}>Taxa: {fmt(o.deliveryFee || o.motoboyFee || 0)}</span>
                             <button
                               onClick={() => setSelectedOrderModal(o)}
                               style={{ padding: "4px 8px", background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", borderRadius: 6, fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
@@ -351,9 +376,16 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                 📦
               </div>
               <div>
-                <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>Pedido #{selectedOrderModal.id.slice(-6).toUpperCase()}</h3>
+                <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>
+                  Pedido {selectedOrderModal.dailyOrderNumber ? `#${selectedOrderModal.dailyOrderNumber}` : selectedOrderModal.ifoodReference ? `#${selectedOrderModal.ifoodReference}` : `#${selectedOrderModal.id.slice(-6).toUpperCase()}`}
+                </h3>
                 <span style={{ fontSize: "0.78rem", color: "#64748B" }}>
-                  {new Date(selectedOrderModal.date).toLocaleDateString("pt-BR")} às {new Date(selectedOrderModal.date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  {(() => {
+                    const d = selectedOrderModal.createdAt || selectedOrderModal.date;
+                    if (!d) return "";
+                    const dateObj = new Date(d);
+                    return `${dateObj.toLocaleDateString("pt-BR")} às ${dateObj.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+                  })()}
                 </span>
               </div>
             </div>
@@ -383,6 +415,23 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                 <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#16A34A", marginTop: 2 }}>{fmt(selectedOrderModal.totalAmount)}</div>
               </div>
             </div>
+
+            {/* Destaque de Troco / Prestação de Contas em Dinheiro */}
+            {(selectedOrderModal.changeGiven || 0) > 0 && (
+              <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: "0.74rem", fontWeight: 800, color: "#166534", textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                  💵 Prestação de Contas (Dinheiro com Troco)
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: "0.82rem", color: "#166534", marginBottom: 6 }}>
+                  <div>Valor do Pedido: <strong>{fmt(selectedOrderModal.totalAmount)}</strong></div>
+                  <div>Troco levado da loja: <strong>{fmt(selectedOrderModal.changeGiven)}</strong></div>
+                </div>
+                <div style={{ borderTop: "1px dashed #86EFAC", paddingTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#15803D" }}>Dinheiro a Devolver na Loja:</span>
+                  <span style={{ fontWeight: 900, fontSize: "1.15rem", color: "#15803D" }}>{fmt(selectedOrderModal.cashToDeliver || selectedOrderModal.changeFor || selectedOrderModal.totalAmount)}</span>
+                </div>
+              </div>
+            )}
 
             {/* Itens do Pedido */}
             {selectedOrderModal.items && Array.isArray(selectedOrderModal.items) && selectedOrderModal.items.length > 0 && (

@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const data = await req.json();
-  const { customerName, customerPhone, customerAddress, deliveryType, paymentMethod, notes, totalAmount, deliveryFee, items, employeeId, employeeName } = data;
+  const { customerName, customerPhone, customerAddress, deliveryType, paymentMethod, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change } = data;
 
   if (!items || items.length === 0) return NextResponse.json({ error: "Nenhum item informado" }, { status: 400 });
 
@@ -29,6 +29,7 @@ export async function POST(req: Request) {
       customerAddress: customerAddress || "",
       deliveryType: deliveryType || "RETIRADA",
       paymentMethod: paymentMethod || "Dinheiro",
+      changeAmount: changeAmount ? Number(changeAmount) : (change ? Number(change) : null),
       employeeId: employeeId || null,
       employeeName: employeeName || null,
       notes: notes || "",
