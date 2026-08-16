@@ -706,11 +706,16 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 
       const userParts: any[] = [];
       if (audioData?.base64) {
+        let cleanBase64 = audioData.base64;
+        if (cleanBase64.includes(";base64,")) {
+          cleanBase64 = cleanBase64.split(";base64,")[1];
+        }
+        cleanBase64 = cleanBase64.trim();
         const rawMime = audioData.mimeType || "audio/ogg";
         const cleanMime = rawMime.split(";")[0].trim() || "audio/ogg";
         userParts.push({
           inlineData: {
-            data: audioData.base64,
+            data: cleanBase64,
             mimeType: cleanMime,
           },
         });
@@ -718,7 +723,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       if (message) {
         userParts.push({ text: message });
       } else if (audioData?.base64) {
-        userParts.push({ text: "O cliente enviou uma mensagem de voz/áudio acima. Por favor, ouça e responda a ele de forma natural, como atendente." });
+        userParts.push({ text: "O cliente enviou uma mensagem de voz/áudio acima. Por favor, ouça com atenção e responda ao pedido ou dúvida dele de forma natural, calorosa e prestativa." });
       }
       if (userParts.length === 0) {
         userParts.push({ text: "O cliente enviou um anexo de mídia." });
@@ -729,14 +734,14 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         { role: "user", parts: userParts }
       ];
 
-      const modelNames = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+      const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash"];
       
       let generatedText = "";
       
       for (let idx = 0; idx < modelNames.length; idx++) {
         const mName = modelNames[idx];
-        const baseTimeout = audioData?.base64 ? 30000 : 10000;
-        const modelTimeout = idx === 0 ? baseTimeout : (baseTimeout - 4000); 
+        const baseTimeout = audioData?.base64 ? 35000 : 12000;
+        const modelTimeout = idx === 0 ? baseTimeout : (baseTimeout - 5000); 
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), modelTimeout);

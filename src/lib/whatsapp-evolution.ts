@@ -285,15 +285,25 @@ export async function disconnectEvolutionInstance(userId: string) {
 }
 
 export async function getEvolutionAudioBase64(userIdOrInstance: string, messageKey: any, messageObj: any): Promise<string | null> {
-  const isInstanceName = userIdOrInstance.startsWith("firehub_");
-  const instanceName = isInstanceName ? userIdOrInstance : `firehub_${userIdOrInstance.slice(-10)}`;
+  // Resolve o nome exato da instância
+  let instanceName = userIdOrInstance;
+  if (userIdOrInstance && userIdOrInstance.length >= 20 && !userIdOrInstance.startsWith("firehub_")) {
+    instanceName = `firehub_${userIdOrInstance.slice(-10)}`;
+  }
+
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
   let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
 
   try {
     const shortId = instanceName.replace(/^firehub_/, "");
     const user = await prisma.user.findFirst({
-      where: isInstanceName ? { id: { endsWith: shortId } } : { id: userIdOrInstance },
+      where: {
+        OR: [
+          { id: userIdOrInstance },
+          { id: { endsWith: shortId } },
+          { chatbotConfig: { path: ['instanceName'], equals: instanceName } }
+        ]
+      },
       select: { chatbotConfig: true },
     });
     const config = (user?.chatbotConfig as any) || {};
@@ -308,76 +318,72 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
     "User-Agent": "FireHub"
   };
 
-  // Tentativa 1: Enviar payload completo de mensagem
-  try {
-    const res = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        message: { key: messageKey, message: messageObj?.message || messageObj },
-        convertToMp4: false,
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
+  const endpoints = [
+    `${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`,
+    `${baseUrl}/message/getBase64FromMediaMessage/${instanceName}`
+  ];
 
-    if (res.ok) {
-      const data = await res.json();
-      let base64Str = data.base64 || data.data || data.response?.base64 || null;
-      if (base64Str && base64Str.includes(";base64,")) {
-        base64Str = base64Str.split(";base64,")[1];
-      }
-      if (base64Str) return base64Str;
+  const payloads = [
+    // Payload padrão Evolution API v2 com key e message aninhados
+    {
+      message: {
+        key: {
+          id: messageKey?.id,
+          remoteJid: messageKey?.remoteJid,
+          fromMe: messageKey?.fromMe || false,
+        },
+        message: messageObj?.message || messageObj,
+      },
+      convertToMp4: false,
+    },
+    // Payload com key direto
+    {
+      message: {
+        key: messageKey,
+      },
+      convertToMp4: false,
+    },
+    // Payload com messageObj puro
+    {
+      message: messageObj,
+      convertToMp4: false,
+    },
+    // Payload simplificado apenas com key.id
+    {
+      message: {
+        key: { id: messageKey?.id },
+      },
+      convertToMp4: false,
     }
-  } catch (err: any) {
-    console.warn("[Evolution API Gateway] Tentativa 1 de áudio falhou:", err?.message);
-  }
+  ];
 
-  // Tentativa 2: Enviar apenas key
-  try {
-    const res2 = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        message: { key: messageKey },
-        convertToMp4: false,
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
+  for (const ep of endpoints) {
+    for (const body of payloads) {
+      try {
+        const res = await fetch(ep, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(10000),
+        });
 
-    if (res2.ok) {
-      const data2 = await res2.json();
-      let base64Str = data2.base64 || data2.data || data2.response?.base64 || null;
-      if (base64Str && base64Str.includes(";base64,")) {
-        base64Str = base64Str.split(";base64,")[1];
+        if (res.ok) {
+          const data = await res.json();
+          let base64Str = data.base64 || data.data || data.response?.base64 || data.media?.base64 || data.mediaBase64 || null;
+          if (base64Str && typeof base64Str === "string") {
+            if (base64Str.includes(";base64,")) {
+              base64Str = base64Str.split(";base64,")[1];
+            }
+            base64Str = base64Str.trim();
+            if (base64Str.length > 50) {
+              return base64Str;
+            }
+          }
+        }
+      } catch (err: any) {
+        // tenta o próximo endpoint/payload
       }
-      if (base64Str) return base64Str;
     }
-  } catch (err: any) {
-    console.warn("[Evolution API Gateway] Tentativa 2 de áudio falhou:", err?.message);
-  }
-
-  // Tentativa 3: Enviar apenas messageObj completo
-  try {
-    const res3 = await fetch(`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        message: messageObj,
-        convertToMp4: false,
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
-
-    if (res3.ok) {
-      const data3 = await res3.json();
-      let base64Str = data3.base64 || data3.data || data3.response?.base64 || null;
-      if (base64Str && base64Str.includes(";base64,")) {
-        base64Str = base64Str.split(";base64,")[1];
-      }
-      if (base64Str) return base64Str;
-    }
-  } catch (err: any) {
-    console.warn("[Evolution API Gateway] Tentativa 3 de áudio falhou:", err?.message);
   }
 
   return null;

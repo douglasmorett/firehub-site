@@ -488,13 +488,14 @@ async function handleIncomingMessage(body: any, instance: string) {
   try {
     // Se for mensagem de usuário, aplicamos um delay de leitura para imitar humano
     if (remoteJid?.includes("@s.whatsapp.net")) {
-      const readingDelay = Math.floor(Math.random() * (7000 - 4000 + 1)) + 4000; // 4s a 7s
+      const readingDelay = audioData ? 1500 : Math.floor(Math.random() * (5000 - 3000 + 1)) + 3000;
       await new Promise(r => setTimeout(r, readingDelay));
     }
 
+    const aiTimeout = audioData ? 45000 : 25000;
     aiResponse = await withTimeout(
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName),
-      25000 // 25 segundos máximo
+      aiTimeout
     );
   } catch (aiErr: any) {
     console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro na IA para ${remoteJid}:`, aiErr?.message || aiErr);
@@ -502,7 +503,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   if (!aiResponse) {
-    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Timeout de 25s para ${remoteJid}. Enviando fallback.`);
+    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Timeout na IA para ${remoteJid}. Enviando fallback.`);
     aiResponse = { reply: fallbackReply };
   }
   
