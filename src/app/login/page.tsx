@@ -248,19 +248,46 @@ export default function FireHubLoginPage() {
           </a>
         </div>
 
-        <div style={{ marginTop: "16px", textAlign: "center" }}>
-          <a
-            href="/embaixador"
-            style={{
-              fontSize: "0.8rem",
-              color: "#9CA3AF",
-              textDecoration: "none",
-              display: "inline-block",
-            }}
-          >
-            Você é embaixador(a)? <span style={{ color: "#DC2626", fontWeight: 600, textDecoration: "underline" }}>Acesse aqui</span>
-          </a>
-        </div>
+        <a
+          href="/embaixador"
+          style={{
+            marginTop: "18px",
+            padding: "12px 16px",
+            background: "#F8FAFC",
+            borderRadius: "12px",
+            border: "1.5px solid #E2E8F0",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            textDecoration: "none",
+            transition: "all 0.2s ease",
+          }}
+          onMouseOver={e => {
+            e.currentTarget.style.borderColor = "#DC2626";
+            e.currentTarget.style.background = "#FEF2F2";
+          }}
+          onMouseOut={e => {
+            e.currentTarget.style.borderColor = "#E2E8F0";
+            e.currentTarget.style.background = "#F8FAFC";
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "1.1rem" }}>🤝</span>
+            <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "#334155" }}>
+              Você é embaixador(a)?
+            </span>
+          </div>
+          <span style={{
+            fontSize: "0.85rem",
+            fontWeight: 800,
+            color: "#DC2626",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px"
+          }}>
+            Acesse aqui →
+          </span>
+        </a>
 
         <a href="https://www.firehubfood.com.br" className="fhl-back">← Voltar para o site</a>
       </div>
