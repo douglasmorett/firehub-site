@@ -86,18 +86,30 @@ export default async function EmbaixadorPage() {
         status = "INACTIVE";
       }
 
-      // Cálculo da mensalidade da plataforma
-      // Se tiver faturamento, aplica 1% (mín R$ 100, máx R$ 400)
+      // Verificação de ciclo pago no Asaas ou faturamento real
+      const paidCycle = await prisma.franchiseeBillingCycle.findFirst({
+        where: {
+          franchiseeId: store.id,
+          status: "PAID"
+        },
+        orderBy: { createdAt: "desc" }
+      });
+
+      // Cálculo da mensalidade real da plataforma:
+      // Se a loja está em Teste (Trial) ou não movimentou faturamento, mensalidade e comissão são R$ 0,00.
       let platformFee = 0;
-      if (monthSales > 0) {
+      let isPaidByAsaas = false;
+
+      if (paidCycle) {
+        isPaidByAsaas = true;
+        platformFee = paidCycle.amountDue;
+      } else if (!isTrial && monthSales > 0) {
+        // Se a loja já saiu do teste e está faturando
         const { mensalidade } = calcMensalidade(monthSales, true);
         platformFee = mensalidade;
-      } else if (status === "ACTIVE" || status === "TRIAL") {
-        // Base estimada para lojas ativas
-        platformFee = 100;
       }
 
-      // Comissão do embaixador
+      // Comissão real do embaixador: só conta sobre mensalidade real gerada/paga
       const ambassadorProfit = platformFee * (ambassador.commissionPercent / 100);
 
       return {
@@ -115,7 +127,8 @@ export default async function EmbaixadorPage() {
         monthSales,
         monthOrdersCount,
         platformFee,
-        ambassadorProfit
+        ambassadorProfit,
+        isPaidByAsaas
       };
     })
   );

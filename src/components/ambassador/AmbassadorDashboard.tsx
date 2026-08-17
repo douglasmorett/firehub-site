@@ -18,6 +18,7 @@ export interface ReferredStoreItem {
   monthOrdersCount: number;
   platformFee: number;
   ambassadorProfit: number;
+  isPaidByAsaas?: boolean;
 }
 
 interface AmbassadorDashboardProps {
@@ -81,36 +82,39 @@ export default function AmbassadorDashboard({
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0F172A", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: "#F8FAFC" }}>
+    <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: "#0F172A" }}>
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; }
         .amb-table-row:hover {
-          background: #1E293B !important;
+          background: #F1F5F9 !important;
         }
         .amb-btn-copy:hover {
-          opacity: 0.92;
+          opacity: 0.95;
           transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(220, 38, 38, 0.3);
         }
         .amb-filter-pill {
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.2s ease;
         }
         .amb-filter-pill:hover {
-          border-color: #EF4444 !important;
+          border-color: #DC2626 !important;
         }
       `}</style>
 
-      {/* HEADER */}
+      {/* HEADER (Tema Claro Limpo) */}
       <header
         style={{
-          background: "#1E293B",
-          borderBottom: "1px solid #334155",
-          padding: "16px 24px",
+          background: "#FFFFFF",
+          borderBottom: "1px solid #E2E8F0",
+          padding: "16px 28px",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           flexWrap: "wrap",
           gap: "16px",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -118,18 +122,19 @@ export default function AmbassadorDashboard({
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontWeight: 900, fontSize: "1.25rem", letterSpacing: "-0.5px" }}>
-                <span style={{ color: "#EF4444" }}>FIRE</span>HUB
+                <span style={{ color: "#DC2626" }}>FIRE</span><span style={{ color: "#0F172A" }}>HUB</span>
               </span>
               <span
                 style={{
-                  background: "rgba(239, 68, 68, 0.15)",
-                  color: "#FCA5A5",
-                  border: "1px solid rgba(239, 68, 68, 0.3)",
-                  padding: "2px 8px",
+                  background: "#FEF2F2",
+                  color: "#DC2626",
+                  border: "1px solid #FECACA",
+                  padding: "3px 8px",
                   borderRadius: "6px",
                   fontSize: "0.72rem",
-                  fontWeight: 700,
+                  fontWeight: 800,
                   textTransform: "uppercase",
+                  letterSpacing: "0.5px",
                 }}
               >
                 Embaixador
@@ -139,27 +144,35 @@ export default function AmbassadorDashboard({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#0F172A", padding: "6px 12px", borderRadius: "8px", border: "1px solid #334155" }}>
-            <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>Comissão:</span>
-            <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#10B981" }}>{ambassador.commissionPercent}% Recorrente</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F1F5F9", padding: "6px 14px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+            <span style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>Comissão:</span>
+            <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#059669" }}>{ambassador.commissionPercent}% Recorrente</span>
           </div>
 
-          <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#E2E8F0" }}>
-            Olá, <strong style={{ color: "#FFF" }}>{ambassador.name}</strong>
+          <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#475569" }}>
+            Olá, <strong style={{ color: "#0F172A" }}>{ambassador.name}</strong>
           </div>
 
           <button
             onClick={() => signOut({ callbackUrl: "/embaixador" })}
             style={{
-              background: "#334155",
-              border: "1px solid #475569",
-              color: "#F1F5F9",
-              padding: "7px 14px",
+              background: "#F8FAFC",
+              border: "1.5px solid #CBD5E1",
+              color: "#475569",
+              padding: "7px 16px",
               borderRadius: "8px",
               cursor: "pointer",
               fontSize: "0.82rem",
-              fontWeight: 600,
+              fontWeight: 700,
               transition: "all 0.2s",
+            }}
+            onMouseOver={e => {
+              e.currentTarget.style.background = "#F1F5F9";
+              e.currentTarget.style.color = "#0F172A";
+            }}
+            onMouseOut={e => {
+              e.currentTarget.style.background = "#F8FAFC";
+              e.currentTarget.style.color = "#475569";
             }}
           >
             Sair
@@ -169,68 +182,68 @@ export default function AmbassadorDashboard({
 
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}>
         
-        {/* TOP METRICS CARDS */}
+        {/* TOP METRICS CARDS (Tema Claro) */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 18, marginBottom: 28 }}>
           
-          {/* Card 1: Lucro Previsto */}
-          <div style={{ background: "#1E293B", border: "1px solid #334155", padding: "22px", borderRadius: "16px", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.3)" }}>
+          {/* Card 1: Lucro Real do Mês */}
+          <div style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(0,0,0,0.03)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ color: "#94A3B8", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              <span style={{ color: "#64748B", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 💰 Seu Lucro no Mês
               </span>
-              <span style={{ background: "rgba(16, 185, 129, 0.15)", color: "#34D399", padding: "3px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
+              <span style={{ background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", padding: "3px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
                 {ambassador.commissionPercent}%
               </span>
             </div>
-            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#10B981", letterSpacing: "-0.5px" }}>
+            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: currentMonthIncome > 0 ? "#059669" : "#0F172A", letterSpacing: "-0.5px" }}>
               {formatBRL(currentMonthIncome)}
             </div>
             <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6 }}>
-              Baseado nas mensalidades geradas pelas lojas da sua carteira
+              {currentMonthIncome > 0 ? "Comissões de mensalidades faturadas/pagas" : "Nenhuma comissão faturada no momento"}
             </div>
           </div>
 
           {/* Card 2: Lojas na Carteira */}
-          <div style={{ background: "#1E293B", border: "1px solid #334155", padding: "22px", borderRadius: "16px", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.3)" }}>
-            <div style={{ color: "#94A3B8", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+          <div style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(0,0,0,0.03)" }}>
+            <div style={{ color: "#64748B", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
               🏪 Lojas na Carteira
             </div>
-            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#F8FAFC", letterSpacing: "-0.5px" }}>
+            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#0F172A", letterSpacing: "-0.5px" }}>
               {stores.length}
             </div>
-            <div style={{ fontSize: "0.78rem", color: "#94A3B8", marginTop: 6, display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <span style={{ color: "#34D399", fontWeight: 600 }}>● {activeCount} ativas</span>
-              <span style={{ color: "#FBBF24", fontWeight: 600 }}>● {trialCount} em teste</span>
-              <span style={{ color: "#F87171", fontWeight: 600 }}>● {inactiveCount} inativas</span>
+            <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6, display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <span style={{ color: "#059669", fontWeight: 700 }}>● {activeCount} ativa{activeCount !== 1 ? "s" : ""}</span>
+              <span style={{ color: "#D97706", fontWeight: 700 }}>● {trialCount} em teste</span>
+              <span style={{ color: "#475569", fontWeight: 700 }}>● {inactiveCount} inativa{inactiveCount !== 1 ? "s" : ""}</span>
             </div>
           </div>
 
           {/* Card 3: Faturamento Total das Lojas */}
-          <div style={{ background: "#1E293B", border: "1px solid #334155", padding: "22px", borderRadius: "16px", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.3)" }}>
-            <div style={{ color: "#94A3B8", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+          <div style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(0,0,0,0.03)" }}>
+            <div style={{ color: "#64748B", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
               📈 Faturamento das Lojas (Mês)
             </div>
-            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#38BDF8", letterSpacing: "-0.5px" }}>
+            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#2563EB", letterSpacing: "-0.5px" }}>
               {formatBRL(totalPortfolioSales)}
             </div>
             <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6 }}>
-              {totalOrdersCount} pedidos movimentados nas lojas indicadas
+              {totalOrdersCount} pedido{totalOrdersCount !== 1 ? "s" : ""} movimentado{totalOrdersCount !== 1 ? "s" : ""} nas lojas indicadas
             </div>
           </div>
 
           {/* Card 4: Link de Convite Oficial */}
-          <div style={{ background: "linear-gradient(135deg, #1E293B 0%, #0F172A 100%)", border: "1.5px solid #EF4444", padding: "22px", borderRadius: "16px", boxShadow: "0 10px 25px -5px rgba(239,68,68,0.2)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div style={{ background: "#FFFFFF", border: "2px solid #DC2626", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(220,38,38,0.08)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ color: "#FCA5A5", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                <span style={{ color: "#DC2626", fontSize: "0.82rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   🔗 Seu Link de Indicação
                 </span>
-                <span style={{ background: "rgba(239,68,68,0.2)", color: "#FCA5A5", padding: "2px 6px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 700 }}>
+                <span style={{ background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 800 }}>
                   {ambassador.code}
                 </span>
               </div>
-              <p style={{ fontSize: "0.75rem", color: "#94A3B8", margin: "4px 0 12px 0" }}>
-                Compartilhe com donos de restaurantes para cadastrá-los na sua carteira
+              <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "4px 0 12px 0" }}>
+                Cadastre novos restaurantes vinculados automaticamente à sua carteira
               </p>
             </div>
             <button
@@ -239,7 +252,7 @@ export default function AmbassadorDashboard({
               style={{
                 width: "100%",
                 padding: "12px",
-                background: copied ? "#10B981" : "linear-gradient(135deg, #EF4444, #DC2626)",
+                background: copied ? "#059669" : "linear-gradient(135deg, #DC2626, #B91C1C)",
                 color: "#FFF",
                 border: "none",
                 borderRadius: "10px",
@@ -262,8 +275,8 @@ export default function AmbassadorDashboard({
         {/* DEMONSTRATION & PROSPECTING HELPER */}
         <div
           style={{
-            background: "#1E293B",
-            border: "1px solid #334155",
+            background: "#EFF6FF",
+            border: "1.5px solid #BFDBFE",
             borderRadius: "14px",
             padding: "20px 24px",
             marginBottom: "28px",
@@ -277,11 +290,11 @@ export default function AmbassadorDashboard({
           <div style={{ maxWidth: 750 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <span style={{ fontSize: "1.1rem" }}>💡</span>
-              <strong style={{ fontSize: "0.98rem", color: "#FFF" }}>
+              <strong style={{ fontSize: "0.98rem", color: "#1E3A8A" }}>
                 Apresentando o FireHub para novos clientes?
               </strong>
             </div>
-            <p style={{ fontSize: "0.85rem", color: "#94A3B8", margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: "0.85rem", color: "#1E40AF", margin: 0, lineHeight: 1.5 }}>
               Mostre a agilidade do cardápio digital, o painel do garçom e o fechamento automático de caixa. Para cadastrar um novo cliente, envie sempre o seu link com <strong>15 dias de teste grátis</strong> para vinculá-lo automaticamente à sua carteira de comissões.
             </p>
           </div>
@@ -292,10 +305,10 @@ export default function AmbassadorDashboard({
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                background: "#0F172A",
-                border: "1px solid #475569",
-                color: "#F8FAFC",
-                padding: "10px 16px",
+                background: "#FFFFFF",
+                border: "1.5px solid #93C5FD",
+                color: "#1D4ED8",
+                padding: "10px 18px",
                 borderRadius: "8px",
                 textDecoration: "none",
                 fontSize: "0.85rem",
@@ -303,6 +316,7 @@ export default function AmbassadorDashboard({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "6px",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
               }}
             >
               🌐 Abrir Site Oficial
@@ -310,17 +324,17 @@ export default function AmbassadorDashboard({
           </div>
         </div>
 
-        {/* STORES SECTION */}
-        <div style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: "16px", overflow: "hidden", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.3)" }}>
+        {/* STORES SECTION (Tema Claro) */}
+        <div style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", borderRadius: "16px", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
           
           {/* Header Controls */}
-          <div style={{ padding: "20px 24px", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
+          <div style={{ padding: "20px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
             <div>
-              <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#FFF", margin: 0 }}>
+              <h2 style={{ fontSize: "1.25rem", fontWeight: 900, color: "#0F172A", margin: 0 }}>
                 Lojas na sua Carteira
               </h2>
-              <p style={{ fontSize: "0.82rem", color: "#94A3B8", margin: "4px 0 0 0" }}>
-                Acompanhe o faturamento, status e lucro estimado de cada restaurante indicado
+              <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "4px 0 0 0" }}>
+                Acompanhe o faturamento, status e comissões reais de cada restaurante indicado
               </p>
             </div>
 
@@ -332,11 +346,11 @@ export default function AmbassadorDashboard({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 style={{
-                  background: "#0F172A",
-                  border: "1px solid #475569",
+                  background: "#F8FAFC",
+                  border: "1.5px solid #CBD5E1",
                   borderRadius: "8px",
                   padding: "8px 14px",
-                  color: "#FFF",
+                  color: "#0F172A",
                   fontSize: "0.85rem",
                   outline: "none",
                   width: "240px",
@@ -344,13 +358,13 @@ export default function AmbassadorDashboard({
               />
 
               {/* Status Filter Tabs */}
-              <div style={{ display: "flex", background: "#0F172A", padding: "3px", borderRadius: "8px", border: "1px solid #334155" }}>
+              <div style={{ display: "flex", background: "#F1F5F9", padding: "3px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                 <button
                   onClick={() => setStatusFilter("ALL")}
                   className="amb-filter-pill"
                   style={{
-                    background: statusFilter === "ALL" ? "#334155" : "transparent",
-                    color: statusFilter === "ALL" ? "#FFF" : "#94A3B8",
+                    background: statusFilter === "ALL" ? "#0F172A" : "transparent",
+                    color: statusFilter === "ALL" ? "#FFFFFF" : "#64748B",
                     border: "none",
                     padding: "6px 12px",
                     borderRadius: "6px",
@@ -364,8 +378,8 @@ export default function AmbassadorDashboard({
                   onClick={() => setStatusFilter("ACTIVE")}
                   className="amb-filter-pill"
                   style={{
-                    background: statusFilter === "ACTIVE" ? "#334155" : "transparent",
-                    color: statusFilter === "ACTIVE" ? "#34D399" : "#94A3B8",
+                    background: statusFilter === "ACTIVE" ? "#059669" : "transparent",
+                    color: statusFilter === "ACTIVE" ? "#FFFFFF" : "#059669",
                     border: "none",
                     padding: "6px 12px",
                     borderRadius: "6px",
@@ -379,8 +393,8 @@ export default function AmbassadorDashboard({
                   onClick={() => setStatusFilter("TRIAL")}
                   className="amb-filter-pill"
                   style={{
-                    background: statusFilter === "TRIAL" ? "#334155" : "transparent",
-                    color: statusFilter === "TRIAL" ? "#FBBF24" : "#94A3B8",
+                    background: statusFilter === "TRIAL" ? "#D97706" : "transparent",
+                    color: statusFilter === "TRIAL" ? "#FFFFFF" : "#D97706",
                     border: "none",
                     padding: "6px 12px",
                     borderRadius: "6px",
@@ -394,8 +408,8 @@ export default function AmbassadorDashboard({
                   onClick={() => setStatusFilter("INACTIVE")}
                   className="amb-filter-pill"
                   style={{
-                    background: statusFilter === "INACTIVE" ? "#334155" : "transparent",
-                    color: statusFilter === "INACTIVE" ? "#F87171" : "#94A3B8",
+                    background: statusFilter === "INACTIVE" ? "#475569" : "transparent",
+                    color: statusFilter === "INACTIVE" ? "#FFFFFF" : "#64748B",
                     border: "none",
                     padding: "6px 12px",
                     borderRadius: "6px",
@@ -411,9 +425,9 @@ export default function AmbassadorDashboard({
 
           {/* Stores Table */}
           {filteredStores.length === 0 ? (
-            <div style={{ padding: "48px 20px", textAlign: "center", color: "#94A3B8" }}>
-              <div style={{ fontSize: "2rem", marginBottom: "12px" }}>🏪</div>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#FFF", marginBottom: "6px" }}>
+            <div style={{ padding: "48px 20px", textAlign: "center", color: "#64748B" }}>
+              <div style={{ fontSize: "2.5rem", marginBottom: "12px" }}>🏪</div>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 800, color: "#0F172A", marginBottom: "6px" }}>
                 {stores.length === 0 ? "Nenhuma loja indicada ainda" : "Nenhuma loja encontrada com esse filtro"}
               </h3>
               <p style={{ fontSize: "0.85rem", maxWidth: 450, margin: "0 auto 18px auto" }}>
@@ -425,12 +439,12 @@ export default function AmbassadorDashboard({
                 <button
                   onClick={copyLink}
                   style={{
-                    background: "#EF4444",
+                    background: "#DC2626",
                     color: "#FFF",
                     border: "none",
                     borderRadius: "8px",
-                    padding: "10px 20px",
-                    fontWeight: 700,
+                    padding: "10px 22px",
+                    fontWeight: 800,
                     cursor: "pointer",
                   }}
                 >
@@ -442,7 +456,7 @@ export default function AmbassadorDashboard({
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.88rem" }}>
                 <thead>
-                  <tr style={{ background: "#0F172A", borderBottom: "1px solid #334155", color: "#94A3B8", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  <tr style={{ background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0", color: "#475569", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                     <th style={{ padding: "14px 20px" }}>Restaurante / Lojista</th>
                     <th style={{ padding: "14px 16px" }}>Status</th>
                     <th style={{ padding: "14px 16px" }}>Faturamento no Mês</th>
@@ -458,87 +472,107 @@ export default function AmbassadorDashboard({
                       ? `https://wa.me/55${cleanPhone}?text=Ol%C3%A1%20${encodeURIComponent(store.name)}!%20Tudo%20bem?%20Sou%20o%20${encodeURIComponent(ambassador.name.split(" ")[0])}%20do%20FireHub.`
                       : null;
 
+                    const isStoreActive = store.status === "ACTIVE";
+
                     return (
                       <tr
                         key={store.id}
                         className="amb-table-row"
                         style={{
-                          borderBottom: "1px solid #334155",
-                          background: "#1E293B",
+                          borderBottom: "1px solid #E2E8F0",
+                          background: "#FFFFFF",
                           transition: "background 0.15s",
                         }}
                       >
-                        {/* Store Info */}
+                        {/* Store Info com Bolinha Verde (Ativa) ou Preta (Inativa / Em Teste) */}
                         <td style={{ padding: "16px 20px" }}>
-                          <div style={{ fontWeight: 800, color: "#FFF", fontSize: "0.95rem" }}>
-                            {store.storeName}
-                          </div>
-                          <div style={{ fontSize: "0.8rem", color: "#94A3B8", marginTop: 2 }}>
-                            {store.name} {store.city ? `· ${store.city}` : ""}
-                          </div>
-                          <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 2 }}>
-                            Cadastrado em {new Date(store.createdAt).toLocaleDateString("pt-BR")}
-                          </div>
-                          {store.slug && (
-                            <a
-                              href={`/loja/${store.slug}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            {/* Bolinha Indicadora Ativa (Verde) / Inativa (Preta) */}
+                            <span
+                              title={isStoreActive ? "Loja Ativa" : (store.status === "TRIAL" ? "Loja em Teste (Trial)" : "Loja Inativa")}
                               style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 4,
-                                color: "#38BDF8",
-                                fontSize: "0.75rem",
-                                marginTop: 4,
-                                textDecoration: "none",
-                                fontWeight: 600,
+                                display: "inline-block",
+                                width: "12px",
+                                height: "12px",
+                                minWidth: "12px",
+                                borderRadius: "50%",
+                                background: isStoreActive ? "#10B981" : "#0F172A",
+                                boxShadow: isStoreActive ? "0 0 0 3px rgba(16,185,129,0.25)" : "0 0 0 3px rgba(15,23,42,0.15)",
                               }}
-                            >
-                              ↗ Ver Cardápio Digital
-                            </a>
-                          )}
+                            />
+                            <div>
+                              <div style={{ fontWeight: 800, color: "#0F172A", fontSize: "0.95rem" }}>
+                                {store.storeName}
+                              </div>
+                              <div style={{ fontSize: "0.8rem", color: "#64748B", marginTop: 2 }}>
+                                {store.name} {store.city ? `· ${store.city}` : ""}
+                              </div>
+                              <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 2 }}>
+                                Cadastrado em {new Date(store.createdAt).toLocaleDateString("pt-BR")}
+                              </div>
+                              {store.slug && (
+                                <a
+                                  href={`/loja/${store.slug}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                    color: "#2563EB",
+                                    fontSize: "0.75rem",
+                                    marginTop: 4,
+                                    textDecoration: "none",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  ↗ Ver Cardápio Digital
+                                </a>
+                              )}
+                            </div>
+                          </div>
                         </td>
 
-                        {/* Status */}
+                        {/* Status Badge */}
                         <td style={{ padding: "16px 16px" }}>
                           {store.status === "ACTIVE" && (
                             <span
                               style={{
-                                background: "rgba(16, 185, 129, 0.15)",
-                                color: "#34D399",
-                                border: "1px solid rgba(16, 185, 129, 0.3)",
+                                background: "#ECFDF5",
+                                color: "#059669",
+                                border: "1px solid #A7F3D0",
                                 padding: "4px 10px",
                                 borderRadius: "20px",
                                 fontSize: "0.75rem",
-                                fontWeight: 700,
+                                fontWeight: 800,
                                 display: "inline-flex",
                                 alignItems: "center",
-                                gap: 4,
+                                gap: 6,
                               }}
                             >
-                              ● Ativa
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#059669" }} />
+                              Ativa
                             </span>
                           )}
                           {store.status === "TRIAL" && (
                             <div>
                               <span
                                 style={{
-                                  background: "rgba(245, 158, 11, 0.15)",
-                                  color: "#FBBF24",
-                                  border: "1px solid rgba(245, 158, 11, 0.3)",
+                                  background: "#FFFBEB",
+                                  color: "#D97706",
+                                  border: "1px solid #FDE68A",
                                   padding: "4px 10px",
                                   borderRadius: "20px",
                                   fontSize: "0.75rem",
-                                  fontWeight: 700,
+                                  fontWeight: 800,
                                   display: "inline-flex",
                                   alignItems: "center",
-                                  gap: 4,
+                                  gap: 6,
                                 }}
                               >
                                 ⏳ Em Teste (Trial)
                               </span>
-                              <div style={{ fontSize: "0.72rem", color: "#FBBF24", marginTop: 4 }}>
+                              <div style={{ fontSize: "0.72rem", color: "#B45309", fontWeight: 600, marginTop: 4 }}>
                                 {store.trialDaysRemaining > 0 ? `${store.trialDaysRemaining} dias restantes` : "Último dia"}
                               </div>
                             </div>
@@ -546,50 +580,53 @@ export default function AmbassadorDashboard({
                           {store.status === "INACTIVE" && (
                             <span
                               style={{
-                                background: "rgba(239, 68, 68, 0.15)",
-                                color: "#F87171",
-                                border: "1px solid rgba(239, 68, 68, 0.3)",
+                                background: "#F1F5F9",
+                                color: "#475569",
+                                border: "1px solid #CBD5E1",
                                 padding: "4px 10px",
                                 borderRadius: "20px",
                                 fontSize: "0.75rem",
-                                fontWeight: 700,
+                                fontWeight: 800,
                                 display: "inline-flex",
                                 alignItems: "center",
-                                gap: 4,
+                                gap: 6,
                               }}
                             >
-                              ● Inativa
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#475569" }} />
+                              Inativa
                             </span>
                           )}
                         </td>
 
                         {/* Month Sales */}
                         <td style={{ padding: "16px 16px" }}>
-                          <div style={{ fontWeight: 700, color: "#F8FAFC", fontSize: "0.95rem" }}>
+                          <div style={{ fontWeight: 800, color: "#0F172A", fontSize: "0.95rem" }}>
                             {formatBRL(store.monthSales)}
                           </div>
                           <div style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 2 }}>
-                            {store.monthOrdersCount} pedidos no mês
+                            {store.monthOrdersCount} pedido{store.monthOrdersCount !== 1 ? "s" : ""} no mês
                           </div>
                         </td>
 
                         {/* Platform Fee */}
                         <td style={{ padding: "16px 16px" }}>
-                          <div style={{ fontWeight: 600, color: "#CBD5E1" }}>
+                          <div style={{ fontWeight: 700, color: store.platformFee > 0 ? "#0F172A" : "#64748B" }}>
                             {formatBRL(store.platformFee)}
                           </div>
                           <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 2 }}>
-                            1% faturamento (mín R$ 100)
+                            {store.status === "TRIAL"
+                              ? "Em teste grátis (sem cobrança)"
+                              : (store.platformFee > 0 ? "1% faturamento (mín R$ 100)" : "Sem faturamento")}
                           </div>
                         </td>
 
                         {/* Ambassador Profit */}
                         <td style={{ padding: "16px 16px" }}>
-                          <div style={{ fontWeight: 900, color: "#10B981", fontSize: "1.05rem" }}>
+                          <div style={{ fontWeight: 900, color: store.ambassadorProfit > 0 ? "#059669" : "#64748B", fontSize: "1.05rem" }}>
                             {formatBRL(store.ambassadorProfit)}
                           </div>
-                          <div style={{ fontSize: "0.72rem", color: "#34D399", marginTop: 2 }}>
-                            {ambassador.commissionPercent}% da mensalidade
+                          <div style={{ fontSize: "0.72rem", color: store.ambassadorProfit > 0 ? "#059669" : "#94A3B8", marginTop: 2 }}>
+                            {store.ambassadorProfit > 0 ? `${ambassador.commissionPercent}% da mensalidade` : "Aguardando pagamento"}
                           </div>
                         </td>
 
@@ -604,26 +641,26 @@ export default function AmbassadorDashboard({
                                 style={{
                                   background: "#25D366",
                                   color: "#FFF",
-                                  padding: "6px 12px",
-                                  borderRadius: "6px",
+                                  padding: "6px 14px",
+                                  borderRadius: "8px",
                                   textDecoration: "none",
-                                  fontSize: "0.78rem",
-                                  fontWeight: 700,
+                                  fontSize: "0.8rem",
+                                  fontWeight: 800,
                                   display: "inline-flex",
                                   alignItems: "center",
                                   gap: 6,
-                                  boxShadow: "0 2px 6px rgba(37, 211, 102, 0.3)",
+                                  boxShadow: "0 2px 6px rgba(37, 211, 102, 0.25)",
                                 }}
                               >
                                 💬 WhatsApp
                               </a>
                             ) : (
-                              <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Sem telefone</span>
+                              <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>Sem telefone</span>
                             )}
                             {store.email && (
                               <a
                                 href={`mailto:${store.email}`}
-                                style={{ fontSize: "0.72rem", color: "#94A3B8", textDecoration: "none" }}
+                                style={{ fontSize: "0.72rem", color: "#64748B", textDecoration: "none" }}
                               >
                                 {store.email}
                               </a>
@@ -639,12 +676,12 @@ export default function AmbassadorDashboard({
           )}
         </div>
 
-        {/* ASAAS SPLIT INFO */}
+        {/* ASAAS SPLIT INFO (Tema Claro) */}
         <div
           style={{
             marginTop: "24px",
-            background: "#0F172A",
-            border: "1px solid #334155",
+            background: "#F1F5F9",
+            border: "1.5px solid #E2E8F0",
             borderRadius: "12px",
             padding: "16px 20px",
             display: "flex",
@@ -654,15 +691,15 @@ export default function AmbassadorDashboard({
             gap: "12px",
           }}
         >
-          <div style={{ fontSize: "0.82rem", color: "#94A3B8" }}>
-            🔒 <strong style={{ color: "#E2E8F0" }}>Repasse Automático via Asaas:</strong> Suas comissões de {ambassador.commissionPercent}% são processadas e divididas automaticamente pelo Asaas a cada fechamento de ciclo dos seus restaurantes parceiros.
+          <div style={{ fontSize: "0.82rem", color: "#475569" }}>
+            🔒 <strong style={{ color: "#0F172A" }}>Repasse Automático via Asaas:</strong> Suas comissões de {ambassador.commissionPercent}% são processadas e repassadas automaticamente pelo Asaas quando a loja parceira realiza o pagamento da mensalidade.
           </div>
           {ambassador.asaasWalletId ? (
-            <span style={{ fontSize: "0.75rem", color: "#34D399", fontWeight: 700, background: "rgba(16, 185, 129, 0.15)", padding: "4px 8px", borderRadius: "6px" }}>
+            <span style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 800, background: "#ECFDF5", border: "1px solid #A7F3D0", padding: "4px 10px", borderRadius: "6px" }}>
               ✓ Carteira Asaas Conectada
             </span>
           ) : (
-            <span style={{ fontSize: "0.75rem", color: "#94A3B8", background: "#1E293B", padding: "4px 8px", borderRadius: "6px" }}>
+            <span style={{ fontSize: "0.75rem", color: "#475569", background: "#FFFFFF", border: "1px solid #CBD5E1", padding: "4px 10px", borderRadius: "6px" }}>
               Repasse via Chave PIX cadastrada
             </span>
           )}

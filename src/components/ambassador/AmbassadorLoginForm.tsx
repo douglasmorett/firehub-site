@@ -40,33 +40,32 @@ export default function AmbassadorLoginForm() {
     <div
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%)",
+        background: "linear-gradient(135deg, #B91C1C 0%, #DC2626 50%, #991B1B 100%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         padding: "24px 16px",
-        color: "#F8FAFC",
       }}
     >
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         * { box-sizing: border-box; }
         .amb-login-card {
-          background: #1E293B;
-          border: 1px solid #334155;
-          border-radius: 20px;
-          padding: 40px 32px;
+          background: #FFFFFF;
+          border-radius: 24px;
+          padding: 44px 36px;
           width: 100%;
           max-width: 440px;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+          box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
         }
         .amb-input {
           width: 100%;
           padding: 13px 16px;
-          background: #0F172A;
-          border: 1.5px solid #334155;
+          background: #F8FAFC;
+          border: 1.5px solid #CBD5E1;
           border-radius: 10px;
-          color: #F8FAFC;
+          color: #0F172A;
           font-size: 0.95rem;
           font-family: inherit;
           outline: none;
@@ -74,8 +73,9 @@ export default function AmbassadorLoginForm() {
           margin-bottom: 18px;
         }
         .amb-input:focus {
-          border-color: #EF4444;
-          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+          border-color: #DC2626;
+          background: #FFFFFF;
+          box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
         }
         .amb-btn {
           width: 100%;
@@ -85,7 +85,7 @@ export default function AmbassadorLoginForm() {
           border: none;
           border-radius: 10px;
           font-size: 1rem;
-          font-weight: 700;
+          font-weight: 800;
           cursor: pointer;
           font-family: inherit;
           transition: all 0.2s;
@@ -110,25 +110,27 @@ export default function AmbassadorLoginForm() {
         {/* Header Branding */}
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-            <img src="/firehub-flame.png" alt="FireHub" style={{ width: 36, height: 36, borderRadius: "8px" }} />
-            <div style={{ fontSize: "1.6rem", fontWeight: 800, letterSpacing: "-0.5px" }}>
-              <span style={{ color: "#EF4444" }}>FIRE</span><span style={{ color: "#FFF" }}>HUB</span>
+            <img src="/firehub-flame.png" alt="FireHub" style={{ width: 38, height: 38, borderRadius: "8px" }} />
+            <div style={{ fontSize: "1.7rem", fontWeight: 900, letterSpacing: "-0.5px" }}>
+              <span style={{ color: "#DC2626" }}>FIRE</span><span style={{ color: "#0F172A" }}>HUB</span>
             </div>
           </div>
-          <div style={{ display: "inline-block", background: "rgba(239, 68, 68, 0.15)", color: "#FCA5A5", border: "1px solid rgba(239, 68, 68, 0.3)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
-            🤝 Portal do Embaixador
+          <div>
+            <span style={{ display: "inline-block", background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "4px 14px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
+              🤝 Portal do Embaixador
+            </span>
           </div>
-          <p style={{ color: "#94A3B8", fontSize: "0.88rem", marginTop: "4px", lineHeight: "1.4" }}>
-            Acesse seu painel exclusivo para gerenciar suas lojas indicadas e comissões
+          <p style={{ color: "#64748B", fontSize: "0.88rem", marginTop: "4px", lineHeight: "1.4" }}>
+            Acesse seu painel exclusivo para acompanhar suas lojas indicadas e comissões
           </p>
         </div>
 
         {error && (
           <div
             style={{
-              background: "rgba(239, 68, 68, 0.15)",
-              border: "1px solid rgba(239, 68, 68, 0.4)",
-              color: "#FCA5A5",
+              background: "#FEF2F2",
+              border: "1px solid #FECACA",
+              color: "#DC2626",
               padding: "12px 14px",
               borderRadius: "10px",
               fontSize: "0.85rem",
@@ -136,6 +138,7 @@ export default function AmbassadorLoginForm() {
               display: "flex",
               alignItems: "center",
               gap: "8px",
+              fontWeight: 600,
             }}
           >
             <span>⚠️</span>
@@ -144,7 +147,7 @@ export default function AmbassadorLoginForm() {
         )}
 
         <form onSubmit={handleSubmit}>
-          <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#CBD5E1", marginBottom: "6px" }}>
+          <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
             E-mail do Embaixador
           </label>
           <input
@@ -158,7 +161,7 @@ export default function AmbassadorLoginForm() {
           />
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-            <label style={{ fontSize: "0.85rem", fontWeight: 600, color: "#CBD5E1" }}>
+            <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>
               Senha de Acesso
             </label>
             <button
@@ -167,10 +170,11 @@ export default function AmbassadorLoginForm() {
               style={{
                 background: "none",
                 border: "none",
-                color: "#94A3B8",
+                color: "#64748B",
                 fontSize: "0.75rem",
                 cursor: "pointer",
                 padding: "2px 4px",
+                fontWeight: 600,
               }}
             >
               {showPassword ? "Ocultar" : "Mostrar"}
@@ -191,16 +195,16 @@ export default function AmbassadorLoginForm() {
           </button>
         </form>
 
-        <div style={{ borderTop: "1px solid #334155", marginTop: "28px", paddingTop: "20px", textAlign: "center" }}>
-          <p style={{ fontSize: "0.85rem", color: "#94A3B8", marginBottom: "8px" }}>
+        <div style={{ borderTop: "1px solid #E2E8F0", marginTop: "28px", paddingTop: "20px", textAlign: "center" }}>
+          <p style={{ fontSize: "0.85rem", color: "#64748B", marginBottom: "8px" }}>
             É proprietário ou gerente de restaurante?
           </p>
           <a
             href="/login"
             style={{
-              color: "#38BDF8",
+              color: "#DC2626",
               fontSize: "0.85rem",
-              fontWeight: 600,
+              fontWeight: 700,
               textDecoration: "none",
               display: "inline-block",
             }}
@@ -213,7 +217,7 @@ export default function AmbassadorLoginForm() {
           <a
             href="https://firehubfood.com.br"
             style={{
-              color: "#64748B",
+              color: "#94A3B8",
               fontSize: "0.8rem",
               textDecoration: "none",
             }}
