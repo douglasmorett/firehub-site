@@ -1,12 +1,10 @@
-import { Resend } from "resend";
+import { sendEmail } from "@/lib/mail";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const FROM = "FireHub <noreply@firehubfood.com.br>";
+const FROM = process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "FireHub <noreply@firehubfood.com.br>";
 
 // ─── Boas-vindas ao novo lojista ──────────────────────────────────────────────
 export async function sendWelcomeEmail(to: string, name: string, storeName: string) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `🔥 Bem-vindo ao FireHub, ${name}!`,
@@ -51,7 +49,7 @@ export async function sendNewOrderEmail(
     .map(i => `<tr><td style="padding:6px 0;color:#475569;">${i.qty}x ${i.name}</td><td style="text-align:right;font-weight:600;">R$ ${(i.price * i.qty).toFixed(2)}</td></tr>`)
     .join("");
 
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `🔔 Novo pedido recebido — #${orderId.slice(-6).toUpperCase()}`,
@@ -88,7 +86,7 @@ export async function sendBillingEmail(
   dueDate: string,
   paymentLink?: string
 ) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `💳 Cobrança FireHub — ${storeName}`,
@@ -125,7 +123,7 @@ export async function sendOrderDeliveredEmail(
   orderId: string,
   slug: string
 ) {
-  return resend.emails.send({
+  return sendEmail({
     from: FROM,
     to,
     subject: `📦 Seu pedido foi entregue! Avalie ${storeName}`,
@@ -146,3 +144,4 @@ export async function sendOrderDeliveredEmail(
     `,
   });
 }
+

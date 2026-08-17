@@ -58,48 +58,51 @@ export async function POST(req: NextRequest) {
 
     const resetUrl = `${APP_URL}/redefinir-senha?token=${resetToken}`;
 
-    const fromAddress = process.env.RESEND_FROM_EMAIL || "FireHub <noreply@firehubfood.com.br>";
-
-    try {
-      const { data: sendData, error: sendError } = await resend.emails.send({
-        from: fromAddress,
-        to: email,
-        subject: "🔥 Redefinição de senha — FireHub",
-        html: `
-          <div style="font-family: Inter, sans-serif; max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
-            <div style="background: linear-gradient(135deg, #DC2626, #B91C1C); padding: 32px; text-align: center;">
-              <h1 style="color: #fff; font-size: 1.8rem; font-weight: 800; margin: 0;">🔥 FIRE<span style="font-weight: 400;">HUB</span></h1>
-            </div>
-            <div style="padding: 40px 32px;">
-              <h2 style="color: #1E293B; font-size: 1.2rem; margin: 0 0 12px;">Redefinição de senha</h2>
-              <p style="color: #64748B; font-size: 0.95rem; line-height: 1.6; margin: 0 0 28px;">
-                Recebemos uma solicitação para redefinir a senha da sua conta FireHub.<br>
-                Clique no botão abaixo para criar uma nova senha.
-              </p>
-              <a href="${resetUrl}" style="display: block; background: linear-gradient(135deg, #DC2626, #B91C1C); color: #fff; text-decoration: none; padding: 14px 24px; border-radius: 10px; font-weight: 700; font-size: 1rem; text-align: center; margin-bottom: 24px;">
-                🔐 Redefinir minha senha
-              </a>
-              <p style="color: #94A3B8; font-size: 0.78rem; text-align: center; margin: 0;">
-                Este link expira em <strong>1 hora</strong>. Se você não solicitou a redefinição, ignore este e-mail.
-              </p>
-            </div>
-            <div style="background: #F8FAFC; padding: 16px 32px; text-align: center;">
-              <p style="color: #CBD5E1; font-size: 0.72rem; margin: 0;">FireHub · Sistema de gestão para restaurantes</p>
-            </div>
+    const emailHtml = `
+      <div style="font-family: Inter, sans-serif; max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); border: 1px solid #E2E8F0;">
+        <div style="background: linear-gradient(135deg, #DC2626, #B91C1C); padding: 32px; text-align: center;">
+          <h1 style="color: #fff; font-size: 1.8rem; font-weight: 800; margin: 0; letter-spacing: -0.5px;">🔥 FIRE<span style="font-weight: 400;">HUB</span></h1>
+        </div>
+        <div style="padding: 40px 32px;">
+          <h2 style="color: #1E293B; font-size: 1.2rem; margin: 0 0 12px; font-weight: 700;">Redefinição de senha</h2>
+          <p style="color: #64748B; font-size: 0.95rem; line-height: 1.6; margin: 0 0 28px;">
+            Olá, <strong>${user.name || "Restaurante"}</strong>.<br>
+            Recebemos uma solicitação para redefinir a senha da sua conta FireHub.<br>
+            Clique no botão abaixo para criar sua nova senha com segurança.
+          </p>
+          <div style="text-align: center; margin: 32px 0;">
+            <a href="${resetUrl}" style="display: inline-block; background: linear-gradient(135deg, #DC2626, #B91C1C); color: #fff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-weight: 700; font-size: 1rem; box-shadow: 0 4px 14px rgba(220,38,38,0.35);">
+              🔐 Redefinir Minha Senha
+            </a>
           </div>
-        `,
-      });
+          <p style="color: #94A3B8; font-size: 0.8rem; line-height: 1.5; text-align: center; margin: 24px 0 0;">
+            Este link expira em <strong>1 hora</strong>. Se você não fez essa solicitação, basta desconsiderar este e-mail.
+          </p>
+        </div>
+        <div style="background: #F8FAFC; padding: 16px 32px; text-align: center; border-top: 1px solid #F1F5F9;">
+          <p style="color: #94A3B8; font-size: 0.75rem; margin: 0;">FireHub · Sistema Integrado de Gestão para Restaurantes</p>
+        </div>
+      </div>
+    `;
 
-      if (sendError) {
-        console.error("[forgot-password] Resend delivery error:", sendError);
-      } else {
-        console.log("[forgot-password] Email successfully dispatched to:", email, sendData?.id);
-      }
-    } catch (err) {
-      console.error("[forgot-password] Exception during email send:", err);
+    const { sendEmail } = await import("@/lib/mail");
+    const mailResult = await sendEmail({
+      to: cleanEmail,
+      subject: "🔥 Redefinição de senha — FireHub",
+      html: emailHtml,
+    });
+
+    if (!mailResult.success) {
+      console.error("[forgot-password] Falha no disparo de e-mail:", mailResult.error);
+      return NextResponse.json(
+        { 
+          error: `Não foi possível enviar o e-mail: ${mailResult.error || "Provedor indisponível"}. Configure as credenciais de e-mail.` 
+        },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, provider: mailResult.provider });
   }
 
   // FLUXO 2 — Redefinir senha com token
