@@ -501,34 +501,35 @@ export default function RoteirizacaoModal({
   // Helper para extrair e destacar o Bairro e formatar endereço completo
   const parseAddressDetails = (rawAddr: string) => {
     if (!rawAddr || typeof rawAddr !== "string") {
-      return { neighborhood: "", fullAddress: "Endereço a confirmar" };
+      return { neighborhood: "", fullAddress: "Endereço a confirmar", streetName: "", houseNumber: "" };
     }
 
     const fullAddress = rawAddr.trim();
     let neighborhood = "";
 
-    // Lista de Bairros Conhecidos da Região (Prioridade MÁXIMA de identificação)
+    // Lista Completa de Bairros Conhecidos da Região (Prioridade MÁXIMA de identificação)
     const knownNeighborhoods = [
-      "Praiamar", "Praia Âncora", "Praia Ancora", "Residencial Praia Âncora", "Village Rio das Ostras",
-      "Bosque D'Areia", "Reduto da Paz", "Colinas", "Chácara Mariléa", "Chacara Marilea", "Chacara Marileia",
-      "Jardim Mariléa", "Jardim Marilea", "Novo Rio das Ostras", "Extensão Novo Rio das Ostras",
+      "Floresta das Gaivotas", "Enseada das Gaivotas", "Praiamar", "Praia Âncora", "Praia Ancora",
+      "Residencial Praia Âncora", "Residencial Praia Ancora", "Village Rio das Ostras", "Bosque D'Areia",
+      "Bosque da Praia", "Reduto da Paz", "Colinas", "Chácara Mariléa", "Chacara Marilea", "Chacara Marileia",
+      "Jardim Mariléa", "Jardim Marilea", "Jardim Marileia", "Novo Rio das Ostras", "Extensão Novo Rio das Ostras",
       "Extensao Novo Rio das Ostras", "Recanto Rio das Ostras", "Bairro Operário", "Bairro Operario",
       "Parque São Jorge", "Parque Sao Jorge", "Extensão do Bosque", "Extensao do Bosque",
       "Jardim Bela Vista", "Cidade Beira Mar", "Cidade Praiana", "Costa Azul", "Costazul",
-      "Serra Mar", "Verdes Mares", "Ouro Verde", "Terra Firme", "Enseada das Gaivotas",
-      "Nova Esperança", "Nova Esperanca", "Jardim Esperança", "Jardim Esperanca",
+      "Serra Mar", "Serramar", "Extensão Serramar", "Extensao Serramar", "Verdes Mares", "Ouro Verde",
+      "Terra Firme", "Nova Esperança", "Nova Esperanca", "Jardim Esperança", "Jardim Esperanca",
       "Casas Velhas", "Rocha Leão", "Rocha Leao", "Balneário Remanso", "Balneario Remanso",
       "Boca da Barra", "Boca do Mato", "Jardim Atlântico", "Jardim Atlantico", "Nova Aliança", "Nova Alianca",
       "São Cristóvão", "São Cristovao", "Sao Cristovao", "Cantinho do Mar", "Gelson Apicelo",
-      "Jardim Campomar", "Campomar", "Bosque da Praia", "Viverde", "Cláudio Ribeiro", "Claudio Ribeiro",
-      "Mariléa", "Marilea", "Centro", "Remanso", "Âncora", "Ancora", "Zabulão", "Zambulao",
-      "Extremoz", "Recreio", "Operários", "Operarios", "Cantagalo", "Unamar", "Tamoios",
-      "Peró", "Atlântica", "Atlantica", "Recanto"
+      "Jardim Campomar", "Campomar", "Viverde", "Cláudio Ribeiro", "Claudio Ribeiro",
+      "Jardim Miramar", "Palmital", "Mar do Norte", "Cantagalo", "Mariléa", "Marilea", "Centro",
+      "Remanso", "Âncora", "Ancora", "Zabulão", "Zambulao", "Extremoz", "Recreio",
+      "Operários", "Operarios", "Unamar", "Tamoios", "Peró", "Atlântica", "Atlantica", "Recanto"
     ];
 
     // 1. Procurar primeiro se o endereço cita explicitamente algum bairro conhecido
     for (const bName of knownNeighborhoods) {
-      const reg = new RegExp(`\\b${bName}\\b`, "i");
+      const reg = new RegExp(`\\b${bName.replace("'", "\\'")}\\b`, "i");
       if (reg.test(fullAddress)) {
         neighborhood = bName;
         break;
@@ -540,7 +541,7 @@ export default function RoteirizacaoModal({
       const bairroMatch = fullAddress.match(/(?:bairro|b\.:?)\s*([^-,]+)/i);
       if (bairroMatch && bairroMatch[1]) {
         const candidate = bairroMatch[1].trim();
-        if (candidate.length > 2 && candidate.toLowerCase() !== "asil" && !/brasil|rio das ostras|cabo frio|rj/i.test(candidate)) {
+        if (candidate.length > 2 && candidate.toLowerCase() !== "asil" && !/brasil|rio das ostras|cabo frio|macae|macaé|rj/i.test(candidate)) {
           neighborhood = candidate;
         }
       }
@@ -560,13 +561,54 @@ export default function RoteirizacaoModal({
       }
     }
 
+    // 4. Extrair Nome da Rua Limpo e Número Predial
+    let streetName = "";
+    let houseNumber = "";
+
+    // Pega a primeira parte antes de traço ou vírgula
+    let firstSegment = fullAddress.split(/\s*-\s*/)[0].trim();
+    
+    // Normalizar prefixos de vias
+    firstSegment = firstSegment
+      .replace(/\bR\.\s*/gi, "Rua ")
+      .replace(/\bAv\.\s*/gi, "Avenida ")
+      .replace(/\bTv\.\s*/gi, "Travessa ")
+      .replace(/\bTrav\.\s*/gi, "Travessa ")
+      .replace(/\bEst\.\s*/gi, "Estrada ")
+      .replace(/\bAl\.\s*/gi, "Alameda ")
+      .replace(/\bPq\.\s*/gi, "Parque ")
+      .replace(/\bRod\.\s*/gi, "Rodovia ")
+      .replace(/\bRes\.\s*/gi, "Residencial ");
+
+    // Extrair número predial se existir
+    const numMatch = firstSegment.match(/\b(?:n[ºo]?\s*|,\s*)(\d+)\b/i) || firstSegment.match(/\s+(\d+)$/);
+    if (numMatch && numMatch[1]) {
+      houseNumber = numMatch[1];
+    }
+
+    // Limpar streetName retirando número, lote, quadra, apto, referências
+    streetName = firstSegment
+      .replace(/\b(?:n[ºo]?\s*|,\s*)\d+\b/gi, "")
+      .replace(/\blote\s*\d+\w*/gi, "")
+      .replace(/\bquadra\s*\d+\w*/gi, "")
+      .replace(/\bqd\s*\d+\w*/gi, "")
+      .replace(/\blt\s*\d+\w*/gi, "")
+      .replace(/\bcasa\s*\d+\w*/gi, "")
+      .replace(/\bapto\s*\d+\w*/gi, "")
+      .replace(/\bapt\s*\d+\w*/gi, "")
+      .replace(/\bbloco\s*\w+/gi, "")
+      .replace(/[\.,\s\-]+$/, "")
+      .trim();
+
     return {
       neighborhood,
       fullAddress,
+      streetName,
+      houseNumber
     };
   };
 
-  // Dicionário de Bairros de Rio das Ostras e Região com Coordenadas de Alta Precisão (RIGOROSAMENTE EM TERRA FIRME)
+  // Dicionário Completo de Bairros de Rio das Ostras e Região com Coordenadas de Alta Precisão (RIGOROSAMENTE EM TERRA FIRME)
   const NEIGHBORHOOD_COORDS_MAP: Record<string, { lat: number; lng: number }> = {
     costazul: { lat: -22.5205, lng: -41.9175 },
     "costa azul": { lat: -22.5205, lng: -41.9175 },
@@ -616,18 +658,35 @@ export default function RoteirizacaoModal({
     "jardim atlântico": { lat: -22.5030, lng: -41.9240 },
     "terra firme": { lat: -22.5120, lng: -41.9200 },
     "enseada das gaivotas": { lat: -22.5020, lng: -41.9200 },
+    "floresta das gaivotas": { lat: -22.5065, lng: -41.9210 },
     operarios: { lat: -22.5230, lng: -41.9380 },
     operários: { lat: -22.5230, lng: -41.9380 },
     "bairro operario": { lat: -22.5230, lng: -41.9380 },
     "bairro operário": { lat: -22.5230, lng: -41.9380 },
     "verdes mares": { lat: -22.5380, lng: -41.9520 },
     "serra mar": { lat: -22.5290, lng: -41.9620 },
+    serramar: { lat: -22.5290, lng: -41.9620 },
+    "extensao serramar": { lat: -22.5280, lng: -41.9600 },
+    "extensão serramar": { lat: -22.5280, lng: -41.9600 },
     "cidade beira mar": { lat: -22.5350, lng: -41.9630 },
     "jardim campomar": { lat: -22.5320, lng: -41.9600 },
     campomar: { lat: -22.5320, lng: -41.9600 },
     "gelson apicelo": { lat: -22.5150, lng: -41.9380 },
     "boca da barra": { lat: -22.5280, lng: -41.9320 },
     viverde: { lat: -22.5180, lng: -41.9520 },
+    "jardim miramar": { lat: -22.5340, lng: -41.9540 },
+    palmital: { lat: -22.5250, lng: -41.9670 },
+    "bosque da praia": { lat: -22.5020, lng: -41.9120 },
+    "bosque d'areia": { lat: -22.5020, lng: -41.9120 },
+    "reduto da paz": { lat: -22.5080, lng: -41.9150 },
+    "claudio ribeiro": { lat: -22.5190, lng: -41.9550 },
+    "cláudio ribeiro": { lat: -22.5190, lng: -41.9550 },
+    "mar do norte": { lat: -22.4580, lng: -41.8750 },
+    cantagalo: { lat: -22.4700, lng: -41.9600 },
+    "rocha leao": { lat: -22.4600, lng: -42.0200 },
+    "rocha leão": { lat: -22.4600, lng: -42.0200 },
+    unamar: { lat: -22.5700, lng: -41.9950 },
+    tamoios: { lat: -22.5700, lng: -41.9950 },
   };
 
   // Limpa Complementos / Referências mantendo rua, número e bairro intactos (idêntico ao Google Maps)
@@ -666,7 +725,7 @@ export default function RoteirizacaoModal({
     return cleanParts.join(", ");
   };
 
-  // Motor Inteligente de Geocodificação Automática com Filtro Anti-Mar e Cache Persistente
+  // Motor Inteligente de Geocodificação Automática: PRIORIDADE BAIRRO -> RUA DENTRO DO BAIRRO (Anti-Homônimos)
   useEffect(() => {
     if (deliveryOrders.length === 0) return;
 
@@ -679,11 +738,21 @@ export default function RoteirizacaoModal({
 
     const initialMap = { ...geocodedMap };
     let initialUpdated = false;
-    const toGeocode: { id: string; idx: number; rawAddr: string; neighborhood: string; cleanedStreet: string; cacheKey: string; dictFallback?: { lat: number; lng: number } }[] = [];
+    const toGeocode: {
+      id: string;
+      idx: number;
+      rawAddr: string;
+      neighborhood: string;
+      streetName: string;
+      houseNumber: string;
+      cleanedStreet: string;
+      cacheKey: string;
+      dictFallback?: { lat: number; lng: number };
+    }[] = [];
 
     deliveryOrders.forEach((order, idx) => {
       const rawAddr = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`;
-      const { neighborhood } = parseAddressDetails(rawAddr);
+      const { neighborhood, streetName, houseNumber } = parseAddressDetails(rawAddr);
       const cleanedStreet = cleanAddressForGeocoding(rawAddr);
       const cacheKey = `${cleanedStreet}_${neighborhood}_${storeCity}`.toLowerCase().trim();
 
@@ -720,6 +789,8 @@ export default function RoteirizacaoModal({
           idx,
           rawAddr,
           neighborhood,
+          streetName,
+          houseNumber,
           cleanedStreet,
           cacheKey,
           dictFallback,
@@ -747,7 +818,7 @@ export default function RoteirizacaoModal({
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-            { headers: { "User-Agent": "FireHub-Roteirizacao/1.0" }, signal: AbortSignal.timeout(3500) }
+            { headers: { "User-Agent": "FireHub-Roteirizacao/2.0" }, signal: AbortSignal.timeout(3500) }
           );
           if (res.ok) {
             const data = await res.json();
@@ -772,31 +843,60 @@ export default function RoteirizacaoModal({
         await Promise.all(
           batch.map(async (item) => {
             let coords: { lat: number; lng: number } | null = null;
+            const bCentroid = item.dictFallback;
 
-            // 1. Tentativa com Endereço Limpo 100% no padrão do Google Maps (Rua, Número, Bairro, Cidade)
-            const query1 = item.cleanedStreet.toLowerCase().includes(storeCity.toLowerCase())
-              ? `${item.cleanedStreet}, RJ, Brasil`
-              : `${item.cleanedStreet}, ${storeCity}, RJ, Brasil`;
-            coords = await fetchNominatim(query1);
+            // ── REGRA DE OURO: PRIMEIRO O BAIRRO, DEPOIS A RUA NO BAIRRO (Anti-Homônimos) ──
+            // Em cidades como Rio das Ostras, existem várias "Rua Três", "Rua A", etc. em bairros distintos.
+            // Por isso, a busca OBRIGATORIAMENTE ancora no BAIRRO e valida proximidade (< 2.5km do centróide do bairro).
 
-            // 2. Segunda tentativa anexando bairro se o endereço ainda for muito curto
-            if (!coords && item.neighborhood && !item.cleanedStreet.toLowerCase().includes(item.neighborhood.toLowerCase())) {
-              const query2 = `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
-              coords = await fetchNominatim(query2);
+            // 1. Tentativa 1: Rua + Número + Bairro + Cidade (Ponto exato no bairro certo)
+            if (item.streetName && item.houseNumber && item.neighborhood) {
+              const query1 = `${item.streetName}, ${item.houseNumber}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              const res1 = await fetchNominatim(query1);
+              if (res1) {
+                // Se temos o centróide do bairro de referência, valida se a rua retornada não é em outro bairro homônimo
+                if (!bCentroid || calculateHaversineKm(res1.lat, res1.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
+                  coords = res1;
+                }
+              }
             }
 
-            // 3. Tentativa apenas pelo Bairro no Nominatim
+            // 2. Tentativa 2: Rua + Bairro + Cidade (SEM número predial, mas estritamente dentro do bairro correto)
+            if (!coords && item.streetName && item.neighborhood) {
+              const query2 = `${item.streetName}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              const res2 = await fetchNominatim(query2);
+              if (res2) {
+                if (!bCentroid || calculateHaversineKm(res2.lat, res2.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
+                  coords = res2;
+                }
+              }
+            }
+
+            // 3. Tentativa 3: Endereço Limpo Completo com Bairro
+            if (!coords && item.cleanedStreet && item.neighborhood) {
+              const query3 = item.cleanedStreet.toLowerCase().includes(item.neighborhood.toLowerCase())
+                ? `${item.cleanedStreet}, ${storeCity}, RJ, Brasil`
+                : `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              const res3 = await fetchNominatim(query3);
+              if (res3) {
+                if (!bCentroid || calculateHaversineKm(res3.lat, res3.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
+                  coords = res3;
+                }
+              }
+            }
+
+            // 4. Tentativa 4: Bairro isolado no Nominatim (se a rua não existir na base cartográfica)
             if (!coords && item.neighborhood) {
-              const query3 = `${item.neighborhood}, ${storeCity}, RJ, Brasil`;
-              coords = await fetchNominatim(query3);
+              const query4 = `${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              coords = await fetchNominatim(query4);
             }
 
-            // 4. Fallback pelo Dicionário Estático do Bairro (RIGOROSAMENTE EM TERRA)
+            // 5. Fallback 5: Dicionário Estático de Alta Precisão do Bairro (RIGOROSAMENTE EM TERRA FIRME)
             if (!coords && item.dictFallback) {
               coords = item.dictFallback;
             }
 
-            // 5. Fallback Absoluto Garantido em Terra Firme (Centro da Cidade com Jitter)
+            // 6. Fallback 6: Centro da Cidade com Jitter
             if (!coords) {
               coords = {
                 lat: defaultCenter.lat + ((item.idx % 5) - 2) * 0.002,
@@ -818,7 +918,7 @@ export default function RoteirizacaoModal({
         if (isMounted) {
           setGeocodedMap({ ...updatedMap });
         }
-        await new Promise((r) => setTimeout(r, 150));
+        await new Promise((r) => setTimeout(r, 120));
       }
 
       if (hasNewCache) {
@@ -957,6 +1057,79 @@ export default function RoteirizacaoModal({
     setSelectedOrderIds(optimizedCluster);
   };
 
+  // Dispersor Anti-Sobreposição (Anti-Overlap Spider / Offset Lateral)
+  // Agrupa pedidos com coordenadas idênticas ou muito próximas (< 15 metros) e distribui lado a lado ou em leque
+  const { displayCoordinatesMap, clusterCentersMap } = useMemo(() => {
+    const dispMap: Record<string, { lat: number; lng: number }> = {};
+    const centersMap: Record<string, { lat: number; lng: number }> = {};
+    const clusters: { baseLat: number; baseLng: number; orderIds: string[] }[] = [];
+
+    deliveryOrders.forEach((order) => {
+      const rawCoords = geocodedMap[order.id];
+      if (!rawCoords) return;
+
+      // Procura cluster existente a menos de 0.00015 graus (~15 metros)
+      let found = clusters.find((c) => {
+        const dLat = Math.abs(c.baseLat - rawCoords.lat);
+        const dLng = Math.abs(c.baseLng - rawCoords.lng);
+        return dLat < 0.00015 && dLng < 0.00015;
+      });
+
+      if (found) {
+        found.orderIds.push(order.id);
+      } else {
+        clusters.push({
+          baseLat: rawCoords.lat,
+          baseLng: rawCoords.lng,
+          orderIds: [order.id],
+        });
+      }
+    });
+
+    clusters.forEach((cluster) => {
+      const total = cluster.orderIds.length;
+      if (total === 1) {
+        const oId = cluster.orderIds[0];
+        dispMap[oId] = { lat: cluster.baseLat, lng: cluster.baseLng };
+        centersMap[oId] = { lat: cluster.baseLat, lng: cluster.baseLng };
+        return;
+      }
+
+      const cosLat = Math.cos((cluster.baseLat * Math.PI) / 180) || 1;
+      const radius = total === 2 ? 0.00022 : (0.00024 + Math.min(0.00010, total * 0.00003));
+
+      if (total === 2) {
+        // 2 pedidos: dispõe perfeitamente lado a lado (esquerda e direita na horizontal)
+        const id1 = cluster.orderIds[0];
+        const id2 = cluster.orderIds[1];
+        dispMap[id1] = {
+          lat: cluster.baseLat,
+          lng: cluster.baseLng - (radius / cosLat),
+        };
+        dispMap[id2] = {
+          lat: cluster.baseLat,
+          lng: cluster.baseLng + (radius / cosLat),
+        };
+        centersMap[id1] = { lat: cluster.baseLat, lng: cluster.baseLng };
+        centersMap[id2] = { lat: cluster.baseLat, lng: cluster.baseLng };
+      } else {
+        // 3 ou mais pedidos: distribui em leque/anel circular regular em torno do ponto central da rua/bairro
+        cluster.orderIds.forEach((oId, idx) => {
+          const angle = ((idx * 2 * Math.PI) / total) - (Math.PI / 2);
+          const offsetLat = radius * Math.sin(angle);
+          const offsetLng = (radius / cosLat) * Math.cos(angle);
+          dispMap[oId] = {
+            lat: cluster.baseLat + offsetLat,
+            lng: cluster.baseLng + offsetLng,
+          };
+          centersMap[oId] = { lat: cluster.baseLat, lng: cluster.baseLng };
+        });
+      }
+    });
+
+    return { displayCoordinatesMap: dispMap, clusterCentersMap: centersMap };
+  }, [deliveryOrders, geocodedMap]);
+
   // Helper para centralizar manualmente a visão do mapa sob demanda do usuário
   const handleFitAllBounds = () => {
     if (!leafletMapRef.current) return;
@@ -965,7 +1138,7 @@ export default function RoteirizacaoModal({
 
     const points: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
     deliveryOrders.forEach((o) => {
-      const coords = geocodedMap[o.id];
+      const coords = displayCoordinatesMap[o.id] || geocodedMap[o.id];
       if (coords) points.push([coords.lat, coords.lng]);
     });
 
@@ -1061,10 +1234,22 @@ export default function RoteirizacaoModal({
       .bindPopup(`<b>🏠 ${storeAddress || "Sua Loja"}</b><br/>Ponto Inicial de Entrega`);
     markersRef.current.set("STORE", storeMarker);
 
-    // 2. Render Orders Markers
+    // 2. Render Orders Markers com Posição Anti-Sobreposição (Lado a Lado / Leque Circular)
     deliveryOrders.forEach(order => {
-      const coords = geocodedMap[order.id];
+      const coords = displayCoordinatesMap[order.id] || geocodedMap[order.id];
       if (!coords) return;
+
+      const baseCenter = clusterCentersMap[order.id];
+      // Se o pedido foi dispersado por estar no mesmo local de outro, desenha linha sutil até o ponto base
+      if (baseCenter && (Math.abs(baseCenter.lat - coords.lat) > 0.00003 || Math.abs(baseCenter.lng - coords.lng) > 0.00003)) {
+        const spiderLine = L.polyline([[baseCenter.lat, baseCenter.lng], [coords.lat, coords.lng]], {
+          color: "#94A3B8",
+          weight: 1.5,
+          dashArray: "3, 3",
+          opacity: 0.6,
+        }).addTo(map);
+        polylinesRef.current.push(spiderLine);
+      }
 
       const isSelected = selectedOrderIds.includes(order.id);
       const selectedIndex = selectedOrderIds.indexOf(order.id);
@@ -1181,7 +1366,7 @@ export default function RoteirizacaoModal({
       const routePoints: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
 
       selectedOrderIds.forEach(id => {
-        const coords = geocodedMap[id];
+        const coords = displayCoordinatesMap[id] || geocodedMap[id];
         if (coords) {
           routePoints.push([coords.lat, coords.lng]);
         }
@@ -1204,7 +1389,7 @@ export default function RoteirizacaoModal({
       createdRoutes.forEach(route => {
         const points: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
         route.orders.forEach(ro => {
-          const coords = geocodedMap[ro.id];
+          const coords = displayCoordinatesMap[ro.id] || geocodedMap[ro.id];
           if (coords) points.push([coords.lat, coords.lng]);
         });
 
@@ -1218,7 +1403,7 @@ export default function RoteirizacaoModal({
         }
       });
     }
-  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, storeAddress, storeCity]);
+  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, storeAddress, storeCity]);
 
   // Toggle order selection for forming a route
   const toggleOrderSelection = (id: string) => {
