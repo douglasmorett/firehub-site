@@ -24,6 +24,7 @@ export default async function StoreFinanceiroPage() {
       id: true, paymentFees: true, storeName: true,
       storeOrderCount: true, createdAt: true,
       fixedCosts: true, financialGoals: true, role: true, ownerId: true,
+      repasseConfig: true,
     }
   }).catch((err) => {
     console.error("[Financeiro] Erro ao buscar usuário:", err);
@@ -106,6 +107,7 @@ export default async function StoreFinanceiroPage() {
       produtosSemCusto={produtosSemCusto.map(p => ({ id: p.id, name: p.name || "Sem nome" }))}
       initialFixedCosts={fixedCosts}
       initialGoals={financialGoals}
+      initialRepasseConfig={(user.repasseConfig as any) || {}}
     />
   );
 }

@@ -116,7 +116,7 @@ function DRERow({ label, value, indent = 0, bold = false, color = "#0F172A", bor
   );
 }
 
-export default function DREClient({ orders, paymentFees, storeName, storeCreatedAt, produtosSemCusto = [], initialFixedCosts = [], initialGoals = {} }: {
+export default function DREClient({ orders, paymentFees, storeName, storeCreatedAt, produtosSemCusto = [], initialFixedCosts = [], initialGoals = {}, initialRepasseConfig = {} }: {
   orders: Order[];
   paymentFees: any;
   storeName: string;
@@ -124,6 +124,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   produtosSemCusto?: { id: string; name: string }[];
   initialFixedCosts?: FixedCost[];
   initialGoals?: Record<string, any>;
+  initialRepasseConfig?: any;
 }) {
   const { data: session } = useSession();
   const userEmailClean = session?.user?.email;
@@ -133,6 +134,15 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
   const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos" | "contasapagar" | "notascompras">("mensalidade");
+
+  // ===== REPASSE & SAQUE PIX =====
+  const [repasseConfig, setRepasseConfig] = useState<any>(initialRepasseConfig || {});
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawChavePix, setWithdrawChavePix] = useState(initialRepasseConfig?.chavePix || "");
+  const [withdrawTitular, setWithdrawTitular] = useState(initialRepasseConfig?.titular || "");
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [withdrawFeedback, setWithdrawFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -193,6 +203,47 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
     const updated = fixedCosts.filter(c => c.id !== id);
     setFixedCosts(updated);
     saveFixedCosts(updated);
+  };
+
+  const handleRequestWithdraw = async () => {
+    const val = parseFloat(withdrawAmount.replace(",", "."));
+    if (isNaN(val) || val <= 0) {
+      setWithdrawFeedback({ type: "error", message: "Informe um valor de saque válido." });
+      return;
+    }
+    if (!withdrawChavePix.trim()) {
+      setWithdrawFeedback({ type: "error", message: "Informe sua Chave Pix para receber a transferência." });
+      return;
+    }
+
+    setWithdrawLoading(true);
+    setWithdrawFeedback(null);
+    try {
+      const res = await fetch("/api/store/repasse/solicitar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: val,
+          chavePix: withdrawChavePix.trim(),
+          titular: withdrawTitular.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setWithdrawFeedback({ type: "error", message: data.error || "Erro ao solicitar saque." });
+        return;
+      }
+      setWithdrawFeedback({ type: "success", message: data.message });
+      setTimeout(() => {
+        setShowWithdrawModal(false);
+        setWithdrawFeedback(null);
+        setWithdrawAmount("");
+      }, 3500);
+    } catch (err: any) {
+      setWithdrawFeedback({ type: "error", message: err.message || "Erro de conexão ao solicitar saque." });
+    } finally {
+      setWithdrawLoading(false);
+    }
   };
 
   const { from, to } = useMemo(() => {
@@ -775,21 +826,95 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#1E40AF", fontSize: "0.88rem", fontWeight: 800 }}>
-                    <span>💳 Saldo Gateway da Loja (Mercado Pago / Celcoin)</span>
+                    <span>💳 Saldo Gateway da Loja (Mercado Pago / Pix Centralizado)</span>
                   </div>
                   <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
                     Vendas Online Próprias
                   </span>
                 </div>
 
-                <p style={{ fontSize: "2.1rem", fontWeight: 900, color: "#16A34A", margin: "4px 0 12px" }}>
+                <p style={{ fontSize: "2.1rem", fontWeight: 900, color: "#16A34A", margin: "4px 0 6px" }}>
                   {fmtR(extratoCalc.saldoDisponivel)}
                 </p>
+
+                {/* Status do Repasse Automático */}
+                {repasseConfig?.chavePix ? (
+                  <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+                    <div>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#166534", display: "block" }}>🟢 Repasse Automático Ativo</span>
+                      <span style={{ fontSize: "0.72rem", color: "#15803D" }}>
+                        {repasseConfig.frequencia === "WEEKLY" ? "Semanalmente" : "Todos os dias"} às {repasseConfig.horario || "03:00"} · Chave: <strong>{repasseConfig.chavePix}</strong>
+                      </span>
+                    </div>
+                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#166534", fontWeight: 700, textDecoration: "underline" }}>Alterar</a>
+                  </div>
+                ) : (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+                    <div>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#991B1B", display: "block" }}>⚪ Repasse Automático Não Configurado</span>
+                      <span style={{ fontSize: "0.72rem", color: "#B91C1C" }}>Cadastre sua chave Pix para receber os repasses automaticamente.</span>
+                    </div>
+                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#DC2626", fontWeight: 800, textDecoration: "underline" }}>Configurar Pix</a>
+                  </div>
+                )}
+
+                {/* Botões de Ação: Solicitar Saque e Programar */}
+                <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => {
+                      setWithdrawAmount(extratoCalc.saldoDisponivel > 0 ? extratoCalc.saldoDisponivel.toFixed(2) : "");
+                      setWithdrawChavePix(repasseConfig?.chavePix || "");
+                      setWithdrawTitular(repasseConfig?.titular || "");
+                      setWithdrawFeedback(null);
+                      setShowWithdrawModal(true);
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: "160px",
+                      padding: "11px 16px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #16A34A, #15803D)",
+                      color: "#fff",
+                      fontWeight: 800,
+                      fontSize: "0.88rem",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      boxShadow: "0 4px 12px rgba(22, 163, 74, 0.25)",
+                      fontFamily: "inherit"
+                    }}
+                  >
+                    ⚡ Solicitar Saque Agora (PIX)
+                  </button>
+                  <a
+                    href="/store/minha-loja"
+                    style={{
+                      padding: "11px 14px",
+                      borderRadius: "10px",
+                      border: "1.5px solid #CBD5E1",
+                      background: "#fff",
+                      color: "#475569",
+                      fontWeight: 700,
+                      fontSize: "0.82rem",
+                      textDecoration: "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "4px",
+                      fontFamily: "inherit"
+                    }}
+                  >
+                    ⚙️ Programar Repasse
+                  </a>
+                </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748B", fontSize: "0.82rem", fontWeight: 700 }}>
                   <span>🔒 Saldo a Liberar (Crédito D+30)</span>
                 </div>
-                <p style={{ fontSize: "1.4rem", fontWeight: 800, color: "#334155", margin: "4px 0 16px" }}>
+                <p style={{ fontSize: "1.3rem", fontWeight: 800, color: "#334155", margin: "2px 0 14px" }}>
                   {fmtR(extratoCalc.saldoALiberar)}
                 </p>
 
@@ -1370,6 +1495,179 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL DE SOLICITAÇÃO DE SAQUE PIX ===== */}
+      {showWithdrawModal && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(6px)", zIndex: 99999, display: "flex",
+          alignItems: "center", justifyContent: "center", padding: "1.5rem"
+        }}>
+          <div style={{
+            background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "520px",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)", border: "1px solid #E2E8F0",
+            overflow: "hidden"
+          }}>
+            {/* Header */}
+            <div style={{
+              background: "linear-gradient(135deg, #16A34A 0%, #15803D 100%)",
+              padding: "1.25rem 1.5rem", color: "#FFFFFF",
+              display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ background: "rgba(255,255,255,0.2)", padding: "8px 10px", borderRadius: "10px", fontSize: "1.2rem" }}>
+                  💰
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "#FFFFFF" }}>
+                    Solicitar Saque via Pix
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "rgba(255,255,255,0.85)" }}>
+                    Transfira seu saldo de vendas online diretamente para sua conta
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowWithdrawModal(false)}
+                style={{ background: "none", border: "none", color: "#fff", fontSize: "1.2rem", cursor: "pointer", padding: "4px" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "1.5rem" }}>
+              {/* Card Saldo Disponível */}
+              <div style={{
+                background: "#F0FDF4", border: "1.5px solid #BBF7D0",
+                borderRadius: "14px", padding: "14px", marginBottom: "16px",
+                display: "flex", justifyContent: "space-between", alignItems: "center"
+              }}>
+                <div>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#166534" }}>Saldo Disponível</span>
+                  <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#15803D" }}>
+                    {fmtR(extratoCalc.saldoDisponivel)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWithdrawAmount(extratoCalc.saldoDisponivel.toFixed(2))}
+                  style={{
+                    background: "#16A34A", color: "#fff", border: "none",
+                    borderRadius: "8px", padding: "8px 14px", fontSize: "0.8rem",
+                    fontWeight: 800, cursor: "pointer", fontFamily: "inherit"
+                  }}
+                >
+                  Sacar Tudo
+                </button>
+              </div>
+
+              {/* Feedback messages */}
+              {withdrawFeedback && (
+                <div style={{
+                  background: withdrawFeedback.type === "success" ? "#F0FDF4" : "#FEF2F2",
+                  border: `1px solid ${withdrawFeedback.type === "success" ? "#BBF7D0" : "#FECACA"}`,
+                  color: withdrawFeedback.type === "success" ? "#166534" : "#991B1B",
+                  borderRadius: "10px", padding: "10px 14px", marginBottom: "14px",
+                  fontSize: "0.84rem", fontWeight: 700
+                }}>
+                  {withdrawFeedback.type === "success" ? "✅ " : "❌ "}
+                  {withdrawFeedback.message}
+                </div>
+              )}
+
+              {/* Form Fields */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
+                    Valor a Sacar (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    placeholder="0.00"
+                    value={withdrawAmount}
+                    onChange={e => setWithdrawAmount(e.target.value)}
+                    style={{
+                      width: "100%", padding: "11px 14px", borderRadius: "10px",
+                      border: "1.5px solid #CBD5E1", fontSize: "1rem", fontWeight: 800,
+                      color: "#0F172A", outline: "none", boxSizing: "border-box"
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
+                    Chave Pix de Destino
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="CPF, CNPJ, Telefone, E-mail ou Chave Aleatória"
+                    value={withdrawChavePix}
+                    onChange={e => setWithdrawChavePix(e.target.value)}
+                    style={{
+                      width: "100%", padding: "10px 14px", borderRadius: "10px",
+                      border: "1.5px solid #CBD5E1", fontSize: "0.88rem",
+                      color: "#0F172A", outline: "none", boxSizing: "border-box"
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
+                    Nome do Titular da Conta
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nome completo ou Razão Social"
+                    value={withdrawTitular}
+                    onChange={e => setWithdrawTitular(e.target.value)}
+                    style={{
+                      width: "100%", padding: "10px 14px", borderRadius: "10px",
+                      border: "1.5px solid #CBD5E1", fontSize: "0.88rem",
+                      color: "#0F172A", outline: "none", boxSizing: "border-box"
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowWithdrawModal(false)}
+                  style={{
+                    flex: 1, padding: "12px", borderRadius: "10px",
+                    border: "1.5px solid #CBD5E1", background: "#fff",
+                    color: "#475569", fontWeight: 700, cursor: "pointer",
+                    fontSize: "0.88rem", fontFamily: "inherit"
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRequestWithdraw}
+                  disabled={withdrawLoading || !withdrawAmount || Number(withdrawAmount) <= 0 || !withdrawChavePix.trim()}
+                  style={{
+                    flex: 2, padding: "12px", borderRadius: "10px",
+                    border: "none",
+                    background: withdrawLoading || !withdrawAmount || Number(withdrawAmount) <= 0 || !withdrawChavePix.trim()
+                      ? "#94A3B8"
+                      : "linear-gradient(135deg, #16A34A, #15803D)",
+                    color: "#fff", fontWeight: 800, cursor: withdrawLoading ? "not-allowed" : "pointer",
+                    fontSize: "0.88rem", fontFamily: "inherit",
+                    boxShadow: "0 4px 14px rgba(22, 163, 74, 0.3)"
+                  }}
+                >
+                  {withdrawLoading ? "Processando..." : "Confirmar Solicitação de Saque"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
