@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       where: {
         franchiseeId: license.franchiseeId,
         active: true,
-        activeTotem: true, // Apenas produtos habilitados para Totem
+        activeTotem: true, // Apenas produtos habilitados para Totem (padrão true para todos os ativos)
       },
       orderBy: [{ category: "asc" }, { name: "asc" }],
       select: {
@@ -50,12 +50,32 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // Buscar categorias
-    const categories = await prisma.menuCategory.findMany({
+    // Buscar categorias cadastradas no banco
+    const dbCategories = await prisma.menuCategory.findMany({
       where: { franchiseeId: license.franchiseeId },
-      orderBy: { sortOrder: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true, emoji: true, imageUrl: true, color: true, sortOrder: true }
     });
+
+    // Sintetizar categorias de produtos caso não estejam na tabela MenuCategory
+    const categoryNames = new Set(dbCategories.map(c => c.name.toLowerCase().trim()));
+    const extraCategories: any[] = [];
+    
+    products.forEach(p => {
+      if (p.category && !categoryNames.has(p.category.toLowerCase().trim())) {
+        categoryNames.add(p.category.toLowerCase().trim());
+        extraCategories.push({
+          id: `cat_${p.category.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
+          name: p.category,
+          emoji: "🍽️",
+          imageUrl: null,
+          color: "#E8360C",
+          sortOrder: 99
+        });
+      }
+    });
+
+    const categories = [...dbCategories, ...extraCategories];
 
     // Filtrar por dia da semana
     const dayMap: Record<number, string> = { 0: "DOM", 1: "SEG", 2: "TER", 3: "QUA", 4: "QUI", 5: "SEX", 6: "SAB" };

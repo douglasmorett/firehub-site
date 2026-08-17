@@ -89,16 +89,24 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatTimerRef = useRef<NodeJS.Timeout | null>(null);
   
+  const resetSession = useCallback(() => {
+    setCart([]);
+    setCustomerName("");
+    setSearchQuery("");
+    setScreen("MENU");
+    if (categories.length > 0) setActiveCategory(categories[0].id || (categories[0] as any).name);
+  }, [categories]);
+
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     
-    // Only set timer if not on WELCOME, LOADING, ERROR, CONFIRMATION
-    if (!["WELCOME", "LOADING", "ERROR", "CONFIRMATION"].includes(screen)) {
+    // Auto reset to menu after 90s of inactivity if not on loading/error/confirmation
+    if (!["LOADING", "ERROR", "CONFIRMATION"].includes(screen)) {
       inactivityTimerRef.current = setTimeout(() => {
         resetSession();
       }, 90000); // 90s
     }
-  }, [screen]);
+  }, [screen, resetSession]);
 
   useEffect(() => {
     // Track interactions
@@ -120,7 +128,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   useEffect(() => {
     async function init() {
       if (!token) {
-        setErrorMsg("Token não fornecido");
+        setErrorMsg("Token de acesso do Totem não fornecido.");
         setScreen("ERROR");
         return;
       }
@@ -144,51 +152,64 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
         setFingerprint(hashHex);
 
-        // Validate Token & Load Menu
-        // Mock API Call due to no backend available here yet
-        // In real life: await fetch('/api/totem/auth', ...) & '/api/totem/menu'
-        
-        setTimeout(() => {
-          setStore({
-            id: "store123",
-            name: "Fire Hub Burger",
-            logoUrl: null,
-            totemWelcomeMessage: "Bem-vindo ao Fire Hub!"
-          });
-          
-          setCategories([
-            { id: "c1", name: "Lanches", sortOrder: 1 },
-            { id: "c2", name: "Bebidas", sortOrder: 2 },
-            { id: "c3", name: "Sobremesas", sortOrder: 3 },
-          ]);
-          
-          setProducts([
-            {
-              id: "p1", name: "Smash Burger", description: "Pão, carne e queijo.", price: 25.9, imageUrl: null, categoryId: "c1", isCombo: false
-            },
-            {
-              id: "p2", name: "Combo Smash", description: "Smash + Fritas + Refri", price: 39.9, imageUrl: null, categoryId: "c1", isCombo: true,
-              comboGroups: [
-                { id: "g1", name: "Escolha sua bebida", required: true, minItems: 1, maxItems: 1, items: [{ id: "i1", name: "Coca Cola", price: 0, productId: "prod_coca" }, { id: "i2", name: "Guaraná", price: 0, productId: "prod_guarana" }] },
-                { id: "g2", name: "Adicionais", required: false, minItems: 0, maxItems: 5, items: [{ id: "i3", name: "Bacon", price: 4.5, productId: "prod_bacon" }] }
-              ]
-            }
-          ]);
-          
-          setActiveCategory("c1");
-          setScreen("WELCOME");
-        }, 1000);
+        // 1. Autenticar Totem na API
+        const authRes = await fetch("/api/totem/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, fingerprint: hashHex }),
+        });
+
+        const authData = await authRes.json();
+        if (!authRes.ok) {
+          setErrorMsg(authData.error || "Falha na autenticação do Totem.");
+          setScreen("ERROR");
+          return;
+        }
+
+        // 2. Carregar Cardápio Oficial da Loja
+        const menuRes = await fetch(`/api/totem/menu?token=${encodeURIComponent(token)}`);
+        const menuData = await menuRes.json();
+
+        if (!menuRes.ok) {
+          setErrorMsg(menuData.error || "Falha ao carregar o cardápio do Totem.");
+          setScreen("ERROR");
+          return;
+        }
+
+        // Configurar dados da loja com a LOGO OFICIAL
+        setStore({
+          id: authData.store?.id || "store",
+          name: authData.store?.name || "Cardápio",
+          logoUrl: authData.store?.logo || authData.store?.storeLogo || null,
+          totemWelcomeMessage: authData.store?.config?.welcomeMessage || "Faça seu pedido aqui!"
+        });
+
+        const loadedCats = Array.isArray(menuData.categories) ? menuData.categories : [];
+        const loadedProds = Array.isArray(menuData.products) ? menuData.products.map((p: any) => ({
+          ...p,
+          categoryId: p.category || (p.categoryId || "")
+        })) : [];
+
+        setCategories(loadedCats);
+        setProducts(loadedProds);
+
+        if (loadedCats.length > 0) {
+          setActiveCategory(loadedCats[0].id || loadedCats[0].name);
+        }
+
+        // ABRIR DIRETO NO CARDÁPIO DO TOTEM (Sem tela de entrada)
+        setScreen("MENU");
         
       } catch (err) {
-        console.error(err);
-        setErrorMsg("Falha ao inicializar o terminal.");
+        console.error("Erro na inicialização do Totem:", err);
+        setErrorMsg("Falha ao inicializar o terminal do Totem.");
         setScreen("ERROR");
       }
     }
     
     init();
     
-    // Wakelock
+    // Wakelock para manter a tela do Totem sempre ligada
     let wakeLock: any = null;
     const requestWakeLock = async () => {
       try {
@@ -207,24 +228,20 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   }, [slug, token]);
 
   useEffect(() => {
-    // Heartbeat
+    // Heartbeat periódico do totem a cada 60 segundos
     if (fingerprint && token) {
       heartbeatTimerRef.current = setInterval(() => {
-        // fetch('/api/totem/heartbeat', { method: 'POST', body: JSON.stringify({ token, fingerprint }) })
+        fetch('/api/totem/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, fingerprint })
+        }).catch(() => {});
       }, 60000);
     }
     return () => {
       if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
     };
   }, [fingerprint, token]);
-
-  const resetSession = () => {
-    setCart([]);
-    setCustomerName("");
-    setSearchQuery("");
-    setScreen("WELCOME");
-    if (categories.length > 0) setActiveCategory(categories[0].id);
-  };
 
   const playBeep = () => {
     try {
@@ -289,11 +306,11 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       for (const itemId in itemsSelected) {
         const qty = itemsSelected[itemId];
         if (qty > 0) {
-          const item = g.items.find(i => i.id === itemId);
+          const item = g.items.find(i => i.id === itemId || (i as any).name === itemId);
           if (item) {
             additionalPrice += item.price * qty;
             formattedItems.push({
-              itemId: item.id,
+              itemId: item.id || itemId,
               name: item.name,
               price: item.price,
               quantity: qty
@@ -349,16 +366,47 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
   const handleConfirmOrder = async (paymentMethod: "MAQUININHA" | "PIX") => {
     setScreen("LOADING");
-    // Mock order creation
-    setTimeout(() => {
-      setOrderNumber(Math.floor(100 + Math.random() * 900).toString());
-      setScreen("CONFIRMATION");
-      
-      // Auto reset after 15s
-      setTimeout(() => {
-        resetSession();
-      }, 15000);
-    }, 1500);
+    try {
+      const res = await fetch("/api/totem/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          customerName: customerName.trim() || "Cliente Totem",
+          items: cart.map(i => ({
+            menuProductId: i.product.id,
+            quantity: i.quantity,
+            comboSelections: i.comboSelections ? i.comboSelections.reduce((acc: any, g) => {
+              acc[g.groupId] = g.items.reduce((itemAcc: any, it) => {
+                itemAcc[it.name] = it.quantity;
+                return itemAcc;
+              }, {});
+              return acc;
+            }, {}) : null
+          })),
+          paymentMethod: paymentMethod === "PIX" ? "PIX (Totem)" : "Cartão (Maquininha)",
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const displayNum = data.order?.dailyOrderNumber ? `#${data.order.dailyOrderNumber}` : (data.order?.id?.slice(-4).toUpperCase() || "OK");
+        setOrderNumber(displayNum);
+        setScreen("CONFIRMATION");
+
+        // Auto reset direto para o cardápio após 8 segundos
+        setTimeout(() => {
+          resetSession();
+        }, 8000);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Erro ao processar o pedido.");
+        setScreen("PAYMENT");
+      }
+    } catch (e) {
+      alert("Erro de conexão ao enviar pedido.");
+      setScreen("PAYMENT");
+    }
   };
 
   // ---------------------------------------------------------
@@ -371,7 +419,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         alignItems: "center", justifyContent: "center", background: "#0F172A", color: "white"
       }}>
         <RefreshCw size={64} color="#E53935" style={{ animation: "spin 2s linear infinite" }} />
-        <h2 style={{ marginTop: 24, fontSize: 24, fontWeight: 600 }}>Aguarde um momento...</h2>
+        <h2 style={{ marginTop: 24, fontSize: 24, fontWeight: 600 }}>Carregando cardápio...</h2>
         <style dangerouslySetInnerHTML={{ __html: "@keyframes spin { 100% { transform: rotate(360deg); } }" }} />
       </div>
     );
@@ -403,50 +451,6 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   }
 
   // ---------------------------------------------------------
-  // RENDER: WELCOME
-  // ---------------------------------------------------------
-  if (screen === "WELCOME") {
-    return (
-      <div 
-        onClick={() => {
-          setScreen("MENU");
-          // Entrar em tela cheia (Kiosk Mode) ao tocar para começar
-          if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen().catch(() => {});
-          }
-        }}
-        style={{
-          width: "100%", height: "100%", display: "flex", flexDirection: "column", 
-          alignItems: "center", justifyContent: "center", 
-          background: "linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%)", color: "white",
-          cursor: "pointer"
-        }}
-      >
-        {store?.logoUrl ? (
-          <img src={store.logoUrl} alt="Logo" style={{ width: 300, height: 300, objectFit: "contain", marginBottom: 40 }} />
-        ) : (
-          <div style={{ width: 240, height: 240, background: "rgba(255,255,255,0.05)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 40 }}>
-            <ChefHat size={120} color="#E53935" />
-          </div>
-        )}
-        
-        <h1 style={{ fontSize: 48, fontWeight: 800, marginBottom: 16, textAlign: "center", padding: "0 20px" }}>
-          {store?.totemWelcomeMessage || "Faça seu pedido aqui!"}
-        </h1>
-        
-        <div style={{
-          marginTop: 60, padding: "24px 64px", background: "linear-gradient(90deg, #C62828, #E53935)",
-          borderRadius: 32, fontSize: 32, fontWeight: 700, boxShadow: "0 10px 25px -5px rgba(229, 57, 53, 0.5)",
-          animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite"
-        }}>
-          TOQUE PARA COMEÇAR
-        </div>
-        <style dangerouslySetInnerHTML={{ __html: "@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .8; transform: scale(0.95); } }" }} />
-      </div>
-    );
-  }
-
-  // ---------------------------------------------------------
   // COMMON STYLES
   // ---------------------------------------------------------
   const glassStyle = {
@@ -466,9 +470,20 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   // RENDER: MENU
   // ---------------------------------------------------------
   if (screen === "MENU") {
+    const activeCatObj = categories.find(c => c.id === activeCategory || c.name === activeCategory);
+    const activeCatName = activeCatObj ? activeCatObj.name : activeCategory;
+    
     const filteredProducts = products.filter(p => {
-      if (searchQuery) return p.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return p.categoryId === activeCategory;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        return p.name.toLowerCase().includes(q) || (p.description && p.description.toLowerCase().includes(q));
+      }
+      return (
+        (p as any).category === activeCatName ||
+        p.categoryId === activeCategory ||
+        (p as any).category === activeCategory ||
+        (activeCatObj?.id && p.categoryId === activeCatObj.id)
+      );
     });
 
     return (
@@ -477,26 +492,24 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         {/* SIDEBAR (Categories) */}
         <div style={{ width: "240px", background: "white", display: "flex", flexDirection: "column", flexShrink: 0, height: "100%", boxShadow: "4px 0 24px rgba(0,0,0,0.06)", zIndex: 10 }}>
           
-          <div style={{ padding: "32px 20px", borderBottom: "1px solid #F1F5F9", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-            <button onClick={() => setScreen("WELCOME")} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748B", alignSelf: "flex-start", cursor: "pointer" }}>
-              <ArrowLeft size={24} />
-            </button>
+          <div style={{ padding: "24px 16px", borderBottom: "1px solid #F1F5F9", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
             {store?.logoUrl ? (
-              <img src={store.logoUrl} alt="Logo" style={{ width: 120, height: 120, objectFit: "contain" }} />
+              <img src={store.logoUrl} alt={store.name} style={{ width: 110, height: 110, objectFit: "contain", borderRadius: 16 }} />
             ) : (
-              <div style={{ width: 100, height: 100, background: "#F8FAFC", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <ChefHat size={48} color="#E53935" />
+              <div style={{ width: 90, height: 90, background: "#F8FAFC", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #E2E8F0" }}>
+                <ChefHat size={44} color="#E53935" />
               </div>
             )}
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#334155", textAlign: "center", lineHeight: 1.2 }}>{store?.name}</span>
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", padding: "16px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
-            {categories.sort((a,b) => a.sortOrder - b.sortOrder).map(cat => {
-              const isActive = activeCategory === cat.id;
+            {categories.sort((a,b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map(cat => {
+              const isActive = activeCategory === cat.id || activeCategory === cat.name;
               return (
                 <button 
                   key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
+                  onClick={() => setActiveCategory(cat.id || cat.name)}
                   style={{
                     width: "100%", padding: "16px", borderRadius: "16px", border: "none",
                     background: isActive ? "#E53935" : "transparent",
@@ -528,7 +541,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           {/* HEADER */}
           <div style={{ padding: "32px 40px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <h1 style={{ fontSize: 32, fontWeight: 800, color: "#0F172A", margin: 0 }}>
-              {searchQuery ? "Resultados da Busca" : categories.find(c => c.id === activeCategory)?.name || "Cardápio"}
+              {searchQuery ? "Resultados da Busca" : categories.find(c => c.id === activeCategory || c.name === activeCategory)?.name || "Cardápio"}
             </h1>
             
             <div style={{ display: "flex", background: "white", borderRadius: 20, padding: "12px 20px", alignItems: "center", width: 360, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", border: "1px solid #E2E8F0" }}>

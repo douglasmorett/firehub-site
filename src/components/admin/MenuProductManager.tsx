@@ -279,7 +279,7 @@ export default function MenuProductManager({
   const [isBeverage, setIsBeverage] = useState(false);
   const [activePDV, setActivePDV] = useState(true);
   const [activeDelivery, setActiveDelivery] = useState(true);
-  const [activeTotem, setActiveTotem] = useState(false);
+  const [activeTotem, setActiveTotem] = useState(true);
   const [activeGarcom, setActiveGarcom] = useState(false);
   const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; items: { id: string; additionalPrice: number }[] }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -343,18 +343,23 @@ export default function MenuProductManager({
       const validIngredients = recipeIngredients.filter(
         ri => (ri.stockItemId || ri.stockItemId === 'NEW') && parseFloat(ri.quantityConsumed) > 0
       );
+      if (validIngredients.length === 0) {
+        showToast("Adicione pelo menos um ingrediente", "#EF4444");
+        setRecipeSaving(false);
+        return;
+      }
       const res = await fetch("/api/store/estoque/recipes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           menuProductId: recipeProductId,
-          ingredients: validIngredients.map(i => ({
-            stockItemId: i.stockItemId,
-            quantityConsumed: i.quantityConsumed,
-            newItemName: i.newItemName,
-            newItemUnit: i.newItemUnit,
-          }))
-        })
+          ingredients: validIngredients.map(ri => ({
+            stockItemId: ri.stockItemId,
+            quantityConsumed: parseFloat(ri.quantityConsumed),
+            newItemName: ri.newItemName?.trim() || undefined,
+            newItemUnit: ri.newItemUnit || "g",
+          })),
+        }),
       });
       if (res.ok) {
         showToast("✅ Ficha técnica salva!");
@@ -399,7 +404,7 @@ export default function MenuProductManager({
     setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]);
     setCategory(dynCategories[0]?.name || "");
     setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
-    setActivePDV(true); setActiveDelivery(true); setActiveTotem(false); setActiveGarcom(false);
+    setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(false);
     setAvailableDaysMode("all"); setSelectedDays([]);
     setShowForm(false); setEditingId(null);
   };
@@ -427,7 +432,7 @@ export default function MenuProductManager({
     setIsCombo(p.isCombo); setIsBeverage(p.isBeverage ?? false);
     setActivePDV(p.activePDV ?? true);
     setActiveDelivery(p.activeDelivery ?? true);
-    setActiveTotem(p.activeTotem ?? false);
+    setActiveTotem(p.activeTotem ?? true);
     setActiveGarcom(p.activeGarcom ?? false);
     if (p.isCombo && p.comboGroups) {
       setComboGroups(p.comboGroups.map((g: any) => ({
