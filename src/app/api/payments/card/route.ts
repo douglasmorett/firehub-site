@@ -25,15 +25,18 @@ export async function POST(req: NextRequest) {
     const order = await prisma.customerOrder.findUnique({
       where: { id: orderId },
       include: {
-        franchisee: { select: { id: true, storeName: true, mpSellerId: true } },
+        franchisee: { select: { id: true, storeName: true, mpSellerId: true, mpAccessToken: true } },
       },
     });
 
     if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
     if (order.paymentPaidAt) return NextResponse.json({ error: "Pedido já pago" }, { status: 400 });
 
-    const storeName = order.franchisee.storeName || "Restaurante FireHub";
+    const storeName = order.franchisee?.storeName || "Restaurante FireHub";
     const description = `Pedido #${order.id.slice(-6).toUpperCase()} — ${storeName}`;
+
+    const cleanPhone = (order.customerPhone || "").replace(/\D/g, "") || "21999999999";
+    const email = payerEmail && payerEmail.includes("@") ? payerEmail.trim() : `cliente${cleanPhone}@firehub.com.br`;
 
     const result = await createMpCardPayment({
       amount:          order.totalAmount,
@@ -41,9 +44,10 @@ export async function POST(req: NextRequest) {
       cardToken,
       paymentMethodId: paymentMethodId || undefined,
       installments:    Number(installments),
-      payerEmail:      payerEmail || order.customerPhone + "@firehub.com.br",
+      payerEmail:      email,
       payerCpf,
-      mpSellerId:      order.franchisee.mpSellerId || undefined,
+      mpSellerId:      order.franchisee?.mpSellerId || undefined,
+      mpAccessToken:   order.franchisee?.mpAccessToken || undefined,
       description,
     });
 

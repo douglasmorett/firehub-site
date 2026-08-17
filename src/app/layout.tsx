@@ -60,6 +60,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             `,
           }}
         />
+        <Script
+          src="https://sdk.mercadopago.com/js/v2"
+          strategy="lazyOnload"
+          id="mp-sdk-global"
+        />
         <Providers>{children}</Providers>
         <FloatingContactWidget />
       </body>

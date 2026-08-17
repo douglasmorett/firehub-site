@@ -54,25 +54,18 @@ export async function POST(req: NextRequest) {
     const firstName = nameParts[0] || "Cliente";
     const lastName = nameParts.slice(1).join(" ") || "Consumidor";
 
-    const isPlatformToken = !order.franchisee?.mpAccessToken && !!process.env.MP_ACCESS_TOKEN;
-
     const paymentBody: any = {
       transaction_amount: Number(order.totalAmount),
       payment_method_id:  "pix",
       description:        `Pedido #${order.id.slice(-6).toUpperCase()} — ${order.franchisee?.storeName || "FireHub"}`,
       payer: {
-        email:      `cliente_${cleanPhone}@firehubfood.com.br`,
+        email:      `cliente${cleanPhone}@firehub.com.br`,
         first_name: firstName,
         last_name:  lastName,
       },
       external_reference: order.id,
       date_of_expiration: expiresAt.toISOString(),
     };
-
-    // Marketplace fee SOMENTE quando usando credenciais mestre da plataforma
-    if (isPlatformToken && order.franchisee?.mpSellerId) {
-      paymentBody.marketplace_fee = parseFloat((order.totalAmount * 0.005 + 0.40).toFixed(2));
-    }
 
     const result = await payment.create({
       body: paymentBody,

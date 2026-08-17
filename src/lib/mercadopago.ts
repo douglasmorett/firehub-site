@@ -25,32 +25,31 @@ export async function createMpCardPayment(params: {
   payerEmail:      string;
   payerCpf?:       string;
   mpSellerId?:     string;
+  mpAccessToken?:  string;
   description:     string;
 }): Promise<MpPaymentResult> {
-  const client = new MercadoPagoConfig({ accessToken: ACCESS_TOKEN });
+  const token = params.mpAccessToken || ACCESS_TOKEN;
+  if (!token) {
+    throw new Error("Credencial do Mercado Pago não configurada.");
+  }
+  const client = new MercadoPagoConfig({ accessToken: token });
   const payment = new Payment(client);
 
-  const firehubFee = parseFloat((params.amount * (FIREHUB_CARD_FEE_PCT / 100)).toFixed(2));
+  const cleanEmail = params.payerEmail?.includes("@") ? params.payerEmail.trim() : "cliente@firehub.com.br";
+  const cleanCpf = params.payerCpf ? params.payerCpf.replace(/\D/g, "") : undefined;
 
   const paymentData: any = {
-    transaction_amount: params.amount,
+    transaction_amount: Number(params.amount),
     token:              params.cardToken,
     description:        params.description,
-    installments:       params.installments,
-    payment_method_id:  params.paymentMethodId || "master",
+    installments:       Number(params.installments) || 1,
+    payment_method_id:  params.paymentMethodId || undefined,
     payer: {
-      email:        params.payerEmail,
-      identification: params.payerCpf
-        ? { type: "CPF", number: params.payerCpf.replace(/\D/g, "") }
-        : undefined,
+      email: cleanEmail,
+      identification: cleanCpf ? { type: "CPF", number: cleanCpf } : undefined,
     },
     external_reference: params.orderId,
-    money_release_days: 2, // D+2
   };
-
-  if (params.mpSellerId) {
-    paymentData.marketplace_fee = firehubFee;
-  }
 
   const result = await payment.create({ body: paymentData });
 
@@ -61,10 +60,14 @@ export async function createMpCardPayment(params: {
   };
 }
 
-export async function checkMpPaymentStatus(paymentId: string): Promise<{
+export async function checkMpPaymentStatus(paymentId: string, customToken?: string): Promise<{
   paid: boolean; failed: boolean; status: string;
 }> {
-  const client = new MercadoPagoConfig({ accessToken: ACCESS_TOKEN });
+  const token = customToken || ACCESS_TOKEN;
+  if (!token) {
+    return { paid: false, failed: false, status: "pending" };
+  }
+  const client = new MercadoPagoConfig({ accessToken: token });
   const payment = new Payment(client);
 
   const result = await payment.get({ id: paymentId });

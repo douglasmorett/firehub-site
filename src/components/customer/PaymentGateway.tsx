@@ -2,7 +2,6 @@
 /**
  * FireHub — Componente de Pagamento Online
  * Gateways: Mercado Pago (PIX + Cartão D+2)
- * Celcoin: integração futura (standby)
  *
  * Fluxo PIX:
  *   POST /api/payments/pix → qr code → polling /api/payments/status
@@ -11,7 +10,7 @@
  *   MP Brick tokeniza o cartão no cliente → POST /api/payments/card
  */
 import { useState, useEffect, useRef } from "react";
-import { QrCode, CreditCard, Check, X, Loader, RefreshCw } from "lucide-react";
+import { Check, X, Loader, RefreshCw, CreditCard, ShieldCheck } from "lucide-react";
 
 type PayMethod = "pix" | "credit_card";
 
@@ -39,7 +38,10 @@ export default function PaymentGateway({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const autoTriggeredRef           = useRef(false);
 
-  // Dados do cartão (tokenizados via MP Brick)
+  // Mercado Pago Public Key
+  const [mpPublicKey, setMpPublicKey] = useState<string>(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "");
+
+  // Dados do cartão
   const [cardNumber, setCardNumber]         = useState("");
   const [cardHolder, setCardHolder]         = useState("");
   const [cardExpiry, setCardExpiry]         = useState("");
@@ -48,6 +50,31 @@ export default function PaymentGateway({
   const [installments, setInstallments]     = useState(1);
 
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Carregar script do Mercado Pago e Public Key do backend
+  useEffect(() => {
+    // 1. Buscar Public Key
+    fetch(`/api/payments/config?orderId=${orderId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.mpPublicKey) {
+          setMpPublicKey(data.mpPublicKey);
+        }
+      })
+      .catch(() => {});
+
+    // 2. Garantir que o script do Mercado Pago está carregado
+    if (typeof window !== "undefined" && !(window as any).MercadoPago) {
+      const existingScript = document.getElementById("mercadopago-sdk-script");
+      if (!existingScript) {
+        const script = document.createElement("script");
+        script.id = "mercadopago-sdk-script";
+        script.src = "https://sdk.mercadopago.com/js/v2";
+        script.async = true;
+        document.body.appendChild(script);
+      }
+    }
+  }, [orderId]);
 
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -64,6 +91,7 @@ export default function PaymentGateway({
   // ──────────────────────────── PIX ────────────────────────────
   const handlePixPay = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const res = await fetch("/api/payments/pix", {
         method: "POST",
@@ -73,9 +101,15 @@ export default function PaymentGateway({
       const data = await res.json();
       if (!res.ok) {
         const rawErr = data.error || "Erro ao gerar PIX";
-        const isMerchantConfigError = rawErr.includes("Credenciais") || rawErr.includes("Mercado Pago") || rawErr.includes("não configuradas") || rawErr.includes("Unauthorized");
+        const isMerchantConfigError =
+          rawErr.includes("Credenciais") ||
+          rawErr.includes("Mercado Pago") ||
+          rawErr.includes("não configuradas") ||
+          rawErr.includes("Unauthorized") ||
+          rawErr.includes("invalid_token");
+
         const cleanMsg = isMerchantConfigError
-          ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, tente novamente ou escolha pagamento na entrega."
+          ? "O pagamento online está temporariamente indisponível nesta loja. Por favor, escolha pagamento na entrega."
           : rawErr;
         setErrorMessage(cleanMsg);
         onError(cleanMsg);
@@ -91,7 +125,7 @@ export default function PaymentGateway({
         if (ms > 0) setTimeout(() => setPixExpired(true), ms);
       }
     } catch (e: any) {
-      const msg = e.message || "Erro de rede";
+      const msg = e.message || "Erro de rede ao conectar ao gateway de pagamento.";
       setErrorMessage(msg);
       onError(msg);
     } finally {
@@ -100,13 +134,22 @@ export default function PaymentGateway({
   };
 
   const startPixPolling = (paymentId?: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/payments/status?orderId=${orderId}`);
         if (res.ok) {
           const d = await res.json();
-          if (d.paid)   { setPixPaid(true); clearInterval(pollRef.current!); setTimeout(onPaid, 1500); }
-          if (d.failed) { clearInterval(pollRef.current!); onError("PIX expirado ou falhou."); }
+          if (d.paid) {
+            setPixPaid(true);
+            if (pollRef.current) clearInterval(pollRef.current);
+            setTimeout(onPaid, 1500);
+          }
+          if (d.failed) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setErrorMessage("PIX expirado ou cancelado.");
+            onError("PIX expirado ou cancelado.");
+          }
         }
       } catch {}
     }, 3000);
@@ -122,47 +165,138 @@ export default function PaymentGateway({
 
   // ──────────────────────────── CARTÃO ────────────────────────────
   const handleCardPay = async () => {
-    if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !payerCpf) {
-      onError("Preencha todos os dados do cartão."); return;
+    setErrorMessage(null);
+    const cleanNum = cardNumber.replace(/\s/g, "");
+    const cleanCpf = payerCpf.replace(/\D/g, "");
+
+    if (cleanNum.length < 13) {
+      const err = "Por favor, digite um número de cartão válido.";
+      setErrorMessage(err);
+      onError(err);
+      return;
     }
+    if (!cardHolder.trim()) {
+      const err = "Digite o nome do titular como está impresso no cartão.";
+      setErrorMessage(err);
+      onError(err);
+      return;
+    }
+    if (!cardExpiry.includes("/") || cardExpiry.length < 5) {
+      const err = "Digite a validade do cartão no formato MM/AA.";
+      setErrorMessage(err);
+      onError(err);
+      return;
+    }
+    if (cardCvv.length < 3) {
+      const err = "Digite o código de segurança (CVV) do cartão.";
+      setErrorMessage(err);
+      onError(err);
+      return;
+    }
+    if (cleanCpf.length !== 11) {
+      const err = "Digite um CPF válido (11 dígitos).";
+      setErrorMessage(err);
+      onError(err);
+      return;
+    }
+
     setLoading(true);
     try {
-      // Tokenização via Mercado Pago SDK (carregado no layout)
-      const mp = (window as any).MercadoPago;
+      // 1. Aguardar SDK Mercado Pago se ainda estiver carregando
+      let mp = (window as any).MercadoPago;
       if (!mp) {
-        onError("Biblioteca Mercado Pago não carregada. Recarregue a página.");
-        setLoading(false); return;
+        // Tentar aguardar 1 segundo
+        await new Promise(r => setTimeout(r, 1000));
+        mp = (window as any).MercadoPago;
       }
 
-      const mpInstance = new mp(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "");
+      if (!mp) {
+        const err = "A biblioteca de pagamento seguro está carregando. Por favor, tente novamente em alguns segundos.";
+        setErrorMessage(err);
+        onError(err);
+        setLoading(false);
+        return;
+      }
+
+      const activeKey = mpPublicKey || process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "";
+      if (!activeKey) {
+        const err = "Pagamento por cartão online temporariamente indisponível nesta loja. Escolha pagamento na entrega ou PIX.";
+        setErrorMessage(err);
+        onError(err);
+        setLoading(false);
+        return;
+      }
+
+      const mpInstance = new mp(activeKey);
       const [expMonth, expYear] = cardExpiry.split("/");
+      const fullYear = expYear.length === 2 ? `20${expYear}` : expYear;
 
-      const { token: cardToken, error: tokenError } = await mpInstance.createCardToken({
-        cardNumber:       cardNumber.replace(/\s/g, ""),
-        cardholderName:   cardHolder,
-        cardExpirationMonth: expMonth,
-        cardExpirationYear: `20${expYear}`,
-        securityCode:    cardCvv,
-        identificationType: "CPF",
-        identificationNumber: payerCpf.replace(/\D/g, ""),
-      });
+      // 2. Tokenização compatível com MP SDK v2
+      let cardToken = "";
+      try {
+        const tokenResp = await mpInstance.createCardToken({
+          cardNumber: cleanNum,
+          cardholderName: cardHolder.trim(),
+          cardExpirationMonth: String(expMonth).padStart(2, "0"),
+          cardExpirationYear: fullYear,
+          securityCode: cardCvv.trim(),
+          identification: {
+            type: "CPF",
+            number: cleanCpf,
+          },
+        });
 
-      if (tokenError) { onError("Dados do cartão inválidos. Verifique e tente novamente."); return; }
+        if (tokenResp.error || !tokenResp.id) {
+          const errMsg = tokenResp.error?.message || "Dados do cartão incorretos. Verifique número, validade e CVV.";
+          setErrorMessage(errMsg);
+          onError(errMsg);
+          setLoading(false);
+          return;
+        }
 
+        cardToken = tokenResp.id;
+      } catch (tokenErr: any) {
+        const errMsg = tokenErr?.message || "Falha na validação do cartão. Verifique os dados.";
+        setErrorMessage(errMsg);
+        onError(errMsg);
+        setLoading(false);
+        return;
+      }
+
+      // 3. Enviar token gerado ao backend para autorização
       const res = await fetch("/api/payments/card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          orderId, cardToken, installments,
-          payerCpf: payerCpf.replace(/\D/g, ""),
+          orderId,
+          cardToken,
+          installments,
+          payerCpf: cleanCpf,
         }),
       });
+
       const data = await res.json();
-      if (!res.ok) { onError(data.error || "Cartão recusado"); return; }
-      if (data.paid) { setTimeout(onPaid, 800); }
-      else { onError("Pagamento não aprovado. Tente outro cartão ou use o PIX."); }
+      if (!res.ok) {
+        const errMsg = data.error || "Pagamento recusado pela operadora do cartão.";
+        setErrorMessage(errMsg);
+        onError(errMsg);
+        return;
+      }
+
+      if (data.paid) {
+        setPixPaid(true);
+        setTimeout(onPaid, 1000);
+      } else {
+        const errMsg = data.statusDetail
+          ? `Pagamento não aprovado (${data.statusDetail}). Tente outro cartão ou utilize o PIX.`
+          : "Pagamento não aprovado pela operadora. Tente outro cartão ou PIX.";
+        setErrorMessage(errMsg);
+        onError(errMsg);
+      }
     } catch (e: any) {
-      onError(e.message || "Erro no cartão");
+      const errMsg = e.message || "Erro de comunicação ao processar o cartão.";
+      setErrorMessage(errMsg);
+      onError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -175,8 +309,8 @@ export default function PaymentGateway({
 
   const inp: React.CSSProperties = {
     width: "100%", padding: "11px 13px", borderRadius: "10px",
-    border: "1.5px solid #E2E8F0", fontSize: "0.88rem", outline: "none",
-    fontFamily: "inherit", boxSizing: "border-box",
+    border: "1.5px solid #CBD5E1", fontSize: "0.88rem", outline: "none",
+    fontFamily: "inherit", boxSizing: "border-box", transition: "border 0.2s ease"
   };
   const lbl: React.CSSProperties = {
     fontSize: "0.72rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "4px"
@@ -200,7 +334,7 @@ export default function PaymentGateway({
         </button>
       </div>
 
-      {/* Banner explicativo de aguardar pagamento para envio à cozinha */}
+      {/* Banner explicativo */}
       {!pixPaid && (
         <div style={{
           background: "#FEF3C7",
@@ -214,7 +348,7 @@ export default function PaymentGateway({
           lineHeight: "1.4",
           textAlign: "center"
         }}>
-          ⚠️ Você precisa realizar o pagamento para o pedido ser enviado para a cozinha. Aguarde a confirmação automática nesta tela.
+          ⚠️ Realize o pagamento para o pedido ser enviado à cozinha. A confirmação é automática nesta tela.
         </div>
       )}
 
@@ -233,7 +367,11 @@ export default function PaymentGateway({
           </p>
           <div style={{ display: "flex", gap: "8px", justifyContent: "center", flexWrap: "wrap" }}>
             <button
-              onClick={() => { setErrorMessage(null); handlePixPay(); }}
+              onClick={() => {
+                setErrorMessage(null);
+                if (method === "pix") handlePixPay();
+                else handleCardPay();
+              }}
               style={{
                 padding: "8px 14px",
                 borderRadius: "8px",
@@ -268,18 +406,23 @@ export default function PaymentGateway({
         </div>
       )}
 
-      {/* Seleção de método apenas se não tiver método inicial pré-definido */}
-      {!initialMethod && !pixData && !pixPaid && (
-        <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
+      {/* Seleção de método (se o lojista aceitar ambos) */}
+      {!pixPaid && (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
           {(["pix", "credit_card"] as PayMethod[]).map(m => (
-            <button key={m} onClick={() => setMethod(m)}
+            <button
+              key={m}
+              onClick={() => {
+                setMethod(m);
+                setErrorMessage(null);
+              }}
               style={{
-                flex: 1, padding: "12px 8px", borderRadius: "12px",
-                border: `2px solid ${method === m ? "#009EE3" : "#E2E8F0"}`,
-                background: method === m ? "#EFF9FF" : "#fff",
+                flex: 1, padding: "10px 8px", borderRadius: "10px",
+                border: `2px solid ${method === m ? "#DC2626" : "#E2E8F0"}`,
+                background: method === m ? "#FEF2F2" : "#fff",
                 cursor: "pointer", textAlign: "center",
-                fontWeight: method === m ? 700 : 500, fontSize: "0.82rem",
-                color: method === m ? "#009EE3" : "#475569",
+                fontWeight: method === m ? 800 : 600, fontSize: "0.82rem",
+                color: method === m ? "#DC2626" : "#475569",
                 transition: "all 0.15s", fontFamily: "inherit",
               }}>
               {PAYMENT_LABELS[m]}
@@ -290,14 +433,14 @@ export default function PaymentGateway({
 
       {/* ── PIX ── */}
       {method === "pix" && !pixData && !pixPaid && !errorMessage && (
-        <div style={{ textAlign: "center", padding: "20px 0" }}>
-          <Loader size={32} color="#009688" style={{ animation: "spin 1s linear infinite", marginBottom: "12px" }} />
-          <p style={{ fontWeight: 700, fontSize: "0.9rem", color: "#334155" }}>Gerando QR Code PIX...</p>
+        <div style={{ textAlign: "center", padding: "24px 0" }}>
+          <Loader size={32} color="#DC2626" style={{ animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+          <p style={{ fontWeight: 700, fontSize: "0.9rem", color: "#334155" }}>Gerando QR Code PIX seguro...</p>
         </div>
       )}
 
       {/* QR CODE */}
-      {pixData && !pixPaid && !pixExpired && (
+      {method === "pix" && pixData && !pixPaid && !pixExpired && (
         <div style={{ textAlign: "center" }}>
           <div style={{ background: "#F0FDF4", border: "2px solid #BBF7D0", borderRadius: "16px", padding: "20px", marginBottom: "12px" }}>
             <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "#16A34A", marginBottom: "12px" }}>
@@ -305,10 +448,10 @@ export default function PaymentGateway({
             </p>
             {pixData.qrCodeBase64 ? (
               <img src={`data:image/png;base64,${pixData.qrCodeBase64}`}
-                alt="QR Code PIX" style={{ width: 200, height: 200, borderRadius: "8px" }} />
+                alt="QR Code PIX" style={{ width: 200, height: 200, borderRadius: "8px", margin: "0 auto" }} />
             ) : (
               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixData.pixKey)}`}
-                alt="QR Code PIX" style={{ width: 200, height: 200, borderRadius: "8px" }} />
+                alt="QR Code PIX" style={{ width: 200, height: 200, borderRadius: "8px", margin: "0 auto" }} />
             )}
             <div style={{ marginTop: "14px" }}>
               <button onClick={copyPix}
@@ -354,18 +497,19 @@ export default function PaymentGateway({
       {pixExpired && (
         <div style={{ textAlign: "center", padding: "1.5rem" }}>
           <p style={{ fontWeight: 700, color: "#DC2626" }}>⏱️ PIX expirado.</p>
-          <button onClick={() => { setPixData(null); setPixExpired(false); }}
-            style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#009688", color: "#fff", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px", fontFamily: "inherit" }}>
+          <button onClick={() => { setPixData(null); setPixExpired(false); handlePixPay(); }}
+            style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px", fontFamily: "inherit" }}>
             <RefreshCw size={14} /> Gerar novo PIX
           </button>
         </div>
       )}
 
-      {/* ── CARTÃO ── */}
-      {method === "credit_card" && !pixData && (
+      {/* ── CARTÃO DE CRÉDITO ── */}
+      {method === "credit_card" && !pixPaid && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div style={{ padding: "10px 14px", background: "#EFF9FF", border: "1px solid #BAE6FD", borderRadius: "10px", fontSize: "0.78rem", color: "#0369A1", fontWeight: 600 }}>
-            🔒 Dados criptografados pelo Mercado Pago — não armazenados no servidor
+          <div style={{ padding: "10px 14px", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", fontSize: "0.78rem", color: "#1E40AF", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+            <ShieldCheck size={18} color="#2563EB" style={{ flexShrink: 0 }} />
+            <span>Dados criptografados pelo Mercado Pago com proteção antifraude.</span>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
@@ -375,7 +519,7 @@ export default function PaymentGateway({
                 placeholder="0000 0000 0000 0000" maxLength={19} />
             </div>
             <div style={{ gridColumn: "span 2" }}>
-              <label style={lbl}>Nome no Cartão</label>
+              <label style={lbl}>Nome Impresso no Cartão</label>
               <input style={inp} value={cardHolder} onChange={e => setCardHolder(e.target.value.toUpperCase())}
                 placeholder="NOME COMO NO CARTÃO" />
             </div>
@@ -390,12 +534,12 @@ export default function PaymentGateway({
                 placeholder="123" maxLength={4} type="password" />
             </div>
             <div style={{ gridColumn: "span 2" }}>
-              <label style={lbl}>CPF do Titular</label>
+              <label style={lbl}>CPF do Titular do Cartão</label>
               <input style={inp} value={payerCpf} onChange={e => setPayerCpf(fmtCpf(e.target.value))}
                 placeholder="000.000.000-00" maxLength={14} />
             </div>
             <div style={{ gridColumn: "span 2" }}>
-              <label style={lbl}>Parcelas</label>
+              <label style={lbl}>Parcelamento</label>
               <select style={{ ...inp, cursor: "pointer" }} value={installments} onChange={e => setInstallments(Number(e.target.value))}>
                 {[1,2,3,4,5,6].map(n => (
                   <option key={n} value={n}>
@@ -410,14 +554,15 @@ export default function PaymentGateway({
             disabled={loading || !cardNumber || !cardHolder || !cardExpiry || !cardCvv || !payerCpf}
             style={{
               width: "100%", padding: "14px", borderRadius: "12px", border: "none",
-              background: loading ? "#94A3B8" : "linear-gradient(135deg,#009EE3,#006EBF)",
+              background: loading ? "#94A3B8" : "linear-gradient(135deg, #DC2626, #B91C1C)",
               color: "#fff", fontWeight: 800, fontSize: "1rem",
               cursor: loading ? "not-allowed" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontFamily: "inherit",
+              boxShadow: "0 4px 14px rgba(220, 38, 38, 0.3)"
             }}>
             {loading
-              ? <><Loader size={18} style={{ animation: "spin 1s linear infinite" }} /> Processando...</>
-              : <><CreditCard size={18} /> Pagar R$ {amount.toFixed(2).replace(".", ",")} via Mercado Pago</>}
+              ? <><Loader size={18} style={{ animation: "spin 1s linear infinite" }} /> Processando Pagamento...</>
+              : <><CreditCard size={18} /> Pagar R$ {amount.toFixed(2).replace(".", ",")}</>}
           </button>
         </div>
       )}

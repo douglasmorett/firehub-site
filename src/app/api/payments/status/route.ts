@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
       gatewayProvider:  true,
       gatewayPaymentId: true,
       pagarmeStatus:    true,
+      franchisee: { select: { mpAccessToken: true } },
     },
   });
 
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (order.gatewayProvider === "mercadopago") {
-      const result = await checkMpPaymentStatus(order.gatewayPaymentId);
+      const result = await checkMpPaymentStatus(order.gatewayPaymentId, order.franchisee?.mpAccessToken || undefined);
 
       if (result.paid) {
         const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
