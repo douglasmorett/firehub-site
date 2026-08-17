@@ -352,6 +352,12 @@
 .add-btn {
   width: 36px;
   height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  max-width: 36px;
+  max-height: 36px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -362,6 +368,8 @@
   justify-content: center;
   box-shadow: 0 4px 12px rgba(198, 40, 40, 0.3);
   transition: transform 0.15s;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .add-btn:hover {
@@ -372,11 +380,18 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .qty-btn-minus {
   width: 30px;
   height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  max-width: 30px;
+  max-height: 30px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
   border-radius: 50%;
   border: 1.5px solid #C62828;
   background: #fff;
@@ -385,11 +400,19 @@
   align-items: center;
   justify-content: center;
   color: #C62828;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .qty-btn-plus {
   width: 30px;
   height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  max-width: 30px;
+  max-height: 30px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
   border-radius: 50%;
   border: none;
   background: #C62828;
@@ -398,6 +421,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .qty-num {

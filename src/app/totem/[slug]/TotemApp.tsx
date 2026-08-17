@@ -663,7 +663,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                                       });
                                     }
                                   }}
-                                  style={{ background: "rgba(255,255,255,0.1)", border: "none", width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: qty > 0 ? "white" : "#475569" }}
+                                  style={{ background: "rgba(255,255,255,0.1)", border: "none", width: 48, height: 48, minWidth: 48, minHeight: 48, maxWidth: 48, maxHeight: 48, aspectRatio: "1 / 1", padding: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: qty > 0 ? "white" : "#475569", flexShrink: 0, boxSizing: "border-box" }}
                                 >
                                   <Minus size={24} />
                                 </button>
@@ -677,7 +677,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                                       });
                                     }
                                   }}
-                                  style={{ background: totalSelectedInGroup < group.maxItems ? "#E53935" : "rgba(255,255,255,0.1)", border: "none", width: 48, height: 48, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: totalSelectedInGroup < group.maxItems ? "white" : "#475569" }}
+                                  style={{ background: totalSelectedInGroup < group.maxItems ? "#E53935" : "rgba(255,255,255,0.1)", border: "none", width: 48, height: 48, minWidth: 48, minHeight: 48, maxWidth: 48, maxHeight: 48, aspectRatio: "1 / 1", padding: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: totalSelectedInGroup < group.maxItems ? "white" : "#475569", flexShrink: 0, boxSizing: "border-box" }}
                                 >
                                   <Plus size={24} />
                                 </button>

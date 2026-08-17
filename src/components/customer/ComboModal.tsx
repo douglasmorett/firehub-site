@@ -167,6 +167,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
             zIndex: 10,
             width: "34px",
             height: "34px",
+            minWidth: "34px",
+            minHeight: "34px",
+            maxWidth: "34px",
+            maxHeight: "34px",
+            aspectRatio: "1 / 1",
+            padding: 0,
             borderRadius: "50%",
             backgroundColor: "rgba(255, 255, 255, 0.9)",
             boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
@@ -176,6 +182,9 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
             alignItems: "center",
             justifyContent: "center",
             color: "#1E293B",
+            flexShrink: 0,
+            boxSizing: "border-box",
+            lineHeight: 1,
           }}
           title="Fechar"
         >
@@ -369,12 +378,18 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                           {isSingle ? (
                             <div
                               style={{
-                                width: "20px",
-                                height: "20px",
+                                width: "22px",
+                                height: "22px",
+                                minWidth: "22px",
+                                minHeight: "22px",
+                                maxWidth: "22px",
+                                maxHeight: "22px",
+                                aspectRatio: "1 / 1",
                                 borderRadius: "50%",
                                 border: isSelected ? "6px solid #10B981" : "2px solid #CBD5E1",
                                 backgroundColor: "#FFFFFF",
                                 flexShrink: 0,
+                                boxSizing: "border-box",
                                 transition: "all 0.15s ease",
                               }}
                             />
@@ -388,8 +403,14 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                     updateQty(group.id, optName, -1);
                                   }}
                                   style={{
-                                    width: "28px",
-                                    height: "28px",
+                                    width: "30px",
+                                    height: "30px",
+                                    minWidth: "30px",
+                                    minHeight: "30px",
+                                    maxWidth: "30px",
+                                    maxHeight: "30px",
+                                    aspectRatio: "1 / 1",
+                                    padding: 0,
                                     borderRadius: "50%",
                                     border: "1px solid #CBD5E1",
                                     backgroundColor: "#FFFFFF",
@@ -398,9 +419,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                     alignItems: "center",
                                     justifyContent: "center",
                                     color: "#334155",
+                                    flexShrink: 0,
+                                    boxSizing: "border-box",
+                                    lineHeight: 1,
                                   }}
                                 >
-                                  <Minus size={13} strokeWidth={2.5} />
+                                  <Minus size={14} strokeWidth={2.5} />
                                 </button>
                               )}
                               {qty > 0 && (
@@ -416,8 +440,14 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                 }}
                                 disabled={total >= max}
                                 style={{
-                                  width: "28px",
-                                  height: "28px",
+                                  width: "30px",
+                                  height: "30px",
+                                  minWidth: "30px",
+                                  minHeight: "30px",
+                                  maxWidth: "30px",
+                                  maxHeight: "30px",
+                                  aspectRatio: "1 / 1",
+                                  padding: 0,
                                   borderRadius: "50%",
                                   border: "none",
                                   backgroundColor: total >= max ? "#E2E8F0" : "#10B981",
@@ -427,9 +457,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                   alignItems: "center",
                                   justifyContent: "center",
                                   boxShadow: total >= max ? "none" : "0 2px 6px rgba(16, 185, 129, 0.3)",
+                                  flexShrink: 0,
+                                  boxSizing: "border-box",
+                                  lineHeight: 1,
                                 }}
                               >
-                                <Plus size={13} strokeWidth={2.5} />
+                                <Plus size={15} strokeWidth={2.5} />
                               </button>
                             </div>
                           )}

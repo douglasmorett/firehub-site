@@ -176,18 +176,20 @@ export default function CustomerStorePage({
   const [showHistory, setShowHistory] = useState(false);
 
   // Delivery fee & Address fields
-  const [deliveryFee, setDeliveryFee] = useState(() => {
-    const dConf = (franchisee as any)?.deliveryConfig || {};
-    const dZones = (franchisee as any)?.deliveryZones || [];
-    return Number(dConf.deliveryFee || dConf.defaultFee || (Array.isArray(dZones) && dZones[0]?.fee) || 5);
-  });
+  const [deliveryFee, setDeliveryFee] = useState<number | null>(null);
+  const [deliveryFeeCalculated, setDeliveryFeeCalculated] = useState(false);
   const [deliveryAvailable, setDeliveryAvailable] = useState(true);
+  const [deliveryDistanceKm, setDeliveryDistanceKm] = useState<number | null>(null);
+  const [deliveryMaxRadiusKm, setDeliveryMaxRadiusKm] = useState<number | null>(null);
   const [customerStreet, setCustomerStreet] = useState("");
   const [customerNumber, setCustomerNumber] = useState("");
   const [customerNeighborhood, setCustomerNeighborhood] = useState("");
   const [customerComplement, setCustomerComplement] = useState("");
+  const [neighborhoodSearch, setNeighborhoodSearch] = useState("");
+  const [isNeighborhoodOpen, setIsNeighborhoodOpen] = useState(false);
   const [deliveryCalculating, setDeliveryCalculating] = useState(false);
   const [deliveryMessage, setDeliveryMessage] = useState("");
+  const [gpsLoading, setGpsLoading] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showVipTooltip, setShowVipTooltip] = useState(false);
 
@@ -439,13 +441,16 @@ export default function CustomerStorePage({
   const freeShippingProgress = freeShippingThreshold ? Math.min(100, (cartTotal / freeShippingThreshold) * 100) : 0;
 
   const isFreeShippingEffective = Boolean(isFreeShippingByMin || couponApplied?.isFreeShipping);
-  const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingEffective) ? deliveryFee : 0;
+  const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null)
+    ? deliveryFee
+    : 0;
   const discount = couponApplied
     ? (couponApplied.isFreeShipping
         ? 0
         : couponApplied.discount)
     : 0;
-  const finalTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied + (deliveryType === "DELIVERY" ? effectiveDeliveryFee : 0));
+  const itemsTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied);
+  const finalTotal = itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   const addToCart = (product: MenuProduct, cs?: any, extraSum: number = 0, qty: number = 1, itemNotes?: string) => {
@@ -534,7 +539,7 @@ export default function CustomerStorePage({
         return;
       }
       if (found.type === "free_shipping") {
-        setCouponApplied({ code: found.code, discount: deliveryFee, isFreeShipping: true });
+        setCouponApplied({ code: found.code, discount: deliveryFee || 0, isFreeShipping: true });
       } else if (found.type === "fixed") {
         const fixedVal = typeof found.discount === "number" ? found.discount : 10;
         setCouponApplied({ code: found.code, discount: fixedVal, isFreeShipping: false });
@@ -556,7 +561,7 @@ export default function CustomerStorePage({
           }
           const isFree = d.type === "free_shipping";
           const isFixed = d.type === "fixed";
-          const calcDiscount = isFree ? deliveryFee : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);
+          const calcDiscount = isFree ? (deliveryFee || 0) : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);
           setCouponApplied({ code: cleanCode, discount: calcDiscount, isFreeShipping: isFree });
         } else {
           setCouponError("Cupom inválido ou expirado.");
@@ -659,7 +664,96 @@ export default function CustomerStorePage({
     return base;
   })();
 
-  const isNeighborhoodType = (!franchisee.deliveryZoneType || franchisee.deliveryZoneType === "NEIGHBORHOOD") && Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.length > 0;
+  const isNeighborhoodType = franchisee.deliveryZoneType === "NEIGHBORHOOD" || (
+    franchisee.deliveryZoneType !== "RADIUS" && franchisee.deliveryZoneType !== "DISTANCE" && franchisee.deliveryZoneType !== "KM" &&
+    Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.some((z: any) => z && z.name && !z.km && !z.radius)
+  );
+
+  const availableNeighborhoods = useMemo(() => {
+    if (!Array.isArray(franchisee.deliveryZones)) return [];
+    return (franchisee.deliveryZones as any[])
+      .filter((z: any) => z && z.name)
+      .map((z: any) => ({
+        name: String(z.name).trim(),
+        fee: Number(z.fee) || 0,
+        time: z.time ? Number(z.time) : null
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [franchisee.deliveryZones]);
+
+  const filteredNeighborhoods = useMemo(() => {
+    if (!neighborhoodSearch.trim()) return availableNeighborhoods;
+    const q = neighborhoodSearch.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return availableNeighborhoods.filter(n =>
+      n.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(q)
+    );
+  }, [availableNeighborhoods, neighborhoodSearch]);
+
+  const handleUseGpsLocation = () => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      alert("Geolocalização não é suportada pelo seu navegador.");
+      return;
+    }
+    setGpsLoading(true);
+    setDeliveryCalculating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          // Reverse geocode para obter rua, número e bairro
+          try {
+            const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`, {
+              headers: { "Accept-Language": "pt-BR" }
+            });
+            if (rev.ok) {
+              const revData = await rev.json();
+              const addr = revData.address || {};
+              const road = addr.road || addr.pedestrian || addr.street || addr.footway || "";
+              const houseNum = addr.house_number || "";
+              const neigh = addr.suburb || addr.neighbourhood || addr.city_district || "";
+              if (road) setCustomerStreet(road);
+              if (houseNum) setCustomerNumber(houseNum);
+              if (neigh && !isNeighborhoodType) setCustomerNeighborhood(neigh);
+            }
+          } catch (e) {
+            console.warn("Reverse geocode timeout / failed:", e);
+          }
+
+          // Consultar rota api/delivery-fee com lat e lng
+          const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&lat=${latitude}&lng=${longitude}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.available === false) {
+              setDeliveryFee(0);
+              setDeliveryFeeCalculated(true);
+              setDeliveryAvailable(false);
+              setDeliveryDistanceKm(data.distanceKm || null);
+              setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
+              setDeliveryMessage(data.message || "Endereço fora da área de entrega da loja.");
+            } else {
+              setDeliveryFee(Number(data.fee) || 0);
+              setDeliveryFeeCalculated(true);
+              setDeliveryAvailable(true);
+              setDeliveryDistanceKm(data.distanceKm || null);
+              setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
+              setDeliveryMessage(data.message || `Distância calculada: ~${data.distanceKm} km`);
+            }
+          }
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setGpsLoading(false);
+          setDeliveryCalculating(false);
+        }
+      },
+      (err) => {
+        setGpsLoading(false);
+        setDeliveryCalculating(false);
+        alert("Não foi possível obter sua localização. Por favor, digite seu endereço.");
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
 
   const calcDeliveryFee = async (neighborhood?: string, customAddress?: string) => {
     const neigh = neighborhood !== undefined ? neighborhood : customerNeighborhood;
@@ -669,28 +763,30 @@ export default function CustomerStorePage({
     const zoneType = franchisee.deliveryZoneType || "RADIUS";
     const defaultStoreFee = Number(delivConfig.deliveryFee || delivConfig.defaultFee || (Array.isArray(zones) && zones[0]?.fee) || 5);
 
-    if (zoneType === "NEIGHBORHOOD" && zones.length > 0) {
+    if (isNeighborhoodType && availableNeighborhoods.length > 0) {
       if (!neigh) {
-        setDeliveryFee(defaultStoreFee);
+        setDeliveryFee(null);
+        setDeliveryFeeCalculated(false);
         setDeliveryAvailable(true);
         setDeliveryMessage("");
         return;
       }
       const searchTarget = neigh.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const found = zones.find((z: any) => {
-        if (!z.name) return false;
-        const zClean = String(z.name).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const found = availableNeighborhoods.find(z => {
+        const zClean = z.name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         return zClean === searchTarget || searchTarget.includes(zClean) || zClean.includes(searchTarget);
       });
 
       if (found) {
         setDeliveryFee(Number(found.fee) || 0);
+        setDeliveryFeeCalculated(true);
         setDeliveryAvailable(true);
         setDeliveryMessage(`Bairro atendido: ${found.name}`);
       } else {
-        setDeliveryFee(defaultStoreFee);
-        setDeliveryAvailable(true);
-        setDeliveryMessage(`Bairro com taxa padrão: R$ ${defaultStoreFee.toFixed(2).replace(".", ",")}`);
+        setDeliveryFee(0);
+        setDeliveryFeeCalculated(true);
+        setDeliveryAvailable(false);
+        setDeliveryMessage("Bairro não atendido pela loja. Selecione um bairro da lista.");
       }
       return;
     }
@@ -698,51 +794,67 @@ export default function CustomerStorePage({
     const fullStreet = customerStreet.trim();
     const fullNum = customerNumber.trim();
     const fullNeigh = (neigh || customerNeighborhood || "").trim();
-    const addrQuery = customAddress || `${fullStreet} ${fullNum}, ${fullNeigh}, ${franchisee.city || ""}`.trim();
+    const addrQuery = customAddress || `${fullStreet}, ${fullNum} - ${fullNeigh}, ${franchisee.city || ""}`.trim();
 
-    if (addrQuery.length < 4 || (!fullStreet && !fullNeigh)) {
-      setDeliveryFee(defaultStoreFee);
+    if (!fullStreet || !fullNum || (!isNeighborhoodType && !fullNeigh) || addrQuery.length < 5) {
+      setDeliveryFee(null);
+      setDeliveryFeeCalculated(false);
       setDeliveryAvailable(true);
+      setDeliveryMessage(isNeighborhoodType ? "Informe a rua e número." : "Informe rua, número e bairro para calcular.");
       return;
     }
 
     setDeliveryCalculating(true);
     try {
-      const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&address=${encodeURIComponent(addrQuery)}&neighborhood=${encodeURIComponent(fullNeigh)}`);
+      const res = await fetch(
+        `/api/delivery-fee?franchiseeId=${franchisee.id}&street=${encodeURIComponent(fullStreet)}&number=${encodeURIComponent(fullNum)}&neighborhood=${encodeURIComponent(fullNeigh)}&address=${encodeURIComponent(addrQuery)}`
+      );
       if (res.ok) {
         const data = await res.json();
         if (data.available === false) {
           setDeliveryFee(0);
+          setDeliveryFeeCalculated(true);
           setDeliveryAvailable(false);
+          setDeliveryDistanceKm(data.distanceKm || null);
+          setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
           setDeliveryMessage(data.message || "Endereço fora da área de entrega.");
         } else {
           setDeliveryFee(data.fee !== undefined ? Number(data.fee) : defaultStoreFee);
+          setDeliveryFeeCalculated(true);
           setDeliveryAvailable(true);
+          setDeliveryDistanceKm(data.distanceKm || null);
+          setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
           setDeliveryMessage(data.message || "");
         }
       } else {
         setDeliveryFee(defaultStoreFee);
+        setDeliveryFeeCalculated(true);
         setDeliveryAvailable(true);
       }
     } catch {
       setDeliveryFee(defaultStoreFee);
+      setDeliveryFeeCalculated(true);
       setDeliveryAvailable(true);
     } finally {
       setDeliveryCalculating(false);
     }
   };
 
-  // Cálculo automático ao preencher Rua, Número ou Bairro
+  // Cálculo automático ao preencher Rua, Número e Bairro no modo Raio
   useEffect(() => {
     if (deliveryType !== "DELIVERY") return;
-    if (customerStreet.trim().length < 3 && customerNeighborhood.trim().length < 3) return;
+    if (isNeighborhoodType) return;
+    const street = customerStreet.trim();
+    const num = customerNumber.trim();
+    const neigh = customerNeighborhood.trim();
+    if (street.length < 3 || !num || neigh.length < 2) return;
 
     const timer = setTimeout(() => {
-      calcDeliveryFee(customerNeighborhood, `${customerStreet} ${customerNumber}, ${customerNeighborhood}, ${franchisee.city || ""}`.trim());
-    }, 600);
+      calcDeliveryFee(neigh, `${street}, ${num} - ${neigh}, ${franchisee.city || ""}`.trim());
+    }, 700);
 
     return () => clearTimeout(timer);
-  }, [customerStreet, customerNumber, customerNeighborhood, deliveryType]);
+  }, [customerStreet, customerNumber, customerNeighborhood, deliveryType, isNeighborhoodType]);
 
   const ONLINE_METHODS = ["PIX", "CREDITO_ONLINE", "ONLINE", "MERCADOPAGO", "CARTAO_ONLINE"];
 
@@ -770,14 +882,25 @@ export default function CustomerStorePage({
     if (!customerPhone.trim()) { alert("Por favor, informe seu WhatsApp / telefone."); return; }
     let finalAddress = "";
     if (deliveryType === "DELIVERY") {
+      if (isNeighborhoodType && availableNeighborhoods.length > 0) {
+        if (!customerNeighborhood.trim() || !deliveryFeeCalculated) {
+          alert("⚠️ Por favor, selecione seu Bairro na lista de bairros atendidos pela loja.");
+          return;
+        }
+      } else {
+        if (!customerNeighborhood.trim()) {
+          alert("Por favor, informe seu Bairro de entrega.");
+          return;
+        }
+      }
       if (!customerStreet.trim()) { alert("Por favor, informe a Rua / Logradouro de entrega."); return; }
       if (!customerNumber.trim()) { alert("Por favor, informe o Número do endereço."); return; }
-      if (!customerNeighborhood.trim()) {
-        alert(isNeighborhoodType ? "Por favor, selecione seu Bairro de entrega." : "Por favor, informe seu Bairro de entrega.");
+      if (!deliveryAvailable) {
+        alert(deliveryMessage || "Este endereço está fora da área de entrega da loja. Por favor, revise o endereço ou escolha 'Retirar no Balcão'.");
         return;
       }
-      if (!deliveryAvailable) {
-        alert(deliveryMessage || "Não atendemos no endereço ou bairro selecionado no momento.");
+      if (!deliveryFeeCalculated && !isFreeShippingEffective) {
+        alert("⚠️ Por favor, aguarde o cálculo da taxa de entrega do seu endereço.");
         return;
       }
       finalAddress = `${customerStreet.trim()}, ${customerNumber.trim()} - ${customerNeighborhood.trim()}${customerComplement.trim() ? ` (${customerComplement.trim()})` : ""}`;
@@ -1226,21 +1349,21 @@ export default function CustomerStorePage({
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Taxa de entrega</span>
-                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : "#64748B" }}>
+                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
                     {deliveryType === "PICKUP" ? (
-                      "Retirada no local"
+                      "Retirada no local (Grátis)"
                     ) : isFreeShippingByMin ? (
                       "Grátis 🎉"
                     ) : couponApplied?.isFreeShipping ? (
                       "Grátis (Cupom) 🎉"
                     ) : deliveryCalculating ? (
                       "Calculando..."
-                    ) : effectiveDeliveryFee > 0 ? (
+                    ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
                       `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
-                    ) : deliveryFee > 0 ? (
-                      `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
-                    ) : (
+                    ) : (deliveryFeeCalculated && effectiveDeliveryFee === 0) ? (
                       "Grátis 🎉"
+                    ) : (
+                      <span style={{ fontStyle: "italic", color: "#94A3B8", fontWeight: 600 }}>A calcular no endereço</span>
                     )}
                   </span>
                 </div>
@@ -1272,14 +1395,29 @@ export default function CustomerStorePage({
               <div className="checkout-type-row">
                 <button
                   type="button"
-                  onClick={() => { setDeliveryType("DELIVERY"); if (customerStreet || customerNeighborhood) calcDeliveryFee(customerNeighborhood); }}
+                  onClick={() => {
+                    setDeliveryType("DELIVERY");
+                    if (isNeighborhoodType) {
+                      if (customerNeighborhood) calcDeliveryFee(customerNeighborhood);
+                      else { setDeliveryFee(null); setDeliveryFeeCalculated(false); }
+                    } else {
+                      if (customerStreet && customerNumber) calcDeliveryFee(customerNeighborhood);
+                      else { setDeliveryFee(null); setDeliveryFeeCalculated(false); }
+                    }
+                  }}
                   className={`checkout-type-btn ${deliveryType === "DELIVERY" ? "active" : ""}`}
                 >
                   🛵 Entrega (Delivery)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDeliveryType("PICKUP")}
+                  onClick={() => {
+                    setDeliveryType("PICKUP");
+                    setDeliveryFee(0);
+                    setDeliveryFeeCalculated(true);
+                    setDeliveryAvailable(true);
+                    setDeliveryMessage("Retirada no balcão selecionada.");
+                  }}
                   className={`checkout-type-btn ${deliveryType === "PICKUP" ? "active" : ""}`}
                 >
                   🛍️ Retirar no Balcão
@@ -1311,18 +1449,39 @@ export default function CustomerStorePage({
             </div>
 
             {deliveryType === "DELIVERY" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", background: "#F8FAFC", padding: "10px 12px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", background: "#F8FAFC", padding: "12px", borderRadius: "14px", border: "1px solid #E2E8F0" }}>
+                {!isNeighborhoodType && (
+                  <button
+                    type="button"
+                    onClick={handleUseGpsLocation}
+                    disabled={gpsLoading || deliveryCalculating}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      padding: "8px 12px",
+                      background: "#EFF6FF",
+                      border: "1.5px solid #BFDBFE",
+                      borderRadius: "10px",
+                      color: "#1D4ED8",
+                      fontSize: "0.80rem",
+                      fontWeight: 800,
+                      cursor: (gpsLoading || deliveryCalculating) ? "not-allowed" : "pointer",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    {gpsLoading ? "⏳ Obtendo sua localização..." : "📍 Usar minha localização atual (GPS)"}
+                  </button>
+                )}
+
                 <div>
                   <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Rua / Logradouro *</label>
                   <input
                     className="checkout-input"
                     value={customerStreet}
                     onChange={e => setCustomerStreet(e.target.value)}
-                    onBlur={() => {
-                      if (!isNeighborhoodType) {
-                        calcDeliveryFee(customerNeighborhood);
-                      }
-                    }}
                     placeholder="Ex: Rua São Paulo, Av. Brasil"
                   />
                 </div>
@@ -1334,32 +1493,180 @@ export default function CustomerStorePage({
                       className="checkout-input"
                       value={customerNumber}
                       onChange={e => setCustomerNumber(e.target.value)}
-                      onBlur={() => {
-                        if (!isNeighborhoodType) {
-                          calcDeliveryFee(customerNeighborhood);
-                        }
-                      }}
                       placeholder="Ex: 98 ou S/N"
                     />
                   </div>
 
                   <div>
-                    <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Bairro *</label>
-                    {isNeighborhoodType && Array.isArray(franchisee.deliveryZones) && franchisee.deliveryZones.length > 0 ? (
-                      <select
-                        className="checkout-input"
-                        value={customerNeighborhood}
-                        onChange={e => {
-                          setCustomerNeighborhood(e.target.value);
-                          calcDeliveryFee(e.target.value);
-                        }}
-                        style={{ cursor: "pointer", fontWeight: customerNeighborhood ? 700 : 400 }}
-                      >
-                        <option value="">Selecione seu bairro...</option>
-                        {(franchisee.deliveryZones as any[]).map((z: any, i: number) => (
-                          <option key={i} value={z.name}>{z.name} — R$ {(z.fee || 0).toFixed(2).replace(".", ",")}</option>
-                        ))}
-                      </select>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2px" }}>
+                      <label className="checkout-label" style={{ fontSize: "0.82rem", margin: 0 }}>Bairro *</label>
+                      {isNeighborhoodType && customerNeighborhood && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerNeighborhood("");
+                            setNeighborhoodSearch("");
+                            setDeliveryFee(null);
+                            setDeliveryFeeCalculated(false);
+                            setDeliveryAvailable(true);
+                            setDeliveryMessage("");
+                            setIsNeighborhoodOpen(true);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "#2563EB",
+                            fontSize: "0.70rem",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            padding: 0
+                          }}
+                        >
+                          ✏️ Trocar
+                        </button>
+                      )}
+                    </div>
+
+                    {isNeighborhoodType && availableNeighborhoods.length > 0 ? (
+                      <div style={{ position: "relative" }}>
+                        {customerNeighborhood ? (
+                          <div
+                            onClick={() => {
+                              setIsNeighborhoodOpen(true);
+                              setNeighborhoodSearch("");
+                            }}
+                            style={{
+                              padding: "8px 10px",
+                              background: "#ECFDF5",
+                              border: "1.5px solid #10B981",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between"
+                            }}
+                          >
+                            <div style={{ fontSize: "0.84rem", fontWeight: 800, color: "#065F46", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              📍 {customerNeighborhood}
+                            </div>
+                            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 6px", borderRadius: "4px" }}>
+                              {effectiveDeliveryFee > 0 ? `R$ ${effectiveDeliveryFee.toFixed(2).replace('.', ',')}` : isFreeShippingByMin ? 'Grátis' : 'Grátis'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div>
+                            <input
+                              className="checkout-input"
+                              value={neighborhoodSearch}
+                              onChange={e => {
+                                setNeighborhoodSearch(e.target.value);
+                                setIsNeighborhoodOpen(true);
+                              }}
+                              onFocus={() => setIsNeighborhoodOpen(true)}
+                              placeholder="🔍 Digite seu bairro..."
+                              style={{
+                                borderColor: isNeighborhoodOpen ? "#2563EB" : undefined
+                              }}
+                            />
+
+                            {/* DROPDOWN FLUTUANTE DE BAIRROS */}
+                            {isNeighborhoodOpen && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "calc(100% + 4px)",
+                                  left: 0,
+                                  right: 0,
+                                  maxHeight: "200px",
+                                  overflowY: "auto",
+                                  background: "#FFFFFF",
+                                  borderRadius: "10px",
+                                  border: "1.5px solid #3B82F6",
+                                  boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.15)",
+                                  zIndex: 100,
+                                  padding: "4px"
+                                }}
+                              >
+                                <div style={{ padding: "4px 8px", fontSize: "0.68rem", fontWeight: 800, color: "#64748B", borderBottom: "1px solid #F1F5F9" }}>
+                                  Selecione o bairro ({filteredNeighborhoods.length} disponíveis)
+                                </div>
+                                {filteredNeighborhoods.length > 0 ? (
+                                  filteredNeighborhoods.map((z, idx) => (
+                                    <div
+                                      key={idx}
+                                      onClick={() => {
+                                        setCustomerNeighborhood(z.name);
+                                        setDeliveryFee(Number(z.fee) || 0);
+                                        setDeliveryFeeCalculated(true);
+                                        setDeliveryAvailable(true);
+                                        setDeliveryMessage(`Bairro selecionado: ${z.name}`);
+                                        setNeighborhoodSearch("");
+                                        setIsNeighborhoodOpen(false);
+                                      }}
+                                      style={{
+                                        padding: "7px 8px",
+                                        borderRadius: "6px",
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        transition: "background 0.15s"
+                                      }}
+                                      onMouseEnter={e => (e.currentTarget.style.background = "#F0FDF4")}
+                                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                                    >
+                                      <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#1E293B" }}>
+                                        📍 {z.name}
+                                      </span>
+                                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: z.fee > 0 ? "#16A34A" : "#059669", background: "#F0FDF4", padding: "2px 6px", borderRadius: "4px" }}>
+                                        {z.fee > 0 ? `R$ ${z.fee.toFixed(2).replace('.', ',')}` : "Grátis"}
+                                      </span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div style={{ padding: "10px", textAlign: "center" }}>
+                                    <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#DC2626", marginBottom: "4px" }}>
+                                      ❌ Bairro não atendido
+                                    </div>
+                                    <div style={{ fontSize: "0.70rem", color: "#64748B", marginBottom: "6px" }}>
+                                      Selecione um dos bairros atendidos:
+                                    </div>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", justifyContent: "center" }}>
+                                      {availableNeighborhoods.map((z, i) => (
+                                        <button
+                                          key={i}
+                                          type="button"
+                                          onClick={() => {
+                                            setCustomerNeighborhood(z.name);
+                                            setDeliveryFee(Number(z.fee) || 0);
+                                            setDeliveryFeeCalculated(true);
+                                            setDeliveryAvailable(true);
+                                            setDeliveryMessage(`Bairro selecionado: ${z.name}`);
+                                            setNeighborhoodSearch("");
+                                            setIsNeighborhoodOpen(false);
+                                          }}
+                                          style={{
+                                            background: "#F1F5F9",
+                                            border: "1px solid #CBD5E1",
+                                            borderRadius: "5px",
+                                            padding: "2px 6px",
+                                            fontSize: "0.70rem",
+                                            fontWeight: 700,
+                                            cursor: "pointer",
+                                            color: "#1E293B"
+                                          }}
+                                        >
+                                          {z.name}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <input
                         className="checkout-input"
@@ -1387,10 +1694,10 @@ export default function CustomerStorePage({
 
                 {/* STATUS TAXA DE ENTREGA EM TEMPO REAL */}
                 <div style={{
-                  padding: "8px 12px",
+                  padding: "9px 12px",
                   borderRadius: "10px",
-                  background: isFreeShippingByMin ? "#ECFDF5" : effectiveDeliveryFee > 0 ? "#F0FDF4" : deliveryCalculating ? "#EFF6FF" : "#F8FAFC",
-                  border: `1px solid ${isFreeShippingByMin ? "#86EFAC" : effectiveDeliveryFee > 0 ? "#86EFAC" : deliveryCalculating ? "#BFDBFE" : "#E2E8F0"}`,
+                  background: !deliveryAvailable ? "#FEF2F2" : isFreeShippingByMin ? "#ECFDF5" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#F0FDF4" : deliveryCalculating ? "#EFF6FF" : "#F8FAFC",
+                  border: `1.5px solid ${!deliveryAvailable ? "#FCA5A5" : isFreeShippingByMin ? "#86EFAC" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#86EFAC" : deliveryCalculating ? "#BFDBFE" : "#E2E8F0"}`,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
@@ -1399,33 +1706,36 @@ export default function CustomerStorePage({
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <span style={{ fontSize: "1rem" }}>
-                      {deliveryCalculating ? "⏳" : isFreeShippingByMin ? "🎉" : effectiveDeliveryFee > 0 ? "🚚" : "📍"}
+                      {!deliveryAvailable ? "⛔" : deliveryCalculating ? "⏳" : isFreeShippingByMin ? "🎉" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "🛵" : "📍"}
                     </span>
                     <div style={{ display: "flex", flexDirection: "column" }}>
-                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: isFreeShippingByMin ? "#166534" : effectiveDeliveryFee > 0 ? "#166534" : "#475569" }}>
-                        {deliveryCalculating ? (
-                          "Calculando taxa de entrega..."
+                      <span style={{ fontSize: "0.80rem", fontWeight: 800, color: !deliveryAvailable ? "#DC2626" : isFreeShippingByMin ? "#166534" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#166534" : "#475569" }}>
+                        {!deliveryAvailable ? (
+                          "Fora da Área de Entrega"
+                        ) : deliveryCalculating ? (
+                          "Verificando endereço e raio..."
                         ) : isFreeShippingByMin ? (
                           "Frete Grátis Aplicado! 🎉"
-                        ) : effectiveDeliveryFee > 0 ? (
+                        ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
                           `Taxa de Entrega: R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
+                        ) : (deliveryFeeCalculated && effectiveDeliveryFee === 0) ? (
+                          "Entrega Grátis! 🎉"
                         ) : (
-                          "Taxa de entrega calculada"
+                          isNeighborhoodType ? "Selecione seu bairro acima" : "Preencha rua, número e bairro para calcular"
                         )}
                       </span>
                       {deliveryMessage && (
-                        <span style={{ fontSize: "0.70rem", color: deliveryAvailable ? "#15803D" : "#DC2626", fontWeight: 600 }}>
+                        <span style={{ fontSize: "0.70rem", color: !deliveryAvailable ? "#DC2626" : "#15803D", fontWeight: 600 }}>
                           {deliveryMessage}
                         </span>
                       )}
                     </div>
                   </div>
-                  {deliveryCalculating ? (
-                    <span style={{ fontSize: "0.70rem", color: "#3B82F6", fontWeight: 700 }}>Buscando...</span>
-                  ) : (
+                  {!isNeighborhoodType && (
                     <button
                       type="button"
                       onClick={() => calcDeliveryFee(customerNeighborhood, `${customerStreet} ${customerNumber}, ${customerNeighborhood}, ${franchisee.city || ""}`.trim())}
+                      disabled={deliveryCalculating}
                       style={{
                         background: "#FFFFFF",
                         border: "1px solid #CBD5E1",
@@ -1434,7 +1744,8 @@ export default function CustomerStorePage({
                         fontSize: "0.70rem",
                         fontWeight: 700,
                         color: "#475569",
-                        cursor: "pointer"
+                        cursor: "pointer",
+                        flexShrink: 0
                       }}
                     >
                       🔄 Recalcular
@@ -1464,23 +1775,23 @@ export default function CustomerStorePage({
                 <span>Subtotal:</span>
                 <span style={{ fontWeight: 700 }}>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>Entrega:</span>
-                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : "#0F172A" }}>
+                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
                   {deliveryType === "PICKUP" ? (
-                    "Retirada"
+                    "Retirada (Grátis)"
                   ) : isFreeShippingByMin ? (
                     "Grátis 🎉"
                   ) : couponApplied?.isFreeShipping ? (
                     "Grátis (Cupom) 🎉"
                   ) : deliveryCalculating ? (
                     "Calculando..."
-                  ) : effectiveDeliveryFee > 0 ? (
+                  ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
                     `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
-                  ) : deliveryFee > 0 ? (
-                    `R$ ${deliveryFee.toFixed(2).replace(".", ",")}`
-                  ) : (
+                  ) : (deliveryFeeCalculated && effectiveDeliveryFee === 0) ? (
                     "Grátis 🎉"
+                  ) : (
+                    <span style={{ fontStyle: "italic", color: "#94A3B8", fontWeight: 600 }}>A calcular</span>
                   )}
                 </span>
               </div>

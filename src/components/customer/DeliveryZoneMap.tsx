@@ -427,37 +427,89 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         Defina onde fica sua loja no mapa e escolha a regra de cobrança da entrega.
       </p>
 
-      {/* 3-Mode Selector Tabs (iFood Style) */}
-      <div style={{ display: "flex", gap: "8px", marginBottom: "1rem", background: "#F1F5F9", padding: "5px", borderRadius: "14px", border: "1px solid #E2E8F0" }}>
-        <button
-          type="button"
+      {/* 2-Mode Selector Tabs com Botão e Indicador Ativo/Inativo */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "1rem" }}>
+        {/* TAB 1: POR RAIO */}
+        <div
           onClick={() => setCurrentZoneType("KM")}
           style={{
-            flex: 1, padding: "10px 12px", borderRadius: "10px", border: "none",
-            background: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#fff" : "transparent",
-            color: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#DC2626" : "#64748B",
-            fontWeight: currentZoneType === "KM" || currentZoneType === "RADIUS" ? 800 : 600,
-            fontSize: "0.85rem", cursor: "pointer",
-            boxShadow: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", fontFamily: "inherit"
-          }}>
-          📍 Por Raio (Linha Reta)
-        </button>
-        <button
-          type="button"
+            padding: "12px 14px",
+            borderRadius: "14px",
+            border: `2px solid ${currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#DC2626" : "#E2E8F0"}`,
+            background: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#FEF2F2" : "#FFFFFF",
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            transition: "all 0.2s ease",
+            boxShadow: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "0 4px 14px rgba(220, 38, 38, 0.12)" : "none"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontWeight: 800, fontSize: "0.92rem", color: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#991B1B" : "#334155" }}>
+              📍 Por Raio (Linha Reta)
+            </span>
+            <span
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 800,
+                padding: "3px 8px",
+                borderRadius: "20px",
+                background: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#16A34A" : "#F1F5F9",
+                color: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#FFFFFF" : "#64748B",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px"
+              }}
+            >
+              {currentZoneType === "KM" || currentZoneType === "RADIUS" ? "🟢 ATIVO NA LOJA" : "⚪ Inativo"}
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.74rem", color: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#B91C1C" : "#64748B", lineHeight: 1.3 }}>
+            Calcula a taxa e validação pelo mapa em KM a partir do raio da sua loja.
+          </p>
+        </div>
+
+        {/* TAB 2: POR BAIRRO */}
+        <div
           onClick={() => setCurrentZoneType("NEIGHBORHOOD")}
           style={{
-            flex: 1, padding: "10px 12px", borderRadius: "10px", border: "none",
-            background: currentZoneType === "NEIGHBORHOOD" ? "#fff" : "transparent",
-            color: currentZoneType === "NEIGHBORHOOD" ? "#DC2626" : "#64748B",
-            fontWeight: currentZoneType === "NEIGHBORHOOD" ? 800 : 600,
-            fontSize: "0.85rem", cursor: "pointer",
-            boxShadow: currentZoneType === "NEIGHBORHOOD" ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", fontFamily: "inherit"
-          }}>
-          🏙️ Por Bairro
-        </button>
-
+            padding: "12px 14px",
+            borderRadius: "14px",
+            border: `2px solid ${currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#E2E8F0"}`,
+            background: currentZoneType === "NEIGHBORHOOD" ? "#F5F3FF" : "#FFFFFF",
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            transition: "all 0.2s ease",
+            boxShadow: currentZoneType === "NEIGHBORHOOD" ? "0 4px 14px rgba(124, 58, 237, 0.12)" : "none"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontWeight: 800, fontSize: "0.92rem", color: currentZoneType === "NEIGHBORHOOD" ? "#5B21B6" : "#334155" }}>
+              🏙️ Por Bairro
+            </span>
+            <span
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 800,
+                padding: "3px 8px",
+                borderRadius: "20px",
+                background: currentZoneType === "NEIGHBORHOOD" ? "#16A34A" : "#F1F5F9",
+                color: currentZoneType === "NEIGHBORHOOD" ? "#FFFFFF" : "#64748B",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px"
+              }}
+            >
+              {currentZoneType === "NEIGHBORHOOD" ? "🟢 ATIVO NA LOJA" : "⚪ Inativo"}
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.74rem", color: currentZoneType === "NEIGHBORHOOD" ? "#6D28D9" : "#64748B", lineHeight: 1.3 }}>
+            O cliente seleciona os bairros pré-cadastrados com taxas fixas definidas por você.
+          </p>
+        </div>
       </div>
 
       {msg && (
@@ -479,8 +531,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             onChange={e => handleAddressChange(e.target.value)}
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
             onKeyDown={e => e.key === "Enter" && geocodeAddress()}
-            placeholder="Digite o endereço da sua loja..."
-            style={{ width: "100%", padding: "10px 12px 10px 36px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.9rem", outline: "none" }}
+            placeholder="Digite o endereço da sua loja (ex: Rua, Número, Bairro, Cidade)"
+            style={{ width: "100%", padding: "10px 14px 10px 36px", borderRadius: "10px", border: "1px solid #E2E8F0", fontSize: "0.85rem", outline: "none", boxSizing: "border-box" }}
           />
           {showSuggestions && suggestions.length > 0 && (
             <div style={{
@@ -489,11 +541,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               left: 0,
               right: 0,
               background: "#fff",
-              border: "1.5px solid #E2E8F0",
-              borderRadius: "12px",
-              boxShadow: "0 12px 30px rgba(0,0,0,0.15)",
-              zIndex: 9999,
-              maxHeight: "240px",
+              borderRadius: "10px",
+              border: "1px solid #E2E8F0",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+              zIndex: 2000,
+              maxHeight: "220px",
               overflowY: "auto"
             }}>
               {suggestions.map((item, idx) => (
@@ -603,8 +655,59 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
         {/* ZONES CONTROL PANEL */}
         <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "20px" }}>
-          <h4 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "4px" }}>Raios de entrega</h4>
-          <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "12px" }}>Configure raio, tempo estimado e taxa por faixa.</p>
+          
+          {/* Banner de Modo Ativo com Switch Exclusivo */}
+          <div
+            style={{
+              padding: "10px 12px",
+              borderRadius: "12px",
+              marginBottom: "14px",
+              background: currentZoneType === "NEIGHBORHOOD" ? "#F5F3FF" : "#FEF2F2",
+              border: `1.5px solid ${currentZoneType === "NEIGHBORHOOD" ? "#DDD6FE" : "#FECACA"}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px"
+            }}
+          >
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.82rem", fontWeight: 800, color: currentZoneType === "NEIGHBORHOOD" ? "#5B21B6" : "#991B1B" }}>
+                <span>{currentZoneType === "NEIGHBORHOOD" ? "🏙️ Modo Bairro ATIVO" : "📍 Modo Raio ATIVO"}</span>
+              </div>
+              <div style={{ fontSize: "0.70rem", color: currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#DC2626", marginTop: "2px" }}>
+                {currentZoneType === "NEIGHBORHOOD"
+                  ? "Clientes selecionarão bairros cadastrados. Modo Raio desativado."
+                  : "Frete calculado por distância em KM. Modo Bairro desativado."}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCurrentZoneType(currentZoneType === "NEIGHBORHOOD" ? "KM" : "NEIGHBORHOOD")}
+              style={{
+                padding: "6px 10px",
+                borderRadius: "8px",
+                border: "1px solid #CBD5E1",
+                background: "#FFFFFF",
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                color: "#1E293B",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.05)"
+              }}
+            >
+              🔄 {currentZoneType === "NEIGHBORHOOD" ? "Ativar Modo Raio" : "Ativar Modo Bairro"}
+            </button>
+          </div>
+
+          <h4 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "4px" }}>
+            {currentZoneType === "NEIGHBORHOOD" ? "Bairros Atendidos" : "Raios de Entrega (KM)"}
+          </h4>
+          <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "12px" }}>
+            {currentZoneType === "NEIGHBORHOOD"
+              ? "Cadastre os bairros que sua loja atende e o valor do frete para cada um."
+              : "Configure os limites de raio (KM), tempo estimado e taxa por faixa."}
+          </p>
 
           {/* Mode 1: KM (Por Raio) */}
           {(currentZoneType === "KM" || currentZoneType === "RADIUS") && (
@@ -716,15 +819,15 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             </>
           )}
 
-
-
           <button onClick={handleSave} disabled={saving || !latLng}
             style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "none",
-              background: !latLng ? "#E2E8F0" : "#DC2626", color: !latLng ? "#94A3B8" : "#fff",
+              background: !latLng ? "#E2E8F0" : currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#DC2626",
+              color: !latLng ? "#94A3B8" : "#fff",
               fontWeight: 800, fontSize: "0.95rem", cursor: !latLng ? "not-allowed" : "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+              boxShadow: !latLng ? "none" : currentZoneType === "NEIGHBORHOOD" ? "0 4px 14px rgba(124, 58, 237, 0.3)" : "0 4px 14px rgba(220, 38, 38, 0.3)" }}>
             {saving ? <Loader2 size={16} /> : <Check size={16} />}
-            {saving ? "Salvando..." : latLng ? "Salvar Configurações" : "Selecione o local no mapa primeiro"}
+            {saving ? "Salvando..." : latLng ? (currentZoneType === "NEIGHBORHOOD" ? "Salvar Configurações (Modo Bairro)" : "Salvar Configurações (Modo Raio)") : "Selecione o local no mapa primeiro"}
           </button>
 
           {latLng && (
