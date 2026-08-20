@@ -5,18 +5,96 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const orders = await prisma.customerOrder.findMany({
-      where: {
-        OR: [
-          { openDeliveryReference: "32526414" },
-          { openDeliveryOrderId: { contains: "32526414" } },
-          { customerName: { contains: "Vitor" } }
-        ]
-      },
-      include: { items: { include: { menuProduct: true } } }
+    const hakim = await prisma.user.findUnique({
+      where: { email: "contatohakim@gmail.com" },
+      select: { id: true, email: true, name: true, storeName: true }
     });
 
-    return NextResponse.json({ ok: true, orders });
+    const pastel = await prisma.user.findUnique({
+      where: { email: "pasteldapaulistamacae21@gmail.com" },
+      select: { id: true, email: true, name: true, storeName: true }
+    });
+
+    if (!hakim) {
+      return NextResponse.json({ error: "Hakim não encontrado" }, { status: 404 });
+    }
+
+    const envMerchantId = process.env.JOTAJA_MERCHANT_ID || "14800";
+
+    // 1. Atualizar credenciais do Hakim no banco
+    await prisma.user.update({
+      where: { id: hakim.id },
+      data: {
+        jotajaConnected: true,
+        jotajaMerchantId: envMerchantId,
+        jotajaClientId: process.env.JOTAJA_CLIENT_ID || undefined,
+        jotajaClientSecret: process.env.JOTAJA_CLIENT_SECRET || undefined,
+      }
+    });
+
+    // 2. Desconectar Jotajá do Pastel da Paulista e limpar credenciais
+    if (pastel) {
+      await prisma.user.update({
+        where: { id: pastel.id },
+        data: {
+          jotajaConnected: false,
+          jotajaMerchantId: null,
+          jotajaClientId: null,
+          jotajaClientSecret: null,
+        }
+      });
+    }
+
+    // 3. Mover pedidos de JotaJá (incluindo o Patrick) do Pastel para o Hakim no final da fila
+    let movedOrders: any[] = [];
+
+    // Buscar pedidos com customerName contendo Patrick ou com openDeliveryReference/openDeliveryOrderId do Jotajá
+    const leakedOrders = await prisma.customerOrder.findMany({
+      where: {
+        OR: [
+          pastel ? { franchiseeId: pastel.id } : undefined,
+          { customerName: { contains: "PATRICK" } },
+          { openDeliveryReference: "32857612" },
+          { openDeliveryOrderId: { contains: "32857612" } },
+        ].filter(Boolean) as any
+      },
+      select: { id: true, customerName: true, openDeliveryReference: true, totalAmount: true, franchiseeId: true }
+    });
+
+    for (const order of leakedOrders) {
+      // Gerar número sequencial no final da fila do Hakim
+      const lastOrder = await prisma.customerOrder.findFirst({
+        where: { franchiseeId: hakim.id },
+        orderBy: { dailyOrderNumber: "desc" },
+        select: { dailyOrderNumber: true }
+      });
+      const nextNumber = (lastOrder?.dailyOrderNumber || 0) + 1;
+
+      await prisma.customerOrder.update({
+        where: { id: order.id },
+        data: {
+          franchiseeId: hakim.id,
+          dailyOrderNumber: nextNumber,
+        }
+      });
+
+      movedOrders.push({
+        id: order.id,
+        customerName: order.customerName,
+        reference: order.openDeliveryReference,
+        assignedDailyNumber: nextNumber,
+        previousFranchiseeId: order.franchiseeId
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      hakimId: hakim.id,
+      pastelCleaned: !!pastel,
+      movedCount: movedOrders.length,
+      movedOrders,
+      message: "Pedido(s) do JotaJá movidos com sucesso para a fila do Hakim sem afetar a ordem existente."
+    });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
