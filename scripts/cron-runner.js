@@ -29,6 +29,11 @@ const jobs = [
     intervalMs: 5 * 60_000, // 5 minutos
   },
   {
+    name: 'health-check',
+    path: '/api/cron/health-check',
+    intervalMs: 5 * 60_000, // 5 minutos — monitora saúde + alerta WhatsApp
+  },
+  {
     name: 'billing-close',
     path: '/api/cron/billing-close',
     intervalMs: 60 * 60_000, // 1 hora (verifica internamente se é dia 1 às 03h)
