@@ -1,25 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
 import { prisma } from "@/lib/prisma";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
 /**
  * GET /api/cron/jotaja-poll
- * Vercel Cron Job — runs every minute to poll Jotajá (Open Delivery) events.
+ * Cron Job — runs every minute to poll Jotajá (Open Delivery) events.
  * MULTI-TENANT: Itera sobre TODAS as lojas com jotajaConnected=true e faz
  * polling individual com as credenciais de cada uma.
- * Protected by CRON_SECRET.
+ * Protected by CRON_SECRET (bypass para chamadas internas do cron-runner).
  */
 export const dynamic = "force-dynamic";
 export const maxDuration = 55;
 
 export async function GET(req: NextRequest) {
-  // Verify cron secret (only if CRON_SECRET is configured)
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  if (process.env.NODE_ENV !== "development" && cronSecret) {
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!verifyCronAuth(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const startTime = Date.now();

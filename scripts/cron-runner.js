@@ -63,7 +63,11 @@ function callEndpoint(job) {
       res.on('end', () => {
         const status = res.statusCode;
         if (status >= 200 && status < 300) {
-          // Log sucinto — só loga erros pra não poluir
+          // Log sucinto de sucesso para confirmar que o cron está rodando
+          const ts = new Date().toISOString().slice(11, 19);
+          console.log(`[cron-runner] ✅ ${ts} ${job.name} ok (${status})`);
+        } else if (status === 401) {
+          console.error(`[cron-runner] 🔒 ${job.name} REJEITADO com 401 — CRON_SECRET ${CRON_SECRET ? 'está definido mas pode estar errado' : 'NÃO ESTÁ DEFINIDO (chamadas locais devem funcionar)'}`);
         } else {
           console.warn(`[cron-runner] ⚠️ ${job.name} retornou ${status}: ${body.slice(0, 200)}`);
         }
@@ -72,7 +76,7 @@ function callEndpoint(job) {
     });
 
     req.on('error', (err) => {
-      // Server pode não estar pronto ainda — silencioso
+      // Server pode não estar pronto ainda — silencioso para ECONNREFUSED
       if (err.code !== 'ECONNREFUSED') {
         console.warn(`[cron-runner] ❌ ${job.name} erro: ${err.message}`);
       }
@@ -123,6 +127,8 @@ function waitForServer(maxWaitMs = 120_000) {
 // ── Main ─────────────────────────────────────────────────────────────
 async function main() {
   console.log('[cron-runner] 🚀 Iniciando cron-runner com', jobs.length, 'jobs...');
+  console.log(`[cron-runner] 🔑 CRON_SECRET: ${CRON_SECRET ? 'definido (' + CRON_SECRET.length + ' chars)' : 'NÃO DEFINIDO — chamadas locais usam bypass'}`);
+  console.log(`[cron-runner] 🌐 BASE_URL: ${BASE_URL}`);
   
   await waitForServer();
 

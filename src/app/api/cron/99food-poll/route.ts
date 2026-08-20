@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
 /**
  * GET /api/cron/99food-poll
@@ -10,12 +11,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  if (process.env.NODE_ENV !== "development" && cronSecret) {
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!verifyCronAuth(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const startTime = Date.now();

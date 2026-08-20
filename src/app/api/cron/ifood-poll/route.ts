@@ -1,27 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
 /**
  * GET /api/cron/ifood-poll
- * Vercel Cron Job — runs every minute to poll iFood events.
+ * Cron Job — runs every minute to poll iFood events.
  * Ensures orders are never missed, even when no dashboard is open.
  * 
- * Protected by CRON_SECRET to prevent unauthorized access.
+ * Protected by CRON_SECRET (bypass para chamadas internas do cron-runner).
  */
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Allow up to 30s for processing
 
 export async function GET(req: NextRequest) {
-  // Verify cron secret (Vercel sets this automatically for cron jobs)
-  const authHeader = req.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  
-  // In production, verify the secret IF it's configured.
-  // If CRON_SECRET is NOT set, allow Vercel's own cron invocations through.
-  if (process.env.NODE_ENV !== "development" && cronSecret) {
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!verifyCronAuth(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const startTime = Date.now();
