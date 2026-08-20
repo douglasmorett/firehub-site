@@ -214,7 +214,7 @@ export default function GlobalPrintListener() {
         console.warn("[GlobalPrint Master] Erro no polling:", err);
       } finally {
         isPollingRef.current = false;
-        if (active) setTimeout(pollAndPrint, 3500);
+        if (active) setTimeout(pollAndPrint, 5000);
       }
     };
 

@@ -380,8 +380,8 @@ export default function KDSTelaPage() {
         }
       };
 
-      // Dispara o polling de 1 em 1 segundo pelo Worker (Tempo Real para Smart TVs)
-      worker.postMessage({ command: "start", interval: 1000 });
+      // Dispara o polling de 3.5 em 3.5 segundos pelo Worker (Tempo Real Otimizado)
+      worker.postMessage({ command: "start", interval: 3500 });
     } else {
       // Fallback para navegadores hiper-antigos sem suporte a Worker (fallback seguro)
       const fallbackPoll = setInterval(() => {
@@ -389,7 +389,7 @@ export default function KDSTelaPage() {
           isFetching = true;
           fetchOrders().finally(() => (isFetching = false));
         }
-      }, 1000);
+      }, 3500);
       return () => {
         clearInterval(fallbackPoll);
         document.removeEventListener(

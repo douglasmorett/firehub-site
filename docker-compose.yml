@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  firehub-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: firehub-app
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
