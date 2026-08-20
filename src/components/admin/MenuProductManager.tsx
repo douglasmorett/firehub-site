@@ -1,7 +1,7 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, Layers, Check } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
 
 const CHANNELS = [
   { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#3B82F6", desc: "Atendimento no balcão/caixa" },
@@ -45,15 +45,91 @@ export default function MenuProductManager({
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"items" | "combos">("items");
+  const [tab, setTab] = useState<"items" | "combos" | "all">("items");
 
-  // Categorias dinâmicas (inicia com as do servidor, pode adicionar novas)
-  const [dynCategories, setDynCategories] = useState(initialCategories);
+  // Helper para identificar categorias de integração ocultas
+  const isIntegrationCategory = (catName: string) => {
+    if (!catName) return false;
+    const catUpper = catName.toUpperCase().trim();
+    return ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"].some(h => catUpper.includes(h));
+  };
+
+  // Categorias dinâmicas (inicia com as do servidor combinadas com quaisquer categorias presentes nos produtos)
+  const [dynCategories, setDynCategories] = useState(() => {
+    const existingMap = new Map((initialCategories || []).map(c => [(c.name || "").toLowerCase().trim(), c]));
+    const list = [...(initialCategories || [])];
+    (products || []).forEach(p => {
+      const catName = (p.category || "").trim();
+      if (!catName || isIntegrationCategory(catName)) return;
+      if (!existingMap.has(catName.toLowerCase())) {
+        const newCat = {
+          id: `virtual-${catName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+          name: catName,
+          emoji: "🍽️",
+          color: "#64748B",
+          sortOrder: list.length,
+        };
+        list.push(newCat);
+        existingMap.set(catName.toLowerCase(), newCat);
+      }
+    });
+    return list;
+  });
+
+  // Re-sincronizar categorias sempre que initialCategories ou products mudarem
+  useEffect(() => {
+    setDynCategories(prev => {
+      const existingMap = new Map(prev.map(c => [(c.name || "").toLowerCase().trim(), c]));
+      let next = [...prev];
+      let changed = false;
+
+      (initialCategories || []).forEach(ic => {
+        const key = (ic.name || "").toLowerCase().trim();
+        if (!key) return;
+        if (!existingMap.has(key)) {
+          next.push(ic);
+          existingMap.set(key, ic);
+          changed = true;
+        } else {
+          // Atualizar dados se existentes
+          const cur = existingMap.get(key);
+          if (cur && cur.id?.startsWith("virtual-") && ic.id && !ic.id.startsWith("virtual-")) {
+            const idx = next.findIndex(c => (c.name || "").toLowerCase().trim() === key);
+            if (idx !== -1) {
+              next[idx] = ic;
+              changed = true;
+            }
+          }
+        }
+      });
+
+      (products || []).forEach(p => {
+        const catName = (p.category || "").trim();
+        if (!catName || isIntegrationCategory(catName)) return;
+        const key = catName.toLowerCase();
+        if (!existingMap.has(key)) {
+          const newCat = {
+            id: `virtual-${catName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+            name: catName,
+            emoji: "🍽️",
+            color: "#64748B",
+            sortOrder: next.length,
+          };
+          next.push(newCat);
+          existingMap.set(key, newCat);
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [initialCategories, products]);
 
   // Reordenação de Categorias (Modal & Inline)
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<any[]>([]);
   const [savingReorder, setSavingReorder] = useState(false);
+  const [expandedCatPreviews, setExpandedCatPreviews] = useState<Record<string, boolean>>({});
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
   const [editingCat, setEditingCat] = useState<{ id: string; name: string } | null>(null);
   const [savingRename, setSavingRename] = useState(false);
@@ -148,7 +224,31 @@ export default function MenuProductManager({
   };
 
   const openReorderModal = () => {
-    setReorderList([...dynCategories]);
+    // Garantir lista completa de todas as categorias existentes
+    const existingMap = new Map(dynCategories.map(c => [(c.name || "").toLowerCase().trim(), c]));
+    const fullList = [...dynCategories];
+    (products || []).forEach(p => {
+      const catName = (p.category || "").trim();
+      if (!catName || isIntegrationCategory(catName)) return;
+      const key = catName.toLowerCase();
+      if (!existingMap.has(key)) {
+        const newCat = {
+          id: `virtual-${catName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+          name: catName,
+          emoji: "🍽️",
+          color: "#64748B",
+          sortOrder: fullList.length,
+        };
+        fullList.push(newCat);
+        existingMap.set(key, newCat);
+      }
+    });
+
+    setReorderList(fullList);
+    // Expandir prévias por padrão para o lojista ver o cardápio completo
+    const initialExpanded: Record<string, boolean> = {};
+    fullList.forEach(c => { initialExpanded[c.name] = true; });
+    setExpandedCatPreviews(initialExpanded);
     setShowReorderModal(true);
   };
 
@@ -160,18 +260,42 @@ export default function MenuProductManager({
     setReorderList(updated);
   };
 
+  const moveReorderToTop = (idx: number) => {
+    if (idx <= 0) return;
+    moveReorderItem(idx, 0);
+  };
+
+  const moveReorderToBottom = (idx: number) => {
+    if (idx >= reorderList.length - 1) return;
+    moveReorderItem(idx, reorderList.length - 1);
+  };
+
   const handleSaveReorder = async (listToSave = reorderList) => {
     setSavingReorder(true);
     try {
       const res = await fetch("/api/admin/categories", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderedIds: listToSave.map(c => c.id) }),
+        body: JSON.stringify({
+          orderedCategories: listToSave.map((c, idx) => ({
+            id: c.id && !c.id.startsWith("virtual-") ? c.id : undefined,
+            name: c.name,
+            emoji: c.emoji || "🍽️",
+            color: c.color || "#64748B",
+            sortOrder: idx,
+          })),
+          orderedIds: listToSave.map(c => c.id).filter(id => id && !id.startsWith("virtual-")),
+        }),
       });
       if (res.ok) {
-        setDynCategories(listToSave);
+        const data = await res.json();
+        if (data.categories && Array.isArray(data.categories)) {
+          setDynCategories(data.categories);
+        } else {
+          setDynCategories(listToSave);
+        }
         setShowReorderModal(false);
-        showToast("✅ Ordem das categorias salva com sucesso!");
+        showToast("✅ Ordem do cardápio salva com sucesso!");
         router.refresh();
       } else {
         showToast("Erro ao salvar ordem", "#EF4444");
@@ -183,13 +307,15 @@ export default function MenuProductManager({
     }
   };
 
-  const handleMoveCategoryDirect = async (index: number, direction: "up" | "down") => {
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= dynCategories.length) return;
+  const handleMoveCategoryDirect = async (catName: string, direction: "up" | "down") => {
+    const currentIdx = dynCategories.findIndex(c => (c.name || "").toLowerCase().trim() === catName.toLowerCase().trim());
+    if (currentIdx === -1) return;
+    const targetIdx = direction === "up" ? currentIdx - 1 : currentIdx + 1;
+    if (targetIdx < 0 || targetIdx >= dynCategories.length) return;
     const newCats = [...dynCategories];
-    const temp = newCats[index];
-    newCats[index] = newCats[targetIndex];
-    newCats[targetIndex] = temp;
+    const temp = newCats[currentIdx];
+    newCats[currentIdx] = newCats[targetIdx];
+    newCats[targetIdx] = temp;
     setDynCategories(newCats);
     await handleSaveReorder(newCats);
   };
@@ -843,6 +969,9 @@ export default function MenuProductManager({
           <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
             <Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
           </button>
+          <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }} title="Ver cardápio completo com itens e combos agrupados por categoria, exatamente como no site">
+            <Eye size={16} style={{ marginRight: "4px" }} /> Visão do Site ({products.filter(p => !isHiddenIntegrationItem(p)).length})
+          </button>
         </div>
 
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
@@ -856,7 +985,7 @@ export default function MenuProductManager({
           <button
             onClick={openReorderModal}
             className="btn btn-outline"
-            style={{ fontSize: "0.85rem", background: "#FFF", borderColor: "#7C3AED", color: "#6D28D9", fontWeight: 700 }}
+            style={{ fontSize: "0.85rem", background: "#F5F3FF", borderColor: "#7C3AED", color: "#6D28D9", fontWeight: 800, boxShadow: "0 2px 6px rgba(124,58,237,0.12)" }}
             title="Reordenar a ordem de exibição das categorias no cardápio"
           >
             <ArrowUpDown size={15} style={{ marginRight: "4px" }} /> Reordenar Categorias
@@ -1682,7 +1811,7 @@ export default function MenuProductManager({
 
                       <div style={{ display: "flex", gap: "3px", marginLeft: "4px" }}>
                         <button
-                          onClick={() => handleMoveCategoryDirect(catIdx, "up")}
+                          onClick={() => handleMoveCategoryDirect(cat.name, "up")}
                           disabled={catIdx === 0}
                           style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: catIdx === 0 ? "not-allowed" : "pointer", opacity: catIdx === 0 ? 0.3 : 1 }}
                           title="Mover categoria para cima"
@@ -1690,7 +1819,7 @@ export default function MenuProductManager({
                           <ArrowUp size={13} />
                         </button>
                         <button
-                          onClick={() => handleMoveCategoryDirect(catIdx, "down")}
+                          onClick={() => handleMoveCategoryDirect(cat.name, "down")}
                           disabled={catIdx === categoriesToDisplay.length - 1}
                           style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: catIdx === categoriesToDisplay.length - 1 ? "not-allowed" : "pointer", opacity: catIdx === categoriesToDisplay.length - 1 ? 0.3 : 1 }}
                           title="Mover categoria para baixo"
@@ -1895,82 +2024,236 @@ export default function MenuProductManager({
 
       {/* MODAL: REORDENAR CATEGORIAS */}
       {showReorderModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(6px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-          <div style={{ background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "520px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)", position: "relative" }}>
-            <button onClick={() => setShowReorderModal(false)} style={{ position: "absolute", top: "1rem", right: "1rem", background: "none", border: "none", cursor: "pointer", color: "#64748B" }}>
-              <X size={20} />
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.75)", backdropFilter: "blur(8px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div style={{ background: "#FFFFFF", borderRadius: "24px", width: "100%", maxWidth: "700px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.35)", position: "relative", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <button onClick={() => setShowReorderModal(false)} style={{ position: "absolute", top: "1.25rem", right: "1.25rem", background: "#F1F5F9", border: "none", borderRadius: "50%", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#64748B" }}>
+              <X size={18} />
             </button>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.5rem" }}>
-              <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "#EDE9FE", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <ArrowUpDown size={20} />
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "0.5rem" }}>
+              <div style={{ width: "44px", height: "44px", borderRadius: "14px", background: "linear-gradient(135deg, #EDE9FE, #DDD6FE)", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(124,58,237,0.15)" }}>
+                <ArrowUpDown size={22} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 800, color: "#0F172A" }}>Reordenar Categorias</h3>
-                <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
-                  Ajuste a ordem em que as categorias aparecem no cardápio do seu cliente.
+                <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>
+                  ↕️ Reordenar Cardápio (Ordem do Site)
+                </h3>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#64748B" }}>
+                  Ajuste a ordem das categorias. Itens avulsos e combos são exibidos juntos exatamente como no site.
                 </p>
               </div>
             </div>
 
-            <div style={{ margin: "1.25rem 0", display: "flex", flexDirection: "column", gap: "6px", maxHeight: "50vh", overflowY: "auto", paddingRight: "4px" }}>
-              {reorderList.map((cat, idx) => (
-                <div
-                  key={cat.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "10px 14px",
-                    background: "#F8FAFC",
-                    borderRadius: "10px",
-                    border: "1.5px solid #E2E8F0",
+            {/* BARRA DE ESTATÍSTICAS E AÇÕES RÁPIDAS */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", margin: "0.75rem 0 0.5rem 0", padding: "8px 12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "0.78rem", fontWeight: 700, color: "#475569" }}>
+                <span>📁 {reorderList.length} Categorias</span>
+                <span>•</span>
+                <span>🍔 {products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p)).length} Itens</span>
+                <span>•</span>
+                <span>📦 {products.filter(p => p.isCombo && !isHiddenIntegrationItem(p)).length} Combos</span>
+              </div>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allExp: Record<string, boolean> = {};
+                    reorderList.forEach(c => { allExp[c.name] = true; });
+                    setExpandedCatPreviews(allExp);
                   }}
+                  style={{ padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#475569", cursor: "pointer" }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ fontSize: "0.8rem", fontWeight: 800, color: "#7C3AED", width: "24px" }}>
-                      {idx + 1}º
-                    </span>
-                    <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "#1E293B" }}>
-                      {cat.emoji || "🍽️"} {cat.name}
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", gap: "4px" }}>
-                    <button
-                      onClick={() => moveReorderItem(idx, idx - 1)}
-                      disabled={idx === 0}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1 }}
-                      title="Subir"
-                    >
-                      <ArrowUp size={14} />
-                    </button>
-                    <button
-                      onClick={() => moveReorderItem(idx, idx + 1)}
-                      disabled={idx === reorderList.length - 1}
-                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === reorderList.length - 1 ? "not-allowed" : "pointer", opacity: idx === reorderList.length - 1 ? 0.3 : 1 }}
-                      title="Descer"
-                    >
-                      <ArrowDown size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  Expandir Tudo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedCatPreviews({})}
+                  style={{ padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#475569", cursor: "pointer" }}
+                >
+                  Recolher Tudo
+                </button>
+              </div>
             </div>
 
-            <div style={{ display: "flex", gap: "10px", marginTop: "1.5rem" }}>
+            {/* LISTA SCROLLÁVEL DE CATEGORIAS */}
+            <div style={{ margin: "0.5rem 0", display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", flex: 1, paddingRight: "4px" }}>
+              {reorderList.map((cat, idx) => {
+                const catProds = products.filter(p => (p.category || "").toLowerCase().trim() === cat.name.toLowerCase().trim() && !isHiddenIntegrationItem(p));
+                const itemsCount = catProds.filter(p => !p.isCombo).length;
+                const combosCount = catProds.filter(p => p.isCombo).length;
+                const isExpanded = !!expandedCatPreviews[cat.name];
+
+                return (
+                  <div
+                    key={cat.id || cat.name}
+                    style={{
+                      background: "#FFFFFF",
+                      borderRadius: "14px",
+                      border: "1.5px solid #E2E8F0",
+                      overflow: "hidden",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
+                    }}
+                  >
+                    {/* Linha principal da Categoria */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 14px",
+                        background: "#F8FAFC",
+                        borderBottom: isExpanded && catProds.length > 0 ? "1px solid #E2E8F0" : "none",
+                        gap: "10px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flex: 1 }}>
+                        <span style={{ fontSize: "0.82rem", fontWeight: 900, color: "#7C3AED", background: "#EDE9FE", padding: "4px 8px", borderRadius: "8px", minWidth: "32px", textAlign: "center" }}>
+                          {idx + 1}º
+                        </span>
+                        <div style={{ minWidth: 0 }}>
+                          <span style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0F172A" }}>
+                            {cat.emoji || "🍽️"} {cat.name}
+                          </span>
+                          <span style={{ marginLeft: "8px", fontSize: "0.75rem", fontWeight: 600, color: "#64748B" }}>
+                            ({catProds.length} {catProds.length === 1 ? "produto" : "produtos"}{itemsCount > 0 ? ` • ${itemsCount} itens` : ""}{combosCount > 0 ? ` • ${combosCount} combos` : ""})
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Botões de Reordenação */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                        <button
+                          type="button"
+                          onClick={() => moveReorderToTop(idx)}
+                          disabled={idx === 0}
+                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1, fontSize: "0.72rem", fontWeight: 700 }}
+                          title="Mover para o Topo"
+                        >
+                          <ChevronsUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveReorderItem(idx, idx - 1)}
+                          disabled={idx === 0}
+                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1 }}
+                          title="Subir 1 posição"
+                        >
+                          <ArrowUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveReorderItem(idx, idx + 1)}
+                          disabled={idx === reorderList.length - 1}
+                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === reorderList.length - 1 ? "not-allowed" : "pointer", opacity: idx === reorderList.length - 1 ? 0.3 : 1 }}
+                          title="Descer 1 posição"
+                        >
+                          <ArrowDown size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveReorderToBottom(idx)}
+                          disabled={idx === reorderList.length - 1}
+                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === reorderList.length - 1 ? "not-allowed" : "pointer", opacity: idx === reorderList.length - 1 ? 0.3 : 1, fontSize: "0.72rem", fontWeight: 700 }}
+                          title="Mover para o Fim"
+                        >
+                          <ChevronsDown size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCatPreviews(prev => ({ ...prev, [cat.name]: !prev[cat.name] }))}
+                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: isExpanded ? "#EDE9FE" : "#FFF", color: isExpanded ? "#7C3AED" : "#64748B", cursor: "pointer", marginLeft: "4px" }}
+                          title={isExpanded ? "Ocultar prévia de produtos" : "Ver produtos nesta categoria"}
+                        >
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Prévia dos Produtos (Itens e Combos juntos) */}
+                    {isExpanded && (
+                      <div style={{ padding: "8px 12px", background: "#FFFFFF" }}>
+                        {catProds.length === 0 ? (
+                          <div style={{ padding: "8px", fontSize: "0.78rem", color: "#94A3B8", fontStyle: "italic" }}>
+                            Nenhum produto cadastrado nesta categoria.
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                            {catProds.map(p => (
+                              <div
+                                key={p.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "6px 10px",
+                                  background: p.active ? "#F8FAFC" : "#FEF2F2",
+                                  borderRadius: "8px",
+                                  border: "1px solid #E2E8F0",
+                                  gap: "8px",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                                  {p.imageUrl ? (
+                                    <img src={p.imageUrl} alt={p.name} style={{ width: "32px", height: "32px", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />
+                                  ) : (
+                                    <div style={{ width: "32px", height: "32px", background: "#E2E8F0", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.8rem" }}>
+                                      {p.isCombo ? "📦" : "🍔"}
+                                    </div>
+                                  )}
+                                  <div style={{ minWidth: 0 }}>
+                                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#1E293B", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "340px" }}>
+                                      {p.name}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                                  <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "2px 6px", borderRadius: "4px", background: p.isCombo ? "#EFF6FF" : "#F1F5F9", color: p.isCombo ? "#1D4ED8" : "#475569" }}>
+                                    {p.isCombo ? "COMBO" : "ITEM"}
+                                  </span>
+                                  {!p.active && (
+                                    <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "2px 6px", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626" }}>
+                                      PAUSADO
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: "0.85rem", fontWeight: 900, color: "#E8360C" }}>
+                                    R$ {p.price.toFixed(2).replace(".", ",")}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0" }}>
               <button
+                type="button"
                 onClick={() => setShowReorderModal(false)}
-                style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "1.5px solid #CBD5E1", background: "#FFF", fontWeight: 700, color: "#64748B", cursor: "pointer" }}
+                style={{ flex: 1, padding: "11px", borderRadius: "12px", border: "1.5px solid #CBD5E1", background: "#FFF", fontWeight: 700, color: "#64748B", cursor: "pointer" }}
               >
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={() => handleSaveReorder()}
                 disabled={savingReorder}
-                style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #7C3AED, #6D28D9)", color: "#FFF", fontWeight: 800, cursor: savingReorder ? "not-allowed" : "pointer" }}
+                style={{ flex: 2, padding: "11px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #7C3AED, #6D28D9)", color: "#FFF", fontWeight: 900, cursor: savingReorder ? "not-allowed" : "pointer", boxShadow: "0 4px 14px rgba(124,58,237,0.35)", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
               >
-                {savingReorder ? "Salvando..." : "💾 Salvar Ordem do Cardápio"}
+                {savingReorder ? (
+                  <>
+                    <div style={{ width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#FFF", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
+                    Salvando no Cardápio...
+                  </>
+                ) : (
+                  "💾 Salvar Ordem do Cardápio"
+                )}
               </button>
             </div>
           </div>

@@ -97,21 +97,92 @@ export async function PATCH(req: Request) {
   const user = await getUser(session);
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  const { orderedIds } = await req.json();
-  if (!Array.isArray(orderedIds)) {
-    return NextResponse.json({ error: "orderedIds deve ser um array" }, { status: 400 });
+  const body = await req.json();
+  const { orderedIds, orderedCategories } = body;
+  const targetFranchiseeId = user.role === "ADMIN" ? null : user.targetFranchiseeId;
+
+  if (Array.isArray(orderedCategories) && orderedCategories.length > 0) {
+    for (let index = 0; index < orderedCategories.length; index++) {
+      const cat = orderedCategories[index];
+      const catName = (cat.name || "").trim();
+      if (!catName) continue;
+
+      if (cat.id && !cat.id.startsWith("virtual-")) {
+        // Tentar atualizar por ID
+        const updated = await prisma.menuCategory.updateMany({
+          where: { 
+            id: cat.id,
+            ...(targetFranchiseeId ? { franchiseeId: targetFranchiseeId } : {})
+          },
+          data: { 
+            sortOrder: index,
+            ...(cat.emoji ? { emoji: cat.emoji } : {}),
+            ...(cat.color ? { color: cat.color } : {})
+          }
+        });
+        if (updated.count > 0) continue;
+      }
+
+      // Se não encontrou por ID ou ID é virtual, buscar por nome
+      const existing = await prisma.menuCategory.findFirst({
+        where: {
+          name: { equals: catName, mode: "insensitive" },
+          ...(targetFranchiseeId ? { franchiseeId: targetFranchiseeId } : {})
+        }
+      });
+
+      if (existing) {
+        await prisma.menuCategory.update({
+          where: { id: existing.id },
+          data: { 
+            sortOrder: index,
+            ...(cat.emoji ? { emoji: cat.emoji } : {}),
+            ...(cat.color ? { color: cat.color } : {})
+          }
+        });
+      } else {
+        await prisma.menuCategory.create({
+          data: {
+            name: catName,
+            emoji: cat.emoji || "🍽️",
+            color: cat.color || "#64748B",
+            sortOrder: index,
+            franchiseeId: targetFranchiseeId
+          }
+        });
+      }
+    }
+
+    const categories = await prisma.menuCategory.findMany({
+      where: user.role === "ADMIN" ? {} : { franchiseeId: user.targetFranchiseeId },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
+    return NextResponse.json({ success: true, categories });
   }
 
-  await prisma.$transaction(
-    orderedIds.map((id: string, index: number) =>
-      prisma.menuCategory.update({
-        where: { id },
+  if (Array.isArray(orderedIds)) {
+    for (let index = 0; index < orderedIds.length; index++) {
+      const id = orderedIds[index];
+      if (!id || id.startsWith("virtual-")) continue;
+      await prisma.menuCategory.updateMany({
+        where: { 
+          id,
+          ...(targetFranchiseeId ? { franchiseeId: targetFranchiseeId } : {})
+        },
         data: { sortOrder: index }
-      })
-    )
-  );
+      });
+    }
 
-  return NextResponse.json({ success: true });
+    const categories = await prisma.menuCategory.findMany({
+      where: user.role === "ADMIN" ? {} : { franchiseeId: user.targetFranchiseeId },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
+    return NextResponse.json({ success: true, categories });
+  }
+
+  return NextResponse.json({ error: "orderedCategories ou orderedIds é obrigatório" }, { status: 400 });
 }
 
 // DELETE — excluir categoria
