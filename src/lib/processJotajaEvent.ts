@@ -125,26 +125,42 @@ export async function processJotajaEvent(
       }
       const orderData = await orderRes.json();
 
-      // Resolve franqueado — MULTI-TENANT: resolução estrita por merchantId, sem fallbacks hardcoded
-      let franchisee = targetFranchiseeId
-        ? await prisma.user.findUnique({ where: { id: targetFranchiseeId } })
-        : null;
+      // Resolve franqueado — MULTI-TENANT: resolução estrita por merchantId
+      const eventMerchantId = orderData.merchant?.id;
+      let franchisee: any = null;
 
+      // 1. Prioridade absoluta: buscar loja que possui exatamente o jotajaMerchantId do evento
+      if (eventMerchantId) {
+        franchisee = await prisma.user.findFirst({
+          where: {
+            jotajaMerchantId: eventMerchantId,
+            NOT: { email: { startsWith: "deleted_" } },
+          } as any,
+        });
+      }
+
+      // 2. Se não encontrou por merchantId e temos targetFranchiseeId, verificar se o target é compatível
+      if (!franchisee && targetFranchiseeId) {
+        const candidate = await prisma.user.findUnique({ where: { id: targetFranchiseeId } });
+        if (candidate) {
+          if (candidate.email === "contatohakim@gmail.com" || candidate.jotajaMerchantId === eventMerchantId) {
+            franchisee = candidate;
+          }
+        }
+      }
+
+      // 3. Fallback estrito: se o merchant for o configurado no ENV (Hakim)
       if (!franchisee) {
-        // Resolver pelo merchantId do evento — cada loja tem seu merchantId único
-        const eventMerchantId = orderData.merchant?.id;
-        if (eventMerchantId) {
+        const envMerchantId = process.env.JOTAJA_MERCHANT_ID || "14800";
+        if (!eventMerchantId || eventMerchantId === envMerchantId) {
           franchisee = await prisma.user.findFirst({
-            where: {
-              jotajaMerchantId: eventMerchantId,
-              jotajaConnected: true,
-              NOT: { email: { startsWith: "deleted_" } },
-            } as any,
+            where: { email: "contatohakim@gmail.com" }
           });
         }
       }
+
       if (!franchisee) {
-        return { action: "error", orderId, message: `Nenhuma loja com merchantId correspondente (merchant: ${orderData.merchant?.id || "N/A"})` };
+        return { action: "error", orderId, message: `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"})` };
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;

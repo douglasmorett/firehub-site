@@ -43,20 +43,26 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Fallback: se nenhuma loja tem credenciais no banco, usar env vars
-    // (compatibilidade com configuração atual onde credenciais estão no .env)
+    // Fallback: se nenhuma loja tem credenciais no banco, usar env vars do Hakim
     const envClientId = process.env.JOTAJA_CLIENT_ID;
     const envClientSecret = process.env.JOTAJA_CLIENT_SECRET;
+    const envMerchantId = process.env.JOTAJA_MERCHANT_ID || "14800";
 
     if (stores.length === 0 && envClientId && envClientSecret) {
-      // Buscar a primeira loja com jotajaConnected = true (sem credenciais no banco)
+      // Buscar explicitamente a loja do Hakim
       const fallbackStore = await prisma.user.findFirst({
-        where: { jotajaConnected: true, NOT: { email: { startsWith: "deleted_" } } },
+        where: {
+          OR: [
+            { email: "contatohakim@gmail.com" },
+            { jotajaMerchantId: envMerchantId }
+          ],
+          NOT: { email: { startsWith: "deleted_" } }
+        },
         select: { id: true, email: true, storeName: true, ownerId: true, jotajaMerchantId: true },
       });
       if (fallbackStore) {
         stores.push(fallbackStore as any);
-        log.push(`⚠️ Usando credenciais ENV para ${fallbackStore.storeName || fallbackStore.email} (sem clientId no banco)`);
+        log.push(`⚠️ Usando credenciais ENV para ${fallbackStore.storeName || fallbackStore.email}`);
       }
     }
 
