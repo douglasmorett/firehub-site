@@ -1,26 +1,13 @@
-require('dotenv').config({ path: '.env.local' });
-const { PrismaClient } = require('@prisma/client');
-const p = new PrismaClient();
-
-async function main() {
-  const activeOrders = await p.customerOrder.findMany({
-    where: {
-      NOT: { status: { in: ['ENTREGUE', 'CANCELADO', 'ENCERRADO'] } }
-    },
-    select: {
-      id: true,
-      ifoodReference: true,
-      openDeliveryReference: true,
-      customerName: true,
-      status: true,
-      deliveryType: true,
-      franchiseeId: true,
-      createdAt: true
+const fs = require('fs');
+['.env.local', '.env.clean', '.env.prod.real', '.env.production.local'].forEach(f => {
+  if (fs.existsSync(f)) {
+    const c = fs.readFileSync(f, 'utf8');
+    const lines = c.split('\n');
+    for (const l of lines) {
+      if (l.startsWith('DATABASE_URL=')) {
+        const val = l.replace('DATABASE_URL=', '').replace(/"/g, '').trim();
+        console.log(f, 'length:', val.length, 'starts with:', val.substring(0, 20));
+      }
     }
-  });
-
-  console.log("\n=== ACTIVE ORDERS IN DB ===");
-  console.log(JSON.stringify(activeOrders, null, 2));
-}
-
-main().catch(console.error).finally(() => p.$disconnect());
+  }
+});
