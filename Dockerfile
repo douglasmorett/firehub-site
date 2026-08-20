@@ -47,8 +47,13 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
+# Copy cron-runner and entrypoint
+COPY --chown=nextjs:nodejs scripts/cron-runner.js ./scripts/cron-runner.js
+COPY --chown=nextjs:nodejs scripts/entrypoint.sh ./scripts/entrypoint.sh
+RUN chmod +x ./scripts/entrypoint.sh
+
 USER nextjs
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["sh", "./scripts/entrypoint.sh"]
