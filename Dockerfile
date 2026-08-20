@@ -1,17 +1,17 @@
 # syntax=docker/dockerfile:1
 FROM node:20-alpine AS base
 
-# Step 1: Install dependencies
+# Step 1: Install ALL dependencies (dev + prod)
 FROM base AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
-ENV NODE_ENV=development
-
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
 
-RUN npm ci --include=dev
+# Forçar instalação de TODAS as dependências (dev incluso)
+# Ignora qualquer NODE_ENV externo
+RUN NODE_ENV=development npm ci
 
 # Step 2: Build application
 FROM base AS builder
@@ -22,13 +22,13 @@ COPY . .
 # Generate Prisma Client
 RUN npx prisma generate
 
-# Build Next.js with standalone output
+# Build Next.js standalone (sem rodar prisma db push)
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
 RUN npx next build
 
-# Step 3: Production runner
+# Step 3: Production runner (imagem final leve)
 FROM base AS runner
+RUN apk add --no-cache openssl
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -44,6 +44,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 USER nextjs
 
