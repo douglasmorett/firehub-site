@@ -311,12 +311,18 @@
 }
 
 .product-combo-tag {
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  background: #FEF3C7;
-  color: #D97706;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+  letter-spacing: 0.02em;
+  margin-left: 6px;
 }
 
 .product-desc {

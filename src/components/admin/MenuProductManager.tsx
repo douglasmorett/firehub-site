@@ -45,7 +45,7 @@ export default function MenuProductManager({
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"items" | "combos" | "all">("items");
+  const [tab, setTab] = useState<"all" | "items" | "combos">("all");
 
   // Helper para identificar categorias de integração ocultas
   const isIntegrationCategory = (catName: string) => {
@@ -963,14 +963,14 @@ export default function MenuProductManager({
       {/* TABS E BOTÕES DE AÇÃO SUPERIOR (iFood style) */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 800 }} title="Ver cardápio completo com itens e combos agrupados por categoria, exatamente como no site e no iFood">
+            📋 Cardápio Completo ({products.filter(p => !isHiddenIntegrationItem(p)).length})
+          </button>
           <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
-            🍔 Itens Avulsos ({itemProducts.length})
+            🍔 Apenas Itens ({itemProducts.length})
           </button>
           <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
-            <Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
-          </button>
-          <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }} title="Ver cardápio completo com itens e combos agrupados por categoria, exatamente como no site">
-            <Eye size={16} style={{ marginRight: "4px" }} /> Visão do Site ({products.filter(p => !isHiddenIntegrationItem(p)).length})
+            <Package size={16} style={{ marginRight: "4px" }} /> Apenas Combos ({comboProducts.length})
           </button>
         </div>
 
@@ -1876,13 +1876,17 @@ export default function MenuProductManager({
                                 <div style={{ minWidth: 0, flex: 1 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                                     <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 800, color: "#0F172A" }}>{p.name}</h4>
-                                    {p.isCombo && (
-                                      <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "1px 6px", borderRadius: "4px", background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}>
-                                        COMBO {p.comboGroups?.length ? `• ${p.comboGroups.length} grupos` : ""}
+                                    {p.isCombo ? (
+                                      <span style={{ fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: "6px", background: "#EFF6FF", color: "#1D4ED8", border: "1.5px solid #93C5FD", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                        📦 COMBO {p.comboGroups?.length ? `• ${p.comboGroups.length} grupos` : ""}
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "2px 6px", borderRadius: "6px", background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0" }}>
+                                        🍔 ITEM
                                       </span>
                                     )}
                                     {!p.active && (
-                                      <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "1px 6px", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA" }}>
+                                      <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "2px 6px", borderRadius: "6px", background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA" }}>
                                         ⏸️ PAUSADO
                                       </span>
                                     )}

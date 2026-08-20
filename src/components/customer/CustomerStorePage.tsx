@@ -2287,7 +2287,7 @@ export default function CustomerStorePage({
                       <div className="product-info">
                         <div className="product-name">
                           {p.name}
-                          {p.isCombo && <span className="product-combo-tag">COMBO</span>}
+                          {p.isCombo && <span className="product-combo-tag">📦 COMBO</span>}
                         </div>
                         {p.description && <p className="product-desc">{p.description}</p>}
                         {(p as any).tags && (() => {
