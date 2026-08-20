@@ -10,6 +10,7 @@ export default function IntegracoesHubClient({
   facebookPixelId: initialFacebookPixelId,
   pagarmeRecipientId,
   mpConnected,
+  initialIfoodIntegrations,
 }: {
   ifoodMerchantId?: string;
   ifoodClientId?: string;
@@ -18,6 +19,7 @@ export default function IntegracoesHubClient({
   facebookPixelId?: string;
   pagarmeRecipientId?: string;
   mpConnected?: boolean;
+  initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
   const [openModal, setOpenModal] = useState<"pixel" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | null>(null);
@@ -50,8 +52,8 @@ export default function IntegracoesHubClient({
   const [ifMerchant, setIfMerchant] = useState(ifoodMerchantId || "");
   const [ifWidget, setIfWidget] = useState(ifoodWidgetId || "");
   const [ifSaving, setIfSaving] = useState(false);
-  const [ifoodIntegrations, setIfoodIntegrations] = useState<{id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[]>([]);
-  const [ifoodLoading, setIfoodLoading] = useState(true);
+  const [ifoodIntegrations, setIfoodIntegrations] = useState<{id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[]>(initialIfoodIntegrations || []);
+  const [ifoodLoading, setIfoodLoading] = useState(!initialIfoodIntegrations || initialIfoodIntegrations.length === 0);
   const [newIfLabel, setNewIfLabel] = useState("");
   const [newIfMerchantId, setNewIfMerchantId] = useState("");
   const [newIfWidgetId, setNewIfWidgetId] = useState("");
@@ -890,25 +892,25 @@ export default function IntegracoesHubClient({
                   </div>
                 )}
 
-                {/* Campo para colar o Código de Autorização retornado pelo iFood */}
+                {/* Campo para colar o Código de Autorização ou Merchant UUID */}
                 <div style={{ padding: "16px", borderRadius: 14, background: "#F0FDF4", border: "1.5px solid #86EFAC", marginBottom: "16px" }}>
                   <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#166534", marginBottom: 4 }}>
-                    🔑 2. Cole o Código de Autorização do iFood (ex: TMFG-KNLN):
+                    🔑 2. Cole o Código de Autorização OU Merchant ID do iFood:
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "#15803D", marginBottom: 10 }}>
-                    Cole abaixo o código exibido na janela <strong>"Aplicativo Autorizado"</strong> do iFood para concluir a vinculação.
+                    Cole o código gerado na janela <strong>"Aplicativo Autorizado"</strong> ou o <strong>Merchant UUID</strong> da sua loja no iFood (ex: <code>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>).
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input
                       type="text"
-                      placeholder="Ex: TMFG-KNLN"
+                      placeholder="Ex: TMFG-KNLN ou ID da Loja (UUID)"
                       value={authCodeInput}
-                      onChange={e => setAuthCodeInput(e.target.value.toUpperCase())}
+                      onChange={e => setAuthCodeInput(e.target.value.trim())}
                       style={{
                         flex: 1, padding: "10px 14px", borderRadius: 10,
-                        border: "1.5px solid #86EFAC", fontSize: "0.95rem",
-                        fontWeight: 800, fontFamily: "monospace", letterSpacing: "1px",
-                        outline: "none", textTransform: "uppercase"
+                        border: "1.5px solid #86EFAC", fontSize: "0.88rem",
+                        fontWeight: 700, fontFamily: "monospace",
+                        outline: "none"
                       }}
                     />
                     <button

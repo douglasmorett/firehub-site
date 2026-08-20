@@ -16,9 +16,11 @@ export default async function IntegracoesPage() {
     where: { email: session.user?.email || "" },
     select: {
       id: true,
+      ownerId: true,
       email: true,
       ifoodWidgetId: true,
       ifoodMerchantId: true,
+      ifoodConnected: true,
       facebookPixelId: true,
       metaPixelId: true,
       pagarmeRecipientId: true,
@@ -29,15 +31,36 @@ export default async function IntegracoesPage() {
     },
   });
 
+  const franchiseeId = user?.ownerId || user?.id;
+
+  const ifoodIntegrations = franchiseeId
+    ? await prisma.ifoodIntegration.findMany({
+        where: { userId: franchiseeId },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          label: true,
+          merchantId: true,
+          connected: true,
+          active: true,
+          widgetId: true,
+          createdAt: true,
+        },
+      })
+    : [];
+
+  const effectiveMerchantId = user?.ifoodMerchantId || ifoodIntegrations[0]?.merchantId || "";
+
   return (
     <IntegracoesHubClient
       userEmail={session.user?.email || ""}
-      ifoodMerchantId={user?.ifoodMerchantId || ""}
+      ifoodMerchantId={effectiveMerchantId}
       ifoodClientId={clientId}
       ifoodWidgetId={user?.ifoodWidgetId || undefined}
       facebookPixelId={user?.facebookPixelId || user?.metaPixelId || ""}
       pagarmeRecipientId={user?.pagarmeRecipientId || undefined}
       mpConnected={!!(user?.mpAccessToken || user?.mpSellerId)}
+      initialIfoodIntegrations={JSON.parse(JSON.stringify(ifoodIntegrations))}
     />
   );
 }

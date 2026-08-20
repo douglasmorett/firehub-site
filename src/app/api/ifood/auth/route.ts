@@ -109,17 +109,38 @@ export async function POST(req: NextRequest) {
   // Se o usuário digitou diretamente um Merchant UUID (formato 8-4-4-4-12)
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCode);
   if (isUuid && session.user?.email) {
-    await prisma.user.update({
+    const userRec = await prisma.user.findUnique({
       where: { email: session.user.email },
-      data: {
-        ifoodConnected: true,
-        ifoodMerchantId: rawCode,
-      },
+      select: { id: true, name: true, storeName: true }
     });
+    if (userRec) {
+      await prisma.user.update({
+        where: { email: session.user.email },
+        data: {
+          ifoodConnected: true,
+          ifoodMerchantId: rawCode,
+        },
+      });
+      try {
+        await prisma.ifoodIntegration.upsert({
+          where: { userId_merchantId: { userId: userRec.id, merchantId: rawCode } },
+          create: {
+            userId: userRec.id,
+            label: userRec.storeName || userRec.name || "Loja Principal",
+            merchantId: rawCode,
+            connected: true,
+            active: true,
+          },
+          update: { connected: true, active: true },
+        });
+      } catch (e: any) {
+        console.warn("[iFood Auth] Aviso ao salvar ifoodIntegration por UUID:", e?.message);
+      }
+    }
     return NextResponse.json({
       success: true,
       merchantId: rawCode,
-      message: "Merchant ID salvo com sucesso!",
+      message: "Loja iFood conectada com sucesso!",
     });
   }
 
