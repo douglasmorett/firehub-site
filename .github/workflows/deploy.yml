@@ -1,0 +1,19 @@
+name: Deploy to Coolify
+
+on:
+  push:
+    branches: [master, main]
+
+jobs:
+  deploy:
+    name: Trigger Coolify Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to DigitalOcean via Coolify
+        run: |
+          curl -X POST "http://107.170.79.194:8000/api/v1/deploy" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"uuid":"binibyxzlgkm4qhfcydy6ocj","force":false}' \
+            --max-time 30
+          echo "✅ Deploy triggered successfully!"
