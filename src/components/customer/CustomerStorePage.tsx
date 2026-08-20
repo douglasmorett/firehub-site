@@ -292,13 +292,15 @@ export default function CustomerStorePage({
   }, [storeRating]);
 
   const filtered = useMemo(() => {
+    if (!searchTerm) return activeTodayProducts;
+    const s = searchTerm.toLowerCase().trim();
     return activeTodayProducts.filter(p => {
-      const pCat = (p.category || "").trim();
-      const mc = selectedCategory === "Todos" || pCat.toLowerCase() === selectedCategory.trim().toLowerCase();
-      const ms = !searchTerm || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description?.toLowerCase().includes(searchTerm.toLowerCase());
-      return mc && ms;
+      const pCat = (p.category || "").toLowerCase();
+      const pName = p.name.toLowerCase();
+      const pDesc = (p.description || "").toLowerCase();
+      return pName.includes(s) || pDesc.includes(s) || pCat.includes(s);
     });
-  }, [activeTodayProducts, selectedCategory, searchTerm]);
+  }, [activeTodayProducts, searchTerm]);
 
   const grouped: Record<string, MenuProduct[]> = useMemo(() => {
     const g: Record<string, MenuProduct[]> = {};
@@ -487,21 +489,54 @@ export default function CustomerStorePage({
   const clearCart = () => setCart([]);
   const getQty = (id: string) => cart.find(i => i.id === id)?.quantity || 0;
 
+  const isManualScrollRef = useRef(false);
+
   const scrollToCategory = (cat: string) => {
     setSelectedCategory(cat);
+    isManualScrollRef.current = true;
     if (cat === "Todos") {
       window.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => { isManualScrollRef.current = false; }, 600);
       return;
     }
-    setTimeout(() => {
-      const el = sectionRefs.current[cat] || sectionRefs.current[cat.trim()];
-      if (el) {
-        const yOffset = -140;
-        const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset;
-        window.scrollTo({ top: y, behavior: "smooth" });
-      }
-    }, 50);
+    const el = sectionRefs.current[cat] || sectionRefs.current[cat.trim()];
+    if (el) {
+      const yOffset = -120;
+      const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset;
+      window.scrollTo({ top: y, behavior: "smooth" });
+      setTimeout(() => { isManualScrollRef.current = false; }, 600);
+    } else {
+      isManualScrollRef.current = false;
+    }
   };
+
+  // Scroll Spy: destaca a aba da categoria atual conforme o cliente rola a página
+  useEffect(() => {
+    if (searchTerm) return;
+    const handleScroll = () => {
+      if (isManualScrollRef.current) return;
+      const scrollPos = window.scrollY + 160;
+      if (scrollPos < 380) {
+        if (selectedCategory !== "Todos") setSelectedCategory("Todos");
+        return;
+      }
+      for (let i = categories.length - 1; i >= 0; i--) {
+        const cat = categories[i];
+        if (cat === "Todos") continue;
+        const el = sectionRefs.current[cat] || sectionRefs.current[cat.trim()];
+        if (el) {
+          const top = el.getBoundingClientRect().top + window.pageYOffset;
+          if (scrollPos >= top) {
+            if (selectedCategory !== cat) setSelectedCategory(cat);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [categories, searchTerm, selectedCategory]);
 
   const fetchMyOrders = async (phoneToFetch?: string) => {
     const raw = phoneToFetch || myOrdersPhone || customer?.phone || customerPhone;
@@ -2204,7 +2239,7 @@ export default function CustomerStorePage({
                     >
                       {p.imageUrl && (
                         <div style={{ width: "100%", height: "180px", overflow: "hidden", position: "relative", backgroundColor: "#F8FAFC" }}>
-                          <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain", padding: "4px" }} />
+                          <img src={p.imageUrl} alt={p.name} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain", padding: "4px" }} />
                           {p.isCombo && (
                             <span style={{ position: "absolute", top: "10px", left: "10px", background: "rgba(15,23,42,0.85)", color: "#fff", padding: "3px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800 }}>
                               COMBO
@@ -2283,7 +2318,7 @@ export default function CustomerStorePage({
                   const q = getQty(p.id);
                   return (
                     <div key={p.id} className={`product-card ${q > 0 ? "in-cart" : ""}`} onClick={() => p.isCombo ? setComboProduct(p) : q === 0 && addToCart(p)}>
-                      {p.imageUrl && <img src={p.imageUrl} alt="" className="product-img" />}
+                      {p.imageUrl && <img src={p.imageUrl} alt="" className="product-img" loading="lazy" decoding="async" />}
                       <div className="product-info">
                         <div className="product-name">
                           {p.name}

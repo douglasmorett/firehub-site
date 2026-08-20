@@ -60,7 +60,9 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
 
   if (!franchisee) notFound();
 
-  const [menuProducts, storeCategories] = await Promise.all([
+  const showReviews = (franchisee as any).showReviewsOnMenu !== false;
+
+  const [menuProducts, storeCategories, reviewsData, recentReviews] = await Promise.all([
     prisma.menuProduct.findMany({
       where: { active: true, franchiseeId: franchisee.id },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
@@ -81,31 +83,32 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       where: { franchiseeId: franchisee.id },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
+    showReviews
+      ? prisma.storeReview.aggregate({
+          where: { franchiseeId: franchisee.id },
+          _avg: { rating: true },
+          _count: { rating: true }
+        })
+      : Promise.resolve(null),
+    showReviews
+      ? prisma.storeReview.findMany({
+          where: { franchiseeId: franchisee.id, comment: { not: null } },
+          orderBy: { createdAt: "desc" },
+          take: 15,
+          include: {
+            customer: { select: { name: true } },
+            order: { select: { customerName: true } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
-  // Get store reviews if enabled
   let storeRating = undefined;
-  if ((franchisee as any).showReviewsOnMenu !== false) {
-    const reviewsData = await prisma.storeReview.aggregate({
-      where: { franchiseeId: franchisee.id },
-      _avg: { rating: true },
-      _count: { rating: true }
-    });
-
-    const recentReviews = await prisma.storeReview.findMany({
-      where: { franchiseeId: franchisee.id, comment: { not: null } },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      include: {
-        customer: { select: { name: true } },
-        order: { select: { customerName: true } },
-      },
-    });
-
+  if (showReviews && reviewsData) {
     storeRating = {
-      average: reviewsData._avg.rating || 0,
-      count: reviewsData._count.rating || 0,
-      reviews: recentReviews.map(r => ({
+      average: reviewsData._avg?.rating || 0,
+      count: reviewsData._count?.rating || 0,
+      reviews: (recentReviews || []).map((r: any) => ({
         rating: r.rating,
         comment: r.comment || "",
         customerName: r.order?.customerName || r.customer?.name || "Cliente",
