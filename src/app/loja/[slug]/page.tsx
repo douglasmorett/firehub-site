@@ -118,15 +118,11 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   }
 
   return (
-    <>
-      {/* Mercado Pago SDK — tokenização de cartão no cliente (PCI Compliant) */}
-      <script src="https://sdk.mercadopago.com/js/v2" async />
-      <CustomerStorePage 
-        franchisee={franchisee as any} 
-        menuProducts={menuProducts as any} 
-        storeCategories={storeCategories as any}
-        storeRating={storeRating} 
-      />
-    </>
+    <CustomerStorePage 
+      franchisee={franchisee as any} 
+      menuProducts={menuProducts as any} 
+      storeCategories={storeCategories as any}
+      storeRating={storeRating} 
+    />
   );
 }
