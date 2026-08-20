@@ -258,9 +258,14 @@ export default function IntegracoesHubClient({
       const data = await res.json();
       if (res.ok && data.success) {
         showToast("🎉 Loja iFood vinculada com sucesso!", "#10B981");
-        setIfMerchant(data.merchantId || "");
+        const linkedMerchantId = data.merchantId || authCodeInput.trim();
+        setIfMerchant(linkedMerchantId);
+        setIfoodIntegrations(prev => [
+          { id: "main", label: "Loja Principal", merchantId: linkedMerchantId, connected: true, active: true, createdAt: new Date().toISOString() },
+          ...prev.filter(i => i.merchantId !== linkedMerchantId)
+        ]);
         setOpenModal(null);
-        window.location.reload();
+        setTimeout(() => { window.location.reload(); }, 600);
       } else {
         showToast(data.error || "Código de autorização inválido ou expirado", "#EF4444");
       }
