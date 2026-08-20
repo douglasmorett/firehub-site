@@ -6,10 +6,12 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
+ENV NODE_ENV=development
+
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
 
-RUN npm ci
+RUN npm ci --include=dev
 
 # Step 2: Build application
 FROM base AS builder
@@ -23,7 +25,7 @@ RUN npx prisma generate
 # Build Next.js with standalone output
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-RUN npm run build
+RUN npx next build
 
 # Step 3: Production runner
 FROM base AS runner
