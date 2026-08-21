@@ -6,6 +6,7 @@ import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
+import { isStoreOpen } from "@/lib/store-hours";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -248,32 +249,6 @@ const COLUMN_STATUS_MAP: Record<string, string> = {
   "col-finalizado": "ENTREGUE",
   "col-cancelados": "CANCELADO"
 };
-
-function isStoreOpen(hours: any[]): { open: boolean; text: string } {
-  if (!hours || !Array.isArray(hours)) return { open: true, text: "Sem horário" };
-  const now = new Date();
-  const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
-  const today = hours[dayIdx];
-  if (!today || !today.active) return { open: false, text: "Fechado hoje" };
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-
-  if (Array.isArray(today.shifts) && today.shifts.length > 0) {
-    const activeShifts = today.shifts.filter((s: any) => s.open && s.close && s.active !== false);
-    for (const shift of activeShifts) {
-      const [oh, om] = (shift.open || "").split(":").map(Number);
-      const [ch, cm] = (shift.close || "").split(":").map(Number);
-      if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${shift.close}` };
-    }
-    return { open: false, text: "Fechado" };
-}
-
-  if (today.open && today.close) {
-    const [oh, om] = today.open.split(":").map(Number);
-    const [ch, cm] = today.close.split(":").map(Number);
-    if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${today.close}` };
-  }
-  return { open: false, text: "Fechado" };
-}
 
 const DashboardColumn = memo(function DashboardColumn({
   columnId,

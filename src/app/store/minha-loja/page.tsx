@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import MinhaLojaClient from "@/components/customer/MinhaLojaClient";
+import { normalizeStoreHours } from "@/lib/store-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export default async function StoreSettingsPage() {
       storeAddress: storeOwner.storeAddress || "",
       storeBanner: storeOwner.storeBanner || "",
       storeLogo: storeOwner.storeLogo || "",
-      storeHours: storeOwner.storeHours || null,
+      storeHours: normalizeStoreHours(storeOwner.storeHours),
       storePause: (storeOwner as any).storePause || null,
       storeCoupons: (storeOwner as any).storeCoupons || [],
       paymentFees: storeOwner.paymentFees || null,

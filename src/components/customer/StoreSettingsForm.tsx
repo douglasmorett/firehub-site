@@ -4,9 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle, ShieldCheck, Truck } from "lucide-react";
 
-const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
-// Padrão 18h-23h — foco em delivery de jantar, igual Brendi
-const defaultHours = () => DAYS.map(d => ({ day: d, open: "18:00", close: "23:00", active: true, shifts: [{ open: "18:00", close: "23:00" }] }));
+import { DAYS, DAY_MAP, normalizeStoreHours, defaultHours } from "@/lib/store-hours";
 
 type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "fixed" | "free_shipping"; minOrderValue?: number; active: boolean };
 
@@ -35,12 +33,12 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [storeLogo, setStoreLogo] = useState(user.storeLogo || "");
   const [storeDeliveryOnly, setStoreDeliveryOnly] = useState(user.storeDeliveryOnly || false);
   const [showAddressOnMenu, setShowAddressOnMenu] = useState<boolean>(user.showAddressOnMenu !== false);
-  const [storeHours, setStoreHours] = useState<any[]>(user.storeHours || defaultHours());
-  const [coupons, setCoupons] = useState<Coupon[]>(user.storeCoupons || []);
+  const [storeHours, setStoreHours] = useState<any[]>(() => normalizeStoreHours(user.storeHours));
+  const [coupons, setCoupons] = useState<Coupon[]>(() => (Array.isArray(user.storeCoupons) ? user.storeCoupons : []));
   // Agendar Pausa
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [pauseActive, setPauseActive] = useState<boolean>(false);
-  const [pauseSavedActive, setPauseSavedActive] = useState<boolean>(false);
+  const [pauseActive, setPauseActive] = useState<boolean>(Boolean(user.storePause?.active));
+  const [pauseSavedActive, setPauseSavedActive] = useState<boolean>(Boolean(user.storePause?.active));
   const [pauseFrom, setPauseFrom] = useState<string>(user.storePause?.from || todayStr);
   const [pauseTo, setPauseTo] = useState<string>(user.storePause?.to || todayStr);
   const [pauseReason, setPauseReason] = useState<string>(user.storePause?.reason || "Férias");
@@ -138,10 +136,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [loading, setLoading] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
-  const storeUrl = `${window.location.origin}/loja/${user.slug}`;
+  const storeUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/loja/${user.slug}`;
   // Delivery zones
   const [deliveryZoneType, setDeliveryZoneType] = useState<string>(user.deliveryZoneType || "");
-  const [deliveryZones, setDeliveryZones] = useState<any[]>(user.deliveryZones || []);
+  const [deliveryZones, setDeliveryZones] = useState<any[]>(() => (Array.isArray(user.deliveryZones) ? user.deliveryZones : []));
 
   // Frete grátis por valor mínimo
   const initialDelivConfig = (user as any).deliveryConfig || {};
@@ -161,24 +159,25 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     else throw new Error("Erro ao salvar");
   };
 
-  const DAY_MAP: Record<string, string> = {
-    "Segunda": "MONDAY", "Terça": "TUESDAY", "Quarta": "WEDNESDAY",
-    "Quinta": "THURSDAY", "Sexta": "FRIDAY", "Sábado": "SATURDAY", "Domingo": "SUNDAY"
-  };
-
   const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, notificationPhone, storeAddress, storeDeliveryOnly, showAddressOnMenu, city, storeTimezone }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
 
   // Valida sobreposição de turnos no mesmo dia
   const validateShifts = (): string | null => {
+    if (!Array.isArray(storeHours)) return null;
     for (const h of storeHours) {
-      if (!h.active) continue;
-      const shifts = h.shifts || [{ open: h.open, close: h.close }];
+      if (!h || !h.active) continue;
+      const rawShifts = Array.isArray(h.shifts) && h.shifts.length > 0 ? h.shifts : [{ open: h.open, close: h.close }];
+      const shifts = rawShifts.filter((s: any) => s && s.open && s.close);
       for (let i = 0; i < shifts.length; i++) {
-        const [aStart] = [shifts[i].open].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
-        const [aEnd] = [shifts[i].close].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
+        const aOpen = (shifts[i].open || "00:00").split(":").map(Number);
+        const aClose = (shifts[i].close || "00:00").split(":").map(Number);
+        const aStart = (aOpen[0] || 0) * 60 + (aOpen[1] || 0);
+        const aEnd = (aClose[0] || 0) * 60 + (aClose[1] || 0);
         for (let j = i + 1; j < shifts.length; j++) {
-          const [bStart] = [shifts[j].open].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
-          const [bEnd] = [shifts[j].close].map((t: string) => { const [h,m] = t.split(":").map(Number); return h * 60 + m; });
+          const bOpen = (shifts[j].open || "00:00").split(":").map(Number);
+          const bClose = (shifts[j].close || "00:00").split(":").map(Number);
+          const bStart = (bOpen[0] || 0) * 60 + (bOpen[1] || 0);
+          const bEnd = (bClose[0] || 0) * 60 + (bClose[1] || 0);
           if (aStart < bEnd && bStart < aEnd) {
             return `${h.day}: Turno ${i+1} (${shifts[i].open}-${shifts[i].close}) se sobrepõe ao Turno ${j+1} (${shifts[j].open}-${shifts[j].close}). Insira um horário diferente.`;
           }
@@ -200,21 +199,23 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
       if (syncIfoodHours) {
         try {
           const ifoodShifts: any[] = [];
-          storeHours
-            .filter((h: any) => h.active && DAY_MAP[h.day])
-            .forEach((h: any) => {
-              const shifts = h.shifts || [{ open: h.open, close: h.close }];
-              shifts.forEach((s: any) => {
-                const [oH, oM] = (s.open || "00:00").split(":").map(Number);
-                const [cH, cM] = (s.close || "23:59").split(":").map(Number);
-                const dur = Math.max(1, (cH * 60 + cM) - (oH * 60 + oM));
-                ifoodShifts.push({
-                  dayOfWeek: DAY_MAP[h.day],
-                  start: `${String(oH).padStart(2,"0")}:${String(oM).padStart(2,"0")}:00`,
-                  duration: dur,
+          if (Array.isArray(storeHours)) {
+            storeHours
+              .filter((h: any) => h && h.active && DAY_MAP[h.day])
+              .forEach((h: any) => {
+                const shifts = Array.isArray(h.shifts) && h.shifts.length > 0 ? h.shifts : [{ open: h.open, close: h.close }];
+                shifts.filter((s: any) => s && s.open && s.close).forEach((s: any) => {
+                  const [oH, oM] = (s.open || "00:00").split(":").map(Number);
+                  const [cH, cM] = (s.close || "23:59").split(":").map(Number);
+                  const dur = Math.max(1, ((cH || 0) * 60 + (cM || 0)) - ((oH || 0) * 60 + (oM || 0)));
+                  ifoodShifts.push({
+                    dayOfWeek: DAY_MAP[h.day],
+                    start: `${String(oH || 0).padStart(2,"0")}:${String(oM || 0).padStart(2,"0")}:00`,
+                    duration: dur,
+                  });
                 });
               });
-            });
+          }
           const syncRes = await fetch("/api/ifood/opening-hours", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -471,67 +472,73 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <h3 className="font-bold mb-4">⏰ Horário de Funcionamento</h3>
         <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "0.75rem" }}>Configure múltiplos turnos por dia (ex: Almoço e Jantar)</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          {storeHours.map((h: any, idx: number) => (
-            <div key={idx} style={{ padding: "0.6rem 0.75rem", backgroundColor: h.active ? "#F0FDF4" : "#FEF2F2", borderRadius: "10px", border: `1px solid ${h.active ? "#BBF7D0" : "#FECACA"}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: h.active && h.shifts?.length > 0 ? "0.5rem" : 0 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", minWidth: "90px" }}>
-                  <input type="checkbox" checked={h.active} onChange={e => {
-                    const updated = [...storeHours];
-                    updated[idx] = { ...h, active: e.target.checked, shifts: h.shifts?.length ? h.shifts : [{ open: "10:00", close: "22:00" }] };
-                    setStoreHours(updated);
-                    setDirtyHours(true);
-                  }} />
-                  <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{h.day}</span>
-                </label>
-                {!h.active && <span style={{ fontSize: "0.8rem", color: "#EF4444", fontWeight: 600 }}>Fechado</span>}
-                {h.active && (
-                  <button onClick={() => {
-                    const updated = [...storeHours];
-                    const shifts = [...(h.shifts || [{ open: h.open || "10:00", close: h.close || "22:00" }])];
-                    shifts.push({ open: "18:00", close: "23:00" });
-                    updated[idx] = { ...h, shifts };
-                    setStoreHours(updated);
-                    setDirtyHours(true);
-                  }} style={{ marginLeft: "auto", padding: "2px 8px", borderRadius: "6px", border: "1px solid #BBF7D0", background: "#fff", cursor: "pointer", fontSize: "0.72rem", fontWeight: 600, color: "#16A34A" }}>
-                    + Turno
-                  </button>
-                )}
-              </div>
-              {h.active && (h.shifts || [{ open: h.open || "10:00", close: h.close || "22:00" }]).map((shift: any, sIdx: number) => (
-                <div key={sIdx} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "4px", paddingLeft: "1.5rem" }}>
-                  <span style={{ fontSize: "0.72rem", color: "#64748B", minWidth: "50px" }}>Turno {sIdx + 1}</span>
-                  <input type="time" value={shift.open} onChange={e => {
-                    const updated = [...storeHours];
-                    const shifts = [...(h.shifts || [{ open: h.open, close: h.close }])];
-                    shifts[sIdx] = { ...shifts[sIdx], open: e.target.value };
-                    updated[idx] = { ...h, shifts, open: shifts[0]?.open, close: shifts[shifts.length - 1]?.close };
-                    setStoreHours(updated);
-                    setDirtyHours(true);
-                  }} style={{ padding: "0.3rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
-                  <span style={{ fontSize: "0.8rem" }}>às</span>
-                  <input type="time" value={shift.close} onChange={e => {
-                    const updated = [...storeHours];
-                    const shifts = [...(h.shifts || [{ open: h.open, close: h.close }])];
-                    shifts[sIdx] = { ...shifts[sIdx], close: e.target.value };
-                    updated[idx] = { ...h, shifts, open: shifts[0]?.open, close: shifts[shifts.length - 1]?.close };
-                    setStoreHours(updated);
-                    setDirtyHours(true);
-                  }} style={{ padding: "0.3rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
-                  {(h.shifts?.length || 1) > 1 && (
-                    <button onClick={() => {
+          {Array.isArray(storeHours) && storeHours.map((h: any, idx: number) => {
+            const dayShifts = Array.isArray(h?.shifts) && h.shifts.length > 0
+              ? h.shifts
+              : [{ open: h?.open || "18:00", close: h?.close || "23:00" }];
+            const isActive = h?.active !== false;
+
+            return (
+              <div key={idx} style={{ padding: "0.6rem 0.75rem", backgroundColor: isActive ? "#F0FDF4" : "#FEF2F2", borderRadius: "10px", border: `1px solid ${isActive ? "#BBF7D0" : "#FECACA"}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: isActive && dayShifts.length > 0 ? "0.5rem" : 0 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", minWidth: "90px" }}>
+                    <input type="checkbox" checked={isActive} onChange={e => {
                       const updated = [...storeHours];
-                      const shifts = [...(h.shifts || [])].filter((_, i) => i !== sIdx);
-                      updated[idx] = { ...h, shifts };
+                      updated[idx] = { ...h, active: e.target.checked, shifts: dayShifts.length ? dayShifts : [{ open: "18:00", close: "23:00" }] };
                       setStoreHours(updated);
                       setDirtyHours(true);
-                    }} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#EF4444" }}>
-                      <Trash2 size={13} />
+                    }} />
+                    <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{h?.day}</span>
+                  </label>
+                  {!isActive && <span style={{ fontSize: "0.8rem", color: "#EF4444", fontWeight: 600 }}>Fechado</span>}
+                  {isActive && (
+                    <button type="button" onClick={() => {
+                      const updated = [...storeHours];
+                      const newShifts = [...dayShifts, { open: "18:00", close: "23:00" }];
+                      updated[idx] = { ...h, shifts: newShifts };
+                      setStoreHours(updated);
+                      setDirtyHours(true);
+                    }} style={{ marginLeft: "auto", padding: "2px 8px", borderRadius: "6px", border: "1px solid #BBF7D0", background: "#fff", cursor: "pointer", fontSize: "0.72rem", fontWeight: 600, color: "#16A34A" }}>
+                      + Turno
                     </button>
                   )}
                 </div>
-              ))}
-            </div>
-          ))}
+                {isActive && dayShifts.map((shift: any, sIdx: number) => (
+                  <div key={sIdx} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "4px", paddingLeft: "1.5rem" }}>
+                    <span style={{ fontSize: "0.72rem", color: "#64748B", minWidth: "50px" }}>Turno {sIdx + 1}</span>
+                    <input type="time" value={shift?.open || "18:00"} onChange={e => {
+                      const updated = [...storeHours];
+                      const newShifts = [...dayShifts];
+                      newShifts[sIdx] = { ...newShifts[sIdx], open: e.target.value };
+                      updated[idx] = { ...h, shifts: newShifts, open: newShifts[0]?.open, close: newShifts[newShifts.length - 1]?.close };
+                      setStoreHours(updated);
+                      setDirtyHours(true);
+                    }} style={{ padding: "0.3rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                    <span style={{ fontSize: "0.8rem" }}>às</span>
+                    <input type="time" value={shift?.close || "23:00"} onChange={e => {
+                      const updated = [...storeHours];
+                      const newShifts = [...dayShifts];
+                      newShifts[sIdx] = { ...newShifts[sIdx], close: e.target.value };
+                      updated[idx] = { ...h, shifts: newShifts, open: newShifts[0]?.open, close: newShifts[newShifts.length - 1]?.close };
+                      setStoreHours(updated);
+                      setDirtyHours(true);
+                    }} style={{ padding: "0.3rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                    {dayShifts.length > 1 && (
+                      <button type="button" onClick={() => {
+                        const updated = [...storeHours];
+                        const newShifts = dayShifts.filter((_: any, i: number) => i !== sIdx);
+                        updated[idx] = { ...h, shifts: newShifts };
+                        setStoreHours(updated);
+                        setDirtyHours(true);
+                      }} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#EF4444" }}>
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
         <SectionSaveBtn dirty={dirtyHours} saving={savingHours} onSave={saveHours} label="Salvar Horários" />
         {hoursError && (

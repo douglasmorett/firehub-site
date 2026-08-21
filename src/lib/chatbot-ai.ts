@@ -4,6 +4,7 @@ import fs from "fs";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { GoogleGenAI } from "@google/genai";
 import { trackGeminiUsage } from "@/lib/usage-tracker";
+import { normalizeStoreHours } from "@/lib/store-hours";
 
 function getFirstName(fullName?: string | null): string {
   if (!fullName) return "";
@@ -223,8 +224,8 @@ export async function processChatbotAI(
   // Formatar horários de funcionamento (com suporte a múltiplos turnos por dia)
   let hoursText = "Todos os dias das 18:00 às 23:30.";
   let nowStatusText = "";
-  if (Array.isArray(user.storeHours) && (user.storeHours as any[]).length > 0) {
-    const hoursArr = user.storeHours as any[];
+  if (user.storeHours) {
+    const hoursArr = normalizeStoreHours(user.storeHours);
 
     const formatDayHours = (h: any): string => {
       if (!h || !h.active) return "Fechado";

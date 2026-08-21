@@ -28,6 +28,7 @@ import {
 import ComboModal from "./ComboModal";
 import PaymentGateway from "./PaymentGateway";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
+import { isStoreOpen } from "@/lib/store-hours";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import "./store.css";
 
@@ -84,38 +85,6 @@ type StoreRating = {
   count: number;
   reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[];
 };
-
-function isStoreOpen(hours: any[]): { open: boolean; text: string } {
-  if (!hours || !Array.isArray(hours)) return { open: true, text: "Horário não definido" };
-  const now = new Date();
-  const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
-  const today = hours[dayIdx];
-  if (!today || !today.active) return { open: false, text: "Fechado hoje" };
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-
-  if (Array.isArray(today.shifts) && today.shifts.length > 0) {
-    const activeShifts = today.shifts.filter((s: any) => s.open && s.close && s.active !== false);
-    for (const shift of activeShifts) {
-      const [oh, om] = (shift.open || "").split(":").map(Number);
-      const [ch, cm] = (shift.close || "").split(":").map(Number);
-      if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${shift.close}` };
-    }
-    const nextShift = activeShifts.find((s: any) => {
-      const [oh, om] = (s.open || "").split(":").map(Number);
-      return nowMin < oh * 60 + om;
-    });
-    if (nextShift) return { open: false, text: `Abre às ${nextShift.open}` };
-    return { open: false, text: "Fechado · Abre amanhã" };
-  }
-
-  if (today.open && today.close) {
-    const [oh, om] = today.open.split(":").map(Number);
-    const [ch, cm] = today.close.split(":").map(Number);
-    if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até as ${today.close}` };
-    return { open: false, text: `Abre às ${today.open}` };
-  }
-  return { open: true, text: "Aberto" };
-}
 
 export default function CustomerStorePage({
   franchisee,
