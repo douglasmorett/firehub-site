@@ -260,17 +260,21 @@ function buildEscPos(order, storeName, columns = 48) {
   };
 
   const rightAlign = (leftStr, rightStr) => {
-    const l = cleanAscii(leftStr);
+    let l = cleanAscii(leftStr);
     const r = cleanAscii(rightStr);
-    const sp = Math.max(1, columns - l.length - r.length);
-    return l + " ".repeat(sp) + r + LF;
+    const maxLeft = columns - r.length - 1; // Reserve at least 1 space
+    if (l.length > maxLeft) l = l.slice(0, maxLeft);
+    const sp = columns - l.length - r.length;
+    return l + " ".repeat(Math.max(1, sp)) + r + LF;
   };
 
   const makeBoxLine = (l, r) => {
-    const cl = cleanAscii(l);
+    let cl = cleanAscii(l);
     const cr = cleanAscii(r);
-    const sp = Math.max(1, columns - cl.length - cr.length);
-    return cl + " ".repeat(sp) + cr + LF;
+    const maxLeft = columns - cr.length - 1; // Reserve at least 1 space
+    if (cl.length > maxLeft) cl = cl.slice(0, maxLeft);
+    const sp = columns - cl.length - cr.length;
+    return cl + " ".repeat(Math.max(1, sp)) + cr + LF;
   };
 
   const makeBoxText = (text) => {

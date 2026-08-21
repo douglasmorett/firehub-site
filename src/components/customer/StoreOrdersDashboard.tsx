@@ -4101,32 +4101,52 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
         .dashboard-kanban-column {
           flex: 1 1 0px !important;
-          min-width: 180px !important;
+          min-width: 220px !important;
+          max-width: none !important;
           transition: all 0.15s ease;
+          overflow: hidden;
+          box-sizing: border-box;
         }
 
-        /* Laptops and standard notebook screens (1024px to 1440px) */
+        /* Large screens (> 1440px) - all 5 columns comfortable */
+
+        /* Standard notebooks (1280px to 1440px) - slightly narrower */
         @media (max-width: 1440px) {
           .dashboard-kanban-column {
-            min-width: 170px !important;
+            min-width: 200px !important;
           }
         }
 
-        /* Tablets and smaller notebooks (< 1024px) */
+        /* Smaller notebooks and laptops (1024px to 1279px) - compact */
+        @media (max-width: 1279px) {
+          .dashboard-kanban-column {
+            min-width: 180px !important;
+          }
+        }
+
+        /* Tablets and smaller notebooks (< 1024px) - horizontal scroll */
         @media (max-width: 1023px) {
+          .dashboard-kanban-container {
+            flex-wrap: nowrap;
+          }
           .dashboard-kanban-column.is-hidden-tab {
             display: none !important;
           }
           .dashboard-kanban-column {
-            flex: 1 1 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            min-height: calc(100vh - 220px) !important;
+            flex: 0 0 280px !important;
+            min-width: 280px !important;
+            max-width: 320px !important;
           }
         }
 
-        /* Mobile phones (< 640px) */
+        /* Mobile phones (< 640px) - single column with horizontal scroll */
         @media (max-width: 640px) {
+          .dashboard-kanban-column {
+            flex: 0 0 85vw !important;
+            min-width: 85vw !important;
+            max-width: 90vw !important;
+            min-height: calc(100vh - 220px) !important;
+          }
           .status-pill-btn {
             padding: 5px 9px !important;
             font-size: 0.72rem !important;
