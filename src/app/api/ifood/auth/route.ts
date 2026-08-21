@@ -85,6 +85,228 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Passo 4: Auto-descobre merchantId e puxa pedidos retroativos ──────────
+  if (step === "discover-merchant") {
+    const email = session.user?.email || "";
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, ifoodMerchantId: true, ifoodConnected: true, ifoodAccessToken: true }
+    });
+
+    if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+    // Se já tem merchantId, retorna
+    if (user.ifoodMerchantId) {
+      return NextResponse.json({ success: true, merchantId: user.ifoodMerchantId, message: "merchantId já configurado" });
+    }
+
+    const log: string[] = [];
+
+    try {
+      const { getIfoodToken } = await import("@/lib/ifood-api");
+      const token = await getIfoodToken();
+
+      // Tentar via API de merchants (usando token do usuario se disponível, senão o centralizado)
+      const merchantsToken = user.ifoodAccessToken || token;
+      let discoveredMerchantId: string | null = null;
+      let discoveredStoreName = "";
+
+      // Tentativa 1: GET /merchant/v1.0/merchants com o token do usuário
+      try {
+        const mRes = await fetch("https://merchant-api.ifood.com.br/merchant/v1.0/merchants", {
+          headers: { Authorization: `Bearer ${merchantsToken}`, Accept: "application/json" },
+        });
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          log.push(`merchants API retornou: ${JSON.stringify(mData).slice(0, 300)}`);
+          const merchants = Array.isArray(mData) ? mData : (mData.merchants || mData.data || []);
+          
+          // Encontrar merchants que não estão atribuídos a nenhum usuário
+          for (const m of merchants) {
+            const mid = m.id || m.merchantId;
+            if (!mid) continue;
+            const existing = await prisma.user.findFirst({ where: { ifoodMerchantId: mid } as any });
+            if (!existing) {
+              discoveredMerchantId = mid;
+              discoveredStoreName = m.name || m.corporateName || "";
+              log.push(`✅ merchantId descoberto: ${mid} (${discoveredStoreName})`);
+              break;
+            }
+          }
+        } else {
+          log.push(`merchants API falhou: ${mRes.status}`);
+        }
+      } catch (e: any) {
+        log.push(`merchants API erro: ${e.message}`);
+      }
+
+      // Tentativa 2: Peek events para encontrar merchantIds desconhecidos
+      if (!discoveredMerchantId) {
+        try {
+          const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (evRes.ok) {
+            const evText = await evRes.text();
+            const events = evText ? JSON.parse(evText) : [];
+            log.push(`${events.length} eventos na fila`);
+            
+            const uniqueMerchantIds = [...new Set(events.map((e: any) => e.merchantId).filter(Boolean))] as string[];
+            for (const mid of uniqueMerchantIds) {
+              const existing = await prisma.user.findFirst({ where: { ifoodMerchantId: mid } as any });
+              if (!existing) {
+                discoveredMerchantId = mid;
+                log.push(`✅ merchantId descoberto via eventos: ${mid}`);
+                break;
+              }
+            }
+
+            // Ack os eventos para não perder — eles serão reprocessados pelo cron
+            // NÃO ack, deixar o cron processar
+          } else {
+            log.push(`events:polling falhou: ${evRes.status}`);
+          }
+        } catch (e: any) {
+          log.push(`events peek erro: ${e.message}`);
+        }
+      }
+
+      if (!discoveredMerchantId) {
+        return NextResponse.json({
+          success: false,
+          message: "Não foi possível descobrir o merchantId automaticamente. Cole o Merchant UUID na seção iFood Merchant API.",
+          log,
+        });
+      }
+
+      // Salvar merchantId descoberto
+      await prisma.user.update({
+        where: { email },
+        data: { ifoodMerchantId: discoveredMerchantId, ifoodConnected: true }
+      });
+
+      // Criar IfoodIntegration record
+      try {
+        await prisma.ifoodIntegration.upsert({
+          where: { userId_merchantId: { userId: user.id, merchantId: discoveredMerchantId } },
+          create: {
+            userId: user.id,
+            label: discoveredStoreName || "Loja iFood",
+            merchantId: discoveredMerchantId,
+            connected: true,
+            active: true,
+          },
+          update: { connected: true, active: true },
+        });
+      } catch {}
+
+      log.push(`✅ merchantId ${discoveredMerchantId} salvo para ${email}`);
+
+      // Backfill: tentar puxar pedidos recentes do iFood
+      let importedCount = 0;
+      try {
+        // Peek events novamente e processar os que pertencem a esta loja
+        const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (evRes.ok) {
+          const evText = await evRes.text();
+          const events = evText ? JSON.parse(evText) : [];
+          const myEvents = events.filter((e: any) => e.merchantId === discoveredMerchantId && e.orderId);
+          
+          for (const event of myEvents) {
+            const exists = await prisma.customerOrder.findFirst({
+              where: { ifoodOrderId: event.orderId } as any,
+            });
+            if (exists) continue;
+
+            try {
+              const orderRes = await fetch(
+                `https://merchant-api.ifood.com.br/order/v1.0/orders/${event.orderId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (!orderRes.ok) continue;
+              const orderData = await orderRes.json();
+
+              const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
+              const { generateDailyOrderNumber } = await import("@/lib/order-number");
+              const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+
+              const items = (orderData.items || []).map((i: any) => ({
+                price: getIfoodItemUnitPrice(i),
+                quantity: i.quantity ?? 1,
+                comboSelections: (i.options || i.subItems || []).length > 0
+                  ? JSON.stringify((i.options || i.subItems || []).map((s: any) => ({ name: s.name || "", quantity: s.quantity || 1, price: s.price || s.unitPrice || 0 })))
+                  : null,
+                menuProduct: {
+                  connectOrCreate: {
+                    where: { id: `ifood-${i.id || i.externalCode || "item"}` } as any,
+                    create: { id: `ifood-${i.id || i.externalCode || "item"}`, franchiseeId: user.id, name: i.name || "Item iFood", description: "", price: getIfoodItemUnitPrice(i), category: "iFood", active: false } as any,
+                  } as any,
+                },
+              }));
+
+              const total = typeof orderData.total === "object" ? (orderData.total?.orderAmount ?? 0) : (orderData.totalPrice ?? 0);
+              const deliveryFee = orderData.total?.deliveryFee ?? orderData.deliveryFee ?? 0;
+              const parsedPay = parseOrderPaymentInfo(orderData, "IFOOD");
+              const customer = orderData.customer || {};
+              const addr = orderData.delivery?.deliveryAddress;
+              const addressStr = addr ? [addr.formattedAddress || `${addr.streetName || ""}, ${addr.streetNumber || ""}`, addr.complement, addr.neighborhood, addr.city].filter(Boolean).join(" - ") : "";
+
+              await (prisma.customerOrder as any).create({
+                data: {
+                  franchiseeId: user.id,
+                  dailyOrderNumber: await generateDailyOrderNumber(user.id),
+                  ifoodOrderId: event.orderId,
+                  ifoodReference: orderData.displayId ?? undefined,
+                  source: "IFOOD",
+                  customerName: customer.name ?? "Cliente iFood",
+                  customerPhone: customer.phone?.number ?? "",
+                  customerAddress: addressStr,
+                  deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
+                  paymentMethod: parsedPay.paymentMethod,
+                  totalAmount: total,
+                  deliveryFee,
+                  status: "NOVO",
+                  createdAt: orderData.createdAt ? new Date(orderData.createdAt) : new Date(),
+                  items: { create: items },
+                },
+              });
+              importedCount++;
+              log.push(`📦 Pedido ${event.orderId} importado!`);
+            } catch (orderErr: any) {
+              log.push(`⚠️ Erro importando ${event.orderId}: ${orderErr.message}`);
+            }
+          }
+
+          // Ack todos os eventos processados
+          if (events.length > 0) {
+            const ackPayload = events.filter((e: any) => e.id).map((e: any) => ({ id: e.id }));
+            await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify(ackPayload),
+            });
+            log.push(`✅ ${ackPayload.length} eventos acknowledged`);
+          }
+        }
+      } catch (backfillErr: any) {
+        log.push(`⚠️ Erro no backfill: ${backfillErr.message}`);
+      }
+
+      return NextResponse.json({
+        success: true,
+        merchantId: discoveredMerchantId,
+        storeName: discoveredStoreName,
+        importedOrders: importedCount,
+        message: `merchantId descoberto e ${importedCount} pedido(s) importado(s)!`,
+        log,
+      });
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message, log }, { status: 500 });
+    }
+  }
+
   // ── Passo 3: Desconecta a loja do iFood ────────────────────────────────────
   if (step === "disconnect") {
     const email = session.user?.email || "";
@@ -95,7 +317,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, connected: false });
   }
 
-  return NextResponse.json({ error: "step inválido. Use ?step=url, ?step=test ou ?step=disconnect" }, { status: 400 });
+  return NextResponse.json({ error: "step inválido. Use ?step=url, ?step=test, ?step=disconnect ou ?step=discover-merchant" }, { status: 400 });
 }
 
 export async function POST(req: NextRequest) {

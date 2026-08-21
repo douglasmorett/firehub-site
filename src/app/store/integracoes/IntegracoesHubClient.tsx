@@ -73,6 +73,22 @@ export default function IntegracoesHubClient({
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Auto-descobrir merchantId quando conectado mas sem merchantId
+  useEffect(() => {
+    if (initialIfoodConnected && !ifMerchant && ifoodIntegrations.length === 0) {
+      fetch("/api/ifood/auth?step=discover-merchant")
+        .then(r => r.json())
+        .then(data => {
+          if (data.success && data.merchantId) {
+            setIfMerchant(data.merchantId);
+            showToast(`🔍 Loja iFood descoberta: ${data.storeName || data.merchantId}${data.importedOrders > 0 ? ` — ${data.importedOrders} pedido(s) importado(s)!` : ""}`, "#10B981");
+            setTimeout(() => window.location.reload(), 1500);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   // Carregar dados da integração JotaJá
   useEffect(() => {
     fetch("/api/store/integracoes/jotaja")
