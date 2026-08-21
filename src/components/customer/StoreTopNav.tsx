@@ -687,7 +687,7 @@ export default function StoreTopNav({
       {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
       {!isCompras && (
       <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.35rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
-        <div style={{ maxWidth:"100%", margin:"0 auto", display:"flex", alignItems:"stretch", justifyContent:"center", gap:"1px", overflowX:"auto", scrollbarWidth:"none" }}>
+        <div style={{ maxWidth:"100%", margin:"0 auto", display:"flex", alignItems:"stretch", gap:"1px", overflowX:"auto", scrollbarWidth:"none", WebkitOverflowScrolling:"touch" }}>
           {menuItems.map(item => {
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
@@ -711,6 +711,13 @@ export default function StoreTopNav({
         @media (max-width: 520px) { .nav-user-label { display: none !important; } .nav-view-store { display: none !important; } }
         @media (max-width: 1400px) {
           .store-nav-link { padding: 0.48rem 0.32rem !important; font-size: 0.71rem !important; gap: 2px !important; }
+        }
+        @media (max-width: 1100px) {
+          .store-nav-link { padding: 0.4rem 0.25rem !important; font-size: 0.67rem !important; gap: 1px !important; }
+          .store-nav-link svg { width: 11px !important; height: 11px !important; }
+        }
+        @media (max-width: 900px) {
+          .store-nav-link { padding: 0.35rem 0.2rem !important; font-size: 0.63rem !important; }
         }
       `}</style>
     </>

@@ -265,7 +265,7 @@ function isStoreOpen(hours: any[]): { open: boolean; text: string } {
       if (nowMin >= oh * 60 + om && nowMin <= ch * 60 + cm) return { open: true, text: `Aberto até ${shift.close}` };
     }
     return { open: false, text: "Fechado" };
-  }
+}
 
   if (today.open && today.close) {
     const [oh, om] = today.open.split(":").map(Number);
@@ -281,8 +281,6 @@ const DashboardColumn = memo(function DashboardColumn({
   emoji,
   color,
   count,
-  children,
-  headerExtra,
   columnOrders,
   dragOverColumn,
   selectedOrderIds,
@@ -290,11 +288,14 @@ const DashboardColumn = memo(function DashboardColumn({
   onDragOver,
   onDragLeave,
   onDrop,
+  headerExtra,
+  children,
+  isTabActive = true,
 }: any) {
-  const canDrop = columnId !== "col-novos";
-  const isOver = canDrop && dragOverColumn === columnId;
+  const isOver = dragOverColumn === columnId;
+  const canDrop = true;
   const hasOrders = columnOrders && columnOrders.length > 0;
-  const isAllSelected = hasOrders && columnOrders.every((o: any) => selectedOrderIds?.has(o.id));
+  const isAllSelected = hasOrders && columnOrders.every((o: any) => selectedOrderIds.has(o.id));
 
   return (
     <div
@@ -302,8 +303,9 @@ const DashboardColumn = memo(function DashboardColumn({
       onDragOver={canDrop ? onDragOver : undefined}
       onDragLeave={canDrop ? onDragLeave : undefined}
       onDrop={canDrop ? onDrop : undefined}
+      className={`dashboard-kanban-column ${!isTabActive ? "is-hidden-tab" : ""}`}
       style={{
-        flex: "1 1 290px", minWidth: "290px",
+        flex: "1 1 0px", minWidth: "180px",
         background: isOver ? "#EFF6FF" : "#F8FAFC",
         borderRadius: "14px",
         border: isOver ? "2.5px dashed #3B82F6" : "1px solid #E2E8F0",
@@ -313,28 +315,28 @@ const DashboardColumn = memo(function DashboardColumn({
         transition: "border-color 0.15s ease, background 0.15s ease",
       }}
     >
-      <div style={{ padding: "0.85rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: "14px 14px 0 0", gap: "0.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+      <div style={{ padding: "0.75rem 0.85rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", borderRadius: "14px 14px 0 0", gap: "0.35rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", minWidth: 0 }}>
           {hasOrders && (
             <input
               type="checkbox"
               checked={isAllSelected}
               onChange={() => onToggleSelectColumn && onToggleSelectColumn(columnOrders)}
-              style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#3B82F6" }}
+              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3B82F6", flexShrink: 0 }}
               title="Selecionar / Desmarcar todos desta coluna"
             />
           )}
-          <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0 }}>{emoji} {title}</h3>
+          <h3 style={{ fontWeight: 700, fontSize: "0.92rem", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{emoji} {title}</h3>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0 }}>
           {headerExtra}
-          <span id={columnId === "col-preparo" ? "firehub-em-producao-count-badge" : undefined} data-column-count={count} style={{ background: color, color: "#fff", borderRadius: "20px", padding: "3px 12px", fontSize: "0.85rem", fontWeight: 700, minWidth: "28px", textAlign: "center" }}>{count}</span>
+          <span id={columnId === "col-preparo" ? "firehub-em-producao-count-badge" : undefined} data-column-count={count} style={{ background: color, color: "#fff", borderRadius: "20px", padding: "2px 8px", fontSize: "0.78rem", fontWeight: 700, minWidth: "24px", textAlign: "center" }}>{count}</span>
         </div>
       </div>
-      <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.75rem" }}>
+      <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.6rem" }}>
         {count === 0 ? (
           <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
-            <Package size={40} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
+            <Package size={36} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
             <p>{isOver ? "Solte aqui!" : "Nenhum pedido"}</p>
           </div>
         ) : children}
@@ -931,7 +933,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   });
   const [receiptPaperSize, setReceiptPaperSize] = useState<"58mm" | "80mm">("80mm");
   const [dueDateExtraMinutes, setDueDateExtraMinutes] = useState<number>(10);
-  const [dueDateReason, setDueDateReason] = useState<string>("OUT_FOR_DELIVERY");
+  const [activeColumnTab, setActiveColumnTab] = useState<string>("all");
   const prevOrderCount = useRef(initialOrders.filter(o => o.status === "NOVO").length);
   const ordersRef = useRef(orders);
   ordersRef.current = orders;
@@ -3708,10 +3710,110 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         )}
 
-        <div style={{ display: "flex", gap: "0.75rem", overflowX: "auto", paddingBottom: "0.5rem", maxWidth: "100%" }}>
+        {/* ── RESPONSIVE STATUS SELECTOR (Visível para alternar ou focar colunas sem cortar) ── */}
+        <div className="status-pill-bar" style={{
+          display: "flex", alignItems: "center", gap: "6px",
+          overflowX: "auto", scrollbarWidth: "none",
+          padding: "4px 0 10px 0", marginBottom: "4px", flexWrap: "nowrap",
+          WebkitOverflowScrolling: "touch"
+        }}>
+          <button
+            type="button"
+            onClick={() => setActiveColumnTab("all")}
+            className="status-pill-btn"
+            style={{
+              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
+              border: activeColumnTab === "all" ? "2px solid #0F172A" : "1.5px solid #E2E8F0",
+              background: activeColumnTab === "all" ? "#0F172A" : "#FFFFFF",
+              color: activeColumnTab === "all" ? "#FFFFFF" : "#64748B",
+              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
+              transition: "all 0.15s"
+            }}
+          >
+            👁️ Todas as Colunas ({novos.length + preparo.length + transporte.length + finalizados.length + cancelados.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveColumnTab("col-novos")}
+            className="status-pill-btn"
+            style={{
+              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
+              border: activeColumnTab === "col-novos" ? "2px solid #3B82F6" : "1.5px solid #E2E8F0",
+              background: activeColumnTab === "col-novos" ? "#EFF6FF" : "#FFFFFF",
+              color: activeColumnTab === "col-novos" ? "#1D4ED8" : "#64748B",
+              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
+              transition: "all 0.15s"
+            }}
+          >
+            🔔 Novos ({novos.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveColumnTab("col-preparo")}
+            className="status-pill-btn"
+            style={{
+              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
+              border: activeColumnTab === "col-preparo" ? "2px solid #F59E0B" : "1.5px solid #E2E8F0",
+              background: activeColumnTab === "col-preparo" ? "#FFFBEB" : "#FFFFFF",
+              color: activeColumnTab === "col-preparo" ? "#B45309" : "#64748B",
+              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
+              transition: "all 0.15s"
+            }}
+          >
+            👨‍🍳 Em Produção ({preparo.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveColumnTab("col-transporte")}
+            className="status-pill-btn"
+            style={{
+              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
+              border: activeColumnTab === "col-transporte" ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
+              background: activeColumnTab === "col-transporte" ? "#F5F3FF" : "#FFFFFF",
+              color: activeColumnTab === "col-transporte" ? "#6D28D9" : "#64748B",
+              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
+              transition: "all 0.15s"
+            }}
+          >
+            🛵 Saiu p/ Entrega ({transporte.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveColumnTab("col-finalizado")}
+            className="status-pill-btn"
+            style={{
+              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
+              border: activeColumnTab === "col-finalizado" ? "2px solid #10B981" : "1.5px solid #E2E8F0",
+              background: activeColumnTab === "col-finalizado" ? "#ECFDF5" : "#FFFFFF",
+              color: activeColumnTab === "col-finalizado" ? "#047857" : "#64748B",
+              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
+              transition: "all 0.15s"
+            }}
+          >
+            ✅ Finalizado ({finalizados.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveColumnTab("col-cancelados")}
+            className="status-pill-btn"
+            style={{
+              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
+              border: activeColumnTab === "col-cancelados" ? "2px solid #EF4444" : "1.5px solid #E2E8F0",
+              background: activeColumnTab === "col-cancelados" ? "#FEF2F2" : "#FFFFFF",
+              color: activeColumnTab === "col-cancelados" ? "#B91C1C" : "#64748B",
+              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
+              transition: "all 0.15s"
+            }}
+          >
+            🚫 Cancelado ({cancelados.length})
+          </button>
+        </div>
+
+        <div className="dashboard-kanban-container" style={{ display: "flex", gap: "0.65rem", overflowX: "auto", paddingBottom: "0.5rem", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
           <DashboardColumn
             columnId="col-novos"
             title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length} columnOrders={novos}
+            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-novos"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-novos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-novos")}
             headerExtra={
@@ -3759,6 +3861,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#F59E0B" count={preparo.length} columnOrders={preparo}
+            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-preparo"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-preparo")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-preparo")}>
             {preparo.map(o => (
@@ -3789,6 +3892,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#7C3AED" count={transporte.length} columnOrders={transporte}
+            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-transporte"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-transporte")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-transporte")}>
             {transporte.map(o => (
@@ -3819,6 +3923,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-finalizado" title="Finalizado" emoji="✅" color="#10B981" count={finalizados.length} columnOrders={finalizados}
+            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-finalizado"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
             {finalizados.map(o => (
@@ -3849,6 +3954,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ))}
           </DashboardColumn>
           <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}
+            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-cancelados"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
             {cancelados.map(o => (
@@ -4098,9 +4204,58 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       )}
 
       <style>{`
-        @media(max-width: 900px) {
-          div > div[style*="min-width: 300px"] { min-width: 100% !important; min-height: 300px !important; max-height: 50vh !important; }
+        .dashboard-kanban-container {
+          display: flex;
+          gap: 0.65rem;
+          overflow-x: auto;
+          padding-bottom: 0.5rem;
+          max-width: 100%;
+          scrollbar-width: thin;
+          scrollbar-color: #CBD5E1 transparent;
+          -webkit-overflow-scrolling: touch;
         }
+        .dashboard-kanban-container::-webkit-scrollbar {
+          height: 6px;
+        }
+        .dashboard-kanban-container::-webkit-scrollbar-thumb {
+          background: #CBD5E1;
+          border-radius: 4px;
+        }
+
+        .dashboard-kanban-column {
+          flex: 1 1 0px !important;
+          min-width: 180px !important;
+          transition: all 0.15s ease;
+        }
+
+        /* Laptops and standard notebook screens (1024px to 1440px) */
+        @media (max-width: 1440px) {
+          .dashboard-kanban-column {
+            min-width: 170px !important;
+          }
+        }
+
+        /* Tablets and smaller notebooks (< 1024px) */
+        @media (max-width: 1023px) {
+          .dashboard-kanban-column.is-hidden-tab {
+            display: none !important;
+          }
+          .dashboard-kanban-column {
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            min-height: calc(100vh - 220px) !important;
+          }
+        }
+
+        /* Mobile phones (< 640px) */
+        @media (max-width: 640px) {
+          .status-pill-btn {
+            padding: 5px 9px !important;
+            font-size: 0.72rem !important;
+          }
+        }
+
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.75; }
