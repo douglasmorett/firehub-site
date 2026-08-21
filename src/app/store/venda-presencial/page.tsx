@@ -68,6 +68,16 @@ export default function VendaPresencialPage() {
     return fmt(0);
   };
 
+  const DAY_ALIASES: Record<string, string[]> = {
+    DOM: ["DOM", "DOMINGO", "0", "SUN", "SUNDAY"],
+    SEG: ["SEG", "SEGUNDA", "SEGUNDA-FEIRA", "1", "MON", "MONDAY"],
+    TER: ["TER", "TERCA", "TERÇA", "TERCA-FEIRA", "TERÇA-FEIRA", "2", "TUE", "TUESDAY"],
+    QUA: ["QUA", "QUARTA", "QUARTA-FEIRA", "3", "WED", "WEDNESDAY"],
+    QUI: ["QUI", "QUINTA", "QUINTA-FEIRA", "4", "THU", "THURSDAY"],
+    SEX: ["SEX", "SEXTA", "SEXTA-FEIRA", "5", "FRI", "FRIDAY"],
+    SAB: ["SAB", "SABADO", "SÁBADO", "6", "SAT", "SATURDAY"],
+  };
+
   const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
   const currentDayCode = DAYS_MAP[new Date().getDay()];
 
@@ -88,12 +98,15 @@ export default function VendaPresencialPage() {
   const isAvailableToday = (p: any, dayCode: string): boolean => {
     const days = parseAvailableDays(p.availableDays);
     if (days.length === 0) return true;
-    return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
+    const allowedAliases = DAY_ALIASES[dayCode] || [dayCode];
+    return days.some(d => {
+      const clean = d.toUpperCase().trim();
+      return allowedAliases.includes(clean) || allowedAliases.some(a => clean.startsWith(a) || a.startsWith(clean));
+    });
   };
 
-  // Esconde itens de integração (iFood, JotaJá, 99Food) que existem no banco
-  // apenas para referência de pedidos, mas não devem aparecer no PDV
-  const HIDDEN_CATEGORIES = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"]);
+  // Esconde itens stub de integração (iFood, JotaJá, 99Food)
+  const HIDDEN_CATEGORIES = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
   const isIntegrationItem = (p: any) => {
     if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
     const cat = (p.category || "").toUpperCase().trim();
@@ -102,7 +115,7 @@ export default function VendaPresencialPage() {
 
   const categories = useMemo(() => {
     const activeTodayProducts = products.filter(p => {
-      if (!p.active || p.activePDV === false) return false;
+      if (p.active === false || p.activePDV === false) return false;
       if (!isAvailableToday(p, currentDayCode)) return false;
       if (isIntegrationItem(p)) return false;
       return true;
@@ -112,7 +125,7 @@ export default function VendaPresencialPage() {
   }, [products, currentDayCode]);
 
   const filtered = products.filter(p => {
-    if (!p.active) return false;
+    if (p.active === false) return false;
     if (p.activePDV === false) return false;
     if (!isAvailableToday(p, currentDayCode)) return false;
     if (isIntegrationItem(p)) return false;

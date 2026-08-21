@@ -155,43 +155,21 @@ export default function MesasPage() {
     }
   }, []);
 
-  useEffect(() => { fetchTables(); }, [fetchTables]);
-  useEffect(() => {
-    const i = setInterval(fetchTables, 8000);
-    return () => clearInterval(i);
-  }, [fetchTables]);
-  // Timer for elapsed display
-  useEffect(() => {
-    const i = setInterval(() => setTick(t => t + 1), 30000);
-    return () => clearInterval(i);
-  }, []);
-
-  const fetchSessionDetail = useCallback(async (sessionId: string) => {
-    try {
-      const res = await fetch(`/api/store/table-sessions?sessionId=${sessionId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSessionDetail(data);
-      }
-    } catch { /* silent */ }
-  }, []);
-
   const fetchMenu = useCallback(async () => {
-    if (menuItems.length > 0) return;
     try {
       const res = await fetch("/api/admin/menu-products");
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Esconde itens de integração (iFood, JotaJá, 99Food)
-          const HIDDEN_CATS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"]);
+          // Esconde itens stub de integração (iFood, JotaJá, 99Food)
+          const HIDDEN_CATS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
           const isIntegration = (p: any) => {
             if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
             return HIDDEN_CATS.has((p.category || "").toUpperCase().trim());
           };
 
           const items = data
-            .filter((p: any) => p.active && p.activeGarcom !== false && !isIntegration(p))
+            .filter((p: any) => p.active !== false && !isIntegration(p))
             .map((p: any) => ({
               id: p.id,
               name: p.name,
@@ -208,7 +186,33 @@ export default function MesasPage() {
         }
       }
     } catch { /* silent */ }
-  }, [menuItems.length]);
+  }, []);
+
+  const fetchSessionDetail = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetch(`/api/store/table-sessions?sessionId=${sessionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSessionDetail(data);
+      }
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { 
+    fetchTables(); 
+    fetchMenu();
+  }, [fetchTables, fetchMenu]);
+
+  useEffect(() => {
+    const i = setInterval(fetchTables, 8000);
+    return () => clearInterval(i);
+  }, [fetchTables]);
+
+  // Timer for elapsed display
+  useEffect(() => {
+    const i = setInterval(() => setTick(t => t + 1), 30000);
+    return () => clearInterval(i);
+  }, []);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const openTable = async () => {

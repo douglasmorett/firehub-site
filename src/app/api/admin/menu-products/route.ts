@@ -14,12 +14,18 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = user.ownerId || user.id;
-  const where = {
-    franchiseeId: targetFranchiseeId,
-    NOT: {
-      category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
-    }
-  };
+  const where = user.role === "ADMIN"
+    ? {
+        NOT: {
+          category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
+        }
+      }
+    : {
+        franchiseeId: targetFranchiseeId,
+        NOT: {
+          category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
+        }
+      };
 
   const products = await prisma.menuProduct.findMany({
     where,
@@ -27,7 +33,8 @@ export async function GET() {
     select: {
       id: true, name: true, price: true, category: true,
       imageUrl: true, active: true, isCombo: true, isBeverage: true,
-      activePDV: true, cost: true, tags: true, availableDays: true, description: true,
+      activePDV: true, activeDelivery: true, activeTotem: true, activeGarcom: true,
+      cost: true, tags: true, availableDays: true, description: true,
       comboConfig: true,
       comboGroups: {
         orderBy: { sortOrder: "asc" },

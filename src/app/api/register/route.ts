@@ -151,8 +151,6 @@ export async function POST(req: NextRequest) {
         storeAlertSound: "bell",
         storeOrderCount: 0,
         planPercent: 1,
-        storeHours: null,
-        paymentFees: null,
       },
     });
 

@@ -406,7 +406,7 @@ export default function MenuProductManager({
   const [activePDV, setActivePDV] = useState(true);
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
-  const [activeGarcom, setActiveGarcom] = useState(false);
+  const [activeGarcom, setActiveGarcom] = useState(true);
   const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; items: { id: string; additionalPrice: number }[] }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("TODAS");
@@ -530,7 +530,7 @@ export default function MenuProductManager({
     setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]);
     setCategory(dynCategories[0]?.name || "");
     setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
-    setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(false);
+    setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(true);
     setAvailableDaysMode("all"); setSelectedDays([]);
     setShowForm(false); setEditingId(null);
   };
@@ -559,7 +559,7 @@ export default function MenuProductManager({
     setActivePDV(p.activePDV ?? true);
     setActiveDelivery(p.activeDelivery ?? true);
     setActiveTotem(p.activeTotem ?? true);
-    setActiveGarcom(p.activeGarcom ?? false);
+    setActiveGarcom(p.activeGarcom ?? true);
     if (p.isCombo && p.comboGroups) {
       setComboGroups(p.comboGroups.map((g: any) => ({
         title: g.title, maxQty: g.maxQty,
