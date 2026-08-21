@@ -803,14 +803,14 @@ export default function IntegracoesHubClient({
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
-                    {ifoodIntegrations.length === 0 && !ifMerchant && (
+                    {ifoodIntegrations.length === 0 && !ifMerchant && !initialIfoodConnected && (
                       <div style={{ padding: "1.5rem", textAlign: "center", background: "#F8FAFC", borderRadius: 12, color: "#64748B", fontSize: "0.85rem" }}>
                         Nenhuma integração iFood cadastrada ainda.
                       </div>
                     )}
 
-                    {/* Integração legada (do campo User.ifoodMerchantId) */}
-                    {ifMerchant && (
+                    {/* Integração conectada (do banco User.ifoodConnected / ifoodMerchantId) */}
+                    {(ifMerchant || initialIfoodConnected) && (
                       <div style={{
                         padding: "14px 16px", borderRadius: 14, border: "1.5px solid #BBF7D0",
                         background: "#F0FDF4", display: "flex", alignItems: "center", gap: 12,
@@ -819,10 +819,30 @@ export default function IntegracoesHubClient({
                           <CheckCircle2 size={18} color="#16A34A" />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>Integração Principal</div>
-                          <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>{ifMerchant}</div>
+                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
+                            {ifMerchant ? "Integração Principal" : "Loja iFood Conectada"}
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>
+                            {ifMerchant || userEmail}
+                          </div>
                         </div>
-                        <span style={{ fontSize: "0.7rem", background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Inclusa no plano</span>
+                        <span style={{ fontSize: "0.7rem", background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Ativa</span>
+                        <button
+                          onClick={async () => {
+                            if (!confirm("Deseja desconectar a integração iFood desta loja?")) return;
+                            try {
+                              const r = await fetch("/api/ifood/auth?step=disconnect");
+                              if (r.ok) {
+                                showToast("🔌 iFood desconectado com sucesso", "#F59E0B");
+                                setTimeout(() => window.location.reload(), 500);
+                              }
+                            } catch { showToast("Erro ao desconectar", "#EF4444"); }
+                          }}
+                          style={{ background: "none", border: "1px solid #FCA5A5", cursor: "pointer", padding: "4px 8px", borderRadius: 8, color: "#EF4444", fontSize: "0.72rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}
+                          title="Desconectar iFood"
+                        >
+                          <X size={14} /> Desconectar
+                        </button>
                       </div>
                     )}
 
