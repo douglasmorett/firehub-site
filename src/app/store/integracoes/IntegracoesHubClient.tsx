@@ -245,6 +245,9 @@ export default function IntegracoesHubClient({
     }
   };
 
+  const [needsMerchantId, setNeedsMerchantId] = useState(false);
+  const [merchantIdInput, setMerchantIdInput] = useState("");
+
   const handleLinkAuthorizationCode = async () => {
     if (!authCodeInput.trim()) {
       showToast("⚠️ Digite o código de autorização gerado no iFood", "#EF4444");
@@ -268,8 +271,46 @@ export default function IntegracoesHubClient({
         ]);
         setOpenModal(null);
         setTimeout(() => { window.location.reload(); }, 600);
+      } else if (data.hasToken) {
+        // Token obtido mas merchantId não detectado — pedir UUID manualmente
+        setNeedsMerchantId(true);
+        showToast("✅ Autorização OK! Agora cole o Merchant ID da sua loja.", "#F59E0B");
       } else {
         showToast(data.error || "Código de autorização inválido ou expirado", "#EF4444");
+      }
+    } catch {
+      showToast("Erro ao conectar com o iFood", "#EF4444");
+    } finally {
+      setConnectingAuthCode(false);
+    }
+  };
+
+  const handleSubmitMerchantId = async () => {
+    const uuid = merchantIdInput.trim();
+    if (!uuid || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
+      showToast("⚠️ Cole o Merchant ID no formato UUID (ex: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", "#EF4444");
+      return;
+    }
+    setConnectingAuthCode(true);
+    try {
+      const res = await fetch("/api/ifood/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId: uuid }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast("🎉 Loja iFood vinculada com sucesso!", "#10B981");
+        setIfMerchant(uuid);
+        setIfoodIntegrations(prev => [
+          { id: "main", label: "Loja Principal", merchantId: uuid, connected: true, active: true, createdAt: new Date().toISOString() },
+          ...prev.filter(i => i.merchantId !== uuid)
+        ]);
+        setNeedsMerchantId(false);
+        setOpenModal(null);
+        setTimeout(() => { window.location.reload(); }, 600);
+      } else {
+        showToast(data.error || "Erro ao vincular Merchant ID", "#EF4444");
       }
     } catch {
       showToast("Erro ao conectar com o iFood", "#EF4444");
@@ -934,6 +975,52 @@ export default function IntegracoesHubClient({
                     </button>
                   </div>
                 </div>
+
+                {/* Passo 3: Merchant ID manual (aparece quando auth OK mas merchantId não detectado) */}
+                {needsMerchantId && (
+                  <div style={{ padding: "16px", borderRadius: 14, background: "#FFFBEB", border: "2px solid #F59E0B", marginBottom: "16px", animation: "fadeIn 0.3s ease-in" }}>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#92400E", marginBottom: 4 }}>
+                      🆔 3. Cole o Merchant ID (UUID) da sua loja no iFood:
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "#B45309", marginBottom: 10 }}>
+                      A autorização foi concedida! Agora cole o <strong>ID da loja</strong> do seu Portal do Parceiro iFood.
+                      Acesse <strong>portal.ifood.com.br</strong> → Configurações → copie o <strong>ID do restaurante</strong> (formato UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        type="text"
+                        placeholder="Ex: a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                        value={merchantIdInput}
+                        onChange={e => setMerchantIdInput(e.target.value.trim())}
+                        style={{
+                          flex: 1, padding: "10px 14px", borderRadius: 10,
+                          border: "2px solid #F59E0B", fontSize: "0.88rem",
+                          fontWeight: 700, fontFamily: "monospace",
+                          outline: "none", background: "#FFFEF5"
+                        }}
+                      />
+                      <button
+                        onClick={handleSubmitMerchantId}
+                        disabled={connectingAuthCode}
+                        style={{
+                          padding: "10px 18px", borderRadius: 10, border: "none",
+                          background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                          color: "#fff", fontWeight: 800, fontSize: "0.85rem",
+                          cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", gap: 6,
+                          opacity: connectingAuthCode ? 0.7 : 1,
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        {connectingAuthCode ? (
+                          <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Vinculando...</>
+                        ) : (
+                          <><CheckCircle2 size={16} /> Vincular Loja</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Info de cobrança */}
                 <div style={{ padding: "12px 14px", borderRadius: 12, background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.5, marginBottom: 16 }}>
