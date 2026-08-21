@@ -248,12 +248,13 @@ export async function POST(req: NextRequest) {
     merchantId = user?.ifoodMerchantId || body.merchantId;
   }
 
-  // Se mesmo assim não encontrou o merchantId, salva o token e pede o Merchant UUID
+  // Se não encontrou merchantId mas tem token, conectar mesmo assim — o merchantId pode ser adicionado depois
   if (!merchantId) {
     if (session.user?.email && data.accessToken) {
       await prisma.user.update({
         where: { email: session.user.email },
         data: {
+          ifoodConnected: true,
           ifoodAccessToken: data.accessToken,
           ifoodRefreshToken: data.refreshToken || null,
           ifoodTokenExpiresAt: data.expiresIn ? new Date(Date.now() + data.expiresIn * 1000) : null,
@@ -261,10 +262,11 @@ export async function POST(req: NextRequest) {
       });
     }
     return NextResponse.json({
-      success: false,
-      error: "Autorização concedida no iFood, mas não foi possível identificar automaticamente o ID da loja. Por favor, cole o Merchant ID da sua loja no campo abaixo para finalizar.",
-      hasToken: true,
-    }, { status: 400 });
+      success: true,
+      merchantId: null,
+      message: "🎉 Loja iFood conectada com sucesso! Agora adicione o Merchant ID na seção 'iFood Merchant API' para receber pedidos.",
+      needsMerchantId: true,
+    });
   }
 
   // Salvar token e merchantId no banco
