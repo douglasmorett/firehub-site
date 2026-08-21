@@ -213,7 +213,10 @@ function listPrinters() {
 function rawPrint(printerName, dataBuffer) {
   return new Promise((resolve, reject) => {
     const tmpFile = path.join(tmpDir, `receipt_${Date.now()}.bin`);
-    fs.writeFileSync(tmpFile, dataBuffer);
+    // O stream carrega bytes de comando (0x00-0xFF). Gravar como UTF-8 transformaria
+    // qualquer byte >= 0x80 em dois bytes e corromperia o comando (ex: GS W do 58mm).
+    const payload = Buffer.isBuffer(dataBuffer) ? dataBuffer : Buffer.from(String(dataBuffer), "latin1");
+    fs.writeFileSync(tmpFile, payload);
 
     const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${PS_SCRIPT_PATH}" -PrinterName "${printerName}" -FilePath "${tmpFile}"`;
     exec(cmd, { timeout: 15000 }, (err, stdout, stderr) => {
@@ -238,7 +241,10 @@ function cleanAscii(str) {
     .replace(/º/g, ".")
     .replace(/ª/g, ".")
     .replace(/Ç/g, "C")
-    .replace(/ç/g, "c");
+    .replace(/ç/g, "c")
+    // Remove o que sobrou fora do ASCII imprimivel (emoji, simbolos).
+    // Sem isto um emoji no nome do item vira byte alto e sai lixo na bobina.
+    .replace(/[^\x20-\x7E\n]/g, "");
 }
 
 function buildEscPos(order, storeName, columns = 48) {
@@ -286,7 +292,19 @@ function buildEscPos(order, storeName, columns = 48) {
   // Separador horizontal sólido entre itens
   const boxBorder = "_".repeat(columns) + LF;
 
-  let res = INIT + ESC + "t\x03"; // Codepage 860 / Portuguese
+  // Estado explicito da impressora. Sem isto, depois do ESC @ cada marca volta ao
+  // default de fabrica/DIP dela: a Bematech rende 42 colunas em 80mm onde a impressora
+  // da Hakim rende 48, e o texto montado para 48 quebra a linha no meio do preco.
+  // Como o envio e RAW (pDataType="RAW"), o driver do Windows nao corrige nada --
+  // so estes bytes garantem a mesma largura em qualquer marca.
+  const areaDots = columns * 12; // fonte A ocupa 12 dots por caractere
+  let res =
+    INIT +                                                                     // ESC @  reset
+    ESC + "M\x00" +                                                            // ESC M  fonte A (12x24)
+    ESC + " \x00" +                                                            // ESC SP espacamento lateral 0
+    GS + "L\x00\x00" +                                                         // GS L   margem esquerda 0
+    GS + "W" + String.fromCharCode(areaDots & 0xFF, (areaDots >> 8) & 0xFF) +  // GS W   area de impressao
+    ESC + "t\x03";                                                             // Codepage 860 / Portuguese
 
   // 1. TOP HEADER (Número + Tipo + Tag) — Usando DOUBLE_HEIGHT para não quebrar linha
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
