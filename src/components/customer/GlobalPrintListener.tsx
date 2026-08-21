@@ -180,7 +180,7 @@ export default function GlobalPrintListener() {
                     createdAt: order.createdAt,
                   };
 
-                  const storeName = (session.user as any)?.storeName || "FIREHUB";
+                  const storeName = (printerConfig as any)?.storeName || (session.user as any)?.storeName || "FIREHUB";
                   const result = await printOrder(
                     formattedOrder as any,
                     storeName,

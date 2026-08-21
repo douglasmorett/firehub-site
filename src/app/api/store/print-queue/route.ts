@@ -65,6 +65,9 @@ export async function GET(req: NextRequest) {
       where,
       orderBy: { createdAt: "asc" },
       include: {
+        franchisee: {
+          select: { storeName: true, name: true }
+        },
         items: {
           include: {
             menuProduct: true,
@@ -76,7 +79,7 @@ export async function GET(req: NextRequest) {
     const jobs = recentOrders.map(order => ({
       id: "job_" + order.id,
       order,
-      storeName: "FIREHUB",
+      storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
       paperWidth: "80mm",
       createdAt: order.createdAt.toISOString(),
     }));

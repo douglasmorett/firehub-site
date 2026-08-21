@@ -37,8 +37,12 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: targetId },
-    select: { printerConfig: true },
+    select: { printerConfig: true, storeName: true, name: true },
   });
 
-  return NextResponse.json(user?.printerConfig || { autoprint: true, printers: [] });
+  const pConfig = (user?.printerConfig as any) || { autoprint: true, printers: [] };
+  return NextResponse.json({
+    ...pConfig,
+    storeName: user?.storeName || user?.name || "FIREHUB",
+  });
 }

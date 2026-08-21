@@ -244,7 +244,7 @@ function cleanAscii(str) {
 function buildEscPos(order, storeName, columns = 48) {
   const ESC = "\x1B", GS = "\x1D", LF = "\x0A";
   const INIT = ESC + "@";
-  const BOLD_ON = ESC + "E\x01"; // Negrito padrão ESC/POS (Emphasized)
+  const BOLD_ON = ESC + "E\x01";
   const BOLD_OFF = ESC + "E\x00";
   const CENTER = ESC + "a\x01", LEFT = ESC + "a\x00";
   const DOUBLE_HEIGHT = GS + "!\x01";
@@ -279,21 +279,20 @@ function buildEscPos(order, storeName, columns = 48) {
     return trimmed + LF;
   };
 
-  // Separador horizontal sólido entre itens (underscores conectam na impressora térmica)
+  // Separador horizontal sólido entre itens
   const boxBorder = "_".repeat(columns) + LF;
 
   let res = INIT + ESC + "t\x03"; // Codepage 860 / Portuguese
 
-  // === ATIVAR NEGRITO GLOBAL para toda a comanda (letras mais robustas) ===
-  res += BOLD_ON;
-
-  // 1. TOP HEADER (Número + Tipo + Tag)
+  // 1. TOP HEADER (Número + Tipo + Tag) — Usando DOUBLE_HEIGHT para não quebrar linha
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
-  const seqTag = seqNumStr ? `${seqNumStr}  ` : "";
-  const deliveryTypeTag = order.deliveryType === "DELIVERY" ? "DELIVERY" : "RETIRADA";
+  const deliveryTypeTag = order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA";
   const orderRef = order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "");
   const refTag = orderRef ? `#${orderRef}` : "";
-  const headerLine = cleanAscii(`${seqTag}${deliveryTypeTag}  ${refTag}`.trim());
+
+  const headerLine = seqNumStr
+    ? `(${seqNumStr}) ${deliveryTypeTag}  ${refTag}`.trim()
+    : `${deliveryTypeTag}  ${refTag}`.trim();
 
   const dByStr = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
   const srcStr = (order.source || "").toString().toUpperCase();
@@ -332,7 +331,7 @@ function buildEscPos(order, storeName, columns = 48) {
   const partnerLabel = is99FoodDriver ? "99FOOD" : (isIfoodDriver ? "IFOOD" : (srcStr || "PARCEIRO"));
   const pCode = order.ifoodPickupCode || order.openDeliveryPickupCode || "";
 
-  res += CENTER + DOUBLE_SIZE + headerLine + LF + DOUBLE_OFF;
+  res += CENTER + DOUBLE_HEIGHT + BOLD_ON + headerLine + BOLD_OFF + DOUBLE_OFF + LF;
   if (isPartnerDriver) {
     res += DOUBLE_HEIGHT + `*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***` + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + LF;
     if (pCode) {
@@ -340,7 +339,7 @@ function buildEscPos(order, storeName, columns = 48) {
     }
   }
   res += LEFT + divider;
-  res += "Estabelecimento: " + cleanAscii(storeName || "HAKIM CENTRO").toUpperCase() + LF;
+  res += "Estabelecimento: " + cleanAscii(storeName || "FIREHUB").toUpperCase() + LF;
   if (orderRef) {
     res += "N. do Pedido: " + cleanAscii(orderRef) + LF;
   }
@@ -371,38 +370,38 @@ function buildEscPos(order, storeName, columns = 48) {
     }
   }
 
-function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0, discountTotal = 0) {
-  let unitPrice = typeof item.price === "number" ? item.price : 0;
-  if (unitPrice > 0) return unitPrice;
+  function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0, discountTotal = 0) {
+    let unitPrice = typeof item.price === "number" ? item.price : 0;
+    if (unitPrice > 0) return unitPrice;
 
-  if (item.comboSelections) {
-    try {
-      const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const comboSum = parsed.reduce((acc, s) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
-        if (comboSum > 0) return comboSum;
-      }
-    } catch {}
+    if (item.comboSelections) {
+      try {
+        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const comboSum = parsed.reduce((acc, s) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+          if (comboSum > 0) return comboSum;
+        }
+      } catch {}
+    }
+
+    const otherItemsSum = (allItems || []).reduce((sum, it) => {
+      if (it === item || (it.id && item.id && it.id === item.id)) return sum;
+      const p = typeof it.price === "number" ? it.price : 0;
+      const q = it.qty || it.quantity || 1;
+      return sum + p * q;
+    }, 0);
+
+    const expectedSubtotal = (orderTotalAmount || 0) - (deliveryFee || 0) + (discountTotal || 0);
+    const diff = expectedSubtotal - otherItemsSum;
+    const zeroPriceItems = (allItems || []).filter(it => !it.price || it.price === 0);
+    const q = item.qty || item.quantity || 1;
+
+    if (zeroPriceItems.length === 1 && diff > 0 && q > 0) {
+      return diff / q;
+    }
+
+    return unitPrice;
   }
-
-  const otherItemsSum = (allItems || []).reduce((sum, it) => {
-    if (it === item || (it.id && item.id && it.id === item.id)) return sum;
-    const p = typeof it.price === "number" ? it.price : 0;
-    const q = it.qty || it.quantity || 1;
-    return sum + p * q;
-  }, 0);
-
-  const expectedSubtotal = (orderTotalAmount || 0) - (deliveryFee || 0) + (discountTotal || 0);
-  const diff = expectedSubtotal - otherItemsSum;
-  const zeroPriceItems = (allItems || []).filter(it => !it.price || it.price === 0);
-  const q = item.qty || item.quantity || 1;
-
-  if (zeroPriceItems.length === 1 && diff > 0 && q > 0) {
-    return diff / q;
-  }
-
-  return unitPrice;
-}
 
   const customKeywords = order.customBeverageKeywords || order.printerConfig?.customBeverageKeywords || "";
   const autoBeverageTag = order.printerConfig?.autoBeverageTag !== false; // Padrão: true
@@ -448,8 +447,6 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   const INVERSE_ON = "\x1d\x42\x01";
   const INVERSE_OFF = "\x1d\x42\x00";
 
-  const BEV_STAMP = BOLD_ON + " <=== BEBIDA" + BOLD_OFF;
-
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
 
@@ -464,7 +461,8 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
       name = name.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
 
       const isItemBev = isBeverageItem(item);
-      const itemLabel = isItemBev ? BOLD_ON + `${name}  <=== BEBIDA` + BOLD_OFF : name;
+      const bevTag = isItemBev ? "  <=== BEBIDA" : "";
+      const itemLabel = `${name}${bevTag}`;
       res += makeBoxLine(`${qty}x ${itemLabel}`, priceStr);
 
       const comboSels = (() => {
@@ -483,8 +481,8 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
           let selName = cleanAscii(sel.name || "");
           selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
           const isSelBev = isBeverageName(selName);
-          const selLabel = isSelBev ? BOLD_ON + `${selName}  <=== BEBIDA` + BOLD_OFF : selName;
-          res += makeBoxText(`  - ${qPrefix}${selLabel}`);
+          const selBevTag = isSelBev ? "  <=== BEBIDA" : "";
+          res += makeBoxText(`  - ${qPrefix}${selName}${selBevTag}`);
         });
       }
 
@@ -518,10 +516,10 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
   const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";
   res += rightAlign(dFeeLabel, "R$ " + Number(dFee).toFixed(2).replace(".", ","));
 
-  // TOTAL BOX — extra destaque com double-size
+  // TOTAL BOX — destaque limpo
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
   res += boxBorder;
-  res += DOUBLE_HEIGHT + makeBoxLine("Total:", totalValStr) + DOUBLE_OFF;
+  res += DOUBLE_HEIGHT + BOLD_ON + makeBoxLine("Total:", totalValStr) + BOLD_OFF + DOUBLE_OFF;
   res += boxBorder;
 
   // 6. PAYMENT METHOD & SAFETY NOTE
@@ -562,11 +560,9 @@ function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0
     }
 
     res += divider;
-    res += DOUBLE_HEIGHT + "!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!" + DOUBLE_OFF + LF;
+    res += DOUBLE_HEIGHT + BOLD_ON + "!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!" + BOLD_OFF + DOUBLE_OFF + LF;
   }
 
-  // Desliga negrito global no final
-  res += BOLD_OFF;
   res += LF + CENTER + "Obrigado pela preferencia!" + LF + FEED + CUT;
   return Buffer.from(res, "binary");
 }
