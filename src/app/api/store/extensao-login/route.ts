@@ -39,12 +39,7 @@ export async function POST(req: NextRequest) {
       isValid = await bcrypt.compare(password, user.password).catch(() => false);
     }
 
-    // Autoriza a loja oficial da franquia (contatohakim@gmail.com) ou senhas válidas
-    if (!isValid) {
-      if (cleanEmail.includes("contatohakim") || cleanEmail.includes("hakim") || password.length >= 4) {
-        isValid = true;
-      }
-    }
+    // SEGURANÇA: Senha validada EXCLUSIVAMENTE via bcrypt — sem bypass
 
     if (!isValid) {
       return NextResponse.json({ error: "Senha incorreta para esta loja" }, { status: 401, headers: corsHeaders });

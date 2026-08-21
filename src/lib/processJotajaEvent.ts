@@ -143,22 +143,14 @@ export async function processJotajaEvent(
       if (!franchisee && targetFranchiseeId) {
         const candidate = await prisma.user.findUnique({ where: { id: targetFranchiseeId } });
         if (candidate) {
-          if (candidate.email === "contatohakim@gmail.com" || candidate.jotajaMerchantId === eventMerchantId) {
+          // MULTI-TENANT: aceitar APENAS se o merchantId bate OU se não veio merchantId no evento
+          if (!eventMerchantId || candidate.jotajaMerchantId === eventMerchantId) {
             franchisee = candidate;
           }
         }
       }
 
-      // 3. Fallback estrito: se o merchant for o configurado no ENV (Hakim)
-      if (!franchisee) {
-        const envMerchantId = process.env.JOTAJA_MERCHANT_ID || "14800";
-        if (!eventMerchantId || eventMerchantId === envMerchantId) {
-          franchisee = await prisma.user.findFirst({
-            where: { email: "contatohakim@gmail.com" }
-          });
-        }
-      }
-
+      // 3. SEM FALLBACK — se não encontrou loja, é erro (nunca atribuir a outra loja)
       if (!franchisee) {
         return { action: "error", orderId, message: `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"})` };
       }

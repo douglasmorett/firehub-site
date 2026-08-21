@@ -16,25 +16,17 @@ export async function POST(req: NextRequest) {
     const cleanSlug = storeSlug.toLowerCase().trim();
     const slugName = cleanSlug.replace(/-/g, " ");
 
-    // Busca a loja pelo slug/nome/email para garantir isolamento multi-tenant
+    // MULTI-TENANT: Busca a loja EXCLUSIVAMENTE pelo slug — sem fallbacks
     let storeUser = await prisma.user.findFirst({
       where: {
         OR: [
           { slug: cleanSlug },
           { name: { contains: cleanSlug, mode: "insensitive" } },
           { name: { contains: slugName, mode: "insensitive" } },
-          { email: { contains: "hakim", mode: "insensitive" } }
         ]
       },
       select: { id: true, name: true, slug: true, storeAddress: true, city: true }
     });
-
-    if (!storeUser) {
-      storeUser = await prisma.user.findFirst({
-        where: { role: { in: ["FRANQUEADO", "ADMIN", "LOJA"] } },
-        select: { id: true, name: true, slug: true, storeAddress: true, city: true }
-      });
-    }
 
     if (!storeUser) {
       return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
@@ -42,20 +34,13 @@ export async function POST(req: NextRequest) {
 
     const cleanPhone = phone.replace(/\D/g, "");
 
-    // Busca motoboys ativos desta loja primeiro
+    // MULTI-TENANT: Busca motoboys APENAS desta loja — sem fallback global
     let motoboys = await prisma.motoboy.findMany({
       where: {
         franchiseeId: storeUser.id,
         active: true,
       }
     });
-
-    // Fallback: se não encontrou vinculados por ID direto, busca globalmente motoboys ativos
-    if (motoboys.length === 0) {
-      motoboys = await prisma.motoboy.findMany({
-        where: { active: true }
-      });
-    }
 
     // Filtra no JS para ignorar caracteres especiais como () - e espaços salvos no banco
     const motoboy = motoboys.find(m => {

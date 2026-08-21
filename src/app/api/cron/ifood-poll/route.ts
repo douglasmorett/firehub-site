@@ -149,7 +149,9 @@ export async function GET(req: NextRequest) {
               if (cancelOrderRes.ok) {
                 const cancelOrderData = await cancelOrderRes.json();
                 let cancelFranchisee = merchantId
-                  ? await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId } as any })
+                  ? (await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId, role: "FRANCHISEE" } as any })
+                    || await prisma.ifoodIntegration.findFirst({ where: { merchantId, active: true } })
+                        .then(async (int: any) => int ? prisma.user.findUnique({ where: { id: int.userId } }) : null))
                   : null;
 
                 if (cancelFranchisee) {
@@ -279,7 +281,9 @@ export async function GET(req: NextRequest) {
 
           const eventMerchantId = merchantId || orderData.merchant?.id;
           let eventFranchisee = eventMerchantId
-            ? await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId, role: "FRANCHISEE" } as any })
+            ? (await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId, role: "FRANCHISEE" } as any })
+              || await prisma.ifoodIntegration.findFirst({ where: { merchantId: eventMerchantId, active: true } })
+                  .then(async (int: any) => int ? prisma.user.findUnique({ where: { id: int.userId } }) : null))
             : null;
 
           if (!eventFranchisee) {

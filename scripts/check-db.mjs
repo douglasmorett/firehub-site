@@ -1,7 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 
-// Check firehub_db
-const firehubUrl = 'postgresql://neondb_owner:npg_9C4DXWRhvBUo@ep-soft-water-amzwjl9k-pooler.c-5.us-east-1.aws.neon.tech/firehub_db?sslmode=require';
+const firehubUrl = 'postgresql://neondb_owner:npg_6q8vJnVD3IHvP2FA4OpfFg@ep-soft-water-amzwjl9k-pooler.c-5.us-east-1.aws.neon.tech/firehub_db?sslmode=require';
 const sqlFirehub = neon(firehubUrl);
 
 // Check neondb (old)

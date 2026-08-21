@@ -201,13 +201,16 @@ async function pollIfoodEvents(sessionUserId?: string) {
             const orderData = await orderRes.json();
 
             const eventMerchantId = merchantId || orderData.merchant?.id;
-            const eventFranchisee = await prisma.user.findFirst({
-              where: { email: "contatohakim@gmail.com" }
-            }) || (sessionUserId
+            // MULTI-TENANT: resolver EXCLUSIVAMENTE por merchantId do evento, NUNCA por email hardcoded
+            const eventFranchisee = (eventMerchantId
+              ? (await prisma.user.findFirst({
+                  where: { ifoodMerchantId: eventMerchantId, role: "FRANCHISEE" } as any,
+                }) || await prisma.ifoodIntegration.findFirst({ where: { merchantId: eventMerchantId, active: true } })
+                    .then(async (int: any) => int ? prisma.user.findUnique({ where: { id: int.userId } }) : null))
+              : null)
+            || (sessionUserId
               ? await prisma.user.findUnique({ where: { id: sessionUserId } })
-              : null) || await prisma.user.findFirst({
-              where: { ifoodMerchantId: eventMerchantId } as any,
-            });
+              : null);
             if (!eventFranchisee) {
               console.error(`[iFood Poll] ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
               continue;
