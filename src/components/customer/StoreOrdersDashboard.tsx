@@ -1925,27 +1925,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (o.status === "ENCERRADO") return false;
     if (!matchesChannelFilter(o)) return false;
     
-    const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
-    
-    // Se o caixa foi reaberto (nova sessão), ocultar pedidos de ANTES da sessão atual
-    // que já foram finalizados (ENTREGUE, CANCELADO) — são do turno anterior
-    if (cashOpenedAt && refDate < cashOpenedAt) {
-      const finalStatuses = ["ENTREGUE", "CANCELADO"];
-      if (finalStatuses.includes(o.status)) return false;
-    }
-    
-    // Pedidos de integrações (iFood/Jotajá) que estão EM ANDAMENTO:
-    // Visíveis por até 3h fora do período do filtro (para pedidos que cruzam a meia-noite).
-    // Após 3h fora do período, são ocultados.
+    // Pedidos de integrações (iFood/Jotajá) que estão EM ANDAMENTO ignoram filtro de data,
+    // garantindo que pedidos ativos fiquem sempre visíveis.
+    // Pedidos ENTREGUE, CANCELADOS e ENCERRADOS respeitam o filtro de data.
     const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
     const isInProgress = activeStatuses.includes(o.status);
     const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
     
     if (isInProgress && isIntegration) {
-      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
-      if (refDate < threeHoursAgo && refDate < fromDate) return false;
+      // Pedidos em andamento de integração: visíveis se recentes, mas oculta se criados há mais de 12h e antes do período
+      const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      if (refDate < twelveHoursAgo && refDate < fromDate) return false;
     } else {
-      // Pedidos finalizados (ENTREGUE), cancelados e pedidos manuais: filtro de data estrito
+      // Pedidos finalizados (ENTREGUE), cancelados e pedidos manuais: filtro de data
+      const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
       if (refDate < fromDate || refDate > toDate) return false;
     }
     
