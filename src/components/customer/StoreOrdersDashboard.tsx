@@ -3712,88 +3712,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         )}
 
         {/* ── RESPONSIVE STATUS SELECTOR (Visível para alternar ou focar colunas sem cortar) ── */}
-        <div className="status-pill-bar" style={{
-          display: "flex", alignItems: "center", gap: "6px",
-          overflowX: "auto", scrollbarWidth: "none",
-          padding: "4px 0 10px 0", marginBottom: "4px", flexWrap: "nowrap",
-          WebkitOverflowScrolling: "touch"
-        }}>
-          <button
-            type="button"
-            onClick={() => setActiveColumnTab("all")}
-            className="status-pill-btn"
-            style={{
-              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
-              border: activeColumnTab === "all" ? "2px solid #0F172A" : "1.5px solid #E2E8F0",
-              background: activeColumnTab === "all" ? "#0F172A" : "#FFFFFF",
-              color: activeColumnTab === "all" ? "#FFFFFF" : "#64748B",
-              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
-              transition: "all 0.15s"
-            }}
-          >
-            👁️ Todas as Colunas ({novos.length + preparo.length + transporte.length + finalizados.length + cancelados.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveColumnTab("col-novos")}
-            className="status-pill-btn"
-            style={{
-              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
-              border: activeColumnTab === "col-novos" ? "2px solid #3B82F6" : "1.5px solid #E2E8F0",
-              background: activeColumnTab === "col-novos" ? "#EFF6FF" : "#FFFFFF",
-              color: activeColumnTab === "col-novos" ? "#1D4ED8" : "#64748B",
-              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
-              transition: "all 0.15s"
-            }}
-          >
-            🔔 Novos ({novos.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveColumnTab("col-preparo")}
-            className="status-pill-btn"
-            style={{
-              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
-              border: activeColumnTab === "col-preparo" ? "2px solid #F59E0B" : "1.5px solid #E2E8F0",
-              background: activeColumnTab === "col-preparo" ? "#FFFBEB" : "#FFFFFF",
-              color: activeColumnTab === "col-preparo" ? "#B45309" : "#64748B",
-              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
-              transition: "all 0.15s"
-            }}
-          >
-            👨‍🍳 Em Produção ({preparo.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveColumnTab("col-transporte")}
-            className="status-pill-btn"
-            style={{
-              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
-              border: activeColumnTab === "col-transporte" ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
-              background: activeColumnTab === "col-transporte" ? "#F5F3FF" : "#FFFFFF",
-              color: activeColumnTab === "col-transporte" ? "#6D28D9" : "#64748B",
-              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
-              transition: "all 0.15s"
-            }}
-          >
-            🛵 Saiu p/ Entrega ({transporte.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveColumnTab("col-finalizado")}
-            className="status-pill-btn"
-            style={{
-              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
-              border: activeColumnTab === "col-finalizado" ? "2px solid #10B981" : "1.5px solid #E2E8F0",
-              background: activeColumnTab === "col-finalizado" ? "#ECFDF5" : "#FFFFFF",
-              color: activeColumnTab === "col-finalizado" ? "#047857" : "#64748B",
-              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
-              transition: "all 0.15s"
-            }}
-          >
-            ✅ Finalizado ({finalizados.length})
-          </button>
-        </div>
+
 
         <div className="dashboard-kanban-container" style={{ display: "flex", gap: "0.65rem", overflowX: "auto", paddingBottom: "0.5rem", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
           <DashboardColumn
@@ -3913,6 +3832,37 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
             {finalizados.map(o => (
+              <DashboardOrderCard
+                key={o.id}
+                order={o}
+                expanded={expandedId === o.id}
+                isLoading={loadingId === o.id}
+                isDragging={draggedOrderId === o.id}
+                now={now}
+                seqNum={getDisplayOrderNumber(o)}
+                timeAlertConfig={timeAlertConfig}
+                selectedOrderIds={selectedOrderIds}
+                motoboys={motoboys}
+                assigningId={assigningId}
+                onToggleSelectOrder={toggleSelectOrder}
+                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                onUpdateStatus={updateStatus}
+                onAssignMotoboy={assignMotoboy}
+                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                setOrders={setOrders}
+              />
+            ))}
+          </DashboardColumn>
+          <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}
+            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-cancelados"}
+            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
+            {cancelados.map(o => (
               <DashboardOrderCard
                 key={o.id}
                 order={o}
