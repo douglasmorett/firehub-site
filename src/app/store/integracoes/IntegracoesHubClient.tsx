@@ -6,6 +6,7 @@ export default function IntegracoesHubClient({
   ifoodMerchantId,
   ifoodClientId,
   ifoodWidgetId,
+  ifoodConnected: initialIfoodConnected,
   userEmail,
   facebookPixelId: initialFacebookPixelId,
   pagarmeRecipientId,
@@ -15,6 +16,7 @@ export default function IntegracoesHubClient({
   ifoodMerchantId?: string;
   ifoodClientId?: string;
   ifoodWidgetId?: string;
+  ifoodConnected?: boolean;
   userEmail: string;
   facebookPixelId?: string;
   pagarmeRecipientId?: string;
@@ -420,7 +422,7 @@ export default function IntegracoesHubClient({
       subtitle: "Loja Oficial iFood",
       icon: "🔴",
       gradient: "linear-gradient(135deg, #EA580C, #C2410C)",
-      badge: (ifoodIntegrations.length > 0 || ifMerchant) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      badge: (ifoodIntegrations.length > 0 || ifMerchant || initialIfoodConnected) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Gerencie suas integrações iFood. Conecte múltiplas lojas e acompanhe o status.",
     },
     {

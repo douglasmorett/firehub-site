@@ -57,6 +57,7 @@ export default async function IntegracoesPage() {
       ifoodMerchantId={effectiveMerchantId}
       ifoodClientId={clientId}
       ifoodWidgetId={user?.ifoodWidgetId || undefined}
+      ifoodConnected={!!user?.ifoodConnected}
       facebookPixelId={user?.facebookPixelId || user?.metaPixelId || ""}
       pagarmeRecipientId={user?.pagarmeRecipientId || undefined}
       mpConnected={!!(user?.mpAccessToken || user?.mpSellerId)}
