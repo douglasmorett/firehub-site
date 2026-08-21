@@ -933,6 +933,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   });
   const [receiptPaperSize, setReceiptPaperSize] = useState<"58mm" | "80mm">("80mm");
   const [dueDateExtraMinutes, setDueDateExtraMinutes] = useState<number>(10);
+  const [dueDateReason, setDueDateReason] = useState<string>("OUT_FOR_DELIVERY");
   const [activeColumnTab, setActiveColumnTab] = useState<string>("all");
   const prevOrderCount = useRef(initialOrders.filter(o => o.status === "NOVO").length);
   const ordersRef = useRef(orders);
