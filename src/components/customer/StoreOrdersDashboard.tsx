@@ -3793,21 +3793,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           >
             ✅ Finalizado ({finalizados.length})
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveColumnTab("col-cancelados")}
-            className="status-pill-btn"
-            style={{
-              padding: "6px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 700,
-              border: activeColumnTab === "col-cancelados" ? "2px solid #EF4444" : "1.5px solid #E2E8F0",
-              background: activeColumnTab === "col-cancelados" ? "#FEF2F2" : "#FFFFFF",
-              color: activeColumnTab === "col-cancelados" ? "#B91C1C" : "#64748B",
-              cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "6px",
-              transition: "all 0.15s"
-            }}
-          >
-            🚫 Cancelado ({cancelados.length})
-          </button>
         </div>
 
         <div className="dashboard-kanban-container" style={{ display: "flex", gap: "0.65rem", overflowX: "auto", paddingBottom: "0.5rem", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
@@ -3928,37 +3913,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
             {finalizados.map(o => (
-              <DashboardOrderCard
-                key={o.id}
-                order={o}
-                expanded={expandedId === o.id}
-                isLoading={loadingId === o.id}
-                isDragging={draggedOrderId === o.id}
-                now={now}
-                seqNum={getDisplayOrderNumber(o)}
-                timeAlertConfig={timeAlertConfig}
-                selectedOrderIds={selectedOrderIds}
-                motoboys={motoboys}
-                assigningId={assigningId}
-                onToggleSelectOrder={toggleSelectOrder}
-                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
-                onUpdateStatus={updateStatus}
-                onAssignMotoboy={assignMotoboy}
-                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
-                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
-                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                setOrders={setOrders}
-              />
-            ))}
-          </DashboardColumn>
-          <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}
-            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-cancelados"}
-            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
-            onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
-            {cancelados.map(o => (
               <DashboardOrderCard
                 key={o.id}
                 order={o}
