@@ -1508,56 +1508,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   });
   const scheduledOrderIds = new Set(scheduledOrders.map(o => o.id));
 
-  // Continuous alert sound — loops every 4s while there are NOVO orders
-  const alertIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasNotifiedRef = useRef(false);
 
-  useEffect(() => {
-    // Só conta pedidos NOVO que NÃO estão na lista de agendados (som só para novos reais)
-    const novoCount = orders.filter(o => o.status === "NOVO" && !scheduledOrderIds.has(o.id)).length;
-
-    if (novoCount > 0) {
-      // Start looping sound if not already playing
-      if (!alertIntervalRef.current) {
-        // Play immediately
-        playOrderChime();
-
-        // Then repeat every 4 seconds
-        alertIntervalRef.current = setInterval(() => {
-          playOrderChime();
-        }, 4000);
-      }
-
-      // Send push notification only once per batch
-      if (!hasNotifiedRef.current) {
-        hasNotifiedRef.current = true;
-        if ("Notification" in window && Notification.permission === "granted") {
-          try {
-            new Notification("🔔 Novo pedido chegou!", {
-              body: `Você tem ${novoCount} pedido${novoCount > 1 ? "s" : ""} aguardando confirmação.`,
-              icon: "/icon.jpg",
-              tag: "new-order",
-            });
-          } catch {}
-        }
-      }
-    } else {
-      // All orders accepted — stop the sound
-      if (alertIntervalRef.current) {
-        clearInterval(alertIntervalRef.current);
-        alertIntervalRef.current = null;
-      }
-      hasNotifiedRef.current = false;
-    }
-
-    return () => {
-      // Cleanup on unmount
-      if (alertIntervalRef.current) {
-        clearInterval(alertIntervalRef.current);
-        alertIntervalRef.current = null;
-      }
-    };
-  }, [orders, playOrderChime, scheduledOrderIds]);
 
   // Solicitar permissão de notificação na montagem
   useEffect(() => {
@@ -1954,6 +1905,52 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
   const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberAsc);
+
+  // Continuous alert sound — loops every 4s while there are NOVO orders visible in Kanban
+  const alertIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasNotifiedRef = useRef(false);
+
+  useEffect(() => {
+    const novoCount = novos.length;
+
+    if (novoCount > 0) {
+      // Start looping sound if not already playing
+      if (!alertIntervalRef.current) {
+        playOrderChime();
+        alertIntervalRef.current = setInterval(() => {
+          playOrderChime();
+        }, 4000);
+      }
+
+      // Send push notification only once per batch
+      if (!hasNotifiedRef.current) {
+        hasNotifiedRef.current = true;
+        if ("Notification" in window && Notification.permission === "granted") {
+          try {
+            new Notification("🔔 Novo pedido chegou!", {
+              body: `Você tem ${novoCount} pedido${novoCount > 1 ? "s" : ""} aguardando confirmação.`,
+              icon: "/icon.jpg",
+              tag: "new-order",
+            });
+          } catch {}
+        }
+      }
+    } else {
+      // All orders accepted or no new orders in current view — stop the sound immediately
+      if (alertIntervalRef.current) {
+        clearInterval(alertIntervalRef.current);
+        alertIntervalRef.current = null;
+      }
+      hasNotifiedRef.current = false;
+    }
+
+    return () => {
+      if (alertIntervalRef.current) {
+        clearInterval(alertIntervalRef.current);
+        alertIntervalRef.current = null;
+      }
+    };
+  }, [novos.length, playOrderChime]);
 
   // Transmite em tempo real a quantidade de pedidos em produção para a extensão Chrome do FireHub
   useEffect(() => {
