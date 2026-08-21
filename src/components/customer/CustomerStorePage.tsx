@@ -331,8 +331,8 @@ export default function CustomerStorePage({
 
   // Fidelidade, Cashback, Carimbos, Indicação & Níveis VIP
   const loyalty = (franchisee.storeLoyalty as any) || {};
-  const isCashbackActive = Boolean(loyalty.cashbackActive !== false && Number(loyalty.rate || 5) > 0);
-  const baseCashbackRate = Number(loyalty.rate || 5);
+  const isCashbackActive = Boolean(loyalty.cashbackActive === true && Number(loyalty.rate || 0) > 0);
+  const baseCashbackRate = Number(loyalty.rate || 0);
   const cashbackMinOrder = Number(loyalty.minOrderValue || 0);
   const cashbackMaxRedeemPercent = Number(loyalty.maxRedeemPercent || 50);
 
