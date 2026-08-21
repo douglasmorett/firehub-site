@@ -54,17 +54,17 @@ export function parseComboSelections(
       if (match) {
         list.push({
           name: match[2].trim(),
-          quantity: parseInt(match[1], 10),
+          quantity: parseInt(match[1], 10) * parentQuantity,
         });
       } else if (item.trim()) {
         list.push({
           name: item.trim(),
-          quantity: 1,
+          quantity: 1 * parentQuantity,
         });
       }
     } else if (item && typeof item === "object") {
       // Objeto com campos estruturados: { name, quantity, price }
-      // A quantidade do sub-item já é a quantidade total selecionada pelo cliente no pedido
+      // A quantidade do sub-item é multiplicada pela quantidade do combo pai
       const rawName = String(
         item.name || item.productName || item.label || item.description || "",
       );
@@ -74,7 +74,7 @@ export function parseComboSelections(
       if (rawName.trim()) {
         list.push({
           name: rawName.trim(),
-          quantity: qty,
+          quantity: qty * parentQuantity,
           ...(price !== undefined ? { price } : {}),
         });
       }
