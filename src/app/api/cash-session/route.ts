@@ -171,6 +171,25 @@ export async function PUT(req: Request) {
     });
   }
 
+  // 🔧 Auto-finalizar pedidos travados em SAIU_ENTREGA com mais de 3h
+  // Isso limpa pedidos que nunca foram confirmados como entregues pelo motoboy
+  const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  try {
+    const stuckResult = await prisma.customerOrder.updateMany({
+      where: {
+        franchiseeId: user.targetId,
+        status: "SAIU_ENTREGA",
+        createdAt: { lt: threeHoursAgo },
+      },
+      data: { status: "ENTREGUE", updatedAt: new Date() },
+    });
+    if (stuckResult.count > 0) {
+      console.log(`[CashSession Close] ✅ ${stuckResult.count} pedidos SAIU_ENTREGA finalizados automaticamente`);
+    }
+  } catch (err) {
+    console.error("[CashSession Close] Erro ao finalizar pedidos travados:", err);
+  }
+
   // Marcar caixa como fechado no user e no owner
   await prisma.user.updateMany({
     where: { OR: [{ id: user.targetId }, { ownerId: user.targetId }] },
