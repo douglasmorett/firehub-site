@@ -9,11 +9,19 @@ jobs:
     name: Trigger Coolify Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to DigitalOcean via Coolify
+      - name: Deploy latest commit to Coolify
         run: |
-          curl -X POST "http://107.170.79.194:8000/api/v1/deploy" \
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://107.170.79.194:8000/api/v1/deploy" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"uuid":"binibyxzlgkm4qhfcydy6ocj","force":false}' \
-            --max-time 30
-          echo "✅ Deploy triggered successfully!"
+            -d '{"uuid":"binibyxzlgkm4qhfcydy6ocj","force":true,"commit":"${{ github.sha }}"}' \
+            --max-time 30)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "❌ Deploy failed with status $HTTP_CODE"
+            exit 1
+          fi
+          echo "✅ Deploy triggered for commit ${{ github.sha }}"
