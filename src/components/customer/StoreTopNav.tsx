@@ -147,14 +147,20 @@ export default function StoreTopNav({
   const [actual, setActual]     = useState<Record<string,string>>({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
   const [closing, setClosing]   = useState(false);
   const [closeWarn, setCloseWarn] = useState(false);
+  const [showPendingWarn, setShowPendingWarn] = useState(false);
+  const [pendingDeliveryCount, setPendingDeliveryCount] = useState(0);
   const [diff, setDiff]         = useState(0);
 
-  // Fetch expected values when opening close modal
+  // Fetch expected values and pending orders when opening close modal
   useEffect(() => {
     if (!showCloseModal) return;
     fetch("/api/cash-session").then(r => r.json()).then(d => {
       if (d.expected) setExpected(d.expected);
     });
+    // Buscar pedidos pendentes em SAIU_ENTREGA
+    fetch("/api/customer-order/pending-count").then(r => r.json()).then(d => {
+      setPendingDeliveryCount(d.count || 0);
+    }).catch(() => setPendingDeliveryCount(0));
   }, [showCloseModal]);
 
   // ── OPEN CASH ───────────────────────────────────────────────────
@@ -178,6 +184,11 @@ export default function StoreTopNav({
   const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0) + (expected.ifoodCoupons || 0);
 
   const tryClose = () => {
+    // Verificar se há pedidos em SAIU_ENTREGA antes de fechar
+    if (pendingDeliveryCount > 0 && !showPendingWarn) {
+      setShowPendingWarn(true);
+      return;
+    }
     const d = totalActual - expected.total;
     setDiff(d);
     if (Math.abs(d) > 0.01) { setCloseWarn(true); return; }
@@ -205,6 +216,7 @@ export default function StoreTopNav({
     setCashOpen(false);
     setShowCloseModal(false);
     setCloseWarn(false);
+    setShowPendingWarn(false);
     setActual({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
     startTransition(() => router.refresh());
   };
@@ -458,9 +470,33 @@ export default function StoreTopNav({
 
       {/* ── MODAL: FECHAR CAIXA ────────────────────────────── */}
       {showCloseModal && (
-        <div style={overlay} onClick={() => !closeWarn && setShowCloseModal(false)}>
+        <div style={overlay} onClick={() => !closeWarn && !showPendingWarn && setShowCloseModal(false)}>
           <div style={{ ...card, maxWidth: 560 }} onClick={e => e.stopPropagation()}>
-            {!closeWarn ? (
+            {showPendingWarn ? (
+              /* ── AVISO: PEDIDOS PENDENTES EM SAIU_ENTREGA ── */
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:"3rem", marginBottom:8 }}>🛵</div>
+                <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#92400E" }}>Atenção! Pedidos em entrega</h2>
+                <p style={{ margin:"0 0 8px", fontSize:"0.9rem", color:"#374151", lineHeight: 1.5 }}>
+                  Ainda {pendingDeliveryCount === 1 ? "existe" : "existem"} <strong style={{ color:"#DC2626" }}>{pendingDeliveryCount} {pendingDeliveryCount === 1 ? "pedido" : "pedidos"}</strong> que {pendingDeliveryCount === 1 ? "saiu" : "saíram"} para entrega e {pendingDeliveryCount === 1 ? "não foi finalizado" : "não foram finalizados"}.
+                </p>
+                <div style={{ background:"#FFF7ED", border:"1px solid #FDE68A", borderRadius:12, padding:"14px", margin:"12px 0", fontSize:"0.88rem", color:"#92400E", lineHeight: 1.6 }}>
+                  <strong>Deseja encerrar o caixa?</strong><br/>
+                  Todos os pedidos que já saíram para entrega serão <strong>finalizados automaticamente</strong>.
+                </div>
+                <p style={{ margin:"0 0 1rem", fontSize:"0.78rem", color:"#94A3B8" }}>
+                  ⚠️ Pedidos ainda em preparo <strong>não serão</strong> afetados.
+                </p>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => { setShowPendingWarn(false); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    ← Voltar
+                  </button>
+                  <button onClick={() => { setShowPendingWarn(false); tryClose(); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#DC2626", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    Encerrar mesmo assim
+                  </button>
+                </div>
+              </div>
+            ) : !closeWarn ? (
               <>
                 <button onClick={() => setShowCloseModal(false)} style={{ position:"absolute", top:12, right:12, background:"none", border:"none", cursor:"pointer" }}><X size={20} /></button>
                 <div style={{ fontSize:"1.5rem", marginBottom:4 }}>🏦</div>
