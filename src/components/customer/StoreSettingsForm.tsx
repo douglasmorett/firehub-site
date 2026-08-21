@@ -44,11 +44,11 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [pauseReason, setPauseReason] = useState<string>(user.storePause?.reason || "Férias");
   const [savingPause, setSavingPause] = useState(false);
   const [dirtyPause, setDirtyPause] = useState(false);
-  // Dirty states por seção
+  // Dirty states por seção (se ainda não foram configurados/salvos no banco, inicia como true para permitir salvar a configuração padrão com 1 clique)
   const [dirtyInfo, setDirtyInfo] = useState(false);
-  const [dirtyHours, setDirtyHours] = useState(false);
+  const [dirtyHours, setDirtyHours] = useState<boolean>(!user.hasConfiguredHours && !user.storeHours);
   const [dirtyCoupons, setDirtyCoupons] = useState(false);
-  const [dirtyPayment, setDirtyPayment] = useState(false);
+  const [dirtyPayment, setDirtyPayment] = useState<boolean>(!user.hasConfiguredPayment && (!user.paymentFees || !user.paymentFees.PIX));
   const [syncIfoodHours, setSyncIfoodHours] = useState(true); // Refletir horários no iFood
   const [hoursError, setHoursError] = useState<string | null>(null);
   const [hoursSyncMsg, setHoursSyncMsg] = useState<string | null>(null);

@@ -135,10 +135,29 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
     if (user.storeLogo) completedSteps.push("logo_logo_upload");
     if (user.storeBanner) completedSteps.push("logo_banner_upload");
     if (user.storeLogo || user.storeBanner) completedSteps.push("logo");
-    if (user.storeHours) completedSteps.push("hours");
-    if (user.paymentFees && Object.keys((user.paymentFees as object) || {}).length > 0) completedSteps.push("payment");
-    if (user.deliveryZones) completedSteps.push("delivery");
-    if ((user.storeOrderCount || 0) > 0) completedSteps.push("first_order");
+
+    // Horários: só considera concluído se já foi explicitamente configurado/salvo pelo lojista (Array com itens)
+    if (user.storeHours && Array.isArray(user.storeHours) && user.storeHours.length > 0) {
+      completedSteps.push("hours");
+    }
+
+    // Formas de Pagamento: só considera concluído se foi salvo pelo formulário com a configuração de taxas (PIX com objeto de taxas)
+    if (
+      user.paymentFees &&
+      typeof user.paymentFees === "object" &&
+      !Array.isArray(user.paymentFees) &&
+      (user.paymentFees as any).PIX &&
+      typeof (user.paymentFees as any).PIX === "object"
+    ) {
+      completedSteps.push("payment");
+    }
+
+    // Zonas de Entrega
+    if (user.deliveryZones && Array.isArray(user.deliveryZones) && user.deliveryZones.length > 0) {
+      completedSteps.push("delivery");
+    }
+
+    if ((user.storeOrderCount || 0) > 0 || orders.length > 0) completedSteps.push("first_order");
     if (menuCount > 0) completedSteps.push("menu");
     if (menuCount >= 5) completedSteps.push("menu_menu_prod");
 

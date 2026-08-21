@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
-import { defaultHours } from "@/lib/store-hours";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
 export async function OPTIONS(req: NextRequest) {
@@ -152,14 +151,8 @@ export async function POST(req: NextRequest) {
         storeAlertSound: "bell",
         storeOrderCount: 0,
         planPercent: 1,
-        storeHours: defaultHours() as any,
-        paymentFees: {
-          pix: true,
-          credit: true,
-          debit: true,
-          cash: true,
-          voucher: false,
-        },
+        storeHours: null,
+        paymentFees: null,
       },
     });
 
