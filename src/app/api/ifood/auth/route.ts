@@ -310,11 +310,38 @@ export async function GET(req: NextRequest) {
   // ── Passo 3: Desconecta a loja do iFood ────────────────────────────────────
   if (step === "disconnect") {
     const email = session.user?.email || "";
-    await prisma.user.update({
+
+    // O card "Integração Principal / Ativa" da tela le da tabela
+    // IfoodIntegration, nao do User. Antes o disconnect so limpava o User,
+    // entao o lojista clicava em Desconectar e a tela continuava mostrando
+    // "Ativa" — foi o que travou a Pastel da Paulista, que precisava
+    // desconectar para reconectar no merchant certo.
+    // Agora limpa OS DOIS, e apaga os tokens junto para nao deixar credencial
+    // orfa de uma conexao que o lojista pediu para encerrar.
+    const usuario = await prisma.user.update({
       where: { email },
-      data: { ifoodConnected: false, ifoodMerchantId: null }
+      data: {
+        ifoodConnected: false,
+        ifoodMerchantId: null,
+        ifoodAccessToken: null,
+        ifoodRefreshToken: null,
+        ifoodTokenExpiresAt: null,
+        ifoodAuthVerifier: null,
+      },
+      select: { id: true },
     });
-    return NextResponse.json({ success: true, connected: false });
+
+    const removidas = await prisma.ifoodIntegration.deleteMany({
+      where: { userId: usuario.id },
+    });
+
+    console.log(`[iFood Auth] Loja ${usuario.id} desconectada. Integrações removidas: ${removidas.count}`);
+
+    return NextResponse.json({
+      success: true,
+      connected: false,
+      integracoesRemovidas: removidas.count,
+    });
   }
 
   return NextResponse.json({ error: "step inválido. Use ?step=url, ?step=test, ?step=disconnect ou ?step=discover-merchant" }, { status: 400 });
