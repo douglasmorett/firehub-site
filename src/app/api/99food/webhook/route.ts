@@ -38,12 +38,24 @@ export async function POST(req: NextRequest) {
           })
         : null;
 
-      // Fallback: se tiver apenas 1 franqueado com 99Food ativo
+      // Fallback: SO quando existe exatamente 1 franqueado com 99Food ativo.
+      // Antes pegava o mais antigo com findFirst, entao um merchantId
+      // desconhecido despejava o pedido na cozinha de outra loja. Com duas ou
+      // mais lojas conectadas nao ha como adivinhar o dono — recusa.
       if (!franchisee) {
-        franchisee = await prisma.user.findFirst({
+        const conectados = await prisma.user.findMany({
           where: { food99Connected: true, role: "FRANCHISEE" },
-          orderBy: { createdAt: "asc" },
+          select: { id: true },
+          take: 2,
         });
+        if (conectados.length === 1) {
+          franchisee = await prisma.user.findUnique({ where: { id: conectados[0].id } });
+        } else if (conectados.length > 1) {
+          console.warn(
+            `[99Food Webhook] merchantId "${merchantId}" nao mapeado e ha ${conectados.length}+ lojas conectadas — pedido ${orderId} recusado para nao cair na loja errada`
+          );
+          continue;
+        }
       }
 
       if (!franchisee) {

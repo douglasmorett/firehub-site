@@ -8,10 +8,18 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
-    // Validação de segurança: Celcoin envia um token no header
-    const secret = req.headers.get("x-celcoin-signature") || req.headers.get("authorization");
+    // Validação de segurança: Celcoin envia um token no header.
+    // FALHA FECHADA. Antes era `if (expected && ...)`: sem CELCOIN_WEBHOOK_SECRET
+    // configurado, qualquer POST anônimo marcava PIX como pago.
+    // A integração Celcoin não tem nenhuma variável configurada hoje, então
+    // exigir o segredo não interrompe operação — só bloqueia o forjador.
     const expected = process.env.CELCOIN_WEBHOOK_SECRET;
-    if (expected && secret !== expected && secret !== `Bearer ${expected}`) {
+    if (!expected) {
+      console.error("[Celcoin Webhook] CELCOIN_WEBHOOK_SECRET não configurado — requisição recusada");
+      return NextResponse.json({ error: "Webhook secret not configured" }, { status: 401 });
+    }
+    const secret = req.headers.get("x-celcoin-signature") || req.headers.get("authorization");
+    if (secret !== expected && secret !== `Bearer ${expected}`) {
       console.warn("[Celcoin Webhook] Assinatura inválida");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
