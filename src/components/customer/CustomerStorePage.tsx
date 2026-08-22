@@ -2575,7 +2575,14 @@ export default function CustomerStorePage({
             )}
           </div>
 
-          {/* CARD DA SACOLA (STICKY COM ROLAGEM INTERNA PERFEITA) */}
+          {/* CARD DA SACOLA
+              Navegando (sacola): fica grudado no topo com rolagem interna — bom
+              para acompanhar o total enquanto o cliente escolhe os itens.
+              No CHECKOUT: cresce por inteiro e quem rola e a PAGINA. Antes o
+              card ficava preso em calc(100vh - 100px) e o formulario inteiro
+              (endereco, pagamento, troco, observacao) ficava espremido numa
+              barra de rolagem interna — o cliente tinha que rolar dentro da
+              caixinha para conseguir digitar. */}
           <div style={{
             background: "#FFFFFF",
             borderRadius: "16px",
@@ -2584,8 +2591,10 @@ export default function CustomerStorePage({
             boxShadow: "0 4px 20px rgba(0,0,0,0.04)",
             display: "flex",
             flexDirection: "column",
-            maxHeight: "calc(100vh - 100px)",
-            position: "sticky",
+            // Sem teto de altura no checkout: o cart-body (flex:1 + overflow
+            // auto) passa a caber no proprio conteudo e a barra interna some.
+            maxHeight: isCheckout ? "none" : "calc(100vh - 100px)",
+            position: isCheckout ? "static" : "sticky",
             top: "80px",
           }}>
             {cartContentJSX}
