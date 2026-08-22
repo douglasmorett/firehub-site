@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
@@ -14,17 +14,26 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = user.ownerId || user.id;
+  const excludeIntegrationCategories = {
+    NOT: {
+      category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
+    }
+  };
+
+  // ADMIN com uma loja selecionada (cookie firehub_active_store, mesmo padrao de
+  // /api/store/dynamic-eta) deve carregar SO o cardapio daquela loja. Sem isso o
+  // PDV de balcao/mesa puxava o catalogo inteiro de todas as franquias, com todos
+  // os combos aninhados — lento e mostrando produto de outra loja.
+  const activeStoreId = req.nextUrl.searchParams.get("storeId")
+    || req.cookies.get("firehub_active_store")?.value;
+
   const where = user.role === "ADMIN"
-    ? {
-        NOT: {
-          category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
-        }
-      }
+    ? (activeStoreId && activeStoreId !== "all"
+        ? { franchiseeId: activeStoreId, ...excludeIntegrationCategories }
+        : excludeIntegrationCategories)
     : {
         franchiseeId: targetFranchiseeId,
-        NOT: {
-          category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
-        }
+        ...excludeIntegrationCategories
       };
 
   const products = await prisma.menuProduct.findMany({

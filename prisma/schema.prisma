@@ -432,6 +432,8 @@ model ComboGroup {
   sortOrder     Int              @default(0)
   menuProduct   MenuProduct      @relation(fields: [menuProductId], references: [id], onDelete: Cascade)
   items         ComboGroupItem[]
+
+  @@index([menuProductId])
 }
 
 model ComboGroupItem {
@@ -441,6 +443,9 @@ model ComboGroupItem {
   additionalPrice Float       @default(0) // Valor adicional cobrado se este item for escolhido no combo
   comboGroup      ComboGroup  @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
   menuProduct     MenuProduct @relation(fields: [menuProductId], references: [id])
+
+  @@index([comboGroupId])
+  @@index([menuProductId])
 }
 
 model CustomerOrder {

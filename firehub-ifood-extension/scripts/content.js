@@ -7,6 +7,13 @@
  * 3. Detecta quando a sessão do iFood é encerrada/desconectada e notifica o FireHub para exibir o aviso sem abrir abas duplicadas.
  */
 
+// Guarda de instancia unica: o background reinjeta este arquivo via
+// chrome.scripting.executeScript no caminho de retry, o que duplicava listeners.
+if (window.__firehubContentLoaded) {
+  console.log("[FireHub Extension] Script ja carregado nesta aba, ignorando reinjecao.");
+} else {
+  window.__firehubContentLoaded = true;
+
 console.log("[FireHub Extension] 🍕 Script carregado no Portal do Parceiro iFood!");
 
 // ── ESTADO ──
@@ -47,17 +54,12 @@ function checkDisconnectionStatus() {
   return false;
 }
 
-// Ao carregar a página, verificar se existe um ETA pendente para aplicar
-chrome.storage.local.get(["pendingETA", "lastAppliedETA"], (store) => {
+// O pendingETA NAO e mais aplicado aqui. Quem aplica agora e o service worker,
+// via chrome.scripting.executeScript, porque o laco de espera dentro da pagina
+// era estrangulado pelo throttling de aba oculta do Chrome (uma rotina de ~12s
+// virava 15-35 min em aba de fundo — a causa do BUG 2).
+chrome.storage.local.get(["lastAppliedETA"], (store) => {
   lastAppliedETA = store.lastAppliedETA || null;
-
-  if (store.pendingETA && isOnDeliverySettingsPage()) {
-    console.log(`[FireHub] 🎯 ETA pendente encontrado: ${store.pendingETA} min. Aplicando em 3s...`);
-    setTimeout(() => {
-      applyETAOnSettingsPage(store.pendingETA);
-      chrome.storage.local.remove(["pendingETA"]);
-    }, 3000);
-  }
 });
 
 // Monitorar navegação na página para pegar logout
@@ -65,25 +67,11 @@ setInterval(checkDisconnectionStatus, 8000);
 
 // ── RECEPTOR DE MENSAGENS ──
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "SET_DELIVERY_TIME") {
-    if (checkDisconnectionStatus()) {
-      sendResponse({ success: false, reason: "disconnected" });
-      return;
-    }
-
-    const targetMin = request.minMinutes || 38;
-    console.log(`[FireHub Auto-ETA] ⏱️ Recebido: ${request.formatted} (${targetMin} min) | Modo: ${request.mode}`);
-
+  // ETA_STATUS e apenas display: o service worker ja esta aplicando o prazo
+  // por conta propria. Este script nao dirige mais o DOM.
+  if (request.action === "ETA_STATUS" || request.action === "SET_DELIVERY_TIME") {
     updateFloatingPill(request.formatted, request.ordersInProduction, request.mode, request.shouldPause);
-
-    if (request.shouldPause) {
-      console.log("[FireHub] ⚠️ shouldPause=true → Não aplicando, só exibindo alerta.");
-      sendResponse({ success: true, applied: false, reason: "shouldPause" });
-      return;
-    }
-
-    handleETAUpdate(targetMin);
-    sendResponse({ success: true, applied: true });
+    sendResponse({ success: true, display: true });
   }
 
   if (request.action === "RESET_APPLIED_ETA") {
@@ -621,3 +609,5 @@ function updatePillStatus(statusText, isError = false) {
     }, 8000);
   }
 }
+
+} // fim da guarda __firehubContentLoaded

@@ -1,8 +1,9 @@
+// Producao roda no Coolify (firehubfood.com.br). Os dominios *.vercel.app foram
+// removidos junto com a saida da Vercel — mante-los na allowlist deixaria o
+// deploy zumbi conversando com esta API.
 const ALLOWED_ORIGINS = [
   'https://firehubfood.com.br',
   'https://www.firehubfood.com.br',
-  'https://hakim-portal-grupohakim.vercel.app',
-  'https://firehub-site-zb7j-grupohakim.vercel.app',
   'http://localhost:3000',
   'http://localhost:3001',
 ];

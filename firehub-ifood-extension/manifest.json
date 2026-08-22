@@ -20,15 +20,14 @@
     "storage",
     "alarms",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "https://portal.ifood.com.br/*",
     "https://*.ifood.com.br/*",
+    "https://firehubfood.com.br/*",
     "https://*.firehubfood.com.br/*",
-    "https://*.firehub.com.br/*",
-    "https://*.hakimriodasostras.com.br/*",
-    "https://*.vercel.app/*",
     "http://localhost:3000/*",
     "http://localhost:3001/*",
     "http://localhost/*"
@@ -51,11 +50,6 @@
       "matches": [
         "https://firehubfood.com.br/*",
         "https://*.firehubfood.com.br/*",
-        "https://firehub.com.br/*",
-        "https://*.firehub.com.br/*",
-        "https://hakimriodasostras.com.br/*",
-        "https://*.hakimriodasostras.com.br/*",
-        "https://*.vercel.app/*",
         "http://localhost:3000/*",
         "http://localhost:3001/*",
         "http://localhost/*"

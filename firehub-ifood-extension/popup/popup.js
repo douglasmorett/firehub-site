@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
     { maxOrders: 15, minutes: 98 },
   ];
 
-  let serverUrl = "https://firehub-site.vercel.app";
+  let serverUrl = "https://firehubfood.com.br";
 
   async function apiFetchWithFallback(endpoint, options = {}) {
     let savedUrl = null;
@@ -61,9 +61,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (store && store.serverUrl) savedUrl = store.serverUrl;
     }
 
+    // PRODUCAO E COOLIFY (firehubfood.com.br) e vem PRIMEIRO.
+    // Antes esta lista comecava em localhost e caia no deploy zumbi da Vercel,
+    // que continua no ar servindo contagem de outro ambiente — e o resultado
+    // ainda era salvo em serverUrl, envenenando tambem o background.
+    // hakimriodasostras.com.br saiu: hoje redireciona para app.jotaja.com.
     const candidates = savedUrl
-      ? [savedUrl, "http://localhost:3001", "http://localhost:3000", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br"]
-      : ["http://localhost:3001", "http://localhost:3000", "https://firehub-site.vercel.app", "https://www.hakimriodasostras.com.br"];
+      ? [savedUrl, "https://firehubfood.com.br", "http://localhost:3001", "http://localhost:3000"]
+      : ["https://firehubfood.com.br", "http://localhost:3001", "http://localhost:3000"];
 
     const uniqueUrls = Array.from(new Set(candidates.map(u => u.replace(/\/$/, ""))));
 
@@ -82,7 +87,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const data = await res.json().catch(() => null);
 
-        if (res.ok || res.status === 401 || (data && (data.success || data.error))) {
+        // 401 NAO e sucesso: tratar como servidor valido escondia sessao expirada
+        // e o popup seguia exibindo numeros velhos sem avisar o lojista.
+        if (res.ok || (data && data.success)) {
           if (typeof chrome !== "undefined" && chrome.storage) {
             chrome.storage.local.set({ serverUrl: baseUrl });
           }
@@ -507,8 +514,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // Auto-dispatch se o toggle estiver ativo
         const autoOn = toggleAutoSync && toggleAutoSync.checked;
         const manualOn = toggleManualSync && toggleManualSync.checked;
-        if (triggerSync || autoOn || manualOn) {
-          dispatchToIfood(data.recommendedMinutes || 38, data.recommendedMinutes || 38, data.etaRangeFormatted, data.shouldPauseStore);
+        // Sem fallback fabricado: se o servidor nao mandou o valor, nao despacha
+        // (o `|| 38` antigo empurrava 38 min pro iFood mesmo sem recomendacao).
+        if ((triggerSync || autoOn || manualOn) && typeof data.recommendedMinutes === "number") {
+          requestBackgroundSync(data.ordersInProduction);
         }
       }
     } catch (err) {
@@ -518,45 +527,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function dispatchToIfood(minMin, maxMin, formatted, shouldPause = false) {
+  // O popup NAO despacha mais direto pro iFood.
+  // Antes existiam DOIS despachantes concorrentes (popup e service worker) e o
+  // do popup morria junto com o painel ao fechar — por isso o prazo so mudava
+  // com a extensao aberta. Agora ha um unico despachante: o service worker,
+  // que sobrevive ao popup fechado e nao sofre throttling de aba oculta.
+  function requestBackgroundSync(count) {
+    if (typeof chrome === "undefined" || !chrome.runtime) return;
     const nowStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-
-    if (typeof chrome !== "undefined" && chrome.tabs) {
-      chrome.tabs.query({ url: "https://*.ifood.com.br/*" }, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          ifoodSyncStatus.textContent = `🟢 ${nowStr}`;
-          ifoodSyncStatus.style.color = "#34D399";
-
-          chrome.tabs.sendMessage(tabs[0].id, {
-            action: "SET_DELIVERY_TIME",
-            minMinutes: minMin,
-            maxMinutes: maxMin,
-            formatted,
-            mode: activeMode,
-            shouldPause,
-          });
-        } else {
-          ifoodSyncStatus.textContent = `🔴 Abrindo...`;
-          ifoodSyncStatus.style.color = "#FCA5A5";
-
-          chrome.tabs.create({ url: "https://portal.ifood.com.br/", active: false }, (newTab) => {
-            if (newTab && newTab.id) {
-              setTimeout(() => {
-                ifoodSyncStatus.textContent = `🟢 ${nowStr}`;
-                ifoodSyncStatus.style.color = "#34D399";
-                chrome.tabs.sendMessage(newTab.id, {
-                  action: "SET_DELIVERY_TIME",
-                  minMinutes: minMin,
-                  maxMinutes: maxMin,
-                  formatted,
-                  mode: activeMode,
-                  shouldPause,
-                }).catch(() => {});
-              }, 6000);
-            }
-          });
-        }
-      });
-    }
+    chrome.runtime.sendMessage({ action: "FORCE_SYNC", count }, (resp) => {
+      if (chrome.runtime.lastError) {
+        ifoodSyncStatus.textContent = "🔴 SW indisponivel";
+        ifoodSyncStatus.style.color = "#FCA5A5";
+        return;
+      }
+      const r = resp && resp.result;
+      if (r && r.ok) {
+        ifoodSyncStatus.textContent = `🟢 ${nowStr}`;
+        ifoodSyncStatus.style.color = "#34D399";
+      } else if (r && r.reason === "histerese") {
+        ifoodSyncStatus.textContent = `🟢 ${nowStr} (sem mudanca)`;
+        ifoodSyncStatus.style.color = "#34D399";
+      } else {
+        ifoodSyncStatus.textContent = `🔴 ${(r && r.reason) || "falhou"}`;
+        ifoodSyncStatus.style.color = "#FCA5A5";
+      }
+    });
   }
 });
