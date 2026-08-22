@@ -130,6 +130,7 @@ export async function GET(req: NextRequest) {
               id: true,
               quantity: true,
               price: true,
+              notes: true, // observacao por item ("sem cebola") — precisa chegar na cozinha
               comboSelections: true,
               menuProduct: {
                 select: {

@@ -63,7 +63,16 @@ export async function POST(req: Request) {
       const product = menuProducts.find(p => p.id === item.menuProductId);
       if (!product) throw new Error("Produto não encontrado: " + item.menuProductId);
       totalAmount += product.price * item.quantity;
-      return { menuProductId: product.id, quantity: item.quantity, price: product.price, comboSelections: item.comboSelections || null };
+      // `notes` e a observacao POR ITEM ("sem cebola"). O carrinho ja mandava
+      // (CustomerStorePage envia notes em cada item) e a impressao/KDS ja liam
+      // i.notes — mas aqui ela era descartada, entao nunca chegava na cozinha.
+      return {
+        menuProductId: product.id,
+        quantity: item.quantity,
+        price: product.price,
+        notes: typeof item.notes === "string" && item.notes.trim() ? item.notes.trim().slice(0, 500) : null,
+        comboSelections: item.comboSelections || null,
+      };
     });
 
     // Regra de Frete Grátis por valor mínimo da loja

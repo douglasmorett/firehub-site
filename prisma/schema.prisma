@@ -657,6 +657,7 @@ model CustomerOrderItem {
   productName     String?       // Nome do produto na hora do pedido (preserva histórico se menu product for deletado)
   quantity        Int
   price           Float
+  notes           String?       // Observacao do cliente POR ITEM ("sem cebola"). O front ja enviava e a impressao/KDS ja liam, mas nao havia coluna: a observacao era descartada em silencio.
   comboSelections Json?
   order           CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuProduct     MenuProduct?  @relation(fields: [menuProductId], references: [id], onDelete: SetNull)
