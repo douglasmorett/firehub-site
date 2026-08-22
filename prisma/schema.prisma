@@ -425,6 +425,26 @@ model MenuCategory {
   updatedAt    DateTime @updatedAt
 }
 
+/// Contador atômico do número diário de pedido, por loja e por dia.
+///
+/// Existe porque a versão anterior gerava o número dentro de uma transação
+/// Serializable que só FAZIA LEITURA (count + findFirst). O SSI do PostgreSQL
+/// não detecta conflito entre transações somente-leitura, e o INSERT acontecia
+/// depois, fora dela — então dois pedidos simultâneos recebiam o MESMO número.
+/// Aconteceu em produção em 22/08/2026: dois pedidos do iFood às 17:39 saíram
+/// como #16, e o seguinte pulou para #18.
+///
+/// Aqui o número vem de `UPDATE ... SET lastNumber = lastNumber + 1 RETURNING`,
+/// que o Postgres serializa no lock da linha. Não há janela de corrida.
+model DailyOrderCounter {
+  franchiseeId String
+  dateKey      String   // "YYYY-MM-DD" no fuso America/Sao_Paulo
+  lastNumber   Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@id([franchiseeId, dateKey])
+}
+
 model ComboGroup {
   id            String           @id @default(cuid())
   menuProductId String
