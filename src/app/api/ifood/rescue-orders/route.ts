@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken, getIfoodItemUnitPrice } from "@/lib/ifood-api";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 /**
  * GET /api/ifood/rescue-orders
@@ -317,6 +318,9 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
 
   const notesArr = [
     `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
+    // Como o pedido resgatado entra no fim da fila (createdAt = agora), a hora
+    // original do iFood fica registrada aqui para nao se perder no relatorio.
+    orderData.createdAt ? `🕐 Feito no iFood às ${new Date(orderData.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} (resgatado depois)` : null,
     scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
     discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
     customerNote ? `💬 ${customerNote}` : null,
@@ -383,7 +387,15 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
       deliveryFee: deliveryFeeValue,
       status,
       notes: notesArr,
-      createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
+      // REGRA DO PROJETO (AGENTS.md): pedido resgatado entra no FIM DA FILA da
+      // cozinha, sem bagunçar numero ja impresso. O KDS ordena por createdAt
+      // (StoreOrdersDashboard sortByOrderNumberAsc, linha ~1903), entao gravar a
+      // hora ORIGINAL do iFood colocaria o resgatado no MEIO da fila, na frente
+      // de pedidos que a cozinha ja esta produzindo.
+      // Por isso createdAt = momento em que foi SALVO. A hora original do iFood
+      // fica registrada em notes, para nao se perder no relatorio.
+      createdAt: new Date(),
+      dailyOrderNumber: await generateDailyOrderNumber(franchiseeId),
       items: { create: items },
     },
   });
