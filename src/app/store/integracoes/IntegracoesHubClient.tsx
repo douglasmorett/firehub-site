@@ -835,12 +835,28 @@ export default function IntegracoesHubClient({
                           <CheckCircle2 size={18} color="#16A34A" />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
-                            {ifMerchant ? "Integração Principal" : "Loja iFood Conectada"}
-                          </div>
-                          <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>
-                            {ifMerchant || userEmail}
-                          </div>
+                          {/* Mostra o NOME da loja no iFood em vez de um rótulo
+                              genérico. O nome vem da IfoodIntegration.label, que
+                              recebe o merchantName na hora da conexão. Só cai no
+                              texto genérico quando a label ainda é um
+                              placeholder ("Loja Principal") ou não existe. */}
+                          {(() => {
+                            const rotulo = (ifoodIntegrations?.[0] as any)?.label?.trim();
+                            const generico = !rotulo || /^loja principal$/i.test(rotulo) || /^loja ifood/i.test(rotulo);
+                            const titulo = generico
+                              ? (ifMerchant ? "Integração Principal" : "Loja iFood Conectada")
+                              : rotulo;
+                            return (
+                              <>
+                                <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
+                                  {titulo}
+                                </div>
+                                <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>
+                                  {ifMerchant || userEmail}
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                         <span style={{ fontSize: "0.7rem", background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Ativa</span>
                         <button

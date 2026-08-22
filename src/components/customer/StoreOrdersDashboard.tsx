@@ -3323,7 +3323,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         <div style={{ maxWidth: "1400px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
 
           {/* Row 1: Search + Date range + Weather/Clock */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
             {/* Search */}
             <div style={{ position: "relative", flex: 1, minWidth: "180px", maxWidth: "320px" }}>
               <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
@@ -3521,7 +3521,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
 
           {/* Row 2: Action buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", flexWrap: "wrap" }}>
             <button onClick={() => setShowResumo(true)} style={{ padding: "5px 12px", background: "#1E293B", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px" }}>💰 Resumo das vendas</button>
             <button
               onClick={() => setShowAltaDemandaModal(true)}

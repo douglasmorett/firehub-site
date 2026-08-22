@@ -413,9 +413,28 @@ export async function POST(req: NextRequest) {
   });
 
   let data = await res.json();
+  let usouVerifier = !!verifier;
 
-  // Tentativa 2: Sem verifier (caso seja fluxo centralizado/direto)
+  console.log(
+    `[iFood Auth] Troca de código: status=${res.status} verifier=${verifier ? "presente" : "AUSENTE"} ` +
+    `clientId=${clientId.slice(0, 8)}…`
+  );
+
+  // Tentativa 2: sem verifier.
+  //
+  // ⚠️ No fluxo DISTRIBUÍDO o authorizationCodeVerifier e obrigatorio — ele
+  // amarra o codigo a sessao de userCode daquela loja. Repetir a troca SEM ele
+  // pode devolver um token que parece valido mas NAO carrega a concessao da
+  // loja: foi assim que a Pastel da Paulista acabou com um token cujo
+  // GET /merchants respondeu [] (visto no log de producao), e o codigo caiu no
+  // fallback do merchantId antigo, vinculando ao merchant da Hakim.
+  //
+  // Mantido apenas como compatibilidade com o fluxo centralizado antigo, mas
+  // agora fica REGISTRADO que o token veio sem verifier — e mais abaixo, se
+  // /merchants vier vazio nesse caminho, o lojista recebe instrucao clara em
+  // vez de um vinculo fantasma.
   if (!res.ok && verifier) {
+    console.warn("[iFood Auth] Tentativa com verifier falhou. Repetindo SEM verifier (fluxo centralizado legado).");
     res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -428,7 +447,17 @@ export async function POST(req: NextRequest) {
     });
     if (res.ok) {
       data = await res.json();
+      usouVerifier = false;
     }
+  }
+
+  // O verifier vale para UMA autorizacao. Deixar guardado faz a proxima
+  // tentativa reutilizar um verifier velho e falhar de novo, empurrando o fluxo
+  // para a Tentativa 2 — o caminho que gera o token sem loja.
+  if (res.ok && verifier && user?.id) {
+    prisma.user
+      .update({ where: { id: user.id }, data: { ifoodAuthVerifier: null } })
+      .catch(() => {});
   }
 
   if (!res.ok) {
@@ -512,6 +541,11 @@ export async function POST(req: NextRequest) {
 
           const livres = candidatos.filter((c: any) => !ocupados.has(c.id));
 
+          console.log(
+            `[iFood Auth] merchants: ${candidatos.length} retornados, ${candidatos.length - ocupados.size} livres` +
+            ` (ocupados por outra loja: ${[...ocupados].join(", ") || "nenhum"})`
+          );
+
           if (livres.length === 1) {
             merchantId = livres[0].id;
             merchantName = livres[0].name;
@@ -534,6 +568,25 @@ export async function POST(req: NextRequest) {
     } catch (e: any) {
       console.warn("[iFood Auth] Erro ao buscar lista de merchants:", e?.message);
     }
+  }
+
+  // ⚠️ NÃO reaproveitar o merchantId antigo quando o iFood não devolveu nenhuma
+  // loja. Era exatamente isso que mantinha a Pastel da Paulista amarrada ao
+  // merchant da Hakim: /merchants respondia [], o código caía aqui e reafirmava
+  // o vínculo errado, então a tela mostrava "Ativa" apontando para a loja errada
+  // e nenhum pedido chegava. Melhor não vincular e dizer o que houve.
+  if (!merchantId && !usouVerifier) {
+    console.error(
+      "[iFood Auth] Token obtido SEM verifier e nenhuma loja retornada. " +
+      "Não vinculando — o lojista precisa gerar um código novo."
+    );
+    return NextResponse.json({
+      error: "A autorização não trouxe nenhuma loja do iFood.",
+      hint:
+        "Isso costuma acontecer quando o código expira (ele vale poucos minutos) ou quando é " +
+        "colado um código de uma tentativa anterior. Clique em 'Conectar e Autorizar' para gerar " +
+        "um código NOVO, autorize no portal e cole em seguida, sem reaproveitar o código antigo.",
+    }, { status: 400 });
   }
 
   // Se o usuário já tinha um merchantId cadastrado na conta ou no body, reutiliza
