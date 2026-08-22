@@ -179,8 +179,21 @@ export async function GET(req: NextRequest) {
     }
 
     // ── MODO AUTOMÁTICO (Tabela Oficial Hakim — Baseada na aba 'Em Produção') ──
+    // A quantidade de motoboys é configuração DA LOJA, persistida em User.etaConfig
+    // (ver /api/store/eta-config) e vale até alguém mudar. O parâmetro ?motoboys=
+    // continua aceito só como fallback para clientes antigos que ainda não
+    // sincronizam com o servidor — o valor salvo tem prioridade.
+    const storeEtaConfig = await prisma.user.findUnique({
+      where: { id: validFranchiseeIds[0] },
+      select: { etaConfig: true },
+    });
+    const savedMotoboys = (storeEtaConfig?.etaConfig as any)?.motoboysCount;
+
     const queryMotoboys = req.nextUrl.searchParams.get("motoboys");
-    let activeMotoboys = queryMotoboys ? parseInt(queryMotoboys, 10) : 2;
+    let activeMotoboys =
+      typeof savedMotoboys === "number" && savedMotoboys > 0
+        ? savedMotoboys
+        : (queryMotoboys ? parseInt(queryMotoboys, 10) : 2);
     if (isNaN(activeMotoboys) || activeMotoboys < 1) activeMotoboys = 1;
 
     // Cálculo exato pela fórmula da Planilha Hakim:

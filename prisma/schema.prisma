@@ -50,6 +50,7 @@ model User {
   storeOrderCount Int             @default(0) // Contador de pedidos (Pay as You Grow)
   printerConfig   Json?           // Config de impressoras: { autoprint, autoBeverageTag, customBeverageKeywords, defaultPaperWidth, printers: [{ id, name, label, categories, copies, paperWidth: "58mm"|"80mm", columns?: number, escposProfile?: "full"|"safe"|"legacy" }] }
   timeAlertConfig Json?           // Config de alertas visuais de tempo: { yellowEnabled, yellowMinutes, redEnabled, redMinutes }
+  etaConfig       Json?           // Config do ETA dinamico por loja: { motoboysCount, updatedAt, updatedBy }. Persiste ate alguem mudar (nao reseta diariamente).
   kdsScreens      Json?           // Telas KDS configuradas da loja: [{id, name, stage, filter, categoryFilter}]
   chatbotConfig   Json?           // Config do Chatbot IA WhatsApp: { active, connected, phone, pairingCode, qrCode, personality, customPrompt, autoOrderLink }
   fixedCosts      Json?           // Custos fixos mensais: [{id, label, value}] ex: aluguel, funcionários

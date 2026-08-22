@@ -233,7 +233,9 @@ document.addEventListener("DOMContentLoaded", () => {
     headerTitle.textContent = storeName;
     headerSub.textContent = "CONECTADO AO FIREHUB";
     renderManualRules();
-    fetchData();
+    // O servidor e a fonte de verdade do numero de motoboys (config da loja).
+    // Busca antes de calcular, senao o primeiro fetchData usaria o cache local.
+    loadMotoboysFromServer().finally(() => fetchData());
   }
 
   // Alternância de Abas
@@ -257,11 +259,57 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchData();
   });
 
+  // A quantidade de motoboys e configuracao DA LOJA e mora no servidor
+  // (User.etaConfig, via /api/store/eta-config). O chrome.storage.local vira so
+  // cache: antes o numero vivia so no navegador, entao trocar de maquina ou
+  // limpar os dados do Chrome fazia voltar ao padrao 2 em silencio — e 2 e
+  // justamente o valor que joga a loja em "PAUSAR" no primeiro pico.
+  // Persiste ate alguem mudar; nao reseta diariamente.
+  async function persistMotoboys(value) {
+    try {
+      const { data } = await apiFetchWithFallback(
+        `/api/store/eta-config${authToken ? `?token=${encodeURIComponent(authToken)}` : ""}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ motoboysCount: value })
+        }
+      );
+      if (data && data.success) {
+        firehubSyncStatus.textContent = `🟢 ${value} motoboys salvos`;
+        firehubSyncStatus.style.color = "#34D399";
+      } else {
+        firehubSyncStatus.textContent = `🔴 nao salvou`;
+        firehubSyncStatus.style.color = "#FCA5A5";
+      }
+    } catch (err) {
+      // Offline: mantem o valor local e avisa que nao sincronizou.
+      firehubSyncStatus.textContent = `🟡 salvo so neste PC`;
+      firehubSyncStatus.style.color = "#FCD34D";
+    }
+  }
+
+  async function loadMotoboysFromServer() {
+    try {
+      const { data } = await apiFetchWithFallback(
+        `/api/store/eta-config${authToken ? `?token=${encodeURIComponent(authToken)}` : ""}`
+      );
+      if (data && data.success && typeof data.motoboysCount === "number") {
+        count = data.motoboysCount;
+        motoboysCountEl.textContent = count;
+        saveState();
+        return true;
+      }
+    } catch (err) {}
+    return false;
+  }
+
   btnMinus.addEventListener("click", () => {
     if (count > 1) {
       count--;
       motoboysCountEl.textContent = count;
       saveState();
+      persistMotoboys(count);
       fetchData();
     }
   });
@@ -270,6 +318,7 @@ document.addEventListener("DOMContentLoaded", () => {
     count++;
     motoboysCountEl.textContent = count;
     saveState();
+    persistMotoboys(count);
     fetchData();
   });
 
