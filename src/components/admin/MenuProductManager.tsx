@@ -129,7 +129,6 @@ export default function MenuProductManager({
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<any[]>([]);
   const [savingReorder, setSavingReorder] = useState(false);
-  const [expandedCatPreviews, setExpandedCatPreviews] = useState<Record<string, boolean>>({});
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
   const [editingCat, setEditingCat] = useState<{ id: string; name: string } | null>(null);
   const [savingRename, setSavingRename] = useState(false);
@@ -300,10 +299,6 @@ export default function MenuProductManager({
     });
 
     setReorderList(fullList);
-    // Expandir prévias por padrão para o lojista ver o cardápio completo
-    const initialExpanded: Record<string, boolean> = {};
-    fullList.forEach(c => { initialExpanded[c.name] = true; });
-    setExpandedCatPreviews(initialExpanded);
     setShowReorderModal(true);
   };
 
@@ -2098,7 +2093,7 @@ export default function MenuProductManager({
                   ↕️ Reordenar Cardápio (Ordem do Site)
                 </h3>
                 <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#64748B" }}>
-                  Ajuste a ordem das categorias. Itens avulsos e combos são exibidos juntos exatamente como no site.
+                  Arraste as categorias para definir a ordem em que aparecem no cardápio do cliente.
                 </p>
               </div>
             </div>
@@ -2112,26 +2107,6 @@ export default function MenuProductManager({
                 <span>•</span>
                 <span>📦 {products.filter(p => p.isCombo && !isHiddenIntegrationItem(p)).length} Combos</span>
               </div>
-              <div style={{ display: "flex", gap: "6px" }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allExp: Record<string, boolean> = {};
-                    reorderList.forEach(c => { allExp[c.name] = true; });
-                    setExpandedCatPreviews(allExp);
-                  }}
-                  style={{ padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#475569", cursor: "pointer" }}
-                >
-                  Expandir Tudo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExpandedCatPreviews({})}
-                  style={{ padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", color: "#475569", cursor: "pointer" }}
-                >
-                  Recolher Tudo
-                </button>
-              </div>
             </div>
 
             {/* LISTA SCROLLÁVEL DE CATEGORIAS */}
@@ -2140,7 +2115,6 @@ export default function MenuProductManager({
                 const catProds = products.filter(p => (p.category || "").toLowerCase().trim() === cat.name.toLowerCase().trim() && !isHiddenIntegrationItem(p));
                 const itemsCount = catProds.filter(p => !p.isCombo).length;
                 const combosCount = catProds.filter(p => p.isCombo).length;
-                const isExpanded = !!expandedCatPreviews[cat.name];
 
                 return (
                   <div
@@ -2161,7 +2135,7 @@ export default function MenuProductManager({
                         justifyContent: "space-between",
                         padding: "10px 14px",
                         background: "#F8FAFC",
-                        borderBottom: isExpanded && catProds.length > 0 ? "1px solid #E2E8F0" : "none",
+                        borderBottom: "none",
                         gap: "10px",
                         flexWrap: "wrap",
                       }}
@@ -2218,74 +2192,9 @@ export default function MenuProductManager({
                         >
                           <ChevronsDown size={14} />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedCatPreviews(prev => ({ ...prev, [cat.name]: !prev[cat.name] }))}
-                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: isExpanded ? "#EDE9FE" : "#FFF", color: isExpanded ? "#7C3AED" : "#64748B", cursor: "pointer", marginLeft: "4px" }}
-                          title={isExpanded ? "Ocultar prévia de produtos" : "Ver produtos nesta categoria"}
-                        >
-                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        </button>
                       </div>
                     </div>
 
-                    {/* Prévia dos Produtos (Itens e Combos juntos) */}
-                    {isExpanded && (
-                      <div style={{ padding: "8px 12px", background: "#FFFFFF" }}>
-                        {catProds.length === 0 ? (
-                          <div style={{ padding: "8px", fontSize: "0.78rem", color: "#94A3B8", fontStyle: "italic" }}>
-                            Nenhum produto cadastrado nesta categoria.
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                            {catProds.map(p => (
-                              <div
-                                key={p.id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  padding: "6px 10px",
-                                  background: p.active ? "#F8FAFC" : "#FEF2F2",
-                                  borderRadius: "8px",
-                                  border: "1px solid #E2E8F0",
-                                  gap: "8px",
-                                }}
-                              >
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-                                  {p.imageUrl ? (
-                                    <img src={p.imageUrl} alt={p.name} style={{ width: "32px", height: "32px", objectFit: "cover", borderRadius: "6px", flexShrink: 0 }} />
-                                  ) : (
-                                    <div style={{ width: "32px", height: "32px", background: "#E2E8F0", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.8rem" }}>
-                                      {p.isCombo ? "📦" : "🍔"}
-                                    </div>
-                                  )}
-                                  <div style={{ minWidth: 0 }}>
-                                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#1E293B", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "340px" }}>
-                                      {p.name}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-                                  <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "2px 6px", borderRadius: "4px", background: p.isCombo ? "#EFF6FF" : "#F1F5F9", color: p.isCombo ? "#1D4ED8" : "#475569" }}>
-                                    {p.isCombo ? "COMBO" : "ITEM"}
-                                  </span>
-                                  {!p.active && (
-                                    <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "2px 6px", borderRadius: "4px", background: "#FEF2F2", color: "#DC2626" }}>
-                                      PAUSADO
-                                    </span>
-                                  )}
-                                  <span style={{ fontSize: "0.85rem", fontWeight: 900, color: "#E8360C" }}>
-                                    R$ {p.price.toFixed(2).replace(".", ",")}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 );
               })}
