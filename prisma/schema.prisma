@@ -48,7 +48,7 @@ model User {
   storeTimezone    String?        @default("America/Sao_Paulo") // Fuso horário regional do restaurante
   storeLoyalty    Json?           // { type: cashback|points, rate: 2, active: true }
   storeOrderCount Int             @default(0) // Contador de pedidos (Pay as You Grow)
-  printerConfig   Json?           // Config de impressoras: { autoprint, printers: [{name, label, categories, copies}] }
+  printerConfig   Json?           // Config de impressoras: { autoprint, autoBeverageTag, customBeverageKeywords, defaultPaperWidth, printers: [{ id, name, label, categories, copies, paperWidth: "58mm"|"80mm", columns?: number, escposProfile?: "full"|"safe"|"legacy" }] }
   timeAlertConfig Json?           // Config de alertas visuais de tempo: { yellowEnabled, yellowMinutes, redEnabled, redMinutes }
   kdsScreens      Json?           // Telas KDS configuradas da loja: [{id, name, stage, filter, categoryFilter}]
   chatbotConfig   Json?           // Config do Chatbot IA WhatsApp: { active, connected, phone, pairingCode, qrCode, personality, customPrompt, autoOrderLink }

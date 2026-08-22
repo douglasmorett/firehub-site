@@ -7,6 +7,7 @@ type PrinterConfig = {
   autoprint: boolean;
   autoBeverageTag?: boolean;
   customBeverageKeywords?: string;
+  defaultPaperWidth?: "58mm" | "80mm"; // herdado por impressora detectada sozinha
   printers: PrinterEntry[];
 };
 
@@ -17,6 +18,8 @@ type PrinterEntry = {
   categories: string[]; // categorias que imprime
   copies: number;
   paperWidth?: "58mm" | "80mm"; // 58mm (32 colunas) ou 80mm (48 colunas)
+  columns?: number;             // largura REAL medida pela regua (vazio = padrao da bobina)
+  escposProfile?: "full" | "safe" | "legacy"; // perfil de preambulo ESC/POS
 };
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
@@ -26,9 +29,10 @@ const ASSISTANT_URL = "http://localhost:7891";
 
 /* ─── Componente principal ───────────────────────────────────── */
 export default function PrinterSetupClient({
-  storeName, initialConfig, categories,
+  storeName, franchiseeId, initialConfig, categories,
 }: {
   storeName: string;
+  franchiseeId: string;
   initialConfig: PrinterConfig | null;
   categories: string[];
 }) {
@@ -42,6 +46,7 @@ export default function PrinterSetupClient({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testingPrinter, setTestingPrinter] = useState<string | null>(null);
+  const [rulerPrinter, setRulerPrinter] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
   const tryConnect = useCallback(async (userClicked = false) => {
@@ -134,8 +139,22 @@ export default function PrinterSetupClient({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              // Campos legados: honrados pelo assistente ja instalado.
+              // franchiseeId e pre-requisito de seguranca: sem ele o polling
+              // da nuvem nao sabe de qual loja puxar os pedidos.
+              franchiseeId,
               printer: firstPrinter.name,
               paperWidth: firstPrinter.paperWidth || "80mm",
+              // Campo novo: assistente antigo ignora, assistente novo usa
+              // para resolver largura/perfil POR IMPRESSORA (Cozinha 80mm + Bar 58mm).
+              printers: config.printers.map(pr => ({
+                name: pr.name,
+                paperWidth: pr.paperWidth || "80mm",
+                columns: pr.columns,
+                escposProfile: pr.escposProfile,
+                copies: pr.copies || 1,
+                categories: pr.categories || [],
+              })),
             }),
           }).catch(() => {});
         }
@@ -187,6 +206,23 @@ export default function PrinterSetupClient({
     });
   };
 
+  const runRuler = async (printerName: string) => {
+    setRulerPrinter(printerName);
+    try {
+      const { printWidthRuler } = await import("@/lib/print");
+      const ok = await printWidthRuler(printerName);
+      if (ok) {
+        alert("📏 Régua enviada!\n\nNo papel, ache a ÚLTIMA linha \"CABE N\" que NÃO quebrou e digite esse número no campo \"colunas reais\" ao lado.");
+      } else {
+        alert("⚠️ Não foi possível falar com o Assistente FireHub neste computador.");
+      }
+    } catch (e: any) {
+      alert(`❌ Erro ao imprimir a régua: ${e.message}`);
+    } finally {
+      setRulerPrinter(null);
+    }
+  };
+
   const testPrint = async (printerName: string, label: string) => {
     setTestingPrinter(printerName);
     try {
@@ -210,18 +246,19 @@ export default function PrinterSetupClient({
         }),
       });
 
-      // 2. Tenta envio direto nas portas locais se disponível
-      const ports = [7899, 7900, 7901, 7891];
-      for (const port of ports) {
-        try {
-          await fetch(`http://localhost:${port}/print-test`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ printer: printerName, storeName }),
-            signal: AbortSignal.timeout(1500),
-          });
-        } catch {}
-      }
+      // 2. Envio direto no assistente local, respeitando a largura configurada.
+      //    /print-test ignora "columns" no assistente instalado — printTestReceipt
+      //    vai por /print, que honra 58/80 e a calibracao fina hoje mesmo.
+      const entry = config.printers.find(p => p.name === printerName);
+      const { printTestReceipt } = await import("@/lib/print");
+      await printTestReceipt(
+        printerName,
+        storeName,
+        entry?.paperWidth || config.defaultPaperWidth || "80mm",
+        entry?.columns,
+        config as any,
+        entry?.escposProfile
+      );
 
       alert(`✅ Impressão de teste enviada para "${label || printerName || "Impressora"}"!\n\nA comanda sairá na impressora em poucos segundos.`);
     } catch (e: any) {
@@ -501,6 +538,35 @@ export default function PrinterSetupClient({
                 >
                   🧾 POS 58 (58mm / 32 colunas)
                 </button>
+              </div>
+
+              {/* Calibração fina — só é necessária quando a impressora não obedece o padrão */}
+              <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => runRuler(printer.name)}
+                  disabled={rulerPrinter === printer.name}
+                  style={{ padding: "7px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  {rulerPrinter === printer.name ? "Imprimindo..." : "📏 Calibrar largura (régua)"}
+                </button>
+                <input
+                  type="number"
+                  min={24}
+                  max={64}
+                  placeholder={printer.paperWidth === "58mm" ? "32" : "48"}
+                  value={printer.columns ?? ""}
+                  onChange={e => {
+                    const v = Number(e.target.value);
+                    updatePrinter(printer.id, {
+                      columns: e.target.value && Number.isFinite(v) ? Math.max(24, Math.min(64, Math.floor(v))) : undefined,
+                    });
+                  }}
+                  style={{ width: 88, padding: "7px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, fontFamily: "inherit" }}
+                />
+                <span style={{ fontSize: "0.72rem", color: "#64748B" }}>
+                  colunas reais (deixe vazio para o padrão)
+                </span>
               </div>
             </div>
 

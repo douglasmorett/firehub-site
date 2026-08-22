@@ -677,7 +677,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           gap: "6px"
         }}>
           {/* Left: Status action button + motoboy select */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, minWidth: 0, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: "1 1 140px", minWidth: 0, flexWrap: "wrap" }}>
             {order.status === "NOVO" && (
               <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
             )}
@@ -756,7 +756,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           </div>
 
           {/* Right: Icon buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, flexWrap: "wrap", maxWidth: "100%" }}>
             {/* WhatsApp */}
             {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (() => {
               const rawDigits = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "");
@@ -1152,6 +1152,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       .then(d => { if (d) setPrinterConfig(d); })
       .catch(() => {});
   }, []);
+
+  // Espelha a largura REAL configurada em /store/impressoras no preview do recibo,
+  // para o seletor do modal parar de divergir do que sai na impressora.
+  useEffect(() => {
+    const w = (printerConfig as any)?.printers?.[0]?.paperWidth
+           || (printerConfig as any)?.defaultPaperWidth;
+    if (w === "58mm" || w === "80mm") setReceiptPaperSize(w);
+  }, [printerConfig]);
 
   const printingInProgressRef = useRef<Set<string>>(new Set());
 

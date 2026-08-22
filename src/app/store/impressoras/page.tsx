@@ -8,8 +8,16 @@ export default async function ImpressorasPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/");
 
-  const user = await prisma.user.findUnique({
+  const me = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true },
+  });
+  if (!me) redirect("/");
+
+  // Mesma resolucao de dono usada pelo PUT/GET de /api/store/printer-config
+  const ownerId = me.ownerId || me.id;
+  const user = await prisma.user.findUnique({
+    where: { id: ownerId },
     select: { id: true, storeName: true, printerConfig: true },
   });
   if (!user) redirect("/");
@@ -25,6 +33,7 @@ export default async function ImpressorasPage() {
   return (
     <PrinterSetupClient
       storeName={user.storeName || ""}
+      franchiseeId={ownerId}
       initialConfig={user.printerConfig as any}
       categories={categories}
     />

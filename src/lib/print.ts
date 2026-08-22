@@ -26,6 +26,8 @@ type PrintOrder = {
   createdAt?: string;
 };
 
+export type EscPosProfile = "full" | "safe" | "legacy";
+
 type PrinterEntry = {
   id: string;
   name: string;
@@ -33,12 +35,32 @@ type PrinterEntry = {
   categories: string[];
   copies: number;
   paperWidth?: "58mm" | "80mm";
+  /* Escape hatch: largura REAL medida pela regua de calibracao.
+     Vazio = usa o padrao da bobina (80mm -> 48 / 58mm -> 32). */
+  columns?: number;
+  /* Perfil de preambulo ESC/POS. Assistentes antigos ignoram este campo. */
+  escposProfile?: EscPosProfile;
 };
 
 type PrinterConfig = {
   autoprint: boolean;
+  autoBeverageTag?: boolean;
+  customBeverageKeywords?: string;
+  /* Herdado pela impressora detectada automaticamente (loja nova, sem printers[]). */
+  defaultPaperWidth?: "58mm" | "80mm";
+  defaultColumns?: number;
   printers: PrinterEntry[];
 };
+
+/* ─── Fonte unica da verdade da largura no site ──────────────
+   Devolve undefined quando NAO ha calibracao. Assim o body do POST
+   sai byte-a-byte igual ao de hoje e o assistente mantem o
+   comportamento atual (32 ou 48 colunas). */
+export function resolveColumns(p?: { paperWidth?: string; columns?: number } | null): number | undefined {
+  const c = Number(p?.columns);
+  if (Number.isFinite(c) && c >= 24 && c <= 64) return Math.floor(c);
+  return undefined;
+}
 
 /* ─── Tenta obter URL ativa do assistente (localhost ou 127.0.0.1) ── */
 async function getAssistantUrl(): Promise<string | null> {
@@ -66,7 +88,9 @@ async function printToDevice(
   copies = 1,
   paperWidth = "80mm",
   force = false,
-  printerConfig?: PrinterConfig
+  printerConfig?: PrinterConfig,
+  columns?: number,
+  escposProfile?: EscPosProfile
 ): Promise<boolean> {
   try {
     const baseUrl = await getAssistantUrl();
@@ -88,6 +112,11 @@ async function printToDevice(
         printer: targetPrinter,
         paperWidth,
         force,
+        /* Aditivos: assistente antigo ignora campo que nao conhece.
+           O assistente ja instalado nas lojas honra "columns" em
+           cols = columns || (paperWidth === "58mm" ? 32 : 48). */
+        ...(columns ? { columns } : {}),
+        ...(escposProfile ? { escposProfile } : {}),
         printerConfig: {
           autoBeverageTag: (printerConfig as any)?.autoBeverageTag !== false,
           customBeverageKeywords: (printerConfig as any)?.customBeverageKeywords || "",
@@ -151,7 +180,8 @@ export async function printOrder(
         label: "Impressora Padrão",
         categories: [],
         copies: 1,
-        paperWidth: "80mm"
+        paperWidth: printerConfig?.defaultPaperWidth || "80mm",
+        columns: printerConfig?.defaultColumns,
       }];
     }
   }
@@ -197,30 +227,132 @@ export async function printOrder(
     }
 
     const filteredOrder = { ...order, items: itemsToPrint };
-    const result = await printToDevice(printer.name, filteredOrder, storeName, printer.copies || 1, printer.paperWidth || "80mm", force, printerConfig);
+    const result = await printToDevice(
+      printer.name,
+      filteredOrder,
+      storeName,
+      printer.copies || 1,
+      printer.paperWidth || printerConfig?.defaultPaperWidth || "80mm",
+      force,
+      printerConfig,
+      resolveColumns(printer) ?? printerConfig?.defaultColumns,
+      printer.escposProfile
+    );
     if (result) printed++;
   }
 
   return { success: printed > 0, printed, attempted: true };
 }
 
-/* ─── Comanda de teste ───────────────────────────────────── */
+/* ─── Comanda de teste ─────────────────────────────────────
+   NAO usa /print-test: aquela rota ignora "columns" no assistente ja
+   instalado e sempre calcula 32/48 a partir do paperWidth. O POST /print
+   honra columns hoje, sem reinstalar nada — entao o teste passa a refletir
+   de verdade a largura configurada pelo lojista. */
 export async function printTestReceipt(
   printerName: string,
   storeName: string,
-  paperWidth: "58mm" | "80mm" = "80mm"
+  paperWidth: "58mm" | "80mm" = "80mm",
+  columns?: number,
+  printerConfig?: PrinterConfig,
+  escposProfile?: EscPosProfile
 ): Promise<boolean> {
+  const larguraTxt = columns ? `${paperWidth} / ${columns} col` : paperWidth;
+  const dummy = {
+    /* id unico: evita a trava anti-duplo-clique de 5s do assistente */
+    id: `TESTE_${Date.now()}`,
+    dailyOrderNumber: "000",
+    customerName: "Cliente Teste FireHub",
+    customerPhone: "(00) 00000-0000",
+    customerAddress: "Rua Exemplo de Endereco Bem Longo Para Testar Quebra, 1234 - Bairro Modelo - Cidade/UF",
+    deliveryType: "DELIVERY" as const,
+    paymentMethod: "Pix (Online)",
+    items: [
+      { name: "Item Teste com Nome Longo Para Medir Largura", qty: 1, price: 15.0 },
+      { name: "Item Teste 2", qty: 2, price: 10.0 },
+    ],
+    totalAmount: 35.0,
+    deliveryFee: 5.99,
+    notes: `Impressao de Teste FireHub (${larguraTxt})`,
+    createdAt: new Date().toISOString(),
+  };
+  return printToDevice(
+    printerName,
+    dummy as any,
+    storeName,
+    1,
+    paperWidth,
+    true,
+    /* config real da loja: sem ela a tarja de bebida cairia no default ligado */
+    printerConfig || ({ autoprint: true, autoBeverageTag: false, printers: [] } as PrinterConfig),
+    columns,
+    escposProfile
+  );
+}
+
+/* ─── Regua de calibracao de largura ───────────────────────
+   Usa /print-raw, que existe no assistente ja instalado e envia os bytes
+   verbatim (sem preambulo nenhum): controlamos 100% do stream a partir do
+   navegador. Cada variacao comeca com ESC @ para isolar o estado da anterior.
+   O lojista acha a ultima linha "CABE N" que NAO quebrou e digita esse N
+   no campo de colunas reais. */
+const RULER_VARIANTS: Array<{ n: string; cmd: number[] }> = [
+  { n: "A: INIT ANTIGO (exe atual da loja)", cmd: [0x1b, 0x74, 0x03] },
+  { n: "B: + ESC M 0 (forca Fonte A)",       cmd: [0x1b, 0x74, 0x03, 0x1b, 0x4d, 0x00] },
+  { n: "C: + ESC SP 0 (espacamento 0)",      cmd: [0x1b, 0x74, 0x03, 0x1b, 0x20, 0x00] },
+  { n: "D: + GS W 576 (area 80mm)",          cmd: [0x1b, 0x74, 0x03, 0x1d, 0x57, 0x40, 0x02] },
+  { n: "E: PERFIL SAFE (novo padrao)",       cmd: [0x1b, 0x74, 0x03, 0x1b, 0x4d, 0x00, 0x1b, 0x21, 0x00, 0x1b, 0x20, 0x00] },
+  { n: "F: PERFIL FULL (safe + geometria)",  cmd: [0x1b, 0x74, 0x03, 0x1b, 0x52, 0x00, 0x1b, 0x4d, 0x00, 0x1b, 0x21, 0x00, 0x1b, 0x20, 0x00, 0x1b, 0x32, 0x1d, 0x4c, 0x00, 0x00, 0x1d, 0x57, 0x40, 0x02] },
+];
+
+/* Base64 sem espalhar o array inteiro em String.fromCharCode (estoura a pilha) */
+function bytesToBase64(bytes: number[]): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b & 0xff);
+  return btoa(bin);
+}
+
+export async function printWidthRuler(printerName: string): Promise<boolean> {
   try {
     const baseUrl = await getAssistantUrl();
     if (!baseUrl) return false;
-    const res = await fetch(`${baseUrl}/print-test`, {
+
+    const b: number[] = [];
+    const put = (str: string) => { for (const ch of str) b.push(ch.charCodeAt(0) & 0xff); };
+    const line = (str: string) => { put(str); b.push(0x0a); };
+
+    const tens  = Array.from({ length: 60 }, (_, i) => String(Math.floor((i + 1) / 10) % 10)).join("");
+    const units = Array.from({ length: 60 }, (_, i) => String((i + 1) % 10)).join("");
+    const fit = (n: number) => `CABE ${n} `.padEnd(n - 1, ".") + "|";
+
+    b.push(0x1b, 0x40);
+    b.push(0x1b, 0x61, 0x01); line("FIREHUB - REGUA DE LARGURA"); b.push(0x1b, 0x61, 0x00);
+    line(`Impressora: ${printerName || "(padrao)"}`);
+    line("1) Ache a ULTIMA linha CABE que NAO quebrou.");
+    line("2) Anote o numero dela no bloco A e no bloco E.");
+    b.push(0x0a);
+
+    for (const v of RULER_VARIANTS) {
+      b.push(0x1b, 0x40); // reset total isola cada variacao
+      for (const cmd of v.cmd) b.push(cmd);
+      line(`--- ${v.n} ---`);
+      line(tens);
+      line(units);
+      for (const n of [32, 40, 42, 44, 46, 48]) line(fit(n));
+      b.push(0x0a);
+    }
+    b.push(0x1b, 0x61, 0x00);             // volta para LEFT: nao deixa estado sujo
+    b.push(0x1b, 0x64, 0x04, 0x1d, 0x56, 0x00);
+
+    const res = await fetch(`${baseUrl}/print-raw`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printer: printerName, storeName, paperWidth }),
+      body: JSON.stringify({ printer: printerName, data: bytesToBase64(b) }),
     });
     const data = await res.json();
     return data.ok === true;
-  } catch {
+  } catch (err) {
+    console.error("[FireHub Print] Regua:", err);
     return false;
   }
 }

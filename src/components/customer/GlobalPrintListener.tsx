@@ -44,6 +44,7 @@ export default function GlobalPrintListener() {
   const isPollingRef = useRef(false);
   const isFirstPollRef = useRef(true);
   const [printerConfig, setPrinterConfig] = useState<any>(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
 
   // Carregar configurações de impressora da loja
   useEffect(() => {
@@ -53,7 +54,8 @@ export default function GlobalPrintListener() {
       .then((data) => {
         if (data && !data.error) setPrinterConfig(data);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setConfigLoaded(true));
   }, [session]);
 
   useEffect(() => {
@@ -80,6 +82,12 @@ export default function GlobalPrintListener() {
       isPollingRef.current = true;
 
       try {
+        // Aguarda a config chegar antes de reivindicar qualquer pedido.
+        // O efeito reexecuta sozinho quando configLoaded virar true.
+        if (!configLoaded) {
+          return;
+        }
+
         if (printerConfig?.autoprint === false) {
           return;
         }
@@ -199,7 +207,11 @@ export default function GlobalPrintListener() {
                           (session.user as any)?.ownerId || (session.user as any)?.id,
                         order: formattedOrder,
                         storeName,
-                        paperWidth: "80mm",
+                        paperWidth:
+                          activePrinterConfig?.printers?.[0]?.paperWidth ||
+                          activePrinterConfig?.defaultPaperWidth ||
+                          "80mm",
+                        printerConfig: activePrinterConfig,
                       }),
                     });
                   }
@@ -223,7 +235,7 @@ export default function GlobalPrintListener() {
       active = false;
       clearTimeout(timer);
     };
-  }, [session, printerConfig]);
+  }, [session, printerConfig, configLoaded]);
 
   return null;
 }

@@ -41,7 +41,12 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const franchiseeId = searchParams.get("franchiseeId");
     const sinceParam = searchParams.get("since");
-    const all = searchParams.get("all") === "true";
+
+    // Sem loja identificada nao ha fila: este endpoint e consumido pelo
+    // assistente local e nunca deve devolver pedido de outra loja.
+    if (!franchiseeId) {
+      return NextResponse.json({ jobs: [] });
+    }
 
     // Padrão: 2 horas atrás
     let sinceDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
@@ -55,11 +60,8 @@ export async function GET(req: NextRequest) {
     const where: any = {
       createdAt: { gt: sinceDate },
       status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
+      franchiseeId,
     };
-
-    if (!all && franchiseeId) {
-      where.franchiseeId = franchiseeId;
-    }
 
     const recentOrders = await prisma.customerOrder.findMany({
       where,
@@ -76,11 +78,32 @@ export async function GET(req: NextRequest) {
       }
     });
 
+    // Uma unica leitura da config da loja (nao repete o JSON por pedido)
+    const owner = await prisma.user.findUnique({
+      where: { id: franchiseeId },
+      select: { printerConfig: true },
+    });
+    const pc: any = (owner?.printerConfig as any) || null;
+    const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
+
     const jobs = recentOrders.map(order => ({
       id: "job_" + order.id,
       order,
       storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
-      paperWidth: "80mm",
+      // Escalar compativel com o assistente ja instalado. Vale para instalacao
+      // de UMA impressora; com varias, quem resolve e o printerConfig abaixo.
+      paperWidth: printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
+      columns: printers[0]?.columns,
+      escposProfile: printers[0]?.escposProfile,
+      // Fonte da verdade do assistente novo: resolve largura POR IMPRESSORA.
+      // Campo aditivo — assistente antigo ignora sem erro.
+      printerConfig: {
+        autoprint: pc?.autoprint !== false,
+        autoBeverageTag: pc?.autoBeverageTag !== false,
+        customBeverageKeywords: pc?.customBeverageKeywords || "",
+        defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
+        printers,
+      },
       createdAt: order.createdAt.toISOString(),
     }));
 

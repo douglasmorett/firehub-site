@@ -247,7 +247,14 @@ function cleanAscii(str) {
     .replace(/[^\x20-\x7E\n]/g, "");
 }
 
-function buildEscPos(order, storeName, columns = 48) {
+function buildEscPos(order, storeName, columns = 48, profile = "safe") {
+  // Largura saneada AQUI, e nao so no site: o assistente e alcancavel por
+  // qualquer pagina em localhost e pela fila da nuvem, entao o site nunca e a
+  // unica fonte. Sem isto um valor invalido viraria bytes arbitrarios no GS W
+  // (NaN & 0xFF = 0, ou seja GS W 0 0 = area de impressao ZERO).
+  const colsRaw = Number(columns);
+  columns = Number.isFinite(colsRaw) ? Math.max(24, Math.min(64, Math.floor(colsRaw))) : 48;
+
   const ESC = "\x1B", GS = "\x1D", LF = "\x0A";
   const INIT = ESC + "@";
   const BOLD_ON = ESC + "E\x01";
@@ -260,51 +267,139 @@ function buildEscPos(order, storeName, columns = 48) {
 
   const divider = "-".repeat(columns) + LF;
 
-  const makeHeaderTitle = (title) => {
-    const cleanT = cleanAscii(title).toUpperCase();
-    return cleanT + LF;
+  // Quebra por palavra. `indent` e a indentacao das linhas de continuacao.
+  // Palavra unica maior que a linha e cortada no limite (nao ha alternativa).
+  // Sem isto o texto sai numa linha unica e quem quebra e a IMPRESSORA, no
+  // ponto que ela quiser -- foi assim que "Endereco: ... Ma / cae" apareceu.
+  const wrap = (text, width, indent = 0) => {
+    const t = cleanAscii(text).replace(/\s+/g, " ").trim();
+    if (!t) return [];
+    const w = Math.max(4, width);
+    const out = [];
+    let cur = "";
+    const capacity = () => (out.length === 0 ? w : Math.max(1, w - indent));
+    const flush = () => { if (cur) { out.push(cur); cur = ""; } };
+
+    for (const rawWord of t.split(" ")) {
+      let word = rawWord;
+      while (word.length > capacity()) {
+        if (cur) { flush(); continue; }   // fecha a linha em curso antes de cortar
+        out.push(word.slice(0, capacity()));
+        word = word.slice(capacity());
+      }
+      if (!word) continue;
+      const cand = cur ? cur + " " + word : word;
+      if (cand.length > capacity()) { flush(); cur = word; }
+      else cur = cand;
+    }
+    flush();
+
+    const pad = " ".repeat(indent);
+    return out.map((l, i) => (i === 0 ? l : pad + l));
   };
 
-  const rightAlign = (leftStr, rightStr) => {
-    let l = cleanAscii(leftStr);
+  const wrapLines = (text, indent = 0) =>
+    wrap(text, columns, indent).map(l => l + LF).join("");
+
+  // Centralizacao NO CODIGO. Antes o titulo era centralizado pela IMPRESSORA
+  // (ESC a 1) sobre a largura FISICA dela, enquanto o corpo era preenchido pelo
+  // codigo ate `columns`: duas larguras de referencia no mesmo cupom. Agora o
+  // layout inteiro e determinado por `columns`, seja qual for o perfil ESC/POS.
+  const centerLine = (text) => {
+    const t = cleanAscii(text).trim();
+    // Se ja cabe, preserva o espacamento interno original: o cabecalho usa
+    // espaco duplo como separador visual entre numero, tipo e referencia.
+    if (t.length <= columns) {
+      return " ".repeat(Math.max(0, Math.floor((columns - t.length) / 2))) + t + LF;
+    }
+    return wrap(t, columns)
+      .map(l => " ".repeat(Math.max(0, Math.floor((columns - l.length) / 2))) + l + LF)
+      .join("");
+  };
+
+  const makeHeaderTitle = (title) => centerLine(cleanAscii(title).toUpperCase());
+
+  // rightAlign e makeBoxLine eram byte-a-byte identicas: viram uma so.
+  // Em vez de TRUNCAR o rotulo (o que comia o fim do nome do produto), quebra
+  // em linhas e alinha o valor a direita na ultima.
+  const padLine = (leftStr, rightStr) => {
     const r = cleanAscii(rightStr);
-    const maxLeft = columns - r.length - 1; // Reserve at least 1 space
-    if (l.length > maxLeft) l = l.slice(0, maxLeft);
-    const sp = columns - l.length - r.length;
-    return l + " ".repeat(Math.max(1, sp)) + r + LF;
+    const room = Math.max(4, columns - r.length - 1); // pelo menos 1 espaco antes do valor
+    const parts = wrap(leftStr, room, 2);
+    if (!parts.length) return " ".repeat(Math.max(0, columns - r.length)) + r + LF;
+    let out = "";
+    for (let i = 0; i < parts.length - 1; i++) out += parts[i] + LF;
+    const last = parts[parts.length - 1];
+    out += last + " ".repeat(Math.max(1, columns - last.length - r.length)) + r + LF;
+    return out;
   };
+  const rightAlign = padLine;
+  const makeBoxLine = padLine;
 
-  const makeBoxLine = (l, r) => {
-    let cl = cleanAscii(l);
-    const cr = cleanAscii(r);
-    const maxLeft = columns - cr.length - 1; // Reserve at least 1 space
-    if (cl.length > maxLeft) cl = cl.slice(0, maxLeft);
-    const sp = columns - cl.length - cr.length;
-    return cl + " ".repeat(Math.max(1, sp)) + cr + LF;
-  };
+  // Nao trunca mais: sub-item de combo e observacao passam a quebrar com
+  // indentacao, mantendo a margem de 2 espacos do modelo da Hakim.
+  const makeBoxText = (text) =>
+    wrap(text, Math.max(6, columns - 2), 2).map(l => "  " + l + LF).join("");
 
-  const makeBoxText = (text) => {
-    const ct = cleanAscii(text);
-    const trimmed = ct.length > columns ? ct.slice(0, columns) : ct;
-    return trimmed + LF;
+  // Tarja invertida ocupa a largura inteira; usa o texto curto quando o longo
+  // nao couber (o literal fixo de 45 chars estourava em 42 e explodia em 32).
+  const banner = (long, short) => {
+    const t = (long.length + 4 <= columns) ? long : short;
+    const total = Math.max(0, columns - t.length);
+    const left = Math.floor(total / 2);
+    return " ".repeat(left) + t + " ".repeat(total - left);
   };
 
   // Separador horizontal sólido entre itens
   const boxBorder = "_".repeat(columns) + LF;
 
   // Estado explicito da impressora. Sem isto, depois do ESC @ cada marca volta ao
-  // default de fabrica/DIP dela: a Bematech rende 42 colunas em 80mm onde a impressora
-  // da Hakim rende 48, e o texto montado para 48 quebra a linha no meio do preco.
+  // default de fabrica/NVRAM dela: a Bematech rende 42 colunas em 80mm onde a
+  // impressora da Hakim rende 48, e o texto montado para 48 quebra no meio do preco.
   // Como o envio e RAW (pDataType="RAW"), o driver do Windows nao corrige nada --
-  // so estes bytes garantem a mesma largura em qualquer marca.
-  const areaDots = columns * 12; // fonte A ocupa 12 dots por caractere
-  let res =
-    INIT +                                                                     // ESC @  reset
-    ESC + "M\x00" +                                                            // ESC M  fonte A (12x24)
-    ESC + " \x00" +                                                            // ESC SP espacamento lateral 0
-    GS + "L\x00\x00" +                                                         // GS L   margem esquerda 0
-    GS + "W" + String.fromCharCode(areaDots & 0xFF, (areaDots >> 8) & 0xFF) +  // GS W   area de impressao
-    ESC + "t\x03";                                                             // Codepage 860 / Portuguese
+  // so estes bytes garantem o mesmo estado em qualquer marca.
+  //
+  // PERFIS (escposProfile, por impressora):
+  //   safe   (PADRAO) so comandos de 1 parametro, universais desde a TM-T88.
+  //          Numa impressora que ja esta em Fonte A sao no-op: nao mudam nada
+  //          onde ja funciona, e firmware que os ignore nao tem parametro
+  //          sobrando para cuspir como texto.
+  //   full   safe + charset USA + entrelinha padrao + GEOMETRIA (GS L / GS W).
+  //          GS L e GS W tem 2 parametros: firmware que nao os conhece imprime
+  //          "L" + 2 NUL / "W@" + STX na PRIMEIRA linha. Alem disso GS W so
+  //          ENCOLHE a area (a spec manda clampar ao maximo imprimivel), entao
+  //          ele e endurecimento contra deriva -- nao e o que conserta uma
+  //          impressora estreita. Quem conserta e o "columns" calibrado.
+  //          So habilite depois que a regua provar que AQUELE modelo obedece.
+  //   legacy exatamente os bytes das versoes antigas. Valvula de escape se
+  //          alguma loja que ja funciona regredir.
+  //
+  // areaDots = columns * 12 assume Fonte A (celula 12x24 a 203dpi) E unidade de
+  // movimento horizontal = 1 dot (que o ESC @ restaura da NVRAM do modelo).
+  // E mais um motivo para "full" so ir para impressora calibrada.
+  const areaDots = Math.max(192, Math.min(576, columns * 12));
+  const PREAMBLE = {
+    legacy: INIT + ESC + "t\x03",
+    safe:
+      INIT +                     // 1B 40       reset
+      ESC + "t\x03" +            // 1B 74 03    codepage 860 (ESC @ restaura da NVRAM)
+      ESC + "M\x00" +            // 1B 4D 00    Fonte A (celula 12x24)
+      ESC + "!\x00" +            // 1B 21 00    zera negrito/dupla/sublinhado residual
+      ESC + " \x00",             // 1B 20 00    espacamento lateral do caractere = 0
+    full:
+      INIT +
+      ESC + "t\x03" +
+      ESC + "R\x00" +            // 1B 52 00    charset internacional USA ("#" e "$" literais)
+      ESC + "M\x00" +
+      ESC + "!\x00" +
+      ESC + " \x00" +
+      ESC + "2" +                // 1B 32       entrelinha padrao 1/6"
+      GS + "L\x00\x00" +         // 1D 4C 00 00 margem esquerda = 0 (antes do GS W: a
+                                 //             spec valida margem+area no GS W)
+      GS + "W" + String.fromCharCode(areaDots & 0xFF, (areaDots >> 8) & 0xFF),
+  };
+
+  let res = PREAMBLE[profile] || PREAMBLE.safe;
 
   // 1. TOP HEADER (Número + Tipo + Tag) — Usando DOUBLE_HEIGHT para não quebrar linha
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
@@ -353,15 +448,16 @@ function buildEscPos(order, storeName, columns = 48) {
   const partnerLabel = is99FoodDriver ? "99FOOD" : (isIfoodDriver ? "IFOOD" : (srcStr || "PARCEIRO"));
   const pCode = order.ifoodPickupCode || order.openDeliveryPickupCode || "";
 
-  res += CENTER + DOUBLE_HEIGHT + BOLD_ON + headerLine + BOLD_OFF + DOUBLE_OFF + LF;
+  res += DOUBLE_HEIGHT + BOLD_ON + centerLine(headerLine) + BOLD_OFF + DOUBLE_OFF;
   if (isPartnerDriver) {
-    res += DOUBLE_HEIGHT + `*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***` + LF + "NAO USAR MOTOBOY DA LOJA!" + DOUBLE_OFF + LF;
+    res += DOUBLE_HEIGHT + centerLine(`*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***`)
+         + centerLine("NAO USAR MOTOBOY DA LOJA!") + DOUBLE_OFF;
     if (pCode) {
-      res += DOUBLE_HEIGHT + `CODIGO DE COLETA: #${pCode}` + DOUBLE_OFF + LF;
+      res += DOUBLE_HEIGHT + centerLine(`CODIGO DE COLETA: #${pCode}`) + DOUBLE_OFF;
     }
   }
   res += LEFT + divider;
-  res += "Estabelecimento: " + cleanAscii(storeName || "FIREHUB").toUpperCase() + LF;
+  res += wrapLines("Estabelecimento: " + cleanAscii(storeName || "FIREHUB").toUpperCase(), 2);
   if (orderRef) {
     res += "N. do Pedido: " + cleanAscii(orderRef) + LF;
   }
@@ -370,15 +466,15 @@ function buildEscPos(order, storeName, columns = 48) {
   if (dateStr) res += "Data: " + dateStr + " " + timeStr + LF;
 
   // 2. CLIENTE SECTION
-  res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LEFT + LF;
-  if (order.customerName) res += "Nome: " + cleanAscii(order.customerName) + LF;
-  if (order.customerPhone) res += "Telefone: " + cleanAscii(order.customerPhone) + LF;
+  res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
+  if (order.customerName) res += wrapLines("Nome: " + cleanAscii(order.customerName), 2);
+  if (order.customerPhone) res += wrapLines("Telefone: " + cleanAscii(order.customerPhone), 2);
   res += "Qtd Pedidos: 1" + LF;
 
   // 3. ENTREGA SECTION
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
-    res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LEFT + LF;
-    res += "Endereco: " + cleanAscii(order.customerAddress) + LF;
+    res += LF + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LF;
+    res += wrapLines("Endereco: " + cleanAscii(order.customerAddress), 2);
     if (order.notes) {
       const cleanObs = cleanAscii(order.notes)
         .replace(/Pedido iFood #[A-Z0-9]+/gi, "")
@@ -387,7 +483,7 @@ function buildEscPos(order, storeName, columns = 48) {
         .replace(/^[\s|]+|[\s|]+$/g, "")
         .trim();
       if (cleanObs) {
-        res += "Obs: " + cleanObs + LF;
+        res += wrapLines("Obs: " + cleanObs, 2);
       }
     }
   }
@@ -470,7 +566,7 @@ function buildEscPos(order, storeName, columns = 48) {
   const INVERSE_OFF = "\x1d\x42\x00";
 
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
-  res += LF + CENTER + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LEFT + LF;
+  res += LF + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LF;
 
   if (order.items && order.items.length) {
     res += boxBorder;
@@ -516,7 +612,7 @@ function buildEscPos(order, storeName, columns = 48) {
   }
 
   if (hasBeverages) {
-    res += CENTER + INVERSE_ON + "  !! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!  " + INVERSE_OFF + LEFT + LF;
+    res += INVERSE_ON + banner("!! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!", "!! CONTEM BEBIDA !!") + INVERSE_OFF + LF;
     res += boxBorder;
   }
 
@@ -565,11 +661,11 @@ function buildEscPos(order, storeName, columns = 48) {
   const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJa" : "Online";
 
   if (isOnlinePayment) {
-    res += BOLD_ON + "Forma de Pagamento: " + baseMethodName + BOLD_OFF + LF;
-    res += DOUBLE_HEIGHT + "(Pago via " + onlineSource + " - NAO COBRAR)" + DOUBLE_OFF + LF;
+    res += BOLD_ON + wrapLines("Forma de Pagamento: " + baseMethodName, 2) + BOLD_OFF;
+    res += DOUBLE_HEIGHT + wrapLines("(Pago via " + onlineSource + " - NAO COBRAR)", 2) + DOUBLE_OFF;
   } else {
-    res += BOLD_ON + "Forma de Pagamento: " + baseMethodName + BOLD_OFF + LF;
-    res += DOUBLE_HEIGHT + "(COBRAR NA ENTREGA)" + DOUBLE_OFF + LF;
+    res += BOLD_ON + wrapLines("Forma de Pagamento: " + baseMethodName, 2) + BOLD_OFF;
+    res += DOUBLE_HEIGHT + wrapLines("(COBRAR NA ENTREGA)", 2) + DOUBLE_OFF;
 
     if (order.changeAmount != null && Number(order.changeAmount) > 0) {
       const changeFor = Number(order.changeAmount);
@@ -578,30 +674,137 @@ function buildEscPos(order, storeName, columns = 48) {
       const changeForStr = "R$ " + changeFor.toFixed(2).replace(".", ",");
       const changeToReturnStr = "R$ " + changeToReturn.toFixed(2).replace(".", ",");
 
-      res += DOUBLE_HEIGHT + "Troco para: " + changeForStr + " (Levar " + changeToReturnStr + " de troco)" + DOUBLE_OFF + LF;
+      res += DOUBLE_HEIGHT + wrapLines("Troco para: " + changeForStr + " (Levar " + changeToReturnStr + " de troco)", 2) + DOUBLE_OFF;
     }
 
     res += divider;
-    res += DOUBLE_HEIGHT + BOLD_ON + "!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!" + BOLD_OFF + DOUBLE_OFF + LF;
+    res += DOUBLE_HEIGHT + BOLD_ON + wrapLines("!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
   }
 
-  res += LF + CENTER + "Obrigado pela preferencia!" + LF + FEED + CUT;
+  res += LF + centerLine("Obrigado pela preferencia!") + LEFT + FEED + CUT;
   return Buffer.from(res, "binary");
 }
 
 /* ─── Configuração Local & Fila da Nuvem ───────────────────── */
-const CONFIG_FILE = path.join(tmpDir, "config.json");
-let currentConfig = { franchiseeId: "", printer: "", paperWidth: "80mm" };
-if (fs.existsSync(CONFIG_FILE)) {
-  try { currentConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")); } catch {}
+// Config durável em %APPDATA%\FireHub. O config.json vivia em %TEMP%, que a
+// limpeza de disco do Windows apaga — e junto ia a calibração de largura.
+// Migra sozinho do caminho antigo na primeira execução.
+const APP_DIR = path.join(process.env.APPDATA || os.homedir(), "FireHub");
+try { if (!fs.existsSync(APP_DIR)) fs.mkdirSync(APP_DIR, { recursive: true }); } catch {}
+const CONFIG_FILE = path.join(APP_DIR, "config.json");
+const LEGACY_CONFIG_FILE = path.join(tmpDir, "config.json");
+
+const CONFIG_PADRAO = { franchiseeId: "", printer: "", paperWidth: "80mm", printers: [] };
+let currentConfig = { ...CONFIG_PADRAO };
+for (const arquivo of [CONFIG_FILE, LEGACY_CONFIG_FILE]) {
+  if (!fs.existsSync(arquivo)) continue;
+  try {
+    currentConfig = { ...CONFIG_PADRAO, ...JSON.parse(fs.readFileSync(arquivo, "utf8")) };
+    console.log("[Config] 📂 Configuração carregada de", arquivo);
+    break;
+  } catch {}
+}
+
+/* Resolve largura e perfil ESC/POS de UMA impressora, com precedência explícita:
+   dica do job (site/nuvem) -> entrada dela em printers[] -> config global -> bobina.
+   printers[] vazio NÃO significa "não há impressora": cai no fallback global,
+   que é o caso de toda loja que nunca cadastrou impressora na UI. */
+/* --- Deteccao automatica de largura --------------------------------------
+ * Pergunta ao driver do Windows a AREA IMPRIMIVEL da impressora selecionada.
+ * Usa PrintableArea, nao PaperSize: numa 58mm o papel tem 57,9mm mas so
+ * 47,9mm sao imprimiveis, e e a area que decide quantas colunas cabem.
+ *
+ *   203 dpi = 7,992 dots/mm  e a Fonte A ocupa 12 dots por caractere
+ *   => colunas = mm * 7,992 / 12 = mm * 2/3
+ *
+ * O preambulo "safe" emite ESC M 0 (Fonte A), entao a conta e consistente
+ * com o que a impressora realmente usa.
+ *
+ * Medido em hardware real:
+ *   POS-80  area 71,9mm -> 47,9 -> 48 colunas
+ *   POS-58  area 47,9mm -> 31,9 -> 32 colunas
+ *   Bematech MP-4200 em papel estreito: 63mm -> 42 colunas, batendo com a
+ *   familia 21/28/42/56 documentada para o modelo.
+ * ----------------------------------------------------------------------- */
+const COLS_SCRIPT_PATH = path.join(tmpDir, "printwidth.ps1");
+fs.writeFileSync(COLS_SCRIPT_PATH, `
+param([string]$PrinterName)
+try {
+  Add-Type -AssemblyName System.Drawing
+  $ps = New-Object System.Drawing.Printing.PrinterSettings
+  $ps.PrinterName = $PrinterName
+  if ($ps.IsValid) { [Math]::Round($ps.DefaultPageSettings.PrintableArea.Width, 2) } else { 0 }
+} catch { 0 }
+`, "utf-8");
+
+const colunasCache = new Map();
+
+function detectarColunasPeloDriver(printerName) {
+  const nome = String(printerName || "").trim();
+  if (!nome) return null;
+  if (colunasCache.has(nome)) return colunasCache.get(nome);
+
+  let colunas = null;
+  try {
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${COLS_SCRIPT_PATH}" -PrinterName "${nome.replace(/"/g, "")}"`;
+    const saida = execSync(cmd, { encoding: "utf-8", timeout: 8000, windowsHide: true });
+    const centesimos = parseFloat(String(saida).trim().replace(",", "."));
+    if (Number.isFinite(centesimos) && centesimos > 0) {
+      const mm = centesimos * 0.254;          // centesimos de polegada -> mm
+      const c = Math.round(mm * 2 / 3);
+      if (c >= 24 && c <= 64) {
+        colunas = c;
+        console.log(`[Colunas] 📏 ${nome}: area ${mm.toFixed(1)}mm -> ${c} colunas`);
+      } else {
+        console.log(`[Colunas] ⚠️ ${nome}: ${c} colunas fora da faixa 24-64, ignorado`);
+      }
+    }
+  } catch (e) {
+    console.log(`[Colunas] ⚠️ driver de "${nome}" nao respondeu: ${e.message}`);
+  }
+
+  colunasCache.set(nome, colunas); // cacheia inclusive o null, para nao repetir
+  return colunas;
+}
+
+function resolvePrinterProfile(printerName, jobHints) {
+  const hints = jobHints || {};
+  const doJob = Array.isArray(hints.printerConfig && hints.printerConfig.printers)
+    ? hints.printerConfig.printers
+    : [];
+  const lista = doJob.concat(currentConfig.printers || []);
+  const chave = String(printerName || "").toLowerCase().trim();
+  const hit = (chave && lista.find(p => String(p.name || "").toLowerCase().trim() === chave))
+    || lista[0]
+    || {};
+
+  const paperWidth = hints.paperWidth || hit.paperWidth || currentConfig.paperWidth || "80mm";
+  const bruto = Number(hints.columns != null ? hints.columns : hit.columns);
+  // Prioridade: (1) colunas configuradas na mao, (2) o que o driver do Windows
+  // informa, (3) o palpite pelo 58/80. So chega em (3) se o driver nao responder.
+  const columns = (Number.isFinite(bruto) && bruto >= 24 && bruto <= 64)
+    ? Math.floor(bruto)
+    : (detectarColunasPeloDriver(printerName || currentConfig.printer)
+       || (paperWidth === "58mm" ? 32 : 48));
+  const profile = hints.escposProfile || hit.escposProfile || currentConfig.escposProfile || "safe";
+  const copies = Number(hit.copies) > 0 ? Number(hit.copies) : 1;
+
+  return { paperWidth, columns, profile, copies };
 }
 
 app.post("/config", (req, res) => {
-  const { franchiseeId, printer, paperWidth } = req.body || {};
+  const { franchiseeId, printer, paperWidth, printers, escposProfile } = req.body || {};
   if (franchiseeId) currentConfig.franchiseeId = franchiseeId;
   if (printer) currentConfig.printer = printer;
   if (paperWidth) currentConfig.paperWidth = paperWidth;
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2));
+  if (escposProfile) currentConfig.escposProfile = escposProfile;
+  // Array completo: único jeito de atender Cozinha 80mm + Bar 58mm no mesmo PC.
+  if (Array.isArray(printers)) currentConfig.printers = printers;
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2));
+  } catch (e) {
+    console.error("[Config] ⚠️ Não foi possível gravar", CONFIG_FILE, "-", e.message);
+  }
   console.log("[Config] Configuração atualizada:", currentConfig);
   res.json({ ok: true, config: currentConfig });
 });
@@ -665,7 +868,7 @@ async function processPrintQueue() {
 
   while (printJobQueue.length > 0) {
     const job = printJobQueue.shift();
-    const { printer, order, storeName, copies = 1, paperWidth = "80mm", columns, force = false, resolve, reject } = job;
+    const { printer, order, storeName, copies = 1, paperWidth, columns, escposProfile, force = false, resolve, reject } = job;
 
     try {
       let targetPrinter = printer || currentConfig.printer;
@@ -696,8 +899,10 @@ async function processPrintQueue() {
 
       markOrderAsPrinted(order);
 
-      const cols = columns || (paperWidth === "58mm" ? 32 : 48);
-      const data = buildEscPos(order || {}, storeName || "FIREHUB", cols);
+      // Largura e perfil resolvidos POR IMPRESSORA (job -> printers[] -> global)
+      const perfil = resolvePrinterProfile(targetPrinter, { paperWidth, columns, escposProfile });
+      const cols = perfil.columns;
+      const data = buildEscPos(order || {}, storeName || "FIREHUB", cols, perfil.profile);
 
       for (let i = 0; i < copies; i++) {
         await rawPrint(targetPrinter, data);
@@ -706,7 +911,7 @@ async function processPrintQueue() {
       // Pausa de 150ms entre impressões para liberar a spooler do Windows com segurança
       await new Promise(r => setTimeout(r, 150));
 
-      resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols)` });
+      resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols - perfil ${perfil.profile})` });
     } catch (e) {
       console.error("[PrintServer] Erro ao imprimir job:", e.message);
       reject(e);
@@ -726,13 +931,16 @@ function enqueuePrintJob(jobParams) {
 // Polling background da Fila de Impressão na Nuvem (roda a cada 3s)
 setInterval(async () => {
   try {
-    const fetch = (await import("node-fetch")).default || globalThis.fetch;
+    // Sem loja identificada não há fila: puxar sem franchiseeId traria pedido
+    // de outras lojas para esta impressora. O site envia esse id no POST /config.
+    if (!currentConfig.franchiseeId) return;
+
+    const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
     const domain = currentConfig.domain || "firehubfood.com";
-    const url = currentConfig.franchiseeId
-      ? `https://${domain}/api/store/print-queue?franchiseeId=${currentConfig.franchiseeId}`
-      : `https://${domain}/api/store/print-queue?all=true`;
-    const res = await fetch(url);
+    const url = `https://${domain}/api/store/print-queue?franchiseeId=${encodeURIComponent(currentConfig.franchiseeId)}`;
+    const res = await fetchFn(url);
     if (!res.ok) return;
+    const data = await res.json();
     const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
     const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
     const jobs = rawJobs.filter(j => {
@@ -751,12 +959,16 @@ setInterval(async () => {
       });
 
       for (const job of jobs) {
+        const alvo = currentConfig.printer;
+        const perfil = resolvePrinterProfile(alvo, job);
         enqueuePrintJob({
-          printer: currentConfig.printer,
+          printer: alvo,
           order: job.order,
           storeName: job.storeName || "FIREHUB",
-          copies: 1,
-          paperWidth: job.paperWidth || currentConfig.paperWidth,
+          copies: perfil.copies,
+          paperWidth: perfil.paperWidth,
+          columns: perfil.columns,
+          escposProfile: perfil.profile,
           force: false
         }).catch(() => {});
       }
@@ -782,8 +994,8 @@ app.get("/printers", (req, res) => res.json(listPrinters()));
 
 app.post("/print", async (req, res) => {
   try {
-    const { printer, order, storeName, copies = 1, paperWidth = "80mm", columns, force = false } = req.body;
-    const result = await enqueuePrintJob({ printer, order, storeName, copies, paperWidth, columns, force });
+    const { printer, order, storeName, copies = 1, paperWidth, columns, escposProfile, force = false } = req.body;
+    const result = await enqueuePrintJob({ printer, order, storeName, copies, paperWidth, columns, escposProfile, force });
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -809,7 +1021,7 @@ app.post("/print-raw", async (req, res) => {
 
 app.post("/print-test", async (req, res) => {
   try {
-    const { printer, storeName, paperWidth = "80mm" } = req.body;
+    const { printer, storeName, paperWidth, columns, escposProfile } = req.body;
     let targetPrinter = printer || currentConfig.printer;
     if (!targetPrinter) {
       const detected = listPrinters();
@@ -817,7 +1029,8 @@ app.post("/print-test", async (req, res) => {
     }
     if (!targetPrinter) return res.status(400).json({ error: "Impressora não especificada" });
 
-    const cols = paperWidth === "58mm" ? 32 : 48;
+    const perfil = resolvePrinterProfile(targetPrinter, { paperWidth, columns, escposProfile });
+    const cols = perfil.columns;
     const dummyOrder = {
       id: "TESTE",
       customerName: "Cliente Teste FireHub",
@@ -830,9 +1043,9 @@ app.post("/print-test", async (req, res) => {
         { name: "Item Teste 2 Comanda", qty: 2, price: 10.00 },
       ],
       totalAmount: 35.00,
-      notes: `Impressão de Teste FireHub (${paperWidth})`,
+      notes: `Impressão de Teste FireHub (${perfil.paperWidth} / ${cols} colunas)`,
     };
-    const data = buildEscPos(dummyOrder, storeName || "FIREHUB TESTE", cols);
+    const data = buildEscPos(dummyOrder, storeName || "FIREHUB TESTE", cols, perfil.profile);
     await rawPrint(targetPrinter, data);
     res.json({ ok: true });
   } catch (e) {
