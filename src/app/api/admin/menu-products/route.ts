@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { isDataUrl, saveDataUrl } from "@/lib/storage";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -158,6 +159,29 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(products);
 }
 
+/**
+ * Impede que imagem em base64 volte a ser gravada dentro do banco.
+ *
+ * Era assim que o cardapio publico chegou a 18,7 MB (18,5 MB só de 10 fotos):
+ * o formulario mandava `data:image/png;base64,...` e isso ia inteiro para a
+ * coluna imageUrl. Toda tela que lista produto — balcao, mesa, cardapio, KDS,
+ * app do motoboy — baixava tudo isso.
+ *
+ * O cliente ja envia a foto comprimida para /api/upload, mas aqui a conversao
+ * fica como rede de seguranca para qualquer cliente antigo ou fora do padrao.
+ */
+async function normalizarImagem(rest: any) {
+  if (!isDataUrl(rest?.imageUrl)) return;
+  try {
+    const saved = await saveDataUrl(rest.imageUrl, "produtos");
+    rest.imageUrl = saved.url;
+  } catch {
+    // Data URI invalido ou tipo nao suportado: melhor ficar sem imagem do que
+    // enfiar megabytes de texto no banco.
+    rest.imageUrl = null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const { scope, error } = await resolveScope(req);
   if (!scope) return error;
@@ -172,6 +196,7 @@ export async function POST(req: NextRequest) {
     ? (bodyFranchiseeId || scope.adminStoreId || scope.storeId)
     : scope.storeId;
 
+  await normalizarImagem(rest);
   const safeComboGroups = await keepOwnComboItems(comboGroups, franchiseeId);
 
   const product = await prisma.menuProduct.create({
@@ -225,6 +250,9 @@ export async function PUT(req: NextRequest) {
   if (updateData.availableDays !== undefined) {
     updateData.availableDays = updateData.availableDays ? JSON.stringify(updateData.availableDays) : null;
   }
+
+  // Converte imagem base64 em arquivo ANTES de gravar (rede de seguranca).
+  await normalizarImagem(updateData);
 
   const product = await prisma.menuProduct.update({
     where: { id },

@@ -171,30 +171,85 @@ export default function MenuProductManager({
   const [imageMode, setImageMode] = useState<"file" | "url">("file");
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Reduz a imagem no navegador antes de enviar.
+   * As fotos que estavam no cardapio eram PNG 1024x1024 sem compressao, ~1,8 MB
+   * CADA. Card de produto renderiza em ~200px, entao 900px de largura com JPEG
+   * de qualidade 0,82 e mais que suficiente e derruba o peso em ~95%.
+   */
+  const comprimirImagem = (file: File): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 900;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          const escala = Math.min(MAX / width, MAX / height);
+          width = Math.round(width * escala);
+          height = Math.round(height * escala);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas indisponível"));
+        // Fundo branco: JPEG não tem transparência, e PNG com alpha viraria preto.
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => (blob ? resolve(blob) : reject(new Error("Falha ao comprimir"))),
+          "image/jpeg",
+          0.82
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Não foi possível ler a imagem"));
+      };
+      img.src = url;
+    });
+
+  /**
+   * ANTES: readAsDataURL gravava a imagem inteira em base64 dentro da coluna
+   * imageUrl. O cardapio publico chegou a 18,7 MB, sendo 18,5 MB só de 10 fotos
+   * — por isso balcao, mesa e cardapio demoravam a abrir. Agora a foto e
+   * comprimida e enviada para /api/upload; no banco fica só a URL.
+   */
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert("A imagem selecionada é muito grande (máximo 5MB).");
+    if (file.size > 8 * 1024 * 1024) {
+      alert("A imagem selecionada é muito grande (máximo 8MB).");
       return;
     }
 
     setUploadingImage(true);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        setImageUrl(result);
-        showToast("📷 Foto carregada do dispositivo!");
+    try {
+      const comprimida = await comprimirImagem(file);
+
+      const fd = new FormData();
+      fd.append("file", new File([comprimida], `${Date.now()}.jpg`, { type: "image/jpeg" }));
+      fd.append("type", "produtos");
+
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error || "Falha no envio da imagem");
       }
+
+      setImageUrl(data.url);
+      const kb = Math.round((data.size || comprimida.size) / 1024);
+      showToast(`📷 Foto enviada (${kb} KB)`);
+    } catch (err: any) {
+      alert(err?.message || "Erro ao enviar a imagem.");
+    } finally {
       setUploadingImage(false);
-    };
-    reader.onerror = () => {
-      alert("Erro ao ler o arquivo de imagem.");
-      setUploadingImage(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleDeleteCategory = async (catId: string, catName: string) => {

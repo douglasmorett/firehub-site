@@ -9,6 +9,14 @@ services:
     restart: always
     ports:
       - "3000:3000"
+    volumes:
+      # Uploads (fotos de produto, logo/banner de loja, notas).
+      # SEM ISTO O QUE FOR ENVIADO SE PERDE NO PROXIMO DEPLOY: o Dockerfile copia
+      # public/ para dentro da imagem, e o container e recriado a cada build.
+      # No Coolify, criar o mesmo mapeamento em Storages / Volume Mounts.
+      # O container roda como uid 1001 (nextjs):
+      #   mkdir -p /data/firehub/uploads && chown -R 1001:1001 /data/firehub/uploads
+      - /data/firehub/uploads:/app/public/uploads
     env_file:
       - .env.production
     environment:

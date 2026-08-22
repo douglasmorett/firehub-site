@@ -55,3 +55,6 @@ scratch/
 .asaas-key.tmp
 .asaas-stripped.txt
 .g65eyo-payment.json
+uploads locais nao versionados (ficam no volume do Coolify)
+/public/uploads/*
+!/public/uploads/.gitkeep

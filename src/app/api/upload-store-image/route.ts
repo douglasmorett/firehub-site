@@ -1,8 +1,12 @@
-import { put } from "@vercel/blob";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { saveUploadedFile } from "@/lib/storage";
 
+/**
+ * POST /api/upload-store-image — logo e banner da loja.
+ * Passou do Vercel Blob para disco local (ver src/lib/storage.ts).
+ */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
@@ -12,18 +16,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File;
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "Formulário inválido" }, { status: 400 });
+  }
 
-  if (!file) return NextResponse.json({ error: "Nenhum arquivo enviado" }, { status: 400 });
+  const file = formData.get("file");
+  if (!file || typeof file === "string") {
+    return NextResponse.json({ error: "Nenhum arquivo enviado" }, { status: 400 });
+  }
 
-  const type = formData.get("type") as string || "logo";
-  const folder = type === "banner" ? "store-banners" : "store-logos";
-
-  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "");
-  const blob = await put(`${folder}/${Date.now()}-${safeName}`, file, {
-    access: "public",
-  });
-
-  return NextResponse.json({ url: blob.url });
+  try {
+    const saved = await saveUploadedFile(file as File, "lojas");
+    return NextResponse.json({ url: saved.url, size: saved.size });
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || "Falha ao salvar arquivo" }, { status: 400 });
+  }
 }
