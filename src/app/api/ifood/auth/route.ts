@@ -495,12 +495,29 @@ export async function POST(req: NextRequest) {
     } catch {}
   }
 
-  // Tentar consultar a API de merchants do iFood
+  // Tentar consultar a API de merchants do iFood.
+  //
+  // ⚠️ Usa o token do APP DISTRIBUÍDO (client_credentials), não o token que o
+  // lojista acabou de gerar. Motivo, confirmado em produção: com o token do
+  // lojista o GET /merchants responde [] mesmo com a autorização perfeita
+  // (status 200, verifier presente) — foi o que manteve a Pastel da Paulista
+  // sem merchant. No portal do desenvolvedor as lojas aparecem em Permissões
+  // DO APP, e é o token do app que as enxerga.
+  // Se o token do app falhar, cai para o do lojista (comportamento antigo).
   if (!merchantId && data.accessToken) {
     try {
+      let tokenParaListar = data.accessToken;
+      try {
+        const { getIfoodDistributedToken } = await import("@/lib/ifood-api");
+        tokenParaListar = await getIfoodDistributedToken();
+        console.log("[iFood Auth] Listando merchants com o token do APP distribuído.");
+      } catch (e: any) {
+        console.warn("[iFood Auth] Token do app indisponível, usando o do lojista:", e?.message);
+      }
+
       const mRes = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants`, {
-        headers: { 
-          Authorization: `Bearer ${data.accessToken}`,
+        headers: {
+          Authorization: `Bearer ${tokenParaListar}`,
           Accept: "application/json"
         },
       });

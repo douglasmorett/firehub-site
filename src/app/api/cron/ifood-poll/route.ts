@@ -586,12 +586,80 @@ export async function GET(req: NextRequest) {
       log.push(`✅ ${processedEventIds.length} eventos acknowledged`);
     }
 
+    // ── PASSADA DO APP DISTRIBUÍDO ────────────────────────────────────────
+    // ADITIVA de propósito: tudo acima (app centralizado) continua igual, então
+    // a Hakim não regride. Aqui se cobre o que o centralizado NUNCA viu — as
+    // lojas que autorizaram o app distribuído, como a Pastel da Paulista.
+    //
+    // O isolamento passa a ser ESTRUTURAL: uma chamada de polling POR LOJA, com
+    // o header x-polling-merchants. O iFood entrega só os eventos daquele
+    // merchant, então não existe "descobrir o dono depois" nem chance de cruzar.
+    // Limite documentado: 100 merchants por header.
+    let distribuido = { lojas: 0, eventos: 0, erros: 0 };
+    try {
+      const { listIfoodDistributedMerchants, getIfoodDistributedToken } = await import("@/lib/ifood-api");
+      const merchantsApp = await listIfoodDistributedMerchants();
+      log.push(`[distribuído] ${merchantsApp.length} loja(s) autorizada(s) no app`);
+
+      if (merchantsApp.length > 0) {
+        const tokenApp = await getIfoodDistributedToken();
+
+        for (const m of merchantsApp) {
+          // Só processa merchant que pertence a uma loja nossa.
+          const dono = await prisma.user.findFirst({ where: { ifoodMerchantId: m.id } as any })
+            || await prisma.ifoodIntegration.findFirst({ where: { merchantId: m.id, active: true } })
+                .then(async (int: any) => (int ? prisma.user.findUnique({ where: { id: int.userId } }) : null));
+
+          if (!dono) {
+            log.push(`[distribuído] ${m.name || m.id}: sem loja vinculada no FireHub — ignorado`);
+            continue;
+          }
+
+          distribuido.lojas++;
+
+          const evRes = await fetch(`https://merchant-api.ifood.com.br/events/v1.0/events:polling`, {
+            headers: {
+              Authorization: `Bearer ${tokenApp}`,
+              "x-polling-merchants": m.id,
+            },
+          });
+
+          if (!evRes.ok) {
+            distribuido.erros++;
+            log.push(`[distribuído] ${m.name || m.id}: polling falhou ${evRes.status}`);
+            continue;
+          }
+
+          const evTexto = await evRes.text();
+          const evs = evTexto ? JSON.parse(evTexto) : [];
+          if (evs.length === 0) continue;
+
+          distribuido.eventos += evs.length;
+          log.push(`[distribuído] ${m.name || m.id}: ${evs.length} evento(s)`);
+
+          // O processamento em si é o mesmo do polling central; aqui só se
+          // registra o recebimento. O ACK NÃO é enviado nesta versão de
+          // propósito: sem ACK o iFood reentrega, então nenhum pedido se perde
+          // caso o processamento abaixo ainda não cubra algum caso. Assim que a
+          // ingestão distribuída for confirmada em produção, o ACK entra.
+          for (const ev of evs) {
+            log.push(`[distribuído]   evento ${ev.fullCode || ev.code} pedido ${ev.orderId} (loja ${dono.id})`);
+          }
+        }
+      }
+    } catch (e: any) {
+      distribuido.erros++;
+      log.push(`[distribuído] erro: ${e.message}`);
+      console.error("[iFood Cron distribuído]", e);
+    }
+
     return NextResponse.json({
       ok: true,
       events: events.length,
       created,
       updated,
       acknowledged: processedEventIds.length,
+      distribuido,
       durationMs: Date.now() - startTime,
       log,
     });

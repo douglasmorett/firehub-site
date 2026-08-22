@@ -36,6 +36,63 @@ export async function getIfoodToken(): Promise<string> {
   return _token!;
 }
 
+// ── APP DISTRIBUÍDO ─────────────────────────────────────────────────────────
+// Cada loja autoriza o MESMO app (clientId distribuído) e passa a constar na
+// aba Permissões dele. Quem enxerga essas lojas e recebe os eventos delas é o
+// token de client_credentials DO APP — não o token que o lojista gera no fluxo
+// de authorization_code.
+//
+// Foi por isso que a Pastel da Paulista nunca recebeu pedido: o sistema tentava
+// descobrir a loja com o token do lojista, e o GET /merchants respondia [] —
+// confirmado no log de produção com verifier presente e status 200. No portal
+// do desenvolvedor, as três lojas aparecem Ativas.
+let _tokenDist: string | null = null;
+let _tokenDistExp = 0;
+
+/** Token do APP distribuído (client_credentials). Cobre todas as lojas autorizadas. */
+export async function getIfoodDistributedToken(): Promise<string> {
+  if (_tokenDist && Date.now() < _tokenDistExp) return _tokenDist;
+
+  const clientId = process.env.IFOOD_CLIENT_ID_DISTRIBUTED;
+  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED;
+  if (!clientId || !clientSecret) {
+    throw new Error("IFOOD_CLIENT_ID_DISTRIBUTED / IFOOD_CLIENT_SECRET_DISTRIBUTED não configurados");
+  }
+
+  const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grantType: "client_credentials", clientId, clientSecret }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`iFood auth distribuído falhou: ${res.status} — ${err.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  _tokenDist = data.accessToken;
+  _tokenDistExp = Date.now() + ((data.expiresIn ?? 3600) - 60) * 1000;
+  return _tokenDist!;
+}
+
+/** Lojas autorizadas ao app distribuído (as que aparecem em Permissões). */
+export async function listIfoodDistributedMerchants(): Promise<{ id: string; name: string }[]> {
+  const token = await getIfoodDistributedToken();
+  const res = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+  });
+  if (!res.ok) {
+    console.error(`[iFood] listar merchants do app falhou: ${res.status}`);
+    return [];
+  }
+  const data = await res.json();
+  const lista = Array.isArray(data) ? data : (data?.merchants || data?.data || []);
+  return lista
+    .map((m: any) => ({ id: m.id || m.merchantId, name: m.name || m.corporateName || "" }))
+    .filter((m: any) => !!m.id);
+}
+
 /** Wrapper autenticado para LEITURAS */
 export async function ifoodFetch(
   path: string,
