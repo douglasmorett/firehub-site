@@ -2411,7 +2411,7 @@ export default function CustomerStorePage({
         </div>
 
         {/* ===== DESKTOP SIDEBAR ===== */}
-        <div className="desk-cart" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div className={`desk-cart${isCheckout ? " checkout-aberto" : ""}`} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           {/* CARD DINÂMICO DE BENEFÍCIOS, VIP, CARIMBOS E INDIQUE & GANHE */}
           <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "10px" }}>
             {/* Header Geral de Benefícios */}

@@ -453,6 +453,17 @@
   flex-direction: column;
 }
 
+/* Durante o CHECKOUT o painel cresce por inteiro e quem rola e a pagina.
+   Com o teto de calc(100vh - 130px) o formulario (entrega, nome, WhatsApp,
+   endereco, pagamento, troco, observacao) ficava espremido numa barra de
+   rolagem interna e o cliente tinha que rolar DENTRO da caixinha para digitar.
+   Medido em producao: conteudo de 1091px espremido em 408px visiveis. */
+.desk-cart.checkout-aberto {
+  max-height: none;
+  position: static;
+  overflow: visible;
+}
+
 /* CART CONTENT */
 .cart-header {
   padding: 0.85rem 1.25rem;
