@@ -418,6 +418,16 @@ export async function POST(req: NextRequest) {
   let merchantId = data.merchantId || data.merchant?.id;
   let merchantName = data.merchantName || data.merchant?.name || "";
 
+  // Merchants livres quando a escolha automatica seria ambigua — devolvidos ao
+  // lojista para ele escolher, em vez de vincular errado.
+  let merchantsAmbiguos: { id: string; name: string }[] = [];
+
+  // Usuario logado, necessario para descartar merchants de OUTRAS lojas.
+  const usuarioAtual = session.user?.email
+    ? await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } })
+    : null;
+  const userIdAtual = usuarioAtual?.id || null;
+
   // Tentar extrair do JWT caso o iFood embute claims
   if (!merchantId && data.accessToken) {
     try {
@@ -441,19 +451,53 @@ export async function POST(req: NextRequest) {
       if (mRes.ok) {
         const mData = await mRes.json();
         console.log("[iFood Auth] merchants response:", JSON.stringify(mData));
-        if (Array.isArray(mData) && mData.length > 0) {
-          merchantId = mData[0].id || mData[0].merchantId;
-          merchantName = mData[0].name || mData[0].corporateName || "";
-        } else if (mData && typeof mData === "object") {
-          if (Array.isArray(mData.merchants) && mData.merchants.length > 0) {
-            merchantId = mData.merchants[0].id || mData.merchants[0].merchantId;
-            merchantName = mData.merchants[0].name || "";
-          } else if (Array.isArray(mData.data) && mData.data.length > 0) {
-            merchantId = mData.data[0].id || mData.data[0].merchantId;
-            merchantName = mData.data[0].name || "";
-          } else if (mData.id) {
-            merchantId = mData.id;
-            merchantName = mData.name || "";
+
+        // Normaliza os formatos que o iFood devolve numa lista unica.
+        const lista: any[] = Array.isArray(mData)
+          ? mData
+          : (Array.isArray(mData?.merchants) ? mData.merchants
+            : (Array.isArray(mData?.data) ? mData.data
+              : (mData?.id ? [mData] : [])));
+
+        // ── POR QUE NAO SE PEGA MAIS O PRIMEIRO DA LISTA ──────────────────
+        // O app distribuido usa o MESMO clientId para todas as lojas, entao
+        // /merchants devolve TODOS os merchants autorizados naquele app — nao
+        // so o da loja que acabou de colar o codigo. O codigo antigo fazia
+        // `merchantId = mData[0].id`, e por isso a Pastel da Paulista foi
+        // vinculada ao merchant da Hakim Centro (6a5fb96d): a Hakim estava em
+        // primeiro na lista. Resultado: tres contas dividindo o mesmo merchant,
+        // pedido caindo na loja errada e a Pastel sem receber nada.
+        //
+        // Agora se descartam os merchants JA VINCULADOS A OUTRO USUARIO. Se
+        // sobrar exatamente um, e o certo. Se sobrar mais de um, NAO se
+        // adivinha — melhor pedir para escolher do que vincular errado.
+        const candidatos = lista
+          .map((m: any) => ({ id: m.id || m.merchantId, name: m.name || m.corporateName || "" }))
+          .filter((m: any) => !!m.id);
+
+        if (candidatos.length > 0) {
+          const ids = candidatos.map((c: any) => c.id);
+          const jaVinculados = await prisma.user.findMany({
+            where: { ifoodMerchantId: { in: ids }, ...(userIdAtual ? { NOT: { id: userIdAtual } } : {}) },
+            select: { ifoodMerchantId: true },
+          });
+          const ocupados = new Set(jaVinculados.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]);
+
+          const livres = candidatos.filter((c: any) => !ocupados.has(c.id));
+
+          if (livres.length === 1) {
+            merchantId = livres[0].id;
+            merchantName = livres[0].name;
+          } else if (livres.length === 0) {
+            console.error(
+              `[iFood Auth] Todos os ${candidatos.length} merchants retornados ja pertencem a outra loja. Nao vinculando para nao cruzar dados.`
+            );
+          } else {
+            console.error(
+              `[iFood Auth] ${livres.length} merchants disponiveis — ambiguo. Nao vinculando automaticamente:`,
+              livres.map((l: any) => `${l.name} (${l.id})`).join(", ")
+            );
+            merchantsAmbiguos = livres;
           }
         }
       } else {
@@ -483,6 +527,22 @@ export async function POST(req: NextRequest) {
         },
       });
     }
+    // Quando havia mais de um merchant livre, o sistema NAO escolhe sozinho —
+    // adivinhar foi o que vinculou a Pastel da Paulista ao merchant da Hakim.
+    // Devolve a lista para o lojista escolher o dele.
+    if (merchantsAmbiguos.length > 0) {
+      return NextResponse.json({
+        success: true,
+        merchantId: null,
+        needsMerchantId: true,
+        merchantsDisponiveis: merchantsAmbiguos,
+        message:
+          `🎉 Loja conectada! Foram encontradas ${merchantsAmbiguos.length} lojas nesta autorização: ` +
+          merchantsAmbiguos.map((m) => `${m.name || "sem nome"} (${m.id})`).join(", ") +
+          ". Cole na seção 'iFood Merchant API' o Merchant ID da SUA loja — não escolhemos automaticamente para não vincular a loja errada.",
+      });
+    }
+
     return NextResponse.json({
       success: true,
       merchantId: null,
