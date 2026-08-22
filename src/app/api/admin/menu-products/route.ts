@@ -148,7 +148,13 @@ export async function GET(req: NextRequest) {
         include: {
           items: {
             include: {
-              menuProduct: { select: { id: true, name: true, active: true, imageUrl: true } }
+              // imageUrl NAO entra aqui de proposito. A tela de combo mostra so o
+              // NOME da opcao ("6 Nuggets"), nunca a foto. Como o mesmo produto
+              // aparece em varios combos, a imagem vinha DUPLICADA a cada combo:
+              // uma foto de 1,8 MB usada em 6 combos virava 10,6 MB no JSON.
+              // Medido em producao: payload de 14,63 MB, sendo 10,59 MB so de
+              // copias aninhadas. 38 segundos para abrir o balcao.
+              menuProduct: { select: { id: true, name: true, active: true } }
             }
           }
         }

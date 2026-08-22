@@ -71,9 +71,9 @@ async function gravar(dataUrl, folder, rotulo) {
       buffer = await sharp(buffer)
         .rotate()
         .resize(900, 900, { fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 82 })
+        .webp({ quality: 82 })
         .toBuffer();
-      ext = "jpg";
+      ext = "webp";
     } catch (e) {
       console.warn(`    (sharp falhou em ${rotulo}, gravando original: ${e.message})`);
     }

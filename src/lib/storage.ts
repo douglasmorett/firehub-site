@@ -61,22 +61,55 @@ function safeBaseName(name: string, ext: string): string {
  * Grava um File (do FormData) no disco e devolve a URL publica.
  * Lanca Error com mensagem amigavel quando o arquivo e invalido.
  */
+/**
+ * Reduz a imagem NO SERVIDOR. Isto nao e otimizacao opcional — e a garantia.
+ *
+ * Nao ha controle sobre o que o lojista envia: fotos geradas por IA chegam como
+ * PNG 1024x1024 de ~1,8 MB. No modal de combo elas sao exibidas em 42x42 pixels.
+ * Medido em producao: o cardapio do balcao chegou a 14,63 MB e 38 segundos.
+ * A compressao no navegador ajuda, mas pode ser burlada (outro cliente, API
+ * direta); aqui e o ponto onde nada passa grande.
+ *
+ * Sai em WebP: comprime melhor que JPEG e, ao contrario dele, preserva
+ * transparencia — logo de loja costuma ter fundo transparente.
+ */
+async function otimizarImagem(buffer: Buffer, mime: string): Promise<{ buffer: Buffer; ext: string }> {
+  if (mime === "application/pdf") return { buffer, ext: "pdf" };
+
+  try {
+    const sharp = (await import("sharp")).default;
+    const otimizada = await sharp(buffer)
+      .rotate() // respeita EXIF, senao foto de celular sai deitada
+      .resize(900, 900, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+
+    // Se a "otimizacao" engordou (imagem ja minuscula), fica com a original.
+    if (otimizada.length < buffer.length) return { buffer: otimizada, ext: "webp" };
+  } catch (err) {
+    console.warn("[storage] sharp falhou, gravando original:", (err as Error)?.message);
+  }
+
+  return { buffer, ext: ALLOWED[mime] || "bin" };
+}
+
 export async function saveUploadedFile(file: File, folder?: string | null): Promise<SavedFile> {
-  const ext = ALLOWED[(file.type || "").toLowerCase()];
-  if (!ext) {
+  const mime = (file.type || "").toLowerCase();
+  if (!ALLOWED[mime]) {
     throw new Error(`Tipo de arquivo nao suportado: ${file.type || "desconhecido"}. Use JPG, PNG, WEBP, GIF ou PDF.`);
   }
   if (file.size > MAX_BYTES) {
     throw new Error(`Arquivo muito grande (${(file.size / 1024 / 1024).toFixed(1)} MB). O limite e 8 MB.`);
   }
 
+  const original = Buffer.from(await file.arrayBuffer());
+  const { buffer, ext } = await otimizarImagem(original, mime);
+
   const dir = sanitizeFolder(folder);
   const fileName = safeBaseName(file.name, ext);
   const destDir = path.join(UPLOADS_ROOT, dir);
 
   await mkdir(destDir, { recursive: true });
-
-  const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(path.join(destDir, fileName), buffer);
 
   return {
@@ -98,13 +131,17 @@ export async function saveDataUrl(dataUrl: string, folder?: string | null): Prom
   const ext = ALLOWED[mime];
   if (!ext) throw new Error(`Tipo nao suportado no data URI: ${mime}`);
 
-  const buffer = Buffer.from(m[2], "base64");
-  if (buffer.length > MAX_BYTES) {
-    throw new Error(`Imagem embutida muito grande: ${(buffer.length / 1024 / 1024).toFixed(1)} MB`);
+  const original = Buffer.from(m[2], "base64");
+  if (original.length > MAX_BYTES) {
+    throw new Error(`Imagem embutida muito grande: ${(original.length / 1024 / 1024).toFixed(1)} MB`);
   }
 
+  // Mesma otimizacao do upload normal: a migracao das imagens que hoje estao no
+  // banco tem que sair pequena, senao troca base64 gigante por arquivo gigante.
+  const { buffer, ext: finalExt } = await otimizarImagem(original, mime);
+
   const dir = sanitizeFolder(folder);
-  const fileName = safeBaseName("imagem", ext);
+  const fileName = safeBaseName("imagem", finalExt);
   const destDir = path.join(UPLOADS_ROOT, dir);
 
   await mkdir(destDir, { recursive: true });
