@@ -47,14 +47,11 @@ async function resolveStore(req: NextRequest) {
   }
 
   if (!user && urlToken) {
+    // O token aceita SOMENTE o id (cuid). Antes aceitava tambem o e-mail e o
+    // ifoodMerchantId: quem soubesse o e-mail da loja escrevia configuracao
+    // dela. E-mail nao e credencial.
     user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: urlToken },
-          { ifoodMerchantId: urlToken },
-          { email: urlToken.toLowerCase().trim() },
-        ],
-      },
+      where: { id: urlToken },
       select: { id: true, ownerId: true, role: true, name: true },
     });
   }

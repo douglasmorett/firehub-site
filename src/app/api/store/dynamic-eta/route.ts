@@ -42,14 +42,11 @@ export async function GET(req: NextRequest) {
     const urlToken = req.nextUrl.searchParams.get("token") || req.headers.get("x-store-token");
     let tokenUser: any = null;
     if (urlToken) {
+      // O token aceita SOMENTE o id (cuid). Antes aceitava tambem o e-mail e o
+      // ifoodMerchantId: quem soubesse o e-mail da loja lia o movimento dela.
+      // A extensao ja envia user.id (popup.js grava data.token = user.id).
       tokenUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { id: urlToken },
-            { ifoodMerchantId: urlToken },
-            { email: urlToken.toLowerCase().trim() },
-          ],
-        },
+        where: { id: urlToken },
         select: { id: true, name: true, ownerId: true, email: true },
       });
     }
