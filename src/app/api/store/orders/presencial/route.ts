@@ -18,6 +18,26 @@ export async function POST(req: Request) {
 
   const targetFranchiseeId = dbUser.ownerId || dbUser.id;
 
+  // ISOLAMENTO ENTRE LOJAS: so aceita produto DESTA loja.
+  // O corpo vinha cru — um menuProductId de outra loja entrava no pedido e a
+  // baixa de estoque seguia a ficha tecnica dela, drenando insumo alheio.
+  const idsInformados = (items || []).map((i: any) => i.menuProductId).filter(Boolean);
+  if (idsInformados.length > 0) {
+    const daLoja = await prisma.menuProduct.findMany({
+      where: { id: { in: idsInformados }, franchiseeId: targetFranchiseeId },
+      select: { id: true },
+    });
+    const permitidos = new Set(daLoja.map((p) => p.id));
+    const invasores = idsInformados.filter((id: string) => !permitidos.has(id));
+    if (invasores.length > 0) {
+      console.error(`[PDV] Produtos de outra loja recusados na loja ${targetFranchiseeId}:`, invasores);
+      return NextResponse.json(
+        { error: "Um dos itens não pertence ao cardápio desta loja." },
+        { status: 400 }
+      );
+    }
+  }
+
   const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
 
   const order = await prisma.customerOrder.create({

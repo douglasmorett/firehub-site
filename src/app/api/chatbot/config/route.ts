@@ -85,7 +85,49 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const currentConfig = (user.chatbotConfig as any) || {};
-    const updatedConfig = { ...currentConfig, ...body };
+
+    // ── ISOLAMENTO ENTRE LOJAS ────────────────────────────────────────────
+    // Antes era `{ ...currentConfig, ...body }` — merge cego do corpo enviado
+    // pelo lojista. Isso deixava a loja B gravar
+    //   { "instanceName": "firehub_<sufixo do id da loja A>" }
+    // e passar a disputar as conversas da loja A no webhook. Pelo mesmo
+    // caminho dava para gravar evolutionUrl/evolutionApiKey apontando para um
+    // servidor do atacante, que passaria a receber o texto das mensagens.
+    //
+    // Agora so entram as chaves que o lojista realmente edita na tela. Campos
+    // de VINCULO e CREDENCIAL (instanceName, evolutionUrl, evolutionApiKey,
+    // cloudApi*, geminiApiKey, connected, connectedAt) so podem ser escritos
+    // pelo fluxo interno de conexao, nunca por este endpoint.
+    // A tela envia o objeto de config INTEIRO de volta (`...config`), entao os
+    // campos fora desta lista simplesmente mantem o valor que ja estava — nada
+    // quebra. `phone`, `connected` e `connectedAt` ficam permitidos porque o
+    // fluxo "vincular numero digitando" grava os tres, e eles sao da PROPRIA
+    // loja: nao criam vinculo com outra.
+    const CAMPOS_DO_LOJISTA = [
+      "active", "personality", "customPrompt", "agentName", "storeType",
+      "acceptsPickup", "externalMenuUrl", "autoAcceptOrders",
+      "aiOrderingEnabled", "stopOnHumanRequest",
+      "instantCoupon", "instantCouponCode", "instantCouponValue",
+      "phone", "connected", "connectedAt",
+    ] as const;
+
+    const permitido: Record<string, any> = {};
+    const recusados: string[] = [];
+    for (const chave of Object.keys(body || {})) {
+      if ((CAMPOS_DO_LOJISTA as readonly string[]).includes(chave)) {
+        permitido[chave] = body[chave];
+      } else {
+        recusados.push(chave);
+      }
+    }
+    if (recusados.length > 0) {
+      console.warn(
+        `[chatbot/config] Campos recusados para a loja ${user.id} (não editáveis por aqui):`,
+        recusados.join(", ")
+      );
+    }
+
+    const updatedConfig = { ...currentConfig, ...permitido };
 
     await prisma.user.update({
       where: { id: user.id },

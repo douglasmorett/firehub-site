@@ -144,7 +144,10 @@ async function processPayload(body: any) {
     trackWhatsAppMessage(user.id, 'INBOUND', 'SERVICE');
 
     // 7. Prepare History
-    let history = historyCache.get(from) || [];
+    // ISOLAMENTO ENTRE LOJAS: chave inclui a loja (mesmo motivo do webhook da
+    // Evolution). O user ja esta resolvido na linha ~103, entao da para usar.
+    const convKey = user.id + "_" + from;
+    let history = historyCache.get(convKey) || [];
     history = history.filter(h => now - h.ts < 30 * 60 * 1000); // Only last 30 minutes
     const chatbotHistory = history.map(h => ({ role: h.role, content: h.content }));
 
@@ -184,7 +187,7 @@ async function processPayload(body: any) {
         if (history.length > 15) {
           history = history.slice(history.length - 15);
         }
-        historyCache.set(from, history);
+        historyCache.set(convKey, history);
       }
     } catch (error: any) {
       console.error('AI Processing Error:', error);

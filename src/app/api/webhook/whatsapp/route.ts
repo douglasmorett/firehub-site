@@ -181,17 +181,51 @@ async function handleIncomingMessage(body: any, instance: string) {
   const shortId = instance.replace(/^firehub_/, "");
   
   // Busca multi-tenant genérica: encontra a loja pelo ID ou pelo nome da instância configurada
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { id: shortId },
-        { id: { endsWith: shortId } },
-        { id: instance },
-        { chatbotConfig: { path: ['instanceName'], equals: instance } }
-      ]
-    },
-    select: { id: true, ownerId: true, chatbotConfig: true, slug: true, email: true, isFranqueadoHakim: true },
+  // ── VINCULO INSTANCIA -> LOJA (isolamento entre lojas) ────────────────────
+  // O telefone que leu o QR pertence a UMA loja. A fonte de verdade e o
+  // chatbotConfig.instanceName, gravado no momento da conexao.
+  //
+  // O que havia antes, e por que era perigoso:
+  //   OR: [ { id: shortId }, { id: { endsWith: shortId } }, { id: instance },
+  //         { chatbotConfig: { path:['instanceName'], equals: instance } } ]
+  //   num findFirst SEM orderBy.
+  // 1) `endsWith` casa por SUFIXO: os ids sao cuid, e um instanceName curto
+  //    casava com o id de outra loja.
+  // 2) OR nao tem precedencia no SQL — findFirst devolve QUALQUER linha que
+  //    satisfaca alguma condicao, entao a "prioridade" pretendida nao existia.
+  // Resultado possivel: o robo da loja A respondendo com os dados da loja B.
+  //
+  // Agora e cascata explicita, e ambiguidade RECUSA em vez de adivinhar.
+  const selecaoLoja = {
+    id: true, ownerId: true, chatbotConfig: true, slug: true,
+    email: true, isFranqueadoHakim: true,
+  } as const;
+
+  // 1) Vinculo real do QR: instanceName exato.
+  let candidatos = await prisma.user.findMany({
+    where: { chatbotConfig: { path: ['instanceName'], equals: instance } },
+    select: selecaoLoja,
+    take: 2,
   });
+
+  // 2) Legado: instancia derivada do proprio id da loja, sempre EXATO.
+  if (candidatos.length === 0) {
+    candidatos = await prisma.user.findMany({
+      where: { OR: [{ id: shortId }, { id: instance }] },
+      select: selecaoLoja,
+      take: 2,
+    });
+  }
+
+  if (candidatos.length > 1) {
+    console.error(
+      `[WhatsApp Webhook] Instância "${instance}" casa com ${candidatos.length} lojas ` +
+      `(${candidatos.map((c) => c.email).join(", ")}). Recusando para não responder pela loja errada.`
+    );
+    return;
+  }
+
+  const user = candidatos[0] || null;
 
   if (!user) {
     console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Instância "${instance}" não pertence a nenhuma loja cadastrada.`);
@@ -469,7 +503,13 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   // Prepare and format history to pass to AI
-  const history = conversationCache.get(remoteJid) || [];
+  // ISOLAMENTO ENTRE LOJAS: a chave do historico inclui a LOJA.
+  // Antes era so o remoteJid (telefone). Como o Map e global ao processo, um
+  // cliente que falava com a loja A e depois com a loja B fazia o robo da B
+  // receber as ultimas mensagens trocadas com a A — produtos, precos, endereco
+  // — e continuar a conversa como se fossem dele.
+  const convKey = user.id + "_" + remoteJid;
+  const history = conversationCache.get(convKey) || [];
   const aiHistory = history.map(msg => ({ sender: msg.sender, text: msg.text }));
 
   console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Processando IA para ${remoteJid} com ${aiHistory.length} mensagens no histórico...`);
@@ -567,7 +607,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     // Keep only the last 15 messages
     const updatedHistory = history.slice(-15);
     
-    conversationCache.set(remoteJid, updatedHistory);
+    conversationCache.set(convKey, updatedHistory);
     cooldownCache.set(remoteJid, Date.now());
   }
 }

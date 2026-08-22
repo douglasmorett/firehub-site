@@ -52,16 +52,30 @@ export async function POST(req: Request) {
     }
 
     // Buscar produtos do menu
+    // ISOLAMENTO ENTRE LOJAS: o produto TEM que ser desta loja.
+    // Esta rota e PUBLICA. Sem o filtro de franchiseeId, qualquer pessoa na
+    // internet mandava no carrinho da loja A um menuProductId da loja B: o
+    // pedido nascia na loja A, mas a baixa de estoque seguia a ficha tecnica
+    // daquele produto e derrubava o insumo DA LOJA B. De quebra, a fila de
+    // impressao devolvia o objeto inteiro do produto alheio, inclusive o campo
+    // `cost` — a margem do concorrente.
     const productIds = items.map((i: any) => i.menuProductId).filter(Boolean);
     const menuProducts = await prisma.menuProduct.findMany({
-      where: { id: { in: productIds }, active: true }
+      where: { id: { in: productIds }, active: true, franchiseeId: franchisee.id }
     });
 
     // Calcular total dos produtos
     let totalAmount = 0;
     const orderItems = items.map((item: any) => {
       const product = menuProducts.find(p => p.id === item.menuProductId);
-      if (!product) throw new Error("Produto não encontrado: " + item.menuProductId);
+      // Antes isto era um throw solto, que caia no catch generico e virava 500
+      // sem explicacao. Agora o cliente entende o que aconteceu.
+      if (!product) {
+        throw Object.assign(
+          new Error("Um dos itens do carrinho não está mais disponível nesta loja."),
+          { statusCode: 400 }
+        );
+      }
       totalAmount += product.price * item.quantity;
       // `notes` e a observacao POR ITEM ("sem cebola"). O carrinho ja mandava
       // (CustomerStorePage envia notes em cada item) e a impressao/KDS ja liam
@@ -234,6 +248,12 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("Erro ao criar pedido:", error);
-    return NextResponse.json({ error: error.message || "Erro interno." }, { status: 500 });
+    // Erros de validacao carregam statusCode e devem chegar ao cliente como 4xx
+    // com a mensagem util, em vez de virarem "Erro interno" 500.
+    const status = typeof error?.statusCode === "number" ? error.statusCode : 500;
+    return NextResponse.json(
+      { error: status === 500 ? "Erro interno." : error.message },
+      { status }
+    );
   }
 }
