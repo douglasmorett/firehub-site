@@ -2,10 +2,20 @@
  * GET /api/cron/payouts
  * Processa os repasses automáticos diários/semanais para as contas Pix dos lojistas.
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
-export async function GET() {
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  // Esta rota era publica e devolvia a CHAVE PIX, o faturamento e o nome de
+  // TODAS as lojas do sistema para qualquer um na internet. Agora exige o mesmo
+  // CRON_SECRET das demais rotas de cron (ver src/lib/cron-auth.ts).
+  if (!verifyCronAuth(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const franchisees = await prisma.user.findMany({
       select: {

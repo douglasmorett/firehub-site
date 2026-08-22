@@ -6,15 +6,16 @@ import { getToken } from "next-auth/jwt";
 const ALLOWED_ORIGINS = [
   "https://firehubfood.com.br",
   "https://www.firehubfood.com.br",
-  "https://hakim-portal-grupohakim.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
 ];
 
 function getCorsHeaders(request: NextRequest): Record<string, string> {
   const origin = request.headers.get("origin") || "";
-  const isAllowed =
-    ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".vercel.app");
+  // Antes havia `|| origin.endsWith(".vercel.app")`, o que liberava QUALQUER
+  // site hospedado na Vercel a chamar esta API de outro domínio. Removido junto
+  // com a saída da Vercel.
+  const isAllowed = ALLOWED_ORIGINS.includes(origin);
 
   return {
     "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS[0],
@@ -66,6 +67,34 @@ export async function middleware(request: NextRequest) {
           ...SECURITY_HEADERS,
         },
       });
+    }
+  }
+
+  // ─── /api/debug/* : bloqueado em produção ───
+  // Eram alcançáveis por qualquer um. /api/debug/env vazava e-mails e nomes de
+  // todas as lojas JotaJá, host do banco e merchant IDs.
+  if (pathname.startsWith("/api/debug")) {
+    if (process.env.NODE_ENV === "production") {
+      return new NextResponse(null, { status: 404, headers: SECURITY_HEADERS });
+    }
+  }
+
+  // ─── /api/admin/* : exige sessão autenticada ───
+  // Não exige role ADMIN de propósito: /api/admin/menu-products e
+  // /api/admin/categories são usados pelo PDV por lojistas comuns. O controle
+  // fino de role continua dentro de cada rota. Aqui só se corta o acesso
+  // ANÔNIMO, que hoje permitia a qualquer um na internet chamar
+  // seed-hakim-menu, clean-stale-orders, fix-daily-numbers etc.
+  if (pathname.startsWith("/api/admin")) {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+    if (!token) {
+      return NextResponse.json(
+        { error: "Não autorizado" },
+        { status: 401, headers: { ...SECURITY_HEADERS, ...getCorsHeaders(request) } }
+      );
     }
   }
 

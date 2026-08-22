@@ -104,7 +104,9 @@ function waitForServer(maxWaitMs = 120_000) {
     const start = Date.now();
     const check = () => {
       const req = http.request(
-        { hostname: 'localhost', port: 3000, path: '/api/debug/env', method: 'GET', timeout: 3000 },
+        // Sonda de prontidao: /api/health. Antes usava /api/debug/env, que
+        // vazava dados das lojas e agora responde 404 em producao.
+        { hostname: 'localhost', port: 3000, path: '/api/health', method: 'GET', timeout: 3000 },
         (res) => {
           res.resume();
           console.log('[cron-runner] ✅ Servidor Next.js pronto!');
