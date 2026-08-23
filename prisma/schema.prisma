@@ -69,6 +69,11 @@ model User {
   metaFbAccessToken String?        @db.Text  // Token OAuth do Facebook (longa duração)
   metaAdAccountId   String?        // act_XXXXXXX — conta de anúncios
   metaPixelId       String?        // Pixel Meta instalado no cardápio
+  // Cota de imagens geradas por IA para anúncio. O pacote de R$50/semana
+  // inclui 10 gerações; sem teto, um lojista indeciso clicando "gerar outra"
+  // consumiria boa parte da margem sozinho (cada imagem custa ~R$0,21).
+  metaIaGeracoesUsadas   Int       @default(0)
+  metaIaSemanaReferencia String?   // "2026-W34" — vira a cota quando muda
   metaAdsEnabled    Boolean        @default(false) // Módulo ativo
   metaAdsWeeklyFee  Float           @default(50) // Taxa semanal FireHub pela gestão de Meta Ads (R$)
   metaAdsCampaigns  MetaAdsCampaign[]

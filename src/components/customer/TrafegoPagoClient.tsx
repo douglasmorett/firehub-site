@@ -69,6 +69,10 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const [imageTab, setImageTab] = useState<"upload" | "menu" | "ai">("menu");
   const [selectedImage, setSelectedImage] = useState<string>("");
   const [uploadPreview, setUploadPreview] = useState<string>("");
+  const [enviandoImagem, setEnviandoImagem] = useState(false);
+  const [gerandoImagem, setGerandoImagem] = useState(false);
+  const [descricaoIA, setDescricaoIA] = useState("");
+  const [cotaRestante, setCotaRestante] = useState<number | null>(null);
   const [productImages, setProductImages] = useState<ProductImage[]>([]);
   const [adCopy, setAdCopy] = useState("");
   const [adDescription, setAdDescription] = useState("");
@@ -180,16 +184,73 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   };
 
   // Upload imagem
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // O arquivo vai para o servidor e volta como URL pública.
+  //
+  // Antes virava data URI (readAsDataURL) e era isso que ia como adImageUrl —
+  // mas a Meta BAIXA a imagem para montar o criativo, e "data:image/..." não é
+  // endereço que ela consiga buscar. O upload nunca funcionou de verdade.
+  // O servidor também padroniza em 1080x1080, senão a Meta recusa foto pequena.
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result as string;
-      setUploadPreview(url);
-      setSelectedImage(url);
-    };
-    reader.readAsDataURL(file);
+
+    setEnviandoImagem(true);
+    try {
+      const corpo = new FormData();
+      corpo.append("imagem", file);
+      const res = await fetch("/api/meta-ads/imagem", { method: "POST", body: corpo });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotification({ type: "error", message: data.error || "Não consegui enviar a imagem." });
+        return;
+      }
+      setUploadPreview(data.url);
+      setSelectedImage(data.url);
+    } catch {
+      setNotification({ type: "error", message: "Falha ao enviar a imagem. Tente de novo." });
+    } finally {
+      setEnviandoImagem(false);
+    }
+  };
+
+  // Geração por IA — 10 por semana no pacote.
+  // Busca a cota ao abrir a aba, para o número já aparecer certo em vez de
+  // mostrar "10 incluídas" para quem já usou 7.
+  useEffect(() => {
+    if (imageTab !== "ai" || cotaRestante !== null) return;
+    fetch("/api/meta-ads/gerar-imagem")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && typeof d.restantes === "number") setCotaRestante(d.restantes); })
+      .catch(() => {});
+  }, [imageTab, cotaRestante]);
+
+  const handleGerarImagemIA = async () => {
+    const descricao = descricaoIA.trim();
+    if (!descricao) {
+      setNotification({ type: "error", message: "Descreva o que você quer na imagem." });
+      return;
+    }
+    setGerandoImagem(true);
+    try {
+      const res = await fetch("/api/meta-ads/gerar-imagem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ descricao }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotification({ type: "error", message: data.mensagem || "Não consegui gerar a imagem." });
+        if (typeof data.restantes === "number") setCotaRestante(data.restantes);
+        return;
+      }
+      setUploadPreview(data.url);
+      setSelectedImage(data.url);
+      setCotaRestante(data.restantes);
+    } catch {
+      setNotification({ type: "error", message: "Falha ao gerar a imagem. Tente de novo." });
+    } finally {
+      setGerandoImagem(false);
+    }
   };
 
   // Criar campanha
@@ -657,18 +718,48 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           </div>
         )}
 
-        {/* Tab: IA */}
+        {/* Tab: IA — 10 gerações por semana incluídas no pacote */}
         {imageTab === "ai" && (
-          <div style={{ textAlign: "center", padding: "1.5rem", background: "#F9FAFB", borderRadius: 12 }}>
-            <Sparkles size={32} color="#8B5CF6" style={{ margin: "0 auto 8px" }} />
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Geração de imagens por IA</div>
-            <div style={{ fontSize: "0.82rem", color: "#6B7280", marginBottom: 16, lineHeight: 1.5 }}>
-              Em breve! A IA vai gerar criativos baseados no seu cardápio.<br />
-              Por enquanto, use fotos do cardápio ou faça upload.
+          <div style={{ padding: "1.25rem", background: "#F9FAFB", borderRadius: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <Sparkles size={20} color="#8B5CF6" />
+              <div style={{ fontWeight: 700 }}>Criar imagem com IA</div>
             </div>
-            <button onClick={() => setImageTab("menu")} style={{ background: "#8B5CF6", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 8, fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>
-              Usar foto do cardápio
+
+            <div style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: 12, lineHeight: 1.5 }}>
+              Descreva a cena que você quer. A IA cria uma foto de apresentação para o anúncio.
+              <br />
+              <strong style={{ color: "#B45309" }}>Importante:</strong> a imagem é ilustrativa. Para mostrar
+              o prato exato que você entrega, prefira a foto do seu cardápio — anunciar um prato
+              diferente do real gera reclamação do cliente.
+            </div>
+
+            <textarea
+              value={descricaoIA}
+              onChange={(e) => setDescricaoIA(e.target.value.slice(0, 300))}
+              placeholder="Ex.: hambúrguer artesanal com fritas, sobre tábua de madeira"
+              rows={2}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #E5E7EB", fontSize: "0.86rem", fontFamily: "inherit", resize: "vertical", marginBottom: 10 }}
+            />
+
+            <button
+              onClick={handleGerarImagemIA}
+              disabled={gerandoImagem || cotaRestante === 0}
+              style={{ width: "100%", background: (gerandoImagem || cotaRestante === 0) ? "#E5E7EB" : "#8B5CF6", color: (gerandoImagem || cotaRestante === 0) ? "#9CA3AF" : "#fff", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: (gerandoImagem || cotaRestante === 0) ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            >
+              {gerandoImagem ? "Criando imagem..." : cotaRestante === 0 ? "Cota da semana esgotada" : "✨ Gerar imagem"}
             </button>
+
+            <div style={{ fontSize: "0.74rem", color: "#9CA3AF", marginTop: 8, textAlign: "center" }}>
+              {cotaRestante === null
+                ? "10 imagens por semana incluídas no seu plano"
+                : `${cotaRestante} de 10 imagens restantes nesta semana`}
+              {cotaRestante === 0 && " · a cota volta na segunda-feira"}
+            </div>
+
+            <div style={{ fontSize: "0.74rem", color: "#6B7280", marginTop: 10, textAlign: "center" }}>
+              Fotos do cardápio e imagens que você envia <strong>não têm limite</strong>.
+            </div>
           </div>
         )}
       </div>
