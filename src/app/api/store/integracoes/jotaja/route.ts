@@ -29,19 +29,21 @@ export async function GET() {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
     }
 
-    // Se for contatohakim@gmail.com ou se estiver vazio, retorna os valores padrão do Hakim
-    const isHakim = user.email.toLowerCase().includes("contatohakim") || user.email.toLowerCase().includes("hakim");
-    const clientId = user.jotajaClientId || (isHakim ? "92c66502-57ce-4563-a9e3-0df07dda5a38" : "");
-    const clientSecret = user.jotajaClientSecret || (isHakim ? "bf6798ba-5abe-43b8-a5d7-adca54643492" : "");
-    const merchantId = user.jotajaMerchantId || (isHakim ? "22238" : "");
-    const connected = user.jotajaConnected || (isHakim ? true : false);
-
+    // ⚠️ NÃO devolver credencial embutida no código.
+    // Antes, para qualquer e-mail contendo "hakim", esta rota devolvia
+    // client_id/secret/merchant fixos e `connected: true` mesmo com o banco
+    // vazio. O painel mostrava "🟢 Conectado & Ativo" independentemente do
+    // estado real, então uma integração desligada no banco (que o cron ignora)
+    // parecia saudável na tela — e o segredo ia junto para o browser.
+    // Agora o painel reflete o banco, e o secret nunca é devolvido.
     return NextResponse.json({
       ok: true,
-      clientId,
-      clientSecret,
-      merchantId,
-      connected,
+      clientId: user.jotajaClientId || "",
+      clientSecret: "", // nunca volta para o cliente; vazio no POST = "manter o atual"
+      hasSecret: !!user.jotajaClientSecret,
+      merchantId: user.jotajaMerchantId || "",
+      connected: !!user.jotajaConnected,
+      configurada: !!(user.jotajaClientId && user.jotajaClientSecret),
       userEmail: user.email
     });
   } catch (err: any) {
@@ -71,13 +73,54 @@ export async function POST(req: NextRequest) {
 
     const targetUserId = user.ownerId || user.id;
 
+    // ⚠️ Campo vazio NUNCA apaga credencial.
+    // O formulário chegava em branco (o GET não devolve mais o secret) e o POST
+    // gravava `null` nos três campos com jotajaConnected: true. O cron exige
+    // clientId E secret não-nulos, então a loja saía da lista de polling para
+    // sempre — com o painel continuando verde. Vazio agora significa "mantém".
+    const atual = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { jotajaClientId: true, jotajaClientSecret: true, jotajaMerchantId: true },
+    });
+
+    const novoClientId = clientId?.trim() || atual?.jotajaClientId || null;
+    const novoSecret = clientSecret?.trim() || atual?.jotajaClientSecret || null;
+    const novoMerchant = merchantId?.trim() || atual?.jotajaMerchantId || null;
+
+    if (!novoClientId || !novoSecret) {
+      return NextResponse.json(
+        { error: "Informe o Client ID e o Client Secret do JotaJá — sem os dois a loja não entra no polling de pedidos." },
+        { status: 400 }
+      );
+    }
+
+    // Só marca como conectada se a credencial realmente autenticar. "Conectado"
+    // no painel passa a significar "o JotaJá aceitou esta credencial agora".
+    let autenticou = false;
+    let erroAuth = "";
+    try {
+      const res = await fetch(`${process.env.JOTAJA_BASE_URL || "https://api.jotaja.com/openDelivery"}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: novoClientId,
+          client_secret: novoSecret,
+        }),
+      });
+      autenticou = res.ok;
+      if (!res.ok) erroAuth = `JotaJá recusou a credencial (HTTP ${res.status})`;
+    } catch (e: any) {
+      erroAuth = `Não foi possível falar com o JotaJá: ${e?.message}`;
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: targetUserId },
       data: {
-        jotajaClientId: clientId ? clientId.trim() : null,
-        jotajaClientSecret: clientSecret ? clientSecret.trim() : null,
-        jotajaMerchantId: merchantId ? merchantId.trim() : null,
-        jotajaConnected: connected !== undefined ? connected : true,
+        jotajaClientId: novoClientId,
+        jotajaClientSecret: novoSecret,
+        jotajaMerchantId: novoMerchant,
+        jotajaConnected: connected === false ? false : autenticou,
       },
       select: {
         id: true,
@@ -90,7 +133,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: "Integração JotaJá salva e ativada com sucesso!",
+      message: autenticou
+        ? "Integração JotaJá salva e ativada — credencial testada e aceita pelo JotaJá."
+        : `Credenciais salvas, mas a integração ficou DESLIGADA: ${erroAuth}. Confira Client ID e Secret no painel do JotaJá.`,
+      autenticou,
       user: updatedUser
     });
   } catch (err: any) {

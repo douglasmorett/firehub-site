@@ -93,16 +93,27 @@ export async function processJotajaEvent(
 
     // ── Verifica idempotência ──────────────────────────────────────────────
     // openDeliveryOrderId é globalmente único (@unique no schema) — busca global
-    // openDeliveryReference é número curto (ex: "1234") que pode repetir entre lojas — DEVE filtrar por franchiseeId
+    // openDeliveryReference NÃO é único (schema.prisma: só @@index) e é gravado
+    // também por 99Food, pela API v1 e pelo import manual. Casar só por ele
+    // encontrava o pedido de outro canal, o evento virava "sem mudança de
+    // status", vinha o ACK e o pedido novo sumia. Por isso exige canal + loja.
     const idempotencyConditions: any[] = [
       { openDeliveryOrderId: orderId },
       { openDeliveryOrderId: { startsWith: `${orderId}_` } },
     ];
     if (targetFranchiseeId) {
-      idempotencyConditions.push({ openDeliveryReference: orderId, franchiseeId: targetFranchiseeId });
+      idempotencyConditions.push({
+        openDeliveryReference: orderId,
+        franchiseeId: targetFranchiseeId,
+        openDeliveryChannel: "JOTAJA",
+      });
       const displayRef = (event as any).displayId || (event as any).orderSeqNumber;
       if (displayRef) {
-        idempotencyConditions.push({ openDeliveryReference: displayRef, franchiseeId: targetFranchiseeId });
+        idempotencyConditions.push({
+          openDeliveryReference: String(displayRef),
+          franchiseeId: targetFranchiseeId,
+          openDeliveryChannel: "JOTAJA",
+        });
       }
     }
     const existing = await prisma.customerOrder.findFirst({
@@ -112,16 +123,23 @@ export async function processJotajaEvent(
     if (!existing) {
       // ── CRIAR pedido novo (com até 3 tentativas resilientes) ──────────────
       let orderRes: Response | null = null;
+      let ultimoErro = "";
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           const res = await jotajaFetch(`/v1/orders/${orderId}`);
           if (res.ok) { orderRes = res; break; }
-        } catch (e) {}
+          ultimoErro = `HTTP ${res.status}`;
+        } catch (e: any) {
+          ultimoErro = e?.message || "erro de rede";
+        }
         if (attempt < 3) await new Promise(r => setTimeout(r, 500));
       }
 
       if (!orderRes || !orderRes.ok) {
-        return { action: "error", orderId, message: `GET /orders falhou após 3 tentativas (${orderRes?.status || "network error"})` };
+        const msg = `GET /orders falhou após 3 tentativas (${ultimoErro || "network error"})`;
+        // Sem log, este era o caminho em que o pedido sumia sem deixar rastro.
+        console.error(`[Jotaja] ❌ ${orderId}: ${msg}`);
+        return { action: "error", orderId, message: msg };
       }
       const orderData = await orderRes.json();
 
@@ -152,10 +170,47 @@ export async function processJotajaEvent(
 
       // 3. SEM FALLBACK — se não encontrou loja, é erro (nunca atribuir a outra loja)
       if (!franchisee) {
-        return { action: "error", orderId, message: `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"})` };
+        const msg = `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"})`;
+        console.error(`[Jotaja] ❌ ${orderId}: ${msg}`);
+        return { action: "error", orderId, message: msg };
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
+
+      // ── 2ª barreira de idempotência: pelo NÚMERO do pedido no JotaJá ───────
+      // O evento do feed traz só o UUID. O número que o lojista vê (displayId)
+      // aparece agora, no corpo do pedido — e é por ele que casam os pedidos
+      // que entraram por outro caminho: import manual ou resgate de um pedido
+      // que o feed não entregou. Sem esta checagem o mesmo pedido vai duas
+      // vezes para a cozinha.
+      const displayIdReal = orderData.displayId ?? orderData.orderSeqNumber ?? null;
+      if (displayIdReal) {
+        const jaImportado = await prisma.customerOrder.findFirst({
+          where: {
+            franchiseeId: franchiseeIdToUse,
+            openDeliveryChannel: "JOTAJA",
+            OR: [
+              { openDeliveryReference: String(displayIdReal) },
+              { openDeliveryOrderId: String(displayIdReal) },
+            ],
+          } as any,
+          select: { id: true, dailyOrderNumber: true, openDeliveryOrderId: true },
+        });
+        if (jaImportado) {
+          // Amarra o UUID ao pedido que já está lá, para os eventos de status
+          // seguintes (CONFIRMED, DISPATCHED…) o encontrarem pelo caminho normal.
+          if (jaImportado.openDeliveryOrderId !== orderId) {
+            await prisma.customerOrder
+              .update({
+                where: { id: jaImportado.id },
+                data: { openDeliveryOrderId: orderId, openDeliveryReference: String(displayIdReal) },
+              })
+              .catch(() => {});
+          }
+          console.log(`[Jotaja] ℹ️ ${orderId} já existe como #${jaImportado.dailyOrderNumber} (entrou por outro caminho) — não duplicado`);
+          return { action: "updated", orderId, message: `já existia como #${jaImportado.dailyOrderNumber}; UUID vinculado` };
+        }
+      }
 
       // REGRA DE OURO: Gerar dailyOrderNumber sequencial — entra no FINAL da fila sem mexer em nada existente
       const dailyOrderNumber = await generateDailyOrderNumber(franchiseeIdToUse);
@@ -650,6 +705,7 @@ export async function processJotajaEvent(
       return { action: "skipped", orderId, message: "sem mudança de status" };
     }
   } catch (err: any) {
+    console.error(`[Jotaja] ❌ Exceção processando ${orderId}:`, err?.message, err?.stack?.split("\n")[1]?.trim());
     return { action: "error", orderId, message: err.message };
   }
 }

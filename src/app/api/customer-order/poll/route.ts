@@ -586,17 +586,41 @@ async function pollJotajaEvents(sessionUserId?: string) {
         sessionUserId
       );
       const eid = event.eventId || event.id;
-      if (result.action !== "error" && eid) {
+
+      // ACK apaga o evento do feed do JotaJá em definitivo, e não há endpoint de
+      // listagem para recuperá-lo depois (GET /v1/orders responde 404). Só ackamos
+      // se o pedido realmente existir no banco — antes, "skipped" também ackava.
+      let podeAckar = result.action !== "error";
+      if (podeAckar && event.orderId) {
+        const { prisma } = await import("@/lib/prisma");
+        const gravado = await prisma.customerOrder.findFirst({
+          where: {
+            OR: [
+              { openDeliveryOrderId: event.orderId },
+              { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
+            ],
+          } as any,
+          select: { id: true },
+        });
+        if (!gravado) {
+          podeAckar = false;
+          console.error(`[Jotaja Poll] ⛔ SEM ACK ${event.orderId}: ${result.action} não gravou pedido (${result.message || "-"}) — fica na fila`);
+        }
+      }
+
+      if (podeAckar && eid) {
         processedEvents.push({
           id: eid,
           orderId: event.orderId || "",
           eventType: event.eventType || event.fullCode || event.code || "",
         });
       }
-      if (result.action !== "error" && result.action !== "skipped") {
-        console.log(`[Jotaja Poll] ${result.action} - ${result.orderId}${result.message ? ": " + result.message : ""}`);
-      } else if (result.action === "error") {
+      if (result.action === "error") {
         console.error(`[Jotaja Poll] ERRO ${result.orderId}: ${result.message}`);
+      } else {
+        // "skipped" era o único caso não logado — e era justamente o que sumia
+        // com o pedido em silêncio.
+        console.log(`[Jotaja Poll] ${result.action} - ${result.orderId}${result.message ? ": " + result.message : ""}`);
       }
     }
 

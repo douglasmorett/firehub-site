@@ -93,7 +93,27 @@ export async function POST(req: NextRequest) {
         console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
         const eid = event.eventId || event.id;
-        if (result.action !== "error" && eid) {
+
+        // Só ackar com o pedido confirmado no banco: o ACK apaga o evento do
+        // feed em definitivo e o JotaJá não tem listagem para recuperá-lo.
+        let podeAckar = result.action !== "error";
+        if (podeAckar && event.orderId) {
+          const gravado = await prisma.customerOrder.findFirst({
+            where: {
+              OR: [
+                { openDeliveryOrderId: event.orderId },
+                { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
+              ],
+            } as any,
+            select: { id: true },
+          });
+          if (!gravado) {
+            podeAckar = false;
+            console.error(`[Jotajá Webhook] ⛔ SEM ACK ${event.orderId}: ${result.action} não gravou pedido (${result.message || "-"})`);
+          }
+        }
+
+        if (podeAckar && eid) {
           processedEvents.push({
             id: eid,
             orderId: event.orderId || "",

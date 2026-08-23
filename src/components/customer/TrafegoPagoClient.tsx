@@ -376,11 +376,16 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
       {/* Métricas */}
       <div className="hero-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "0.75rem", marginBottom: "2rem" }}>
+        {/* Antes havia aqui "ROAS médio 4,72x", "133 mil visualizações" e
+            "37 pedidos/semana" — todos escritos no código, sem nenhum dado real
+            por trás. Prometer resultado que não se pode sustentar é o caminho
+            mais curto para o lojista pedir o dinheiro de volta. Trocado pelo
+            que é verdade e verificável sobre o serviço. */}
         {[
-          { label: "Custo médio por pedido", value: "R$ 7,33" },
-          { label: "Visualizações/semana", value: "133 mil" },
-          { label: "ROAS médio", value: "4,72x" },
-          { label: "Pedidos gerados/semana", value: "37" },
+          { label: "Onde aparece", value: "Facebook e Instagram" },
+          { label: "Quem vê", value: "Só quem você entrega" },
+          { label: "Gestão FireHub", value: "R$ 50/semana" },
+          { label: "Fidelidade", value: "Sem contrato" },
         ].map(s => (
           <div key={s.label} style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: "1rem", textAlign: "center" }}>
             <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 4 }}>{s.label}</div>
@@ -394,7 +399,11 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         </button>
         <p style={{ color: "#9CA3AF", fontSize: "0.8rem", marginTop: 8 }}>⚡ Configuração em menos de 5 minutos · Sem contrato</p>
       </div>
-      {/* Marquee */}
+      {/* O carrossel de "depoimentos" mostrava 14 restaurantes que NÃO EXISTEM
+          ("Burger Carioca investiu R$150 e faturou R$847"), com cinco estrelas
+          e tudo. Isso é depoimento fabricado — some até haver resultado real de
+          cliente real para mostrar, com autorização dele. */}
+      {false && (
       <div style={{ overflow: "hidden", marginBottom: "2rem", userSelect: "none" }}>
         <div className="social-track">
           {[...SOCIAL_PROOF, ...SOCIAL_PROOF].map((r, i) => (
@@ -406,6 +415,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           ))}
         </div>
       </div>
+      )}
+      {false && (
       <div className="hero-live-row" style={{ display: "flex", justifyContent: "center", gap: "3rem", borderTop: "1px solid #E5E7EB", paddingTop: "1.5rem" }}>
         {[
           { label: "Receita Gerada", value: `R$ ${liveReceita.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
@@ -418,6 +429,10 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           </div>
         ))}
       </div>
+      )}
+      {/* Os contadores "ao vivo" acima (Receita Gerada / Valor Investido /
+          Pedidos) eram uma fórmula: 2.847.392,18 + tick × 3,47. Nada vinha do
+          banco. Ficam ocultos até existir número real para somar. */}
     </div>
   );
 
@@ -567,19 +582,29 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       {/* Estimativas */}
       <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "1rem", marginBottom: "0.75rem" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", textAlign: "center" }}>
-          <div>
-            <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>Retorno estimado</div>
-            <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#16A34A" }}>≈ R$ {(investment * 4.72).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</div>
-            <div style={{ fontSize: "0.65rem", color: "#9CA3AF" }}>ROAS médio 4,72x</div>
-          </div>
+          {/* "Retorno estimado = investimento × 4,72" saiu daqui.
+              Era promessa de resultado financeiro calculada sobre um ROAS
+              inventado no código — quem investisse R$ 200 lia "≈ R$ 944". Sem
+              nenhum dado por trás, isso é o tipo de número que volta como
+              reclamação, e com razão.
+              O alcance fica, porque é estimativa de ENTREGA (quantas pessoas o
+              valor alcança), não de retorno — e é a conta que a própria Meta
+              usa. Mesmo assim vai marcado como estimativa. */}
           <div>
             <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>Alcance estimado</div>
             <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#3B82F6" }}>≈ {(investment * 85).toLocaleString("pt-BR")}</div>
             <div style={{ fontSize: "0.65rem", color: "#9CA3AF" }}>pessoas na sua região</div>
           </div>
+          <div>
+            <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>Gestão FireHub</div>
+            <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#111" }}>R$ 50<span style={{ fontSize: "0.8rem", fontWeight: 600 }}>/semana</span></div>
+            <div style={{ fontSize: "0.65rem", color: "#9CA3AF" }}>cobrado só enquanto ativo</div>
+          </div>
         </div>
         <div style={{ fontSize: "0.68rem", color: "#9CA3AF", marginTop: 8, lineHeight: 1.4, borderTop: "1px solid #BBF7D0", paddingTop: 8, textAlign: "center" }}>
-          ⚠️ Valores aproximados. O retorno real varia conforme <strong>fotos</strong>, <strong>preços</strong> e <strong>mercado local</strong>.
+          ⚠️ O alcance é uma estimativa e varia com concorrência e público. Não prometemos
+          número de pedidos: o resultado depende das suas <strong>fotos</strong>, <strong>preços</strong> e
+          <strong> mercado local</strong>. Você acompanha os números reais aqui no painel.
         </div>
       </div>
       <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.5rem", fontSize: "0.82rem", color: "#991B1B", lineHeight: 1.6 }}>

@@ -436,6 +436,44 @@ export async function lerCarteiraDaConta(
   }
 }
 
+/**
+ * Renova o token de longa duração do lojista.
+ *
+ * O token do Facebook vale ~60 dias. Não havia nenhuma renovação: passados os
+ * 60 dias a campanha simplesmente parava de ser sincronizada e o lojista
+ * continuava pagando R$ 50/semana sem ninguém notar — nem ele, nem nós. É a
+ * pior categoria de falha: silenciosa e cobrada.
+ *
+ * A Meta permite trocar um token de longa duração ainda válido por outro,
+ * renovando o prazo. Só funciona ANTES de expirar — por isso o cron renova com
+ * folga, não no dia do vencimento.
+ */
+export async function renovarTokenDoLojista(tokenAtual: string): Promise<string | null> {
+  try {
+    const appId = segredoObrigatorio("META_APP_ID");
+    const appSecret = segredoObrigatorio("META_APP_SECRET");
+    const res = await fetch(
+      `${META_BASE}/oauth/access_token?grant_type=fb_exchange_token` +
+      `&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenAtual}`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** O token ainda é válido? Usado para avisar o lojista antes de quebrar. */
+export async function tokenAindaVale(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${META_BASE}/me?fields=id&access_token=${token}`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Link direto para o lojista ADICIONAR FUNDOS / trocar a forma de pagamento. */
 export function linkDeRecargaDoMeta(adAccountId: string): string {
   const semPrefixo = adAccountId.replace(/^act_/, "");

@@ -39,6 +39,7 @@ export default function IntegracoesHubClient({
   const [jjClientSecret, setJjClientSecret] = useState("");
   const [jjMerchantId, setJjMerchantId] = useState("");
   const [jjConnected, setJjConnected] = useState(false);
+  const [jjHasSecret, setJjHasSecret] = useState(false);
   const [jjLoading, setJjLoading] = useState(true);
   const [jjSaving, setJjSaving] = useState(false);
 
@@ -96,7 +97,8 @@ export default function IntegracoesHubClient({
       .then((data) => {
         if (data.ok) {
           setJjClientId(data.clientId || "");
-          setJjClientSecret(data.clientSecret || "");
+          setJjClientSecret(""); // o secret nunca volta do servidor
+          setJjHasSecret(!!data.hasSecret);
           setJjMerchantId(data.merchantId || "");
           setJjConnected(!!data.connected);
         }
@@ -747,7 +749,7 @@ export default function IntegracoesHubClient({
                     </label>
                     <input
                       type="text"
-                      placeholder="Ex: 92c66502-57ce-4563-a9e3-0df07dda5a38"
+                      placeholder="Cole aqui o Client ID que o JotaJá forneceu"
                       value={jjClientId}
                       onChange={e => setJjClientId(e.target.value)}
                       style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
@@ -760,11 +762,16 @@ export default function IntegracoesHubClient({
                     </label>
                     <input
                       type="password"
-                      placeholder="Ex: bf6798ba-5abe-43b8-a5d7-adca54643492"
+                      placeholder={jjHasSecret ? "•••••••• já configurado — deixe em branco para manter" : "Cole aqui o Client Secret do JotaJá"}
                       value={jjClientSecret}
                       onChange={e => setJjClientSecret(e.target.value)}
                       style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
                     />
+                    {jjHasSecret && (
+                      <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "4px 0 0" }}>
+                        Campo em branco mantém o segredo atual — ele nunca é devolvido para o navegador.
+                      </p>
+                    )}
                   </div>
 
                   <div>

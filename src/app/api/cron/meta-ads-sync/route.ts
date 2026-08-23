@@ -4,8 +4,9 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 
 /**
  * GET /api/cron/meta-ads-sync
- * Cron job diário — sincroniza métricas de campanhas ativas com o Meta
- * e calcula a taxa de 10% do FireHub sobre o spend.
+ * Cron job — sincroniza métricas das campanhas ativas com o Meta, cobra a
+ * gestão de R$ 50 por semana ATIVA (não é percentual do gasto) e renova os
+ * tokens do Facebook antes que expirem.
  */
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -19,7 +20,51 @@ export async function GET(req: NextRequest) {
   let synced = 0;
 
   try {
-    const { getCampaignInsights } = await import("@/lib/meta-ads");
+    const { getCampaignInsights, renovarTokenDoLojista, tokenAindaVale } =
+      await import("@/lib/meta-ads");
+
+    // ── RENOVAÇÃO DOS TOKENS ────────────────────────────────────────────────
+    // O token do Facebook vale ~60 dias e não havia nenhuma renovação: depois
+    // disso a campanha parava de sincronizar e o lojista seguia pagando R$ 50
+    // por semana sem ninguém perceber. Falha silenciosa e cobrada — a pior
+    // combinação.
+    //
+    // A troca só funciona com token AINDA válido, então roda com folga, a cada
+    // passagem do cron, em vez de esperar o vencimento.
+    try {
+      const comToken = await prisma.user.findMany({
+        where: { metaFbAccessToken: { not: null }, metaAdsEnabled: true },
+        select: { id: true, storeName: true, metaFbAccessToken: true },
+      });
+
+      for (const loja of comToken) {
+        const atual = loja.metaFbAccessToken as string;
+        const novo = await renovarTokenDoLojista(atual);
+
+        if (novo && novo !== atual) {
+          await prisma.user.update({
+            where: { id: loja.id },
+            data: { metaFbAccessToken: novo },
+          });
+          log.push(`🔑 token renovado: ${loja.storeName ?? loja.id}`);
+          continue;
+        }
+
+        // Não renovou: só é problema se o token atual já morreu. Aí a loja
+        // precisa reconectar, e é melhor desligar o módulo do que seguir
+        // cobrando por um serviço que parou.
+        if (!(await tokenAindaVale(atual))) {
+          await prisma.user.update({
+            where: { id: loja.id },
+            data: { metaAdsEnabled: false },
+          });
+          log.push(`⚠️ token expirado: ${loja.storeName ?? loja.id} — precisa reconectar o Facebook`);
+          console.warn(`[MetaAds] token expirado na loja ${loja.id}; módulo desligado até reconectar.`);
+        }
+      }
+    } catch (e: any) {
+      log.push(`⚠️ renovação de tokens: ${e?.message}`);
+    }
 
     // Busca todas as campanhas ativas
     const campaigns = await (prisma as any).metaAdsCampaign.findMany({
