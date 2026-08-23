@@ -6,9 +6,18 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPixOrder, createCardOrder } from "@/lib/pagarme";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { PAGAMENTO_ONLINE_ATIVO, MOTIVO_PAGAMENTO_ONLINE_OFF } from "@/lib/pagamento-online";
 
 export async function POST(req: Request) {
   try {
+    // Mesma trava das rotas do Mercado Pago. Esta é PÚBLICA e grava
+    // gatewayProvider/pagarmeOrderId — exatamente os campos que o painel
+    // financeiro passou a aceitar como prova de que o dinheiro entrou. Deixá-la
+    // aberta permitiria fabricar saldo sacável sem pagamento nenhum.
+    if (!PAGAMENTO_ONLINE_ATIVO) {
+      return NextResponse.json({ error: MOTIVO_PAGAMENTO_ONLINE_OFF }, { status: 503 });
+    }
+
     // Rate limiting: 10 tentativas por minuto por IP
     const ip = getClientIp(req);
     const { allowed } = checkRateLimit(`pagarme:${ip}`, { windowMs: 60_000, maxRequests: 10 });

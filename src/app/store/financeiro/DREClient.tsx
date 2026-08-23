@@ -26,6 +26,11 @@ type Order = {
   deliveryDistance: number; status: string; deliveryType: string;
   paymentMethod: string; source: string; createdAt: string;
   items: OrderItem[]; motoboy: any;
+  // Prova de que o dinheiro entrou pelo gateway (vêm de page.tsx).
+  gatewayProvider?: string | null;
+  gatewayPaymentId?: string | null;
+  pagarmeOrderId?: string | null;
+  paymentPaidAt?: string | null;
 };
 
 // Configura taxa por forma de pagamento (padrão FireHub)
@@ -315,10 +320,10 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       // Agora exige-se PROVA de pagamento: um identificador do gateway E a
       // marca de pago. Nome de forma de pagamento não é prova de nada.
       const temIdentificadorDeGateway =
-        Boolean((o as any).gatewayProvider) ||
-        Boolean((o as any).gatewayPaymentId) ||
-        Boolean((o as any).pagarmeOrderId);
-      const foiPagoDeVerdade = Boolean((o as any).paymentPaidAt);
+        Boolean(o.gatewayProvider) ||
+        Boolean(o.gatewayPaymentId) ||
+        Boolean(o.pagarmeOrderId);
+      const foiPagoDeVerdade = Boolean(o.paymentPaidAt);
 
       const isMercadoPagoGateway =
         !isIfood && !isJotaja && !isPresencial &&
@@ -868,9 +873,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 {repasseConfig?.chavePix ? (
                   <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
                     <div>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#166534", display: "block" }}>🟢 Repasse Automático Ativo</span>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#166534", display: "block" }}>🔑 Chave Pix cadastrada para repasse</span>
                       <span style={{ fontSize: "0.72rem", color: "#15803D" }}>
-                        {repasseConfig.frequencia === "WEEKLY" ? "Semanalmente" : "Todos os dias"} às {repasseConfig.horario || "03:00"} · Chave: <strong>{repasseConfig.chavePix}</strong>
+                        Chave: <strong>{repasseConfig.chavePix}</strong> · O repasse automático ainda não está ativo — está sendo implementado junto com o pagamento online.
                       </span>
                     </div>
                     <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#166534", fontWeight: 700, textDecoration: "underline" }}>Alterar</a>
@@ -914,7 +919,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       fontFamily: "inherit"
                     }}
                   >
-                    ⚡ Solicitar Saque Agora (PIX)
+                    ⏳ Saque indisponível (em implantação)
                   </button>
                   <a
                     href="/store/minha-loja"

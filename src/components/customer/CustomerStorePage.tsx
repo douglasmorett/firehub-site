@@ -654,6 +654,18 @@ export default function CustomerStorePage({
         { k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" }
       );
     }
+    // Pix na ENTREGA (cliente paga na chave da loja quando recebe).
+    // Sem isto, desligar o Pix online deixava o cardápio sem NENHUMA forma de
+    // Pix — e Pix é hoje a forma mais usada. A loja perderia venda por causa
+    // de uma mudança que era só para esconder o pagamento pelo site.
+    //
+    // A chave é PIX_ENTREGA, não PIX: "PIX" está em ONLINE_METHODS e abriria o
+    // modal de pagamento online. Como o nome contém "ENTREGA", o financeiro já
+    // o classifica como presencial e ele não entra no saldo do gateway.
+    if (!hasOnlinePayment) {
+      base.push({ k: "PIX_ENTREGA", l: "💰 Pix (na entrega)" });
+    }
+
     base.push(
       { k: "DINHEIRO", l: "💵 Dinheiro" },
       { k: "DEBITO", l: "💳 Débito (Entrega)" },

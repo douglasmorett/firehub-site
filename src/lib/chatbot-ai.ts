@@ -1059,10 +1059,23 @@ async function syncAiOrderToDatabase({
     })
     .filter(Boolean); // Remove os nulls (itens alucinados)
 
-  const totalItemsSum = orderItemsData.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
-  const deliveryFee = Number(payload.deliveryFee || payload.deliveryTax || payload.shippingFee || 0);
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const totalItemsSum = centavos(
+    orderItemsData.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0)
+  );
+
+  // O frete aqui vem do payload que a IA monta. Mesmo piso e teto do cardápio:
+  // valor negativo abateria o total do pedido, e o modelo pode alucinar número.
+  const freteBruto = Number(payload.deliveryFee || payload.deliveryTax || payload.shippingFee || 0);
+  const TETO_FRETE = 300;
+  const freteValido = Number.isFinite(freteBruto) && freteBruto >= 0 && freteBruto <= TETO_FRETE;
+  if (!freteValido && freteBruto !== 0) {
+    console.warn(`[chatbot-ai] frete recusado (${freteBruto}) — gravando 0.`);
+  }
+  const deliveryFee = freteValido ? centavos(freteBruto) : 0;
+
   // Recalcula o total de forma determinística — NUNCA confiar no valor total chutado pela IA!
-  const totalOrderAmount = totalItemsSum + deliveryFee;
+  const totalOrderAmount = centavos(totalItemsSum + deliveryFee);
 
   const notesText = payload.finalized
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`

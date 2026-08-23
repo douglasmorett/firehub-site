@@ -80,6 +80,14 @@ export default async function StoreFinanceiroPage() {
     deliveryType: o.deliveryType,
     paymentMethod: o.paymentMethod || "",
     pagarmeMethod: (o as any).pagarmeMethod || null,
+    // Prova de pagamento pelo gateway. Sem estes quatro campos aqui, a regra
+    // de saldo do DREClient vira um `false` fixo: ela os lê no navegador e
+    // eles chegariam sempre undefined, então o painel mostraria R$ 0,00 mesmo
+    // com dinheiro real no gateway — sem erro nenhum para diagnosticar.
+    gatewayProvider: (o as any).gatewayProvider || null,
+    gatewayPaymentId: (o as any).gatewayPaymentId || null,
+    pagarmeOrderId: (o as any).pagarmeOrderId || null,
+    paymentPaidAt: (o as any).paymentPaidAt ? (o as any).paymentPaidAt.toISOString() : null,
     source: o.source || "ONLINE",
     createdAt: o.createdAt.toISOString(),
     items: o.items.map((i: any) => ({

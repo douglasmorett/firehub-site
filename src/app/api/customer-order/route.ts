@@ -109,14 +109,24 @@ export async function POST(req: Request) {
     // O teto é rede de segurança contra o oposto (inflar o pedido de outra
     // pessoa): frete acima de R$ 200 ou maior que 3x o valor dos itens não é
     // frete, é erro ou abuso.
-    const feeBruta = deliveryType === "DELIVERY" ? Number(deliveryFee) || 0 : 0;
-    const tetoFrete = Math.max(200, totalAmount * 3);
-    if (feeBruta < 0 || feeBruta > tetoFrete) {
+    const feeInformada = deliveryType === "DELIVERY" ? Number(deliveryFee) : 0;
+    const feeEhNumero = Number.isFinite(feeInformada);
+
+    // O teto é ABSOLUTO de propósito, não proporcional ao valor dos itens.
+    // `totalAmount` sai subestimado quando o pedido tem combo com adicional
+    // (bug conhecido e ainda não corrigido, fora do escopo desta mudança), e
+    // amarrar o teto a ele faria frete legítimo ser zerado justamente nos
+    // pedidos com combo. R$ 300 de entrega não existe em delivery de bairro.
+    const TETO_FRETE = 300;
+    const feeForaDaFaixa = !feeEhNumero || feeInformada < 0 || feeInformada > TETO_FRETE;
+
+    if (deliveryType === "DELIVERY" && feeForaDaFaixa && deliveryFee !== undefined && deliveryFee !== null) {
       console.warn(
-        `[customer-order] deliveryFee fora da faixa (${feeBruta}) para a loja ${franchisee.id} — usando 0. Itens: R$ ${totalAmount.toFixed(2)}`
+        `[customer-order] deliveryFee recusado (${JSON.stringify(deliveryFee)}) na loja ${franchisee.id} — gravando 0.`
       );
     }
-    const originalFee = feeBruta < 0 || feeBruta > tetoFrete ? 0 : feeBruta;
+
+    const originalFee = feeForaDaFaixa ? 0 : feeInformada;
     let fee = originalFee;
     let freeShippingNote = "";
 
@@ -158,6 +168,9 @@ export async function POST(req: Request) {
     // `transaction_amount` para o gateway — que recusa moeda com mais de 2 casas.
     const centavos = (n: number) => Math.round(n * 100) / 100;
     const finalTotal = centavos(Math.max(0, totalAmount - discount + fee));
+    // A taxa é gravada ao lado do total e entra em relatório; arredondar só o
+    // total deixaria os dois divergindo em frações de centavo.
+    fee = centavos(fee);
     let orderNotes = notes || "";
     if (couponCode && discount > 0) {
       orderNotes = `[Cupom: ${couponCode.trim().toUpperCase()}] ${orderNotes}`.trim();
