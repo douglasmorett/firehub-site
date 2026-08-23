@@ -18,7 +18,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { verificarProntidaoDaConta, linkDeCobrancaDoMeta } from "@/lib/meta-ads";
+import {
+  verificarProntidaoDaConta,
+  linkDeCobrancaDoMeta,
+  linkDeRecargaDoMeta,
+  lerCarteiraDaConta,
+} from "@/lib/meta-ads";
 
 export const dynamic = "force-dynamic";
 
@@ -86,10 +91,28 @@ export async function GET() {
     });
   }
 
+  // Carteira: o lojista vê crédito e gasto sem sair do FireHub.
+  // Recarregar continua sendo no painel do Meta (não há API), por isso vai
+  // junto o link — e o aviso de que com CARTÃO ele nunca mais precisa voltar lá.
+  const carteira = await lerCarteiraDaConta(loja.metaAdAccountId, loja.metaFbAccessToken);
+
+  const precisaRecarregar =
+    carteira != null &&
+    !carteira.cobrancaAutomatica &&
+    carteira.saldoDisponivel != null &&
+    carteira.saldoDisponivel <= 0;
+
   return NextResponse.json({
     conectado: true,
-    pronto: true,
-    mensagem: "Tudo certo. Sua conta está pronta para veicular anúncios.",
+    pronto: !precisaRecarregar,
+    proximoPasso: precisaRecarregar ? "sem_saldo" : undefined,
+    mensagem: precisaRecarregar
+      ? "Sua conta está no modo saldo pré-pago e está zerada — os anúncios não vão rodar. " +
+        "Adicione saldo, ou cadastre um cartão para o Facebook cobrar automaticamente e você " +
+        "não precisar recarregar nunca mais."
+      : "Tudo certo. Sua conta está pronta para veicular anúncios.",
     moeda: prontidao.moeda,
+    carteira,
+    linkParaRecarregar: linkDeRecargaDoMeta(loja.metaAdAccountId),
   });
 }

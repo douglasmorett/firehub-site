@@ -311,6 +311,114 @@ export async function verificarProntidaoDaConta(
   }
 }
 
+/**
+ * Descobre o Pixel da conta de anúncios do lojista.
+ *
+ * Sem pixel não existe medição: a Meta não sabe quais cliques viraram pedido,
+ * o lojista vê ROAS zero e — pior — a campanha não consegue otimizar para quem
+ * costuma comprar, que é o que faz o anúncio dar retorno.
+ *
+ * Pedir para o lojista achar e colar o ID do pixel é atrito que a maioria não
+ * vence. Como a conexão já dá acesso à conta, o pixel é descoberto sozinho.
+ * Se houver mais de um, fica o primeiro — e a tela permite trocar depois.
+ */
+export async function descobrirPixelDaConta(
+  adAccountId: string,
+  accessToken: string
+): Promise<{ id: string; nome: string } | null> {
+  try {
+    const res = await fetch(
+      `${META_BASE}/${adAccountId}/adspixels?fields=id,name&limit=10&access_token=${accessToken}`
+    );
+    if (!res.ok) return null;
+    const lista = (await res.json())?.data ?? [];
+    const primeiro = lista[0];
+    return primeiro?.id ? { id: String(primeiro.id), nome: primeiro.name ?? "" } : null;
+  } catch {
+    return null;
+  }
+}
+
+export type CarteiraDaConta = {
+  moeda: string;
+  /** Pré-pago: crédito disponível. Pós-pago (cartão): null — não existe saldo. */
+  saldoDisponivel: number | null;
+  /** Fatura em aberto que a Meta ainda vai cobrar (pós-pago). */
+  aFaturar: number | null;
+  /** Total já gasto pela conta, histórico. */
+  totalGasto: number;
+  /** Teto de gasto da conta, se o lojista definiu um. */
+  tetoDaConta: number | null;
+  /** Limite diário que a própria Meta impõe a contas novas. */
+  limiteDiarioDaMeta: number | null;
+  /** true = cartão (cobrança automática). false = saldo pré-pago. */
+  cobrancaAutomatica: boolean;
+  formaDePagamento: string | null;
+};
+
+/**
+ * Lê a "carteira" da conta de anúncios para exibir dentro do FireHub.
+ *
+ * Sobre RECARREGAR: não é possível por API — a Meta só permite adicionar
+ * cartão ou fundos na interface do Ads Manager. O que dá para fazer, e é o que
+ * se faz aqui, é MOSTRAR o estado e mandar o lojista ao lugar certo.
+ *
+ * A saída boa para o lojista é o cartão (pós-pago): a Meta cobra sozinha e ele
+ * nunca mais precisa recarregar. No pré-pago ele tem que voltar lá sempre que
+ * o saldo acaba — e, sem saldo, os anúncios param.
+ *
+ * Todos os valores da Meta vêm em CENTAVOS da moeda da conta.
+ */
+export async function lerCarteiraDaConta(
+  adAccountId: string,
+  accessToken: string
+): Promise<CarteiraDaConta | null> {
+  const campos = [
+    "currency", "balance", "amount_spent", "spend_cap",
+    "funding_source", "funding_source_details", "adtrust_dsl",
+  ].join(",");
+
+  try {
+    const res = await fetch(`${META_BASE}/${adAccountId}?fields=${campos}&access_token=${accessToken}`);
+    if (!res.ok) return null;
+    const c = await res.json();
+
+    const emReais = (v: any) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n / 100 : null;
+    };
+
+    const detalhes = c.funding_source_details || {};
+    const tipo = String(detalhes.type ?? "").toUpperCase();
+
+    // A Meta não expõe um campo único e estável de "saldo pré-pago". O que
+    // existe de forma consistente é `balance`, que no pré-pago se comporta como
+    // crédito disponível e no pós-pago como fatura em aberto. Por isso o valor
+    // é interpretado conforme o tipo de cobrança, em vez de chutar um só.
+    const ehPrePago = tipo.includes("PREPAID") || tipo.includes("STORED");
+    const saldo = emReais(c.balance);
+
+    return {
+      moeda: c.currency ?? "BRL",
+      saldoDisponivel: ehPrePago ? saldo : null,
+      aFaturar: ehPrePago ? null : saldo,
+      totalGasto: emReais(c.amount_spent) ?? 0,
+      tetoDaConta: c.spend_cap ? emReais(c.spend_cap) : null,
+      limiteDiarioDaMeta: c.adtrust_dsl ? emReais(c.adtrust_dsl) : null,
+      cobrancaAutomatica: !ehPrePago && Boolean(c.funding_source || detalhes.id),
+      formaDePagamento: detalhes.display_string ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Link direto para o lojista ADICIONAR FUNDOS / trocar a forma de pagamento. */
+export function linkDeRecargaDoMeta(adAccountId: string): string {
+  const semPrefixo = adAccountId.replace(/^act_/, "");
+  return `https://adsmanager.facebook.com/adsmanager/billing_hub/payment_settings?act=${semPrefixo}`;
+}
+
 /** Link direto para o lojista cadastrar a forma de pagamento no Meta. */
 export function linkDeCobrancaDoMeta(adAccountId: string): string {
   const semPrefixo = adAccountId.replace(/^act_/, "");

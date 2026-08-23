@@ -1909,7 +1909,14 @@ export default function CustomerStorePage({
   // ===== MAIN RENDER =====
   return (
     <div className="saipos-store">
-      {franchisee.facebookPixelId && <FacebookPixel pixelId={franchisee.facebookPixelId} />}
+      {/* Dois campos no schema guardam a mesma coisa: `facebookPixelId` (preenchido
+          na tela de Integrações) e `metaPixelId` (preenchido pelo módulo de tráfego
+          pago ao conectar a conta). Aceitar os dois evita o caso em que o lojista
+          conecta o Facebook, o pixel é descoberto e salvo, e mesmo assim o cardápio
+          não dispara nada por estar olhando só um dos campos. */}
+      {(franchisee.facebookPixelId || (franchisee as any).metaPixelId) && (
+        <FacebookPixel pixelId={(franchisee.facebookPixelId || (franchisee as any).metaPixelId) as string} />
+      )}
 
       {/* BANNER DE PAUSA */}
       {isPaused && (

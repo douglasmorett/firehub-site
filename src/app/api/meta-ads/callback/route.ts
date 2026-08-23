@@ -23,7 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { exchangeCodeForToken, getMetaAccounts } from "@/lib/meta-ads";
+import { exchangeCodeForToken, getMetaAccounts, descobrirPixelDaConta } from "@/lib/meta-ads";
 import { lerState } from "@/lib/meta-oauth-state";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +78,10 @@ export async function GET(req: NextRequest) {
     const adAccountId = accounts?.[0]?.id ?? null;
     const pageId = pages?.[0]?.id ?? null;
 
+    // Descobre o Pixel na hora da conexão. Sem ele não há medição de pedido, e
+    // pedir para o lojista achar o ID sozinho é atrito que a maioria não vence.
+    const pixel = adAccountId ? await descobrirPixelDaConta(adAccountId, accessToken) : null;
+
     // Sem conta de anúncios não há como veicular. Guarda o token (a conta pode
     // ser escolhida depois) mas NÃO liga o módulo, para a tela não prometer o
     // que não existe.
@@ -88,6 +92,9 @@ export async function GET(req: NextRequest) {
         metaAdAccountId: adAccountId,
         metaFbPageId: pageId,
         metaAdsEnabled: Boolean(adAccountId),
+        // Só grava o pixel se descobriu algum — não apaga o que o lojista já
+        // tenha configurado à mão na tela de Integrações.
+        ...(pixel?.id ? { metaPixelId: pixel.id } : {}),
       },
     });
 
