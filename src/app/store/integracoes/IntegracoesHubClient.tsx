@@ -147,9 +147,16 @@ export default function IntegracoesHubClient({
 
       const data = await res.json();
       if (res.ok && data.ok) {
-        setJjConnected(true);
-        showToast("✅ Integração JotaJá salva e ativada!", "#10B981");
-        setOpenModal(null);
+        // "Conectado" agora reflete o teste real da credencial no JotaJá,
+        // não o simples fato de o formulário ter sido salvo.
+        setJjConnected(!!data.autenticou);
+        setJjHasSecret(true);
+        setJjClientSecret("");
+        showToast(
+          data.autenticou ? "✅ Integração JotaJá salva e ativada!" : `⚠️ ${data.message}`,
+          data.autenticou ? "#10B981" : "#F59E0B"
+        );
+        if (data.autenticou) setOpenModal(null);
       } else {
         showToast(`⚠️ ${data.error || "Erro ao salvar JotaJá"}`, "#EF4444");
       }

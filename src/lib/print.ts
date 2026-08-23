@@ -135,6 +135,9 @@ async function printToDevice(
           discountTotal: (order as any).discountTotal,
           discountIfood: (order as any).discountIfood,
           discountMerchant: (order as any).discountMerchant,
+          // Detalhe do desconto (ex.: "Cupom HAKIM10 (-10%)") para a comanda
+          // dizer POR QUE o total ficou menor que a soma dos itens.
+          discountDetails: (order as any).discountDetails,
           changeAmount: (order as any).changeAmount,
           ifoodReference: (order as any).ifoodReference,
           ifoodPickupCode: (order as any).ifoodPickupCode,

@@ -2541,7 +2541,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </div>
                   {order.discountTotal && order.discountTotal > 0 && (
                     <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
-                      <span>Desconto (Cupom - Loja):</span>
+                      {/* Mostra o cupom que gerou o desconto (ex.: "Cupom HAKIM10 (-10%)").
+                          Antes dizia sempre "Cupom - Loja", sem dizer qual nem por quê. */}
+                      <span>{(order as any).discountDetails?.[0]?.description || "Desconto (Cupom)"}:</span>
                       <span>-R$ {Number(order.discountTotal).toFixed(2).replace('.', ',')}</span>
                     </div>
                   )}

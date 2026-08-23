@@ -378,6 +378,55 @@ export async function processJotajaEvent(
         });
       }
 
+      // ── CUPOM / DESCONTO ───────────────────────────────────────────────────
+      // O JotaJá aplica cupom (ex.: HAKIM10, -10%) e manda o total já abatido,
+      // mas nem sempre preenche `benefits` (padrão Open Delivery). O resultado
+      // na comanda era um total menor que a soma dos itens, sem uma linha
+      // dizendo por quê — a cozinha e o caixa viam "sumir" dinheiro.
+      // Aqui: primeiro procuramos o cupom nos campos conhecidos; se não houver
+      // valor de desconto, deduzimos pela diferença (itens + taxa − total),
+      // que é aritmética e não depende do formato do payload.
+      // Verificado contra a API real em 23/08/2026: o payload do JotaJá NÃO tem
+      // `benefits` (o array que este código lia). O desconto vem em
+      // `total.discount`, ao lado de itemsPrice / otherFees / orderAmount:
+      //   total: { itemsPrice: {value}, otherFees: {value},
+      //            discount: {value}, orderAmount: {value} }
+      // Por isso o cupom (ex.: HAKIM10 -10%) sumia: o total chegava abatido, o
+      // desconto ficava em zero e a comanda mostrava um total menor que a soma
+      // dos itens, sem explicação. O código do cupom não vem no Open Delivery —
+      // só o valor —, então mostramos o percentual.
+      const cupomCodigo: string | null =
+        orderData.coupon?.code ?? orderData.cupom?.codigo ?? orderData.voucher?.code ?? orderData.promoCode ?? null;
+
+      if (discountTotal === 0) {
+        const descontoDoPayload = priceVal(orderData.total?.discount);
+        const somaItens = priceVal(orderData.total?.itemsPrice) ||
+          items.reduce((s: number, it: any) => s + (it.price || 0) * (it.quantity || 1), 0);
+
+        // Fonte primária: total.discount. Se vier ausente, deduz pela aritmética
+        // (itens + taxa − total), que independe do formato do payload.
+        const valor = descontoDoPayload > 0
+          ? descontoDoPayload
+          : Math.round((somaItens + deliveryFeeValue - total) * 100) / 100;
+
+        if (valor > 0.01 && somaItens > 0) {
+          discountTotal = Math.round(valor * 100) / 100;
+          discountMerchant = discountTotal; // sem sponsorship no payload: é da loja
+          const pct = Math.round((discountTotal / somaItens) * 100);
+          discountDetails.push({
+            target: "CART",
+            value: discountTotal,
+            platform: 0,
+            merchant: discountTotal,
+            description: cupomCodigo
+              ? `Cupom ${String(cupomCodigo).toUpperCase()}${pct > 0 ? ` (-${pct}%)` : ""}`
+              : `Cupom JotaJá${pct > 0 ? ` (-${pct}%)` : ""}`,
+          });
+        }
+      } else if (cupomCodigo && discountDetails.length > 0 && !discountDetails[0].description) {
+        discountDetails[0].description = `Cupom ${String(cupomCodigo).toUpperCase()}`;
+      }
+
       // Se a taxa de entrega ainda veio 0 em pedido DELIVERY, calcula como a diferença entre total e subtotal
       if (deliveryFeeValue === 0 && (orderData.total?.orderAmount || orderData.totalPrice) && orderData.total?.subTotal) {
         const orderTotal = priceVal(orderData.total?.orderAmount ?? orderData.totalPrice);
@@ -458,7 +507,8 @@ export async function processJotajaEvent(
         `Pedido Jotajá #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
         (scheduledDatetime && isExplicitScheduled) ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
         discountTotal > 0
-          ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (Plataforma: R$${discountPlatform.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})`
+          ? `🏷️ ${discountDetails[0]?.description || "Desconto"}: -R$${discountTotal.toFixed(2)}` +
+            (discountPlatform > 0 ? ` (Plataforma: R$${discountPlatform.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : "")
           : null,
         customerNote ? `📝 OBS: ${customerNote}` : null,
         ...itemNotes.map((n: string) => `📝 ${n}`),

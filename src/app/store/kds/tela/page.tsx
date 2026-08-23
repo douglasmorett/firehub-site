@@ -1633,7 +1633,8 @@ function OrderCard({
             if (!l) return false;
             // Filter out system-generated info lines
             if (l.startsWith("Pedido iFood") || l.startsWith("Pedido Jotajá") || l.startsWith("Pedido Jotaja")) return false;
-            if (l.startsWith("🏷️ Desconto")) return false;
+            // linha de desconto/cupom é informação de caixa, não de produção
+            if (l.startsWith("🏷️")) return false;
             if (l.startsWith("Fonte:")) return false;
             if (l.startsWith("📦")) return false;
             if (l.match(/^(Ref|ID|iFood|Jotajá|Jotaja|#\d)/i)) return false;
