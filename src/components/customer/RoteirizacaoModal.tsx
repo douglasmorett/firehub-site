@@ -486,16 +486,56 @@ export default function RoteirizacaoModal({
     });
   }, [deliveryOrders, createdRoutes, searchTerm, selectedOrderIds]);
 
-  // Helper para verificar se um ponto caiu no Oceano Atlântico em Rio das Ostras
+  // ── LINHA DE COSTA DE RIO DAS OSTRAS ─────────────────────────────────────
+  // Antes isto era uma linha VERTICAL fixa: `lng > -41.915 → mar`. O litoral,
+  // porém, é inclinado no sentido nordeste–sudoeste, e essa reta cortava fora
+  // toda a zona norte da cidade. Conferido contra o OpenStreetMap, caíam como
+  // "oceano" bairros que são terra firme:
+  //
+  //   Residencial Praia Âncora  -22.4815, -41.9130
+  //   Av. das Flores (ped. #68) -22.4822, -41.9082
+  //   Enseada das Gaivotas      -22.4947, -41.9093
+  //   Terra Firme               -22.4994, -41.9132
+  //   Mar do Norte              -22.4484, -41.8663
+  //
+  // Como todo ponto reprovado aqui é descartado e reposicionado para oeste, a
+  // cidade inteira ao norte vinha parar no lugar errado do mapa.
+  //
+  // Agora a fronteira acompanha a latitude, interpolada entre âncoras tiradas
+  // de bairros reais (com folga a leste, porque o erro caro é chamar terra de
+  // mar — esta checagem é rede de segurança contra pin no oceano, não deve
+  // mandar em endereço legítimo).
+  const LIMITE_LESTE_POR_LATITUDE: [number, number][] = [
+    [-22.43, -41.845],
+    [-22.46, -41.875],
+    [-22.48, -41.898],
+    [-22.50, -41.900],
+    [-22.52, -41.908],
+    [-22.53, -41.928],
+    [-22.54, -41.955],
+    [-22.55, -41.975],
+    [-22.57, -41.995],
+  ];
+
+  const limiteLesteDaCosta = (lat: number): number => {
+    const pts = LIMITE_LESTE_POR_LATITUDE;
+    // latitudes são negativas e a lista vai do norte para o sul
+    if (lat >= pts[0][0]) return pts[0][1];
+    if (lat <= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [latA, lngA] = pts[i];
+      const [latB, lngB] = pts[i + 1];
+      if (lat <= latA && lat >= latB) {
+        const t = (latA - lat) / (latA - latB);
+        return lngA + t * (lngB - lngA);
+      }
+    }
+    return pts[pts.length - 1][1];
+  };
+
   const isPointInSea = (lat: number, lng: number): boolean => {
     if (!lat || !lng || isNaN(lat) || isNaN(lng)) return true;
-    // Linha costeira de Rio das Ostras: terra fica estritamente a oeste de Lng -41.915
-    if (lng > -41.915) return true;
-    // Na curva ao sul de Costazul / Boca da Barra (Lat < -22.525), a costa entra para Oeste
-    if (lat < -22.525 && lng > -41.921) return true;
-    // Na região de Cidade Beira Mar / Praiana / Cantinho do Mar (Lat < -22.533)
-    if (lat < -22.533 && lng > -41.952) return true;
-    return false;
+    return lng > limiteLesteDaCosta(lat);
   };
 
   // Helper para extrair e destacar o Bairro e formatar endereço completo
@@ -614,10 +654,16 @@ export default function RoteirizacaoModal({
     "costa azul": { lat: -22.5205, lng: -41.9175 },
     recreio: { lat: -22.5115, lng: -41.9160 },
     praiamar: { lat: -22.4980, lng: -41.9060 },
-    "praia ancora": { lat: -22.5010, lng: -41.9050 },
-    "praia âmcora": { lat: -22.5010, lng: -41.9050 },
-    "residencial praia ancora": { lat: -22.5010, lng: -41.9050 },
-    "residencial praia Âncora": { lat: -22.5010, lng: -41.9050 },
+    "praia ancora": { lat: -22.4815, lng: -41.9130 },
+    "praia âncora": { lat: -22.4815, lng: -41.9130 },
+    "residencial praia ancora": { lat: -22.4815, lng: -41.9130 },
+    "residencial praia âncora": { lat: -22.4815, lng: -41.9130 },
+    // "Residencial Âncora" é como o bairro chega nos pedidos. Sem estas duas
+    // chaves, a busca caía no fallback que remove o prefixo "residencial" e
+    // acertava a entrada genérica `ancora`, 4,4 km a oeste — foi o que jogou
+    // o pedido #68 (Av. das Flores, 314) para o outro lado da cidade.
+    "residencial ancora": { lat: -22.4815, lng: -41.9130 },
+    "residencial âncora": { lat: -22.4815, lng: -41.9130 },
     "village rio das ostras": { lat: -22.5040, lng: -41.9120 },
     marilea: { lat: -22.5130, lng: -41.9340 },
     mariléa: { lat: -22.5130, lng: -41.9340 },
@@ -646,8 +692,8 @@ export default function RoteirizacaoModal({
     "extensao novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
     "extensão novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
     "novo rio das ostras": { lat: -22.5210, lng: -41.9430 },
-    ancora: { lat: -22.5050, lng: -41.9480 },
-    âncora: { lat: -22.5050, lng: -41.9480 },
+    ancora: { lat: -22.4815, lng: -41.9130 },
+    âncora: { lat: -22.4815, lng: -41.9130 },
     "cidade praiana": { lat: -22.5360, lng: -41.9660 },
     centro: { lat: -22.5245, lng: -41.9455 },
     recanto: { lat: -22.5320, lng: -41.9560 },
@@ -835,7 +881,42 @@ export default function RoteirizacaoModal({
         return null;
       };
 
-      const BATCH_SIZE = 4;
+      // ── CENTRÓIDE DO BAIRRO ────────────────────────────────────────────
+      // O centróide não serve só de chute inicial: ele é o VALIDADOR. Um
+      // resultado do Nominatim a mais de 2,8 km dele é descartado (regra
+      // anti-homônimo: "Avenida das Flores" existe no Praia Âncora E no
+      // Village). Com centróide errado, o sistema rejeitava justamente a
+      // resposta certa e caía no ponto errado.
+      //
+      // Auditoria contra o OpenStreetMap: 19 dos 42 bairros do dicionário
+      // divergiam mais de 1 km (Verdes Mares 6,07 km; Bosque da Praia 5,02;
+      // Âncora 4,44). Por isso o centróide passa a vir do próprio OSM — a
+      // mesma fonte da busca, então validador e resultado ficam coerentes.
+      // O dicionário continua como rede de segurança para quando o serviço
+      // não responde (fora do ar, sem internet, IP bloqueado).
+      // Guarda a PROMESSA, não o resultado: quatro pedidos do mesmo bairro no
+      // mesmo lote pediriam o centróide quatro vezes em paralelo, porque
+      // nenhum teria preenchido o cache ainda quando os outros consultam.
+      const centroidesDoBairro: Record<string, Promise<{ lat: number; lng: number } | null>> = {};
+
+      const obterCentroide = async (
+        bairro: string,
+        doDicionario?: { lat: number; lng: number }
+      ): Promise<{ lat: number; lng: number } | undefined> => {
+        const chave = bairro.toLowerCase().trim();
+        if (!chave) return doDicionario;
+        if (!(chave in centroidesDoBairro)) {
+          centroidesDoBairro[chave] = fetchNominatim(`${bairro}, ${storeCity}, RJ, Brasil`);
+        }
+        const achado = await centroidesDoBairro[chave];
+        return achado || doDicionario;
+      };
+
+      // A política de uso do Nominatim é 1 requisição por segundo. Estava em 4
+      // em paralelo a cada 120 ms (~33/s) — abuso que faz o serviço bloquear o
+      // IP, e aí NENHUM endereço geocodifica. Com o cache de endereço e o de
+      // centróide por bairro, 2 por vez já resolve a tela rápido.
+      const BATCH_SIZE = 2;
       for (let i = 0; i < toGeocode.length; i += BATCH_SIZE) {
         if (!isMounted) break;
         const batch = toGeocode.slice(i, i + BATCH_SIZE);
@@ -843,7 +924,7 @@ export default function RoteirizacaoModal({
         await Promise.all(
           batch.map(async (item) => {
             let coords: { lat: number; lng: number } | null = null;
-            const bCentroid = item.dictFallback;
+            const bCentroid = await obterCentroide(item.neighborhood, item.dictFallback);
 
             // ── REGRA DE OURO: PRIMEIRO O BAIRRO, DEPOIS A RUA NO BAIRRO (Anti-Homônimos) ──
             // Em cidades como Rio das Ostras, existem várias "Rua Três", "Rua A", etc. em bairros distintos.
@@ -891,9 +972,9 @@ export default function RoteirizacaoModal({
               coords = await fetchNominatim(query4);
             }
 
-            // 5. Fallback 5: Dicionário Estático de Alta Precisão do Bairro (RIGOROSAMENTE EM TERRA FIRME)
-            if (!coords && item.dictFallback) {
-              coords = item.dictFallback;
+            // 5. Fallback: centróide do bairro (OSM na frente, dicionário atrás).
+            if (!coords && (bCentroid || item.dictFallback)) {
+              coords = bCentroid || item.dictFallback!;
             }
 
             // 6. Fallback 6: Centro da Cidade com Jitter
@@ -918,7 +999,7 @@ export default function RoteirizacaoModal({
         if (isMounted) {
           setGeocodedMap({ ...updatedMap });
         }
-        await new Promise((r) => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 600));
       }
 
       if (hasNewCache) {
