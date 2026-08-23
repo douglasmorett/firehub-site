@@ -459,9 +459,23 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 10, padding: "0.85rem", margin: "0.75rem 0" }}>
             <strong style={{ color: "#991B1B" }}>🔴 IMPORTANTE:</strong>
             <ul style={{ margin: "4px 0 0", paddingLeft: "1.2rem", color: "#991B1B" }}>
-              <li><strong>Ativou a campanha = taxa é cobrada</strong>, independente do retorno em vendas</li>
+              <li><strong>Ativou a campanha = a semana inteira é cobrada.</strong> Se ativar e pausar no dia seguinte, os R$ 50,00 daquela semana são devidos do mesmo jeito</li>
+              <li>A taxa é cobrada <strong>independente do retorno em vendas</strong></li>
               <li>O FireHub <strong>NÃO garante</strong> resultados específicos de vendas ou ROAS</li>
               <li>O retorno depende de fatores como: <strong>qualidade do produto, atendimento, preços, fotos do cardápio e mercado local</strong></li>
+            </ul>
+          </div>
+
+          <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "0.85rem", margin: "0.75rem 0" }}>
+            <strong style={{ color: "#92400E" }}>💡 Impostos do Facebook (não é cobrança do FireHub):</strong>
+            <p style={{ margin: "4px 0 0", color: "#92400E" }}>
+              Desde janeiro de 2026 a Meta repassa impostos ao anunciante — cerca de
+              <strong> 12,5%</strong> sobre o valor de mídia. Isso vai para o governo, não para nós,
+              e aparece assim:
+            </p>
+            <ul style={{ margin: "6px 0 0", paddingLeft: "1.2rem", color: "#92400E" }}>
+              <li><strong>Cartão de crédito:</strong> a fatura vem maior que o orçamento. Definiu R$ 200 de mídia, o Facebook cobra cerca de R$ 225</li>
+              <li><strong>Pix ou boleto:</strong> o imposto sai do crédito. Depositou R$ 200, cerca de R$ 175 viram anúncio</li>
             </ul>
           </div>
 

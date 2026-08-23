@@ -29,8 +29,10 @@ export const dynamic = "force-dynamic";
 
 const EXPLICACAO: Record<string, string> = {
   sem_forma_de_pagamento:
-    "Sua conta de anúncios ainda não tem forma de pagamento. O Facebook exige que o cartão " +
-    "seja cadastrado no painel deles — é rápido, e só precisa ser feito uma vez.",
+    "Sua conta de anúncios ainda não tem forma de pagamento. O cadastro é no painel do " +
+    "Facebook e leva dois minutos. Você pode usar CARTÃO (o Facebook cobra sozinho e você " +
+    "nunca precisa recarregar) ou PIX/BOLETO (você adiciona crédito e recarrega quando " +
+    "acabar — sem saldo, os anúncios param).",
   conta_desativada:
     "Sua conta de anúncios está desativada no Facebook. Isso costuma ser cobrança pendente " +
     "ou revisão de política. Resolva no painel do Facebook para voltar a anunciar.",
@@ -107,9 +109,9 @@ export async function GET() {
     pronto: !precisaRecarregar,
     proximoPasso: precisaRecarregar ? "sem_saldo" : undefined,
     mensagem: precisaRecarregar
-      ? "Sua conta está no modo saldo pré-pago e está zerada — os anúncios não vão rodar. " +
-        "Adicione saldo, ou cadastre um cartão para o Facebook cobrar automaticamente e você " +
-        "não precisar recarregar nunca mais."
+      ? "Sua conta está no modo pré-pago e o saldo acabou — os anúncios não vão rodar. " +
+        "Adicione crédito por Pix ou boleto, ou troque para cartão: com cartão o Facebook " +
+        "cobra sozinho e você não precisa recarregar nunca mais."
       : "Tudo certo. Sua conta está pronta para veicular anúncios.",
     moeda: prontidao.moeda,
     carteira,

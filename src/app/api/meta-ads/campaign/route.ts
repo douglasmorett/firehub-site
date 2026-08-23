@@ -153,11 +153,58 @@ export async function PUT(req: NextRequest) {
     });
   } else if (action === "resume" && campaign.metaCampaignId) {
     await setCampaignStatus(campaign.metaCampaignId, user.metaFbAccessToken, "ACTIVE");
-    // A semana de gestão recomeça agora, não de quando pausou.
+
+    // ── COBRANÇA NA ATIVAÇÃO ─────────────────────────────────────────────
+    // Regra do produto: a semana é cobrada INTEIRA ao ativar. Ligou e usou um
+    // dia, pagou os R$ 50 — e isso está avisado na tela antes de confirmar.
+    //
+    // A trava dos 7 dias evita a cobrança dupla óbvia: pausar e religar no
+    // mesmo dia não gera uma segunda cobrança, porque a semana paga ainda está
+    // correndo. Sem isso, alguém que pausasse e voltasse três vezes num dia
+    // pagaria R$ 150.
+    const ultimaCobranca = campaign.lastBilledAt ? new Date(campaign.lastBilledAt) : null;
+    const diasDesdeACobranca = ultimaCobranca
+      ? (Date.now() - ultimaCobranca.getTime()) / 86_400_000
+      : Infinity;
+    const devecobrar = diasDesdeACobranca >= 7;
+
+    const taxaSemanal = user.metaAdsWeeklyFee ?? 50;
+
     await prisma.metaAdsCampaign.update({
       where: { id: campaign.id },
-      data: { status: "ACTIVE", lastBilledAt: new Date() },
+      data: {
+        status: "ACTIVE",
+        ...(devecobrar
+          ? {
+              feeAccrued: (campaign.feeAccrued ?? 0) + taxaSemanal,
+              lastBilledAt: new Date(),
+            }
+          : {}),
+      },
     });
+
+    if (devecobrar) {
+      // Espelha no ciclo mensal, do mesmo jeito que o cron faz.
+      const agora = new Date();
+      const cicloMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
+      try {
+        const ciclo = await (prisma as any).franchiseeBillingCycle.findFirst({
+          where: { userId: campaign.franchiseeId, month: cicloMes },
+        });
+        if (ciclo) {
+          await (prisma as any).franchiseeBillingCycle.update({
+            where: { id: ciclo.id },
+            data: { metaAdsFee: (ciclo.metaAdsFee ?? 0) + taxaSemanal },
+          });
+        } else {
+          await (prisma as any).franchiseeBillingCycle.create({
+            data: { userId: campaign.franchiseeId, month: cicloMes, metaAdsFee: taxaSemanal },
+          });
+        }
+      } catch (e: any) {
+        console.error("[MetaAds] falha ao lançar a taxa de ativação:", e?.message);
+      }
+    }
   } else if (action === "update_budget" && weeklyBudget) {
     const valor = Number(weeklyBudget);
     if (!Number.isFinite(valor) || valor <= 0) {
