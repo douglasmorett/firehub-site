@@ -780,9 +780,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       {/* KPIs totais */}
       <div className="dash-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
         {[
-          { label: "Total investido", value: `R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, color: "#3B82F6", icon: DollarSign },
+          { label: "Total investido", value: `R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#3B82F6", icon: DollarSign },
           { label: "Pedidos gerados", value: totalOrders.toLocaleString("pt-BR"), color: "#10B981", icon: CheckCircle },
-          { label: "Receita atribuída", value: `R$ ${totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, color: "#8B5CF6", icon: TrendingUp },
+          { label: "Receita atribuída", value: `R$ ${totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#8B5CF6", icon: TrendingUp },
           { label: "ROAS geral", value: `${overallRoas}x`, color: "#EF4444", icon: BarChart2 },
         ].map(k => (
           <div key={k.label} style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 14, padding: "1rem" }}>

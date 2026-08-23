@@ -309,7 +309,14 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
       null
     )?.toString().trim() || null;
 
-      const createdOrder = await (prisma.customerOrder as any).create({
+      // Número e pedido na MESMA transação. Este webhook e o cron
+      // (src/lib/ifood-eventos.ts) processam o MESMO pedido do iFood; quando os
+      // dois corriam, um perdia na trava de ifoodOrderId único e o número que ele
+      // já tinha tirado do contador ficava queimado. Em produção, 23/08/2026, a
+      // Hakim ficou com a sequência 93, 94, 96, 98 — sem 95 nem 97. Dentro da
+      // transação, a falha desfaz o incremento junto.
+      const createdOrder = await prisma.$transaction(async (tx) =>
+        (tx.customerOrder as any).create({
         data: {
           franchiseeId:     franchisee.id,
           ifoodOrderId:     orderId,
@@ -369,12 +376,14 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
           kdsProductionAt:  new Date(),
           notes:            notesArr,
           dailyOrderNumber: await (async () => {
-            const { generateDailyOrderNumber } = await import("@/lib/order-number");
-            return generateDailyOrderNumber(franchisee.id);
+            const { generateDailyOrderNumberTx } = await import("@/lib/order-number");
+            return generateDailyOrderNumberTx(tx, franchisee.id);
           })(),
           items:            { create: items },
         },
-      });
+        }),
+        { timeout: 20000 }
+      );
       console.log(`[iFood Webhook] 🎉 Pedido ${orderId} (${orderData.customer?.name}) criado no FireHub`);
 
       // 🖨️ AUTO-PRINT: Enfileira na Fila de Impressão na Nuvem para impressão automática imediata!

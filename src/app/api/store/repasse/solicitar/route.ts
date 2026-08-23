@@ -1,102 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions).catch(() => null);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: {
-        id: true,
-        name: true,
-        storeName: true,
-        repasseConfig: true,
-      },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
-    }
-
-    const { amount, chavePix, tipoChave, titular } = await req.json();
-
-    const withdrawAmount = Number(amount);
-    if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
-      return NextResponse.json({ error: "Valor de saque inválido" }, { status: 400 });
-    }
-
-    const activePix = chavePix || (user.repasseConfig as any)?.chavePix;
-    if (!activePix) {
-      return NextResponse.json({
-        error: "Nenhuma chave Pix configurada. Cadastre sua chave Pix antes de solicitar o saque."
-      }, { status: 400 });
-    }
-
-    // Calcular o saldo disponível real de vendas online
-    const onlineOrders = await prisma.customerOrder.findMany({
-      where: {
-        franchiseeId: user.id,
-        status: { notIn: ["CANCELADO"] },
-        paymentPaidAt: { not: null },
-      },
-      select: {
-        totalAmount: true,
-        paymentMethod: true,
-        source: true,
-      }
-    });
-
-    let pixGross = 0;
-    let pixCount = 0;
-
-    onlineOrders.forEach(o => {
-      const pm = (o.paymentMethod || "").toUpperCase();
-      const src = (o.source || "").toUpperCase();
-      const isOnline = pm.includes("PIX") || pm.includes("CREDITO") || pm.includes("ONLINE") || pm.includes("MERCADOPAGO") || src === "ONLINE";
-      if (isOnline && pm.includes("PIX")) {
-        pixGross += o.totalAmount || 0;
-        pixCount++;
-      }
-    });
-
-    const pixFees = pixGross * 0.005 + pixCount * 0.40;
-    const saldoDisponivel = Math.max(0, pixGross - pixFees);
-
-    if (withdrawAmount > saldoDisponivel && saldoDisponivel > 0) {
-      return NextResponse.json({
-        error: `O valor solicitado (R$ ${withdrawAmount.toFixed(2)}) é maior que o saldo disponível (R$ ${saldoDisponivel.toFixed(2)}).`
-      }, { status: 400 });
-    }
-
-    const payoutRecord = {
-      id: `SAQ-${Date.now().toString().slice(-6)}`,
-      franchiseeId: user.id,
-      storeName: user.storeName || user.name,
-      amount: withdrawAmount,
-      chavePix: activePix,
-      tipoChave: tipoChave || (user.repasseConfig as any)?.tipoChave || "CHAVE_PIX",
-      titular: titular || (user.repasseConfig as any)?.titular || user.name,
-      status: "SOLICITADO",
-      requestedAt: new Date().toISOString(),
-    };
-
-    console.log(`[Repasse / Saque Solicitado] Loja: ${user.storeName} | Valor: R$ ${withdrawAmount.toFixed(2)} | Pix: ${activePix}`);
-
-    return NextResponse.json({
-      success: true,
-      message: `Solicitação de saque de R$ ${withdrawAmount.toFixed(2)} realizada com sucesso! O valor será transferido para a chave Pix cadastrada.`,
-      payout: payoutRecord
-    });
-  } catch (err: any) {
-    console.error("[Solicitar Saque Error]:", err);
-    return NextResponse.json({ error: err.message || "Erro ao processar solicitação de saque" }, { status: 500 });
-  }
+/**
+ * POST /api/store/repasse/solicitar — DESLIGADA.
+ *
+ * A implementação anterior não solicitava saque nenhum. Ela montava um objeto
+ * em memória (`SAQ-<timestamp>`), dava um console.log e respondia ao lojista
+ * "Solicitação de saque realizada com sucesso! O valor será transferido para a
+ * chave Pix cadastrada". Nada era gravado no banco e nenhuma transferência era
+ * ordenada.
+ *
+ * A validação de saldo também estava com a guarda invertida:
+ *
+ *     if (withdrawAmount > saldoDisponivel && saldoDisponivel > 0) { ...recusa }
+ *
+ * Com saldo ZERO a segunda condição é falsa e a checagem inteira é pulada, ou
+ * seja, qualquer valor era aceito. E hoje todas as lojas têm saldo zero: em
+ * 4.562 pedidos do sistema inteiro, nenhum tem `gatewayProvider` nem
+ * `paymentPaidAt` — nunca houve uma transação online de verdade.
+ *
+ * O saldo que aparecia no painel era calculado somando pedidos pelo NOME da
+ * forma de pagamento, sem exigir pagamento confirmado; entravam inclusive
+ * pedidos em AGUARDANDO_PAGAMENTO. Isso foi corrigido em DREClient.tsx.
+ *
+ * Esta rota volta quando existir:
+ *   1. livro-razão de lançamentos imutáveis por loja (crédito de venda, taxa,
+ *      estorno, débito de saque), com o saldo sendo a soma deles;
+ *   2. ordem de transferência real no provedor de pagamento;
+ *   3. trava de um único saque em andamento por loja, garantida pelo banco.
+ *
+ * Enquanto isso, 503 — prometer transferência que não acontece é pior do que
+ * não ter o botão.
+ */
+export async function POST(_req: NextRequest) {
+  return NextResponse.json(
+    {
+      error: "Solicitação de saque temporariamente indisponível.",
+      detalhe:
+        "O repasse automático está sendo implementado. Nenhum saque foi perdido: " +
+        "as solicitações anteriores não chegaram a ser registradas em lugar nenhum. " +
+        "Em caso de dúvida, fale com o suporte.",
+    },
+    { status: 503 }
+  );
 }

@@ -14,7 +14,7 @@
  * eventos daquela loja.
  */
 import { prisma } from "./prisma";
-import { generateDailyOrderNumber } from "./order-number";
+import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
 
 export type ResultadoEventos = {
   created: number;
@@ -422,16 +422,25 @@ export async function processarEventosIfood(opts: {
           else if (isDispatched) initialStatus = "SAIU_ENTREGA";
           else if (isConcluded) initialStatus = "ENTREGUE";
 
-          // Numeração sequencial DA LOJA (1, 2, 3…).
+          // Numeração sequencial DA LOJA (1, 2, 3…), DENTRO da transação.
           //
-          // Sem isto o pedido nascia com dailyOrderNumber null e a tela caía no
-          // ifoodReference — a Pastel da Paulista recebeu os 15 primeiros pedidos
-          // como #3902, #5097, #1772, que é o displayId do iFood, não a fila da
-          // loja. O contador é atômico (UPDATE … RETURNING), então pedido de
-          // iFood e de balcão dividem a mesma sequência sem repetir número.
-          const numeroDoDia = await generateDailyOrderNumber(eventFranchisee.id);
+          // Sem número, o pedido caía no ifoodReference e a Pastel da Paulista
+          // recebeu os 15 primeiros como #3902, #5097, #1772 — o displayId do
+          // iFood, não a fila da loja.
+          //
+          // Mas pegar o número FORA da transação criou outro problema, visto em
+          // produção no mesmo dia: a Hakim ficou com a sequência 93, 94, 96, 98.
+          // O mesmo pedido do iFood chega por dois caminhos (este cron e o
+          // webhook); os dois pegavam número e tentavam gravar, um perdia na
+          // trava de ifoodOrderId único e o número dele ficava queimado. Buraco
+          // na sequência, que o lojista lê como "sumiu um pedido".
+          //
+          // Agora número e pedido nascem na MESMA transação: se a gravação falhar
+          // — inclusive por duplicidade — o contador volta atrás junto.
+          await prisma.$transaction(async (tx) => {
+            const numeroDoDia = await generateDailyOrderNumberTx(tx, eventFranchisee.id);
 
-          await (prisma.customerOrder as any).create({
+            await (tx.customerOrder as any).create({
             data: {
               franchiseeId: eventFranchisee.id,
               dailyOrderNumber: numeroDoDia,
@@ -491,7 +500,8 @@ export async function processarEventosIfood(opts: {
               createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
               items: { create: items },
             },
-          });
+            });
+          }, { timeout: 20000 });
 
           log.push(`  ✅ Pedido CRIADO: ${orderId} (status: ${initialStatus})`);
           created++;

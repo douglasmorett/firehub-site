@@ -199,7 +199,7 @@ export async function PUT(req: Request) {
   const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true } });
   if (ownerInfo?.notificationPhone) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    const msg = `🔴 *Caixa Fechado*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *FECHADO* às ${timeStr}.\n\nDiferença no caixa: R$ ${Number(difference.toFixed(2)).toLocaleString('pt-BR', {minimumFractionDigits: 2})}\n\n_Ass: Seu Assistente FireHub 🔥_`;
+    const msg = `🔴 *Caixa Fechado*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *FECHADO* às ${timeStr}.\n\nDiferença no caixa: R$ ${Number(difference.toFixed(2)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n_Ass: Seu Assistente FireHub 🔥_`;
     sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
   }
 

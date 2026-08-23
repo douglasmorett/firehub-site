@@ -5,7 +5,7 @@ import { Save, CheckCircle, AlertTriangle, Search, TrendingUp } from "lucide-rea
 
 type Product = { id: string; name: string; price: number; cost: number; category: string; active: boolean };
 
-function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`; }
+function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function margem(price: number, cost: number) {
   if (!cost || !price) return null;
   return (((price - cost) / price) * 100).toFixed(0);

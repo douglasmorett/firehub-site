@@ -72,7 +72,13 @@ function getRange(preset: number): { from: Date; to: Date } {
   return { from, to };
 }
 
-function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`; }
+// `minimumFractionDigits: 2` sozinho deixa o MÁXIMO em 3 (padrão do Intl), e aí
+// 286.0005 vira "R$ 286,001" e 51.2314 vira "R$ 51,231" — foi o que fez um saldo
+// de R$ 286,00 parecer R$ 286 mil na tela. Contas percentuais (comissão,
+// cashback, desconto) produzem essas dízimas o tempo todo.
+function fmtR(v: number) {
+  return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 function fmtPct(v: number) { return `${v.toFixed(1)}%`; }
 
 function KPICard({ icon, label, value, sub, color, trend }: any) {
@@ -230,7 +236,10 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       });
       const data = await res.json();
       if (!res.ok) {
-        setWithdrawFeedback({ type: "error", message: data.error || "Erro ao solicitar saque." });
+        setWithdrawFeedback({
+          type: "error",
+          message: [data.error, data.detalhe].filter(Boolean).join(" ") || "Erro ao solicitar saque.",
+        });
         return;
       }
       setWithdrawFeedback({ type: "success", message: data.message });
@@ -290,12 +299,30 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       const isJotaja = src === "JOTAJA" || pm.includes("JOTAJA") || src === "OPEN_DELIVERY";
       const isPresencial = src === "PRESENCIAL" || pm.includes("DINHEIRO") || pm.includes("MAQUININHA") || pm.includes("ENTREGA");
 
-      const isMercadoPagoGateway = !isIfood && !isJotaja && !isPresencial && (
-        Boolean((o as any).gatewayProvider) || Boolean((o as any).gatewayPaymentId) || Boolean((o as any).pagarmeOrderId) ||
-        pm.includes("MERCADOPAGO") || pm.includes("CELCOIN") || pm.includes("PAGARME") || (
-          (src === "ONLINE" || src === "SITE" || src === "APP") && (pm.includes("PIX") || pm.includes("CREDITO") || pm.includes("ONLINE"))
-        )
-      );
+      // ── SÓ CONTA DINHEIRO QUE ENTROU DE VERDADE ─────────────────────────
+      // Antes bastava o pedido se CHAMAR "Pix" ou "Crédito" e ter vindo do
+      // cardápio para virar saldo sacável. O filtro de cima (allInRange) só
+      // exclui data fora do período, e o laço só trata CANCELADO — então
+      // pedido com status AGUARDANDO_PAGAMENTO, que o cliente nunca pagou,
+      // entrava como "disponível para sacar".
+      //
+      // Foi o que produziu o saldo fantasma na Hakim Centro: 8 pedidos de Pix
+      // e 1 de crédito, TODOS em AGUARDANDO_PAGAMENTO, viraram R$ 342,35
+      // disponíveis e R$ 49,82 a liberar. A loja nunca teve uma transação
+      // por gateway — no sistema inteiro, 4.562 pedidos, nenhum tem
+      // gatewayProvider nem paymentPaidAt.
+      //
+      // Agora exige-se PROVA de pagamento: um identificador do gateway E a
+      // marca de pago. Nome de forma de pagamento não é prova de nada.
+      const temIdentificadorDeGateway =
+        Boolean((o as any).gatewayProvider) ||
+        Boolean((o as any).gatewayPaymentId) ||
+        Boolean((o as any).pagarmeOrderId);
+      const foiPagoDeVerdade = Boolean((o as any).paymentPaidAt);
+
+      const isMercadoPagoGateway =
+        !isIfood && !isJotaja && !isPresencial &&
+        temIdentificadorDeGateway && foiPagoDeVerdade;
 
       const displayOrderNum = getOrderDisplayNumber(o);
 
@@ -753,7 +780,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <span style={{ fontSize: "0.72rem", color: "#0369A1" }}>
                 {dre.receitaBruta >= FIREHUB_PLAN.THRESHOLD
                   ? `✅ Teto atingido — R$${FIREHUB_PLAN.MAX_MONTHLY} fixo (faturamento ≥ R$${FIREHUB_PLAN.THRESHOLD.toLocaleString("pt-BR")})`
-                  : `📊 ${FIREHUB_PLAN.PERCENT_RATE}% de R$${dre.receitaBruta.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} — aumenta até R$${FIREHUB_PLAN.MAX_MONTHLY} teto`
+                  : `📊 ${FIREHUB_PLAN.PERCENT_RATE}% de R$${dre.receitaBruta.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — aumenta até R$${FIREHUB_PLAN.MAX_MONTHLY} teto`
                 }
               </span>
             </div>
@@ -1217,7 +1244,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             {fixedCosts.length > 0 && (
               <div style={{ marginTop: 12, background: "rgba(255,255,255,0.15)", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>Total mensal cadastrado:</span>
-                <span style={{ fontSize: "1.1rem", fontWeight: 900 }}>R$ {totalFixedCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                <span style={{ fontSize: "1.1rem", fontWeight: 900 }}>R$ {totalFixedCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             )}
           </div>
@@ -1279,7 +1306,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#7C3AED" }}>
-                      R$ {c.value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      R$ {c.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <button onClick={() => removeFixedCost(c.id)} style={{ padding: 6, borderRadius: 8, background: "#FEF2F2", border: "none", cursor: "pointer" }}>
                       <Trash2 size={14} color="#EF4444" />
@@ -1290,7 +1317,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{ padding: "14px 16px", background: "#F5F3FF", borderTop: "2px solid #DDD6FE", display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontWeight: 800, color: "#7C3AED" }}>Total mensal</span>
                 <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#7C3AED" }}>
-                  R$ {totalFixedCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  R$ {totalFixedCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
@@ -1302,12 +1329,12 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <p style={{ fontWeight: 800, fontSize: "0.88rem", color: "#92400E", margin: "0 0 8px" }}>📊 Impacto no período atual ({dre.diasNoPeriodo} dias)</p>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#78350F", marginBottom: 4 }}>
                 <span>Custo proporcional do período:</span>
-                <strong>- R$ {dre.custosFixosPeriodo.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong>
+                <strong>- R$ {dre.custosFixosPeriodo.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#78350F" }}>
                 <span>Lucro líquido resultante:</span>
                 <strong style={{ color: dre.lucroLiquido >= 0 ? "#16A34A" : "#DC2626" }}>
-                  R$ {dre.lucroLiquido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  R$ {dre.lucroLiquido.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </strong>
               </div>
             </div>

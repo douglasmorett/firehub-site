@@ -317,7 +317,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
         <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", margin: 0 }}>Relatório de Gastos</h2>
         <div style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", padding: "0.5rem 1rem", borderRadius: "20px", fontWeight: "bold" }}>
-          Total: R$ {totalGasto.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          Total: R$ {totalGasto.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </div>
       </div>
 

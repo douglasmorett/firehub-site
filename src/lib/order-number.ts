@@ -50,16 +50,16 @@ function dateKeySP(ref: Date): string {
  * chamada do dia — mantém a mesma lógica da versão antiga, para o contador
  * nunca começar atrás de um pedido que já foi impresso.
  */
-async function calcularSemente(franchiseeId: string, startOfDay: Date): Promise<number> {
+async function calcularSemente(db: ClientePrisma, franchiseeId: string, startOfDay: Date): Promise<number> {
   const [totalToday, maxOrder] = await Promise.all([
-    prisma.customerOrder.count({
+    db.customerOrder.count({
       where: {
         franchiseeId,
         createdAt: { gte: startOfDay },
         status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
       },
     }),
-    prisma.customerOrder.findFirst({
+    db.customerOrder.findFirst({
       where: {
         franchiseeId,
         createdAt: { gte: startOfDay },
@@ -73,7 +73,38 @@ async function calcularSemente(franchiseeId: string, startOfDay: Date): Promise<
   return Math.max(totalToday, maxOrder?.dailyOrderNumber || 0);
 }
 
+/**
+ * Cliente do Prisma OU o cliente de uma transação em andamento.
+ * Passar o de transação é o que permite o número ser DESFEITO junto com o
+ * pedido quando a gravação falha — ver a nota sobre números queimados abaixo.
+ */
+type ClientePrisma = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">;
+
+/**
+ * ⚠️ NÚMERO QUEIMADO: chamar isto FORA de uma transação e criar o pedido
+ * depois deixa buraco na sequência sempre que a gravação falha — o contador
+ * já subiu e ninguém devolve.
+ *
+ * Aconteceu em produção em 23/08/2026 na Hakim Centro: a sequência do dia foi
+ * 93, 94, 96, 98 — os números 95 e 97 sumiram. O mesmo pedido do iFood chega
+ * por dois caminhos (webhook e cron); os dois pegavam número e tentavam
+ * gravar, um perdia na trava de ifoodOrderId único e o número dele evaporava.
+ * O lojista lê isso como "meu pedido sumiu".
+ *
+ * Por isso prefira `generateDailyOrderNumberTx` dentro de $transaction junto
+ * com o create. Esta versão sem transação continua válida para quem cria o
+ * pedido logo em seguida sem chance de conflito.
+ */
 export async function generateDailyOrderNumber(
+  franchiseeId: string,
+  ref: Date = new Date()
+): Promise<number> {
+  return generateDailyOrderNumberTx(prisma, franchiseeId, ref);
+}
+
+/** Mesma numeração, porém usando o client da transação em andamento. */
+export async function generateDailyOrderNumberTx(
+  db: ClientePrisma,
   franchiseeId: string,
   ref: Date = new Date()
 ): Promise<number> {
@@ -82,15 +113,15 @@ export async function generateDailyOrderNumber(
   const chave = { franchiseeId_dateKey: { franchiseeId, dateKey } };
 
   // 1. Garante que o contador do dia existe, semeado com o maior número já usado.
-  const jaExiste = await prisma.dailyOrderCounter.findUnique({
+  const jaExiste = await db.dailyOrderCounter.findUnique({
     where: chave,
     select: { franchiseeId: true },
   });
 
   if (!jaExiste) {
-    const semente = await calcularSemente(franchiseeId, startOfDay);
+    const semente = await calcularSemente(db, franchiseeId, startOfDay);
     try {
-      await prisma.dailyOrderCounter.create({
+      await db.dailyOrderCounter.create({
         data: { franchiseeId, dateKey, lastNumber: semente },
       });
     } catch (err: any) {
@@ -102,7 +133,7 @@ export async function generateDailyOrderNumber(
 
   // 2. Incremento ATÔMICO. Vira UPDATE ... SET lastNumber = lastNumber + 1
   //    RETURNING, que o Postgres serializa no lock da linha.
-  const linha = await prisma.dailyOrderCounter.update({
+  const linha = await db.dailyOrderCounter.update({
     where: chave,
     data: { lastNumber: { increment: 1 } },
     select: { lastNumber: true },

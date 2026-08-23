@@ -99,8 +99,24 @@ export async function POST(req: Request) {
       totalAmount >= Number(delivConfig.freeShippingMinValue)
     );
 
-    // Taxa de entrega base informada
-    const originalFee = deliveryType === "DELIVERY" ? (deliveryFee || 0) : 0;
+    // ── TAXA DE ENTREGA: VEM DO CLIENTE, ENTÃO NÃO SE CONFIA ──────────────
+    // Esta rota é PÚBLICA e `deliveryFee` chega no corpo da requisição. Sem
+    // piso, um `deliveryFee: -195` num carrinho de R$ 200 fazia o total virar
+    // R$ 5,00 — e era esse valor que ia para o banco e, de lá, para a
+    // cobrança no gateway. Frete negativo não existe: qualquer valor abaixo
+    // de zero é descartado.
+    //
+    // O teto é rede de segurança contra o oposto (inflar o pedido de outra
+    // pessoa): frete acima de R$ 200 ou maior que 3x o valor dos itens não é
+    // frete, é erro ou abuso.
+    const feeBruta = deliveryType === "DELIVERY" ? Number(deliveryFee) || 0 : 0;
+    const tetoFrete = Math.max(200, totalAmount * 3);
+    if (feeBruta < 0 || feeBruta > tetoFrete) {
+      console.warn(
+        `[customer-order] deliveryFee fora da faixa (${feeBruta}) para a loja ${franchisee.id} — usando 0. Itens: R$ ${totalAmount.toFixed(2)}`
+      );
+    }
+    const originalFee = feeBruta < 0 || feeBruta > tetoFrete ? 0 : feeBruta;
     let fee = originalFee;
     let freeShippingNote = "";
 
@@ -137,7 +153,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const finalTotal = Math.max(0, totalAmount - discount + fee);
+    // Arredonda para centavos ANTES de gravar. Em JS 29.9*3 = 89.69999999999999,
+    // e era esse número que ia para o banco (`totalAmount Float`) e daí cru como
+    // `transaction_amount` para o gateway — que recusa moeda com mais de 2 casas.
+    const centavos = (n: number) => Math.round(n * 100) / 100;
+    const finalTotal = centavos(Math.max(0, totalAmount - discount + fee));
     let orderNotes = notes || "";
     if (couponCode && discount > 0) {
       orderNotes = `[Cupom: ${couponCode.trim().toUpperCase()}] ${orderNotes}`.trim();

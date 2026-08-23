@@ -14,7 +14,7 @@ const STATUS_FLOW = [
   { key: "CANCELADO",    label: "Pedido Cancelado",    icon: X,           color: "#EF4444", emoji: "ÔØî", desc: "Seu pedido foi cancelado" },
 ];
 
-function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`; }
+function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 export default function OrderTrackingClient({
   orderId, initialStatus, customerName, deliveryType, totalAmount, deliveryFee,

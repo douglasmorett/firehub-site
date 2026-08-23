@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import ComboModal from "./ComboModal";
 import PaymentGateway from "./PaymentGateway";
+import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import { isStoreOpen } from "@/lib/store-hours";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
@@ -110,7 +111,13 @@ export default function CustomerStorePage({
   const [customerAddress, setCustomerAddress] = useState("");
   const [deliveryType, setDeliveryType] = useState("DELIVERY");
 
-  const hasOnlinePayment = franchisee.hasOnlinePayment !== false;
+  // O interruptor global manda. `franchisee.hasOnlinePayment` nunca é
+  // preenchido por ninguém no sistema (o campo existe na interface e não tem
+  // fonte), então `undefined !== false` deixava Pix e cartão online visíveis
+  // em TODOS os cardápios sem controle nenhum — inclusive agora, com a
+  // credencial de teste do Mercado Pago no ar.
+  const hasOnlinePayment =
+    PAGAMENTO_ONLINE_ATIVO && franchisee.hasOnlinePayment !== false;
   const [paymentMethod, setPaymentMethod] = useState(() => (hasOnlinePayment ? "PIX" : "DINHEIRO"));
 
   const [notes, setNotes] = useState("");

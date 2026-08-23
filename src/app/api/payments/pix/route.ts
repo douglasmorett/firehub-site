@@ -7,11 +7,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { MercadoPagoConfig, Payment } from "mercadopago";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { PAGAMENTO_ONLINE_ATIVO, MOTIVO_PAGAMENTO_ONLINE_OFF } from "@/lib/pagamento-online";
 
 const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || "";
 
 export async function POST(req: NextRequest) {
   try {
+    // Pagamento online desligado — ver src/lib/pagamento-online.ts.
+    // Esconder os botões no cardápio não basta: esta rota é pública e
+    // continuaria aceitando chamada direta.
+    if (!PAGAMENTO_ONLINE_ATIVO) {
+      return NextResponse.json({ error: MOTIVO_PAGAMENTO_ONLINE_OFF }, { status: 503 });
+    }
+
     // Rate limiting: 10 tentativas por minuto por IP
     const ip = getClientIp(req);
     const { allowed } = checkRateLimit(`pay-pix:${ip}`, { windowMs: 60_000, maxRequests: 10 });
