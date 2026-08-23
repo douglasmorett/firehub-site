@@ -3,8 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { jwtVerify } from "jose";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
+import { segredoObrigatorio } from "@/lib/segredos";
 
-const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET || "fallback-secret");
+// Função, não constante: `segredoObrigatorio` lança quando a variável falta, e
+// no topo do módulo isso quebraria o BUILD (o Next avalia os módulos ao gerar
+// as páginas). Avaliado só no uso, falha apenas a requisição — e com mensagem.
+const obterSegredo = () => new TextEncoder().encode(segredoObrigatorio("NEXTAUTH_SECRET"));
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +23,7 @@ export async function POST(req: NextRequest) {
     // Verify token
     let payload: any;
     try {
-      const result = await jwtVerify(token, secret);
+      const result = await jwtVerify(token, obterSegredo());
       payload = result.payload;
     } catch {
       return NextResponse.json({ error: "Token inválido" }, { status: 401 });

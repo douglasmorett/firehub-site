@@ -1,3 +1,4 @@
+import { segredoObrigatorio } from "./segredos";
 /**
  * src/lib/server-monitor.ts
  * Sistema de monitoramento interno com alertas via WhatsApp.
@@ -30,7 +31,7 @@ function canAlert(alertType: string): boolean {
 
 async function sendWhatsAppAlert(message: string) {
   const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  const apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   // Buscar primeira instância ativa do banco para enviar o alerta
   let instanceName = "firehub_admin";

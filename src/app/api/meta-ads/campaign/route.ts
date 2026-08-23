@@ -8,13 +8,14 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createMetaCampaign, getCampaignInsights, setCampaignStatus } from "@/lib/meta-ads";
+import { segredoObrigatorio } from "@/lib/segredos";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const franchiseeId = (session.user as any).id;
 
-  const appId = process.env.META_APP_ID || "4084810071817607";
+  const appId = segredoObrigatorio("META_APP_ID");
   // Indica se a integração Meta ainda não foi configurada no Vercel
   if (!appId) {
     return NextResponse.json({ campaigns: [], needsSetup: true });

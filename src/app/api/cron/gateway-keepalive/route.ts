@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { segredoObrigatorio } from "@/lib/segredos";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  const apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   const results: { gateway: string; reconnected: string[] } = {
     gateway: "unknown",

@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { segredoObrigatorio } from "./segredos";
 
 export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
 
   // Buscar configurações da loja para verificar se há URL/API Key customizadas da Evolution API
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   try {
     const user = await prisma.user.findUnique({
@@ -114,7 +115,7 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
     : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
 
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   try {
     const shortId = instanceName.replace(/^firehub_/, "");
@@ -163,7 +164,7 @@ export async function sendEvolutionMediaUrl(userIdOrInstance: string, toPhone: s
     : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
 
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   try {
     const shortId = instanceName.replace(/^firehub_/, "");
@@ -211,7 +212,7 @@ export async function sendEvolutionAudioBase64(userIdOrInstance: string, toPhone
     : (toPhone.replace(/\D/g, "").startsWith("55") ? toPhone.replace(/\D/g, "") : `55${toPhone.replace(/\D/g, "")}`);
 
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   try {
     const shortId = instanceName.replace(/^firehub_/, "");
@@ -257,7 +258,7 @@ export async function sendEvolutionAudioBase64(userIdOrInstance: string, toPhone
 export async function disconnectEvolutionInstance(userId: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   try {
     const user = await prisma.user.findUnique({
@@ -292,7 +293,7 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
   }
 
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+  let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   try {
     const shortId = instanceName.replace(/^firehub_/, "");

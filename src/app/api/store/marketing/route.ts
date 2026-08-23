@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
+import { segredoObrigatorio } from "@/lib/segredos";
 
 export const dynamic = "force-dynamic";
 
@@ -219,7 +220,7 @@ export async function GET(req: NextRequest) {
     try {
       const instanceName = `firehub_${targetFranchiseeId.slice(-10)}`;
       let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-      let apiKey = process.env.EVOLUTION_API_KEY || "firehub_secret_key_2026";
+      let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
       
       const chatbotConfigObj = (user?.chatbotConfig as any) || {};
       if (chatbotConfigObj.evolutionUrl) baseUrl = chatbotConfigObj.evolutionUrl.replace(/\/$/, "");

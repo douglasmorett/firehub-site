@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { 
-  parseCloudApiWebhook, 
+import { segredoObrigatorio } from "@/lib/segredos";
+import {
+  parseCloudApiWebhook,
   sendCloudApiMessage, 
   downloadCloudApiMedia, 
   markAsRead, 
@@ -12,7 +13,9 @@ import { trackWhatsAppMessage } from '@/lib/usage-tracker';
 
 export const dynamic = 'force-dynamic';
 
-const VERIFY_TOKEN = process.env.WHATSAPP_CLOUD_VERIFY_TOKEN || "firehub_cloud_verify_2026";
+// Função pelo mesmo motivo dos arquivos do totem: avaliar no topo do módulo
+// quebraria o build quando a variável não está presente no ambiente de build.
+const obterVerifyToken = () => segredoObrigatorio("WHATSAPP_CLOUD_VERIFY_TOKEN");
 
 // Caches
 const messageCooldowns = new Map<string, number>();
@@ -42,7 +45,7 @@ export async function GET(req: NextRequest) {
     const token = searchParams.get('hub.verify_token');
     const challenge = searchParams.get('hub.challenge');
 
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    if (mode === 'subscribe' && token === obterVerifyToken()) {
       return new NextResponse(challenge, { status: 200 });
     }
 

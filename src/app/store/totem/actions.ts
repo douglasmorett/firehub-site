@@ -4,8 +4,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { SignJWT } from "jose";
+import { segredoObrigatorio } from "@/lib/segredos";
 
-const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET || "fallback-secret");
+// Função, não constante: `segredoObrigatorio` lança quando a variável falta, e
+// no topo do módulo isso quebraria o BUILD (o Next avalia os módulos ao gerar
+// as páginas). Avaliado só no uso, falha apenas a requisição — e com mensagem.
+const obterSegredo = () => new TextEncoder().encode(segredoObrigatorio("NEXTAUTH_SECRET"));
 
 async function getFranchiseeId(): Promise<string> {
   const session = await getServerSession(authOptions);
@@ -56,7 +60,7 @@ export async function createTotemLicense(label: string) {
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .sign(secret);
+    .sign(obterSegredo());
 
   // Update with real token
   await prisma.totemLicense.update({

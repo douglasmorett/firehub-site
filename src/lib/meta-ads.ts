@@ -1,3 +1,4 @@
+import { segredoObrigatorio } from "./segredos";
 /**
  * lib/meta-ads.ts
  * Integração com a Meta Marketing API
@@ -154,7 +155,7 @@ export async function setCampaignStatus(
  * Gera URL de autorização OAuth para o franqueado conectar seu Facebook
  */
 export function getMetaOAuthUrl(franchiseeId: string): string {
-  const appId = process.env.META_APP_ID || "4084810071817607";
+  const appId = segredoObrigatorio("META_APP_ID");
   const redirect = encodeURIComponent(
     `${process.env.NEXTAUTH_URL ?? "https://www.firehubfood.com.br"}/api/meta-ads/callback`
   );
@@ -174,8 +175,8 @@ export function getMetaOAuthUrl(franchiseeId: string): string {
  * Troca o code OAuth por um Access Token de longa duração
  */
 export async function exchangeCodeForToken(code: string): Promise<string> {
-  const appId     = process.env.META_APP_ID || "4084810071817607";
-  const appSecret = process.env.META_APP_SECRET || "310b254fc74098ebf4a36f2bc9f3b83a";
+  const appId     = segredoObrigatorio("META_APP_ID");
+  const appSecret = segredoObrigatorio("META_APP_SECRET");
   const redirect  = `${process.env.NEXTAUTH_URL ?? "https://www.firehubfood.com.br"}/api/meta-ads/callback`;
 
   // Short-lived token
