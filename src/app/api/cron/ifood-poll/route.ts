@@ -85,6 +85,11 @@ export async function GET(req: NextRequest) {
     // (e o módulo Merchant não é autorizado neste app, então não há endpoint
     // para perguntar). Aqui se tenta de novo a cada rodada, até o primeiro
     // pedido revelar o ID — o lojista não precisa fazer nada.
+    // Loja vinculada AGORA já consumiu uma chamada de polling na descoberta.
+    // Bater de novo na mesma rodada arrisca 429 do iFood, então ela entra na
+    // passada distribuída na próxima volta (60s depois).
+    const vinculadasAgora = new Set<string>();
+
     try {
       const pendentes = await prisma.user.findMany({
         where: {
@@ -135,6 +140,7 @@ export async function GET(req: NextRequest) {
           },
           update: { connected: true, active: true },
         });
+        vinculadasAgora.add(loja.id);
         log.push(`[vínculo] ${nome}: merchant ${livres[0]} vinculado automaticamente`);
         console.log(`[iFood Cron] Loja ${loja.id} vinculada ao merchant ${livres[0]} pelos eventos.`);
       }
@@ -157,6 +163,10 @@ export async function GET(req: NextRequest) {
 
       for (const loja of lojas) {
         const nome = loja.storeName || loja.email || loja.id;
+        if (vinculadasAgora.has(loja.id)) {
+          log.push(`[distribuído] ${nome}: recém-vinculada, entra na próxima rodada`);
+          continue;
+        }
         try {
           const tokenLoja = await getTokenDaLojaIfood(loja.id);
           if (!tokenLoja) {
