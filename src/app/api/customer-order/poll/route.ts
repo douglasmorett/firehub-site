@@ -30,16 +30,28 @@ async function pollIfoodEvents(sessionUserId?: string) {
   lastIfoodPoll = now;
 
   try {
-    const { getIfoodToken } = await import("@/lib/ifood-api");
+    const { getIfoodToken, getTokenDaLojaIfood } = await import("@/lib/ifood-api");
     let merchantId = process.env.IFOOD_MERCHANT_UUID;
     if (sessionUserId) {
       const u = await prisma.user.findUnique({ where: { id: sessionUserId }, select: { ifoodMerchantId: true } });
       if (u?.ifoodMerchantId) merchantId = u.ifoodMerchantId;
     }
-    
+
     if (!merchantId) return; // Se a loja não tem integração com iFood, aborta em vez de puxar do Hakim
 
-    const token = await getIfoodToken();
+    // O app do iFood é DISTRIBUÍDO: não existe token central que enxergue as
+    // lojas — cada uma tem o seu. Usar o token global com o merchant da loja
+    // fazia o iFood recusar a chamada inteira com
+    // 403 "Some polling merchants are not authorized" (era o caso da Brasa
+    // Burguer, que enchia o log a cada minuto). O cron de fundo já fazia certo.
+    const token = sessionUserId
+      ? await getTokenDaLojaIfood(sessionUserId)
+      : await getIfoodToken();
+
+    if (!token) {
+      console.error(`[iFood Poll] ⚠️ loja ${sessionUserId} sem token utilizável — precisa reconectar o iFood`);
+      return;
+    }
 
     // Poll events from iFood
     const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
