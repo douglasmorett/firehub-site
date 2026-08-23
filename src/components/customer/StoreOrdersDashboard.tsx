@@ -1911,8 +1911,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const novos = filteredOrders.filter(o => (o.status === "NOVO" || o.status === "CRIANDO_IA") && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
-  const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
-  const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberAsc);
+  // ── COLUNAS DE ENCERRADOS VÃO DO MAIS RECENTE PARA O MAIS ANTIGO ──────────
+  // As colunas ativas (Novos, Em Produção, Saiu para Entrega) são FIFO: o mais
+  // antigo primeiro, porque é a ordem de atendimento. Já em Finalizado e
+  // Cancelado o operador quer ver o que ACABOU de sair — e ali a ordem
+  // crescente jogava o pedido recém-concluído para o fim da lista.
+  //
+  // Na prática isso fazia o lojista achar que o pedido tinha sumido: em
+  // 22/08/2026 a coluna Finalizado da Hakim tinha 48 pedidos na ordem
+  // 148, 149, 150, 151, 1, 2, 3 … 84, 92, 102 — os de ontem no topo (entram
+  // pelo scheduledDatetime) e o #92, recém-entregue, na 47ª posição.
+  const sortByOrderNumberDesc = (a: any, b: any) => sortByOrderNumberAsc(b, a);
+
+  const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberDesc);
+  const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberDesc);
 
   // Continuous alert sound — loops every 4s while there are NOVO orders visible in Kanban
   const alertIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
