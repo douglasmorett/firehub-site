@@ -147,16 +147,19 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const liveInvestido = 412_580 + tick * 0.58;
   const livePedidos = 41_893 + tick;
 
+  // A URL do OAuth é montada NO SERVIDOR (/api/meta-ads/auth).
+  //
+  // Antes era montada aqui, com o state em base64 contendo o franchiseeId — e o
+  // callback confiava nesse valor. Trocando o id no state dava para desviar a
+  // conexão de outro lojista e passar a gastar a verba da conta de anúncios
+  // dele. Agora a loja vem da sessão e o state é assinado; o navegador não
+  // decide mais nada.
+  //
+  // Isso também acaba com a divergência de redirect_uri (com e sem "www", que
+  // a Meta exige idêntico) — a origem passou a sair de um lugar só.
   const handleConnectFacebook = () => {
-    const state = btoa(JSON.stringify({ franchiseeId: user.id, investment }));
-    const appId = process.env.NEXT_PUBLIC_META_APP_ID || "4084810071817607";
-    const redirectUri = encodeURIComponent(
-      window.location.hostname === "localhost"
-        ? "http://localhost:3000/api/meta-ads/callback"
-        : "https://www.firehubfood.com.br/api/meta-ads/callback"
-    );
-    const scope = "ads_management,ads_read,pages_show_list,pages_read_engagement,business_management";
-    window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=code`;
+    const qs = investment ? `?investment=${encodeURIComponent(String(investment))}` : "";
+    window.location.href = `/api/meta-ads/auth${qs}`;
   };
 
   // Gerar copy com IA

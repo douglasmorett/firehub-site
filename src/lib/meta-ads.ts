@@ -1,4 +1,3 @@
-import { segredoObrigatorio } from "./segredos";
 /**
  * lib/meta-ads.ts
  * Integração com a Meta Marketing API
@@ -11,8 +10,14 @@ import { segredoObrigatorio } from "./segredos";
  *   META_SYSTEM_TOKEN  = Token do sistema (Business Manager)
  */
 
-const META_API_VERSION = "v20.0";
+// v20.0 saiu em maio/2024 e está no fim do ciclo de vida. Chamadas de
+// Marketing API em versões antigas passam a ser recusadas quando a versão sai
+// de suporte — e aí nenhuma campanha é criada, sem erro óbvio na tela.
+const META_API_VERSION = "v23.0";
 const META_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
+
+import { segredoObrigatorio } from "./segredos";
+import { criarState } from "./meta-oauth-state";
 
 export type MetaCampaignConfig = {
   adAccountId: string;    // act_XXXXX
@@ -23,7 +28,8 @@ export type MetaCampaignConfig = {
   lat: number;
   lng: number;
   radiusKm: number;
-  weeklyBudgetBRL: number;   // Em reais — convertemos para centavos de USD (aprox)
+  weeklyBudgetBRL: number;   // Em REAIS. A Meta cobra na moeda da conta (BRL).
+  semanasDeVeiculacao?: number; // Padrão 4. Define o teto de gasto e a data de fim.
   adCopy: string;
   adImageUrl: string;
   pageId: string;         // Página do Facebook do restaurante
@@ -37,26 +43,52 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
   const token = config.accessToken;
   const acct  = config.adAccountId;
 
+  // Teto de gasto da campanha, em centavos. É a trava dura: mesmo que algo
+  // dispare o orçamento diário, a Meta para de veicular ao atingir este valor.
+  // Sem isto não havia NENHUM limite superior no sistema.
+  const semanas = Math.max(1, Math.min(Number(config.semanasDeVeiculacao) || 4, 52));
+  const tetoCentavos = Math.round(config.weeklyBudgetBRL * semanas * 100);
+
   // 1. Campanha
   const campaignRes = await metaPost(`/${acct}/campaigns`, token, {
     name:          `FireHub — ${config.storeName} — Delivery`,
-    objective:     "LINK_CLICKS",
-    status:        "ACTIVE",
+    // OUTCOME_TRAFFIC é o objetivo do modelo ODAX. Os nomes antigos
+    // (LINK_CLICKS e afins) são anteriores a ele e a Meta deixou de aceitar a
+    // criação de novos conjuntos com objetivo original — a campanha nem nasce.
+    objective:     "OUTCOME_TRAFFIC",
+    // Nasce PAUSADA de propósito: quem liga é o lojista, depois de ver o
+    // criativo e o valor. Criar com status ACTIVE começava a gastar dinheiro no
+    // mesmo instante em que o registro entrava no banco.
+    status:        "PAUSED",
+    spend_cap:     tetoCentavos,
     special_ad_categories: [],
   });
   const campaignId = campaignRes.id;
 
   // 2. Conjunto de anúncios (audiência + orçamento + localização)
-  // Converte R$/semana → centavos por dia (aprox R$1 = US$0.20 → *100 centavos / 7 dias)
-  const dailyBudgetCents = Math.round((config.weeklyBudgetBRL / 7) * 100);
+  //
+  // O comentário anterior dizia "aprox R$1 = US$0.20" e não convertia nada — o
+  // que estava certo por acidente: a Meta cobra na MOEDA DA CONTA, e a conta é
+  // em BRL. `daily_budget` é simplesmente o valor em centavos de real.
+  //
+  // A Meta tem mínimo diário por conjunto; abaixo dele a criação é recusada.
+  // R$ 6/dia (≈ R$ 42/semana) é uma margem segura para BRL.
+  const MINIMO_DIARIO_CENTAVOS = 600;
+  const dailyBudgetCents = Math.max(
+    MINIMO_DIARIO_CENTAVOS,
+    Math.round((config.weeklyBudgetBRL / 7) * 100)
+  );
 
   const adSetRes = await metaPost(`/${acct}/adsets`, token, {
     name:           `AdSet — ${config.storeName}`,
     campaign_id:    campaignId,
-    billing_event:  "LINK_CLICKS",
-    optimization_goal: "LINK_CLICKS",
+    billing_event:  "IMPRESSIONS",
+    optimization_goal: "LANDING_PAGE_VIEWS",
     daily_budget:   dailyBudgetCents,
-    status:         "ACTIVE",
+    // Data de término: mais uma trava. Se ninguém mexer, a veiculação acaba
+    // sozinha em vez de gastar indefinidamente.
+    end_time:       new Date(Date.now() + semanas * 7 * 24 * 60 * 60 * 1000).toISOString(),
+    status:         "PAUSED",
     targeting: {
       geo_locations: {
         custom_locations: [{
@@ -92,12 +124,12 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
     object_story_spec: {
       page_id: config.pageId,
       link_data: {
-        link:       `https://www.firehubfood.com.br/loja/${config.storeSlug}`,
+        link:       `${urlDoSite()}/loja/${config.storeSlug}`,
         message:    config.adCopy,
         image_hash: imageHash || undefined,
         call_to_action: {
           type: "ORDER_NOW",
-          value: { link: `https://www.firehubfood.com.br/loja/${config.storeSlug}` },
+          value: { link: `${urlDoSite()}/loja/${config.storeSlug}` },
         },
       },
     },
@@ -109,7 +141,9 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
     name:       `Ad — ${config.storeName}`,
     adset_id:   adSetId,
     creative:   { creative_id: creativeId },
-    status:     "ACTIVE",
+    // Pausado como a campanha e o conjunto: nada entra no ar sem o lojista
+    // mandar. Quem liga é setCampaignStatus, depois da aprovação dele.
+    status:     "PAUSED",
   });
 
   return {
@@ -154,11 +188,27 @@ export async function setCampaignStatus(
 /**
  * Gera URL de autorização OAuth para o franqueado conectar seu Facebook
  */
-export function getMetaOAuthUrl(franchiseeId: string): string {
+/**
+ * Origem canônica do callback.
+ *
+ * A Meta exige que o redirect_uri do /dialog/oauth seja IDÊNTICO ao da troca
+ * de código — byte a byte. Havia três grafias diferentes no projeto (a tela
+ * usava `https://www.firehubfood.com.br` fixo, as funções usavam NEXTAUTH_URL,
+ * e o callback caía em `https://firehubfood.com.br` sem www). Divergindo,
+ * a troca falha sempre com token_exchange_failed. Agora sai tudo daqui.
+ */
+/** Origem do site, sem barra no fim. */
+export function urlDoSite(): string {
+  return (process.env.NEXTAUTH_URL || "https://firehubfood.com.br").trim().replace(/\/$/, "");
+}
+
+export function urlDoCallbackMeta(): string {
+  return `${urlDoSite()}/api/meta-ads/callback`;
+}
+
+export function getMetaOAuthUrl(franchiseeId: string, investment?: number): string {
   const appId = segredoObrigatorio("META_APP_ID");
-  const redirect = encodeURIComponent(
-    `${process.env.NEXTAUTH_URL ?? "https://www.firehubfood.com.br"}/api/meta-ads/callback`
-  );
+  const redirect = encodeURIComponent(urlDoCallbackMeta());
   const scopes = [
     "ads_management",
     "ads_read",
@@ -166,9 +216,9 @@ export function getMetaOAuthUrl(franchiseeId: string): string {
     "pages_read_engagement",
     "pages_show_list",
   ].join(",");
-  const state = Buffer.from(JSON.stringify({ franchiseeId })).toString("base64");
+  const state = criarState(franchiseeId, investment);
 
-  return `https://www.facebook.com/dialog/oauth?client_id=${appId}&redirect_uri=${redirect}&scope=${scopes}&state=${state}&response_type=code`;
+  return `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?client_id=${appId}&redirect_uri=${redirect}&scope=${scopes}&state=${state}&response_type=code`;
 }
 
 /**
@@ -177,7 +227,7 @@ export function getMetaOAuthUrl(franchiseeId: string): string {
 export async function exchangeCodeForToken(code: string): Promise<string> {
   const appId     = segredoObrigatorio("META_APP_ID");
   const appSecret = segredoObrigatorio("META_APP_SECRET");
-  const redirect  = `${process.env.NEXTAUTH_URL ?? "https://www.firehubfood.com.br"}/api/meta-ads/callback`;
+  const redirect  = urlDoCallbackMeta();
 
   // Short-lived token
   const shortRes = await fetch(
@@ -198,12 +248,73 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
  */
 export async function getMetaAccounts(accessToken: string) {
   const [acctRes, pagesRes] = await Promise.all([
-    fetch(`${META_BASE}/me/adaccounts?fields=id,name,account_status&access_token=${accessToken}`),
+    // `funding_source_details` e `account_status` dizem se a conta consegue
+    // veicular. Sem isso o lojista monta a campanha inteira e só descobre o
+    // problema quando aperta publicar — ou pior, acha que está no ar e não está.
+    fetch(`${META_BASE}/me/adaccounts?fields=id,name,account_status,currency,funding_source,funding_source_details,disable_reason&access_token=${accessToken}`),
     fetch(`${META_BASE}/me/accounts?fields=id,name,category&access_token=${accessToken}`),
   ]);
   const accounts = (await acctRes.json()).data ?? [];
   const pages    = (await pagesRes.json()).data ?? [];
   return { accounts, pages };
+}
+
+export type ProntidaoDaConta = {
+  pronta: boolean;
+  motivo?: "sem_forma_de_pagamento" | "conta_desativada" | "conta_nao_encontrada" | "erro";
+  detalhe?: string;
+  moeda?: string;
+};
+
+/**
+ * A conta consegue veicular anúncio AGORA?
+ *
+ * Verificado na conta real do dono em 23/08/2026: fundos R$ 0,00 e nenhuma
+ * forma de pagamento cadastrada. A tela do Meta avisa que "se não houver saldo
+ * disponível, os anúncios serão pausados" — ou seja, a campanha nasce e não
+ * roda. Melhor dizer isso ANTES de o lojista montar o criativo.
+ *
+ * Importante: adicionar cartão ou fundos NÃO é possível pela API — a Meta só
+ * oferece isso na interface do Ads Manager. Por isso aqui apenas se detecta o
+ * estado, e a tela manda o lojista ao link certo, uma única vez.
+ */
+export async function verificarProntidaoDaConta(
+  adAccountId: string,
+  accessToken: string
+): Promise<ProntidaoDaConta> {
+  try {
+    const campos = "account_status,disable_reason,funding_source,funding_source_details,currency";
+    const res = await fetch(`${META_BASE}/${adAccountId}?fields=${campos}&access_token=${accessToken}`);
+    if (!res.ok) {
+      return { pronta: false, motivo: "conta_nao_encontrada", detalhe: `HTTP ${res.status}` };
+    }
+    const c = await res.json();
+
+    // account_status: 1 = ativa. Qualquer outro valor não veicula.
+    if (Number(c.account_status) !== 1) {
+      return {
+        pronta: false,
+        motivo: "conta_desativada",
+        detalhe: `status ${c.account_status}${c.disable_reason ? ` (motivo ${c.disable_reason})` : ""}`,
+        moeda: c.currency,
+      };
+    }
+
+    const temFonte = Boolean(c.funding_source) || Boolean(c.funding_source_details?.id);
+    if (!temFonte) {
+      return { pronta: false, motivo: "sem_forma_de_pagamento", moeda: c.currency };
+    }
+
+    return { pronta: true, moeda: c.currency };
+  } catch (e: any) {
+    return { pronta: false, motivo: "erro", detalhe: String(e?.message).slice(0, 120) };
+  }
+}
+
+/** Link direto para o lojista cadastrar a forma de pagamento no Meta. */
+export function linkDeCobrancaDoMeta(adAccountId: string): string {
+  const semPrefixo = adAccountId.replace(/^act_/, "");
+  return `https://adsmanager.facebook.com/adsmanager/manage/accounts?act=${semPrefixo}&nav_entry_point=billing`;
 }
 
 // --------------- helpers ---------------
