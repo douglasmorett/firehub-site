@@ -217,6 +217,25 @@ async function handleIncomingMessage(body: any, instance: string) {
     });
   }
 
+  // 3) Legado real: o nome da instancia e SEMPRE `firehub_<10 ultimos do id>`
+  //    (src/lib/whatsapp-evolution.ts), e o id completo e um cuid — nunca igual
+  //    ao sufixo. Ou seja, o passo 2 acima jamais casa, e toda loja conectada
+  //    antes de existir o campo instanceName ficava sem robo: era o caso da
+  //    Brasa Burguer (`firehub_04z3ss479k` para o id `cmt1hle8y0001ia04z3ss479k`),
+  //    cujo webhook caia em "nao pertence a nenhuma loja cadastrada".
+  //    Reconectar nao resolvia: a rota de QR nao grava instanceName, e o nome
+  //    gerado seria o mesmo.
+  //    Aqui o sufixo so estreita a busca — a decisao vem da RECONSTRUCAO exata
+  //    do nome a partir do id encontrado. Ambiguidade continua recusando.
+  if (candidatos.length === 0 && shortId.length >= 8) {
+    const porSufixo = await prisma.user.findMany({
+      where: { id: { endsWith: shortId } },
+      select: selecaoLoja,
+      take: 5,
+    });
+    candidatos = porSufixo.filter(u => `firehub_${u.id.slice(-10)}` === instance).slice(0, 2);
+  }
+
   if (candidatos.length > 1) {
     console.error(
       `[WhatsApp Webhook] Instância "${instance}" casa com ${candidatos.length} lojas ` +

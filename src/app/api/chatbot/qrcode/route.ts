@@ -37,6 +37,10 @@ export async function GET() {
         connected: true,
         phone: waData.phone || chatbotConfig.phone || user.storePhone || "+55 (21) 99999-9999",
         connectedAt: new Date().toISOString(),
+        // Vínculo instância -> loja. O webhook procura por este campo para saber
+        // de quem é a mensagem; sem ele, o robô da loja ficava mudo mesmo com o
+        // QR conectado. O nome é o mesmo gerado em getEvolutionQRCode.
+        instanceName: `firehub_${user.id.slice(-10)}`,
       };
       await prisma.user.update({
         where: { id: user.id },
