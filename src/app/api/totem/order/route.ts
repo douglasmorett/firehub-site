@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { jwtVerify } from "jose";
+import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
 
 const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET || "fallback-secret");
 
@@ -52,20 +53,20 @@ export async function POST(req: NextRequest) {
       const product = productMap.get(item.menuProductId);
       if (!product) continue;
 
-      let itemPrice = product.price;
+      // Mesma conta do cardápio, do modal e do robô — src/lib/preco-combo.ts.
+      // A lógica que existia aqui já casava por grupo e estava certa; passou a
+      // usar a função compartilhada para os canais não voltarem a divergir.
+      let itemPrice = precoUnitarioDoItem(product as any, item.comboSelections);
 
-      // Calcular acréscimos de combo
-      if (item.comboSelections && product.isCombo) {
-        for (const group of product.comboGroups) {
-          const groupSelections = item.comboSelections[group.id];
-          if (!groupSelections) continue;
-          for (const comboItem of group.items) {
-            const qty = groupSelections[comboItem.menuProduct.name] || 0;
-            if (qty > 0 && comboItem.additionalPrice) {
-              itemPrice += comboItem.additionalPrice * qty;
-            }
-          }
-        }
+      // Piso de segurança: produto cujo valor mora nas opções (o "Nugget" da
+      // Hakim, base R$ 0,00) sairia por R$ 0,00 se a escolha não viesse ou não
+      // casasse. Melhor cobrar o mínimo possível do que entregar de graça.
+      const minimo = precoMinimoDoProduto(product as any);
+      if (itemPrice < minimo) {
+        console.warn(
+          `[Totem] "${product.name}" sairia por R$ ${itemPrice} sem escolha válida; aplicando o mínimo R$ ${minimo}.`
+        );
+        itemPrice = minimo;
       }
 
       const quantity = Math.max(1, Math.min(99, item.quantity || 1));

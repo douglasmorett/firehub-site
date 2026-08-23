@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
+import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface TableItem {
@@ -580,7 +581,13 @@ export default function MesasPage() {
                   <div style={{ fontWeight: 700, fontSize: "0.8rem", marginBottom: 2, lineHeight: 1.2 }}>{p.name}</div>
                   <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginBottom: 4 }}>{p.isCombo ? "Combo" : p.category}</div>
                   <div style={{ color: "#C62828", fontWeight: 800, fontSize: 14 }}>
-                    {p.isCombo ? `a partir de ${fmt(p.price)}` : fmt(p.price)}
+                    {(() => {
+                      // Mesmo cálculo do cardápio: no "Nugget" (base R$ 0,00) o
+                      // card anunciava "a partir de R$ 0,00".
+                      const comGrupos = { ...p, comboGroups: getEffectiveComboGroups(p) } as any;
+                      const minimo = precoMinimoDoProduto(comGrupos);
+                      return precoVariaPorEscolha(comGrupos) ? `a partir de ${fmt(minimo)}` : fmt(minimo);
+                    })()}
                   </div>
                 </div>
               );
@@ -1295,6 +1302,33 @@ export default function MesasPage() {
         }}>
           {toast}
         </div>
+      )}
+
+      {/* ── MODAL DE COMBO ──────────────────────────────────────────────
+          O componente já era importado (linha 5) e `comboProduct` já era
+          preenchido no clique (handleProductClick), mas o modal NUNCA era
+          renderizado: o garçom clicava num combo e não acontecia nada — o item
+          nem entrava na comanda. */}
+      {comboProduct && (
+        <ComboModal
+          product={comboProduct as any}
+          onClose={() => setComboProduct(null)}
+          onConfirm={(selections, extraSum, qty) => {
+            // O ComboModal devolve { grupoId: { nome: qtd } }; o carrinho das
+            // mesas guarda lista [{ name, quantity }]. Converte preservando a
+            // quantidade escolhida.
+            const lista: { name: string; quantity: number }[] = [];
+            for (const porGrupo of Object.values(selections || {})) {
+              for (const [nome, quantidade] of Object.entries((porGrupo || {}) as Record<string, number>)) {
+                if (Number(quantidade) > 0) lista.push({ name: nome, quantity: Number(quantidade) });
+              }
+            }
+            for (let i = 0; i < Math.max(1, qty || 1); i++) {
+              addToCart(comboProduct, lista, extraSum);
+            }
+            setComboProduct(null);
+          }}
+        />
       )}
     </div>
   );

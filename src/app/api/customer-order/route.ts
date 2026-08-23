@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
@@ -61,7 +62,14 @@ export async function POST(req: Request) {
     // `cost` — a margem do concorrente.
     const productIds = items.map((i: any) => i.menuProductId).filter(Boolean);
     const menuProducts = await prisma.menuProduct.findMany({
-      where: { id: { in: productIds }, active: true, franchiseeId: franchisee.id }
+      where: { id: { in: productIds }, active: true, franchiseeId: franchisee.id },
+      // Os grupos vêm junto porque o preço do item depende deles: sem isso o
+      // servidor não tem como saber quanto custa a opção que o cliente marcou.
+      include: {
+        comboGroups: {
+          include: { items: { include: { menuProduct: { select: { name: true, price: true } } } } },
+        },
+      },
     });
 
     // Calcular total dos produtos
@@ -76,14 +84,39 @@ export async function POST(req: Request) {
           { statusCode: 400 }
         );
       }
-      totalAmount += product.price * item.quantity;
+      // ── PREÇO COM AS OPÇÕES ESCOLHIDAS ────────────────────────────────
+      // Antes somava só `product.price`, ignorando o que o cliente marcou
+      // dentro do combo. No "Nugget" da Hakim, cujo preço base é R$ 0,00 e o
+      // valor inteiro está nas opções (6/15/40 unidades), o pedido era gravado
+      // por R$ 0,00 — a loja entregava e recebia nada. Já aconteceu uma vez,
+      // por outro canal.
+      //
+      // A conta agora é a mesma em todo lugar (src/lib/preco-combo.ts), e
+      // continua sendo feita AQUI, no servidor: o carrinho manda só o que foi
+      // escolhido, nunca o preço.
+      let precoUnitario = precoUnitarioDoItem(product as any, item.comboSelections);
+
+      // Piso: se a escolha não vier, vier vazia, ou o nome não casar com nenhuma
+      // opção do grupo, o cálculo devolve só a base — e no "Nugget" (base
+      // R$ 0,00) isso é um pedido de graça. Cobrar o mínimo possível é o pior
+      // caso aceitável; entregar sem cobrar não é.
+      const minimoDoProduto = precoMinimoDoProduto(product as any);
+      if (precoUnitario < minimoDoProduto) {
+        console.warn(
+          `[customer-order] "${product.name}" sairia por R$ ${precoUnitario} sem escolha válida ` +
+          `(loja ${franchisee.id}); aplicando o mínimo R$ ${minimoDoProduto}.`
+        );
+        precoUnitario = minimoDoProduto;
+      }
+
+      totalAmount += precoUnitario * item.quantity;
       // `notes` e a observacao POR ITEM ("sem cebola"). O carrinho ja mandava
       // (CustomerStorePage envia notes em cada item) e a impressao/KDS ja liam
       // i.notes — mas aqui ela era descartada, entao nunca chegava na cozinha.
       return {
         menuProductId: product.id,
         quantity: item.quantity,
-        price: product.price,
+        price: precoUnitario,
         notes: typeof item.notes === "string" && item.notes.trim() ? item.notes.trim().slice(0, 500) : null,
         comboSelections: item.comboSelections || null,
       };

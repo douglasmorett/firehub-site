@@ -106,15 +106,21 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
     }, 0);
   }, [groups, selections]);
 
-  let minOptionPrice = Infinity;
-  groups.forEach(g => {
-    (g.items || []).forEach(i => {
-      const pr = (i.additionalPrice || 0) + ((i.menuProduct as any)?.price || 0);
-      if (pr > 0 && pr < minOptionPrice) minOptionPrice = pr;
-    });
-  });
-
-  const basePrice = product.price > 0 ? product.price : (minOptionPrice !== Infinity ? minOptionPrice : 0);
+  // ── COBRANÇA EM DOBRO (CORRIGIDA) ───────────────────────────────────────
+  // O código anterior procurava um "preço mínimo" somando
+  //     additionalPrice + preço do produto-opção
+  // e, quando o produto base custava R$ 0,00, usava esse mínimo como base —
+  // somando o additionalPrice da escolha DE NOVO por cima.
+  //
+  // No "Nugget" (base R$ 0,00; opção "6 Nuggets" com additionalPrice R$ 9,90 e
+  // produto-opção de R$ 9,90), quem pedisse 6 unidades via:
+  //     mínimo 9,90 + 9,90 = 19,80  →  base 19,80 + adicional 9,90 = R$ 29,70
+  // três vezes os R$ 9,90 que o item custa.
+  //
+  // O preço do produto-opção é o valor de vendê-lo avulso no cardápio; dentro
+  // do combo quem manda é o additionalPrice. A conta agora é a mesma do
+  // servidor e do cardápio: base + adicionais escolhidos.
+  const basePrice = product.price || 0;
   const unitFinalPrice = basePrice + extraSum;
   const grandTotal = unitFinalPrice * comboQty;
 

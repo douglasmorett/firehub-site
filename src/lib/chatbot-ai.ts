@@ -5,6 +5,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { GoogleGenAI } from "@google/genai";
 import { trackGeminiUsage } from "@/lib/usage-tracker";
 import { normalizeStoreHours } from "@/lib/store-hours";
+import { precoMinimoDoProduto, precoVariaPorEscolha } from "./preco-combo";
 
 function getFirstName(fullName?: string | null): string {
   if (!fullName) return "";
@@ -89,7 +90,18 @@ export async function processChatbotAI(
   const [products, categories, searchedOrders, customerRecord] = await Promise.all([
     prisma.menuProduct.findMany({
       where: { franchiseeId: targetFranchiseeId, active: true },
-      select: { id: true, name: true, description: true, price: true, category: true, isCombo: true, isBeverage: true, availableDays: true, tags: true },
+      select: {
+        id: true, name: true, description: true, price: true, category: true,
+        isCombo: true, isBeverage: true, availableDays: true, tags: true,
+        // Sem os grupos, o robô não sabe que o "Nugget" custa R$ 0,00 de base e
+        // tem o valor todo nas opções — e acabava lançando o pedido por zero.
+        comboGroups: {
+          select: {
+            id: true, title: true, maxQty: true,
+            items: { select: { additionalPrice: true, menuProduct: { select: { name: true, price: true } } } },
+          },
+        },
+      },
       orderBy: { category: "asc" },
     }),
     prisma.menuCategory.findMany({
@@ -317,8 +329,19 @@ export async function processChatbotAI(
     }
 
     if (isToday) {
-      const priceFormatted = p.price.toFixed(2).replace(".", ",");
-      const line = `- ${isCombo ? "COMBO REAL DA LOJA" : "PRODUTO"}: "${rawCleanName}" (${p.category}) ➔ PREÇO EXATO E OBRIGATÓRIO = R$ ${priceFormatted}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
+      // O robô precisa COTAR o mesmo valor que vai ser gravado no pedido.
+      // Com `p.price` cru, produto cujo preço mora nas opções (o "Nugget" da
+      // Hakim, base R$ 0,00) era anunciado no WhatsApp como "R$ 0,00" — e o
+      // pedido saía por outro valor. Agora a cotação usa o mesmo mínimo que a
+      // gravação, e o produto é marcado como "a partir de" para o robô não
+      // prometer preço fechado no que varia por escolha.
+      const precoParaCotar = Math.max(p.price || 0, precoMinimoDoProduto(p as any));
+      const varia = precoVariaPorEscolha(p as any);
+      const priceFormatted = precoParaCotar.toFixed(2).replace(".", ",");
+      const rotuloPreco = varia
+        ? `PREÇO A PARTIR DE R$ ${priceFormatted} (varia conforme a opção escolhida — PERGUNTE a opção antes de fechar)`
+        : `PREÇO EXATO E OBRIGATÓRIO = R$ ${priceFormatted}`;
+      const line = `- ${isCombo ? "COMBO REAL DA LOJA" : "PRODUTO"}: "${rawCleanName}" (${p.category}) ➔ ${rotuloPreco}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
 
       if (!seenProductKeys.has(uniqueKey)) {
         seenProductKeys.add(uniqueKey);
@@ -1047,7 +1070,23 @@ async function syncAiOrderToDatabase({
 
       // REGRA DE SEGURANÇA SUPREMA E ANTI-ALUCINAÇÃO DE PREÇOS:
       // NUNCA usar o preço inventado pela IA no payload! Usar sempre o preço REAL do produto cadastrado no banco de dados!
-      const realPrice = matchedProduct.price;
+      //
+      // Só que "preço real" não é sempre `matchedProduct.price`: em produto
+      // cujo valor está nas opções (o "Nugget" da Hakim tem base R$ 0,00 e
+      // custa 9,90 / 19,90 / 39,80 conforme a quantidade escolhida), a base é
+      // zero. Em 01/08/2026 saiu exatamente assim um pedido de Nugget lançado
+      // pelo robô por R$ 0,00.
+      //
+      // O robô ainda não conduz a escolha dentro do combo, então aqui se cobra
+      // no mínimo o menor preço possível do produto — nunca zero. Quando ele
+      // souber perguntar a opção, passa a usar precoUnitarioDoItem.
+      const precoMinimo = precoMinimoDoProduto(matchedProduct as any);
+      const realPrice = Math.max(matchedProduct.price || 0, precoMinimo);
+      if (realPrice !== (matchedProduct.price || 0)) {
+        console.warn(
+          `[Chatbot AI] "${matchedProduct.name}" tem preço variável por opção; base R$ ${matchedProduct.price} — lançando pelo mínimo R$ ${realPrice}.`
+        );
+      }
       const quantity = Math.max(1, parseInt(it.quantity) || 1);
 
       return {

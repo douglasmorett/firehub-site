@@ -28,6 +28,7 @@ import {
 import ComboModal from "./ComboModal";
 import PaymentGateway from "./PaymentGateway";
 import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
+import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import { isStoreOpen } from "@/lib/store-hours";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
@@ -2264,8 +2265,8 @@ export default function CustomerStorePage({
                         )}
                         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "8px" }}>
                           <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#059669" }}>
-                            {p.isCombo && <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
-                            R$ {p.price.toFixed(2).replace(".", ",")}
+                            {precoVariaPorEscolha(p as any) && <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
+                            R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
                           </span>
                           <button
                             type="button"
@@ -2359,8 +2360,8 @@ export default function CustomerStorePage({
                           </div>
                         )}
                         <p className="product-price">
-                          {p.isCombo && <span className="product-price-from">A partir de </span>}
-                          R$ {p.price.toFixed(2)}
+                          {precoVariaPorEscolha(p as any) && <span className="product-price-from">A partir de </span>}
+                          R$ {precoMinimoDoProduto(p as any).toFixed(2)}
                         </p>
                       </div>
                       <div className="product-actions">
@@ -2815,7 +2816,8 @@ export default function CustomerStorePage({
                         <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginTop: "2px" }}>{p.name}</div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
                           <span style={{ fontWeight: 900, fontSize: "0.95rem", color: "#059669" }}>
-                            R$ {p.price.toFixed(2).replace(".", ",")}
+                            {precoVariaPorEscolha(p as any) && <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
+                            R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
                           </span>
                         </div>
                       </div>
