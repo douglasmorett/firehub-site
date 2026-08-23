@@ -48,9 +48,25 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ─── Force HTTPS in production ───
+  //
+  // ⚠️ Chamada de dentro do próprio container fica de fora.
+  //
+  // O server standalone do Next injeta `x-forwarded-proto: http` sozinho em
+  // requisição HTTP direta. Como o cron-runner chama http://localhost:3000, TODO
+  // cron levava 301 para https://0.0.0.0:3000 e nunca executava — visto no log de
+  // produção: ifood-poll, jotaja-poll, billing-close, meta-ads-sync,
+  // health-check e gateway-keepalive, todos parados em "retornou 301".
+  //
+  // Isso não afrouxa nada para fora: requisição externa chega com o Host do
+  // domínio, nunca com localhost, e continua sendo redirecionada para HTTPS.
+  const hostDaRequisicao = (request.headers.get("host") || "").toLowerCase();
+  const ehChamadaLocal =
+    /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$/.test(hostDaRequisicao);
+
   if (
     process.env.NODE_ENV === "production" &&
-    request.headers.get("x-forwarded-proto") === "http"
+    request.headers.get("x-forwarded-proto") === "http" &&
+    !ehChamadaLocal
   ) {
     const url = request.nextUrl.clone();
     url.protocol = "https:";
