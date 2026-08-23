@@ -18,6 +18,8 @@ type Lojista = {
   pendente: number; temMP: boolean; temCelcoin: boolean;
 };
 
+type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes";
+
 type KPIs = {
   totalLojistas: number; emTrial: number; assinantes: number;
   novosMes: number; novosSemana: number;
@@ -33,6 +35,7 @@ export default function AdminDashboardClient({
   lojistas: Lojista[];
 }) {
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [tab, setTab] = useState<"overview" | "lojistas" | "financeiro" | "ambassadors" | "custos">("overview");
   const [lojistas, setLojistas] = useState<Lojista[]>(initialLojistas);
 
@@ -47,11 +50,32 @@ export default function AdminDashboardClient({
   // Expandir detalhes do lojista
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const filtered = lojistas.filter(l =>
-    [l.name, l.storeName, l.email, l.city].some(v =>
-      v?.toLowerCase().includes(search.toLowerCase())
-    )
-  );
+  const onlyDigits = (v: string) => v.replace(/\D/g, "");
+  const startOfMonthTs = (() => {
+    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime();
+  })();
+
+  const term = search.trim().toLowerCase();
+  const termDigits = onlyDigits(term);
+
+  const matchesSearch = (l: Lojista) => {
+    if (!term) return true;
+    if ([l.name, l.storeName, l.email, l.city, l.slug].some(v => v?.toLowerCase().includes(term))) return true;
+    if (termDigits.length >= 3 && [l.storePhone, l.cpfCnpj].some(v => v && onlyDigits(v).includes(termDigits))) return true;
+    return false;
+  };
+
+  const matchesStatus = (l: Lojista) => {
+    switch (statusFilter) {
+      case "trial": return l.emTrial;
+      case "assinantes": return !l.emTrial;
+      case "pendencia": return !l.isFranqueadoHakim && l.pendente > 0;
+      case "mes": return new Date(l.createdAt).getTime() >= startOfMonthTs;
+      default: return true;
+    }
+  };
+
+  const filtered = lojistas.filter(l => matchesSearch(l) && matchesStatus(l));
 
   const maxGrowth = Math.max(...monthlyGrowth.map(m => m.count), 1);
 
@@ -210,14 +234,13 @@ export default function AdminDashboardClient({
             </p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {tab === "lojistas" && (
-              <input
-                className="fha-input"
-                placeholder="🔍  Buscar lojista..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ width: 220 }}
-              />
+            {tab !== "lojistas" && (
+              <button
+                className="fha-btn-action"
+                onClick={() => { setSearch(""); setStatusFilter("todos"); setTab("lojistas"); }}
+              >
+                🔍 Buscar lojista
+              </button>
             )}
           </div>
         </div>
@@ -262,8 +285,19 @@ export default function AdminDashboardClient({
 
               {/* Últimos cadastros */}
               <div className="fha-section">
-                <div style={{ padding: "14px 18px", borderBottom: "1px solid #334155" }}>
-                  <h3 style={{ color: "#F1F5F9", fontWeight: 700, margin: 0, fontSize: "0.9rem" }}>🕐 Últimos Cadastros</h3>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <h3 style={{ color: "#F1F5F9", fontWeight: 700, margin: 0, fontSize: "0.9rem" }}>
+                    🕐 Últimos Cadastros{" "}
+                    <span style={{ color: "#64748B", fontWeight: 400, fontSize: "0.78rem" }}>
+                      (10 mais recentes de {lojistas.length})
+                    </span>
+                  </h3>
+                  <button
+                    className="fha-btn-action"
+                    onClick={() => { setSearch(""); setStatusFilter("todos"); setTab("lojistas"); }}
+                  >
+                    Ver todos os {lojistas.length} lojistas →
+                  </button>
                 </div>
                 <table className="fha-table">
                   <thead>
@@ -272,7 +306,7 @@ export default function AdminDashboardClient({
                     </tr>
                   </thead>
                   <tbody>
-                    {lojistas.slice(0, 8).map(l => (
+                    {lojistas.slice(0, 10).map(l => (
                       <React.Fragment key={l.id}>
                       <tr>
                         <td>
@@ -386,11 +420,51 @@ export default function AdminDashboardClient({
             <div className="fha-section">
               <div style={{ padding: "14px 18px", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <h3 style={{ color: "#F1F5F9", fontWeight: 700, margin: 0, fontSize: "0.9rem" }}>
-                  Todos os Lojistas <span style={{ color: "#64748B", fontWeight: 400 }}>({filtered.length})</span>
+                  Todos os Lojistas <span style={{ color: "#64748B", fontWeight: 400 }}>({filtered.length} de {lojistas.length})</span>
                 </h3>
                 <a href="/store/admin/lojistas" style={{ background: "rgba(239,68,68,0.15)", color: "#F87171", border: "1px solid rgba(239,68,68,0.3)", padding: "6px 14px", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", textDecoration: "none" }}>
                   + Novo Lojista
                 </a>
+              </div>
+
+              <div style={{ padding: "14px 18px", borderBottom: "1px solid #334155", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                <div style={{ position: "relative", flex: "1 1 280px", minWidth: 220 }}>
+                  <input
+                    className="fha-input"
+                    placeholder="🔍  Buscar por nome, loja, e-mail, cidade, telefone ou CPF/CNPJ..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    style={{ width: "100%", paddingRight: search ? 34 : 14 }}
+                  />
+                  {search && (
+                    <button
+                      onClick={() => setSearch("")}
+                      title="Limpar busca"
+                      style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: "1rem", lineHeight: 1 }}
+                    >×</button>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {([
+                    { key: "todos", label: `Todos (${lojistas.length})` },
+                    { key: "mes", label: `Novos este mês (${kpis.novosMes})` },
+                    { key: "trial", label: `Em trial (${kpis.emTrial})` },
+                    { key: "assinantes", label: `Assinantes (${kpis.assinantes})` },
+                    { key: "pendencia", label: `Com pendência (${kpis.comPendencia})` },
+                  ] as { key: StatusFilter; label: string }[]).map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setStatusFilter(opt.key)}
+                      style={{
+                        padding: "6px 12px", borderRadius: 20, fontSize: "0.72rem", fontWeight: 700, cursor: "pointer",
+                        fontFamily: "inherit", transition: "all 0.2s",
+                        background: statusFilter === opt.key ? "rgba(239,68,68,0.15)" : "#0F172A",
+                        color: statusFilter === opt.key ? "#F87171" : "#94A3B8",
+                        border: `1px solid ${statusFilter === opt.key ? "rgba(239,68,68,0.35)" : "#334155"}`,
+                      }}
+                    >{opt.label}</button>
+                  ))}
+                </div>
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table className="fha-table">
@@ -521,6 +595,11 @@ export default function AdminDashboardClient({
                       )}
                       </React.Fragment>
                     ))}
+                    {filtered.length === 0 && (
+                      <tr><td colSpan={8} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>
+                        Nenhum lojista encontrado{search ? ` para "${search}"` : ""}.
+                      </td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
