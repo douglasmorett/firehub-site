@@ -124,8 +124,8 @@ export const getPartnerDeliveryInfo = (order: any): PartnerDeliveryInfo => {
   if (src === "99FOOD" || odChannel === "99FOOD" || src.includes("99") || dBy.includes("99")) {
     const is99Partner = (
       dBy === "99FOOD" || dBy === "99_FOOD" || dBy.includes("99") ||
-      dBy === "LOGISTICS" || dBy === "PARTNER" || dMode === "LOGISTIC" || dMode === "PARTNER" ||
-      Boolean(pickupCode)
+      dBy === "LOGISTICS" || dBy === "PARTNER" || dMode === "LOGISTIC" || dMode === "PARTNER"
+      // pickupCode removido daqui pelo mesmo motivo da regra do iFood.
     );
     if (is99Partner) {
       return { isPartner: true, partnerName: "99Food", pickupCode };
@@ -137,7 +137,24 @@ export const getPartnerDeliveryInfo = (order: any): PartnerDeliveryInfo => {
     const isIfoodPartner = (
       dBy === "IFOOD" || dBy === "IFOOD_LOGISTICS" || dBy === "IFOOD_DELIVERY" || dBy === "LOGISTICS" ||
       dBy.includes("IFOOD") || dBy.includes("LOGISTICS") || dMode === "LOGISTIC" || dMode === "PARTNER" ||
-      Boolean(pickupCode) || Boolean(order.ifoodDriverName) || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")
+      // ⚠️ `pickupCode` NÃO entra mais nesta conta.
+      //
+      // O iFood emite código também em ENTREGA PRÓPRIA: é o código que o
+      // cliente informa ao entregador para confirmar o recebimento (o painel
+      // do iFood chama de "Confirmação de entrega"). Medido em produção em
+      // 23/08/2026 na Hakim: 73 dos 80 pedidos do dia tinham código, e 70
+      // deles eram entrega da própria loja.
+      //
+      // Enquanto `deliveryBy` vinha "MERCHANT" a regra 1 blindava esses 70. Mas
+      // pedido criado por /api/ifood/rescue-orders nascia sem `deliveryBy`, caía
+      // aqui, e o código sozinho o transformava em "entrega parceira". Foi o que
+      // aconteceu com o pedido #94 (iFood #8288, Luciana Ribeiro): a tela mandou
+      // NÃO enviar motoboy da loja, ninguém entregou, e o cliente cancelou por
+      // atraso.
+      //
+      // Entrega parceira se prova por quem vai entregar — `deliveryBy` explícito
+      // ou um entregador do iFood atribuído — nunca pela existência de um código.
+      Boolean(order.ifoodDriverName) || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")
     );
     if (isIfoodPartner) {
       return { isPartner: true, partnerName: "iFood", pickupCode };
@@ -145,7 +162,8 @@ export const getPartnerDeliveryInfo = (order: any): PartnerDeliveryInfo => {
   }
 
   // 4. JotaJá ou outros canais Open Delivery com logística parceira
-  if (dBy === "LOGISTICS" || dBy === "PARTNER" || dMode === "LOGISTIC" || dMode === "PARTNER" || Boolean(pickupCode)) {
+  // Mesma correção da regra 3: código de coleta não prova entrega parceira.
+  if (dBy === "LOGISTICS" || dBy === "PARTNER" || dMode === "LOGISTIC" || dMode === "PARTNER") {
     const pName = src === "JOTAJA" ? "JotaJá" : (odChannel || src || "Parceiro");
     return { isPartner: true, partnerName: pName, pickupCode };
   }

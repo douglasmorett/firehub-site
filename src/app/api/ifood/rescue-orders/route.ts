@@ -335,9 +335,33 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
   else if (["CONCLUDED", "DELIVERED"].includes(ifoodStatus)) status = "ENTREGUE";
   else if (["CANCELLED"].includes(ifoodStatus)) status = "CANCELADO";
 
+  // ── QUEM ENTREGA ──────────────────────────────────────────────────────────
+  // Esta rota não gravava `deliveryBy`, e o pedido resgatado nascia com o campo
+  // NULO. Como o painel tratava a existência de código de coleta como prova de
+  // entrega parceira, o pedido aparecia com "ENTREGA PARCEIRA IFOOD — não enviar
+  // motoboy da loja" mesmo sendo entrega própria. Aconteceu com o pedido #94
+  // (iFood #8288): ninguém foi entregar e o cliente cancelou por atraso.
+  //
+  // A regra do painel foi corrigida, mas o campo precisa vir preenchido na
+  // origem — é a mesma leitura que o webhook e o cron já fazem.
+  const entreguePorRaw = (
+    orderData.deliveredBy || orderData.deliveryBy ||
+    orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
+    orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
+    ""
+  ).toString().toUpperCase();
+
+  const deliveryBy =
+    entreguePorRaw.includes("IFOOD") ||
+    entreguePorRaw.includes("LOGISTICS") ||
+    entreguePorRaw.includes("PARTNER")
+      ? "IFOOD"
+      : "MERCHANT";
+
   await (prisma.customerOrder as any).create({
     data: {
       franchiseeId,
+      deliveryBy,
       ifoodOrderId: orderId,
       ifoodReference: orderData.displayId ?? undefined,
       scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
