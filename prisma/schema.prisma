@@ -933,7 +933,7 @@ model MetaAdsCampaign {
   revenue          Float     @default(0)     // Faturamento atribuído aos anúncios
 
   // Cobrança FireHub (R$50/semana de gestão)
-  feeAccrued        Float    @default(0)     // Total de taxa FireHub acumulada (10% do spend)
+  feeAccrued        Float    @default(0)     // Taxa de gestão acumulada — R$50 por semana ATIVA (não é % do gasto)
   feePaid           Float    @default(0)     // Total de taxa já cobrada
   lastBilledAt     DateTime?                 // Última cobrança semanal
 

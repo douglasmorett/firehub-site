@@ -177,6 +177,29 @@ export async function getCampaignInsights(campaignId: string, accessToken: strin
 }
 
 /**
+ * Altera o orçamento diário do conjunto de anúncios NA META.
+ *
+ * A rota de update_budget só gravava no nosso banco e respondia "orçamento
+ * atualizado ✅". A Meta nunca era avisada: o lojista baixava de R$ 500 para
+ * R$ 100, via a confirmação, e continuava sendo cobrado R$ 500 — dinheiro dele
+ * saindo por causa de uma tela que mentia.
+ *
+ * O orçamento mora no ad set, não na campanha. Por isso recebe o adSetId.
+ */
+export async function atualizarOrcamentoDoAdSet(
+  adSetId: string,
+  accessToken: string,
+  weeklyBudgetBRL: number
+) {
+  const MINIMO_DIARIO_CENTAVOS = 600;
+  const diarioCentavos = Math.max(
+    MINIMO_DIARIO_CENTAVOS,
+    Math.round((weeklyBudgetBRL / 7) * 100)
+  );
+  return metaPost(`/${adSetId}`, accessToken, { daily_budget: diarioCentavos });
+}
+
+/**
  * Pausa ou retoma uma campanha
  */
 export async function setCampaignStatus(

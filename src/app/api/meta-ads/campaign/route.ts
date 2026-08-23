@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createMetaCampaign, getCampaignInsights, setCampaignStatus } from "@/lib/meta-ads";
+import { createMetaCampaign, getCampaignInsights, setCampaignStatus, atualizarOrcamentoDoAdSet } from "@/lib/meta-ads";
 import { segredoObrigatorio } from "@/lib/segredos";
 
 export async function GET() {
@@ -144,12 +144,45 @@ export async function PUT(req: NextRequest) {
 
   if (action === "pause" && campaign.metaCampaignId) {
     await setCampaignStatus(campaign.metaCampaignId, user.metaFbAccessToken, "PAUSED");
-    await prisma.metaAdsCampaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+    // Congela o relógio da gestão. O cron cobra R$50 a cada 7 dias contados a
+    // partir de lastBilledAt; sem zerar aqui, uma campanha parada por 3 semanas
+    // voltaria cobrando 3 semanas de gestão que não houve.
+    await prisma.metaAdsCampaign.update({
+      where: { id: campaign.id },
+      data: { status: "PAUSED", lastBilledAt: new Date() },
+    });
   } else if (action === "resume" && campaign.metaCampaignId) {
     await setCampaignStatus(campaign.metaCampaignId, user.metaFbAccessToken, "ACTIVE");
-    await prisma.metaAdsCampaign.update({ where: { id: campaign.id }, data: { status: "ACTIVE" } });
+    // A semana de gestão recomeça agora, não de quando pausou.
+    await prisma.metaAdsCampaign.update({
+      where: { id: campaign.id },
+      data: { status: "ACTIVE", lastBilledAt: new Date() },
+    });
   } else if (action === "update_budget" && weeklyBudget) {
-    await prisma.metaAdsCampaign.update({ where: { id: campaign.id }, data: { weeklyBudget } });
+    const valor = Number(weeklyBudget);
+    if (!Number.isFinite(valor) || valor <= 0) {
+      return NextResponse.json({ error: "Orçamento inválido." }, { status: 400 });
+    }
+
+    // A Meta PRIMEIRO. Se ela recusar, o banco não pode dizer que mudou —
+    // era exatamente essa a mentira: o painel confirmava e a cobrança seguia
+    // no valor antigo.
+    if (campaign.metaAdSetId) {
+      try {
+        await atualizarOrcamentoDoAdSet(campaign.metaAdSetId, user.metaFbAccessToken, valor);
+      } catch (e: any) {
+        console.error("[MetaAds] falha ao atualizar orçamento na Meta:", e?.message);
+        return NextResponse.json(
+          { error: "Não consegui alterar o orçamento no Facebook. Tente de novo." },
+          { status: 502 }
+        );
+      }
+    }
+
+    await prisma.metaAdsCampaign.update({
+      where: { id: campaign.id },
+      data: { weeklyBudget: valor },
+    });
   }
 
   return NextResponse.json({ success: true });
