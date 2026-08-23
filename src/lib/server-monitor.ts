@@ -69,6 +69,36 @@ async function sendWhatsAppAlert(message: string) {
 }
 
 /**
+ * Alerta de integração: avisa no WhatsApp quando um pedido de canal externo
+ * (JotaJá, iFood, 99Food) não conseguiu entrar no sistema.
+ *
+ * Existe porque a falha era silenciosa: o lojista só descobria olhando o painel
+ * do parceiro e comparando com o FireHub — em 23/08/2026 dois pedidos do JotaJá
+ * ficaram quase uma hora sem ninguém saber. O `tipo` entra no cooldown, então
+ * uma rajada de falhas do mesmo canal gera um aviso a cada 5 minutos, não um
+ * por evento.
+ */
+export async function alertarFalhaDeIntegracao(
+  canal: string,
+  loja: string,
+  detalhe: string
+): Promise<void> {
+  if (!canAlert(`integracao_${canal}`)) return;
+  const msg =
+    `🚨 *FireHub — pedido não entrou*\n\n` +
+    `Canal: *${canal}*\n` +
+    `Loja: *${loja}*\n` +
+    `Motivo: ${detalhe}\n\n` +
+    `O evento NÃO foi confirmado ao parceiro, então o sistema vai tentar de novo ` +
+    `no próximo minuto. Se o pedido não aparecer, confira o painel do ${canal}.`;
+  try {
+    await sendWhatsAppAlert(msg);
+  } catch (err: any) {
+    console.error("[Monitor] Falha ao alertar integração:", err?.message);
+  }
+}
+
+/**
  * Verifica a saúde do servidor e envia alertas se necessário.
  * Chamado pelo cron-runner a cada 5 minutos.
  */

@@ -73,6 +73,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const [gerandoImagem, setGerandoImagem] = useState(false);
   const [descricaoIA, setDescricaoIA] = useState("");
   const [cotaRestante, setCotaRestante] = useState<number | null>(null);
+  const [contaMeta, setContaMeta] = useState<any>(null);
   const [productImages, setProductImages] = useState<ProductImage[]>([]);
   const [adCopy, setAdCopy] = useState("");
   const [adDescription, setAdDescription] = useState("");
@@ -136,6 +137,23 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       } catch { /* silencioso */ }
     }, 60_000);
     return () => clearInterval(interval);
+  }, [step]);
+
+  // Saldo da conta de anúncios. Sem isso o lojista só descobre que o crédito
+  // acabou quando estranha que parou de vender — o anúncio some sem avisar.
+  useEffect(() => {
+    if (step !== "dashboard") return;
+    let vivo = true;
+    const buscar = async () => {
+      try {
+        const r = await fetch("/api/meta-ads/status");
+        const d = await r.json();
+        if (vivo) setContaMeta(d);
+      } catch { /* silencioso */ }
+    };
+    buscar();
+    const t = setInterval(buscar, 120_000);
+    return () => { vivo = false; clearInterval(t); };
   }, [step]);
 
   // Auto-gerar copy ao entrar no step creative (se ainda não tem)
@@ -949,6 +967,80 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             <span>Investiu R${totalSpend.toFixed(0)} → Faturou R${totalRevenue.toFixed(0)}</span>
             <span>6x+</span>
           </div>
+        </div>
+      )}
+
+      {/* ── SALDO DA CONTA DE ANÚNCIOS ────────────────────────────────────
+          Sem isto o lojista só percebe que o crédito acabou quando estranha que
+          parou de vender: o Facebook simplesmente para de veicular, sem avisar
+          ninguém. E o pior — a gestão de R$50/semana continua sendo cobrada. */}
+      {contaMeta?.conectado && (
+        <div style={{
+          background: contaMeta.pronto ? "#F0FDF4" : "#FEF2F2",
+          border: `1.5px solid ${contaMeta.pronto ? "#BBF7D0" : "#FCA5A5"}`,
+          borderRadius: 14, padding: "1rem 1.15rem", marginBottom: "1.25rem",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 220px" }}>
+              <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>
+                {contaMeta.carteira?.cobrancaAutomatica ? "Forma de pagamento" : "Crédito na sua conta do Facebook"}
+              </div>
+
+              {contaMeta.carteira?.cobrancaAutomatica ? (
+                <>
+                  <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#166534" }}>
+                    {contaMeta.carteira.formaDePagamento || "Cartão cadastrado"}
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: "#15803D" }}>
+                    O Facebook cobra automaticamente — você não precisa recarregar
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: "1.6rem", fontWeight: 900, color: contaMeta.pronto ? "#166534" : "#991B1B" }}>
+                    {typeof contaMeta.carteira?.saldoDisponivel === "number"
+                      ? `R$ ${contaMeta.carteira.saldoDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : "—"}
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: contaMeta.pronto ? "#15803D" : "#991B1B" }}>
+                    {contaMeta.pronto ? "disponível para anúncios" : "sem saldo — os anúncios não vão rodar"}
+                  </div>
+                </>
+              )}
+
+              {typeof contaMeta.carteira?.totalGasto === "number" && (
+                <div style={{ fontSize: "0.7rem", color: "#9CA3AF", marginTop: 6 }}>
+                  Total já investido em anúncios: R$ {contaMeta.carteira.totalGasto.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              )}
+            </div>
+
+            {contaMeta.linkParaRecarregar && (
+              <a href={contaMeta.linkParaRecarregar} target="_blank" rel="noopener noreferrer"
+                style={{
+                  background: contaMeta.pronto ? "#F1F5F9" : "#DC2626",
+                  color: contaMeta.pronto ? "#334155" : "#fff",
+                  border: "none", padding: "10px 16px", borderRadius: 10,
+                  fontSize: "0.85rem", fontWeight: 800, textDecoration: "none",
+                  whiteSpace: "nowrap", alignSelf: "center",
+                }}>
+                {contaMeta.pronto ? "Gerenciar pagamento" : "Adicionar saldo agora"}
+              </a>
+            )}
+          </div>
+
+          {!contaMeta.pronto && contaMeta.mensagem && (
+            <div style={{ fontSize: "0.8rem", color: "#991B1B", marginTop: 10, lineHeight: 1.5, borderTop: "1px solid #FCA5A5", paddingTop: 10 }}>
+              ⚠️ {contaMeta.mensagem}
+            </div>
+          )}
+
+          {!contaMeta.carteira?.cobrancaAutomatica && contaMeta.pronto && (
+            <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: 8, lineHeight: 1.5, borderTop: "1px solid #BBF7D0", paddingTop: 8 }}>
+              💡 Você está no modo pré-pago: quando o crédito acabar, os anúncios param. Cadastrando
+              um cartão, o Facebook cobra sozinho e você não precisa recarregar.
+            </div>
+          )}
         </div>
       )}
 

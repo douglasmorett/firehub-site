@@ -138,6 +138,10 @@ export async function GET(req: NextRequest) {
                 if (!gravado) {
                   log.push(`  ⛔ [${storeName}] SEM ACK — ${result.action} não deixou pedido no banco (${event.orderId}); evento fica na fila para a próxima tentativa`);
                   console.error(`[Jotajá Cron] ⛔ SEM ACK ${event.orderId}: ${result.action} sem gravar (${result.message || "-"})`);
+                  // Avisa no WhatsApp em vez de deixar a falha só no log do container.
+                  import("@/lib/server-monitor")
+                    .then(m => m.alertarFalhaDeIntegracao("JotaJá", storeName, `${result.action}: ${result.message || "pedido não gravado"}`))
+                    .catch(() => {});
                   return false;
                 }
                 return true;
