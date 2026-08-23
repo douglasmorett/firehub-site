@@ -37,60 +37,130 @@ export async function getIfoodToken(): Promise<string> {
 }
 
 // ── APP DISTRIBUÍDO ─────────────────────────────────────────────────────────
-// Cada loja autoriza o MESMO app (clientId distribuído) e passa a constar na
-// aba Permissões dele. Quem enxerga essas lojas e recebe os eventos delas é o
-// token de client_credentials DO APP — não o token que o lojista gera no fluxo
-// de authorization_code.
+// NÃO existe client_credentials aqui. Confirmado contra a API de produção:
 //
-// Foi por isso que a Pastel da Paulista nunca recebeu pedido: o sistema tentava
-// descobrir a loja com o token do lojista, e o GET /merchants respondia [] —
-// confirmado no log de produção com verifier presente e status 200. No portal
-// do desenvolvedor, as três lojas aparecem Ativas.
-let _tokenDist: string | null = null;
-let _tokenDistExp = 0;
+//   POST /authentication/v1.0/oauth/token  grantType=client_credentials
+//   → 400 {"error":{"code":"BadRequest","message":
+//          "Unsupported grant type client_credentials to client cabc4064-…"}}
+//
+// e confirmado no portal do desenvolvedor: o app "FireHub Distribuído" é do
+// tipo *Authorization Code*. Ou seja, não há "token do app" que enxergue as
+// lojas — cada loja tem o SEU access_token, nascido do código que o lojista
+// cola, e é com ele que se faz polling, buscar pedido e dar ACK.
+//
+// Outro achado que explica o bug da Pastel da Paulista: em Permissões, os
+// módulos autorizados de cada loja são apenas **Order** e **Events**. Sem o
+// módulo *Merchant*, o GET /merchant/v1.0/merchants responde 200 [] mesmo com
+// token perfeitamente válido. Por isso a descoberta do merchantId NÃO pode
+// depender daquele endpoint: o merchantId vem dentro dos próprios eventos.
 
-/** Token do APP distribuído (client_credentials). Cobre todas as lojas autorizadas. */
-export async function getIfoodDistributedToken(): Promise<string> {
-  if (_tokenDist && Date.now() < _tokenDistExp) return _tokenDist;
+/**
+ * Token da PRÓPRIA loja (app distribuído), renovando via refresh_token quando
+ * necessário.
+ *
+ * Sem isto os tokens simplesmente morriam: em produção a Hakim estava com o
+ * token vencido desde 07/08 e a Brasa Burguer desde 22/08 03:44, ambos
+ * devolvendo 401 "token expired" — ninguém nunca os renovou.
+ *
+ * Retorna null quando a loja não tem credencial utilizável; nunca cai no token
+ * de outra loja, o que cruzaria dados entre donos diferentes.
+ */
+export async function getTokenDaLojaIfood(userId: string): Promise<string | null> {
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      ifoodAccessToken: true,
+      ifoodRefreshToken: true,
+      ifoodTokenExpiresAt: true,
+    },
+  });
+  if (!u) return null;
+
+  const margem = 5 * 60 * 1000; // renova 5 min antes de vencer
+  const valido =
+    !!u.ifoodAccessToken &&
+    !!u.ifoodTokenExpiresAt &&
+    u.ifoodTokenExpiresAt.getTime() - margem > Date.now();
+
+  if (valido) return u.ifoodAccessToken!;
+
+  if (!u.ifoodRefreshToken) {
+    // Sem refresh não há como renovar. Devolve o access token só se ainda não
+    // venceu de fato — melhor uma última chamada válida do que nenhuma.
+    if (u.ifoodAccessToken && u.ifoodTokenExpiresAt && u.ifoodTokenExpiresAt.getTime() > Date.now()) {
+      return u.ifoodAccessToken;
+    }
+    return null;
+  }
 
   const clientId = process.env.IFOOD_CLIENT_ID_DISTRIBUTED;
   const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED;
   if (!clientId || !clientSecret) {
-    throw new Error("IFOOD_CLIENT_ID_DISTRIBUTED / IFOOD_CLIENT_SECRET_DISTRIBUTED não configurados");
+    console.error("[iFood] IFOOD_CLIENT_ID_DISTRIBUTED / IFOOD_CLIENT_SECRET_DISTRIBUTED não configurados — não dá para renovar token de loja.");
+    return u.ifoodAccessToken ?? null;
   }
 
-  const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grantType: "client_credentials", clientId, clientSecret }),
-  });
+  try {
+    const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grantType: "refresh_token",
+        clientId,
+        clientSecret,
+        refreshToken: u.ifoodRefreshToken,
+      }),
+    });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`iFood auth distribuído falhou: ${res.status} — ${err.slice(0, 300)}`);
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      console.error(`[iFood] refresh_token falhou para a loja ${userId}: ${res.status} ${err.slice(0, 200)}`);
+      return u.ifoodAccessToken ?? null;
+    }
+
+    const data = await res.json();
+    if (!data?.accessToken) return u.ifoodAccessToken ?? null;
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ifoodAccessToken: data.accessToken,
+        ifoodRefreshToken: data.refreshToken || u.ifoodRefreshToken,
+        ifoodTokenExpiresAt: new Date(Date.now() + ((data.expiresIn ?? 3600) - 60) * 1000),
+      },
+    });
+
+    console.log(`[iFood] Token da loja ${userId} renovado.`);
+    return data.accessToken as string;
+  } catch (e: any) {
+    console.error(`[iFood] Erro ao renovar token da loja ${userId}:`, e?.message);
+    return u.ifoodAccessToken ?? null;
   }
-
-  const data = await res.json();
-  _tokenDist = data.accessToken;
-  _tokenDistExp = Date.now() + ((data.expiresIn ?? 3600) - 60) * 1000;
-  return _tokenDist!;
 }
 
-/** Lojas autorizadas ao app distribuído (as que aparecem em Permissões). */
-export async function listIfoodDistributedMerchants(): Promise<{ id: string; name: string }[]> {
-  const token = await getIfoodDistributedToken();
-  const res = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-  });
-  if (!res.ok) {
-    console.error(`[iFood] listar merchants do app falhou: ${res.status}`);
+/**
+ * Descobre os merchantIds que um access_token de loja alcança, lendo os
+ * eventos da fila.
+ *
+ * É o único caminho possível neste app: o módulo Merchant não está autorizado,
+ * então /merchant/v1.0/merchants responde [].
+ *
+ * NÃO envia acknowledgment — os eventos continuam na fila para o cron
+ * processar normalmente. Só se espia quem é o dono.
+ */
+export async function descobrirMerchantsPorEventos(accessToken: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${IFOOD_BASE}/events/v1.0/events:polling`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return [];
+    const texto = await res.text();
+    const eventos = texto ? JSON.parse(texto) : [];
+    if (!Array.isArray(eventos)) return [];
+    return [...new Set(eventos.map((e: any) => e?.merchantId).filter(Boolean))] as string[];
+  } catch {
     return [];
   }
-  const data = await res.json();
-  const lista = Array.isArray(data) ? data : (data?.merchants || data?.data || []);
-  return lista
-    .map((m: any) => ({ id: m.id || m.merchantId, name: m.name || m.corporateName || "" }))
-    .filter((m: any) => !!m.id);
 }
 
 /** Wrapper autenticado para LEITURAS */

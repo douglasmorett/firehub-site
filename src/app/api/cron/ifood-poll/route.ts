@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { processarEventosIfood } from "@/lib/ifood-eventos";
+import { getTokenDaLojaIfood } from "@/lib/ifood-api";
 
 /**
  * GET /api/cron/ifood-poll
@@ -23,633 +25,185 @@ export async function GET(req: NextRequest) {
   try {
     const { getIfoodToken } = await import("@/lib/ifood-api");
 
-    // Get token
-    let token: string;
+    // ⚠️ Um tropeço do app CENTRALIZADO não pode abortar a função inteira: a
+    // passada distribuída, mais abaixo, é a única fonte de pedidos das lojas
+    // que conectam pelo painel (Pastel da Paulista, Brasa Burguer...). Antes
+    // havia `return` aqui e logo depois em "0 eventos" — ou seja, no dia a dia
+    // normal (fila central vazia) o código NUNCA chegava na parte distribuída.
+    let token = "";
     try {
       token = await getIfoodToken();
       log.push("✅ Token obtido");
     } catch (err: any) {
-      log.push(`❌ Token falhou: ${err.message}`);
-      return NextResponse.json({ ok: false, log });
+      log.push(`❌ Token central falhou: ${err.message} — seguindo para as lojas distribuídas`);
     }
 
-    // Poll events from iFood
-    const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    // Poll events do app CENTRALIZADO
+    let events: any[] = [];
+    if (token) {
+      const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "");
-      log.push(`❌ events:polling falhou: ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
-      return NextResponse.json({ ok: false, log });
-    }
-
-    const eventsText = await res.text();
-    const events = eventsText ? JSON.parse(eventsText) : [];
-    log.push(`📥 ${events.length} evento(s) recebido(s)`);
-
-    if (!events || events.length === 0) {
-      return NextResponse.json({ ok: true, events: 0, log, durationMs: Date.now() - startTime });
-    }
-
-    // Process events
-    const processedEventIds: { id: string; orderId: string; eventType: string }[] = [];
-    let created = 0;
-    let updated = 0;
-
-    for (const event of events) {
-      try {
-        const { code, orderId, merchantId } = event;
-        if (!orderId) continue;
-
-        const isPlaced = code === "PLC" || event.fullCode === "PLACED";
-        const isConfirmed = code === "CFM" || event.fullCode === "CONFIRMED";
-        const isPreparation = code === "PRP" || event.fullCode === "IN_PREPARATION" || event.fullCode === "PREPARATION_STARTED";
-        const isReadyPickup = code === "RTP" || event.fullCode === "READY_TO_PICKUP";
-        const isDispatched = code === "DSP" || event.fullCode === "DISPATCHED";
-        const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
-        const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
-        const isDispute = code === "HSD" || code === "CRR" || code === "DDC" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED" || event.fullCode === "DUE_DATE_CHANGE_REQUESTED";
-
-        log.push(`  📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
-
-        // Handle cancellation or due date change REQUEST (negotiation)
-        if (isDispute) {
-          const meta = event.metadata || {};
-          const actionType = (meta.action || meta.handshakeType || meta.type || event.fullCode || "").toUpperCase();
-          const rawReason = meta.message || meta.cancelCodeDescription || meta.subCodeDescription || meta.reason || meta.description || "";
-          
-          let disputeType = "CANCELLATION";
-          if (actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC") {
-            disputeType = "DUE_DATE_CHANGE";
-          } else if (actionType.includes("RESEND") || actionType.includes("REPLACEMENT") || actionType.includes("REENVIO") || /reenvio|reenviar|repor|substituir/i.test(rawReason)) {
-            disputeType = "RESEND_ITEMS";
-          } else if (actionType.includes("REFUND") || /reembolso|reembolsar/i.test(rawReason)) {
-            disputeType = "REFUND_ITEMS";
-          }
-
-          const finalReason = rawReason || (
-            disputeType === "DUE_DATE_CHANGE" ? "O pedido está atrasado. Quero uma nova previsão de entrega." :
-            disputeType === "RESEND_ITEMS" ? "Cliente prefere o reenvio de itens pra resolver o problema." :
-            disputeType === "REFUND_ITEMS" ? "Cliente solicitou reembolso de item." :
-            "Cliente solicitou cancelamento do pedido pelo iFood."
-          );
-
-          const disputeData = {
-            pending: true,
-            disputeId: meta.disputeId || "",
-            type: disputeType,
-            reason: finalReason,
-            customerName: meta.customerName || "",
-            handshakeType: meta.handshakeType || actionType,
-            expiresAt: meta.expiresAt || "",
-            requestedAt: meta.createdAt || new Date().toISOString(),
-          };
-          await (prisma.customerOrder as any).updateMany({
-            where: { ifoodOrderId: orderId } as any,
-            data: { cancelDispute: disputeData },
-          });
-          log.push(`  ⚠️ Negociação (${disputeData.type}): ${orderId} — disputeId=${meta.disputeId}, motivo="${meta.message}"`);
-          if (event.id) {
-            processedEventIds.push({
-              id: event.id,
-              orderId: event.orderId || "",
-              eventType: event.fullCode || event.code || "",
-            });
-          }
-          continue;
-        }
-
-        if (isCancelled) {
-          const existingOrder: any = await prisma.customerOrder.findFirst({
-            where: { ifoodOrderId: orderId } as any,
-            select: { id: true, cancelledBy: true } as any,
-          });
-
-          if (existingOrder) {
-            // Pedido já existe — apenas atualizar status para CANCELADO
-            const cancelData: any = { status: "CANCELADO" };
-            if (!existingOrder.cancelledBy || existingOrder.cancelledBy !== "LOJA") {
-              cancelData.cancelledBy = "IFOOD";
-            }
-            await (prisma.customerOrder as any).updateMany({
-              where: { ifoodOrderId: orderId } as any,
-              data: cancelData,
-            });
-            log.push(`  🚫 Cancelado (existente): ${orderId}`);
-          } else {
-            // Pedido NÃO existe no nosso DB — importar como CANCELADO
-            // Isso acontece quando o sistema estava fora do ar e o iFood cancelou por timeout
-            try {
-              const cancelOrderRes = await fetch(
-                `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-              if (cancelOrderRes.ok) {
-                const cancelOrderData = await cancelOrderRes.json();
-                let cancelFranchisee = merchantId
-                  ? (await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId, role: "FRANCHISEE" } as any })
-                    || await prisma.ifoodIntegration.findFirst({ where: { merchantId, active: true } })
-                        .then(async (int: any) => int ? prisma.user.findUnique({ where: { id: int.userId } }) : null))
-                  : null;
-
-                if (cancelFranchisee) {
-                  const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
-                  const cancelItems = (cancelOrderData.items ?? []).map((i: any) => {
-                    const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-                    const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-                      ? JSON.stringify(subItemsList.map((s: any) => ({
-                          name: s.name || s.label || s.productName || "",
-                          quantity: s.quantity || 1,
-                          price: s.price || s.unitPrice || s.addition || 0,
-                        })))
-                      : null;
-                    const itemUnitPrice = getIfoodItemUnitPrice(i);
-                    return {
-                      price: itemUnitPrice,
-                      quantity: i.quantity ?? 1,
-                      comboSelections: comboSels,
-                      menuProduct: {
-                        connectOrCreate: {
-                          where: { id: `ifood-${i.id}` } as any,
-                          create: {
-                            id: `ifood-${i.id}`,
-                            franchiseeId: cancelFranchisee.id,
-                            name: i.name ?? "Item iFood",
-                            description: "",
-                            price: itemUnitPrice,
-                            category: "iFood",
-                            active: true,
-                          } as any,
-                        } as any,
-                      },
-                    };
-                  });
-
-                  const cancelTotal = typeof cancelOrderData.total === "object"
-                    ? (cancelOrderData.total?.orderAmount ?? cancelOrderData.total?.subTotal ?? 0)
-                    : (cancelOrderData.totalPrice ?? cancelOrderData.total ?? 0);
-
-                  const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
-                  const cancelParsedPay = parseOrderPaymentInfo(cancelOrderData, "IFOOD");
-
-                  const cancelMeta = event.metadata || {};
-                  const cancelReason = cancelMeta.cancelCodeDescription
-                    || cancelMeta.message
-                    || cancelMeta.reason
-                    || "Pedido cancelado automaticamente pelo iFood (não confirmado a tempo)";
-
-                  await (prisma.customerOrder as any).create({
-                    data: {
-                      franchiseeId: cancelFranchisee.id,
-                      ifoodOrderId: orderId,
-                      ifoodReference: cancelOrderData.displayId ?? undefined,
-                      source: "IFOOD",
-                      customerName: cancelOrderData.customer?.name ?? "Cliente iFood",
-                      customerPhone: (() => {
-                        const phone = cancelOrderData.customer?.phone;
-                        const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
-                        const localizer = phone?.localizer;
-                        return localizer ? `${number} ID: ${localizer}` : number;
-                      })(),
-                      customerAddress: (() => {
-                        const addr = cancelOrderData.delivery?.deliveryAddress;
-                        if (!addr) return "";
-                        const parts: string[] = [];
-                        if (addr.formattedAddress) parts.push(addr.formattedAddress);
-                        else if (addr.streetName) parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
-                        if (addr.neighborhood) parts.push(addr.neighborhood);
-                        if (addr.city) parts.push(addr.city);
-                        return parts.join(" - ");
-                      })(),
-                      deliveryType: cancelOrderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-                      paymentMethod: cancelParsedPay.paymentMethod,
-                      totalAmount: cancelTotal,
-                      deliveryFee: cancelOrderData.total?.deliveryFee ?? cancelOrderData.delivery?.deliveryFee ?? 0,
-                      status: "CANCELADO",
-                      cancelledBy: "IFOOD",
-                      cancelReason,
-                      kdsStage: "PRODUCTION",
-                      kdsProductionAt: new Date(),
-                      notes: `Pedido iFood #${(cancelOrderData.displayId ?? orderId.slice(-6)).toUpperCase()} | ❌ Cancelado: ${cancelReason}`,
-                      createdAt: cancelOrderData.createdAt ? new Date(cancelOrderData.createdAt) : undefined,
-                      items: { create: cancelItems },
-                    },
-                  });
-                  created++;
-                  log.push(`  🚫📦 Cancelado + IMPORTADO: ${orderId} (R$ ${cancelTotal})`);
-                } else {
-                  log.push(`  ⚠️ Cancelado mas sem franqueado: ${orderId}`);
-                }
-              } else {
-                log.push(`  ⚠️ Cancelado mas detalhes indisponíveis: ${orderId} (${cancelOrderRes.status})`);
-              }
-            } catch (cancelErr: any) {
-              log.push(`  ⚠️ Erro ao importar cancelado ${orderId}: ${cancelErr.message}`);
-            }
-          }
-
-          if (event.id) {
-            processedEventIds.push({
-              id: event.id,
-              orderId: event.orderId || "",
-              eventType: event.fullCode || event.code || "",
-            });
-          }
-          continue;
-        }
-
-        // Check if order exists
-        const exists = await prisma.customerOrder.findFirst({
-          where: { ifoodOrderId: orderId } as any,
-        });
-
-        if (!exists) {
-          // Fetch order details
-          const orderRes = await fetch(
-            `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-
-          if (!orderRes.ok) {
-            log.push(`  ⚠️ Detalhes do pedido ${orderId} falhou: ${orderRes.status}`);
-            continue;
-          }
-
-          const orderData = await orderRes.json();
-
-          const eventMerchantId = merchantId || orderData.merchant?.id;
-          let eventFranchisee = eventMerchantId
-            ? (await prisma.user.findFirst({ where: { ifoodMerchantId: eventMerchantId, role: "FRANCHISEE" } as any })
-              || await prisma.ifoodIntegration.findFirst({ where: { merchantId: eventMerchantId, active: true } })
-                  .then(async (int: any) => int ? prisma.user.findUnique({ where: { id: int.userId } }) : null))
-            : null;
-
-          if (!eventFranchisee) {
-            log.push(`  ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
-            continue;
-          }
-
-          // Extract items
-          const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
-          const items = (orderData.items ?? []).map((i: any) => {
-            const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-            const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-              ? JSON.stringify(subItemsList.map((s: any) => ({
-                  name: s.name || s.label || s.productName || "",
-                  quantity: s.quantity || 1,
-                  price: s.price || s.unitPrice || s.addition || 0,
-                })))
-              : null;
-
-            const itemUnitPrice = getIfoodItemUnitPrice(i);
-
-            return {
-              price: itemUnitPrice,
-              quantity: i.quantity ?? 1,
-              comboSelections: comboSels,
-              menuProduct: {
-                connectOrCreate: {
-                  where: { id: `ifood-${i.id}` } as any,
-                  create: {
-                    id: `ifood-${i.id}`,
-                    franchiseeId: eventFranchisee.id,
-                    name: i.name ?? "Item iFood",
-                    description: "",
-                    price: itemUnitPrice,
-                    category: "iFood",
-                    active: false,
-                  } as any,
-                } as any,
-              },
-            };
-          });
-
-          const total = typeof orderData.total === "object"
-            ? (orderData.total?.orderAmount ?? orderData.total?.subTotal ?? 0)
-            : (orderData.totalPrice ?? orderData.total ?? 0);
-
-          const paymentMethods = orderData.payments?.methods ?? orderData.payments ?? [];
-          const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
-
-          const deliveryFeeValue = orderData.total?.deliveryFee
-            ?? orderData.delivery?.deliveryFee
-            ?? orderData.deliveryFee
-            ?? 0;
-
-          const isExplicitlyScheduled = orderData.orderTiming === "SCHEDULED" || Boolean(orderData.schedule);
-          const rawScheduled = isExplicitlyScheduled
-            ? (orderData.schedule?.scheduledDatetimeEnd
-              ?? orderData.schedule?.scheduledDatetimeStart
-              ?? orderData.scheduledDatetime
-              ?? orderData.preparationStartDateTime)
-            : null;
-
-          const scheduledDatetime = rawScheduled ? new Date(rawScheduled) : null;
-
-          if (isExplicitlyScheduled) {
-            log.push(`  📅 Scheduling: orderTiming=${orderData.orderTiming}, scheduledDatetime=${orderData.scheduledDatetime}, schedule=${JSON.stringify(orderData.schedule)}, resolved=${scheduledDatetime?.toISOString()}`);
-          }
-
-          const rawDeadline = orderData.delivery?.deliveryDateTime
-            ?? orderData.delivery?.estimatedDeliveryWindow?.end
-            ?? orderData.delivery?.estimatedDeliveryWindow?.start
-            ?? orderData.takeout?.takeoutDateTime
-            ?? orderData.takeout?.estimatedTakeoutWindow?.end;
-
-          const deliveryDeadline = scheduledDatetime ?? (rawDeadline ? new Date(rawDeadline) : null);
-
-          const customerNote = orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
-
-          const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
-          const parsedPay = parseOrderPaymentInfo(orderData, "IFOOD");
-          const payMethodName = parsedPay.paymentMethod;
-          const changeAmount = parsedPay.changeAmount;
-          const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? null;
-
-          // Descontos
-          const benefits = orderData.benefits ?? [];
-          let discountIfood = 0, discountMerchant = 0, discountTotal = 0;
-          const discountDetails: any[] = [];
-
-          for (const benefit of benefits) {
-            const value = benefit.value ?? 0;
-            discountTotal += value;
-            const sponsorships = Array.isArray(benefit.sponsorshipValues)
-              ? benefit.sponsorshipValues
-              : benefit.sponsorshipValues ? [benefit.sponsorshipValues] : [];
-            let bIfood = 0, bMerchant = 0;
-            for (const sp of sponsorships) {
-              const spName = (sp.name ?? sp.sponsorship ?? "").toUpperCase();
-              const spValue = sp.value ?? 0;
-              if (spName === "IFOOD" || spName === "PARTNER" || spName === "EXTERNAL") bIfood += spValue;
-              else if (spName === "MERCHANT") bMerchant += spValue;
-              else bIfood += spValue;
-            }
-            if (sponsorships.length === 0 && value > 0) {
-              if ((benefit.sponsorship ?? "").toUpperCase() === "MERCHANT") bMerchant += value;
-              else bIfood += value;
-            }
-            discountIfood += bIfood;
-            discountMerchant += bMerchant;
-            discountDetails.push({ target: benefit.target ?? "CART", value, ifood: bIfood, merchant: bMerchant, description: benefit.campaign?.name ?? benefit.description ?? null });
-          }
-
-          const notesArr = [
-            `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-            scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
-            discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
-            customerNote ? `💬 ${customerNote}` : null,
-          ].filter(Boolean).join(" | ");
-
-          const deliveredByRaw = (
-            orderData.deliveredBy || orderData.deliveryBy ||
-            orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
-            orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
-            ""
-          ).toString().toUpperCase();
-
-          const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS") || deliveredByRaw.includes("PARTNER")) ? "IFOOD" : "MERCHANT";
-
-          const ifoodPickupCode = (
-            orderData.delivery?.pickupCode ||
-            orderData.pickupCode ||
-            orderData.driver?.pickupCode ||
-            orderData.logistics?.pickupCode ||
-            event?.pickupCode ||
-            event?.data?.pickupCode ||
-            null
-          )?.toString().trim() || null;
-
-          let initialStatus = "NOVO";
-          if (isConfirmed) initialStatus = "ACEITO";
-          else if (isPreparation) initialStatus = "PREPARANDO";
-          else if (isReadyPickup) initialStatus = "PREPARANDO";
-          else if (isDispatched) initialStatus = "SAIU_ENTREGA";
-          else if (isConcluded) initialStatus = "ENTREGUE";
-
-          await (prisma.customerOrder as any).create({
-            data: {
-              franchiseeId: eventFranchisee.id,
-              ifoodOrderId: orderId,
-              ifoodReference: orderData.displayId ?? undefined,
-              ifoodPickupCode: ifoodPickupCode ?? undefined,
-              scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
-              changeAmount,
-              customerCpfCnpj,
-              deliveryBy,
-              discountTotal: discountTotal > 0 ? discountTotal : null,
-              discountIfood: discountIfood > 0 ? discountIfood : null,
-              discountMerchant: discountMerchant > 0 ? discountMerchant : null,
-              discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
-              source: "IFOOD",
-              customerName: orderData.customer?.name ?? "Cliente iFood",
-              customerPhone: (() => {
-                const phone = orderData.customer?.phone;
-                const number = phone?.number ?? (typeof phone === 'string' ? phone : '');
-                const localizer = phone?.localizer;
-                return localizer ? `${number} ID: ${localizer}` : number;
-              })(),
-              customerAddress: (() => {
-                const addr = orderData.delivery?.deliveryAddress;
-                if (!addr) return "";
-                const formatted = addr.formattedAddress || "";
-                const neighborhood = addr.neighborhood || "";
-                const city = addr.city || "";
-                const complement = addr.complement || addr.streetNameComplement || "";
-                const reference = addr.reference || addr.streetNameReference || orderData.delivery?.observations || orderData.customer?.customerNote || "";
-                const parts: string[] = [];
-                if (formatted) {
-                  parts.push(formatted);
-                } else if (addr.streetName) {
-                  parts.push(`${addr.streetName}${addr.streetNumber ? `, ${addr.streetNumber}` : ""}`);
-                }
-                if (complement && !parts.some(p => p.toLowerCase().includes(complement.toLowerCase()))) {
-                  parts.push(`Comp: ${complement}`);
-                }
-                if (reference && !parts.some(p => p.toLowerCase().includes(reference.toLowerCase()))) {
-                  parts.push(`Ref: ${reference}`);
-                }
-                if (neighborhood && (!parts[0] || !parts[0].toLowerCase().includes(neighborhood.toLowerCase()))) {
-                  parts.push(neighborhood);
-                }
-                if (city) parts.push(city);
-                return parts.join(" - ");
-              })(),
-              deliveryType: orderData.orderType === "TAKEOUT" ? "RETIRADA" : "DELIVERY",
-              paymentMethod: payMethodName,
-              totalAmount: total,
-              deliveryFee: deliveryFeeValue,
-              status: initialStatus,
-              kdsStage: "PRODUCTION",
-              kdsProductionAt: new Date(),
-              notes: notesArr,
-              createdAt: orderData.createdAt ? new Date(orderData.createdAt) : undefined,
-              items: { create: items },
-            },
-          });
-
-          log.push(`  ✅ Pedido CRIADO: ${orderId} (status: ${initialStatus})`);
-          created++;
-
-          // Auto-confirm
-          if (isPlaced) {
-            await fetch(
-              `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
-              { method: "POST", headers: { Authorization: `Bearer ${token}` } }
-            );
-            log.push(`  ✅ Auto-confirmado: ${orderId}`);
-          }
-        } else {
-          // Update existing order status
-          let newStatus: string | null = null;
-          if (isConcluded) newStatus = "ENTREGUE";
-          else if (isDispatched) newStatus = "SAIU_ENTREGA";
-          else if (isPreparation || isReadyPickup) newStatus = "PREPARANDO";
-          else if (isConfirmed) newStatus = "ACEITO";
-
-          if (newStatus) {
-            const updateData: any = { status: newStatus };
-            if (isConcluded) {
-              updateData.ifoodDriverStatus = "CONCLUDED";
-            }
-
-            // === Sincronizar prazo de entrega do iFood ===
-            try {
-              const detailRes = await fetch(
-                `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-              if (detailRes.ok) {
-                const detailData = await detailRes.json();
-                const updatedDeadline = detailData.delivery?.deliveryDateTime
-                  ?? detailData.delivery?.estimatedDeliveryWindow?.end
-                  ?? detailData.delivery?.estimatedDeliveryWindow?.start
-                  ?? detailData.takeout?.takeoutDateTime
-                  ?? detailData.takeout?.estimatedTakeoutWindow?.end;
-                if (updatedDeadline) {
-                  updateData.scheduledDatetime = new Date(updatedDeadline);
-                  log.push(`  ⏱️ Prazo atualizado: ${orderId} → ${updatedDeadline}`);
-                }
-                const dByRaw = (
-                  detailData.deliveredBy || detailData.deliveryBy ||
-                  detailData.delivery?.deliveredBy || detailData.delivery?.deliveryBy ||
-                  detailData.merchant?.deliveredBy || detailData.logistics?.deliveredBy ||
-                  ""
-                ).toString().toUpperCase();
-                if (dByRaw.includes("IFOOD") || dByRaw.includes("LOGISTICS") || dByRaw.includes("PARTNER")) {
-                  updateData.deliveryBy = "IFOOD";
-                }
-                const pCode = (
-                  detailData.delivery?.pickupCode ||
-                  detailData.pickupCode ||
-                  detailData.driver?.pickupCode ||
-                  detailData.logistics?.pickupCode
-                )?.toString().trim();
-                if (pCode) {
-                  updateData.ifoodPickupCode = pCode;
-                }
-              }
-            } catch (deadlineErr: any) {
-              log.push(`  ⚠️ Falha ao sincronizar prazo de ${orderId}: ${deadlineErr?.message}`);
-            }
-
-            await (prisma.customerOrder as any).updateMany({
-              where: { ifoodOrderId: orderId } as any,
-              data: updateData,
-            });
-            log.push(`  🔄 Status atualizado: ${orderId} → ${newStatus}`);
-            updated++;
-          }
-        }
-
-        if (event.id) {
-          processedEventIds.push({
-            id: event.id,
-            orderId: event.orderId || "",
-            eventType: event.fullCode || event.code || "",
-          });
-        }
-      } catch (err: any) {
-        log.push(`  ❌ Erro: ${err.message}`);
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        log.push(`❌ events:polling central falhou: ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
+      } else {
+        const eventsText = await res.text();
+        const lidos = eventsText ? JSON.parse(eventsText) : [];
+        events = Array.isArray(lidos) ? lidos : [];
+        log.push(`📥 ${events.length} evento(s) recebido(s) no app central`);
       }
     }
 
-    // Acknowledge processed events
-    if (processedEventIds.length > 0) {
-      await fetch("https://merchant-api.ifood.com.br/events/v1.0/events/acknowledgment", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(processedEventIds),
-      });
-      log.push(`✅ ${processedEventIds.length} eventos acknowledged`);
-    }
+    // Processamento do app CENTRALIZADO (comportamento histórico, intacto).
+    const central = events.length > 0
+      ? await processarEventosIfood({ events, token, log })
+      : { created: 0, updated: 0, acknowledged: 0, descartados: 0 };
+    const created = central.created;
+    const updated = central.updated;
 
     // ── PASSADA DO APP DISTRIBUÍDO ────────────────────────────────────────
-    // ADITIVA de propósito: tudo acima (app centralizado) continua igual, então
-    // a Hakim não regride. Aqui se cobre o que o centralizado NUNCA viu — as
-    // lojas que autorizaram o app distribuído, como a Pastel da Paulista.
+    // Cada loja puxa PELA PRÓPRIA CONEXÃO, como o iFood exige de um app
+    // distribuído — e como o dono de cada loja precisa que seja.
     //
-    // O isolamento passa a ser ESTRUTURAL: uma chamada de polling POR LOJA, com
-    // o header x-polling-merchants. O iFood entrega só os eventos daquele
-    // merchant, então não existe "descobrir o dono depois" nem chance de cruzar.
-    // Limite documentado: 100 merchants por header.
-    let distribuido = { lojas: 0, eventos: 0, erros: 0 };
+    // A versão anterior tentava um "token do app" via client_credentials. Isso
+    // nunca poderia funcionar: a API responde
+    //   400 Unsupported grant type client_credentials to client cabc4064-…
+    // porque o app é do tipo Authorization Code. Agora usa-se o access_token
+    // DA LOJA, renovado por refresh_token quando vencido.
+    //
+    // Duas trancas de isolamento:
+    //   1) header x-polling-merchants com o merchant DAQUELA loja — o iFood já
+    //      entrega só o que é dela;
+    //   2) merchantEsperado no processamento — qualquer evento que ainda assim
+    //      viesse de outro merchant é descartado antes de tocar o banco.
+    // ── VÍNCULO AUTOMÁTICO DA LOJA RECÉM-CONECTADA ────────────────────────
+    // Loja que acabou de colar o código ainda pode não ter merchantId: se a
+    // fila estava vazia no momento da conexão, não havia evento de onde tirá-lo
+    // (e o módulo Merchant não é autorizado neste app, então não há endpoint
+    // para perguntar). Aqui se tenta de novo a cada rodada, até o primeiro
+    // pedido revelar o ID — o lojista não precisa fazer nada.
     try {
-      const { listIfoodDistributedMerchants, getIfoodDistributedToken } = await import("@/lib/ifood-api");
-      const merchantsApp = await listIfoodDistributedMerchants();
-      log.push(`[distribuído] ${merchantsApp.length} loja(s) autorizada(s) no app`);
+      const pendentes = await prisma.user.findMany({
+        where: {
+          ifoodConnected: true,
+          ifoodMerchantId: null,
+          ifoodAccessToken: { not: null },
+        },
+        select: { id: true, storeName: true, email: true },
+      });
 
-      if (merchantsApp.length > 0) {
-        const tokenApp = await getIfoodDistributedToken();
+      for (const loja of pendentes) {
+        const nome = loja.storeName || loja.email || loja.id;
+        const tokenLoja = await getTokenDaLojaIfood(loja.id);
+        if (!tokenLoja) continue;
 
-        for (const m of merchantsApp) {
-          // Só processa merchant que pertence a uma loja nossa.
-          const dono = await prisma.user.findFirst({ where: { ifoodMerchantId: m.id } as any })
-            || await prisma.ifoodIntegration.findFirst({ where: { merchantId: m.id, active: true } })
-                .then(async (int: any) => (int ? prisma.user.findUnique({ where: { id: int.userId } }) : null));
+        const { descobrirMerchantsPorEventos } = await import("@/lib/ifood-api");
+        const vistos = await descobrirMerchantsPorEventos(tokenLoja);
+        if (vistos.length === 0) {
+          log.push(`[vínculo] ${nome}: nenhum evento ainda — tentando na próxima rodada`);
+          continue;
+        }
 
-          if (!dono) {
-            log.push(`[distribuído] ${m.name || m.id}: sem loja vinculada no FireHub — ignorado`);
+        // Um merchant que já é de outro dono nunca pode ser adotado aqui.
+        const ocupadosDb = await prisma.user.findMany({
+          where: { ifoodMerchantId: { in: vistos }, NOT: { id: loja.id } },
+          select: { ifoodMerchantId: true },
+        });
+        const ocupados = new Set(ocupadosDb.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]);
+        const livres = vistos.filter((id) => !ocupados.has(id));
+
+        if (livres.length !== 1) {
+          log.push(`[vínculo] ${nome}: ${livres.length} merchant(s) candidato(s) — não vinculando por segurança`);
+          continue;
+        }
+
+        await prisma.user.update({
+          where: { id: loja.id },
+          data: { ifoodMerchantId: livres[0] },
+        });
+        await prisma.ifoodIntegration.upsert({
+          where: { userId_merchantId: { userId: loja.id, merchantId: livres[0] } },
+          create: {
+            userId: loja.id,
+            label: loja.storeName || "Loja Principal",
+            merchantId: livres[0],
+            connected: true,
+            active: true,
+          },
+          update: { connected: true, active: true },
+        });
+        log.push(`[vínculo] ${nome}: merchant ${livres[0]} vinculado automaticamente`);
+        console.log(`[iFood Cron] Loja ${loja.id} vinculada ao merchant ${livres[0]} pelos eventos.`);
+      }
+    } catch (e: any) {
+      log.push(`[vínculo] erro: ${e?.message}`);
+    }
+
+    const distribuido = { lojas: 0, eventos: 0, criados: 0, atualizados: 0, erros: 0 };
+    try {
+      const lojas = await prisma.user.findMany({
+        where: {
+          ifoodConnected: true,
+          ifoodMerchantId: { not: null },
+          ifoodAccessToken: { not: null },
+        },
+        select: { id: true, storeName: true, email: true, ifoodMerchantId: true },
+      });
+
+      log.push(`[distribuído] ${lojas.length} loja(s) com conexão própria`);
+
+      for (const loja of lojas) {
+        const nome = loja.storeName || loja.email || loja.id;
+        try {
+          const tokenLoja = await getTokenDaLojaIfood(loja.id);
+          if (!tokenLoja) {
+            distribuido.erros++;
+            log.push(`[distribuído] ${nome}: sem token utilizável — precisa reconectar`);
             continue;
           }
 
           distribuido.lojas++;
 
-          const evRes = await fetch(`https://merchant-api.ifood.com.br/events/v1.0/events:polling`, {
+          const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
             headers: {
-              Authorization: `Bearer ${tokenApp}`,
-              "x-polling-merchants": m.id,
+              Authorization: `Bearer ${tokenLoja}`,
+              "x-polling-merchants": loja.ifoodMerchantId as string,
             },
           });
 
           if (!evRes.ok) {
             distribuido.erros++;
-            log.push(`[distribuído] ${m.name || m.id}: polling falhou ${evRes.status}`);
+            const corpoErro = await evRes.text().catch(() => "");
+            log.push(`[distribuído] ${nome}: polling falhou ${evRes.status} ${corpoErro.slice(0, 120)}`);
             continue;
           }
 
           const evTexto = await evRes.text();
           const evs = evTexto ? JSON.parse(evTexto) : [];
-          if (evs.length === 0) continue;
+          if (!Array.isArray(evs) || evs.length === 0) continue;
 
           distribuido.eventos += evs.length;
-          log.push(`[distribuído] ${m.name || m.id}: ${evs.length} evento(s)`);
+          log.push(`[distribuído] ${nome}: ${evs.length} evento(s)`);
 
-          // O processamento em si é o mesmo do polling central; aqui só se
-          // registra o recebimento. O ACK NÃO é enviado nesta versão de
-          // propósito: sem ACK o iFood reentrega, então nenhum pedido se perde
-          // caso o processamento abaixo ainda não cubra algum caso. Assim que a
-          // ingestão distribuída for confirmada em produção, o ACK entra.
-          for (const ev of evs) {
-            log.push(`[distribuído]   evento ${ev.fullCode || ev.code} pedido ${ev.orderId} (loja ${dono.id})`);
-          }
+          const r = await processarEventosIfood({
+            events: evs,
+            token: tokenLoja,
+            log,
+            merchantEsperado: loja.ifoodMerchantId,
+          });
+          distribuido.criados += r.created;
+          distribuido.atualizados += r.updated;
+        } catch (e: any) {
+          distribuido.erros++;
+          log.push(`[distribuído] ${nome}: erro ${e?.message}`);
         }
       }
     } catch (e: any) {
       distribuido.erros++;
-      log.push(`[distribuído] erro: ${e.message}`);
+      log.push(`[distribuído] erro geral: ${e.message}`);
       console.error("[iFood Cron distribuído]", e);
     }
 
@@ -658,7 +212,7 @@ export async function GET(req: NextRequest) {
       events: events.length,
       created,
       updated,
-      acknowledged: processedEventIds.length,
+      acknowledged: central.acknowledged,
       distribuido,
       durationMs: Date.now() - startTime,
       log,

@@ -393,8 +393,15 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED || "cabc4064-8d01-4bb0-bb5b-ed93963f9a7a";
-  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED || "2k28s9uil03gobzo6p3gkojim4ffsw9ttu3031veoxm1irbiz53vbzrd50n8wqnywrbvfsurzalevhv4ank4jrrm9wr4xhfcahv";
+  const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED;
+  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED;
+  if (!clientId || !clientSecret) {
+    console.error("[iFood Auth] IFOOD_CLIENT_ID_DISTRIBUTED / IFOOD_CLIENT_SECRET_DISTRIBUTED ausentes.");
+    return NextResponse.json({
+      error: "Integração iFood indisponível no momento.",
+      hint: "As credenciais do aplicativo não estão configuradas no servidor. Avise o suporte.",
+    }, { status: 503 });
+  }
 
   const user = session.user?.email ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;
   const verifier = user?.ifoodAuthVerifier;
@@ -495,95 +502,49 @@ export async function POST(req: NextRequest) {
     } catch {}
   }
 
-  // Tentar consultar a API de merchants do iFood.
+  // ── DESCOBERTA DO MERCHANT ID ─────────────────────────────────────────
+  // NÃO se usa mais GET /merchant/v1.0/merchants. Verificado no portal do
+  // desenvolvedor: em Permissões, cada loja deste app tem apenas os módulos
+  // **Order** e **Events** autorizados — o módulo *Merchant* não existe aqui.
+  // Sem ele aquele endpoint responde `200 []` mesmo com um token impecável, e
+  // foi exatamente esse [] que deixou a Pastel da Paulista sem merchant por
+  // dias, apesar de a autorização estar Ativa dos dois lados.
   //
-  // ⚠️ Usa o token do APP DISTRIBUÍDO (client_credentials), não o token que o
-  // lojista acabou de gerar. Motivo, confirmado em produção: com o token do
-  // lojista o GET /merchants responde [] mesmo com a autorização perfeita
-  // (status 200, verifier presente) — foi o que manteve a Pastel da Paulista
-  // sem merchant. No portal do desenvolvedor as lojas aparecem em Permissões
-  // DO APP, e é o token do app que as enxerga.
-  // Se o token do app falhar, cai para o do lojista (comportamento antigo).
+  // O merchantId vem, então, de onde ele realmente está: dentro dos eventos.
+  // O módulo Events é autorizado, e todo evento carrega o merchantId da loja
+  // que o gerou. Espiar a fila NÃO consome nada — sem acknowledgment o iFood
+  // mantém tudo lá para o cron processar em seguida.
   if (!merchantId && data.accessToken) {
     try {
-      let tokenParaListar = data.accessToken;
-      try {
-        const { getIfoodDistributedToken } = await import("@/lib/ifood-api");
-        tokenParaListar = await getIfoodDistributedToken();
-        console.log("[iFood Auth] Listando merchants com o token do APP distribuído.");
-      } catch (e: any) {
-        console.warn("[iFood Auth] Token do app indisponível, usando o do lojista:", e?.message);
-      }
+      const { descobrirMerchantsPorEventos } = await import("@/lib/ifood-api");
+      const encontrados = await descobrirMerchantsPorEventos(data.accessToken);
+      console.log(`[iFood Auth] merchants vistos nos eventos: ${encontrados.join(", ") || "nenhum"}`);
 
-      const mRes = await fetch(`${IFOOD_BASE}/merchant/v1.0/merchants`, {
-        headers: {
-          Authorization: `Bearer ${tokenParaListar}`,
-          Accept: "application/json"
-        },
-      });
-      if (mRes.ok) {
-        const mData = await mRes.json();
-        console.log("[iFood Auth] merchants response:", JSON.stringify(mData));
+      if (encontrados.length > 0) {
+        // Descarta o que já pertence a OUTRO dono. Adivinhar aqui foi o que
+        // amarrou a Pastel ao merchant da Hakim.
+        const jaVinculados = await prisma.user.findMany({
+          where: {
+            ifoodMerchantId: { in: encontrados },
+            ...(userIdAtual ? { NOT: { id: userIdAtual } } : {}),
+          },
+          select: { ifoodMerchantId: true },
+        });
+        const ocupados = new Set(jaVinculados.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]);
+        const livres = encontrados.filter((id) => !ocupados.has(id));
 
-        // Normaliza os formatos que o iFood devolve numa lista unica.
-        const lista: any[] = Array.isArray(mData)
-          ? mData
-          : (Array.isArray(mData?.merchants) ? mData.merchants
-            : (Array.isArray(mData?.data) ? mData.data
-              : (mData?.id ? [mData] : [])));
-
-        // ── POR QUE NAO SE PEGA MAIS O PRIMEIRO DA LISTA ──────────────────
-        // O app distribuido usa o MESMO clientId para todas as lojas, entao
-        // /merchants devolve TODOS os merchants autorizados naquele app — nao
-        // so o da loja que acabou de colar o codigo. O codigo antigo fazia
-        // `merchantId = mData[0].id`, e por isso a Pastel da Paulista foi
-        // vinculada ao merchant da Hakim Centro (6a5fb96d): a Hakim estava em
-        // primeiro na lista. Resultado: tres contas dividindo o mesmo merchant,
-        // pedido caindo na loja errada e a Pastel sem receber nada.
-        //
-        // Agora se descartam os merchants JA VINCULADOS A OUTRO USUARIO. Se
-        // sobrar exatamente um, e o certo. Se sobrar mais de um, NAO se
-        // adivinha — melhor pedir para escolher do que vincular errado.
-        const candidatos = lista
-          .map((m: any) => ({ id: m.id || m.merchantId, name: m.name || m.corporateName || "" }))
-          .filter((m: any) => !!m.id);
-
-        if (candidatos.length > 0) {
-          const ids = candidatos.map((c: any) => c.id);
-          const jaVinculados = await prisma.user.findMany({
-            where: { ifoodMerchantId: { in: ids }, ...(userIdAtual ? { NOT: { id: userIdAtual } } : {}) },
-            select: { ifoodMerchantId: true },
-          });
-          const ocupados = new Set(jaVinculados.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]);
-
-          const livres = candidatos.filter((c: any) => !ocupados.has(c.id));
-
-          console.log(
-            `[iFood Auth] merchants: ${candidatos.length} retornados, ${candidatos.length - ocupados.size} livres` +
-            ` (ocupados por outra loja: ${[...ocupados].join(", ") || "nenhum"})`
-          );
-
-          if (livres.length === 1) {
-            merchantId = livres[0].id;
-            merchantName = livres[0].name;
-          } else if (livres.length === 0) {
-            console.error(
-              `[iFood Auth] Todos os ${candidatos.length} merchants retornados ja pertencem a outra loja. Nao vinculando para nao cruzar dados.`
-            );
-          } else {
-            console.error(
-              `[iFood Auth] ${livres.length} merchants disponiveis — ambiguo. Nao vinculando automaticamente:`,
-              livres.map((l: any) => `${l.name} (${l.id})`).join(", ")
-            );
-            merchantsAmbiguos = livres;
-          }
+        if (livres.length === 1) {
+          merchantId = livres[0];
+          console.log(`[iFood Auth] merchantId descoberto pelos eventos: ${merchantId}`);
+        } else if (livres.length > 1) {
+          merchantsAmbiguos = livres.map((id) => ({ id, name: "" }));
+          console.error(`[iFood Auth] ${livres.length} merchants nos eventos — ambíguo, não vinculando.`);
+        } else {
+          console.error("[iFood Auth] Todos os merchants dos eventos já pertencem a outra loja.");
         }
-      } else {
-        const mErr = await mRes.text().catch(() => "");
-        console.error(`[iFood Auth] merchants fetch failed (${mRes.status}):`, mErr);
       }
     } catch (e: any) {
-      console.warn("[iFood Auth] Erro ao buscar lista de merchants:", e?.message);
+      console.warn("[iFood Auth] Erro ao descobrir merchant pelos eventos:", e?.message);
     }
   }
 
@@ -593,22 +554,18 @@ export async function POST(req: NextRequest) {
   // o vínculo errado, então a tela mostrava "Ativa" apontando para a loja errada
   // e nenhum pedido chegava. Melhor não vincular e dizer o que houve.
   if (!merchantId && !usouVerifier) {
-    console.error(
-      "[iFood Auth] Token obtido SEM verifier e nenhuma loja retornada. " +
-      "Não vinculando — o lojista precisa gerar um código novo."
+    console.warn(
+      "[iFood Auth] Token obtido SEM verifier e nenhum merchant nos eventos. " +
+      "Guardando a conexão; o vínculo se completa no primeiro pedido."
     );
-    return NextResponse.json({
-      error: "A autorização não trouxe nenhuma loja do iFood.",
-      hint:
-        "Isso costuma acontecer quando o código expira (ele vale poucos minutos) ou quando é " +
-        "colado um código de uma tentativa anterior. Clique em 'Conectar e Autorizar' para gerar " +
-        "um código NOVO, autorize no portal e cole em seguida, sem reaproveitar o código antigo.",
-    }, { status: 400 });
   }
 
-  // Se o usuário já tinha um merchantId cadastrado na conta ou no body, reutiliza
-  if (!merchantId) {
-    merchantId = user?.ifoodMerchantId || body.merchantId;
+  // Só o merchantId enviado explicitamente no corpo é aceito como alternativa.
+  // Herdar `user.ifoodMerchantId` era o que reafirmava o vínculo ERRADO a cada
+  // tentativa: a Pastel reconectava e voltava a apontar para o merchant da
+  // Hakim, com a tela dizendo "Ativa" e nenhum pedido chegando.
+  if (!merchantId && body.merchantId) {
+    merchantId = body.merchantId;
   }
 
   // Se não encontrou merchantId mas tem token, conectar mesmo assim — o merchantId pode ser adicionado depois
@@ -643,8 +600,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       merchantId: null,
-      message: "🎉 Loja iFood conectada com sucesso! Agora adicione o Merchant ID na seção 'iFood Merchant API' para receber pedidos.",
       needsMerchantId: true,
+      message:
+        "🎉 Loja iFood conectada! A identificação da loja é concluída automaticamente " +
+        "assim que chegar o primeiro pedido — não precisa fazer mais nada.",
     });
   }
 
