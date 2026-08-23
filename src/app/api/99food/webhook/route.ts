@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 /**
  * POST /api/99food/webhook
@@ -150,6 +151,7 @@ export async function POST(req: NextRequest) {
           await (prisma.customerOrder as any).create({
             data: {
               franchiseeId: franchisee.id,
+              dailyOrderNumber: await generateDailyOrderNumber(franchisee.id),
               customerName: customer.name || "Cliente 99Food",
               customerPhone: customer.phone?.number || customer.phone || "",
               customerAddress: formattedAddress,

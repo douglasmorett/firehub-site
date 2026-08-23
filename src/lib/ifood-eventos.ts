@@ -14,6 +14,7 @@
  * eventos daquela loja.
  */
 import { prisma } from "./prisma";
+import { generateDailyOrderNumber } from "./order-number";
 
 export type ResultadoEventos = {
   created: number;
@@ -187,9 +188,14 @@ export async function processarEventosIfood(opts: {
                     || cancelMeta.reason
                     || "Pedido cancelado automaticamente pelo iFood (não confirmado a tempo)";
 
+                  // Mesma sequência da loja: sem número, a tela cai no displayId
+                  // do iFood e o pedido cancelado aparece com numeração alheia.
+                  const numeroCancelado = await generateDailyOrderNumber(cancelFranchisee.id);
+
                   await (prisma.customerOrder as any).create({
                     data: {
                       franchiseeId: cancelFranchisee.id,
+                      dailyOrderNumber: numeroCancelado,
                       ifoodOrderId: orderId,
                       ifoodReference: cancelOrderData.displayId ?? undefined,
                       source: "IFOOD",
@@ -416,9 +422,19 @@ export async function processarEventosIfood(opts: {
           else if (isDispatched) initialStatus = "SAIU_ENTREGA";
           else if (isConcluded) initialStatus = "ENTREGUE";
 
+          // Numeração sequencial DA LOJA (1, 2, 3…).
+          //
+          // Sem isto o pedido nascia com dailyOrderNumber null e a tela caía no
+          // ifoodReference — a Pastel da Paulista recebeu os 15 primeiros pedidos
+          // como #3902, #5097, #1772, que é o displayId do iFood, não a fila da
+          // loja. O contador é atômico (UPDATE … RETURNING), então pedido de
+          // iFood e de balcão dividem a mesma sequência sem repetir número.
+          const numeroDoDia = await generateDailyOrderNumber(eventFranchisee.id);
+
           await (prisma.customerOrder as any).create({
             data: {
               franchiseeId: eventFranchisee.id,
+              dailyOrderNumber: numeroDoDia,
               ifoodOrderId: orderId,
               ifoodReference: orderData.displayId ?? undefined,
               ifoodPickupCode: ifoodPickupCode ?? undefined,

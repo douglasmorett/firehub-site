@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/api-key";
 import { prisma } from "@/lib/prisma";
 import { dispatchOutboundWebhook } from "@/lib/webhook-dispatcher";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export const dynamic = "force-dynamic";
 
@@ -138,6 +139,7 @@ export async function POST(req: NextRequest) {
     const newOrder = await prisma.customerOrder.create({
       data: {
         franchiseeId: auth.franchiseeId,
+        dailyOrderNumber: await generateDailyOrderNumber(auth.franchiseeId),
         customerName,
         customerPhone: customerPhone || "—",
         customerAddress: customerAddress || "Retirada na loja",

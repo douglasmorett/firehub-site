@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 /**
  * POST /api/ifood/import-order
@@ -173,6 +174,7 @@ export async function POST(req: NextRequest) {
     const newOrder = await (prisma.customerOrder as any).create({
       data: {
         franchiseeId,
+        dailyOrderNumber: await generateDailyOrderNumber(franchiseeId),
         customerName: customer.name || "Cliente iFood",
         customerPhone: customer.phone?.number || customer.phone || "",
         customerAddress: formattedAddress,

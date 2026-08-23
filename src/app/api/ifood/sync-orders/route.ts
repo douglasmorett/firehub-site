@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken, getIfoodItemUnitPrice } from "@/lib/ifood-api";
 import { parseIfoodPaymentInfo } from "@/app/api/ifood/webhook/route";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 /**
  * POST /api/ifood/sync-orders
@@ -261,6 +262,7 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
   await (prisma.customerOrder as any).create({
     data: {
       franchiseeId: franchisee.id,
+      dailyOrderNumber: await generateDailyOrderNumber(franchisee.id),
       ifoodOrderId: orderId,
       ifoodReference: orderData.displayId ?? undefined,
       ifoodPickupCode: ifoodPickupCode ?? undefined,

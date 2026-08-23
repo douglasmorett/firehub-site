@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { generateDailyOrderNumber } from "./order-number";
 
 const prisma = new PrismaClient();
 
@@ -65,6 +66,7 @@ async function main() {
       const newOrder = await prisma.customerOrder.create({
         data: {
           franchiseeId: u.id,
+          dailyOrderNumber: await generateDailyOrderNumber(u.id),
           openDeliveryOrderId: targetOpenId,
           openDeliveryReference: src.openDeliveryReference,
           openDeliveryChannel: "JOTAJA",

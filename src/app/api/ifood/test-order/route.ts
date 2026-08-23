@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { generateDailyOrderNumber } from "@/lib/order-number";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
 
@@ -94,6 +95,8 @@ export async function GET(req: NextRequest) {
         totalAmount,
         notes:           `[IFOOD] ${order.merchant?.name ?? ""}`,
         franchiseeId:    adminUser.id,
+        dailyOrderNumber: await generateDailyOrderNumber(adminUser.id),
+
         items: {
           create: ifoodItems.map((i: any) => ({
             quantity: i.quantity ?? 1,
