@@ -187,12 +187,22 @@
 }
 
 /* CATEGORY TABS */
+/* As categorias QUEBRAM em várias linhas em vez de rolar.
+ *
+ * Antes era `nowrap` + `overflow-x: auto` + `justify-content: center`, e essa
+ * combinação corta: num container que centraliza, o que transborda sai para os
+ * DOIS lados, e a parte que sobra à esquerda fica inalcançável — nem rolando se
+ * chega nela. Com o cardápio da Pastel da Paulista, que tem 17 categorias, a
+ * primeira aparecia cortada pela metade na borda da tela.
+ *
+ * Quebrar em linha resolve sem depender de rolagem: toda categoria fica visível
+ * e clicável, quantas forem. */
 .store-cats {
-  overflow-x: auto;
   display: flex;
   justify-content: center;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  row-gap: 0.4rem;
   gap: 0.5rem;
   background: #fff;
   border-bottom: 1px solid #E2E8F0;
@@ -201,11 +211,23 @@
   z-index: 40;
   padding: 0.6rem 1.25rem;
   scrollbar-width: none;
+  /* Teto para a barra não engolir a tela num cardápio com muitas categorias:
+   * passando disso ela rola verticalmente, que não esconde nada. */
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 @media (max-width: 768px) {
+  /* No celular a barra volta a ser uma faixa que rola de lado — empilhar 17
+   * categorias comeria a tela inteira antes do primeiro produto. Aqui o
+   * `flex-start` é o que impede o corte: alinhado à esquerda, o transbordo sai
+   * só para a direita e a rolagem alcança tudo. */
   .store-cats {
     justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-height: none;
   }
 }
 
