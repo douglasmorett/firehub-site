@@ -580,6 +580,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     remoteJid,
     text: textMessage,
     verifiedBizName: data.verifiedBizName || data.message?.verifiedBizName,
+    isAudio: Boolean(audioData?.base64),
     now,
   });
 
@@ -654,6 +655,20 @@ async function handleIncomingMessage(body: any, instance: string) {
       replyText = replyText.replace(/\[\[CHAMAR_ATENDENTE.*\]\]/g, "").trim();
     }
 
+    // O que o cliente falou no áudio, para o histórico.
+    //
+    // O áudio vai para o modelo uma vez só, na mensagem em que chega. O que
+    // sobrava no histórico era o texto-marcador ("o cliente enviou um áudio"),
+    // igual em todas as mensagens de voz — então quem pedia "dois x-tudo" por
+    // áudio e depois mandava "e uma coca" via o pedido evaporar. Guardar a
+    // transcrição é o que dá memória à conversa falada.
+    let transcription = "";
+    const transcriptionMatch = replyText.match(/\[\[TRANSCRICAO:\s*([\s\S]*?)\]\]/i);
+    if (transcriptionMatch) {
+      transcription = transcriptionMatch[1].trim();
+      replyText = replyText.replace(/\[\[TRANSCRICAO:[\s\S]*?\]\]/gi, "").trim();
+    }
+
     const recipientTarget = remoteJid || data.from || "";
     
     // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
@@ -677,7 +692,9 @@ async function handleIncomingMessage(body: any, instance: string) {
     }
     
     // Update cache after response
-    history.push({ sender: 'user', text: textMessage, timestamp: now });
+    // Para áudio, guarda o que foi dito — não o texto-marcador, que é igual em
+    // toda mensagem de voz e não carrega nada do pedido.
+    history.push({ sender: 'user', text: transcription || textMessage, timestamp: now });
     
     // NÃO salvar mensagens de erro de sistema no histórico da IA,
     // senão na próxima iteração a IA começa a alucinar que está quebrada de propósito.

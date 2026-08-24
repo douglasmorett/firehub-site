@@ -713,6 +713,13 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
     - Se a mensagem do cliente for um áudio, ela será transcrita ou enviada como anexo para você processar.
     - ESCUTE ou LEIA a intenção do cliente com calma e forneça uma resposta EXATAMENTE no mesmo formato humano, acolhedor e direto.
     - NÃO é necessário dizer "Ouvi o seu áudio". Apenas responda naturalmente como se estivessem em uma conversa falada.
+    - OBRIGATÓRIO ao receber áudio: comece a resposta com a tag de transcrição, em uma linha só:
+      [[TRANSCRICAO: o que o cliente falou, literal]]
+      Ela é removida antes de chegar ao cliente e serve para guardar no histórico o que
+      foi dito. Sem ela, na mensagem seguinte você não faz ideia do que ele pediu por voz:
+      o áudio só é enviado uma vez, e o histórico guardaria apenas "o cliente enviou um
+      áudio". Cliente que fala "quero dois x-tudo" e depois "e uma coca" precisa que os
+      dois x-tudo continuem existindo.
     - ANOTAÇÃO TEMPORÁRIA DO RASCUNHO (RASCUNHO EM ANDAMENTO):
       Em TODA mensagem onde você estiver anotando itens ou dados sem ter a confirmação final:
       Inclua a tag JSON com "finalized": false:

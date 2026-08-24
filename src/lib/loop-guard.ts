@@ -70,6 +70,15 @@ export interface LoopGuardInput {
   text: string;
   /** Nome verificado de conta empresarial, quando o WhatsApp informa. */
   verifiedBizName?: string | null;
+  /**
+   * Mensagem de voz. Precisa ser sinalizada porque, na hora em que decidimos,
+   * o áudio ainda não foi ouvido: `text` é sempre o MESMO texto-marcador
+   * ("O cliente enviou a mensagem de áudio em anexo..."). Sem esta bandeira o
+   * segundo áudio já acenderia "mensagem repetida" e o cliente que prefere
+   * gravar seria cortado por parecer um robô — sendo que áudio é justamente o
+   * que robô nenhum manda.
+   */
+  isAudio?: boolean;
   now: number;
 }
 
@@ -159,7 +168,7 @@ export async function evaluateLoopGuard(input: LoopGuardInput): Promise<LoopDeci
 }
 
 async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
-  const { userId, remoteJid, text, verifiedBizName, now } = input;
+  const { userId, remoteJid, text, verifiedBizName, isAudio, now } = input;
 
   // ── Sinal A: conta empresarial verificada ───────────────────────────────
   // Cliente de verdade não é conta empresarial verificada; robô institucional
@@ -197,12 +206,17 @@ async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
     intervals = [...intervals, now - lastAt].slice(-INTERVAL_WINDOW);
   }
 
+  // Áudio é evidência forte de gente: o texto aqui é sempre o mesmo marcador,
+  // então nem o hash nem a busca por palavra de pedido dizem qualquer coisa
+  // sobre esta mensagem. Robô institucional não grava mensagem de voz.
   const hash = hashText(text);
-  const repeated = hashes.includes(hash);
-  hashes = [...hashes, hash].slice(-HASH_WINDOW);
+  const repeated = !isAudio && hashes.includes(hash);
+  if (!isAudio) {
+    hashes = [...hashes, hash].slice(-HASH_WINDOW);
+  }
 
   turnCount += 1;
-  turnsWithoutProgress = hasProgressSignal(text) ? 0 : turnsWithoutProgress + 1;
+  turnsWithoutProgress = isAudio || hasProgressSignal(text) ? 0 : turnsWithoutProgress + 1;
 
   // ── Sinal B: cadência regular demais ────────────────────────────────────
   const rhythmIsMechanical =
