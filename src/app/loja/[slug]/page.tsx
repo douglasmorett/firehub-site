@@ -12,12 +12,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     select: { storeName: true, name: true, city: true }
   });
   
-  if (!franchisee) return { title: "Loja n├úo encontrada" };
+  if (!franchisee) return { title: "Loja não encontrada" };
   
   const name = franchisee.storeName || franchisee.name;
   return {
-    title: `${name} | Card├ípio Online`,
-    description: `Fa├ºa seu pedido online em ${name}. Pe├ºa agora pelo card├ípio digital!`,
+    title: `${name} | Cardápio Online`,
+    description: `Faça seu pedido online em ${name}. Peça agora pelo cardápio digital!`,
   };
 }
 

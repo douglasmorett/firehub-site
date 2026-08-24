@@ -6,12 +6,12 @@ import Link from "next/link";
 type Item = { name: string; qty: number; price: number; imageUrl: string | null };
 
 const STATUS_FLOW = [
-  { key: "NOVO",         label: "Pedido Recebido",     icon: Clock,       color: "#3B82F6", emoji: "­ƒöö", desc: "Aguardando confirma├º├úo da loja" },
-  { key: "ACEITO",       label: "Pedido Confirmado",   icon: CheckCircle, color: "#10B981", emoji: "Ô£à", desc: "A loja aceitou seu pedido!" },
-  { key: "PREPARANDO",   label: "Em Preparo",          icon: ChefHat,     color: "#F59E0B", emoji: "­ƒæ¿ÔÇì­ƒì│", desc: "Sua comida est├í sendo preparada" },
-  { key: "SAIU_ENTREGA", label: "Saiu para Entrega",   icon: Bike,        color: "#8B5CF6", emoji: "­ƒøÁ", desc: "O entregador est├í a caminho!" },
-  { key: "ENTREGUE",     label: "Pedido Entregue!",    icon: Package,     color: "#16A34A", emoji: "­ƒÄë", desc: "Bom apetite! Aproveite sua refei├º├úo ­ƒÿï" },
-  { key: "CANCELADO",    label: "Pedido Cancelado",    icon: X,           color: "#EF4444", emoji: "ÔØî", desc: "Seu pedido foi cancelado" },
+  { key: "NOVO",         label: "Pedido Recebido",     icon: Clock,       color: "#3B82F6", emoji: "🔔", desc: "Aguardando confirmação da loja" },
+  { key: "ACEITO",       label: "Pedido Confirmado",   icon: CheckCircle, color: "#10B981", emoji: "✅", desc: "A loja aceitou seu pedido!" },
+  { key: "PREPARANDO",   label: "Em Preparo",          icon: ChefHat,     color: "#F59E0B", emoji: "👨‍🍳", desc: "Sua comida está sendo preparada" },
+  { key: "SAIU_ENTREGA", label: "Saiu para Entrega",   icon: Bike,        color: "#8B5CF6", emoji: "🛵", desc: "O entregador está a caminho!" },
+  { key: "ENTREGUE",     label: "Pedido Entregue!",    icon: Package,     color: "#16A34A", emoji: "🎉", desc: "Bom apetite! Aproveite sua refeição 😋" },
+  { key: "CANCELADO",    label: "Pedido Cancelado",    icon: X,           color: "#EF4444", emoji: "❌", desc: "Seu pedido foi cancelado" },
 ];
 
 function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
@@ -102,7 +102,7 @@ export default function OrderTrackingClient({
           </p>
           {estimatedTime() && !isCanceled && !isDelivered && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: "20px", padding: "6px 16px", fontSize: "0.82rem", fontWeight: 700, color: "#C2410C" }}>
-              <Clock size={14} /> Previs├úo: {estimatedTime()}
+              <Clock size={14} /> Previsão: {estimatedTime()}
             </div>
           )}
           {!isCanceled && !isDelivered && (
@@ -115,7 +115,7 @@ export default function OrderTrackingClient({
         {/* Timeline de progresso */}
         {!isCanceled && (
           <div style={{ background: "#fff", borderRadius: "16px", padding: "1.25rem 1.5rem", marginBottom: "1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
-            <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: "0 0 1rem" }}>­ƒù║´©Å Acompanhe seu pedido</h3>
+            <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: "0 0 1rem" }}>🗺️ Acompanhe seu pedido</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
               {STATUS_FLOW.filter(s => s.key !== "CANCELADO").map((step, idx) => {
                 const stepIdx = STATUS_FLOW.findIndex(s => s.key === step.key);
@@ -128,7 +128,7 @@ export default function OrderTrackingClient({
                     {idx < 4 && (
                       <div style={{ position: "absolute", left: "17px", top: "34px", width: "2px", height: "calc(100% - 18px)", background: done && stepIdx < currentIdx ? step.color : "#E2E8F0" }} />
                     )}
-                    {/* C├¡rculo */}
+                    {/* Círculo */}
                     <div style={{
                       width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
                       background: done ? (active ? step.color : step.color + "22") : "#F8FAFC",
@@ -156,7 +156,7 @@ export default function OrderTrackingClient({
         {/* Resumo do pedido */}
         <div style={{ background: "#fff", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.25rem", border: "1px solid #F1F5F9" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-            <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: 0 }}>­ƒº¥ Resumo do Pedido</h3>
+            <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: 0 }}>🧾 Resumo do Pedido</h3>
             <button onClick={() => setShowItems(v => !v)} style={{ fontSize: "0.75rem", color: "#3B82F6", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>
               {showItems ? "Ocultar" : "Ver itens"}
             </button>
@@ -167,7 +167,7 @@ export default function OrderTrackingClient({
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "#64748B", marginBottom: "4px" }}>
             <span>Tipo:</span>
-            <span style={{ fontWeight: 600 }}>{deliveryType === "DELIVERY" ? "­ƒøÁ Delivery" : "­ƒÅ¬ Retirada"}</span>
+            <span style={{ fontWeight: 600 }}>{deliveryType === "DELIVERY" ? "🛵 Delivery" : "🏪 Retirada"}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "#64748B", marginBottom: "8px" }}>
             <span>Pagamento:</span>
@@ -184,7 +184,7 @@ export default function OrderTrackingClient({
               ))}
               {deliveryFee > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", padding: "4px 0", color: "#64748B" }}>
-                  <span>­ƒøÁ Taxa de entrega</span>
+                  <span>🛵 Taxa de entrega</span>
                   <span>{fmtR(deliveryFee)}</span>
                 </div>
               )}
@@ -197,30 +197,30 @@ export default function OrderTrackingClient({
           </div>
         </div>
 
-        {/* Avalia├º├úo (s├│ aparece quando entregue) */}
+        {/* Avaliação (só aparece quando entregue) */}
         {isDelivered && !ratingDone && (
           <div style={{ background: "linear-gradient(135deg, #FFF7ED, #FEF3C7)", borderRadius: "16px", padding: "1.5rem", marginBottom: "1.25rem", border: "1px solid #FCD34D" }}>
-            <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: "0 0 4px", color: "#92400E" }}>Ô¡É Como foi sua experi├¬ncia?</h3>
-            <p style={{ fontSize: "0.8rem", color: "#B45309", margin: "0 0 1rem" }}>Sua avalia├º├úo ajuda o restaurante a melhorar</p>
+            <h3 style={{ fontWeight: 800, fontSize: "1rem", margin: "0 0 4px", color: "#92400E" }}>⭐ Como foi sua experiência?</h3>
+            <p style={{ fontSize: "0.8rem", color: "#B45309", margin: "0 0 1rem" }}>Sua avaliação ajuda o restaurante a melhorar</p>
             <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginBottom: "12px" }}>
               {[1, 2, 3, 4, 5].map(n => (
                 <button key={n} onClick={() => setRatingValue(n)} style={{
                   fontSize: "2rem", background: "none", border: "none", cursor: "pointer",
                   transform: n <= ratingValue ? "scale(1.2)" : "scale(0.9)",
                   opacity: n <= ratingValue ? 1 : 0.35, transition: "all 0.15s",
-                }}>Ô¡É</button>
+                }}>⭐</button>
               ))}
             </div>
             {ratingValue > 0 && (
               <>
                 <textarea
                   value={ratingComment} onChange={e => setRatingComment(e.target.value)}
-                  placeholder="Deixe um coment├írio (opcional)..."
+                  placeholder="Deixe um comentário (opcional)..."
                   rows={2}
                   style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #FCD34D", fontSize: "0.85rem", boxSizing: "border-box", resize: "none", background: "#fff", fontFamily: "inherit", marginBottom: "10px" }}
                 />
                 <button onClick={submitRating} style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #F59E0B, #EF4444)", color: "#fff", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer", fontFamily: "inherit" }}>
-                  Enviar Avalia├º├úo
+                  Enviar Avaliação
                 </button>
               </>
             )}
@@ -228,7 +228,7 @@ export default function OrderTrackingClient({
         )}
         {isDelivered && ratingDone && (
           <div style={{ background: "#F0FDF4", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.25rem", border: "1px solid #BBF7D0", textAlign: "center" }}>
-            <p style={{ fontWeight: 800, fontSize: "1rem", color: "#16A34A" }}>­ƒÖÅ Obrigado pela avalia├º├úo!</p>
+            <p style={{ fontWeight: 800, fontSize: "1rem", color: "#16A34A" }}>🙏 Obrigado pela avaliação!</p>
           </div>
         )}
 
@@ -241,7 +241,7 @@ export default function OrderTrackingClient({
         )}
 
         <Link href={`/loja/${slug}`} style={{ display: "block", textAlign: "center", fontSize: "0.82rem", color: "#3B82F6", fontWeight: 600, textDecoration: "none" }}>
-          ÔåÉ Voltar ao card├ípio
+          ← Voltar ao cardápio
         </Link>
       </div>
 
