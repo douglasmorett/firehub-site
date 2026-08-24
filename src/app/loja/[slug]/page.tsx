@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { orderByCardapio } from "@/lib/menu-order";
 import { notFound } from "next/navigation";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 
@@ -75,7 +76,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       // outra query, abaixo, sem este filtro — sem virar um item solto de R$ 0,00
       // no meio do cardápio.
       where: { active: true, activeDelivery: true, franchiseeId: franchisee.id },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      orderBy: await orderByCardapio(),
       include: {
         comboGroups: {
           orderBy: { sortOrder: 'asc' },

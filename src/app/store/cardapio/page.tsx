@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth/next";
+import { orderByCardapio } from "@/lib/menu-order";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -43,7 +44,7 @@ export default async function StoreCardapioPage() {
     [products, availableItems, categories] = await Promise.all([
       prisma.menuProduct.findMany({
         where: franchiseeFilter,
-        orderBy: [{ category: "asc" }, { name: "asc" }],
+        orderBy: await orderByCardapio(),
         include: {
           comboGroups: {
             orderBy: { sortOrder: "asc" },

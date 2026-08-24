@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import { ehProdutoDeIntegracao } from "@/lib/cardapio-interno";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
 
@@ -51,21 +52,18 @@ export default function MenuProductManager({
   /**
    * Categoria que só existe por causa de integração — não é cardápio.
    *
-   * A lista precisa bater com a do cardápio do cliente
-   * (CustomerStorePage.isIntegrationCategory). Aqui ela também trazia
-   * COMPLEMENTO, OPCIONAL, ADICIONAL, INSUMO e OCULTO, escondendo por PALAVRA.
-   * A Brasa Burguer tem uma categoria de verdade chamada "Complementos", que o
-   * cliente vê e pede: a batata aparecia para quem compra e sumia para quem
-   * precisa editar. As duas telas discordavam sobre o que é cardápio.
+   * Passa a usar a regra única de src/lib/cardapio-interno.ts, em vez da lista
+   * local que havia aqui. A lista daqui escondia também COMPLEMENTO, OPCIONAL,
+   * ADICIONAL, INSUMO e OCULTO, e escondia por PALAVRA: a Brasa Burguer tem uma
+   * categoria de verdade chamada "Complementos", que o cliente vê e pede, e ela
+   * sumia inteira do painel — a batata aparecia para quem compra e não aparecia
+   * para quem precisa editar.
    *
-   * A regra que vale é simples: se o cliente consegue pedir, a loja tem que
-   * conseguir editar.
+   * A regra que vale é simples: se o cliente consegue pedir, a loja consegue
+   * editar. E manter a lista num arquivo só evita que a próxima integração
+   * entre em três telas e esqueça a quarta — que foi como esta divergiu.
    */
-  const isIntegrationCategory = (catName: string) => {
-    if (!catName) return false;
-    const catUpper = catName.toUpperCase().trim();
-    return ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"].some(h => catUpper.includes(h));
-  };
+  const isIntegrationCategory = (catName: string) => ehProdutoDeIntegracao(catName);
 
   // Categorias dinâmicas (inicia com as do servidor combinadas com quaisquer categorias presentes nos produtos)
   const [dynCategories, setDynCategories] = useState(() => {
@@ -142,6 +140,12 @@ export default function MenuProductManager({
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<any[]>([]);
   const [savingReorder, setSavingReorder] = useState(false);
+  /** Categoria aberta na tela de reordenar (só uma por vez, para não virar sopa). */
+  const [expandedReorderCat, setExpandedReorderCat] = useState<string | null>(null);
+  /** Produtos por categoria, em edição. Chave = nome da categoria em minúsculas. */
+  const [reorderProducts, setReorderProducts] = useState<Record<string, any[]>>({});
+  /** Só as categorias mexidas vão para o banco — salvar o cardápio inteiro seria centenas de updates à toa. */
+  const [categoriasMexidas, setCategoriasMexidas] = useState<Set<string>>(new Set());
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
   const [editingCat, setEditingCat] = useState<{ id: string; name: string } | null>(null);
   const [savingRename, setSavingRename] = useState(false);
@@ -312,7 +316,45 @@ export default function MenuProductManager({
     });
 
     setReorderList(fullList);
+
+    // Fotografa os produtos de cada categoria na ordem em que estão hoje. A
+    // edição acontece toda nessa cópia; o banco só é tocado no Salvar, e só nas
+    // categorias que a pessoa realmente abriu e mexeu.
+    const porCategoria: Record<string, any[]> = {};
+    (products || []).forEach(p => {
+      if (isHiddenIntegrationItem(p)) return;
+      const chave = (p.category || "").toLowerCase().trim();
+      if (!porCategoria[chave]) porCategoria[chave] = [];
+      porCategoria[chave].push(p);
+    });
+    setReorderProducts(porCategoria);
+    setCategoriasMexidas(new Set());
+    setExpandedReorderCat(null);
     setShowReorderModal(true);
+  };
+
+  /** Move um produto dentro da própria categoria. */
+  const moveProductInCat = (catName: string, fromIdx: number, toIdx: number) => {
+    const chave = catName.toLowerCase().trim();
+    const lista = reorderProducts[chave] || [];
+    if (toIdx < 0 || toIdx >= lista.length) return;
+
+    const atualizada = [...lista];
+    const item = atualizada.splice(fromIdx, 1)[0];
+    atualizada.splice(toIdx, 0, item);
+
+    setReorderProducts(prev => ({ ...prev, [chave]: atualizada }));
+    setCategoriasMexidas(prev => new Set(prev).add(chave));
+  };
+
+  /** Volta a categoria para a ordem alfabética — o padrão de quem nunca mexeu. */
+  const resetProductOrder = (catName: string) => {
+    const chave = catName.toLowerCase().trim();
+    const lista = [...(reorderProducts[chave] || [])].sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", "pt-BR")
+    );
+    setReorderProducts(prev => ({ ...prev, [chave]: lista }));
+    setCategoriasMexidas(prev => new Set(prev).add(chave));
   };
 
   const moveReorderItem = (fromIdx: number, toIdx: number) => {
@@ -357,8 +399,33 @@ export default function MenuProductManager({
         } else {
           setDynCategories(listToSave);
         }
+
+        // Ordem dos produtos, só das categorias que foram mexidas. Uma categoria
+        // que falhar não impede as outras: o aviso diz quais não entraram, em
+        // vez de dizer "erro" e deixar a pessoa sem saber o que salvou.
+        const falhas: string[] = [];
+        for (const chave of Array.from(categoriasMexidas)) {
+          const lista = reorderProducts[chave] || [];
+          const ids = lista.map(p => p.id).filter(Boolean);
+          if (ids.length === 0) continue;
+          try {
+            const r = await fetch("/api/admin/menu-products", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ orderedIds: ids }),
+            });
+            if (!r.ok) falhas.push(chave);
+          } catch {
+            falhas.push(chave);
+          }
+        }
+
         setShowReorderModal(false);
-        showToast("✅ Ordem do cardápio salva com sucesso!");
+        if (falhas.length > 0) {
+          showToast(`Ordem salva, mas ${falhas.length} categoria(s) falharam`, "#F59E0B");
+        } else {
+          showToast("✅ Ordem do cardápio salva com sucesso!");
+        }
         router.refresh();
       } else {
         showToast("Erro ao salvar ordem", "#EF4444");
@@ -1063,9 +1130,9 @@ export default function MenuProductManager({
             onClick={openReorderModal}
             className="btn btn-outline"
             style={{ fontSize: "0.85rem", background: "#F5F3FF", borderColor: "#7C3AED", color: "#6D28D9", fontWeight: 800, boxShadow: "0 2px 6px rgba(124,58,237,0.12)" }}
-            title="Reordenar a ordem de exibição das categorias no cardápio"
+            title="Ordenar as categorias e os produtos dentro de cada uma"
           >
-            <ArrowUpDown size={15} style={{ marginRight: "4px" }} /> Reordenar Categorias
+            <ArrowUpDown size={15} style={{ marginRight: "4px" }} /> Reordenar Cardápio
           </button>
           <button
             onClick={() => { resetForm(); setIsCombo(false); setCategory(dynCategories[0]?.name || ""); setShowForm(true); }}
@@ -2164,7 +2231,7 @@ export default function MenuProductManager({
                   ↕️ Reordenar Cardápio (Ordem do Site)
                 </h3>
                 <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#64748B" }}>
-                  Arraste as categorias para definir a ordem em que aparecem no cardápio do cliente.
+                  Ordene as categorias e, clicando em uma delas, os produtos dentro dela.
                 </p>
               </div>
             </div>
@@ -2266,6 +2333,124 @@ export default function MenuProductManager({
                       </div>
                     </div>
 
+                    {/* Produtos da categoria — abre ao clicar na barra abaixo */}
+                    {(() => {
+                      const chave = cat.name.toLowerCase().trim();
+                      const listaProds = reorderProducts[chave] || [];
+                      const aberta = expandedReorderCat === chave;
+
+                      if (listaProds.length === 0) return null;
+
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedReorderCat(aberta ? null : chave)}
+                            style={{
+                              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                              gap: "6px", padding: "7px", border: "none", borderTop: "1px solid #F1F5F9",
+                              background: aberta ? "#F5F3FF" : "#FFF", cursor: "pointer",
+                              fontSize: "0.76rem", fontWeight: 800,
+                              color: aberta ? "#6D28D9" : "#64748B",
+                            }}
+                          >
+                            {aberta ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+                            {aberta ? "Fechar" : `Ordenar os ${listaProds.length} produtos desta categoria`}
+                            {categoriasMexidas.has(chave) && (
+                              <span style={{ marginLeft: "4px", fontSize: "0.68rem", fontWeight: 900, color: "#059669", background: "#D1FAE5", padding: "2px 6px", borderRadius: "6px" }}>
+                                alterada
+                              </span>
+                            )}
+                          </button>
+
+                          {aberta && (
+                            <div style={{ padding: "8px 10px 10px", background: "#FBFAFF", borderTop: "1px solid #EDE9FE" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px", gap: "8px", flexWrap: "wrap" }}>
+                                <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>
+                                  A ordem daqui é a que o cliente vê dentro de <strong>{cat.name}</strong>.
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => resetProductOrder(cat.name)}
+                                  style={{ padding: "3px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "0.68rem", fontWeight: 700, color: "#64748B", cursor: "pointer" }}
+                                  title="Voltar à ordem alfabética"
+                                >
+                                  A→Z
+                                </button>
+                              </div>
+
+                              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                                {listaProds.map((prod, pIdx) => (
+                                  <div
+                                    key={prod.id}
+                                    style={{
+                                      display: "flex", alignItems: "center", gap: "8px",
+                                      padding: "6px 9px", background: "#FFF",
+                                      border: "1px solid #E9E5F8", borderRadius: "9px",
+                                    }}
+                                  >
+                                    <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#6D28D9", minWidth: "26px" }}>
+                                      {pIdx + 1}º
+                                    </span>
+                                    {prod.imageUrl && (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={prod.imageUrl} alt="" style={{ width: "26px", height: "26px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
+                                    )}
+                                    <span style={{ flex: 1, minWidth: 0, fontSize: "0.82rem", fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      {prod.name}
+                                      {prod.isCombo && (
+                                        <span style={{ marginLeft: "6px", fontSize: "0.65rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "1px 5px", borderRadius: "5px" }}>
+                                          COMBO
+                                        </span>
+                                      )}
+                                    </span>
+
+                                    <div style={{ display: "flex", gap: "3px", flexShrink: 0 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveProductInCat(cat.name, pIdx, 0)}
+                                        disabled={pIdx === 0}
+                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === 0 ? "not-allowed" : "pointer", opacity: pIdx === 0 ? 0.3 : 1 }}
+                                        title="Mover para o topo da categoria"
+                                      >
+                                        <ChevronsUp size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveProductInCat(cat.name, pIdx, pIdx - 1)}
+                                        disabled={pIdx === 0}
+                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === 0 ? "not-allowed" : "pointer", opacity: pIdx === 0 ? 0.3 : 1 }}
+                                        title="Subir 1 posição"
+                                      >
+                                        <ArrowUp size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveProductInCat(cat.name, pIdx, pIdx + 1)}
+                                        disabled={pIdx === listaProds.length - 1}
+                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === listaProds.length - 1 ? "not-allowed" : "pointer", opacity: pIdx === listaProds.length - 1 ? 0.3 : 1 }}
+                                        title="Descer 1 posição"
+                                      >
+                                        <ArrowDown size={12} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => moveProductInCat(cat.name, pIdx, listaProds.length - 1)}
+                                        disabled={pIdx === listaProds.length - 1}
+                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === listaProds.length - 1 ? "not-allowed" : "pointer", opacity: pIdx === listaProds.length - 1 ? 0.3 : 1 }}
+                                        title="Mover para o fim da categoria"
+                                      >
+                                        <ChevronsDown size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 );
               })}

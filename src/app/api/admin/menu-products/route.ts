@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { orderByCardapio, podeOrdenarProdutos } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -176,7 +177,7 @@ export async function GET(req: NextRequest) {
 
   const products = await prisma.menuProduct.findMany({
     where,
-    orderBy: [{ category: "asc" }, { name: "asc" }],
+    orderBy: await orderByCardapio(),
     select: {
       id: true, name: true, price: true, category: true,
       imageUrl: true, active: true, isCombo: true, isBeverage: true,
@@ -348,5 +349,76 @@ export async function DELETE(req: NextRequest) {
     // Soft delete se falhar por restrição em histórico de pedidos anteriores
     await prisma.menuProduct.update({ where: { id: productId }, data: { active: false } });
     return NextResponse.json({ success: true, softDeleted: true });
+  }
+}
+
+/**
+ * Grava a ordem dos produtos dentro de uma categoria.
+ *
+ * Até aqui o cardápio saía sempre alfabético (`category asc, name asc`), então
+ * a loja não tinha como pôr o carro-chefe em cima — só renomeando produto, que
+ * é o tipo de gambiarra que aparece como "Brasa Burguer" virando "1 - Brasa
+ * Burguer" no cardápio do cliente.
+ *
+ * Recebe a lista de ids na ordem desejada e grava o índice em sortOrder. Só
+ * mexe no que a loja pode tocar: os ids são conferidos um a um contra canTouch
+ * antes de qualquer escrita, e um id de outra loja no meio da lista derruba a
+ * requisição inteira em vez de gravar metade.
+ */
+export async function PATCH(req: NextRequest) {
+  const { scope, error } = await resolveScope(req);
+  if (!scope) return error;
+
+  // Sem a coluna no banco não há onde gravar. Melhor dizer isso com todas as
+  // letras do que estourar um erro de Prisma que ninguém sabe interpretar.
+  if (!(await podeOrdenarProdutos())) {
+    return NextResponse.json(
+      { error: "A ordenação de produtos ainda não foi aplicada no banco. Rode `prisma db push` (ver scripts/aplicar-schema.md)." },
+      { status: 503 }
+    );
+  }
+
+  const data = await req.json();
+  const orderedIds: string[] = Array.isArray(data?.orderedIds) ? data.orderedIds : [];
+
+  if (orderedIds.length === 0) {
+    return NextResponse.json({ error: "Nenhum produto informado" }, { status: 400 });
+  }
+
+  const rows = await prisma.menuProduct.findMany({
+    where: { id: { in: orderedIds } },
+    select: { id: true, franchiseeId: true },
+  });
+
+  const encontrados = new Map(rows.map(r => [r.id, r.franchiseeId]));
+  const desconhecidos = orderedIds.filter(id => !encontrados.has(id));
+  if (desconhecidos.length > 0) {
+    return NextResponse.json(
+      { error: `Produto não encontrado: ${desconhecidos.slice(0, 3).join(", ")}` },
+      { status: 404 }
+    );
+  }
+
+  const semPermissao = rows.filter(r => !canTouch(scope, r.franchiseeId));
+  if (semPermissao.length > 0) {
+    return NextResponse.json(
+      { error: "Sem permissão para reordenar produtos de outra loja" },
+      { status: 403 }
+    );
+  }
+
+  try {
+    // Transação: ou a ordem inteira entra, ou nada entra. Ordem pela metade é
+    // pior do que ordem nenhuma — o cardápio ficaria embaralhado sem ninguém
+    // ter pedido isso.
+    await prisma.$transaction(
+      orderedIds.map((id, idx) =>
+        prisma.menuProduct.update({ where: { id }, data: { sortOrder: idx } })
+      )
+    );
+    return NextResponse.json({ success: true, total: orderedIds.length });
+  } catch (err: any) {
+    console.error("[menu-products] Erro ao salvar ordem dos produtos:", err);
+    return NextResponse.json({ error: "Erro ao salvar a ordem" }, { status: 500 });
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { orderByCardapio } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
         // por ali. Ver src/lib/cardapio-interno.ts.
         ...SEM_PRODUTO_DE_INTEGRACAO,
       },
-      orderBy: [{ category: "asc" }, { name: "asc" }],
+      orderBy: await orderByCardapio(),
       select: {
         id: true, name: true, description: true, price: true, imageUrl: true,
         category: true, isCombo: true, isBeverage: true, tags: true, availableDays: true,
