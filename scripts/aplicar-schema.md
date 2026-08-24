@@ -8,15 +8,22 @@ produção — ver `5a953ac`. Enquanto os pré-requisitos de lá não forem aten
 
 ## Quando rodar
 
-Depois de qualquer mudança em `prisma/schema.prisma`. Hoje há uma pendente: a
-tabela `ChatbotConversationState`, do anti-loop do chatbot. Sem ela o recurso
-funciona com estado em memória, que se perde a cada restart do container.
+Depois de qualquer mudança em `prisma/schema.prisma`. Hoje há duas pendentes, e
+as duas foram escritas para funcionar SEM o push — degradadas, mas sem quebrar
+nada. Um único `db push` resolve as duas.
 
-Para conferir onde o estado está agora:
+**1. `ChatbotConversationState`** — anti-loop do chatbot. Sem a tabela, o estado
+por conversa vive em memória e se perde a cada restart do container.
 
     curl -s https://firehubfood.com.br/api/chatbot/diagnostico | grep estadoDoAntiLoop
 
 `"memoria"` = tabela ainda não existe. `"postgres"` = já aplicada.
+
+**2. `MenuProduct.sortOrder`** — ordem dos produtos dentro da categoria. Sem a
+coluna, o cardápio continua alfabético e a tela de reordenar responde que a
+ordenação ainda não foi aplicada (503, com esta instrução). O código NÃO tenta
+ordenar pela coluna enquanto ela não existir — é o que evita repetir a queda
+descrita abaixo.
 
 ## Como rodar
 
