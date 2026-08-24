@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useMemo } from "react";
 import { X, Plus, Minus, Check, AlertCircle } from "lucide-react";
+import { precoMinimoDoProduto } from "@/lib/preco-combo";
 
 export type ComboGroupData = {
   id: string;
@@ -288,7 +289,14 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
             )}
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "#059669" }}>
-                {product.price > 0 ? `R$ ${product.price.toFixed(2).replace(".", ",")}` : `A partir de R$ ${basePrice.toFixed(2).replace(".", ",")}`}
+                {/* Com preço base 0, o "a partir de" é o MÍNIMO do produto, não a
+                    base crua — senão um pastel cujo valor inteiro está no tamanho
+                    (Baby R$ 15,90) anuncia "A partir de R$ 0,00" no topo do modal,
+                    enquanto o card na lista já mostra o preço certo. Mesma conta
+                    de src/lib/preco-combo.ts, que é a fonte única. */}
+                {product.price > 0
+                  ? `R$ ${product.price.toFixed(2).replace(".", ",")}`
+                  : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
               </span>
               {extraSum > 0 && (
                 <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", padding: "2px 8px", borderRadius: "12px" }}>
