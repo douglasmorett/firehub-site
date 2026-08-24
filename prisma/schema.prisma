@@ -637,11 +637,29 @@ model TableSession {
   totalPaid       Float?          // Total pago no fechamento
   paymentMethods  Json?           // [{method: "Pix", amount: 100}, ...]
   orders          CustomerOrder[]
+  guests          TableGuest[]
   createdAt       DateTime        @default(now())
 
   @@index([tableId])
   @@index([franchiseeId, status])
   @@index([waiterId])
+}
+
+/// Pessoa sentada na mesa.
+///
+/// Existe para responder "quem pediu o quê" ANTES da hora de pagar. Sem isso, na
+/// hora de rachar a conta o garçom precisa lembrar de cabeça quem comeu o quê —
+/// e é aí que a mesa demora, o cliente reclama e alguém paga a mais.
+model TableGuest {
+  id              String          @id @default(cuid())
+  tableSessionId  String
+  session         TableSession    @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  name            String          // "Cliente 1", "João", "Camisa azul"
+  sortOrder       Int             @default(0)
+  items           CustomerOrderItem[]
+  createdAt       DateTime        @default(now())
+
+  @@index([tableSessionId])
 }
 
 model StoreEmployee {
@@ -707,10 +725,17 @@ model CustomerOrderItem {
   price           Float
   notes           String?       // Observacao do cliente POR ITEM ("sem cebola"). O front ja enviava e a impressao/KDS ja liam, mas nao havia coluna: a observacao era descartada em silencio.
   comboSelections Json?
+  // Quem, na mesa, pediu este item. Nulo quando o pedido é da mesa inteira
+  // (couvert, entrada para dividir) ou quando não é pedido de mesa.
+  // É o que permite rachar a conta pelo que cada um consumiu, em vez de
+  // dividir por igual e alguém pagar a bebida do outro.
+  tableGuestId    String?
+  tableGuest      TableGuest?   @relation(fields: [tableGuestId], references: [id], onDelete: SetNull)
   order           CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuProduct     MenuProduct?  @relation(fields: [menuProductId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+  @@index([tableGuestId])
 }
 
 model StoreCustomer {

@@ -40,24 +40,59 @@ export async function POST(
       return NextResponse.json({ error: "Session is not open" }, { status: 400 });
     }
 
-    // Calculate total amount
-    const subtotal = tableSession.orders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
+    // Pedido cancelado não entra na conta. A tela de conta por pessoa já os
+    // ignora; se aqui somasse, o garçom veria um total na tela, pagaria esse
+    // valor e o fechamento recusaria por "faltar" dinheiro que ninguém deve.
+    const pedidosValidos = tableSession.orders.filter((o) => o.status !== "CANCELADO");
+    const subtotal = pedidosValidos.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
     const serviceFee = serviceFeePercent ? (subtotal * serviceFeePercent) / 100 : 0;
     const tipAmount = waiterTip ? Number(waiterTip) : 0;
     const totalAmount = subtotal + serviceFee + tipAmount;
 
-    // Validate payment methods total
+    // ── A SOMA DOS PAGAMENTOS TEM QUE FECHAR COM A CONTA ──────────────────
+    // O comentário antigo dizia "Validate payment methods total", mas nada era
+    // validado: a soma era calculada e a mesa fechava com qualquer valor —
+    // inclusive R$ 0,00. Uma mesa de R$ 300 podia ser encerrada sem ninguém
+    // pagar, e o caixa fechava com sobra falsa no fim do dia.
+    //
+    // Agora recusa quando falta dinheiro. Sobra é aceita (troco/gorjeta em
+    // dinheiro é comum), mas falta não.
+    const centavos = (n: number) => Math.round((Number(n) || 0) * 100);
+
     let totalPaid = 0;
     if (paymentMethods && Array.isArray(paymentMethods)) {
-      totalPaid = paymentMethods.reduce((sum, pm) => sum + (pm.amount || 0), 0);
+      totalPaid = paymentMethods.reduce((sum: number, pm: any) => sum + (Number(pm?.amount) || 0), 0);
+    }
+
+    const faltando = centavos(totalAmount) - centavos(totalPaid);
+
+    // Tolerância de 1 centavo: arredondamento de taxa de serviço não pode
+    // travar o fechamento de uma mesa real.
+    if (faltando > 1) {
+      return NextResponse.json(
+        {
+          error: "pagamento_incompleto",
+          mensagem:
+            `Faltam R$ ${(faltando / 100).toFixed(2).replace(".", ",")} para fechar a mesa. ` +
+            `A conta é de R$ ${totalAmount.toFixed(2).replace(".", ",")} e foram informados ` +
+            `R$ ${totalPaid.toFixed(2).replace(".", ",")}.`,
+          totalDaConta: Number(totalAmount.toFixed(2)),
+          totalInformado: Number(totalPaid.toFixed(2)),
+          faltando: Number((faltando / 100).toFixed(2)),
+        },
+        { status: 400 }
+      );
     }
 
     // Wrap in transaction
     await prisma.$transaction(async (tx) => {
       // 1. Update orders status to ENTREGUE
-      if (tableSession.orders.length > 0) {
+      if (pedidosValidos.length > 0) {
+        // NOT: cancelado continua cancelado. Sem o filtro, fechar a mesa
+        // ressuscitava o pedido cancelado como ENTREGUE e ele voltava para o
+        // faturamento do dia.
         await tx.customerOrder.updateMany({
-          where: { tableSessionId: id },
+          where: { tableSessionId: id, status: { not: "CANCELADO" } },
           data: { status: "ENTREGUE" }
         });
       }

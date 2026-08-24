@@ -44,6 +44,19 @@ export async function POST(
       return NextResponse.json({ error: "Session is not open" }, { status: 400 });
     }
 
+    // Só aceita vincular a item quem realmente está NESTA mesa. Sem esta
+    // conferência, um id qualquer no corpo da requisição jogaria o consumo na
+    // conta de uma pessoa de outra mesa.
+    const pedidos = items.map((i: any) => i?.tableGuestId).filter(Boolean);
+    const idsValidos = new Set<string>();
+    if (pedidos.length > 0) {
+      const daMesa = await prisma.tableGuest.findMany({
+        where: { id: { in: pedidos }, tableSessionId: id },
+        select: { id: true },
+      });
+      daMesa.forEach((g: any) => idsValidos.add(g.id));
+    }
+
     const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
     
     // Calculate total amount for this specific order
@@ -71,6 +84,12 @@ export async function POST(
             menuProductId: item.menuProductId,
             quantity: item.quantity,
             price: item.price,
+            // De quem é este item. Nulo = da mesa inteira (couvert, entrada
+            // para dividir), e nesse caso entra no rateio geral no fechamento.
+            // É o que permite rachar a conta pelo consumo real de cada um em
+            // vez de dividir por igual — que é onde alguém sempre paga a
+            // bebida do outro.
+            tableGuestId: idsValidos.has(item.tableGuestId) ? item.tableGuestId : null,
             comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : null,
           })),
         },
