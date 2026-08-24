@@ -74,7 +74,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(ACK);
     }
 
-    const payload = JSON.parse(bodyText);
+    // Payload ilegível é o único erro que merece ACK: reenviar o mesmo texto
+    // quebrado dez vezes não o conserta. Erro NOSSO, mais abaixo, é o oposto —
+    // ali o reenvio é justamente o que salva o pedido.
+    let payload: any;
+    try {
+      payload = JSON.parse(bodyText);
+    } catch {
+      console.error("[99Food Webhook] Corpo não é JSON válido:", bodyText.slice(0, 300));
+      registrar99Food({
+        tipo: "json-invalido",
+        reconhecido: false,
+        pedidoCriado: false,
+        motivo: "corpo recebido não é JSON válido",
+        payload: bodyText.slice(0, 1000),
+      });
+      return NextResponse.json(ACK);
+    }
+
     const events = Array.isArray(payload) ? payload : [payload];
 
     console.log(`[99Food Webhook] Recebidos ${events.length} evento(s)`);
@@ -265,8 +282,13 @@ export async function POST(req: NextRequest) {
     console.log(`[99Food Webhook] ${events.length} evento(s): ${created} pedido(s) criado(s), ${updated} atualizado(s)`);
     return NextResponse.json(ACK);
   } catch (err: any) {
-    console.error("[99Food Webhook] Erro:", err);
+    // Falha NOSSA (banco fora, bug no parser). Aqui NÃO se manda ACK de
+    // propósito: o reenvio do 99Food é a única coisa entre um pedido e a
+    // cozinha nunca saber dele. Perder o pedido em silêncio é pior do que
+    // receber o mesmo evento duas vezes — a criação já é idempotente por
+    // openDeliveryOrderId.
+    console.error("[99Food Webhook] Erro ao processar:", err);
     registrar99Food({ tipo: "erro", reconhecido: false, pedidoCriado: false, motivo: err?.message, payload: null });
-    return NextResponse.json({ ok: false, error: err.message }, { status: 200 });
+    return NextResponse.json({ errno: 1, errmsg: err?.message || "erro interno" }, { status: 500 });
   }
 }
