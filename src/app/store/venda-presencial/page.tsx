@@ -224,8 +224,55 @@ export default function VendaPresencialPage() {
   const cartQty = cart.reduce((s, i) => s + i.qty, 0);
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif", display: "grid", gridTemplateColumns: "1fr 380px", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
+    <div className="pdv-layout" style={{ fontFamily: "'Inter', sans-serif", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
       <style>{`
+        /* ── LAYOUT ADAPTATIVO PARA TABLET ──────────────────────────────────
+           O carrinho tinha 380px FIXOS. Num tablet em retrato (768px) sobravam
+           388px para o cardápio, e com cards de 150px só cabia UMA coluna —
+           o garçom via 4 produtos numa tela que comporta 12, e rolava a lista
+           inteira para achar uma Coca.
+
+           Agora a largura do carrinho acompanha a tela, e abaixo de 900px ele
+           sai da lateral e vira uma barra no rodapé: o cardápio ocupa a tela
+           toda, que é o que importa para quem está lançando pedido em pé. */
+        .pdv-layout {
+          display: grid;
+          grid-template-columns: 1fr 380px;
+        }
+        .pdv-produtos {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 10px;
+        }
+
+        /* Tablet deitado e telas médias */
+        @media (max-width: 1180px) {
+          .pdv-layout { grid-template-columns: 1fr 300px; }
+          .pdv-produtos { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+        }
+
+        /* Tablet em pé: carrinho vai para o rodapé */
+        @media (max-width: 900px) {
+          .pdv-layout {
+            grid-template-columns: 1fr;
+            grid-template-rows: 1fr auto;
+          }
+          .pdv-produtos { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+          .pdv-carrinho {
+            border-left: none !important;
+            border-top: 2px solid #E2E8F0;
+            max-height: 42vh;
+          }
+        }
+
+        /* Alvo de toque: dedo não acerta botão de 24px com precisão.
+           44px é a medida recomendada para toque, e num tablet de garçom
+           errar o botão significa lançar o item errado na comanda. */
+        @media (pointer: coarse) {
+          .pdv-layout button { min-height: 44px; }
+          .pdv-layout input, .pdv-layout select { min-height: 44px; font-size: 16px; }
+        }
+
         #floating-contact-widget, .fcw-container, .fcw-backdrop, #contact-widget-fab,
         #hubspot-messages-iframe-container, iframe[src*="chat"], .crisp-client, div[class*="chat"], #chat-widget-container, div[class*="widget"], div[id*="chat"] {
           display: none !important;
@@ -273,7 +320,7 @@ export default function VendaPresencialPage() {
 
         {/* Grid de produtos */}
         <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+          <div className="pdv-produtos">
             {filtered.map(p => {
               const inCart = cart.find(i => i.product.id === p.id);
               return (
@@ -306,7 +353,7 @@ export default function VendaPresencialPage() {
       </div>
 
       {/* ===== RIGHT: PEDIDO ===== */}
-      <div style={{ display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+      <div className="pdv-carrinho" style={{ display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
         {/* Tipo de pedido */}
         <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>

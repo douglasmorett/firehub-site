@@ -78,6 +78,64 @@ const getEffectiveComboGroups = (prod: any) => {
 };
 
 // ─── Component ─────────────────────────────────────────────────────────────────
+/**
+ * Layout para TABLET — é o aparelho que o garçom usa em pé, andando.
+ *
+ * Os painéis laterais tinham largura FIXA (340px na comanda, 370px no detalhe).
+ * Num tablet em retrato sobrava uma faixa estreita para o cardápio: os produtos
+ * caíam em coluna única e o garçom via 4 itens numa tela que comporta 12,
+ * rolando a lista inteira para achar uma bebida.
+ *
+ * Abaixo de 900px o painel sai da lateral e vai para o rodapé — o cardápio ocupa
+ * a tela toda, que é o que importa na hora de lançar.
+ */
+const ESTILO_TABLET = `
+  .mesa-lancar {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    overflow: hidden;
+  }
+  .mesa-produtos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  .mesa-detalhe { width: 370px; }
+
+  @media (max-width: 1180px) {
+    .mesa-lancar { grid-template-columns: 1fr 290px; }
+    .mesa-produtos { grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); }
+    .mesa-detalhe { width: 300px; }
+  }
+
+  @media (max-width: 900px) {
+    .mesa-conteudo { flex-direction: column; }
+    .mesa-lancar {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr auto;
+    }
+    .mesa-comanda {
+      border-left: none !important;
+      border-top: 2px solid #E2E8F0;
+      max-height: 44vh;
+    }
+    .mesa-produtos { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+    .mesa-detalhe {
+      width: 100% !important;
+      border-left: none !important;
+      border-top: 2px solid #E2E8F0;
+      max-height: 46vh;
+    }
+  }
+
+  /* 44px é o alvo de toque recomendado. Num tablet de garçom, errar o botão
+     significa lançar o item errado na comanda de um cliente. */
+  @media (pointer: coarse) {
+    .mesa-lancar button, .mesa-detalhe button { min-height: 44px; }
+    .mesa-lancar input, .mesa-lancar select { min-height: 44px; font-size: 16px; }
+  }
+`;
+
 export default function MesasPage() {
   const router = useRouter();
 
@@ -504,11 +562,12 @@ export default function MesasPage() {
 
   if (view === "order" && selectedTable?.openSession) {
     return (
-      <div style={{
-        display: "flex", height: "100vh",
+      <div className="mesa-lancar" style={{
+        height: "100vh",
         fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
         background: "#F8FAFC",
       }}>
+        <style>{ESTILO_TABLET}</style>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{
             padding: "14px 20px", background: "#7C3AED",
@@ -555,11 +614,7 @@ export default function MesasPage() {
             </div>
           </div>
 
-          <div style={{
-            flex: 1, overflowY: "auto", padding: 12,
-            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-            gap: 8, alignContent: "start",
-          }}>
+          <div className="mesa-produtos" style={{ flex: 1, overflowY: "auto", padding: 12, alignContent: "start" }}>
             {filteredMenu.map(p => {
               const inCart = cart.find(c => c.item.id === p.id && !c.comboSelections);
               return (
@@ -595,8 +650,8 @@ export default function MesasPage() {
           </div>
         </div>
 
-        <div style={{
-          width: 340, borderLeft: "1px solid #E2E8F0", background: "#fff",
+        <div className="mesa-comanda" style={{
+          borderLeft: "1px solid #E2E8F0", background: "#fff",
           display: "flex", flexDirection: "column",
         }}>
           <div style={{
@@ -675,6 +730,7 @@ export default function MesasPage() {
       background: "linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)",
       fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
     }}>
+      <style>{ESTILO_TABLET}</style>
       {/* ─── Header ─── */}
       <header style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -715,12 +771,12 @@ export default function MesasPage() {
       </header>
 
       {/* ─── Content ─── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div className="mesa-conteudo" style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* ─── Table Grid ─── */}
         <div style={{
           flex: 1, overflowY: "auto", padding: 20,
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fill, minmax(clamp(112px, 22vw, 145px), 1fr))",
           gap: 12, alignContent: "start",
         }}>
           {tables.length === 0 ? (
@@ -818,8 +874,8 @@ export default function MesasPage() {
 
         {/* ─── Side Panel ─── */}
         {selectedTable && selectedTable.openSession && (
-          <div style={{
-            width: 370, borderLeft: "1px solid #E2E8F0", background: "#fff",
+          <div className="mesa-detalhe" style={{
+            borderLeft: "1px solid #E2E8F0", background: "#fff",
             display: "flex", flexDirection: "column", flexShrink: 0,
             boxShadow: "-4px 0 20px rgba(0,0,0,0.04)",
           }}>
