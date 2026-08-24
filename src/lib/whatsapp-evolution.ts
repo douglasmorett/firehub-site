@@ -48,6 +48,9 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
       }
     }
 
+    const webhookUrl = `${process.env.NEXTAUTH_URL || "https://firehubfood.com.br"}/api/webhook/whatsapp`;
+    const webhookEvents = ["MESSAGES_UPSERT", "CONNECTION_UPDATE"];
+
     // 2. Se não existir, tenta criar
     if (stateRes.status === 404) {
       await fetch(`${url}/instance/create`, {
@@ -58,15 +61,47 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
           token: userId,
           qrcode: true,
           integration: "WHATSAPP-BAILEYS",
-          webhook: `${process.env.NEXTAUTH_URL || "https://firehubfood.com.br"}/api/webhook/whatsapp`,
+          webhook: webhookUrl,
           webhookByEvents: true,
-          events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+          events: webhookEvents,
         }),
         signal: AbortSignal.timeout(10000),
       });
     }
 
-    // 3. Obter QR Code real
+    // 3. Garantir o webhook TAMBEM quando a instancia ja existia.
+    //
+    // Antes, o webhook so era definido no /instance/create acima. Instancia que
+    // ja existisse — criada por uma versao anterior, por outro ambiente, ou
+    // sobrevivente de um logout/reconexao — ficava para sempre sem destino:
+    // o lojista lia o QR, o WhatsApp conectava, e nenhuma mensagem chegava ao
+    // FireHub. Sem erro em lugar nenhum, so o robo mudo.
+    //
+    // Como e idempotente (redefinir o mesmo destino nao muda nada), roda a cada
+    // pedido de QR. Falha aqui nao pode derrubar a conexao: o QR e o que o
+    // lojista esta esperando, entao o erro so vai para o log.
+    try {
+      await fetch(`${url}/webhook/set/${instanceName}`, {
+        method: "POST",
+        headers: defaultHeaders,
+        body: JSON.stringify({
+          webhook: { enabled: true, url: webhookUrl, webhookByEvents: true, events: webhookEvents },
+          // Formato antigo da Evolution, aceito em paralelo por versoes mais velhas.
+          enabled: true,
+          url: webhookUrl,
+          webhookByEvents: true,
+          events: webhookEvents,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (webhookErr) {
+      console.warn(
+        `[WhatsApp Evolution] Nao consegui reafirmar o webhook de ${instanceName}:`,
+        (webhookErr as any)?.message
+      );
+    }
+
+    // 4. Obter QR Code real
     const connectRes = await fetch(`${url}/instance/connect/${instanceName}`, {
       method: "GET",
       headers: defaultHeaders,
