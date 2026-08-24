@@ -62,3 +62,4 @@ scratch/
 
 # scripts temporarios de diagnostico (nao versionar)
 tmp-*.js
+.firecrawl/
