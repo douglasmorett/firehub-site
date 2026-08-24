@@ -63,3 +63,4 @@ scratch/
 # scripts temporarios de diagnostico (nao versionar)
 tmp-*.js
 .firecrawl/
+.99food-docs/
