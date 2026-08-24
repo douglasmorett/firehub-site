@@ -388,14 +388,14 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     if (!base64Data && key.id) {
       try {
+        // Uma tentativa, não três. As outras duas repetiam a mesma busca com
+        // outro identificador da mesma loja — e a função já resolve o nome da
+        // instância internamente, então as três caíam no mesmo lugar. O que
+        // elas produziam era só espera: com 8 tentativas de 10s cada dentro da
+        // função, as três chamadas somavam até quatro minutos antes de avisar
+        // o cliente que o áudio não foi ouvido.
         const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
         base64Data = await getEvolutionAudioBase64(instance || user.id, key, data);
-        if (!base64Data && user.id) {
-          base64Data = await getEvolutionAudioBase64(user.id, key, data);
-        }
-        if (!base64Data && user.ownerId) {
-          base64Data = await getEvolutionAudioBase64(user.ownerId, key, data);
-        }
       } catch (err) {
         console.error("[WhatsApp Webhook] Erro ao buscar base64 do áudio via Evolution API:", err);
       }

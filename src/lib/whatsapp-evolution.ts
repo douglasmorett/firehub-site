@@ -354,13 +354,25 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
     "User-Agent": "FireHub"
   };
 
-  const endpoints = [
-    `${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`,
-    `${baseUrl}/message/getBase64FromMediaMessage/${instanceName}`
-  ];
+  // ── Sobre o tamanho desta lista ─────────────────────────────────────────
+  // Havia aqui 2 endpoints × 4 payloads = 8 tentativas de 10s, e o webhook
+  // chamava esta função 3 vezes seguidas: até 4 MINUTOS antes de desistir e
+  // avisar o cliente que o áudio não foi ouvido.
+  //
+  // E o esforço era inútil. Este fallback existe para quando o gateway não
+  // conseguiu baixar o áudio inline — mas o endpoint do gateway roda o MESMO
+  // `downloadMediaMessage` que acabou de falhar. Repetir 24 vezes a operação
+  // que falhou não a faz funcionar; só transforma um erro rápido numa espera
+  // longa, e no meio dela o cliente desiste.
+  //
+  // Sobrou o único endpoint que o gateway realmente implementa (o outro sempre
+  // respondeu 404) e os dois formatos de payload que ele aceita. Vale a pena
+  // tentar porque o download pode falhar por motivo transitório — mas em
+  // segundos, não em minutos.
+  const endpoints = [`${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`];
 
   const payloads = [
-    // Payload padrão Evolution API v2 com key e message aninhados
+    // Formato que o gateway espera: key e message aninhados.
     {
       message: {
         key: {
@@ -372,25 +384,11 @@ export async function getEvolutionAudioBase64(userIdOrInstance: string, messageK
       },
       convertToMp4: false,
     },
-    // Payload com key direto
-    {
-      message: {
-        key: messageKey,
-      },
-      convertToMp4: false,
-    },
-    // Payload com messageObj puro
+    // Mensagem crua, para o caso de o objeto já vir no formato do Baileys.
     {
       message: messageObj,
       convertToMp4: false,
     },
-    // Payload simplificado apenas com key.id
-    {
-      message: {
-        key: { id: messageKey?.id },
-      },
-      convertToMp4: false,
-    }
   ];
 
   for (const ep of endpoints) {
