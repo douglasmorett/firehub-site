@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { getCurrentYearMonth } from "@/lib/billing";
 
 /**
  * GET /api/cron/meta-ads-sync
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
     // Busca todas as campanhas ativas
     const campaigns = await (prisma as any).metaAdsCampaign.findMany({
       where: { status: "ACTIVE" },
-      include: { franchisee: { select: { id: true, metaFbAccessToken: true, metaAdsWeeklyFee: true } } },
+      include: { franchisee: { select: { id: true, metaFbAccessToken: true, metaAdsWeeklyFee: true, storeTimezone: true, planPercent: true } } },
     });
 
     log.push(`📊 ${campaigns.length} campanhas ativas encontradas`);
@@ -102,6 +103,45 @@ export async function GET(req: NextRequest) {
           newLastBilledAt = new Date();
         }
 
+        // A taxa entra no ciclo ANTES de o contador da campanha avançar.
+        //
+        // Na ordem antiga a campanha era atualizada primeiro: se a gravação no
+        // ciclo falhasse, `feeAccrued` já tinha subido e a rodada seguinte não
+        // via mais diferença nenhuma — a semana era perdida em silêncio. Agora,
+        // se o ciclo não aceitar a taxa, o contador não anda e a próxima
+        // execução tenta de novo.
+        const feeToAdd = newFeeAccrued - (campaign.feeAccrued ?? 0);
+        let feeGravada = feeToAdd <= 0;
+
+        if (feeToAdd > 0) {
+          const tz = campaign.franchisee.storeTimezone || "America/Sao_Paulo";
+          const yearMonth = getCurrentYearMonth(0, tz);
+          try {
+            // Os nomes dos campos estavam errados aqui (`userId`/`month` em vez
+            // de `franchiseeId`/`yearMonth`). A query lançava, o catch abaixo
+            // engolia, e a gestão de R$50/semana nunca chegou a um boleto.
+            await prisma.franchiseeBillingCycle.upsert({
+              where: { franchiseeId_yearMonth: { franchiseeId: campaign.franchiseeId, yearMonth } },
+              update: { metaAdsFee: { increment: feeToAdd } },
+              create: {
+                franchiseeId: campaign.franchiseeId,
+                yearMonth,
+                planPercent: campaign.franchisee.planPercent ?? 1,
+                metaAdsFee: feeToAdd,
+                status: "OPEN",
+              },
+            });
+            feeGravada = true;
+            log.push(`  💸 +R$${feeToAdd.toFixed(2)} de gestão no ciclo ${yearMonth}`);
+          } catch (billingErr: any) {
+            // Não avança o contador: a taxa fica pendente para a próxima rodada.
+            log.push(`  ❌ FALHA ao lançar R$${feeToAdd.toFixed(2)} no ciclo ${yearMonth} de ${campaign.franchiseeId}: ${billingErr.message}`);
+            console.error("[meta-ads-sync] taxa de gestão não lançada", {
+              franchiseeId: campaign.franchiseeId, yearMonth, feeToAdd, erro: billingErr.message,
+            });
+          }
+        }
+
         await (prisma as any).metaAdsCampaign.update({
           where: { id: campaign.id },
           data: {
@@ -109,38 +149,11 @@ export async function GET(req: NextRequest) {
             impressions: (insights as any).impressions ?? 0,
             clicks: (insights as any).clicks ?? 0,
             ordersGenerated: (insights as any).orders ?? 0,
-            feeAccrued: newFeeAccrued,
-            lastBilledAt: newLastBilledAt,
+            // Só sobe se a taxa entrou no ciclo.
+            ...(feeGravada ? { feeAccrued: newFeeAccrued, lastBilledAt: newLastBilledAt } : {}),
             updatedAt: new Date(),
           },
         });
-
-        // Vincular taxa de gestão ao ciclo de faturamento mensal
-        if (newFeeAccrued > (campaign.feeAccrued ?? 0)) {
-          const feeToAdd = newFeeAccrued - (campaign.feeAccrued ?? 0);
-          const now = new Date();
-          const cycleMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-          try {
-            // Tenta incrementar no ciclo existente
-            const existing = await (prisma as any).franchiseeBillingCycle.findFirst({
-              where: { userId: campaign.franchiseeId, month: cycleMonth },
-            });
-            if (existing) {
-              await (prisma as any).franchiseeBillingCycle.update({
-                where: { id: existing.id },
-                data: { metaAdsFee: (existing.metaAdsFee ?? 0) + feeToAdd },
-              });
-            } else {
-              await (prisma as any).franchiseeBillingCycle.create({
-                data: { userId: campaign.franchiseeId, month: cycleMonth, metaAdsFee: feeToAdd },
-              });
-            }
-            log.push(`  💸 +R$${feeToAdd.toFixed(2)} taxa adicionada ao ciclo ${cycleMonth}`);
-          } catch (billingErr: any) {
-            log.push(`  ⚠️ Billing: ${billingErr.message}`);
-          }
-        }
-
 
         log.push(`✅ ${campaign.id}: spend=R$${newSpend.toFixed(2)}, fee=R$${newFeeAccrued.toFixed(2)}`);
         synced++;

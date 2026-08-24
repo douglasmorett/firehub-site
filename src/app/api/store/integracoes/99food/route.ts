@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { ler99Food } from "@/lib/webhook-99food-log";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,16 @@ export async function GET() {
       connected: !!user.food99Connected,
       webhookUrl: "https://firehubfood.com.br/api/99food/webhook",
       userEmail: user.email,
+
+      // `connected` acima significa apenas "alguém preencheu o formulário": nada
+      // neste sistema fala com o 99Food para confirmar. Enquanto a integração
+      // de saída não existir, o que diz a verdade sobre a integração é isto —
+      // o que o 99Food efetivamente mandou para cá.
+      //
+      // Vazio depois de um pedido de teste = o 99Food não está chamando o
+      // webhook, e o problema está na configuração do Callback address no
+      // portal deles, não aqui dentro.
+      ultimosEventos99Food: ler99Food(),
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

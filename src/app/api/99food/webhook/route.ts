@@ -1,19 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { registrar99Food } from "@/lib/webhook-99food-log";
 
 /**
  * POST /api/99food/webhook
- * Recebe pedidos e eventos de webhook do 99Food / OpenDelivery.
+ * Recebe pedidos e eventos de webhook do 99Food.
+ *
+ * ── A resposta é parte do protocolo ─────────────────────────────────────────
+ * O 99Food só considera a entrega bem-sucedida se receber EXATAMENTE
+ * `{"errno": 0, "errmsg": "ok"}` dentro de 6 segundos. Qualquer outra coisa —
+ * inclusive um 200 com outro corpo — conta como falha, e ele reenvia o mesmo
+ * evento várias vezes.
+ *
+ * Esta rota respondia `{"ok": true, "created": ...}`. Ou seja: mesmo que os
+ * pedidos estivessem chegando, o 99Food os trataria como não entregues e
+ * entraria em reenvio.
+ *
+ * ── Os nomes dos eventos também estavam errados ─────────────────────────────
+ * O código procurava PLACED / PLC / ORDER_PLACED / CONCLUDED / DSP — que são
+ * convenções do iFood e do OpenDelivery. O 99Food manda orderNew, orderCancel,
+ * orderFinish, deliveryStatus, orderCancelApply, orderRefundApply e
+ * orderPartialCancel. Os nomes antigos ficam aceitos junto, porque não custa
+ * nada e cobre payload de teste montado no padrão antigo.
+ *
+ * Fonte: developer-food.99app.com/pt-BR/openapi (Integration Guide).
  */
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
+
+/** A única resposta que o 99Food aceita como "recebido". */
+const ACK = { errno: 0, errmsg: "ok" };
+
+/** Nome de evento normalizado, sem caixa nem separador, para comparar. */
+function normalizarEvento(bruto: string): string {
+  return (bruto || "").toString().toLowerCase().replace(/[^a-z]/g, "");
+}
+
+const EVENTOS_PEDIDO_NOVO = new Set([
+  "ordernew",                                    // 99Food
+  "placed", "plc", "orderplaced", "new",         // iFood / OpenDelivery
+]);
+
+/** Evento de mudança de status → status interno do FireHub. */
+function statusDoEvento(evento: string): string | null {
+  switch (normalizarEvento(evento)) {
+    case "ordercancel":
+    case "orderpartialcancel":
+    case "cancelled":
+    case "can":
+      return "CANCELADO";
+    case "orderfinish":
+    case "concluded":
+    case "con":
+      return "ENTREGUE";
+    case "deliverystatus":
+    case "dispatched":
+    case "dsp":
+      return "SAIU_ENTREGA";
+    case "confirmed":
+    case "cfm":
+      return "ACEITO";
+    default:
+      return null;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
     const bodyText = await req.text();
     if (!bodyText) {
-      return NextResponse.json({ error: "Body vazio" }, { status: 400 });
+      // Corpo vazio ainda recebe ACK: reenviar nao vai fazer aparecer.
+      return NextResponse.json(ACK);
     }
 
     const payload = JSON.parse(bodyText);
@@ -64,13 +122,22 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Se for pedido criado/colocado (PLACED / NEW / ORDER_PLACED)
-      const isNewOrder =
-        eventType === "PLACED" ||
-        eventType === "PLC" ||
-        eventType === "ORDER_PLACED" ||
-        eventType === "NEW" ||
-        !!event.order;
+      // Pedido novo: orderNew (99Food) ou os nomes do iFood/OpenDelivery.
+      const isNewOrder = EVENTOS_PEDIDO_NOVO.has(normalizarEvento(eventType)) || !!event.order;
+
+      // Evento de pedido novo SEM o objeto do pedido no formato esperado:
+      // registra o payload cru. E assim que o formato real do 99Food aparece,
+      // em vez de a gente adivinhar a estrutura e errar em silencio.
+      if (isNewOrder && !event.order) {
+        registrar99Food({
+          tipo: eventType || "(pedido novo)",
+          reconhecido: false,
+          pedidoCriado: false,
+          motivo: "pedido novo, mas sem campo event.order no formato esperado — payload cru abaixo",
+          payload: event,
+        });
+        console.warn(`[99Food Webhook] Pedido ${orderId} chegou em formato nao mapeado. Payload registrado em /api/store/integracoes/99food`);
+      }
 
       if (isNewOrder && event.order) {
         const oData = event.order;
@@ -170,15 +237,12 @@ export async function POST(req: NextRequest) {
             },
           });
           created++;
+          registrar99Food({ tipo: eventType || "orderNew", reconhecido: true, pedidoCriado: true, payload: event });
           console.log(`[99Food Webhook] ✅ Pedido #${displayId} criado!`);
         }
       } else if (orderId) {
         // Atualizações de status
-        let newStatus: string | null = null;
-        if (eventType === "CONFIRMED" || eventType === "CFM") newStatus = "ACEITO";
-        if (eventType === "DISPATCHED" || eventType === "DSP") newStatus = "SAIU_ENTREGA";
-        if (eventType === "CONCLUDED" || eventType === "CON") newStatus = "ENTREGUE";
-        if (eventType === "CANCELLED" || eventType === "CAN") newStatus = "CANCELADO";
+        const newStatus = statusDoEvento(eventType);
 
         if (newStatus) {
           await (prisma.customerOrder as any).updateMany({
@@ -187,12 +251,22 @@ export async function POST(req: NextRequest) {
           });
           updated++;
         }
+
+        registrar99Food({
+          tipo: eventType || "(sem tipo)",
+          reconhecido: !!newStatus,
+          pedidoCriado: false,
+          motivo: newStatus ? `status → ${newStatus}` : "evento não reconhecido",
+          payload: event,
+        });
       }
     }
 
-    return NextResponse.json({ ok: true, created, updated, received: events.length });
+    console.log(`[99Food Webhook] ${events.length} evento(s): ${created} pedido(s) criado(s), ${updated} atualizado(s)`);
+    return NextResponse.json(ACK);
   } catch (err: any) {
     console.error("[99Food Webhook] Erro:", err);
+    registrar99Food({ tipo: "erro", reconhecido: false, pedidoCriado: false, motivo: err?.message, payload: null });
     return NextResponse.json({ ok: false, error: err.message }, { status: 200 });
   }
 }
