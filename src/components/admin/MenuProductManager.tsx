@@ -48,10 +48,23 @@ export default function MenuProductManager({
   const [tab, setTab] = useState<"all" | "items" | "combos">("all");
 
   // Helper para identificar categorias de integração ocultas
+  /**
+   * Categoria que só existe por causa de integração — não é cardápio.
+   *
+   * A lista precisa bater com a do cardápio do cliente
+   * (CustomerStorePage.isIntegrationCategory). Aqui ela também trazia
+   * COMPLEMENTO, OPCIONAL, ADICIONAL, INSUMO e OCULTO, escondendo por PALAVRA.
+   * A Brasa Burguer tem uma categoria de verdade chamada "Complementos", que o
+   * cliente vê e pede: a batata aparecia para quem compra e sumia para quem
+   * precisa editar. As duas telas discordavam sobre o que é cardápio.
+   *
+   * A regra que vale é simples: se o cliente consegue pedir, a loja tem que
+   * conseguir editar.
+   */
   const isIntegrationCategory = (catName: string) => {
     if (!catName) return false;
     const catUpper = catName.toUpperCase().trim();
-    return ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"].some(h => catUpper.includes(h));
+    return ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"].some(h => catUpper.includes(h));
   };
 
   // Categorias dinâmicas (inicia com as do servidor combinadas com quaisquer categorias presentes nos produtos)
@@ -765,14 +778,13 @@ export default function MenuProductManager({
   };
 
   const isHiddenIntegrationItem = (p: any) => {
-    const catUpper = (p.category || "").toUpperCase().trim();
-    if (["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"].some(h => catUpper.includes(h))) {
-      return true;
-    }
-    // Se existirem categorias dinâmicas ativas, oculta itens cujas categorias não existem nas categorias do cardápio visível da loja
+    const cat = (p.category || "").trim();
+    if (isIntegrationCategory(cat)) return true;
+
+    // Fora as de integração, quem manda é o cadastro de categorias da loja.
     if (dynCategories && dynCategories.length > 0) {
       const validCatNames = new Set(dynCategories.map((c: any) => (c.name || "").toUpperCase().trim()));
-      if (!validCatNames.has(catUpper)) return true;
+      return !validCatNames.has(cat.toUpperCase());
     }
     return false;
   };
@@ -1790,7 +1802,14 @@ export default function MenuProductManager({
 
       {/* PRODUCT LIST AGRUPADO POR CATEGORIAS (iFood style) */}
       {(() => {
-        const rawProducts = tab === "items" ? itemProducts : comboProducts;
+        // A aba "Cardápio Completo" (tab === "all") caía no ramo dos combos por
+        // não ter ramo próprio. Numa loja sem combo nenhum — a Brasa Burguer
+        // tem zero — ela mostrava a tela de "nenhum produto encontrado", apesar
+        // do contador no botão dizer 14.
+        const rawProducts =
+          tab === "items" ? itemProducts :
+          tab === "combos" ? comboProducts :
+          [...itemProducts, ...comboProducts];
         const displayedProducts = rawProducts.filter(p => {
           // Ocultar produtos temporários de integração (iFood, Jotajá, ONLINE) do painel visual de cardápio
           const catUpper = (p.category || "").toUpperCase();
