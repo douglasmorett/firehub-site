@@ -131,6 +131,28 @@ export async function POST(req: NextRequest) {
 }
 
 /**
+ * Envia uma mensagem ao cliente E registra que foi o robô quem falou.
+ *
+ * Os dois passos precisam andar juntos, sempre. O WhatsApp devolve tudo que sai
+ * do número como `fromMe`, e o que distingue o eco do robô do lojista digitando
+ * é justamente esse registro. Uma mensagem enviada sem registrar volta como
+ * "humano assumiu" e cala o robô por 5 minutos — foi o que aconteceu com o
+ * aviso de falha de áudio: o cliente recebia "não consegui ouvir", mandava
+ * outro áudio, e aí não recebia mais nada.
+ *
+ * Por isso o envio passou a ser só por aqui: um ponto de envio novo não tem
+ * como esquecer de registrar.
+ */
+async function replyToCustomer(userId: string, remoteJid: string, text: string, target?: string) {
+  // Registrar ANTES de enviar. O eco volta pelo WhatsApp em milissegundos e
+  // pode chegar antes de uma gravação feita depois do envio — e aí o robô se
+  // cala por causa da própria mensagem. Registrar cedo demais não custa nada:
+  // se o envio falhar, sobra um hash que nunca aparece.
+  await registerBotReply(userId, remoteJid, text);
+  return sendEvolutionMessage(userId, target || remoteJid, text);
+}
+
+/**
  * Coloca a conversa na fila do balãozinho de atendimento humano.
  *
  * A montagem era a mesma em dois pontos e agora em três; ficar copiando o
@@ -408,10 +430,11 @@ async function handleIncomingMessage(body: any, instance: string) {
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 📞 Chamada de voz detectada de ${remoteJid}`);
     const cleanTarget = remoteJid.replace(/@.*$/, "");
     if (cleanTarget) {
-      sendEvolutionMessage(
-        instance || user.id,
-        cleanTarget,
-        "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?"
+      replyToCustomer(
+        user.id,
+        remoteJid,
+        "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?",
+        cleanTarget
       ).catch(() => {});
     }
     return;
@@ -423,8 +446,8 @@ async function handleIncomingMessage(body: any, instance: string) {
       textMessage = (rawText ? rawText + "\n\n" : "") + "O cliente enviou a mensagem de áudio em anexo. Por favor escute o áudio com atenção, entenda o pedido ou dúvida do cliente e responda no mesmo tom carinhoso e prestativo do cardápio.";
     } else {
       // Se não conseguiu baixar o áudio de jeito nenhum, envia uma resposta amigável de fallback pedindo para o cliente regravar ou digitar
-      await sendEvolutionMessage(
-        instance || user.id,
+      await replyToCustomer(
+        user.id,
         remoteJid,
         "Ops, tentei ouvir o seu áudio mas deu uma instabilidade no sinal! 😅\n\nVocê pode me mandar em texto ou gravar um novo áudio para eu te ajudar?"
       ).catch(() => {});
@@ -516,7 +539,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       ? `Recebemos a confirmação do seu pedido *#${orderNum}* pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`
       : `Recebemos a confirmação do seu pedido pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`;
 
-    await sendEvolutionMessage(instance || user.id, remoteJid, thankMsg).catch(() => {});
+    await replyToCustomer(user.id, remoteJid, thankMsg).catch(() => {});
     return;
   }
 
@@ -537,8 +560,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   if (stopOnHuman && isAskingHuman) {
     const humanReply = "Entendido! Já avisei nossa equipe e um atendente humano vai te responder por aqui em instantes. Por favor, aguarde só um momento! 😊";
     const recipientTarget = remoteJid || data.from || "";
-    await sendEvolutionMessage(user.id, recipientTarget, humanReply);
-    await registerBotReply(user.id, remoteJid, humanReply);
+    await replyToCustomer(user.id, remoteJid, humanReply, recipientTarget);
 
     // Marca a conversa como pausada por 12 horas para o robô não responder mais automaticamente
     cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
@@ -595,8 +617,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     // robô do outro lado — o loop morre aqui.
     console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔁 Loop suspeito em ${remoteJid} (${guard.reason}). Passando para atendimento humano.`);
     const target = remoteJid || data.from || "";
-    await sendEvolutionMessage(user.id, target, guard.message).catch(() => {});
-    await registerBotReply(user.id, remoteJid, guard.message);
+    await replyToCustomer(user.id, remoteJid, guard.message, target).catch(() => {});
     enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, guard.message, now);
     return;
   }
@@ -672,12 +693,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     const recipientTarget = remoteJid || data.from || "";
     
     // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
-    await sendEvolutionMessage(user.id, recipientTarget, replyText);
-
-    // O WhatsApp devolve esta mensagem como `fromMe`. Guardar o hash é o que
-    // evita o robô confundir o próprio eco com o lojista digitando e se calar
-    // sozinho depois de cada resposta que ele mesmo deu.
-    await registerBotReply(user.id, remoteJid, replyText);
+    await replyToCustomer(user.id, remoteJid, replyText, recipientTarget);
 
     // Track WhatsApp usage (fire-and-forget)
     trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });
