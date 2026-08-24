@@ -389,6 +389,16 @@ model MenuProduct {
   availableDays   String?             // JSON array: ["SEG","TER","QUA","QUI","SEX","SAB","DOM"] (null/empty = todos os dias)
   imageUrl        String?
   category        String              @default("Lanches")
+  /// Ordem do produto DENTRO da categoria, definida pela loja na tela de
+  /// reordenar. Nasce 0 em todo mundo e o desempate continua sendo o nome, então
+  /// quem nunca reordenar segue vendo o cardápio alfabético de sempre.
+  ///
+  /// A coluna foi criada no banco ANTES deste campo entrar aqui, e a ordem
+  /// importa: declarar o campo com a coluna ausente faz o Prisma montar SELECT
+  /// com todas as colunas escalares em qualquer consulta que use `include:` sem
+  /// `select:` — e o cardápio inteiro serve 500. Foi assim que /loja caiu em
+  /// 24/08/2026. Primeiro a coluna, depois o schema.
+  sortOrder       Int                 @default(0)
   active          Boolean             @default(true)
   isCombo         Boolean             @default(false)
   isBeverage      Boolean             @default(false)
