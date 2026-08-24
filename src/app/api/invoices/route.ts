@@ -72,7 +72,9 @@ NÃO RETORNE NENHUM TEXTO ALÉM DO JSON.`;
     let aiText = "";
     
     try {
-      // Usa gemini-2.0-flash — modelo estável com suporte a visão (imagens)
+      // Modelo estável com suporte a visão (imagens). O comentário antigo citava
+      // gemini-2.0-flash, que o Google já descontinuou — o código aqui sempre usou
+      // o 2.5, então continua funcionando; só a nota é que estava desatualizada.
       const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: [

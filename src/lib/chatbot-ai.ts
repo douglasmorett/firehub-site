@@ -758,7 +758,13 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         { role: "user", parts: userParts }
       ];
 
-      const modelNames = ["gemini-2.0-flash", "gemini-1.5-flash"];
+      // Os dois modelos que estavam aqui — gemini-2.0-flash e gemini-1.5-flash —
+      // foram descontinuados pelo Google e respondem 404 ("no longer available").
+      // O efeito era silencioso e caro: o bot queimava os dois timeouts (12s + 7s)
+      // a cada mensagem e só então caía no prompt mínimo, que responde sem
+      // cardápio, sem cupom e sem histórico. Parecia "IA burra", era modelo morto.
+      // Verificado em 23/08/2026 contra a API: destes, só o 2.5-flash continua de pé.
+      const modelNames = ["gemini-3.6-flash", "gemini-2.5-flash"];
       
       let generatedText = "";
       
