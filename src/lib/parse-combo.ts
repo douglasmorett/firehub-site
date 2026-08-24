@@ -43,6 +43,29 @@ export function parseComboSelections(
     }
   }
 
+  // ── FORMATO DO CARDÁPIO ONLINE ──────────────────────────────────────────
+  // O ComboModal trabalha com { grupoId: { nome: quantidade } } e o
+  // /api/customer-order grava esse objeto CRU — o grupoId precisa sobreviver,
+  // porque é ele que faz `somaDosAdicionais` cobrar o preço do grupo certo
+  // (a mesma opção pode custar diferente em dois grupos).
+  //
+  // Só que aqui embaixo o código exigia array e devolvia [] para esse objeto.
+  // Resultado: todo combo pedido pelo cardápio online chegava à cozinha como o
+  // nome do combo e mais nada — sem os sabores escolhidos, sem acompanhamento.
+  // Pelo PDV aparecia, porque o PDV manda array. Achatar aqui conserta os
+  // pedidos novos e os que já estão gravados, sem mexer no formato de origem.
+  if (parsed && !Array.isArray(parsed) && typeof parsed === "object") {
+    const achatado: any[] = [];
+    for (const grupo of Object.values(parsed as Record<string, any>)) {
+      if (!grupo || typeof grupo !== "object" || Array.isArray(grupo)) continue;
+      for (const [nome, qtd] of Object.entries(grupo as Record<string, any>)) {
+        const n = Number(qtd);
+        if (nome && Number.isFinite(n) && n > 0) achatado.push({ name: nome, quantity: n });
+      }
+    }
+    parsed = achatado;
+  }
+
   if (!Array.isArray(parsed)) return [];
 
   const list: ComboItem[] = [];

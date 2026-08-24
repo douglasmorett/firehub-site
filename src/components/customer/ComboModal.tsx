@@ -6,9 +6,15 @@ export type ComboGroupData = {
   id: string;
   title: string;
   maxQty: number;
+  /** Mínimo de escolhas. Nulo = regra antiga: exige exatamente `maxQty`. */
+  minQty?: number | null;
   items: {
     id: string;
     additionalPrice?: number;
+    /** Teto desta opção sozinha. Nulo = só vale o teto do grupo. */
+    maxPerItem?: number | null;
+    /** Linha curta sob o nome da opção ("13cm"), quando o grupo define uma. */
+    optionNote?: string | null;
     menuProduct: {
       id: string;
       name: string;
@@ -21,6 +27,38 @@ export type ComboGroupData = {
 };
 
 export type Selections = Record<string, Record<string, number>>;
+
+/**
+ * Grupo em que não há escolha nenhuma a fazer já vem marcado.
+ *
+ * É o caso do que acompanha um combo: "4 mini pastéis + batata frita +
+ * guaravita" tem a batata e o guaravita como parte fixa. Eles precisam existir
+ * como grupo para chegarem à cozinha — o KDS só imprime o que está nas
+ * seleções, então componente que não é escolha nenhuma sumia da comanda e a
+ * produção montava o combo pela memória.
+ *
+ * Marcar sozinho evita transformar isso em clique obrigatório sem alternativa.
+ * Só vale quando as opções cabem EXATAMENTE no teto do grupo — havendo
+ * qualquer liberdade de escolha, quem decide é o cliente.
+ */
+function preenchimentoForcado(group: ComboGroupData): Record<string, number> {
+  const max = Math.max(1, group.maxQty || 1);
+  const itens = (group.items || []).filter(i => i.menuProduct?.active !== false);
+  if (itens.length === 0) return {};
+
+  const tetos = itens.map(i => {
+    const t = Number(i.maxPerItem);
+    return Number.isFinite(t) && t > 0 ? t : max;
+  });
+  if (tetos.reduce((s, t) => s + t, 0) !== max) return {};
+
+  const forcado: Record<string, number> = {};
+  itens.forEach((i, idx) => {
+    const nome = i.menuProduct?.name;
+    if (nome) forcado[nome] = tetos[idx];
+  });
+  return forcado;
+}
 
 interface ComboModalProps {
   product: {
@@ -43,19 +81,31 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
 
   const [selections, setSelections] = useState<Selections>(() => {
     const init: Selections = {};
-    groups.forEach(g => { init[g.id] = {}; });
+    groups.forEach(g => { init[g.id] = preenchimentoForcado(g); });
     return init;
   });
 
   const getGroupTotal = (gId: string) =>
     Object.values(selections[gId] || {}).reduce((s, v) => s + v, 0);
 
-  const isGroupRequired = (group: ComboGroupData) => (group.maxQty || 1) >= 1;
+  // Quantas escolhas o grupo exige. Nulo mantém a regra antiga (exatamente
+  // maxQty) — é o que os combos gravados antes da coluna minQty esperam.
+  const groupMin = (group: ComboGroupData) => {
+    const max = Math.max(1, group.maxQty || 1);
+    if (group.minQty === null || group.minQty === undefined) return max;
+    const min = Number(group.minQty);
+    if (!Number.isFinite(min) || min < 0) return max;
+    return Math.min(min, max);
+  };
 
+  const isGroupRequired = (group: ComboGroupData) => groupMin(group) > 0;
+
+  // Completo = dentro da faixa. Um grupo opcional já nasce completo; um
+  // obrigatório de 4/4 só fecha com os 4. Antes exigia-se `total === maxQty`
+  // sempre, e por isso não havia como ter adicional que o cliente pode dispensar.
   const isGroupComplete = (group: ComboGroupData) => {
     const total = getGroupTotal(group.id);
-    const max = group.maxQty || 1;
-    return total === max;
+    return total >= groupMin(group) && total <= Math.max(1, group.maxQty || 1);
   };
 
   const allComplete = groups.every(g => isGroupComplete(g));
@@ -81,6 +131,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
       return;
     }
 
+    // Teto da opção sozinha, quando ela define um. O grupo aceita 4 adicionais
+    // no total, mas cada um tem o seu "Máx 2" — sem isto, a mesma opção podia
+    // ser repetida até encher o grupo.
+    const item = group?.items?.find(i => i.menuProduct?.name === optionName);
+    const maxDoItem = Number(item?.maxPerItem) > 0 ? Number(item!.maxPerItem) : maxQty;
+
     setSelections(prev => {
       const currentGroup = { ...(prev[gId] || {}) };
       const currentTotal = Object.values(currentGroup).reduce((s, v) => s + v, 0);
@@ -88,6 +144,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
       const newVal = current + delta;
 
       if (newVal < 0 || (delta > 0 && currentTotal >= maxQty)) return prev;
+      if (delta > 0 && newVal > maxDoItem) return prev;
       if (newVal === 0) delete currentGroup[optionName];
       else currentGroup[optionName] = newVal;
 
@@ -246,9 +303,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
             {groups.map((group, gIdx) => {
               const total = getGroupTotal(group.id);
               const max = group.maxQty || 1;
-              const complete = total === max;
+              const min = groupMin(group);
+              const complete = isGroupComplete(group);
+              const obrigatorio = min > 0;
               const isSingle = max === 1;
               const activeItems = (group.items || []).filter(i => i.menuProduct?.active !== false);
+              // Grupo opcional nunca fica "faltando": ele já nasce completo.
               const isMissing = attemptedSubmit && !complete;
 
               return (
@@ -267,7 +327,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   <div
                     style={{
                       padding: "0.75rem 1rem",
-                      backgroundColor: complete ? "#F0FDF4" : isMissing ? "#FEF2F2" : "#F8FAFC",
+                      backgroundColor: complete && total > 0 ? "#F0FDF4" : isMissing ? "#FEF2F2" : "#F8FAFC",
                       borderBottom: "1px solid #E2E8F0",
                       display: "flex",
                       alignItems: "center",
@@ -282,38 +342,44 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                         </span>
                       </div>
                       <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "2px" }}>
-                        {isSingle ? "Escolha 1 opção" : `Escolha até ${max} opções`}
+                        {min === max
+                          ? (isSingle ? "Escolha 1 opção" : `Escolha ${max} itens`)
+                          : min > 0
+                            ? `Escolha de ${min} a ${max} itens`
+                            : `Escolha até ${max} ${max === 1 ? "item" : "itens"}`}
                       </div>
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-                      <span
-                        style={{
-                          fontSize: "0.68rem",
-                          fontWeight: 800,
-                          padding: "3px 8px",
-                          borderRadius: "6px",
-                          backgroundColor: "#0F172A",
-                          color: "#FFFFFF",
-                          letterSpacing: "0.02em",
-                        }}
-                      >
-                        OBRIGATÓRIO
-                      </span>
+                      {obrigatorio && (
+                        <span
+                          style={{
+                            fontSize: "0.68rem",
+                            fontWeight: 800,
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            backgroundColor: "#0F172A",
+                            color: "#FFFFFF",
+                            letterSpacing: "0.02em",
+                          }}
+                        >
+                          OBRIGATÓRIO
+                        </span>
+                      )}
                       <span
                         style={{
                           fontSize: "0.74rem",
                           fontWeight: 700,
                           padding: "3px 9px",
                           borderRadius: "20px",
-                          backgroundColor: complete ? "#DCFCE7" : isMissing ? "#FEE2E2" : "#FEF3C7",
-                          color: complete ? "#16A34A" : isMissing ? "#DC2626" : "#D97706",
+                          backgroundColor: complete && total > 0 ? "#DCFCE7" : isMissing ? "#FEE2E2" : "#FEF3C7",
+                          color: complete && total > 0 ? "#16A34A" : isMissing ? "#DC2626" : "#D97706",
                           display: "inline-flex",
                           alignItems: "center",
                           gap: "3px",
                         }}
                       >
-                        {complete ? (
+                        {complete && total > 0 ? (
                           <>
                             <Check size={12} strokeWidth={3} /> Escolhido
                           </>
@@ -363,9 +429,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                               <div style={{ fontSize: "0.85rem", fontWeight: isSelected ? 700 : 600, color: "#1E293B", lineHeight: 1.3 }}>
                                 {optName}
                               </div>
-                              {item.menuProduct.description && (
+                              {/* A nota do grupo ganha da descrição do produto: "Baby" é
+                                  o mesmo item em dezenas de grupos, e o que muda de um
+                                  para outro é o "13cm" que o grupo define. */}
+                              {(item.optionNote || item.menuProduct.description) && (
                                 <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "1px", lineHeight: 1.25 }}>
-                                  {item.menuProduct.description}
+                                  {item.optionNote || item.menuProduct.description}
                                 </div>
                               )}
                               {addPrice > 0 ? (
@@ -375,6 +444,11 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                               ) : (
                                 <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#94A3B8", marginTop: "1px" }}>
                                   Incluso
+                                </div>
+                              )}
+                              {!isSingle && Number(item.maxPerItem) > 0 && Number(item.maxPerItem) < max && (
+                                <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: "1px" }}>
+                                  Máx {item.maxPerItem}
                                 </div>
                               )}
                             </div>

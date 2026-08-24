@@ -455,6 +455,19 @@ model ComboGroup {
   menuProductId String
   title         String
   maxQty        Int
+  /// Quantas escolhas o grupo exige no mínimo.
+  ///
+  /// NULO mantém a regra antiga — exigir exatamente `maxQty` —, que é a única
+  /// que existiu até aqui e que todos os combos já gravados esperam.
+  ///
+  /// Sem esta coluna não havia grupo opcional: o cardápio só sabia dizer
+  /// "escolha exatamente N", então um grupo de adicionais que deveria ser
+  /// livre (0 a 4) obrigava o cliente a levar 4 adicionais pagos. Foi o que
+  /// travou a cópia do cardápio do Anota AI para a Pastel da Paulista, onde
+  /// 55 dos 123 grupos são opcionais.
+  ///
+  /// 0 = opcional (o cliente pode não escolher nada).
+  minQty        Int?
   sortOrder     Int              @default(0)
   menuProduct   MenuProduct      @relation(fields: [menuProductId], references: [id], onDelete: Cascade)
   items         ComboGroupItem[]
@@ -467,6 +480,16 @@ model ComboGroupItem {
   comboGroupId    String
   menuProductId   String
   additionalPrice Float       @default(0) // Valor adicional cobrado se este item for escolhido no combo
+  /// Teto de repetição DESTA opção dentro do grupo. Nulo = só o teto do grupo.
+  ///
+  /// É o "Máx 2" que aparece embaixo de cada adicional: o grupo aceita 4 itens
+  /// no total, mas ninguém leva 4 bacons. Sem isto, o único limite era o do
+  /// grupo, e a mesma opção podia ser repetida até enchê-lo.
+  maxPerItem      Int?
+  /// Texto curto sob o nome da opção ("13cm", "22cm"). Existe porque a opção
+  /// pode ser um produto genérico ("Baby") reaproveitado em dezenas de grupos,
+  /// e o que muda de um para outro é justamente essa linha.
+  optionNote      String?
   comboGroup      ComboGroup  @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
   menuProduct     MenuProduct @relation(fields: [menuProductId], references: [id])
 

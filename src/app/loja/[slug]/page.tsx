@@ -65,7 +65,16 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
 
   const [menuProducts, storeCategories, reviewsData, recentReviews] = await Promise.all([
     prisma.menuProduct.findMany({
-      where: { active: true, franchiseeId: franchisee.id },
+      // activeDelivery entra no filtro porque este É o delivery. O campo existia
+      // desde sempre e a tela de cadastro já oferecia o toggle, mas o cardápio
+      // online nunca o consultou: desmarcar "Delivery" não tirava o item daqui.
+      //
+      // Também é o que permite um produto existir SÓ como opção de combo (o
+      // "Frango" que é sabor do mini pastel, a batata que acompanha): ele
+      // precisa estar ativo para o grupo enxergá-lo — os itens do combo vêm por
+      // outra query, abaixo, sem este filtro — sem virar um item solto de R$ 0,00
+      // no meio do cardápio.
+      where: { active: true, activeDelivery: true, franchiseeId: franchisee.id },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
       include: {
         comboGroups: {

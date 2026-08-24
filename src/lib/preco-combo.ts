@@ -33,8 +33,25 @@ export type GrupoDeCombo = {
   id?: string;
   title?: string | null;
   maxQty?: number | null;
+  /** Mínimo de escolhas. Nulo = regra antiga: exige exatamente `maxQty`. */
+  minQty?: number | null;
   items?: ItemDeGrupo[] | null;
 };
+
+/**
+ * Quantas escolhas o grupo EXIGE. É o número que entra no "a partir de".
+ *
+ * Com `minQty` nulo vale a regra antiga (exatamente `maxQty`), que é o que os
+ * combos gravados antes desta coluna esperam. Com `minQty` 0 o grupo é
+ * opcional e não empurra nada para o preço mínimo.
+ */
+export function minimoExigidoDoGrupo(grupo: GrupoDeCombo): number {
+  const max = Math.max(1, Number(grupo.maxQty) || 1);
+  if (grupo.minQty === null || grupo.minQty === undefined) return max;
+  const min = Number(grupo.minQty);
+  if (!Number.isFinite(min) || min < 0) return max;
+  return Math.min(min, max);
+}
 
 export type ProdutoComCombo = {
   price: number;
@@ -151,11 +168,17 @@ export function precoUnitarioDoItem(
 /**
  * Menor preço possível do produto — o "a partir de" do cardápio.
  *
- * Para cada grupo, assume que o cliente vai preencher `maxQty` itens escolhendo
- * sempre o mais barato. Num grupo cujo item mais barato é grátis (o caso das
- * "3 Esfirras Doces", base R$ 16,90), a contribuição é zero e o mínimo continua
- * sendo o preço base. Já no "Nugget" (base R$ 0,00, maxQty 1, opção mais barata
- * +R$ 9,90), o mínimo é R$ 9,90 — que é o número que o cliente precisa ver.
+ * Para cada grupo, assume que o cliente vai preencher o MÍNIMO EXIGIDO
+ * escolhendo sempre a opção mais barata. Num grupo cujo item mais barato é
+ * grátis (o caso das "3 Esfirras Doces", base R$ 16,90), a contribuição é zero
+ * e o mínimo continua sendo o preço base. Já no "Nugget" (base R$ 0,00,
+ * maxQty 1, opção mais barata +R$ 9,90), o mínimo é R$ 9,90 — que é o número
+ * que o cliente precisa ver.
+ *
+ * Grupo opcional (`minQty` 0) não entra na conta: os adicionais de um pastel
+ * não podem inflar o "a partir de" de um item que se vende sem nenhum deles.
+ * Antes desta coluna todo grupo era tratado como obrigatório, então um pastel
+ * com "Adicionais" anunciaria o preço com quatro adicionais embutidos.
  */
 export function precoMinimoDoProduto(produto: ProdutoComCombo): number {
   const base = Number(produto.price) || 0;
@@ -166,8 +189,9 @@ export function precoMinimoDoProduto(produto: ProdutoComCombo): number {
   for (const g of grupos) {
     const itens = g.items || [];
     if (itens.length === 0) continue;
+    const quantos = minimoExigidoDoGrupo(g);
+    if (quantos <= 0) continue;
     const maisBarato = Math.min(...itens.map((i) => Number(i.additionalPrice) || 0));
-    const quantos = Math.max(1, Number(g.maxQty) || 1);
     minimo += maisBarato * quantos;
   }
   return arredondar(minimo);

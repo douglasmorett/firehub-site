@@ -75,6 +75,45 @@ function canTouch(scope: Scope, franchiseeId: string | null): boolean {
 const comboItemId = (it: any): string | null =>
   typeof it === "string" ? it : (it?.id || it?.menuProductId || null);
 
+/**
+ * Monta o payload de um grupo de combo. POST e PUT gravam pelo mesmo caminho —
+ * antes cada um montava o seu, e um campo novo entrava só na metade dos casos.
+ *
+ * `minQty` chega como número ou não chega. Ausente vira NULO de propósito: é o
+ * que preserva a regra antiga ("exige exatamente maxQty") para todo combo
+ * gravado antes da coluna existir, e para todo cliente da API que ainda não
+ * sabe mandar o campo.
+ */
+function dadosDoGrupo(g: any, gIdx: number) {
+  const maxQty = Number(g?.maxQty) > 0 ? Number(g.maxQty) : 1;
+  const minBruto = Number(g?.minQty);
+  const minQty =
+    g?.minQty === null || g?.minQty === undefined || !Number.isFinite(minBruto) || minBruto < 0
+      ? null
+      : Math.min(Math.trunc(minBruto), maxQty);
+
+  return {
+    title: g?.title,
+    maxQty,
+    minQty,
+    sortOrder: gIdx,
+    items: {
+      create: (Array.isArray(g?.items) ? g.items : []).map((it: any) => {
+        const maxItem = Number(it?.maxPerItem);
+        return {
+          menuProductId: comboItemId(it) as string,
+          additionalPrice: typeof it === "object" ? (Number(it?.additionalPrice) || 0) : 0,
+          maxPerItem: Number.isFinite(maxItem) && maxItem > 0 ? Math.trunc(maxItem) : null,
+          optionNote:
+            typeof it === "object" && typeof it?.optionNote === "string" && it.optionNote.trim()
+              ? it.optionNote.trim()
+              : null,
+        };
+      }),
+    },
+  };
+}
+
 // Um combo só pode apontar para itens da MESMA loja. Antes dava para montar um
 // combo referenciando produtos de outra franquia (e vazar nome/preço deles na
 // tela). Itens de fora são descartados em vez de derrubar o salvamento inteiro.
@@ -212,17 +251,7 @@ export async function POST(req: NextRequest) {
       availableDays: rest.availableDays ? JSON.stringify(rest.availableDays) : null,
       franchiseeId,
       comboGroups: safeComboGroups && Array.isArray(safeComboGroups) && safeComboGroups.length > 0 ? {
-        create: safeComboGroups.map((g: any, gIdx: number) => ({
-          title: g.title,
-          maxQty: g.maxQty || 1,
-          sortOrder: gIdx,
-          items: {
-            create: (g.items || []).map((it: any) => ({
-              menuProductId: typeof it === "string" ? it : (it.id || it.menuProductId),
-              additionalPrice: typeof it === "object" ? (Number(it.additionalPrice) || 0) : 0,
-            }))
-          }
-        }))
+        create: safeComboGroups.map((g: any, gIdx: number) => dadosDoGrupo(g, gIdx))
       } : undefined
     }
   });
@@ -272,18 +301,7 @@ export async function PUT(req: NextRequest) {
       for (let gIdx = 0; gIdx < safeComboGroups.length; gIdx++) {
         const g = safeComboGroups[gIdx];
         await prisma.comboGroup.create({
-          data: {
-            menuProductId: id,
-            title: g.title,
-            maxQty: g.maxQty || 1,
-            sortOrder: gIdx,
-            items: {
-              create: (g.items || []).map((it: any) => ({
-                menuProductId: typeof it === "string" ? it : (it.id || it.menuProductId),
-                additionalPrice: typeof it === "object" ? (Number(it.additionalPrice) || 0) : 0,
-              }))
-            }
-          }
+          data: { menuProductId: id, ...dadosDoGrupo(g, gIdx) }
         });
       }
     }

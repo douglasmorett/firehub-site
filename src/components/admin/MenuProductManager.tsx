@@ -457,7 +457,7 @@ export default function MenuProductManager({
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
   const [activeGarcom, setActiveGarcom] = useState(true);
-  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; items: { id: string; additionalPrice: number }[] }[]>([]);
+  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; items: { id: string; additionalPrice: number; maxPerItem: number | null; optionNote: string | null }[] }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("TODAS");
 
@@ -613,9 +613,15 @@ export default function MenuProductManager({
     if (p.isCombo && p.comboGroups) {
       setComboGroups(p.comboGroups.map((g: any) => ({
         title: g.title, maxQty: g.maxQty,
+        // Nulo tem significado (= regra antiga, exige exatamente maxQty) e por
+        // isso não vira 0 aqui: carregar como 0 transformaria todo grupo antigo
+        // em opcional no primeiro salvamento pela tela.
+        minQty: g.minQty === null || g.minQty === undefined ? null : Number(g.minQty),
         items: (g.items || []).map((i: any) => ({
           id: i.menuProduct?.id || i.menuProductId || i.id,
-          additionalPrice: Number(i.additionalPrice) || 0
+          additionalPrice: Number(i.additionalPrice) || 0,
+          maxPerItem: i.maxPerItem === null || i.maxPerItem === undefined ? null : Number(i.maxPerItem),
+          optionNote: i.optionNote ?? null,
         }))
       })));
     } else { setComboGroups([]); }
@@ -720,7 +726,7 @@ export default function MenuProductManager({
     router.refresh();
   };
 
-  const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, items: [] }]);
+  const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, minQty: 1, items: [] }]);
   const removeGroup = (idx: number) => setComboGroups(prev => prev.filter((_, i) => i !== idx));
   const updateGroup = (idx: number, key: string, val: any) => {
     setComboGroups(prev => prev.map((g, i) => i === idx ? { ...g, [key]: val } : g));
@@ -730,7 +736,7 @@ export default function MenuProductManager({
     setComboGroups(prev => prev.map((g, i) => {
       if (i !== gIdx) return g;
       if (g.items.some((it: any) => it.id === itemId)) return g;
-      return { ...g, items: [...g.items, { id: itemId, additionalPrice: 0 }] };
+      return { ...g, items: [...g.items, { id: itemId, additionalPrice: 0, maxPerItem: null, optionNote: null }] };
     }));
   };
   const removeGroupItem = (gIdx: number, itemId: string) => {
@@ -745,6 +751,15 @@ export default function MenuProductManager({
       return {
         ...g,
         items: g.items.map((it: any) => it.id === itemId ? { ...it, additionalPrice: price } : it)
+      };
+    }));
+  };
+  const updateGroupItemField = (gIdx: number, itemId: string, key: string, val: any) => {
+    setComboGroups(prev => prev.map((g, i) => {
+      if (i !== gIdx) return g;
+      return {
+        ...g,
+        items: g.items.map((it: any) => it.id === itemId ? { ...it, [key]: val } : it)
       };
     }));
   };
@@ -1635,10 +1650,29 @@ export default function MenuProductManager({
                         <input className="input-field" value={group.title} onChange={e => updateGroup(gIdx, "title", e.target.value)} placeholder="Ex: Escolha suas esfirras" />
                       </div>
                       <div style={{ width: "90px" }}>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Qtd Mín</label>
+                        <input
+                          className="input-field"
+                          type="number"
+                          min={0}
+                          value={group.minQty ?? group.maxQty}
+                          onChange={e => updateGroup(gIdx, "minQty", Math.max(0, parseInt(e.target.value) || 0))}
+                          title="0 deixa o grupo opcional — o cliente pode não escolher nada."
+                        />
+                      </div>
+                      <div style={{ width: "90px" }}>
                         <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Qtd Máx</label>
                         <input className="input-field" type="number" min={1} value={group.maxQty} onChange={e => updateGroup(gIdx, "maxQty", parseInt(e.target.value) || 1)} />
                       </div>
                       <button type="button" onClick={() => removeGroup(gIdx)} style={{ cursor: "pointer", color: "#EF4444", padding: "0.6rem", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "8px" }} title="Remover Grupo"><Trash2 size={16} /></button>
+                    </div>
+
+                    <div style={{ fontSize: "0.73rem", color: "#64748B", marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
+                      {(group.minQty ?? group.maxQty) === 0
+                        ? "Opcional — o cliente pode seguir sem escolher nada."
+                        : (group.minQty ?? group.maxQty) === group.maxQty
+                          ? `Obrigatório — exige exatamente ${group.maxQty} ${group.maxQty === 1 ? "escolha" : "escolhas"}.`
+                          : `Obrigatório — de ${group.minQty} a ${group.maxQty} escolhas.`}
                     </div>
 
                     {/* Lista de Sabores / Itens Escolhidos */}
@@ -1661,6 +1695,14 @@ export default function MenuProductManager({
                                   {targetProd ? targetProd.name : "Item Excluído"} {!targetProd?.active && "⏸️"}
                                 </span>
                                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <input
+                                    type="text"
+                                    placeholder="obs. (ex: 13cm)"
+                                    value={it.optionNote || ""}
+                                    onChange={e => updateGroupItemField(gIdx, it.id, "optionNote", e.target.value || null)}
+                                    title="Linha curta sob o nome da opção no cardápio."
+                                    style={{ width: "110px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.78rem" }}
+                                  />
                                   <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Acréscimo R$:</label>
                                   <input
                                     type="number"
@@ -1670,6 +1712,16 @@ export default function MenuProductManager({
                                     value={it.additionalPrice || 0}
                                     onChange={e => updateGroupItemPrice(gIdx, it.id, parseFloat(e.target.value) || 0)}
                                     style={{ width: "80px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
+                                  />
+                                  <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Máx:</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="—"
+                                    value={it.maxPerItem ?? ""}
+                                    onChange={e => updateGroupItemField(gIdx, it.id, "maxPerItem", e.target.value ? Math.max(1, parseInt(e.target.value)) : null)}
+                                    title="Quantas vezes ESTA opção pode ser repetida. Vazio = só o limite do grupo."
+                                    style={{ width: "58px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
                                   />
                                   <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444" }} title="Remover Sabor">
                                     <Trash2 size={15} />
