@@ -19,7 +19,6 @@ type FiscalConfig = {
   certA1Url?: string;
   certA1Password?: string;
   cstDefault: string;
-  ncmDefault: string;
   autoEmitPaymentMethods: string[];
 };
 
@@ -105,9 +104,16 @@ export default function StoreFiscalPage() {
     nomeFantasia: "",
     regimeTributario: "Simples Nacional",
     cstDefault: "102",
-    ncmDefault: "2106.90.90",
+    // `ncmDefault: "2106.90.90"` saiu daqui. Aquele valor era gravado no
+    // produto sem NCM e o produto passava a exibir "Regular" — o lojista via o
+    // cardápio inteiro em ordem com o cadastro fiscal vazio. Cada produto tem
+    // o NCM dele na tabela da Receita; não existe genérico que sirva.
     autoEmitPaymentMethods: ["PIX", "CREDIT_CARD", "DEBIT_CARD"],
   });
+
+  // O que falta para esta loja emitir, conforme o servidor. Vazio = pronta.
+  const [pendenciasFiscais, setPendenciasFiscais] = useState<{ campo: string; mensagem: string }[]>([]);
+  const [podeEmitir, setPodeEmitir] = useState(false);
 
   // Config sub-accordion state
   const [openConfigSection, setOpenConfigSection] = useState<string | null>("dados");
@@ -165,6 +171,11 @@ export default function StoreFiscalPage() {
         if (data.fiscalConfig) {
           setFiscalConfig(prev => ({ ...prev, ...data.fiscalConfig }));
         }
+        // O servidor devolve a lista do que ainda falta para emitir. É ela que
+        // alimenta o aviso do topo — antes a tela não tinha como saber se o
+        // módulo estava pronto, então mostrava tudo verde de qualquer jeito.
+        setPendenciasFiscais(Array.isArray(data.pendencias) ? data.pendencias : []);
+        setPodeEmitir(Boolean(data.podeEmitir));
       }
     } catch (err) {
       console.error(err);
@@ -284,13 +295,37 @@ export default function StoreFiscalPage() {
     if (!selectedOrderForEmit) return;
     setEmitting(true);
     try {
-      // Simular emissão SEFAZ
-      await new Promise(r => setTimeout(r, 1200));
-      alert(`✅ Nota Fiscal emitida com sucesso para o pedido #${selectedOrderForEmit.dailyOrderNumber}!`);
+      const res = await fetch("/api/store/fiscal/emitir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: selectedOrderForEmit.id }),
+      });
+      const dados = await res.json();
+
+      if (!res.ok) {
+        // A resposta traz a lista do que falta. Mostrar item por item é o que
+        // permite o lojista resolver — "Erro na emissão" não dizia nada.
+        const lista = Array.isArray(dados.pendencias) && dados.pendencias.length > 0
+          ? "\n\n" + dados.pendencias.map((x: any) => `• ${x.campo}: ${x.mensagem}`).join("\n")
+          : "";
+        alert(`${dados.mensagem || dados.error || "Não foi possível emitir."}${lista}`);
+        return;
+      }
+
+      alert(
+        `Nota autorizada.
+
+Chave: ${dados.chaveDeAcesso}
+Protocolo: ${dados.protocolo}` +
+        (dados.aviso ? `
+
+${dados.aviso}` : "")
+      );
+      if (andPrint && dados.urlDoDanfe) window.open(dados.urlDoDanfe, "_blank");
       setSelectedOrderForEmit(null);
       fetchInvoices();
     } catch {
-      alert("Erro na emissão.");
+      alert("Não consegui falar com o servidor. A nota NÃO foi emitida.");
     } finally {
       setEmitting(false);
     }
@@ -300,13 +335,37 @@ export default function StoreFiscalPage() {
     if (selectedBatchOrderIds.length === 0) return;
     setBatchEmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 1500));
-      alert(`✅ ${selectedBatchOrderIds.length} notas fiscais emitidas em lote com sucesso!`);
+      // Uma por vez, de propósito: cada NFC-e consome um número da série, e a
+      // SEFAZ recusa a série inteira se houver furo na sequência. Em paralelo,
+      // duas falhas simultâneas deixariam dois números queimados.
+      const resultados: { numero: any; ok: boolean; motivo?: string }[] = [];
+      for (const id of selectedBatchOrderIds) {
+        const pedido = orders.find((o: any) => o.id === id);
+        const res = await fetch("/api/store/fiscal/emitir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: id }),
+        });
+        const dados = await res.json().catch(() => ({}));
+        resultados.push({
+          numero: pedido?.dailyOrderNumber ?? id.slice(-5),
+          ok: res.ok,
+          motivo: res.ok ? undefined : (dados.mensagem || dados.error),
+        });
+      }
+
+      const autorizadas = resultados.filter(r => r.ok);
+      const recusadas = resultados.filter(r => !r.ok);
+      const detalhe = recusadas.length
+        ? "\n\nNão emitidas:\n" + recusadas.map(r => `• #${r.numero}: ${r.motivo}`).join("\n")
+        : "";
+      alert(`${autorizadas.length} de ${resultados.length} nota(s) autorizada(s).${detalhe}`);
+
       setShowBatchEmitModal(false);
       setSelectedBatchOrderIds([]);
       fetchInvoices();
     } catch {
-      alert("Erro na emissão em lote.");
+      alert("Não consegui falar com o servidor. Verifique quais notas saíram antes de tentar de novo.");
     } finally {
       setBatchEmitting(false);
     }
@@ -385,6 +444,40 @@ export default function StoreFiscalPage() {
     return FAQ_ITEMS.filter(f => f.q.toLowerCase().includes(faqSearch.toLowerCase()) || f.a.toLowerCase().includes(faqSearch.toLowerCase()));
   }, [faqSearch]);
 
+  /* O estado real do módulo, dito em voz alta no topo de todas as abas.
+     Antes a tela não avisava nada: o botão "Emitir" respondia
+     "✅ Nota Fiscal emitida com sucesso" sem chamar API nenhuma, e a listagem
+     inventava chave e protocolo. Dava para usar o módulo por meses achando que
+     estava emitindo. Agora, enquanto faltar qualquer peça, a tela diz que
+     nenhuma nota sai — e diz exatamente o que buscar. */
+  const AvisoDoEstadoFiscal = () =>
+    podeEmitir ? null : (
+      <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <AlertTriangle size={18} color="#DC2626" />
+          <strong style={{ fontSize: "0.92rem", color: "#991B1B" }}>
+            Esta loja ainda não emite nota fiscal
+          </strong>
+        </div>
+        <p style={{ fontSize: "0.83rem", color: "#7F1D1D", margin: "8px 0 0", lineHeight: 1.5 }}>
+          Nenhuma NFC-e é transmitida à SEFAZ enquanto o cadastro abaixo não estiver completo.
+          Os pedidos aparecem como <strong>pendentes</strong> — não há nota emitida para eles.
+        </p>
+        {pendenciasFiscais.length > 0 && (
+          <ul style={{ margin: "10px 0 0", paddingLeft: 20, fontSize: "0.82rem", color: "#7F1D1D", lineHeight: 1.6 }}>
+            {pendenciasFiscais.slice(0, 8).map((p, i) => (
+              <li key={i}>
+                <strong>{p.campo}</strong>: {p.mensagem}
+              </li>
+            ))}
+            {pendenciasFiscais.length > 8 && (
+              <li>e mais {pendenciasFiscais.length - 8} pendência(s).</li>
+            )}
+          </ul>
+        )}
+      </div>
+    );
+
   return (
     <div style={{ background: "#F8FAFC", minHeight: "100vh", display: "flex", fontFamily: "'Inter', sans-serif" }}>
       {/* ── CARDÁPIO WEB STYLE SIDEBAR (FISCAL NAV) ── */}
@@ -438,6 +531,7 @@ export default function StoreFiscalPage() {
         {/* ── NAV 1: CONFIGURAÇÕES FISCAIS (STYLE CARDÁPIO WEB) ── */}
         {activeNav === "config" && (
           <div>
+            <AvisoDoEstadoFiscal />
             <h1 style={{ margin: "0 0 1.25rem", fontSize: "1.35rem", fontWeight: 800, color: "#1E293B" }}>
               Configurações fiscais
             </h1>
@@ -539,11 +633,29 @@ export default function StoreFiscalPage() {
 
                   {openConfigSection === "cert" && (
                     <div style={{ padding: "0 1.5rem 1.5rem", borderTop: "1px solid #F1F5F9" }}>
-                      <p style={{ fontSize: "0.82rem", color: "#64748B", marginTop: 12 }}>Faça o upload do seu certificado digital A1 (.pfx ou .p12):</p>
-                      <input type="file" accept=".pfx,.p12" style={{ marginTop: 8, fontSize: "0.82rem" }} />
-                      <div style={{ marginTop: 10 }}>
-                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block" }}>Senha do Certificado A1</label>
-                        <input type="password" placeholder="••••••••" style={{ width: 220, padding: "6px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem", marginTop: 4 }} />
+                      {/* Aqui havia um <input type="file"> sem onChange e um campo de
+                          senha sem state: o arquivo e a senha nunca saíam da tela. O
+                          lojista selecionava o certificado, via o nome do arquivo
+                          aparecer e ia embora achando que tinha enviado.
+
+                          Não foi trocado por um upload que funciona, e sim removido:
+                          o .pfx é a CHAVE PRIVADA da empresa. Quem tem o arquivo e a
+                          senha assina documento fiscal em nome dela. Guardar isso no
+                          FireHub significaria virar depositário da chave de cada
+                          cliente — e um vazamento nosso viraria fraude fiscal deles.
+                          O certificado vai direto para o provedor de emissão, que é
+                          quem assina e transmite. */}
+                      <div style={{ marginTop: 12, padding: 14, background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10 }}>
+                        <p style={{ fontSize: "0.85rem", color: "#92400E", fontWeight: 700, margin: 0 }}>
+                          O certificado não é enviado ao FireHub
+                        </p>
+                        <p style={{ fontSize: "0.82rem", color: "#78350F", marginTop: 6, lineHeight: 1.5 }}>
+                          O arquivo <strong>.pfx</strong> é a chave privada da sua empresa — quem tem
+                          ele e a senha assina documento fiscal no seu nome. Por isso ele fica com o
+                          <strong> provedor de emissão</strong>, que é quem assina e transmite para a
+                          SEFAZ. Envie o certificado no painel do provedor e cole aqui apenas o token
+                          de acesso, na seção <strong>Provedor de emissão</strong>.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -613,6 +725,7 @@ export default function StoreFiscalPage() {
         {/* ── NAV 2: CONFIGURAÇÕES FISCAIS DOS PRODUTOS & COMBOS ── */}
         {activeNav === "products" && (
           <div>
+            <AvisoDoEstadoFiscal />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
               <h1 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#1E293B" }}>
                 Configurações fiscais dos produtos
@@ -708,6 +821,7 @@ export default function StoreFiscalPage() {
         {/* ── NAV 3: NOTAS FISCAIS (STYLE CARDÁPIO WEB SCREENSHOT 3) ── */}
         {activeNav === "invoices" && (
           <div>
+            <AvisoDoEstadoFiscal />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 10 }}>
               <h1 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#1E293B" }}>
                 Notas fiscais
@@ -740,7 +854,16 @@ export default function StoreFiscalPage() {
                 </button>
 
                 <button
-                  onClick={() => alert(`Download de ${orderStats.countAutorizadas} XMLs do período iniciado!`)}
+                  onClick={() => {
+                    // Abre o XML de cada nota REALMENTE autorizada. Antes era um
+                    // alert dizendo "download iniciado" sem baixar arquivo nenhum.
+                    const comXml = (orders as any[]).filter(o => o.fiscalInfo?.xmlUrl);
+                    if (comXml.length === 0) {
+                      alert("Nenhuma nota autorizada no período — não há XML para baixar.");
+                      return;
+                    }
+                    comXml.forEach(o => window.open(o.fiscalInfo.xmlUrl, "_blank"));
+                  }}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -1152,19 +1275,39 @@ export default function StoreFiscalPage() {
                   <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#334155" }}>📦 Grupos do Combo</h3>
                   <button
                     onClick={() => {
-                      // Auto-popular fiscalItemsDraft a partir dos comboGroups
+                      // ── RATEIO DO PREÇO DO COMBO ENTRE AS ESCOLHAS ──────────
+                      // A conta era `preço do combo / group.maxQty` aplicada a
+                      // CADA opção do grupo. Num combo de R$ 100 com um grupo de
+                      // 2 escolhas e 5 opções, mais um grupo de 1 escolha e 3
+                      // opções, saíam 8 linhas somando 5×50 + 3×100 = R$ 550 —
+                      // cinco vezes e meia o que o cliente paga.
+                      //
+                      // O certo é dividir o preço pelo total de escolhas que o
+                      // combo exige, não por grupo. Cada opção é ALTERNATIVA
+                      // dentro do grupo, não item somado: as opções de um grupo
+                      // de 2 escolhas valem o mesmo, e são duas que entram.
+                      const escolhasExigidas = comboDetails.comboGroups.reduce(
+                        (soma: number, g: any) => soma + Math.max(1, Number(g.maxQty) || 1),
+                        0
+                      );
+                      const porEscolha =
+                        escolhasExigidas > 0 ? editingCombo.price / escolhasExigidas : editingCombo.price;
+
                       const items: any[] = [];
                       for (const group of comboDetails.comboGroups) {
-                        const basePrice = group.maxQty > 0 ? editingCombo.price / group.maxQty : editingCombo.price;
                         for (const gi of group.items) {
                           const addPrice = gi.additionalPrice || 0;
                           items.push({
                             name: gi.menuProduct?.name || gi.name || "Item",
-                            price: parseFloat((basePrice + addPrice).toFixed(2)),
-                            basePrice: parseFloat(basePrice.toFixed(2)),
+                            price: parseFloat((porEscolha + addPrice).toFixed(2)),
+                            basePrice: parseFloat(porEscolha.toFixed(2)),
                             additionalPrice: addPrice,
                             category: gi.menuProduct?.category || editingCombo.category || "Lanches",
-                            ncm: gi.menuProduct?.ncm || editingCombo.ncm || "2106.90.90",
+                            // Sem NCM de mentira: se o componente não tem o dele,
+                            // o campo fica vazio e a linha aparece pendente. O
+                            // "2106.90.90" que ficava aqui fazia o combo inteiro
+                            // parecer classificado sem ninguém ter classificado.
+                            ncm: gi.menuProduct?.ncm || editingCombo.ncm || "",
                             cfop: editingCombo.cfop || "5102",
                             csosn: editingCombo.csosn || "102",
                             groupTitle: group.title,
@@ -1181,7 +1324,16 @@ export default function StoreFiscalPage() {
                 </div>
 
                 {comboDetails.comboGroups.map((group: any) => {
-                  const basePrice = group.maxQty > 0 ? editingCombo.price / group.maxQty : editingCombo.price;
+                  // Mesmo rateio do botão de auto-preencher: pelo total de
+                  // escolhas do combo, não por grupo. Se a etiqueta mostrasse
+                  // uma conta e o botão gravasse outra, o lojista não teria
+                  // como saber qual das duas é a que vale.
+                  const escolhasExigidas = comboDetails.comboGroups.reduce(
+                    (soma: number, g: any) => soma + Math.max(1, Number(g.maxQty) || 1),
+                    0
+                  );
+                  const basePrice =
+                    escolhasExigidas > 0 ? editingCombo.price / escolhasExigidas : editingCombo.price;
                   return (
                     <div key={group.id} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 14px", marginBottom: 8 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>

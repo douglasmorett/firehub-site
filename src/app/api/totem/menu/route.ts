@@ -1,98 +1,92 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { jwtVerify } from "jose";
-import { segredoObrigatorio } from "@/lib/segredos";
+import { autenticarTotem } from "@/lib/totem-auth";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
+import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 
-// Função, não constante: `segredoObrigatorio` lança quando a variável falta, e
-// no topo do módulo isso quebraria o BUILD (o Next avalia os módulos ao gerar
-// as páginas). Avaliado só no uso, falha apenas a requisição — e com mensagem.
-const obterSegredo = () => new TextEncoder().encode(segredoObrigatorio("NEXTAUTH_SECRET"));
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.nextUrl.searchParams.get("token");
-    if (!token) return NextResponse.json({ error: "Token obrigatório" }, { status: 400 });
-
-    let payload: any;
-    try {
-      const result = await jwtVerify(token, obterSegredo());
-      payload = result.payload;
-    } catch {
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    const auth = await autenticarTotem(req.nextUrl.searchParams.get("token"));
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.erro, code: auth.codigo }, { status: auth.status });
     }
+    const lojaId = auth.licenca.franchiseeId;
 
-    const license = await prisma.totemLicense.findUnique({
-      where: { id: payload.licenseId },
-      select: { franchiseeId: true, active: true }
-    });
-
-    if (!license || !license.active) {
-      return NextResponse.json({ error: "Licença inválida" }, { status: 403 });
-    }
-
-    // Buscar produtos ativos para o totem
     const products = await prisma.menuProduct.findMany({
       where: {
-        franchiseeId: license.franchiseeId,
+        franchiseeId: lojaId,
         active: true,
-        activeTotem: true, // Apenas produtos habilitados para Totem (padrão true para todos os ativos)
+        activeTotem: true,
+        // O espelho do catálogo do iFood não é cardápio da loja: existe só para
+        // casar o pedido que chega da plataforma. Cliente no totem não compra
+        // por ali. Ver src/lib/cardapio-interno.ts.
+        ...SEM_PRODUTO_DE_INTEGRACAO,
       },
       orderBy: [{ category: "asc" }, { name: "asc" }],
       select: {
         id: true, name: true, description: true, price: true, imageUrl: true,
         category: true, isCombo: true, isBeverage: true, tags: true, availableDays: true,
+        comboConfig: true,
         comboGroups: {
           orderBy: { sortOrder: "asc" },
           include: {
             items: {
               include: {
-                menuProduct: { select: { id: true, name: true, active: true, imageUrl: true, price: true } }
-              }
-            }
-          }
-        }
-      }
+                menuProduct: { select: { id: true, name: true, active: true, imageUrl: true, price: true } },
+              },
+            },
+          },
+        },
+      },
     });
 
-    // Buscar categorias cadastradas no banco
     const dbCategories = await prisma.menuCategory.findMany({
-      where: { franchiseeId: license.franchiseeId },
+      where: { franchiseeId: lojaId },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, emoji: true, imageUrl: true, color: true, sortOrder: true }
+      select: { id: true, name: true, emoji: true, imageUrl: true, color: true, sortOrder: true },
     });
 
-    // Sintetizar categorias de produtos caso não estejam na tabela MenuCategory
-    const categoryNames = new Set(dbCategories.map(c => c.name.toLowerCase().trim()));
-    const extraCategories: any[] = [];
-    
-    products.forEach(p => {
-      if (p.category && !categoryNames.has(p.category.toLowerCase().trim())) {
-        categoryNames.add(p.category.toLowerCase().trim());
-        extraCategories.push({
-          id: `cat_${p.category.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
-          name: p.category,
-          emoji: "🍽️",
-          imageUrl: null,
-          color: "#E8360C",
-          sortOrder: 99
-        });
-      }
+    // Categoria que existe só no produto (nunca foi cadastrada em MenuCategory)
+    // ainda precisa virar aba, senão o produto fica órfão e some da tela.
+    const nomesConhecidos = new Set(dbCategories.map((c) => c.name.toLowerCase().trim()));
+    const extras: any[] = [];
+    for (const p of products) {
+      const chave = p.category?.toLowerCase().trim();
+      if (!chave || nomesConhecidos.has(chave)) continue;
+      nomesConhecidos.add(chave);
+      extras.push({
+        id: `cat_${chave.replace(/[^a-z0-9]/g, "_")}`,
+        name: p.category,
+        emoji: "🍽️",
+        imageUrl: null,
+        color: "#E8360C",
+        sortOrder: 99,
+      });
+    }
+
+    const doDia = products.filter((p) => disponivelHoje(p.availableDays));
+
+    // O preço do combo é calculado aqui, não na tela. `price` de um combo é a
+    // base: um combo de base R$ 0,00 cujo grupo obrigatório mais barato custa
+    // R$ 9,90 apareceria como "R$ 0,00" no totem, e o cliente veria um preço
+    // que não existe. `precoMinimoDoProduto` é a mesma função que o cardápio
+    // online e o PDV usam — um preço só, calculado num lugar só.
+    const comPreco = doDia.map((p) => {
+      const minimo = precoMinimoDoProduto(p as any);
+      return {
+        ...p,
+        precoMinimo: minimo,
+        // "a partir de" só quando a escolha do cliente pode mudar o valor.
+        precoAPartirDe: precoVariaPorEscolha(p as any),
+      };
     });
 
-    const categories = [...dbCategories, ...extraCategories];
-
-    // Filtrar por dia da semana
-    const dayMap: Record<number, string> = { 0: "DOM", 1: "SEG", 2: "TER", 3: "QUA", 4: "QUI", 5: "SEX", 6: "SAB" };
-    const today = dayMap[new Date().getDay()];
-    const filtered = products.filter(p => {
-      if (!p.availableDays) return true;
-      try {
-        const days = JSON.parse(p.availableDays as string);
-        return !Array.isArray(days) || days.length === 0 || days.includes(today);
-      } catch { return true; }
+    return NextResponse.json({
+      products: comPreco,
+      categories: [...dbCategories, ...extras],
     });
-
-    return NextResponse.json({ products: filtered, categories });
   } catch (err) {
     console.error("[Totem Menu] Erro:", err);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });

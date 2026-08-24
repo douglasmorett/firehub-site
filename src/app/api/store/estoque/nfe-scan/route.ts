@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
 import { trackVisionUsage } from "@/lib/usage-tracker";
 
@@ -10,6 +11,17 @@ export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const email = session.user.email || "";
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, ownerId: true }
+    });
+    if (!user) return NextResponse.json({ error: "Lojista não encontrado" }, { status: 404 });
+
+    // O STAFF é um User com ownerId apontando para o dono da loja: cobrando pelo id dele,
+    // a leitura de nota feita pelo funcionário nunca aparecia no consumo da loja.
+    const franchiseeId = user.ownerId || user.id;
 
     const { imageUrl } = await req.json();
     if (!imageUrl) return NextResponse.json({ error: "URL da imagem é obrigatória" }, { status: 400 });
@@ -117,7 +129,7 @@ IMPORTANTE:
     }
 
     // Track Vision AI usage (fire-and-forget)
-    trackVisionUsage((session.user as any).id, { imageUrl });
+    trackVisionUsage(franchiseeId, { imageUrl });
 
     return NextResponse.json({ success: true, data: parsed });
   } catch (error: any) {

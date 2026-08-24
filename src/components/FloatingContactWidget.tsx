@@ -15,8 +15,19 @@ export default function FloatingContactWidget({
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(true);
 
-  // Não renderiza em telas de venda presencial ou KDS para não sobrepor botões
-  if (pathname?.startsWith("/store/venda-presencial") || pathname?.startsWith("/store/kds")) {
+  // Não renderiza em telas de venda presencial ou KDS para não sobrepor botões.
+  //
+  // O totem entrou na lista pelo mesmo motivo, e por um pior: este widget é a
+  // venda do FireHub para o LOJISTA ("Quero saber mais sobre o FireHub"), e ele
+  // aparecia flutuando na frente do cliente que está comprando um lanche. Fixo
+  // com z-index 9999 no canto inferior direito, ficava exatamente por cima do
+  // "Ver carrinho" do quiosque — o dedo mirava o carrinho e abria o WhatsApp
+  // comercial.
+  if (
+    pathname?.startsWith("/store/venda-presencial") ||
+    pathname?.startsWith("/store/kds") ||
+    pathname?.startsWith("/totem")
+  ) {
     return null;
   }
 

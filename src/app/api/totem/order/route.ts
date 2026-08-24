@@ -1,65 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateDailyOrderNumber } from "@/lib/order-number";
-import { jwtVerify } from "jose";
+import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
-import { segredoObrigatorio } from "@/lib/segredos";
+import { autenticarTotem } from "@/lib/totem-auth";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
 
-// Função, não constante: `segredoObrigatorio` lança quando a variável falta, e
-// no topo do módulo isso quebraria o BUILD (o Next avalia os módulos ao gerar
-// as páginas). Avaliado só no uso, falha apenas a requisição — e com mensagem.
-const obterSegredo = () => new TextEncoder().encode(segredoObrigatorio("NEXTAUTH_SECRET"));
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { token, customerName, items, notes, paymentMethod } = body;
 
-    if (!token) return NextResponse.json({ error: "Token obrigatório" }, { status: 400 });
+    const auth = await autenticarTotem(token);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.erro, code: auth.codigo }, { status: auth.status });
+    }
+    const licenca = auth.licenca;
+
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
     }
 
-    // Verify token
-    let payload: any;
-    try {
-      const result = await jwtVerify(token, obterSegredo());
-      payload = result.payload;
-    } catch {
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
-    }
-
-    const license = await prisma.totemLicense.findUnique({
-      where: { id: payload.licenseId },
-      select: { id: true, franchiseeId: true, active: true, label: true }
-    });
-
-    if (!license || !license.active) {
-      return NextResponse.json({ error: "Licença inválida" }, { status: 403 });
-    }
-
-    // Buscar produtos para validar preços
-    const productIds = items.map((i: any) => i.menuProductId);
+    // O produto precisa ser da loja, estar ativo E estar liberado para o totem.
+    // Antes bastava ser da loja: quem montasse a requisição na mão comprava um
+    // item que o totem nem oferece — inclusive o espelho do catálogo do iFood.
+    const productIds = [...new Set(items.map((i: any) => i?.menuProductId).filter(Boolean))];
     const dbProducts = await prisma.menuProduct.findMany({
-      where: { id: { in: productIds }, franchiseeId: license.franchiseeId, active: true },
-      include: {
-        comboGroups: { include: { items: { include: { menuProduct: true } } } }
-      }
+      where: {
+        id: { in: productIds },
+        franchiseeId: licenca.franchiseeId,
+        active: true,
+        activeTotem: true,
+        ...SEM_PRODUTO_DE_INTEGRACAO,
+      },
+      include: { comboGroups: { include: { items: { include: { menuProduct: true } } } } },
     });
 
-    const productMap = new Map(dbProducts.map(p => [p.id, p]));
+    const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
-    // Calcular total verificado pelo servidor
     let totalAmount = 0;
     const orderItems: Array<{ menuProductId: string; quantity: number; price: number; comboSelections: any }> = [];
+    const recusados: string[] = [];
 
     for (const item of items) {
       const product = productMap.get(item.menuProductId);
-      if (!product) continue;
+      if (!product) {
+        recusados.push(String(item?.menuProductId ?? "?"));
+        continue;
+      }
+
+      // Produto de dia específico não pode ser vendido fora do dia. O cardápio
+      // já esconde, mas a tela pode estar aberta desde ontem.
+      if (!disponivelHoje(product.availableDays)) {
+        recusados.push(product.name);
+        continue;
+      }
 
       // Mesma conta do cardápio, do modal e do robô — src/lib/preco-combo.ts.
-      // A lógica que existia aqui já casava por grupo e estava certa; passou a
-      // usar a função compartilhada para os canais não voltarem a divergir.
       let itemPrice = precoUnitarioDoItem(product as any, item.comboSelections);
 
       // Piso de segurança: produto cujo valor mora nas opções (o "Nugget" da
@@ -73,7 +71,7 @@ export async function POST(req: NextRequest) {
         itemPrice = minimo;
       }
 
-      const quantity = Math.max(1, Math.min(99, item.quantity || 1));
+      const quantity = Math.max(1, Math.min(99, Number(item.quantity) || 1));
       totalAmount += itemPrice * quantity;
 
       orderItems.push({
@@ -85,76 +83,89 @@ export async function POST(req: NextRequest) {
     }
 
     if (orderItems.length === 0) {
-      return NextResponse.json({ error: "Nenhum produto válido no carrinho" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Nenhum produto válido no carrinho. Atualize o cardápio e tente de novo." },
+        { status: 400 }
+      );
     }
 
-    // Verificar auto-accept
+    // Recusar item silenciosamente é pior do que recusar o pedido: o cliente
+    // paga na maquininha o valor da tela e recebe menos comida.
+    if (recusados.length > 0) {
+      return NextResponse.json(
+        {
+          error: "carrinho_desatualizado",
+          mensagem: `Estes itens saíram do cardápio: ${recusados.join(", ")}. Refaça o pedido.`,
+          itensRecusados: recusados,
+        },
+        { status: 409 }
+      );
+    }
+
     const store = await prisma.user.findUnique({
-      where: { id: license.franchiseeId },
-      select: { autoAcceptOrders: true, storeName: true, name: true }
+      where: { id: licenca.franchiseeId },
+      select: { autoAcceptOrders: true },
+    });
+    const initialStatus = store?.autoAcceptOrders ? "ACEITO" : "NOVO";
+
+    // Numeração DENTRO da transação que grava o pedido. Fora dela, o número é
+    // consumido antes do insert e evapora se o insert falhar — foi o que abriu
+    // buracos na sequência (os pedidos 92, 95 e 97 que sumiram).
+    const order = await prisma.$transaction(async (tx) => {
+      const dailyOrderNumber = await generateDailyOrderNumberTx(tx, licenca.franchiseeId);
+
+      return tx.customerOrder.create({
+        data: {
+          franchiseeId: licenca.franchiseeId,
+          dailyOrderNumber,
+          customerName: customerName || `Totem ${licenca.label}`,
+          customerPhone: "totem",
+          deliveryType: "TAKEOUT", // Totem é sempre retirada no balcão
+          paymentMethod: paymentMethod || "Cartão (Maquininha)",
+          totalAmount,
+          deliveryFee: 0,
+          status: initialStatus,
+          source: "TOTEM",
+          notes: notes || null,
+          kdsStage: "PRODUCTION",
+          totemLicenseId: licenca.id,
+          items: { create: orderItems },
+        },
+        include: { items: true },
+      });
     });
 
-    const autoAccept = store?.autoAcceptOrders ?? false;
-    const initialStatus = autoAccept ? "ACEITO" : "NOVO";
+    // Daqui para baixo é consequência do pedido já gravado: nada pode derrubar
+    // a resposta. O cliente já está com o número dele na mão.
+    prisma.user
+      .update({ where: { id: licenca.franchiseeId }, data: { storeOrderCount: { increment: 1 } } })
+      .catch((e) => console.error("[Totem] contador de pedidos:", e));
 
-    const dailyOrderNumber = await generateDailyOrderNumber(license.franchiseeId);
+    // Baixa de estoque: o totem não fazia. Venda pelo autoatendimento saía do
+    // caixa sem sair do estoque, e o saldo ia descolando do real todo dia.
+    import("@/lib/stock")
+      .then(({ deductStockForOrder }) => deductStockForOrder(order.id))
+      .catch((e) => console.error("[Totem] baixa de estoque:", e));
 
-    // Criar pedido
-    const order = await prisma.customerOrder.create({
-      data: {
-        franchiseeId: license.franchiseeId,
-        dailyOrderNumber,
-        customerName: customerName || `Totem ${license.label}`,
-        customerPhone: "totem",
-        deliveryType: "TAKEOUT", // Totem é sempre retirada no balcão
-        paymentMethod: paymentMethod || "Cartão (Maquininha)",
-        totalAmount,
-        deliveryFee: 0,
-        status: initialStatus,
-        source: "TOTEM",
-        notes: notes || null,
-        kdsStage: "PRODUCTION",
-        totemLicenseId: license.id,
-        items: {
-          create: orderItems.map(item => ({
-            menuProductId: item.menuProductId,
-            quantity: item.quantity,
-            price: item.price,
-            comboSelections: item.comboSelections,
-          }))
-        }
-      },
-      include: { items: true }
-    });
+    import("@/lib/billing")
+      .then(({ trackSaleForBilling }) => trackSaleForBilling(licenca.franchiseeId))
+      .catch((e) => console.error("[Totem] faturamento:", e));
 
-    // Incrementar contador de pedidos
-    await prisma.user.update({
-      where: { id: license.franchiseeId },
-      data: { storeOrderCount: { increment: 1 } }
-    });
-
-    // Track sale for billing
-    const { trackSaleForBilling } = await import("@/lib/billing");
-    await trackSaleForBilling(license.franchiseeId);
-
-    // Auto-print (se configurado)
-    try {
-      const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
-      await pushJobToPrintQueue(license.franchiseeId, order);
-    } catch (e) {
-      // Print queue optional
-    }
+    import("@/app/api/store/print-queue/route")
+      .then(({ pushJobToPrintQueue }) => pushJobToPrintQueue(licenca.franchiseeId, order))
+      .catch((e) => console.error("[Totem] impressão:", e));
 
     return NextResponse.json({
       success: true,
       order: {
         id: order.id,
+        numero: order.dailyOrderNumber,
         status: order.status,
         totalAmount: order.totalAmount,
         customerName: order.customerName,
         itemCount: order.items.length,
         createdAt: order.createdAt.toISOString(),
-      }
+      },
     });
   } catch (err) {
     console.error("[Totem Order] Erro:", err);

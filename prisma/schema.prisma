@@ -146,6 +146,9 @@ model User {
   totemConfig         Json?     // { theme, welcomeMessage, inactivityTimeout, requireCustomerName }
   totemLicenses       TotemLicense[]
 
+  // === MAQUININHA (PDV FÍSICO) ===
+  posTerminals        PosTerminal[]
+
   // === TRACKING DE CUSTOS ===
   usageLogs           UsageLog[]
 
@@ -402,8 +405,14 @@ model MenuProduct {
   // Canais de venda
   activePDV       Boolean             @default(true)   // Disponível no PDV (atendente)
   activeDelivery  Boolean             @default(true)   // Disponível no Delivery online
-  activeTotem     Boolean             @default(false)  // Disponível no Totem de autoatendimento
-  activeGarcom    Boolean             @default(false)  // Disponível para o garçom (mesa)
+  /// Os quatro canais nascem LIGADOS. Antes, PDV e Delivery vinham `true` e
+  /// Totem e Garçom vinham `false`: produto criado por qualquer caminho que não
+  /// preenchesse os campos — import de CSV, sincronização do iFood, JotaJá —
+  /// aparecia no balcão e sumia do totem, sem nada avisar. Eram 194 de 331
+  /// produtos invisíveis no totem por causa disso. Quem não quer o item num
+  /// canal desliga na tela; o padrão é o cardápio inteiro em todo lugar.
+  activeTotem     Boolean             @default(true)   // Disponível no Totem de autoatendimento
+  activeGarcom    Boolean             @default(true)   // Disponível para o garçom (mesa)
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   franchisee      User?               @relation(fields: [franchiseeId], references: [id])
@@ -580,6 +589,17 @@ model CustomerOrder {
 
   // === TOTEM ===
   totemLicenseId    String?   // ID do totem que gerou o pedido
+  // === MAQUININHA (MERCADO PAGO POINT) ===
+  // ID da Order no MP ("ORD01J..."). O webhook do Point não carrega nada nosso
+  // além disto, então é por este campo que o pedido é encontrado — daí o índice.
+  posOrderId        String?
+  posTerminalId     String?             // Em qual Point a cobrança subiu, para o operador saber em qual visor olhar
+  posStatus         String?             // Último status vindo do MP: created | processed | canceled | refunded | failed | expired | action_required
+  // Quantas vezes esta comanda já foi mandada para a maquininha. Entra na
+  // X-Idempotency-Key: a chave vale 24h no MP, então sem contador a segunda
+  // tentativa (depois de um cancelamento ou de uma recusa) devolveria a ordem
+  // antiga em vez de acender uma cobrança nova no visor.
+  posTentativas     Int                 @default(0)
   // === MESA ===
   tableSessionId    String?             // Sessão de mesa vinculada
   tableSession      TableSession?       @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
@@ -598,6 +618,7 @@ model CustomerOrder {
   @@index([employeeId])
   @@index([openDeliveryReference])
   @@index([tableSessionId])
+  @@index([posOrderId])
 }
 
 // ─── MÓDULO DE MESAS ──────────────────────────────────────────────────────────
@@ -708,11 +729,52 @@ model TotemLicense {
   lastIp            String?   // IP do último heartbeat
   userAgent         String?   // User agent do dispositivo
   monthlyPrice      Float     @default(100) // R$ 100/mês
+  // Maquininha que fica fisicamente ao lado deste totem. Sem isso o cliente
+  // escolhe "cartão" na tela e ninguém sabe em qual das Points da loja jogar a
+  // cobrança — com dois totens no salão, o pedido de um sobe no visor do outro.
+  posTerminalId     String?
+  posTerminal       PosTerminal? @relation(fields: [posTerminalId], references: [id], onDelete: SetNull)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([franchiseeId])
   @@index([token])
+  @@index([posTerminalId])
+}
+
+// Maquininha física cadastrada pela loja. Guardamos o terminal no banco em vez
+// de consultar a lista do Mercado Pago a cada venda porque o caixa não pode
+// esperar uma chamada externa (nem quebrar quando ela cai) só para descobrir
+// para onde mandar a cobrança.
+model PosTerminal {
+  id            String    @id @default(cuid())
+  franchiseeId  String
+  franchisee    User      @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  // Qual adquirente. Hoje só existe o Point, mas o campo evita migrar a tabela
+  // inteira quando entrar Stone/Cielo — o formato do externalId muda com cada uma.
+  provider      String    @default("MERCADOPAGO_POINT")
+  // terminal_id do MP, no formato "NEWLAND_N950__N950NCB801293324". É o que vai
+  // em config.point.terminal_id na criação da ordem.
+  externalId    String
+  label         String    // Nome que o operador reconhece: "Point do balcão"
+  storeId       String?   // store_id do MP — loja física à qual a maquininha está vinculada lá
+  posId         String?   // pos_id do MP — caixa/PDV ao qual ela está vinculada lá
+  // PDV | STANDALONE | UNDEFINED. Fora de PDV a maquininha ignora a cobrança
+  // enviada por API e só aceita valor digitado à mão; guardar o modo deixa a
+  // tela avisar isso antes da venda, em vez de o pedido sumir no silêncio.
+  operatingMode String?
+  // Maquininha devolvida ou trocada não some do histórico: pedidos antigos
+  // apontam para ela. Desliga aqui e ela deixa de aparecer na hora de cobrar.
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  totemLicenses TotemLicense[]
+
+  // A mesma maquininha não pode ser cadastrada duas vezes na mesma loja: dois
+  // registros para o mesmo terminal_id fariam o webhook casar com o cadastro errado.
+  @@unique([franchiseeId, externalId])
+  @@index([franchiseeId])
 }
 
 

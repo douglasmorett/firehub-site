@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
+import { SEM_PRODUTO_DE_INTEGRACAO } from "@/lib/cardapio-interno";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -154,11 +155,11 @@ export async function GET(req: NextRequest) {
   const { scope, error } = await resolveScope(req);
   if (!scope) return error;
 
-  const excludeIntegrationCategories = {
-    NOT: {
-      category: { in: ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"] }
-    }
-  };
+  // Regra única em src/lib/cardapio-interno.ts. A lista escrita aqui comparava
+  // com "IFOOD" em caixa alta e a sincronização grava "iFood": o `in` do Prisma
+  // diferencia caixa, então este filtro não excluía UM produto sequer. Os 36
+  // espelhos do iFood da Hakim Centro chegavam ao PDV misturados ao cardápio.
+  const excludeIntegrationCategories = SEM_PRODUTO_DE_INTEGRACAO;
 
   // ADMIN com uma loja selecionada (cookie firehub_active_store, mesmo padrao de
   // /api/store/dynamic-eta) deve carregar SO o cardapio daquela loja. Sem isso o

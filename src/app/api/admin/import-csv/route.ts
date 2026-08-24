@@ -114,6 +114,13 @@ export async function POST(req: NextRequest) {
           category: p.category,
           imageUrl: p.imageUrl,
           active: true,
+          // Explícito porque o schema tinha padrões diferentes por canal: PDV e
+          // Delivery nasciam ligados, Totem e Garçom desligados. Produto
+          // importado aparecia no balcão e sumia do totem, sem nada avisar.
+          activePDV: true,
+          activeDelivery: true,
+          activeTotem: true,
+          activeGarcom: true,
         },
       });
       created.push(p.name);

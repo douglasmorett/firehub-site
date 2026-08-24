@@ -1,49 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { jwtVerify } from "jose";
-import { segredoObrigatorio } from "@/lib/segredos";
+import { autenticarTotem, ipDaRequisicao } from "@/lib/totem-auth";
 
-// Função, não constante: `segredoObrigatorio` lança quando a variável falta, e
-// no topo do módulo isso quebraria o BUILD (o Next avalia os módulos ao gerar
-// as páginas). Avaliado só no uso, falha apenas a requisição — e com mensagem.
-const obterSegredo = () => new TextEncoder().encode(segredoObrigatorio("NEXTAUTH_SECRET"));
+export const dynamic = "force-dynamic";
 
+/**
+ * Ping periódico do totem. Serve para o painel mostrar quem está de pé e para o
+ * totem descobrir que a loja fechou ou que a licença foi desligada.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const { token } = await req.json();
-    if (!token) return NextResponse.json({ error: "Token obrigatório" }, { status: 400 });
+    const { token } = await req.json().catch(() => ({}));
 
-    let payload: any;
-    try {
-      const result = await jwtVerify(token, obterSegredo());
-      payload = result.payload;
-    } catch {
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    // `exigirModuloAtivo: false` de propósito: se o dono desligar o módulo, o
+    // totem precisa RECEBER essa resposta para se recolher sozinho. Barrar aqui
+    // deixaria a tela de venda no ar até alguém desligar o aparelho na tomada.
+    const auth = await autenticarTotem(token, { exigirModuloAtivo: false });
+    if (!auth.ok) {
+      return NextResponse.json(
+        { error: auth.erro, code: auth.codigo, active: false },
+        { status: auth.status }
+      );
     }
 
-    const license = await prisma.totemLicense.findUnique({
-      where: { id: payload.licenseId },
-      select: { id: true, active: true, franchisee: { select: { totemEnabled: true, storeOpen: true } } }
-    });
-
-    if (!license || !license.active) {
-      return NextResponse.json({ error: "Licença inválida", active: false }, { status: 403 });
-    }
-
-    await prisma.totemLicense.update({
-      where: { id: payload.licenseId },
-      data: {
-        lastHeartbeat: new Date(),
-        lastIp: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown",
-      }
+    const atualizada = await prisma.totemLicense.update({
+      where: { id: auth.licenca.id },
+      data: { lastHeartbeat: new Date(), lastIp: ipDaRequisicao(req) },
+      select: {
+        active: true,
+        franchisee: { select: { storeOpen: true, totemEnabled: true } },
+      },
     });
 
     return NextResponse.json({
-      active: license.active,
-      storeOpen: license.franchisee.storeOpen,
-      totemEnabled: license.franchisee.totemEnabled,
+      active: atualizada.active,
+      storeOpen: atualizada.franchisee.storeOpen,
+      totemEnabled: atualizada.franchisee.totemEnabled,
     });
   } catch (err) {
+    console.error("[Totem Heartbeat] Erro:", err);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }

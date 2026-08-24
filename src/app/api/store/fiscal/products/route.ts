@@ -44,18 +44,46 @@ export async function PUT(req: Request) {
 
     if (!productId) return NextResponse.json({ error: "Product ID obrigatório" }, { status: 400 });
 
+    // ── NADA DE NCM DE MENTIRA ───────────────────────────────────────────────
+    // Aqui era `ncm: ncm || "2106.90.90"`. Produto salvo com o campo vazio
+    // recebia esse NCM em silêncio e passava a aparecer como "Regular" na tela
+    // fiscal — o lojista via o cardápio inteiro verde sem ter cadastrado um NCM
+    // sequer. 2106.90.90 é "preparações alimentícias não especificadas": serve
+    // para quase nada e classifica errado quase tudo, e classificação errada é
+    // problema do lojista com a Receita, não nosso.
+    //
+    // Agora: NCM vazio fica vazio, e a tela mostra o produto como pendente.
+    const problemas: string[] = [];
+    const so = (v: unknown) => [...String(v ?? "")].filter((c) => c >= "0" && c <= "9").join("");
+
+    if (ncm && so(ncm).length !== 8) problemas.push("NCM precisa ter 8 dígitos.");
+    if (cfop && so(cfop).length !== 4) problemas.push("CFOP precisa ter 4 dígitos.");
+    if (cest && so(cest).length !== 7) problemas.push("CEST precisa ter 7 dígitos (ou ficar vazio).");
+    if (problemas.length > 0) {
+      return NextResponse.json({ error: "dados_invalidos", mensagem: problemas.join(" ") }, { status: 400 });
+    }
+
     const updated = await prisma.menuProduct.updateMany({
       where: { id: productId, franchiseeId },
       data: {
-        ncm: ncm || "2106.90.90",
-        cest: cest || null,
-        cfop: cfop || "5102",
+        // Guardamos só os dígitos: é o formato que vai no XML, e evita o mesmo
+        // NCM entrar duas vezes escrito de jeitos diferentes.
+        ncm: ncm ? so(ncm) : null,
+        cest: cest ? so(cest) : null,
+        // 5102 (venda dentro do estado) e 102 (Simples, sem crédito) são os
+        // valores certos para a esmagadora maioria de restaurante, e diferente
+        // do NCM eles NÃO variam por produto — por isso seguem como padrão.
+        cfop: cfop ? so(cfop) : "5102",
         origem: origem || "0",
         csosn: csosn || "102",
         pis: pis || "49",
         cofins: cofins || "49",
       },
     });
+
+    if (updated.count === 0) {
+      return NextResponse.json({ error: "Produto não encontrado nesta loja" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, count: updated.count });
   } catch (err: any) {

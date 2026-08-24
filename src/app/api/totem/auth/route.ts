@@ -1,92 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { jwtVerify } from "jose";
-import { segredoObrigatorio } from "@/lib/segredos";
+import { autenticarTotem, ipDaRequisicao } from "@/lib/totem-auth";
 
-// Função, não constante: `segredoObrigatorio` lança quando a variável falta, e
-// no topo do módulo isso quebraria o BUILD (o Next avalia os módulos ao gerar
-// as páginas). Avaliado só no uso, falha apenas a requisição — e com mensagem.
-const obterSegredo = () => new TextEncoder().encode(segredoObrigatorio("NEXTAUTH_SECRET"));
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { token, fingerprint } = await req.json();
-    if (!token) return NextResponse.json({ error: "Token obrigatório" }, { status: 400 });
+    const { token, fingerprint } = await req.json().catch(() => ({}));
 
-    // Verify JWT
-    let payload: any;
-    try {
-      const result = await jwtVerify(token, obterSegredo());
-      payload = result.payload;
-    } catch {
-      return NextResponse.json({ error: "Token inválido ou expirado" }, { status: 401 });
+    const auth = await autenticarTotem(token);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.erro, code: auth.codigo }, { status: auth.status });
     }
+    const { licenca } = auth;
 
-    const licenseId = payload.licenseId;
-    if (!licenseId) return NextResponse.json({ error: "Token inválido" }, { status: 401 });
-
-    // Find license
-    const license = await prisma.totemLicense.findUnique({
-      where: { id: licenseId },
-      include: { franchisee: { select: {
-        id: true, storeName: true, name: true, slug: true, storeLogo: true,
-        storeBanner: true, storeOpen: true, totemEnabled: true, totemConfig: true,
-        storeHours: true, paymentFees: true,
-      }}}
-    });
-
-    if (!license) return NextResponse.json({ error: "Licença não encontrada" }, { status: 404 });
-    if (!license.active) return NextResponse.json({ error: "Licença desativada" }, { status: 403 });
-    if (!license.franchisee.totemEnabled) return NextResponse.json({ error: "Módulo Totem desativado" }, { status: 403 });
-
-    // Fingerprint binding
+    // Vínculo com o aparelho: a licença é de UM totem. Sem isso, o link vaza
+    // por WhatsApp e vira cardápio de graça em qualquer celular.
     if (fingerprint) {
-      if (license.deviceFingerprint && license.deviceFingerprint !== fingerprint) {
-        return NextResponse.json({ 
-          error: "Este totem não está autorizado neste dispositivo. Desvincule o dispositivo anterior no painel para usar aqui.",
-          code: "DEVICE_MISMATCH" 
-        }, { status: 403 });
-      }
-
-      // Bind fingerprint on first access
-      if (!license.deviceFingerprint) {
-        await prisma.totemLicense.update({
-          where: { id: licenseId },
-          data: {
-            deviceFingerprint: fingerprint,
-            lastHeartbeat: new Date(),
-            lastIp: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown",
-            userAgent: req.headers.get("user-agent") || undefined,
-          }
-        });
+      if (licenca.deviceFingerprint && licenca.deviceFingerprint !== fingerprint) {
+        return NextResponse.json(
+          {
+            error:
+              "Este totem não está autorizado neste dispositivo. Desvincule o aparelho anterior no painel para usar aqui.",
+            code: "DEVICE_MISMATCH",
+          },
+          { status: 403 }
+        );
       }
     }
 
-    // Update heartbeat
-    await prisma.totemLicense.update({
-      where: { id: licenseId },
-      data: {
-        lastHeartbeat: new Date(),
-        lastIp: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown",
-      }
-    });
+    // Uma escrita só: vincula o aparelho (na primeira vez) e marca o heartbeat.
+    // Antes eram dois `update` seguidos no mesmo registro — o segundo desfazia
+    // parte do trabalho do primeiro em ida e volta extra ao banco, e o totem
+    // paga esse custo em toda abertura de tela.
+    const loja = await prisma.totemLicense
+      .update({
+        where: { id: licenca.id },
+        data: {
+          lastHeartbeat: new Date(),
+          lastIp: ipDaRequisicao(req),
+          ...(fingerprint && !licenca.deviceFingerprint
+            ? { deviceFingerprint: fingerprint, userAgent: req.headers.get("user-agent") || undefined }
+            : {}),
+        },
+        select: {
+          franchisee: {
+            select: {
+              id: true,
+              storeName: true,
+              name: true,
+              slug: true,
+              storeLogo: true,
+              storeBanner: true,
+              storeOpen: true,
+              totemConfig: true,
+              storeHours: true,
+              paymentFees: true,
+            },
+          },
+        },
+      })
+      .then((r) => r.franchisee);
 
     return NextResponse.json({
       success: true,
-      license: {
-        id: license.id,
-        label: license.label,
-      },
+      license: { id: licenca.id, label: licenca.label },
       store: {
-        id: license.franchisee.id,
-        name: license.franchisee.storeName || license.franchisee.name,
-        slug: license.franchisee.slug,
-        logo: license.franchisee.storeLogo,
-        banner: license.franchisee.storeBanner,
-        isOpen: license.franchisee.storeOpen,
-        config: license.franchisee.totemConfig,
-        hours: license.franchisee.storeHours,
-        paymentFees: license.franchisee.paymentFees,
+        id: loja.id,
+        name: loja.storeName || loja.name,
+        slug: loja.slug,
+        logo: loja.storeLogo,
+        banner: loja.storeBanner,
+        isOpen: loja.storeOpen,
+        config: loja.totemConfig,
+        hours: loja.storeHours,
+        paymentFees: loja.paymentFees,
       },
     });
   } catch (err) {

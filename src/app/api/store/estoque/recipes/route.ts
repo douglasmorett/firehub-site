@@ -12,16 +12,20 @@ export async function GET(req: Request) {
     const email = session.user.email || "";
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true }
+      select: { id: true, ownerId: true }
     });
     if (!user) return NextResponse.json({ error: "Lojista não encontrado" }, { status: 404 });
+
+    // O STAFF é um User com ownerId apontando para o dono da loja: sem isso o funcionário
+    // abria a tela de fichas técnicas sem nenhum ingrediente e sem nenhum produto.
+    const franchiseeId = user.ownerId || user.id;
 
     const { searchParams } = new URL(req.url);
     const menuProductId = searchParams.get("menuProductId");
 
     // Obter ingredientes cadastrados no estoque do franchisee
     const stockItems = await prisma.stockItem.findMany({
-      where: { franchiseeId: user.id },
+      where: { franchiseeId },
       orderBy: { name: "asc" }
     });
 
@@ -31,7 +35,7 @@ export async function GET(req: Request) {
         where: {
           menuProductId,
           menuProduct: {
-            franchiseeId: user.id
+            franchiseeId
           }
         },
         include: {
@@ -48,7 +52,7 @@ export async function GET(req: Request) {
     
     const menuProducts = await prisma.menuProduct.findMany({
       where: {
-        franchiseeId: user.id,
+        franchiseeId,
         active: true,
         category: {
           notIn: junkCategories
@@ -89,9 +93,13 @@ export async function POST(req: Request) {
     const email = session.user.email || "";
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true }
+      select: { id: true, ownerId: true }
     });
     if (!user) return NextResponse.json({ error: "Lojista não encontrado" }, { status: 404 });
+
+    // O STAFF é um User com ownerId apontando para o dono da loja: sem isso a ficha técnica
+    // que o funcionário salvava ia parar num estoque paralelo, fora da loja dele.
+    const franchiseeId = user.ownerId || user.id;
 
     const body = await req.json();
     const { menuProductId, ingredients } = body; // ingredients = Array<{ stockItemId, quantityConsumed }>
@@ -102,8 +110,33 @@ export async function POST(req: Request) {
 
     // Verificar se o produto do cardápio pertence ao lojista
     const menuProduct = await prisma.menuProduct.findUnique({ where: { id: menuProductId } });
-    if (!menuProduct || menuProduct.franchiseeId !== user.id) {
+    if (!menuProduct || menuProduct.franchiseeId !== franchiseeId) {
       return NextResponse.json({ error: "Produto do cardápio não encontrado" }, { status: 404 });
+    }
+
+    // Só o menuProduct era conferido. Como o stockItemId vinha cru do body, a loja A podia
+    // salvar uma receita apontando para um ingrediente da loja B, e a partir daí cada venda
+    // da A dava baixa no estoque da B. Confere todos os ids de uma vez antes de gravar.
+    const idsInformados: string[] = Array.from(
+      new Set(
+        ingredients
+          .filter((ing: any) => ing?.stockItemId && ing.stockItemId !== "NEW")
+          .map((ing: any) => String(ing.stockItemId))
+      )
+    );
+
+    if (idsInformados.length > 0) {
+      const itensDaLoja = await prisma.stockItem.findMany({
+        where: { id: { in: idsInformados }, franchiseeId },
+        select: { id: true }
+      });
+
+      if (itensDaLoja.length !== idsInformados.length) {
+        return NextResponse.json(
+          { error: "Um dos ingredientes informados não pertence ao estoque desta loja" },
+          { status: 400 }
+        );
+      }
     }
 
     // Usar transação atômica do Prisma para limpar e salvar
@@ -115,19 +148,23 @@ export async function POST(req: Request) {
 
       // 2. Criar novos itens de receita (se houver)
       if (ingredients.length > 0) {
-        const recipeData = [];
+        const recipeData: Array<{ menuProductId: string; stockItemId: string; quantityConsumed: number }> = [];
         
         for (const ing of ingredients) {
           let stockItemId = ing.stockItemId;
+          // NaN e Infinity passavam por "qty <= 0" (a comparação é falsa para os dois) e iam
+          // parar no quantityConsumed. Infinity gravado é o pior: o Postgres aceita no double
+          // e a primeira venda do produto jogava o saldo do ingrediente para -Infinity, sem
+          // nenhuma tela que trouxesse ele de volta.
           const qty = Number(ing.quantityConsumed);
-          if (qty <= 0) continue;
+          if (!Number.isFinite(qty) || qty <= 0) continue;
           
           // Auto-create stock item if it's a new ingredient
           if (stockItemId === 'NEW' && ing.newItemName) {
             // Check if already exists (case-insensitive)
             const existing = await tx.stockItem.findFirst({
               where: {
-                franchiseeId: user.id,
+                franchiseeId,
                 name: { equals: ing.newItemName, mode: 'insensitive' }
               }
             });
@@ -137,7 +174,7 @@ export async function POST(req: Request) {
             } else {
               const newItem = await tx.stockItem.create({
                 data: {
-                  franchiseeId: user.id,
+                  franchiseeId,
                   name: ing.newItemName,
                   quantity: 0,
                   unit: ing.newItemUnit || 'un',
@@ -149,6 +186,18 @@ export async function POST(req: Request) {
           
           if (!stockItemId || stockItemId === 'NEW') continue;
           
+          // A tela deixa abrir duas linhas com o mesmo ingrediente ("100 g de queijo no
+          // recheio" e "50 g na cobertura"), e o par (menuProductId, stockItemId) é único no
+          // banco: o createMany estourava a constraint e a ficha técnica inteira se perdia com
+          // "Erro interno". Somar as linhas repetidas é o que o lojista quis dizer — 150 g de
+          // queijo por unidade do produto. Vale também para dois 'NEW' com o mesmo nome, que
+          // caem no mesmo StockItem logo acima.
+          const repetido = recipeData.find((r) => r.stockItemId === stockItemId);
+          if (repetido) {
+            repetido.quantityConsumed += qty;
+            continue;
+          }
+
           recipeData.push({
             menuProductId,
             stockItemId,

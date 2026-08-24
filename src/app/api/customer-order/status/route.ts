@@ -355,6 +355,16 @@ export async function PUT(req: Request) {
     );
   }
 
+  // Cancelou depois do ACEITO: o insumo já saiu do saldo, mas continua na
+  // prateleira. Devolve o que a baixa consumiu — a própria função ignora
+  // pedido que nunca chegou a baixar e não devolve duas vezes.
+  if (status === "CANCELADO") {
+    const { restoreStockForOrder } = await import("@/lib/stock");
+    restoreStockForOrder(orderId).catch(err =>
+      console.error("[Stock] Erro ao devolver estoque:", err)
+    );
+  }
+
   return NextResponse.json({ success: true });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);

@@ -3,14 +3,16 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-// Helper to get franchiseeId from session
+// O STAFF é um User com ownerId apontando para o dono da loja. Usando só o user.id,
+// o funcionário caía num estoque paralelo vazio em vez do estoque da loja onde trabalha.
 async function getFranchiseeId(session: any) {
   const email = session.user.email;
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { id: true }
+    select: { id: true, ownerId: true }
   });
-  return user?.id || null;
+  if (!user) return null;
+  return user.ownerId || user.id;
 }
 
 // GET: List all stock items for the logged-in franchisee

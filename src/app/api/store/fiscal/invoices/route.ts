@@ -51,55 +51,79 @@ export async function GET(req: Request) {
       take: 200,
     });
 
-    const formattedOrders = orders.map(order => {
-      const created = new Date(order.createdAt);
-      const isEmitted = order.fiscalStatus === "EMITTED" || created.getTime() < Date.now() - 3600000;
-      
-      const rawNfce = (order.fiscalInfo as any)?.nfceNumber;
-      const nfceNumber = rawNfce ? String(rawNfce) : String(Math.floor(10000 + (created.getTime() % 89999)));
-      const serie = (order.fiscalInfo as any)?.serie || "1";
-      const key = (order.fiscalInfo as any)?.nfceKey || `352608${(order.franchiseeId || "12345678901234").replace(/[^0-9]/g, "").slice(0, 14).padEnd(14, "0")}65001${nfceNumber.padStart(9, "0")}1${String(created.getTime()).slice(-8)}`;
-      const protocol = (order.fiscalInfo as any)?.protocol || `13526${String(created.getTime()).slice(-10)}`;
+    // ── SÓ O QUE EXISTE DE VERDADE ──────────────────────────────────────────
+    // Este bloco fabricava a nota inteira quando o pedido não tinha uma:
+    //
+    //   isEmitted   = pedido com mais de uma hora
+    //   nfceNumber  = Math.floor(10000 + (created.getTime() % 89999))
+    //   nfceKey     = "352608" + dígitos do id do lojista + "65001" + ...
+    //   protocol    = "13526" + últimos 10 dígitos do timestamp
+    //   impostos    = 13,45% do total, fixo
+    //   xmlUrl      = rota que não existe
+    //
+    // Chave de acesso, número e protocolo são emitidos pela SEFAZ; inventar os
+    // três e ainda marcar a nota como AUTORIZADA porque o pedido é velho fazia a
+    // tela mostrar um documento fiscal que nunca existiu. O lojista guardava
+    // aquela chave achando ter uma nota.
+    //
+    // Agora: se `fiscalInfo` tem dados reais gravados por uma emissão, mostra.
+    // Se não tem, o pedido aparece como PENDENTE e ponto.
+    const formattedOrders = orders.map((order) => {
+      const fiscal = (order.fiscalInfo as any) || {};
+      const foiEmitida = order.fiscalStatus === "EMITTED" && Boolean(fiscal.nfceKey);
 
       const itemsFormatted = order.items.map((item: any) => {
         const mp = item.menuProduct;
-        const hasBreakdown = mp?.fiscalBreakdown && Array.isArray(mp.fiscalBreakdown) && mp.fiscalBreakdown.length > 0;
-        
+        const temDetalhe =
+          mp?.fiscalBreakdown && Array.isArray(mp.fiscalBreakdown) && mp.fiscalBreakdown.length > 0;
+
         return {
           id: item.id,
-          name: mp?.name || item.name || "Item",
+          // productName preserva o nome do momento da venda; menuProduct.name
+          // muda se o lojista renomear o produto depois, e a nota tem que
+          // refletir o que foi vendido.
+          name: item.productName || mp?.name || "Item",
           quantity: item.quantity,
           unitPrice: item.price,
           totalPrice: item.price * item.quantity,
           isCombo: Boolean(mp?.isCombo),
-          fiscalBreakdown: hasBreakdown ? mp.fiscalBreakdown : null,
+          ncm: mp?.ncm ?? null,
+          cfop: mp?.cfop ?? null,
+          fiscalBreakdown: temDetalhe ? mp.fiscalBreakdown : null,
+          // O que impede este item de entrar numa nota, se for o caso.
+          pendenciaFiscal: mp?.ncm ? null : "Produto sem NCM cadastrado",
         };
       });
 
       return {
         id: order.id,
-        dailyOrderNumber: (order as any).dailyOrderNumber || (order as any).orderSeqNumber || order.id.slice(-5),
+        dailyOrderNumber:
+          (order as any).dailyOrderNumber || (order as any).orderSeqNumber || order.id.slice(-5),
         customerName: order.customerName || "Cliente Consumidor",
-        customerCpfCnpj: order.customerCpfCnpj || "Consumidor Não Identificado",
+        customerCpfCnpj: order.customerCpfCnpj || null,
         customerPhone: order.customerPhone || "—",
         customerAddress: order.customerAddress || "Balcão / Retirada",
         paymentMethod: order.paymentMethod || "Dinheiro",
         totalAmount: order.totalAmount,
         deliveryFee: order.deliveryFee || 0,
         createdAt: order.createdAt,
-        fiscalStatus: order.fiscalStatus || (isEmitted ? "EMITTED" : "PENDING"),
-        fiscalInfo: {
-          nfceNumber,
-          serie,
-          nfceKey: key,
-          protocol,
-          emittedAt: (order.fiscalInfo as any)?.emittedAt || order.createdAt,
-          ambiente: (order.fiscalInfo as any)?.ambiente || "Homologação (SEFAZ-SP)",
-          impostosAproximados: Number((order.totalAmount * 0.1345).toFixed(2)),
-          xmlUrl: (order.fiscalInfo as any)?.xmlUrl || `/api/store/fiscal/download-xml?id=${order.id}`,
-          pdfUrl: (order.fiscalInfo as any)?.pdfUrl || `/api/store/fiscal/download-danfe?id=${order.id}`,
-          items: itemsFormatted,
-        },
+        fiscalStatus: order.fiscalStatus || "PENDING",
+        // `null` quando não houve emissão. A tela mostra "não emitida" em vez
+        // de um documento inventado.
+        fiscalInfo: foiEmitida
+          ? {
+              nfceNumber: fiscal.nfceNumber ?? null,
+              serie: fiscal.serie ?? null,
+              nfceKey: fiscal.nfceKey,
+              protocol: fiscal.protocol ?? null,
+              emittedAt: fiscal.emittedAt ?? null,
+              ambiente: fiscal.ambiente ?? null,
+              xmlUrl: fiscal.xmlUrl ?? null,
+              pdfUrl: fiscal.pdfUrl ?? null,
+              items: itemsFormatted,
+            }
+          : null,
+        itens: itemsFormatted,
       };
     });
 
