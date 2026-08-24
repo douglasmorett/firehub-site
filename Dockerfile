@@ -46,6 +46,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# O CLI do Prisma vem junto porque o entrypoint aplica o schema no start.
+# O `db push` mora no script de build do package.json, que ESTE Dockerfile não
+# usa — o build aqui é `next build` puro. Sem isto, coluna nova no schema nunca
+# chegava ao banco de produção e o deploy subia um app pedindo coluna que não
+# existe. `prisma` é devDependency, então precisa ser copiado explicitamente.
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 # Copy cron-runner and entrypoint
 COPY --chown=nextjs:nodejs scripts/cron-runner.js ./scripts/cron-runner.js
