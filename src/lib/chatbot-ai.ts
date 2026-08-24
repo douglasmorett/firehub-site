@@ -7,6 +7,49 @@ import { trackGeminiUsage } from "@/lib/usage-tracker";
 import { normalizeStoreHours } from "@/lib/store-hours";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "./preco-combo";
 
+/**
+ * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
+ *
+ * O terceiro nível existe porque sem ele o robô só atende nas lojas em que
+ * alguém configurou uma chave à mão, uma a uma. Era exatamente o que acontecia
+ * em 23/08/2026: a Hakim Centro tinha chave própria e respondia; a Brasa
+ * Burguer não tinha e devolvia "instabilidade técnica" para qualquer mensagem,
+ * porque GEMINI_API_KEY também não estava no ambiente de produção.
+ *
+ * Com a chave guardada uma única vez na conta matriz (isFireHubSystem), toda
+ * loja passa a atender assim que o lojista conecta o QR — inclusive as que
+ * forem cadastradas depois, sem ninguém precisar lembrar de configurar nada.
+ *
+ * A variável de ambiente continua tendo precedência sobre a matriz: quem
+ * preferir manter o segredo só no painel de deploy não é afetado.
+ */
+let cacheChaveMatriz: { valor: string | null; expiraEm: number } | null = null;
+
+async function resolverChaveGemini(chatbotConfig: any): Promise<string | null> {
+  const daLoja = chatbotConfig?.geminiApiKey;
+  if (daLoja) return daLoja;
+
+  const doAmbiente =
+    process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  if (doAmbiente) return doAmbiente;
+
+  // Cache curto: sem ele seria uma consulta a mais por mensagem recebida.
+  if (cacheChaveMatriz && cacheChaveMatriz.expiraEm > Date.now()) return cacheChaveMatriz.valor;
+
+  try {
+    const matriz = await prisma.user.findFirst({
+      where: { isFireHubSystem: true },
+      select: { chatbotConfig: true },
+    });
+    const valor = ((matriz?.chatbotConfig as any)?.geminiApiKey as string) || null;
+    cacheChaveMatriz = { valor, expiraEm: Date.now() + 5 * 60 * 1000 };
+    return valor;
+  } catch (err) {
+    console.error("[Chatbot AI] Falha ao ler a chave da conta matriz:", (err as Error)?.message);
+    return null;
+  }
+}
+
 function getFirstName(fullName?: string | null): string {
   if (!fullName) return "";
   const cleaned = fullName.trim().replace(/^[^a-zA-ZÀ-ÖØ-öø-ÿ]+/, "");
@@ -456,7 +499,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     }
   }
 
-  const apiKey = (user.chatbotConfig as any)?.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const apiKey = await resolverChaveGemini(user.chatbotConfig);
 
   if (!apiKey) {
     console.error("[Chatbot AI] CRITICAL: No Gemini API key configured!");
