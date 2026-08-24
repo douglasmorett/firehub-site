@@ -42,7 +42,10 @@ async function resolverChaveGemini(chatbotConfig: any): Promise<string | null> {
       select: { chatbotConfig: true },
     });
     const valor = ((matriz?.chatbotConfig as any)?.geminiApiKey as string) || null;
-    cacheChaveMatriz = { valor, expiraEm: Date.now() + 5 * 60 * 1000 };
+    // So guarda em cache quando ACHOU. Cachear a ausencia deixaria o robo mudo
+    // por mais 5 minutos depois de alguem cadastrar a chave — justamente no
+    // momento em que a pessoa vai testar se funcionou.
+    if (valor) cacheChaveMatriz = { valor, expiraEm: Date.now() + 5 * 60 * 1000 };
     return valor;
   } catch (err) {
     console.error("[Chatbot AI] Falha ao ler a chave da conta matriz:", (err as Error)?.message);
