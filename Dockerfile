@@ -52,6 +52,13 @@ COPY --chown=nextjs:nodejs scripts/cron-runner.js ./scripts/cron-runner.js
 COPY --chown=nextjs:nodejs scripts/entrypoint.sh ./scripts/entrypoint.sh
 RUN chmod +x ./scripts/entrypoint.sh
 
+# Raiz padrao dos uploads quando UPLOADS_DIR nao esta definido. Em producao a
+# variavel aponta para o volume do Coolify. Os dois diretorios precisam ser
+# gravaveis pelo usuario nextjs: /app pertence ao root, entao sem isto o mkdir
+# do primeiro upload falharia por permissao.
+RUN mkdir -p /app/uploads /app/public/uploads \
+    && chown -R nextjs:nodejs /app/uploads /app/public/uploads
+
 USER nextjs
 
 EXPOSE 3000

@@ -2,22 +2,41 @@
  * src/lib/storage.ts
  * Armazenamento de arquivos enviados (fotos de produto, imagens de loja, notas).
  *
- * Substitui o @vercel/blob. Grava em disco, dentro de public/uploads, servido
- * estaticamente pelo proprio Next — sem servico externo e sem credencial.
+ * Substitui o @vercel/blob. Grava em disco e devolve uma URL /uploads/...,
+ * entregue pela rota src/app/uploads/[...path]/route.ts — sem servico externo
+ * e sem credencial.
  *
- * ⚠️ EM PRODUCAO O DIRETORIO PRECISA SER UM VOLUME PERSISTENTE DO COOLIFY.
- * O Dockerfile copia public/ para dentro da imagem, entao sem volume o que for
- * enviado se perde no proximo deploy. Mapear no Coolify:
- *     host  /data/firehub/uploads   ->   container  /app/public/uploads
- * O container roda como o usuario `nextjs` (uid 1001), entao o diretorio no
- * host precisa ser gravavel por ele:  chown -R 1001:1001 /data/firehub/uploads
+ * NAO deixar o Next servir estes arquivos: ele so serve public/ para o que ja
+ * existia quando o servidor subiu, entao upload feito com o site no ar responde
+ * 404 ate o proximo restart. Medido em producao em 23/08/2026 com a logo da
+ * Brasa Burguer — o arquivo estava no disco, legivel, e o proprio
+ * localhost:3000 de dentro do container devolvia 404; depois de um deploy, a
+ * MESMA URL passou a responder 200 sem ninguem reenviar nada. Era esse o bug,
+ * e e por isso que quem entrega agora e a rota, que le do disco a cada request.
+ *
+ * A raiz continua sendo public/uploads porque e ali que o volume do Coolify
+ * (binibyxzlgkm4qhfcydy6ocj-firehub-uploads) ja esta montado — e por isso que
+ * as imagens sobrevivem aos deploys. Estar dentro de public/ deixou de ser
+ * problema no momento em que a entrega passou a ser feita pela rota.
  */
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
-/** Raiz dos uploads no disco. UPLOADS_DIR permite apontar para outro caminho. */
-const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
+/**
+ * Raiz dos uploads no disco. O padrao e public/uploads porque e ali que o
+ * volume do Coolify ja esta montado — mudar isso sem mexer no volume jogaria
+ * os arquivos novos num diretorio efemero. UPLOADS_DIR existe para o dia em
+ * que o volume mudar de lugar.
+ */
+export const UPLOADS_ROOT =
+  process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
+
+/**
+ * Segunda raiz que a rota consulta. Serve para quando UPLOADS_DIR aponta para
+ * fora de public/: as imagens antigas continuam sendo encontradas aqui.
+ */
+export const LEGACY_PUBLIC_ROOT = path.join(process.cwd(), "public", "uploads");
 
 /** Prefixo publico correspondente. */
 const PUBLIC_PREFIX = "/uploads";

@@ -11,14 +11,20 @@ services:
       - "3000:3000"
     volumes:
       # Uploads (fotos de produto, logo/banner de loja, notas).
-      # SEM ISTO O QUE FOR ENVIADO SE PERDE NO PROXIMO DEPLOY: o Dockerfile copia
-      # public/ para dentro da imagem, e o container e recriado a cada build.
-      # No Coolify, criar o mesmo mapeamento em Storages / Volume Mounts.
-      # O container roda como uid 1001 (nextjs):
+      # SEM ISTO O QUE FOR ENVIADO SE PERDE NO PROXIMO DEPLOY: o container e
+      # recriado a cada build. No Coolify, criar o mesmo mapeamento em
+      # Storages / Volume Mounts. O container roda como uid 1001 (nextjs):
       #   mkdir -p /data/firehub/uploads && chown -R 1001:1001 /data/firehub/uploads
+      #
+      # Estar dentro de public/ nao e problema: o Next nao serve arquivo criado
+      # ali depois que o servidor subiu (dava 404 ate reiniciar), entao quem
+      # entrega e a rota src/app/uploads/[...path]/route.ts, que le do disco.
+      # O destino tem que casar com UPLOADS_ROOT (src/lib/storage.ts); so defina
+      # UPLOADS_DIR se um dia mudar este mapeamento.
       - /data/firehub/uploads:/app/public/uploads
     env_file:
       - .env.production
     environment:
       - NODE_ENV=production
       - PORT=3000
+

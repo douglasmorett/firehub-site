@@ -20,7 +20,7 @@
  *
  * ⚠️ ONDE RODAR: os arquivos precisam acabar no MESMO disco que o site serve.
  *    Se você já configurou o volume persistente no Coolify
- *    (host /data/firehub/uploads -> container /app/public/uploads), rode DENTRO
+ *    (host /data/firehub/uploads -> container /app/uploads), rode DENTRO
  *    do container, senão os arquivos ficam na sua máquina e o site devolve 404:
  *        docker exec -it firehub-app node scripts/migrate-base64-images.js --apply
  *
@@ -33,7 +33,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const APPLY = process.argv.includes("--apply");
-const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
+const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(process.cwd(), "uploads");
 
 const EXT = {
   "image/jpeg": "jpg",
