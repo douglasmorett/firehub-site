@@ -262,13 +262,22 @@ async function getOrCreateSocket(instanceName) {
 
       if (!textMessage.trim() && !isAudio) continue;
 
+      // O cooldown existe para não disparar a IA em rajada. Mensagem que SAI do
+      // número da loja não chama IA nenhuma — ela é o sinal de que o lojista
+      // assumiu a conversa. Se ela caísse no cooldown (o dono respondendo 2s
+      // depois do cliente, que é o caso comum), o FireHub nunca ficaria sabendo
+      // e o robô continuaria falando por cima dele.
+      const isFromMe = Boolean(msg.key?.fromMe);
+
       const now = Date.now();
-      const lastReply = replyCooldowns.get(remoteJid) || 0;
-      if (now - lastReply < 3000) {
-        console.log(`[WhatsApp Gateway] ⏳ Ignorando mensagem de ${remoteJid} (cooldown)`);
-        continue;
+      if (!isFromMe) {
+        const lastReply = replyCooldowns.get(remoteJid) || 0;
+        if (now - lastReply < 3000) {
+          console.log(`[WhatsApp Gateway] ⏳ Ignorando mensagem de ${remoteJid} (cooldown)`);
+          continue;
+        }
+        replyCooldowns.set(remoteJid, now);
       }
-      replyCooldowns.set(remoteJid, now);
 
       let payloadMessage = JSON.parse(JSON.stringify(msg.message));
 
@@ -301,6 +310,11 @@ async function getOrCreateSocket(instanceName) {
               message: payloadMessage,
               sender: remoteJid,
               pushName: msg.pushName || "",
+              // Conta empresarial verificada. Cliente de verdade nunca tem esse
+              // campo; robô institucional (InfinityPay, banco, marketplace) tem.
+              // É o sinal mais barato para o FireHub não entrar em conversa de
+              // robô com robô.
+              verifiedBizName: msg.verifiedBizName || "",
             },
           }),
         });

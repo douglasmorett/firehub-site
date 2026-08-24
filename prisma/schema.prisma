@@ -1194,3 +1194,46 @@ model UsageLog {
   @@index([franchiseeId, yearMonth])
   @@index([category, yearMonth])
 }
+
+// Estado por conversa do chatbot, usado para detectar loop bot-a-bot.
+//
+// Precisa viver no banco, e não em Map na memória: o webhook roda serverless na
+// Vercel e cada instância teria a própria contagem — o mesmo número cairia numa
+// instância fria com contador zerado e a trava nunca fecharia.
+//
+// Tudo aqui é POR CONVERSA. Nada é compartilhado entre clientes da mesma loja,
+// então volume de atendimento não faz ninguém bater em limite: 500 clientes são
+// 500 contadores independentes.
+model ChatbotConversationState {
+  id        String @id @default(cuid())
+  userId    String
+  remoteJid String
+
+  // Respostas do bot na conversa atual e há quantos turnos ela não sai do lugar.
+  turnCount            Int @default(0)
+  turnsWithoutProgress Int @default(0)
+
+  // Intervalos (ms) entre mensagens recebidas. Gente responde torto, bot é
+  // regular — variância baixa demais denuncia a máquina.
+  recentIntervals Json?
+  recentHashes    Json?
+  lastMessageAt   DateTime?
+
+  // Quando preenchido, a IA não é mais chamada nesta conversa: já mandamos a
+  // mensagem de transição e passamos para atendimento humano.
+  degradedAt     DateTime?
+  degradedReason String?
+
+  // Quando o dono da loja responde o cliente pelo proprio numero conectado.
+  // Enquanto estiver fresco, o robo fica em silencio para nao falar por cima do
+  // atendente. As mensagens que o robo enviou voltam como fromMe, entao guardamos
+  // o hash das ultimas para distinguir uma da outra.
+  humanTakeoverAt DateTime?
+  botSentHashes   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, remoteJid])
+  @@index([userId, degradedAt])
+}

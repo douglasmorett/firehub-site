@@ -3,6 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
 import { processChatbotAI } from '@/lib/chatbot-ai';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
+import {
+  evaluateLoopGuard,
+  handleOutgoingMessage,
+  registerBotReply,
+  clearLoopGuard,
+} from '@/lib/loop-guard';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Evita timeout silencioso do Vercel (504) se a IA ou download demorar
@@ -125,6 +131,46 @@ export async function POST(req: NextRequest) {
 }
 
 /**
+ * Coloca a conversa na fila do balãozinho de atendimento humano.
+ *
+ * A montagem era a mesma em dois pontos e agora em três; ficar copiando o
+ * formato do registro é como uma das cópias acaba divergindo em silêncio.
+ */
+function enqueueHumanSupport(
+  userId: string,
+  remoteJid: string,
+  cleanPhone: string,
+  pushName: string | undefined,
+  userText: string,
+  botText: string,
+  now: number
+) {
+  if (!global.__humanSupportChats) {
+    global.__humanSupportChats = new Map();
+  }
+  const humanKey = `${userId}_${remoteJid}`;
+  const existing = global.__humanSupportChats.get(humanKey);
+  const formattedPhone = cleanPhone ? `+55 ${cleanPhone.replace(/^55/, "")}` : remoteJid;
+
+  const messages = existing ? existing.messages : [];
+  messages.push({ sender: "user", text: userText, timestamp: now });
+  messages.push({ sender: "bot", text: botText, timestamp: Date.now() });
+
+  global.__humanSupportChats.set(humanKey, {
+    id: humanKey,
+    userId,
+    jid: remoteJid,
+    phone: formattedPhone,
+    clientName: pushName || formattedPhone,
+    status: "PENDING",
+    unreadCount: (existing?.unreadCount || 0) + 1,
+    lastMessage: userText,
+    updatedAt: Date.now(),
+    messages,
+  });
+}
+
+/**
  * Processa uma mensagem recebida do cliente.
  * Isolada em função separada para que erros aqui NUNCA derrubem o webhook.
  */
@@ -168,9 +214,6 @@ async function handleIncomingMessage(body: any, instance: string) {
   };
 
   const remoteJid = getRealJid();
-
-  // Anti-loop: ALWAYS ignore fromMe (mensagens do próprio bot)
-  if (fromMe === true) return;
 
   // Ignore status broadcasts
   if (remoteJid.includes("@broadcast") || remoteJid.includes("status@broadcast")) return;
@@ -248,6 +291,32 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   if (!user) {
     console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Instância "${instance}" não pertence a nenhuma loja cadastrada.`);
+    return;
+  }
+
+  // ── Mensagem que SAIU do número conectado ───────────────────────────────
+  // Antes isso era descartado logo no começo, junto com o `fromMe`. Mas fromMe
+  // tem dois significados bem diferentes: pode ser o eco da resposta que o
+  // próprio robô mandou, ou o lojista digitando para o cliente. No segundo caso
+  // o robô precisa se calar, senão os dois respondem juntos e embola.
+  //
+  // Fica depois da cascata acima de propósito: sem saber de QUAL loja é a
+  // conversa, não dá para registrar o silêncio no lugar certo.
+  if (fromMe === true) {
+    const ownText = String(
+      data.message?.conversation ||
+      data.message?.extendedTextMessage?.text ||
+      data.message?.imageMessage?.caption ||
+      data.body ||
+      data.text ||
+      ""
+    );
+    if (!ownText.trim()) return;
+
+    const tookOver = await handleOutgoingMessage(user.id, remoteJid, ownText, Date.now());
+    if (tookOver) {
+      console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🧑‍💼 Atendente da loja assumiu ${remoteJid}. Robô em silêncio.`);
+    }
     return;
   }
 
@@ -469,34 +538,13 @@ async function handleIncomingMessage(body: any, instance: string) {
     const humanReply = "Entendido! Já avisei nossa equipe e um atendente humano vai te responder por aqui em instantes. Por favor, aguarde só um momento! 😊";
     const recipientTarget = remoteJid || data.from || "";
     await sendEvolutionMessage(user.id, recipientTarget, humanReply);
-    
+    await registerBotReply(user.id, remoteJid, humanReply);
+
     // Marca a conversa como pausada por 12 horas para o robô não responder mais automaticamente
     cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
 
     // Registra na fila do balãozinho flutuante de atendimento humano
-    if (!global.__humanSupportChats) {
-      global.__humanSupportChats = new Map();
-    }
-    const humanKey = `${user.id}_${remoteJid}`;
-    const existing = global.__humanSupportChats.get(humanKey);
-    const formattedPhone = cleanPhone ? `+55 ${cleanPhone.replace(/^55/, "")}` : remoteJid;
-
-    const newMsgList = existing ? existing.messages : [];
-    newMsgList.push({ sender: "user", text: textMessage, timestamp: Date.now() });
-    newMsgList.push({ sender: "bot", text: humanReply, timestamp: Date.now() });
-
-    global.__humanSupportChats.set(humanKey, {
-      id: humanKey,
-      userId: user.id,
-      jid: remoteJid,
-      phone: formattedPhone,
-      clientName: data.pushName || formattedPhone,
-      status: "PENDING",
-      unreadCount: (existing?.unreadCount || 0) + 1,
-      lastMessage: textMessage,
-      updatedAt: Date.now(),
-      messages: newMsgList,
-    });
+    enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, humanReply, Date.now());
 
     return;
   }
@@ -512,6 +560,9 @@ async function handleIncomingMessage(body: any, instance: string) {
       chat.status = "CLOSED";
       global.__humanSupportChats.delete(pausedKey);
       cooldownCache.delete(pausedCacheKey);
+      // Zera também o estado persistido, senão a conversa que caiu na trava
+      // ficaria sem robô para sempre.
+      await clearLoopGuard(user.id, remoteJid);
     } else if (chat.status !== "CLOSED") {
       chat.messages.push({ sender: "user", text: textMessage, timestamp: Date.now() });
       chat.lastMessage = textMessage;
@@ -519,6 +570,34 @@ async function handleIncomingMessage(body: any, instance: string) {
       chat.unreadCount = (chat.unreadCount || 0) + 1;
       return;
     }
+  }
+
+  // ── Última porteira antes de gastar uma chamada de IA ───────────────────
+  // Decide por conversa, nunca por loja: movimento alto numa sexta não faz
+  // ninguém bater em limite, porque cada cliente tem o próprio contador.
+  const guard = await evaluateLoopGuard({
+    userId: user.id,
+    remoteJid,
+    text: textMessage,
+    verifiedBizName: data.verifiedBizName || data.message?.verifiedBizName,
+    now,
+  });
+
+  if (guard.action === "ignore") {
+    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔇 Sem resposta para ${remoteJid}: ${guard.reason}`);
+    return;
+  }
+
+  if (guard.action === "degrade") {
+    // Não silenciamos: mandamos UMA frase fixa e passamos para o humano. O
+    // cliente nunca fica sem resposta, e frase enlatada não dá assunto para o
+    // robô do outro lado — o loop morre aqui.
+    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔁 Loop suspeito em ${remoteJid} (${guard.reason}). Passando para atendimento humano.`);
+    const target = remoteJid || data.from || "";
+    await sendEvolutionMessage(user.id, target, guard.message).catch(() => {});
+    await registerBotReply(user.id, remoteJid, guard.message);
+    enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, guard.message, now);
+    return;
   }
 
   // Prepare and format history to pass to AI
@@ -580,6 +659,11 @@ async function handleIncomingMessage(body: any, instance: string) {
     // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
     await sendEvolutionMessage(user.id, recipientTarget, replyText);
 
+    // O WhatsApp devolve esta mensagem como `fromMe`. Guardar o hash é o que
+    // evita o robô confundir o próprio eco com o lojista digitando e se calar
+    // sozinho depois de cada resposta que ele mesmo deu.
+    await registerBotReply(user.id, remoteJid, replyText);
+
     // Track WhatsApp usage (fire-and-forget)
     trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });
     trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
@@ -588,29 +672,7 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     if (callHuman) {
       cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
-      if (!global.__humanSupportChats) {
-        global.__humanSupportChats = new Map();
-      }
-      const humanKey = `${user.id}_${remoteJid}`;
-      const existing = global.__humanSupportChats.get(humanKey);
-      const formattedPhone = cleanPhone ? `+55 ${cleanPhone.replace(/^55/, "")}` : remoteJid;
-
-      const newMsgList = existing ? existing.messages : [];
-      newMsgList.push({ sender: "user", text: textMessage, timestamp: now });
-      newMsgList.push({ sender: "bot", text: replyText, timestamp: Date.now() });
-
-      global.__humanSupportChats.set(humanKey, {
-        id: humanKey,
-        userId: user.id,
-        jid: remoteJid,
-        phone: formattedPhone,
-        clientName: data.pushName || formattedPhone,
-        status: "PENDING",
-        unreadCount: (existing?.unreadCount || 0) + 1,
-        lastMessage: textMessage,
-        updatedAt: Date.now(),
-        messages: newMsgList,
-      });
+      enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, replyText, now);
       console.log(`[WhatsApp Webhook] 🙋 Chat transferido para atendimento humano por solicitação/cancelamento (${remoteJid})`);
     }
     
