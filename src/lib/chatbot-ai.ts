@@ -218,11 +218,21 @@ export async function processChatbotAI(
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.customInstructions || "").trim();
-  const isHakimStore = (user.email || "").toLowerCase().includes("hakim") || (user as any).isFranqueadoHakim === true;
-  const agentName = (chatbotConfig.agentName || (isHakimStore ? "Hakim" : "Atendente")).trim();
+  // Nome do atendente sai da configuração do chatbot da própria loja. Sem nome
+  // cadastrado o robô atende igual, só não se apresenta — antes o padrão era
+  // "Hakim" para as lojas da rede e "Atendente" para o resto, e "Atendente" é
+  // justamente o tipo de nome que denuncia que do outro lado não tem gente.
+  const agentName = (chatbotConfig.agentName || "").trim();
   const storeName = user.storeName || "Nossa Loja";
+  const identidade = agentName
+    ? `Você é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.`
+    : `Você é uma PESSOA REAL que trabalha no atendimento do restaurante ${storeName}. Você NÃO tem um nome cadastrado: nunca invente um nome para si. Se perguntarem seu nome, desconverse com naturalidade e siga ajudando (ex: "sou do atendimento aqui da loja! 😊 Como posso te ajudar?").`;
   const customMenuUrl = (chatbotConfig.externalMenuUrl || "").trim();
-  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : (isHakimStore ? "https://www.hakimriodasostras.com.br" : "");
+  // Link do cardápio da própria loja. Aqui havia um fallback para o site da
+  // Hakim quando a loja não tinha slug — conferido no banco: nenhuma loja sem
+  // slug é da rede Hakim, então era caminho morto que só podia dar errado,
+  // mandando cliente de uma loja para o site de outra.
+  const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "";
   const storeLink = customMenuUrl || defaultStoreLink;
   const storeLinkMsg = storeLink ? ` Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}` : "";
 
@@ -603,7 +613,7 @@ O número de WhatsApp falando com você AGORA é o PROPRIETÁRIO OFICIAL da loja
   }
 
   try {
-    const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n\nVocê é uma PESSOA REAL chamada ${agentName}, atendente do restaurante ${storeName}.
+    const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n\n${identidade}
 
 REGRAS ABSOLUTAS:
 1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem. NUNCA escreva cabeçalhos ou pensamentos internos como "TRAIN OF THOUGHT:", "THOUGHTS:", "RACIOCÍNIO:", "PENSAMENTO:" ou "RESPONSE:". Responda diretamente com o texto final em linguagem humana natural!
@@ -969,7 +979,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           model: "gemini-2.5-flash",
           contents: [{ role: "user", parts: [{ text: message }] }],
           config: {
-            systemInstruction: `Você é ${agentName}, atendente do ${storeName}. Responda de forma curta, simpática e natural como uma pessoa no WhatsApp. Link do cardápio: ${storeLink}. ${customerFirstName ? `O cliente se chama ${customerFirstName}.` : ""}`,
+            systemInstruction: `${agentName ? `Você é ${agentName}, atendente` : "Você trabalha no atendimento"} do ${storeName}. Responda de forma curta, simpática e natural como uma pessoa no WhatsApp.${agentName ? "" : " Você não tem nome cadastrado: nunca invente um para si."} Link do cardápio: ${storeLink}. ${customerFirstName ? `O cliente se chama ${customerFirstName}.` : ""}`,
             temperature: 0.9,
             maxOutputTokens: 300,
           }
