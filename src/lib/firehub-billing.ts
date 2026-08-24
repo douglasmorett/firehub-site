@@ -2,17 +2,19 @@
  * FireHub — Modelo de Mensalidade "Pay as You Grow"
  * 
  * Regras:
- *  - Faturamento = 0 no mês        → R$0 (sem cobrança)
- *  - Faturamento > 0               → mínimo de R$50/mês
- *  - Faturamento < R$40.000/mês    → 1% do faturamento (mín R$50)
- *  - Faturamento ≥ R$40.000/mês    → R$400 fixo (teto máximo)
- *  - Apenas pedidos FireHub contam (iFood, 99Food, Jotajá = fora)
+ *  - Faturamento = 0 e sem uso ativo → R$0 (sem cobrança)
+ *  - Faturamento = 0 com uso ativo   → mínimo de R$100/mês
+ *  - Faturamento < R$40.000/mês      → 1% do faturamento (mín R$100)
+ *  - Faturamento ≥ R$40.000/mês      → R$400 fixo (teto máximo)
+ *  - TODO pedido gravado no sistema conta: cardápio digital, WhatsApp, mesa,
+ *    balcão, totem e as integrações de iFood, 99Food e Jotajá. Só fica de fora
+ *    o que está CANCELADO. Ver a base de cálculo em lib/billing.ts.
  *  - 1ª cobrança: após trial de 15 dias
  *  - Abatimento automático dos pagamentos online recebidos
  *  - Se saldo insuficiente: gera link boleto/PIX dia 1 do mês seguinte
  *
  * ✅ Diferencial: Concorrência cobra 4% — FireHub cobra apenas 1%
- *    mantendo piso de R$50 e teto de R$400.
+ *    mantendo piso de R$100 e teto de R$400.
  */
 
 export const FIREHUB_PLAN = {
@@ -21,6 +23,9 @@ export const FIREHUB_PLAN = {
   MAX_MONTHLY: 400,         // Teto R$400/mês
   THRESHOLD: 40000,         // A partir de R$40.000, vai pro teto fixo
   TRIAL_DAYS: 15,           // Dias de trial gratuito
+  // Marketplace: a primeira loja integrada é gratuita; cada loja adicional
+  // ligada na MESMA conta custa isto por mês. Vale para iFood e 99Food.
+  EXTRA_STORE_FEE: 50,
   PIX_RATE: 0.005,          // 0,5% por transação PIX
   PIX_FIXED: 0.40,          // R$0,40 fixo por transação PIX
   CREDIT_RATE: 0.0399,      // 3,99% cartão crédito (spread MDR)

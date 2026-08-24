@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { orderByCardapio, podeOrdenarProdutos } from "@/lib/menu-order";
+import { podeOrdenarProdutos } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
 
   const products = await prisma.menuProduct.findMany({
     where,
-    orderBy: await orderByCardapio(),
+    orderBy: [{ category: "asc" }, { name: "asc" }],
     select: {
       id: true, name: true, price: true, category: true,
       imageUrl: true, active: true, isCombo: true, isBeverage: true,

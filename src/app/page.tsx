@@ -62,8 +62,8 @@ const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(100, Math.min(400, r
 
 const FAQ = [
   { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades durante o período de teste." },
-  { q: "E se eu não usar a plataforma?", a: "Se você não processar nenhuma venda pelo FireHub no mês, você não paga nada. Nosso modelo é justo: você só paga quando vende." },
-  { q: "Como funciona a cobrança?", a: "Cobramos apenas 1% do seu faturamento no canal próprio (cardápio digital + WhatsApp). Mínimo de R$ 100 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
+  { q: "E se eu não usar a plataforma?", a: "Se você não vender nada e não usar nenhuma funcionalidade no mês, você não paga nada. Se você usar a plataforma ativamente (chatbot conectado, integrações ligadas, financeiro, estoque) sem faturar, aplica-se apenas a mensalidade mínima." },
+  { q: "Como funciona a cobrança?", a: "Cobramos apenas 1% de tudo que você fatura dentro do FireHub — cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e Jotajá entram na mesma conta. Mínimo de R$ 100 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona 100% no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento." },
   { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana — manhã, tarde e noite. Você nunca fica sem resposta." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
@@ -663,6 +663,7 @@ export default function Home() {
               {/* Slider */}
               <div style={{marginBottom:28}}>
                 <p style={{textAlign:"center",fontWeight:600,fontSize:".88rem",color:"#374151",marginBottom:12}}>Selecione seu faturamento mensal atual:</p>
+                <p style={{textAlign:"center",fontSize:".78rem",color:"#9CA3AF",marginBottom:12}}>Considere tudo que passa pelo FireHub: cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e Jotajá.</p>
                 <div style={{textAlign:"center",marginBottom:16}}>
                   <span style={{display:"inline-block",padding:"8px 24px",background:"#FEF2F2",border:"2px solid #EF4444",borderRadius:12,color:"#EF4444",fontWeight:800,fontSize:"1.3rem"}}>
                     R$ {sliderValue.toLocaleString("pt-BR")}

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { orderByCardapio } from "@/lib/menu-order";
 import { authenticateApiKey } from "@/lib/api-key";
 import { prisma } from "@/lib/prisma";
 
@@ -25,7 +24,7 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      orderBy: await orderByCardapio(),
+      orderBy: [{ category: "asc" }, { name: "asc" }],
     }),
   ]);
 

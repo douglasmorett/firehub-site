@@ -31,9 +31,12 @@ export default function TermosPage() {
         }}>
           <strong>⚠️ Exemplos práticos:</strong>
           <ul style={{ margin: "6px 0 0", paddingLeft: "1.2rem" }}>
-            <li>Usou o sistema <strong>1 dia</strong> e fez 1 venda de R$30 → cobrança de <strong>R$50</strong> (mínimo)</li>
-            <li>Usou o sistema o mês todo, vendeu R$8.000 → cobrança de <strong>R$80</strong> (1% de R$8.000)</li>
-            <li>Usou o sistema mas <strong>não fez nenhuma venda</strong> → <strong>R$0</strong> (sem cobrança)</li>
+            <li>Usou o sistema <strong>1 dia</strong> e fez 1 venda de R$30 → cobrança de <strong>R$100</strong> (mínimo)</li>
+            <li>Usou o sistema o mês todo, vendeu R$8.000 → cobrança de <strong>R$100</strong> (1% de R$8.000 = R$80, abaixo do mínimo)</li>
+            <li>Vendeu R$25.000 no mês (somando cardápio, WhatsApp e iFood) → cobrança de <strong>R$250</strong> (1% de R$25.000)</li>
+            <li>Vendeu R$60.000 no mês → cobrança de <strong>R$400</strong> (teto máximo)</li>
+            <li><strong>Não fez nenhuma venda</strong>, mas manteve o sistema em uso (chatbot conectado, integrações ligadas, financeiro ou estoque em uso) → cobrança de <strong>R$100</strong> (mínimo)</li>
+            <li><strong>Não fez nenhuma venda e não usou nenhuma funcionalidade</strong> → <strong>R$0</strong> (sem cobrança)</li>
             <li><strong>Pausou a loja</strong> e não vendeu nada → <strong>R$0</strong> (sem cobrança enquanto pausado)</li>
             <li>Voltou a usar após pausa, fez vendas → cobrança retoma normalmente no próximo fechamento</li>
           </ul>
@@ -49,7 +52,7 @@ export default function TermosPage() {
           <li>O mês de referência vai do <strong>dia 1 ao último dia do mês</strong>, no horário de Brasília</li>
           <li>A fatura é gerada automaticamente no <strong>dia 1 do mês seguinte, à meia-noite de Brasília</strong></li>
           <li>A primeira cobrança acontece <strong>30 dias após o fim do período de teste</strong> (15 dias)</li>
-          <li>Apenas pedidos feitos pela plataforma FireHub contam — vendas iFood, 99Food, Jotajá etc. <strong>não</strong> são contabilizadas</li>
+          <li><strong>Todo pedido registrado no FireHub é contabilizado</strong> — cardápio digital, WhatsApp, mesa, balcão, totem e também os pedidos recebidos pelas integrações de iFood, 99Food e Jotajá. Pedidos cancelados não entram no cálculo</li>
         </ul>
       </section>
 

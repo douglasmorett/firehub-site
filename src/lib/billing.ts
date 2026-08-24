@@ -5,7 +5,13 @@
  *
  * Regra:
  *   Taxa = 1% do faturamento mensal do franqueado
- *   Mínimo: R$50 · Máximo: R$400
+ *   Mínimo: R$100 · Máximo: R$400
+ *
+ * Base de cálculo: soma de CustomerOrder.totalAmount do mês, com status
+ * diferente de CANCELADO. Isso inclui TODA origem gravada como CustomerOrder —
+ * cardápio digital, chatbot de WhatsApp, mesa, balcão, totem e os pedidos
+ * importados das integrações de iFood, 99Food e Jotajá. Não existe filtro por
+ * `source` aqui, e é intencional: o trato é 1% de tudo que passa pelo sistema.
  *
  * Fluxo:
  *   1. Pedido é confirmado (status ACEITO/ENTREGUE) → trackSaleForBilling()
@@ -19,7 +25,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { calcMensalidade } from "@/lib/firehub-billing";
+import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 
 /**
@@ -114,11 +120,63 @@ export function isExemptAccount(email?: string | null): boolean {
 export function getCurrentYearMonth(offset = 0, timezone = "America/Sao_Paulo"): string {
   // Usa o fuso horário da loja (ou Brasília) para garantir que
   // o fechamento do mês acontece à meia-noite local, não UTC.
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: timezone }));
-  now.setMonth(now.getMonth() + offset);
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone, year: "numeric", month: "2-digit",
+  }).formatToParts(new Date());
+  const ano = Number(partes.find((p) => p.type === "year")!.value);
+  const mes = Number(partes.find((p) => p.type === "month")!.value); // 1-12
+
+  // Anda os meses na aritmética, não com setMonth(). `setMonth` estoura quando
+  // o dia de hoje não existe no mês de destino: em 31/03, offset -1 caía em
+  // 03/03 (31 de fevereiro não existe) e o fechamento lia o mês errado.
+  const total = ano * 12 + (mes - 1) + offset;
+  const anoFinal = Math.floor(total / 12);
+  const mesFinal = (total % 12) + 1;
+  return `${anoFinal}-${String(mesFinal).padStart(2, "0")}`;
+}
+
+/**
+ * Quanto o fuso `timeZone` está deslocado do UTC no instante `data`, em ms.
+ */
+function offsetDoFuso(data: Date, timeZone: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p: Record<string, string> = {};
+  for (const parte of dtf.formatToParts(data)) {
+    if (parte.type !== "literal") p[parte.type] = parte.value;
+  }
+  const comoSeFosseUtc = Date.UTC(
+    Number(p.year), Number(p.month) - 1, Number(p.day),
+    Number(p.hour) % 24, Number(p.minute), Number(p.second),
+  );
+  return data.getTime() - comoSeFosseUtc;
+}
+
+/**
+ * Começo e fim do mês de referência COMO INSTANTES, ancorados na meia-noite do
+ * fuso da loja.
+ *
+ * O código antigo fazia `new Date(y, m - 1, 1)`, que usa o fuso do processo — e
+ * a Vercel roda em UTC. Na prática o mês virava às 21h de Brasília: toda venda
+ * entre 21h e a meia-noite do último dia caía no ciclo do mês seguinte, apesar
+ * de os Termos prometerem fechamento no horário de Brasília.
+ */
+export function intervaloDoMes(yearMonth: string, timeZone = "America/Sao_Paulo") {
+  const [ano, mes] = yearMonth.split("-").map(Number);
+
+  const meiaNoiteLocal = (a: number, mIndex: number) => {
+    const chute = Date.UTC(a, mIndex, 1, 0, 0, 0);
+    // Duas passadas: a primeira acha o offset aproximado, a segunda confirma no
+    // instante corrigido (importa só em virada de horário de verão).
+    const off1 = offsetDoFuso(new Date(chute), timeZone);
+    const off2 = offsetDoFuso(new Date(chute + off1), timeZone);
+    return new Date(chute + off2);
+  };
+
+  return { monthStart: meiaNoiteLocal(ano, mes - 1), monthEnd: meiaNoiteLocal(ano, mes) };
 }
 
 /**
@@ -167,9 +225,7 @@ export async function trackSaleForBilling(franchiseeId: string) {
 
   const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0 || user?.isFranqueadoHakim === true || user?.email?.toLowerCase() === "contatohakim@gmail.com";
 
-  const [y, m] = yearMonth.split("-").map(Number);
-  const monthStart = new Date(y, m - 1, 1);
-  const monthEnd   = new Date(y, m, 1);
+  const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
 
   const agg = await prisma.customerOrder.aggregate({
     where: {
@@ -227,8 +283,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 
   // Recalcula valores finais (pedidos confirmados do mês)
   const [y, m] = yearMonth.split("-").map(Number);
-  const monthStart = new Date(y, m - 1, 1);
-  const monthEnd   = new Date(y, m, 1);
+  const tz = cycle.franchisee?.storeTimezone || "America/Sao_Paulo";
+  const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
 
   const agg = await prisma.customerOrder.aggregate({
     where: {
@@ -261,17 +317,53 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const isentoPorTeste = emTeste && totalSales === 0;
 
   const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage);
-  const amountPending = isSpecialStore ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
+  const mensalidadePendente = isSpecialStore ? 0 : Math.max(0, amountDue - cycle.amountOffset);
 
-  let ifoodExtraCharge = 0;
-  if (!isSpecialStore) {
+  // Taxas fixas do mês, por fora do 1% sobre as vendas.
+  //
+  // A primeira loja integrada a cada marketplace é gratuita; cada loja
+  // ADICIONAL ligada na mesma conta custa EXTRA_STORE_FEE por mês. Isto já era
+  // anunciado no painel e escrito na descrição do boleto, mas nunca entrava no
+  // valor: o payload do Asaas mandava só a mensalidade. Quem tinha três lojas
+  // no iFood lia "+ iFood Extra R$100,00" num boleto que não cobrava os R$100.
+  let taxasExtras = 0;
+  const linhasExtras: string[] = [];
+
+  if (!isSpecialStore && !isentoPorTeste) {
     const ifoodIntegCount = await prisma.ifoodIntegration.count({
       where: { userId: franchiseeId, active: true },
     });
     const legacyIfood = cycle.franchisee?.ifoodConnected ? 1 : 0;
-    const totalIfood = Math.max(ifoodIntegCount, legacyIfood);
-    ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
+    const lojasIfood = Math.max(ifoodIntegCount, legacyIfood);
+    const extraIfood = Math.max(0, lojasIfood - 1) * FIREHUB_PLAN.EXTRA_STORE_FEE;
+    if (extraIfood > 0) {
+      taxasExtras += extraIfood;
+      linhasExtras.push(`iFood +${lojasIfood - 1} loja(s) R$${extraIfood.toFixed(2)}`);
+    }
+
+    // 99Food segue a mesma regra. Hoje o schema guarda um único merchant por
+    // conta (User.food99MerchantId), então isto sempre dá 0 — fica pronto para
+    // quando existir o modelo multi-loja, sem precisar lembrar da regra depois.
+    const lojas99 = cycle.franchisee?.food99Connected ? 1 : 0;
+    const extra99 = Math.max(0, lojas99 - 1) * FIREHUB_PLAN.EXTRA_STORE_FEE;
+    if (extra99 > 0) {
+      taxasExtras += extra99;
+      linhasExtras.push(`99Food +${lojas99 - 1} loja(s) R$${extra99.toFixed(2)}`);
+    }
+
+    // Taxas acumuladas no ciclo por outros módulos (tráfego pago, totens).
+    if (cycle.metaAdsFee > 0) {
+      taxasExtras += cycle.metaAdsFee;
+      linhasExtras.push(`Tráfego pago R$${cycle.metaAdsFee.toFixed(2)}`);
+    }
+    if (cycle.totemFee > 0) {
+      taxasExtras += cycle.totemFee;
+      linhasExtras.push(`Totem R$${cycle.totemFee.toFixed(2)}`);
+    }
   }
+
+  const ifoodExtraCharge = taxasExtras;
+  const amountPending = parseFloat((mensalidadePendente + taxasExtras).toFixed(2));
 
   // Nada a cobrar, loja isenta, ou ainda dentro do período de teste
   if (amountPending < 1 || (!hasUsage) || isSpecialStore || isentoPorTeste) {
@@ -335,9 +427,9 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       // Vencimento: dia 5 do próximo mês
       const due = new Date(y, m, 5).toISOString().split("T")[0];
 
-      const chargeDescription = ifoodExtraCharge > 0
-        ? `FireHub ${yearMonth} — Mensalidade R$${amountDue.toFixed(2)} + iFood Extra R$${ifoodExtraCharge.toFixed(2)}`
-        : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$50 · máx R$400)`;
+      const chargeDescription = linhasExtras.length > 0
+        ? `FireHub ${yearMonth} — Mensalidade R$${mensalidadePendente.toFixed(2)} + ${linhasExtras.join(" + ")}`
+        : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$100 · máx R$400)`;
 
       const payload: any = {
         customer: customerId,
@@ -445,34 +537,57 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // R$ 0,00 o mês inteiro e recebia um boleto do mínimo no fim. Aqui a previsão
   // já mostra o mínimo assim que ele usa alguma funcionalidade, com o motivo,
   // para a cobrança nunca ser surpresa.
-  const vendasDoMes = cycle?.totalSales || 0;
+  // As vendas são recontadas do banco, não lidas do ciclo. `trackSaleForBilling`
+  // só roda nos fluxos próprios (site, totem, pagamento) — nenhuma rota de
+  // iFood, 99Food ou Jotajá o chama. O fechamento sempre recalculou, então o
+  // BOLETO saía certo, mas o lojista via um valor baixo o mês inteiro e tomava
+  // o susto no dia 1. Contando aqui, painel e fatura falam a mesma coisa.
+  const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
+  const aggVendas = await prisma.customerOrder.aggregate({
+    where: {
+      franchiseeId,
+      status: { not: "CANCELADO" },
+      createdAt: { gte: monthStart, lt: monthEnd },
+    },
+    _sum: { totalAmount: true },
+  });
+  const vendasDoMes = aggVendas._sum.totalAmount ?? 0;
+
   const emTeste = !!user?.trialEndsAt && user.trialEndsAt > new Date();
   let previsaoPorUso: { valor: number; motivos: string[] } | null = null;
   if (vendasDoMes === 0 && !emTeste) {
-    const [ano, mes] = yearMonth.split("-").map(Number);
-    const uso = await detectarUsoDaLoja(franchiseeId, new Date(ano, mes - 1, 1), new Date(ano, mes, 1));
+    const uso = await detectarUsoDaLoja(franchiseeId, monthStart, monthEnd);
     if (uso.usou) {
       previsaoPorUso = { valor: calcMensalidade(0, true).mensalidade, motivos: uso.motivos };
     }
   }
 
+  // Mesma conta do fechamento, para o painel bater com o boleto.
+  const previsaoPorVendas = vendasDoMes > 0 ? calcMensalidade(vendasDoMes, true).mensalidade : 0;
+  const devidoAgora = Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
+
+  // Loja que só recebe pedido de marketplace nunca passa por `ensureCycle`, e
+  // por isso pode não ter linha de ciclo no meio do mês. O valor previsto tem
+  // que aparecer do mesmo jeito.
   if (!cycle) {
     return {
-      yearMonth, totalSales: 0,
-      amountDue: previsaoPorUso?.valor || 0,
+      yearMonth, totalSales: vendasDoMes,
+      amountDue: devidoAgora,
       amountOffset: 0,
-      amountPending: previsaoPorUso?.valor || 0,
+      amountPending: devidoAgora,
       status: "OPEN", isExempt: false,
       cobrancaPorUso: previsaoPorUso,
     };
   }
 
+  const amountDue = Math.max(cycle.amountDue, devidoAgora);
+
   return {
     yearMonth: cycle.yearMonth,
-    totalSales: cycle.totalSales,
-    amountDue: Math.max(cycle.amountDue, previsaoPorUso?.valor || 0),
+    totalSales: vendasDoMes,
+    amountDue,
     amountOffset: cycle.amountOffset,
-    amountPending: Math.max(cycle.amountPending, previsaoPorUso?.valor || 0),
+    amountPending: parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2)),
     status: cycle.status,
     isExempt: false,
     asaasBoletoUrl: cycle.asaasBoletoUrl,

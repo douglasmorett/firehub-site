@@ -255,7 +255,7 @@ export default function CadastroPage() {
               Crie sua conta grátis e veja o FireHub em ação
             </h1>
             <p style={{ color: "rgba(255,255,255,.6)", lineHeight: 1.7, marginBottom: 28, fontSize: ".9rem" }}>
-              Fale com nosso time, entenda qual plano faz mais sentido para sua operação e comece a vender mais no seu canal próprio.
+              Fale com nosso time, entenda qual plano faz mais sentido para sua operação e comece a vender mais em todos os seus canais.
             </p>
             {[
               `🔥 ${trialDays} dias grátis, sem cartão`,
@@ -306,7 +306,7 @@ export default function CadastroPage() {
 
                   <div>
                     <select className="sel" value={faturamento} onChange={e => setFaturamento(e.target.value)}>
-                      <option value="">Qual seu faturamento no canal próprio (WhatsApp + Cardápio Digital)?*</option>
+                      <option value="">Qual seu faturamento mensal somando todos os canais?*</option>
                       {FATURAMENTO.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
