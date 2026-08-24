@@ -413,7 +413,10 @@ export async function PATCH(req: NextRequest) {
     // ter pedido isso.
     await prisma.$transaction(
       orderedIds.map((id, idx) =>
-        prisma.menuProduct.update({ where: { id }, data: { sortOrder: idx } })
+        // SQL cru de propósito: `sortOrder` NÃO está no schema do Prisma, e é
+        // justamente por isso que este endpoint não derruba o cardápio. Ver o
+        // comentário em src/lib/menu-order.ts.
+        prisma.$executeRaw`UPDATE "MenuProduct" SET "sortOrder" = ${idx} WHERE "id" = ${id}`
       )
     );
     return NextResponse.json({ success: true, total: orderedIds.length });

@@ -1,19 +1,25 @@
 /**
- * Ordenação do cardápio, tolerante a schema não aplicado.
+ * Ordenação do cardápio: onde está a coluna sortOrder.
  *
- * `MenuProduct.sortOrder` é a coluna que permite à loja escolher a ordem dos
- * produtos dentro da categoria. Ela entra no schema por um `prisma db push`
- * feito À MÃO — o Dockerfile roda `next build` puro e o entrypoint não aplica
- * nada (ver scripts/aplicar-schema.md).
+ * `MenuProduct.sortOrder` guarda a ordem escolhida pela loja dentro da
+ * categoria. Ela NÃO está no schema do Prisma, e isso é deliberado — o que se
+ * aprendeu derrubando o cardápio:
  *
- * Isso cria uma janela perigosa: entre o deploy do código e o db push, um
- * `orderBy: { sortOrder }` bate em coluna inexistente, o Prisma levanta erro e
- * o cardápio inteiro serve 500. Já aconteceu duas vezes nesta aplicação por
- * motivo equivalente (5a953ac) — não vale repetir a terceira.
+ * Declarar o campo no schema não é inofensivo. Toda consulta que usa `include:`
+ * sem `select:` faz o Prisma montar um SELECT com TODAS as colunas escalares do
+ * modelo. Com o campo no schema e a coluna ausente no banco, o Postgres
+ * responde "column MenuProduct.sortOrder does not exist" e o cardápio inteiro
+ * serve 500 — independente de qualquer `orderBy`. Foi exatamente o que
+ * aconteceu com /loja/brasa-burguer, e é a terceira vez que esta aplicação cai
+ * pela mesma classe de erro (ver 5a953ac).
  *
- * Então a ordenação é perguntada ao banco: existe a coluna, usa; não existe,
- * cai no alfabético de sempre. Quando o db push rodar, o cardápio passa a
- * respeitar a ordem da loja sozinho, sem deploy.
+ * A coluna entra por SQL rodado à mão (scripts/aplicar-schema.md). Enquanto
+ * isso, quem escreve nela usa SQL cru, que não depende do schema, e quem lê
+ * continua no alfabético de sempre.
+ *
+ * Passo seguinte, depois da coluna existir no banco: devolver o campo ao
+ * schema e trocar os `orderBy` literais por orderByCardapio(). Nessa ordem —
+ * primeiro a coluna, depois o schema. Nunca o contrário.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -35,8 +41,11 @@ async function colunaExiste(): Promise<boolean> {
   if (temColuna === false && Date.now() - ultimaChecagem < REPROBE_MS) return false;
 
   try {
-    const rows = await prisma.$queryRaw<{ exists: number }[]>`
-      SELECT 1 as exists
+    // O apelido NÃO pode ser `exists`: é palavra reservada no Postgres e a
+    // consulta inteira vira erro de sintaxe — o que fazia esta sondagem
+    // responder "não existe" para sempre, mesmo com a coluna criada.
+    const rows = await prisma.$queryRaw<{ achou: number }[]>`
+      SELECT 1 AS achou
       FROM information_schema.columns
       WHERE table_name = 'MenuProduct' AND column_name = 'sortOrder'
       LIMIT 1

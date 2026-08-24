@@ -389,11 +389,6 @@ model MenuProduct {
   availableDays   String?             // JSON array: ["SEG","TER","QUA","QUI","SEX","SAB","DOM"] (null/empty = todos os dias)
   imageUrl        String?
   category        String              @default("Lanches")
-  /// Ordem do produto DENTRO da categoria, definida pela loja na tela de
-  /// reordenar. Nasce 0 em todo mundo, e o desempate continua sendo o nome —
-  /// então enquanto ninguém reordenar, o cardápio segue alfabético como sempre
-  /// foi, e nenhuma loja vê o cardápio embaralhar sozinho.
-  sortOrder       Int                 @default(0)
   active          Boolean             @default(true)
   isCombo         Boolean             @default(false)
   isBeverage      Boolean             @default(false)
