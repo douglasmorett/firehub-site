@@ -22,6 +22,79 @@ import { prisma } from "@/lib/prisma";
 import { calcMensalidade } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 
+/**
+ * O lojista usou alguma funcionalidade nossa no mês?
+ *
+ * A regra do plano é "use first, pay later": quem não usa nada não paga nada.
+ * O contrário também vale — quem usa QUALQUER coisa paga pelo menos o mínimo,
+ * mesmo sem ter vendido. Sem isto, dava para deixar o robô atendendo no
+ * WhatsApp, lançar contas no financeiro e controlar estoque o mês inteiro sem
+ * receber um pedido pelo sistema, e não pagar nada.
+ *
+ * A checagem antiga olhava só três sinais (produto cadastrado, iFood ativo e
+ * chatbotConfig.connected). Faltavam 99Food, Jotajá, totem, Meta Ads e o
+ * financeiro inteiro. Pior: `connected` do chatbot só é gravado quando alguém
+ * abre a tela do QR depois de conectar — quem lia o QR e fechava a aba ficava
+ * com o robô atendendo e a cobrança cega. Por isso o consumo de IA registrado
+ * no UsageLog entra aqui: é prova de que o robô trabalhou, não promessa.
+ *
+ * Devolve também o motivo, que fica no `notes` do ciclo — quando o lojista
+ * perguntar "por que estou pagando se não vendi?", a resposta está gravada.
+ */
+export async function detectarUsoDaLoja(
+  franchiseeId: string,
+  monthStart: Date,
+  monthEnd: Date
+): Promise<{ usou: boolean; motivos: string[] }> {
+  const motivos: string[] = [];
+
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: {
+      chatbotConfig: true, ifoodConnected: true, jotajaConnected: true,
+      food99Connected: true, metaAdsEnabled: true, fiscalConfig: true,
+      printerConfig: true, kdsScreens: true, repasseConfig: true,
+    },
+  });
+
+  const chatbot = (user?.chatbotConfig as any) || {};
+  // `active !== false` porque o robô responde nesse estado — é o mesmo critério
+  // que o webhook usa para decidir se atende. Cobrança e atendimento não podem
+  // discordar sobre o que é "estar ligado".
+  if (chatbot.connected === true || (chatbot.instanceName && chatbot.active !== false)) {
+    motivos.push("robô de WhatsApp conectado");
+  }
+  if (user?.ifoodConnected) motivos.push("integração iFood");
+  if (user?.jotajaConnected) motivos.push("integração Jotajá");
+  if (user?.food99Connected) motivos.push("integração 99Food");
+  if (user?.metaAdsEnabled) motivos.push("Meta Ads");
+  if (user?.fiscalConfig) motivos.push("módulo fiscal");
+  if (user?.printerConfig || user?.kdsScreens) motivos.push("impressão/KDS");
+  if (user?.repasseConfig) motivos.push("repasse automático");
+
+  const noMes = { gte: monthStart, lt: monthEnd };
+
+  const [produtos, consumoIA, contas, caixa, notas, estoque, totem] = await Promise.all([
+    prisma.menuProduct.count({ where: { franchiseeId } }),
+    prisma.usageLog.count({ where: { franchiseeId, createdAt: noMes } }),
+    prisma.payable.count({ where: { franchiseeId, createdAt: noMes } }),
+    prisma.cashSession.count({ where: { franchiseeId, createdAt: noMes } }),
+    prisma.purchaseInvoice.count({ where: { franchiseeId, createdAt: noMes } }),
+    prisma.stockItem.count({ where: { franchiseeId } }),
+    prisma.totemLicense.count({ where: { franchiseeId, active: true } }),
+  ]);
+
+  if (produtos > 0) motivos.push(`${produtos} produto(s) no cardápio`);
+  if (consumoIA > 0) motivos.push(`${consumoIA} uso(s) de IA no mês`);
+  if (contas > 0) motivos.push("financeiro (contas a pagar)");
+  if (caixa > 0) motivos.push("controle de caixa");
+  if (notas > 0) motivos.push("notas de compra");
+  if (estoque > 0) motivos.push("controle de estoque");
+  if (totem > 0) motivos.push("totem de autoatendimento");
+
+  return { usou: motivos.length > 0, motivos };
+}
+
 export function isExemptAccount(email?: string | null): boolean {
   if (!email) return false;
   const clean = email.toLowerCase().replace(/\s+/g, "");
@@ -169,19 +242,23 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const totalSales = agg._sum.totalAmount ?? 0;
   
   let hasUsage = totalSales > 0;
+  let motivosUso: string[] = hasUsage ? ["vendas no mês"] : [];
   if (!hasUsage && !isSpecialStore) {
-    const userWithIncludes = await prisma.user.findUnique({
-      where: { id: franchiseeId },
-      include: {
-        menuProducts: { take: 1 },
-        ifoodIntegrations: { take: 1, where: { active: true } },
-      }
-    });
-    const hasProducts = (userWithIncludes?.menuProducts?.length || 0) > 0;
-    const hasIfood = (userWithIncludes?.ifoodIntegrations?.length || 0) > 0;
-    const hasChatbot = (userWithIncludes?.chatbotConfig as any)?.connected === true;
-    hasUsage = hasProducts || hasIfood || hasChatbot;
+    const uso = await detectarUsoDaLoja(franchiseeId, monthStart, monthEnd);
+    hasUsage = uso.usou;
+    motivosUso = uso.motivos;
   }
+
+  // Período de teste isenta APENAS a cobrança que nasce do uso sem venda.
+  //
+  // Quem vendeu pelo sistema paga sobre o que vendeu, em teste ou não — é o
+  // trato do "use first, pay later", e mexer nisso tiraria do faturamento
+  // lojas que já vendem (a Pastel da Paulista faturou R$ 3.782 num mês em que
+  // tinha benefício concedido). O teste serve para o lojista experimentar sem
+  // levar boleto por ter ligado o robô, não para vender de graça.
+  const trialAte = cycle.franchisee?.trialEndsAt;
+  const emTeste = !!trialAte && trialAte > new Date();
+  const isentoPorTeste = emTeste && totalSales === 0;
 
   const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage);
   const amountPending = isSpecialStore ? 0 : parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2));
@@ -196,13 +273,27 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     ifoodExtraCharge = Math.max(0, totalIfood - 1) * 50;
   }
 
-  // Nada a cobrar ou loja isenta
-  if (amountPending < 1 || (!hasUsage) || isSpecialStore) {
+  // Nada a cobrar, loja isenta, ou ainda dentro do período de teste
+  if (amountPending < 1 || (!hasUsage) || isSpecialStore || isentoPorTeste) {
     await prisma.franchiseeBillingCycle.update({
       where: { id: cycle.id },
-      data: { totalSales, amountDue: 0, amountPending: 0, status: "PAID", closedAt: new Date() },
+      data: {
+        totalSales, amountDue: 0, amountPending: 0, status: "PAID", closedAt: new Date(),
+        // Fica gravado por que não cobrou. Sem isto, "por que essa loja não foi
+        // cobrada?" vira arqueologia toda vez.
+        notes: isSpecialStore ? "Isento (loja oficial/própria)."
+          : isentoPorTeste ? `Em período de teste até ${trialAte?.toLocaleDateString("pt-BR")}, sem vendas no mês. Uso detectado: ${motivosUso.join(", ") || "nenhum"}.`
+          : !hasUsage ? "Não usou nenhuma funcionalidade no mês."
+          : "Valor abaixo do mínimo de cobrança.",
+      },
     });
-    return { charged: false, amountPending: 0, message: isSpecialStore ? "Isento (loja oficial / própria)." : "Nada a cobrar neste mês." };
+    return {
+      charged: false,
+      amountPending: 0,
+      message: isSpecialStore ? "Isento (loja oficial / própria)."
+        : isentoPorTeste ? "Em período de teste, sem vendas — nada cobrado."
+        : "Nada a cobrar neste mês.",
+    };
   }
 
   // Gera cobrança Asaas pelo valor restante
@@ -327,7 +418,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 export async function getCurrentCycleView(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true, storeTimezone: true },
+    select: { email: true, planPercent: true, storeTimezone: true, trialEndsAt: true },
   });
 
   const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
@@ -350,19 +441,42 @@ export async function getCurrentCycleView(franchiseeId: string) {
     };
   }
 
+  // Sem venda no mês, o valor devido só aparecia no fechamento — o lojista via
+  // R$ 0,00 o mês inteiro e recebia um boleto do mínimo no fim. Aqui a previsão
+  // já mostra o mínimo assim que ele usa alguma funcionalidade, com o motivo,
+  // para a cobrança nunca ser surpresa.
+  const vendasDoMes = cycle?.totalSales || 0;
+  const emTeste = !!user?.trialEndsAt && user.trialEndsAt > new Date();
+  let previsaoPorUso: { valor: number; motivos: string[] } | null = null;
+  if (vendasDoMes === 0 && !emTeste) {
+    const [ano, mes] = yearMonth.split("-").map(Number);
+    const uso = await detectarUsoDaLoja(franchiseeId, new Date(ano, mes - 1, 1), new Date(ano, mes, 1));
+    if (uso.usou) {
+      previsaoPorUso = { valor: calcMensalidade(0, true).mensalidade, motivos: uso.motivos };
+    }
+  }
+
   if (!cycle) {
-    return { yearMonth, totalSales: 0, amountDue: 0, amountOffset: 0, amountPending: 0, status: "OPEN", isExempt: false };
+    return {
+      yearMonth, totalSales: 0,
+      amountDue: previsaoPorUso?.valor || 0,
+      amountOffset: 0,
+      amountPending: previsaoPorUso?.valor || 0,
+      status: "OPEN", isExempt: false,
+      cobrancaPorUso: previsaoPorUso,
+    };
   }
 
   return {
     yearMonth: cycle.yearMonth,
     totalSales: cycle.totalSales,
-    amountDue: cycle.amountDue,
+    amountDue: Math.max(cycle.amountDue, previsaoPorUso?.valor || 0),
     amountOffset: cycle.amountOffset,
-    amountPending: cycle.amountPending,
+    amountPending: Math.max(cycle.amountPending, previsaoPorUso?.valor || 0),
     status: cycle.status,
     isExempt: false,
     asaasBoletoUrl: cycle.asaasBoletoUrl,
     asaasBoletoCode: cycle.asaasBoletoCode,
+    cobrancaPorUso: previsaoPorUso,
   };
 }
