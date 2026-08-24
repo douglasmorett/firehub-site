@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
 import { processChatbotAI } from '@/lib/chatbot-ai';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
+import { registrarTrace, mascararTelefone } from '@/lib/webhook-trace';
 import {
   evaluateLoopGuard,
   handleOutgoingMessage,
@@ -313,6 +314,7 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   if (!user) {
     console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Instância "${instance}" não pertence a nenhuma loja cadastrada.`);
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: "texto", estagio: "loja-nao-encontrada" });
     return;
   }
 
@@ -440,8 +442,20 @@ async function handleIncomingMessage(body: any, instance: string) {
     return;
   }
 
+  // Rótulo do rastro: separar áudio de texto é o que torna o diagnóstico útil,
+  // já que "não respondeu" tem causas diferentes nos dois casos.
+  const tipoTrace: "texto" | "audio" = (isAudioMessage || audioObj) ? "audio" : "texto";
+
   let textMessage = rawText;
   if (isAudioMessage || audioObj) {
+    registrarTrace({
+      instancia: instance,
+      telefone: mascararTelefone(remoteJid),
+      tipo: "audio",
+      estagio: audioData?.base64 ? "audio-ok" : "audio-sem-bytes",
+      audioChars: audioData?.base64?.length || 0,
+      detalhe: audioData?.base64 ? undefined : "gateway não mandou bytes e o download pela Evolution também falhou",
+    });
     if (audioData?.base64) {
       textMessage = (rawText ? rawText + "\n\n" : "") + "O cliente enviou a mensagem de áudio em anexo. Por favor escute o áudio com atenção, entenda o pedido ou dúvida do cliente e responda no mesmo tom carinhoso e prestativo do cardápio.";
     } else {
@@ -486,7 +500,10 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
-  if (chatbotConfig.active === false) return;
+  if (chatbotConfig.active === false) {
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "robo-desativado" });
+    return;
+  }
 
   // ── DETECT JOTAJA / IFOOD AUTOMATIC ORDER CONFIRMATION MESSAGE FROM CUSTOMER ──
   const isJotajaConfirmationMsg =
@@ -608,6 +625,10 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   if (guard.action === "ignore") {
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔇 Sem resposta para ${remoteJid}: ${guard.reason}`);
+    registrarTrace({
+      instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+      estagio: "guard-ignorou", detalhe: guard.reason,
+    });
     return;
   }
 
@@ -619,6 +640,10 @@ async function handleIncomingMessage(body: any, instance: string) {
     const target = remoteJid || data.from || "";
     await replyToCustomer(user.id, remoteJid, guard.message, target).catch(() => {});
     enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, guard.message, now);
+    registrarTrace({
+      instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+      estagio: "guard-degradou", detalhe: guard.reason,
+    });
     return;
   }
 
@@ -653,12 +678,23 @@ async function handleIncomingMessage(body: any, instance: string) {
     }
 
     const aiTimeout = audioData ? 45000 : 25000;
+    const iaInicio = Date.now();
     aiResponse = await withTimeout(
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName),
       aiTimeout
     );
+    registrarTrace({
+      instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+      estagio: aiResponse ? "ia-chamada" : "ia-timeout",
+      ms: Date.now() - iaInicio,
+      detalhe: aiResponse ? undefined : `estourou o limite de ${aiTimeout}ms`,
+    });
   } catch (aiErr: any) {
     console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro na IA para ${remoteJid}:`, aiErr?.message || aiErr);
+    registrarTrace({
+      instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+      estagio: "erro", detalhe: String(aiErr?.message || aiErr).slice(0, 200),
+    });
     aiResponse = { reply: fallbackReply };
   }
 
@@ -693,7 +729,12 @@ async function handleIncomingMessage(body: any, instance: string) {
     const recipientTarget = remoteJid || data.from || "";
     
     // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
-    await replyToCustomer(user.id, remoteJid, replyText, recipientTarget);
+    const enviou = await replyToCustomer(user.id, remoteJid, replyText, recipientTarget);
+    registrarTrace({
+      instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+      estagio: enviou ? "enviado" : "envio-falhou",
+      detalhe: enviou ? undefined : "gateway recusou o envio (sendText não retornou ok)",
+    });
 
     // Track WhatsApp usage (fire-and-forget)
     trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });

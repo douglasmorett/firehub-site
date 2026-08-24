@@ -27,6 +27,110 @@
 
 import { prisma } from "@/lib/prisma";
 
+/**
+ * Onde o estado por conversa é guardado.
+ *
+ * A tabela é o lugar certo: sobrevive a restart e continua correta no dia em
+ * que rodar mais de um container. Mas ela só passa a existir depois de um
+ * `prisma db push` feito À MÃO — o Dockerfile roda `next build` puro, e as duas
+ * tentativas de aplicar schema no start do container derrubaram o cardápio em
+ * produção (ver 5a953ac). Sem a tabela, o Prisma responde P2021 e a proteção
+ * inteira viraria enfeite: toda chamada cairia no catch e liberaria a mensagem.
+ *
+ * Daí o fallback em memória. Ele é honesto aqui porque o deploy é UM container
+ * Docker de longa duração no Coolify, não serverless: o Map vive enquanto o
+ * processo vive. O que se perde é o estado no restart — aceitável para uma
+ * trava cuja janela é de minutos.
+ *
+ * A troca é automática: assim que a tabela existir, o banco volta a mandar.
+ */
+type ConversationState = {
+  turnCount: number;
+  turnsWithoutProgress: number;
+  recentIntervals: number[];
+  recentHashes: string[];
+  botSentHashes: string[];
+  lastMessageAt: Date | null;
+  degradedAt: Date | null;
+  degradedReason: string | null;
+  humanTakeoverAt: Date | null;
+};
+
+const memoryStore = new Map<string, ConversationState>();
+let usingMemory = false;
+
+/** Erro de "tabela não existe" — o schema ainda não foi aplicado. */
+function isMissingTable(err: any): boolean {
+  return err?.code === "P2021" || /does not exist/i.test(err?.message || "");
+}
+
+function emptyState(): ConversationState {
+  return {
+    turnCount: 0,
+    turnsWithoutProgress: 0,
+    recentIntervals: [],
+    recentHashes: [],
+    botSentHashes: [],
+    lastMessageAt: null,
+    degradedAt: null,
+    degradedReason: null,
+    humanTakeoverAt: null,
+  };
+}
+
+/** Onde o estado está morando agora. Exposto para o diagnóstico. */
+export function loopGuardBackend(): "postgres" | "memoria" {
+  return usingMemory ? "memoria" : "postgres";
+}
+
+async function readState(userId: string, remoteJid: string): Promise<ConversationState | null> {
+  if (!usingMemory) {
+    try {
+      const row = await prisma.chatbotConversationState.findUnique({
+        where: { userId_remoteJid: { userId, remoteJid } },
+      });
+      if (!row) return null;
+      return {
+        turnCount: row.turnCount,
+        turnsWithoutProgress: row.turnsWithoutProgress,
+        recentIntervals: toNumberArray(row.recentIntervals),
+        recentHashes: toStringArray(row.recentHashes),
+        botSentHashes: toStringArray(row.botSentHashes),
+        lastMessageAt: row.lastMessageAt,
+        degradedAt: row.degradedAt,
+        degradedReason: row.degradedReason,
+        humanTakeoverAt: row.humanTakeoverAt,
+      };
+    } catch (err: any) {
+      if (!isMissingTable(err)) throw err;
+      usingMemory = true;
+      console.warn(
+        "[LoopGuard] Tabela ChatbotConversationState não existe — caindo para estado em memória. " +
+        "Rode `prisma db push` à mão para persistir entre restarts."
+      );
+    }
+  }
+  return memoryStore.get(`${userId}_${remoteJid}`) || null;
+}
+
+async function writeState(userId: string, remoteJid: string, patch: Partial<ConversationState>) {
+  if (!usingMemory) {
+    try {
+      await prisma.chatbotConversationState.upsert({
+        where: { userId_remoteJid: { userId, remoteJid } },
+        create: { userId, remoteJid, ...(patch as any) },
+        update: patch as any,
+      });
+      return;
+    } catch (err: any) {
+      if (!isMissingTable(err)) throw err;
+      usingMemory = true;
+    }
+  }
+  const k = `${userId}_${remoteJid}`;
+  memoryStore.set(k, { ...(memoryStore.get(k) || emptyState()), ...patch });
+}
+
 /** Turnos parados antes de degradar. Conversa real converge bem antes disso. */
 const MAX_TURNS_WITHOUT_PROGRESS = 12;
 
@@ -179,9 +283,7 @@ async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
     return { action: "ignore", reason };
   }
 
-  const state = await prisma.chatbotConversationState.findUnique({
-    where: { userId_remoteJid: { userId, remoteJid } },
-  });
+  const state = await readState(userId, remoteJid);
 
   // ── Atendente da loja assumiu ───────────────────────────────────────────
   const takeoverAt = state?.humanTakeoverAt ? state.humanTakeoverAt.getTime() : 0;
@@ -239,44 +341,22 @@ async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
     return { action: "degrade", reason, message: DEGRADE_MESSAGE };
   }
 
-  await prisma.chatbotConversationState.upsert({
-    where: { userId_remoteJid: { userId, remoteJid } },
-    create: {
-      userId,
-      remoteJid,
-      turnCount,
-      turnsWithoutProgress,
-      recentIntervals: intervals,
-      recentHashes: hashes,
-      lastMessageAt: new Date(now),
-    },
-    update: {
-      turnCount,
-      turnsWithoutProgress,
-      recentIntervals: intervals,
-      recentHashes: hashes,
-      lastMessageAt: new Date(now),
-    },
+  await writeState(userId, remoteJid, {
+    turnCount,
+    turnsWithoutProgress,
+    recentIntervals: intervals,
+    recentHashes: hashes,
+    lastMessageAt: new Date(now),
   });
 
   return { action: "allow" };
 }
 
 async function markDegraded(userId: string, remoteJid: string, reason: string, now: number) {
-  await prisma.chatbotConversationState.upsert({
-    where: { userId_remoteJid: { userId, remoteJid } },
-    create: {
-      userId,
-      remoteJid,
-      lastMessageAt: new Date(now),
-      degradedAt: new Date(now),
-      degradedReason: reason,
-    },
-    update: {
-      lastMessageAt: new Date(now),
-      degradedAt: new Date(now),
-      degradedReason: reason,
-    },
+  await writeState(userId, remoteJid, {
+    lastMessageAt: new Date(now),
+    degradedAt: new Date(now),
+    degradedReason: reason,
   });
 }
 
@@ -289,17 +369,9 @@ async function markDegraded(userId: string, remoteJid: string, reason: string, n
  */
 export async function registerBotReply(userId: string, remoteJid: string, text: string) {
   try {
-    const state = await prisma.chatbotConversationState.findUnique({
-      where: { userId_remoteJid: { userId, remoteJid } },
-      select: { botSentHashes: true },
-    });
-    const hashes = [...toStringArray(state?.botSentHashes), hashText(text)].slice(-BOT_SENT_WINDOW);
-
-    await prisma.chatbotConversationState.upsert({
-      where: { userId_remoteJid: { userId, remoteJid } },
-      create: { userId, remoteJid, botSentHashes: hashes },
-      update: { botSentHashes: hashes },
-    });
+    const state = await readState(userId, remoteJid);
+    const hashes = [...(state?.botSentHashes || []), hashText(text)].slice(-BOT_SENT_WINDOW);
+    await writeState(userId, remoteJid, { botSentHashes: hashes });
   } catch (err) {
     console.error("[LoopGuard] Falha ao registrar resposta do robô:", err);
   }
@@ -321,19 +393,12 @@ export async function handleOutgoingMessage(
   now: number
 ): Promise<boolean> {
   try {
-    const state = await prisma.chatbotConversationState.findUnique({
-      where: { userId_remoteJid: { userId, remoteJid } },
-      select: { botSentHashes: true },
-    });
+    const state = await readState(userId, remoteJid);
 
-    const known = toStringArray(state?.botSentHashes);
+    const known = state?.botSentHashes || [];
     if (known.includes(hashText(text))) return false; // eco do próprio robô
 
-    await prisma.chatbotConversationState.upsert({
-      where: { userId_remoteJid: { userId, remoteJid } },
-      create: { userId, remoteJid, humanTakeoverAt: new Date(now) },
-      update: { humanTakeoverAt: new Date(now) },
-    });
+    await writeState(userId, remoteJid, { humanTakeoverAt: new Date(now) });
     return true;
   } catch (err) {
     console.error("[LoopGuard] Falha ao processar mensagem do lojista:", err);
@@ -346,18 +411,13 @@ export async function handleOutgoingMessage(
  * Sem isto, o cliente que caiu na trava ficaria sem robô para sempre.
  */
 export async function clearLoopGuard(userId: string, remoteJid: string) {
-  await prisma.chatbotConversationState
-    .updateMany({
-      where: { userId, remoteJid },
-      data: {
-        degradedAt: null,
-        degradedReason: null,
-        humanTakeoverAt: null,
-        turnCount: 0,
-        turnsWithoutProgress: 0,
-        recentIntervals: [],
-        recentHashes: [],
-      },
-    })
-    .catch(() => {});
+  await writeState(userId, remoteJid, {
+    degradedAt: null,
+    degradedReason: null,
+    humanTakeoverAt: null,
+    turnCount: 0,
+    turnsWithoutProgress: 0,
+    recentIntervals: [],
+    recentHashes: [],
+  }).catch(() => {});
 }
