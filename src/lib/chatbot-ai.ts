@@ -312,11 +312,16 @@ export async function processChatbotAI(
     }
   }
 
-  // Separar catálogo entre Promoções R$ 1,90 HOJE, AMANHÃ, CRONOGRAMA SEMANAL, Combos e Itens Avulsos
+  // Separa o catálogo em: promoções de hoje, de amanhã, cronograma semanal,
+  // combos e itens avulsos.
+  //
+  // Isto já foi escrito em cima da promoção de R$ 1,90 da Hakim: havia listas
+  // separadas só para itens nesse preço, e o prompt falava em "esfirra de
+  // R$ 1,90" para toda loja do sistema. Uma hamburgueria recebia instrução
+  // sobre esfirra. Agora o que define promoção é o cadastro — a tag, a
+  // categoria ou o nome do produto — e não um valor mágico.
   const todayPromotions: string[] = [];
-  const itemsAt190Today: string[] = [];
   const tomorrowPromotions: string[] = [];
-  const itemsAt190Tomorrow: string[] = [];
   const availableCombos: string[] = [];
   const availableSingleProducts: string[] = [];
   const unavailableTodayProducts: string[] = [];
@@ -359,13 +364,19 @@ export async function processChatbotAI(
     }
 
     const isChannelImport = /jotaja|ifood|online/i.test(p.category || "");
-    const isCombo = p.isCombo === true || /combo|oferta|kit|pack|imperia|príncip|principe|rei|sábio|sabio/i.test(rawCleanName) || /combo|oferta/i.test(p.category || "");
-    // Desconsidera itens importados do Jotajá/iFood para a classificação de promoções de R$ 1,90
-    const isPrice190 = !isChannelImport && (Math.abs(p.price - 1.90) < 0.10 || p.price === 1.9 || /1[\.,]90/i.test(rawCleanName) || /1[\.,]90/i.test(p.description || ""));
-    const isPromoItem = !isChannelImport && (isPrice190 || /promo|promoção|promocao|esfirra do dia|oferta do dia/i.test(rawCleanName) || /promo|promoção|promocao/i.test(p.category || ""));
+    const isCombo = p.isCombo === true || /combo|kit|pack/i.test(rawCleanName) || /combo|oferta/i.test(p.category || "");
+    // Promoção sai do cadastro: a tag "Promoção" marcada pelo lojista, a
+    // categoria, ou o nome do item. Itens importados do Jotajá/iFood ficam de
+    // fora — o nome vem do canal e classificaria errado.
+    const temTagPromo = /promo|promoção|promocao|oferta/i.test(tagsNotice);
+    const isPromoItem = !isChannelImport && (
+      temTagPromo ||
+      /promo|promoção|promocao|oferta do dia|do dia/i.test(rawCleanName) ||
+      /promo|promoção|promocao|oferta/i.test(p.category || "")
+    );
 
     // Preenche o cronograma semanal de promoções da loja
-    if (isPromoItem || isPrice190) {
+    if (isPromoItem) {
       const activeDays = days.length === 0 ? ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"] : days.map(d => d.toUpperCase());
       activeDays.forEach(d => {
         if (dayScheduleMap[d]) {
@@ -392,9 +403,6 @@ export async function processChatbotAI(
       if (!seenProductKeys.has(uniqueKey)) {
         seenProductKeys.add(uniqueKey);
 
-        if (isPrice190) {
-          itemsAt190Today.push(line);
-        }
         if (isPromoItem) {
           todayPromotions.push(line);
         }
@@ -409,9 +417,8 @@ export async function processChatbotAI(
       unavailableTodayProducts.push(line);
     }
 
-    if (isTomorrow && (isPromoItem || isPrice190)) {
+    if (isTomorrow && isPromoItem) {
       const line = `- "${rawCleanName}" (${p.category}): R$ ${p.price.toFixed(2)}${p.description ? ` — ${p.description}` : ""}`;
-      if (isPrice190) itemsAt190Tomorrow.push(line);
       tomorrowPromotions.push(line);
     }
   });
@@ -421,19 +428,16 @@ export async function processChatbotAI(
     .map(([dCode, items]) => `- ${DAY_NAMES[dCode] || dCode}: ${items.join(", ")}`)
     .join("\n");
 
-  const catalogSummary = `=== 🏷️ PROMOÇÃO DE R$ 1,90 / ANÚNCIOS META DE HOJE (${currentDayName}) ===
-${itemsAt190Today.length > 0 ? itemsAt190Today.join("\n") : (todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma esfirra de R$ 1,90 ativa hoje.")}
+  const catalogSummary = `=== 🌟 PROMOÇÕES DE HOJE (${currentDayName}) ===
+${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma promoção cadastrada para hoje."}
+(SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE, RESPONDA EXATAMENTE OS ITENS ACIMA, COM O PREÇO CADASTRADO. É PROIBIDO APRESENTAR QUALQUER OUTRO ITEM COMO SE FOSSE A PROMOÇÃO DE HOJE.)
 
-=== 📅 PROMOÇÃO E ITENS DE R$ 1,90 AMANHÃ (${tomorrowDayName}) ===
-${itemsAt190Tomorrow.length > 0 ? itemsAt190Tomorrow.join("\n") : (tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Amanhã haverá promoção de R$ 1,90 conforme o cardápio da loja.")}
+=== 📅 PROMOÇÕES DE AMANHÃ (${tomorrowDayName}) ===
+${tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Nenhuma promoção cadastrada para amanhã."}
 
 === 🗓️ CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA ===
-${weeklyScheduleSummary || "- Promoções diárias conforme cardápio ativo da loja!"}
-(SE O CLIENTE PERGUNTAR QUAIS DIAS TEM PROMOÇÃO OU SE AMANHÃ VAI TER 1,90, CONSULTE ESTA TABELA REAL DA LOJA E RESPONDA COM TOTAL CERTEZA!)
-
-=== 🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE (${currentDayName}) 🌟 ===
-${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma promoção cadastrada para hoje."}
-(SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE OU QUAL A ESFIRRA DA PROMOÇÃO, RESPONDA EXATAMENTE A OPÇÃO ACIMA! É PROIBIDO MENCIONAR QUALQUER OUTRA ESFIRRA COMO SE FOSSE A PROMOÇÃO DE HOJE!)
+${weeklyScheduleSummary || "- Sem cronograma de promoções cadastrado."}
+(SE O CLIENTE PERGUNTAR EM QUAIS DIAS TEM PROMOÇÃO, CONSULTE ESTA TABELA REAL DA LOJA E RESPONDA COM TOTAL CERTEZA.)
 
 === COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
 ${availableCombos.length > 0 ? availableCombos.join("\n") : "[NENHUM COMBO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER COMBOS QUE NÃO ESTEJAM AQUI!]"}
@@ -484,10 +488,17 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   }
 
   if (Array.isArray(user.storeCoupons) && (user.storeCoupons as any[]).length > 0) {
-    // FILTRO DE SEGURANÇA MÁXIMA: APENAS cupons públicos permitidos ou o cupom instantâneo (ex: HAKIM10) podem ser passados para a IA!
-    // Cupons sigilosos/estratégicos de recuperação de clientes inativos (como HAKIM15, SAUDADE10) NUNCA são expostos!
+    // FILTRO DE SEGURANÇA: só chega na IA o cupom marcado como público ou o
+    // cupom instantâneo configurado PELA PRÓPRIA LOJA. Cupom estratégico de
+    // recuperação de cliente inativo nunca é exposto.
+    //
+    // O fallback aqui era `instantCouponCode || "HAKIM10"`: loja que não tinha
+    // cupom instantâneo configurado passava a comparar com HAKIM10, o cupom de
+    // outra loja. Sem o fallback, quem não configurou nada simplesmente não tem
+    // cupom para a IA citar — que é o correto.
+    const codigoInstantaneo = instantCouponEnabled && instantCouponCode ? instantCouponCode.toUpperCase() : null;
     const activePublicCoupons = (user.storeCoupons as any[]).filter(
-      (c: any) => c.active !== false && c.code && (c.isPublic === true || c.code.toUpperCase() === (instantCouponCode || "HAKIM10").toUpperCase())
+      (c: any) => c.active !== false && c.code && (c.isPublic === true || (codigoInstantaneo && c.code.toUpperCase() === codigoInstantaneo))
     );
     if (activePublicCoupons.length > 0) {
       availableCouponsText += activePublicCoupons.map((c: any) => {
@@ -512,7 +523,12 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   // Geocodificação e verificação de raio no mapa em tempo real
   let addressValidationText = "";
   const potentialAddressText = `${message || ""} ${history ? history.slice(-2).map((h: any) => h.text).join(" ") : ""}`;
-  const addressRegex = /\b(rua|r\.|avenida|av\.|bairro|estrada|est\.|alameda|travessa|praça|praca|quadra|qd|lote|lt|serra mar|zabulão|zambulao|mariléa|marilea|centro|costa azul|cidade praiana|âncora|ancora|remanso)\b/i;
+  // Só tipos de logradouro, que valem em qualquer cidade. Antes havia bairros
+  // de Rio das Ostras na lista (Mariléa, Costa Azul, Zabulão, Cidade Praiana,
+  // Âncora, Remanso, Serra Mar): loja de outra cidade não ganhava nada com
+  // isso, e "centro" é palavra comum demais — bastava o cliente escrever
+  // "centro" numa frase qualquer para o sistema tratar como endereço.
+  const addressRegex = /\b(rua|r\.|avenida|av\.|bairro|estrada|est\.|alameda|travessa|praça|praca|rodovia|rod\.|quadra|qd|lote|lt|condomínio|condominio|loteamento|km)\b/i;
 
   if (addressRegex.test(potentialAddressText)) {
     try {
@@ -611,16 +627,16 @@ REGRAS ABSOLUTAS:
    - Você tem acesso EM TEMPO REAL aos pedidos do dia cadastrados no sistema da loja (Jotajá, iFood, Site e WhatsApp) listados no campo "PEDIDOS RECENTES DO CLIENTE / PEDIDOS ATIVOS DO DIA" abaixo.
    - Quando o cliente perguntar sobre o pedido ("Chega dentro da prévia?", "cadê meu pedido?", "meu pedido já saiu?", "tá demorando?", "onde tá meu pedido?", "já fiz o pedido"):
      a) Consulte a lista de pedidos abaixo. Se encontrar um pedido correspondente (seja pelo número do WhatsApp, pelo nome do cliente ou pelo número de referência informado como 32653126, 1876 ou #142):
-        RESPONDA IMEDIATAMENTE INFORMANDO O STATUS REAL DO PEDIDO COM MUITA SIMPATIA E ALEGRIA! Exemplo: "Oi, Paulo Victor! 🥰 Localizei aqui seu pedido nº 32653126 do Jotajá (16x Esfirra de Calabresa)! Ele já está em preparação na nossa cozinha e vai sair para entrega em instantes dentro da prévia! 🛵🔥"
+        RESPONDA IMEDIATAMENTE INFORMANDO O STATUS REAL DO PEDIDO COM MUITA SIMPATIA E ALEGRIA! Exemplo: "Oi, [Nome]! 🥰 Localizei aqui seu pedido nº [número] do [canal] ([itens do pedido])! Ele já está em preparação na nossa cozinha e vai sair para entrega em instantes dentro da prévia! 🛵🔥"
      b) Se o cliente informar um número de código (ex: 32653126, 1876, #142) ou disser que fez pelo Jotajá/iFood:
         Localize o pedido correspondente na lista abaixo e informe a posição na hora. Se houver qualquer dúvida ou se não tiver 100% de certeza do nome do cliente, pergunte com carinho: "É o pedido no nome de [Nome do Cliente] pelo Jotajá/iFood? Me confirma que eu já te passo a posição exata!"
      c) Se o pedido estiver com status "SAIU_PARA_ENTREGA" ou "SAIU_ENTREGA":
         Diga que o entregador já está a caminho com o pedido e peça para o cliente ficar atento ao interfone/portaria!
 7. QUANDO O CLIENTE PERGUNTAR SOBRE PROMOÇÕES OU CUPOM:
    - REGRA MANDATÓRIA DE RESPOSTA A PROMOÇÕES: Se o cliente perguntar "tem alguma promoção?", "quais são as promoções?", "o que tem de promoção hoje?":
-     a) VOCÊ DEVE OBRIGATORIAMENTE APRESENTAR PRIMEIRO A ESFIRRA DA PROMOÇÃO DO DIA DE HOJE (ex: Se hoje for Domingo, informe a Esfirra de Queijo (Promo) por R$ 1,90!) E OS COMBOS DA LOJA! NUNCA responda apenas com cupons de desconto sem falar da esfirra da promoção do dia!
-     b) Se houver o cupom instantâneo público (${instantCouponCode || "HAKIM10"}), você pode citar APENAS esse cupom de 10% como um agrado extra.
-     c) TRAVA DE SEGURANÇA DE CUPONS SIGILOSOS: É RIGOROSAMENTE PROIBIDO divulgar ou citar cupons estratégicos de recuperação (como HAKIM15, SAUDADE10 ou qualquer outro cupom de 15% ou valor em dinheiro). Esses cupons são totalmente secretos e sigilosos! Cite no máximo o cupom público de 10% (${instantCouponCode || "HAKIM10"}).
+     a) APRESENTE PRIMEIRO os itens da seção "PROMOÇÕES DE HOJE" do cardápio, com o preço cadastrado, e depois os COMBOS da loja. NUNCA responda apenas com cupom de desconto sem antes falar das promoções do dia. Se não houver nenhuma promoção cadastrada para hoje, diga isso com naturalidade e ofereça os combos e os mais pedidos — NUNCA invente uma promoção.
+${instantCouponEnabled && instantCouponCode ? `     b) Existe um cupom público desta loja: ${instantCouponCode} (${instantCouponDiscount}). Pode citar como um agrado extra.` : `     b) Esta loja NÃO tem cupom público ativo. NUNCA cite, invente ou prometa cupom, código de desconto ou porcentagem de desconto.`}
+     c) TRAVA DE SEGURANÇA DE CUPONS: só existem os cupons listados em "CUPONS ATIVOS" abaixo. Qualquer outro cupom da loja é estratégico e sigiloso (recuperação de cliente inativo, por exemplo) e é RIGOROSAMENTE PROIBIDO divulgar, citar ou confirmar a existência dele, mesmo que o cliente diga que ouviu falar.
 8. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
    - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
@@ -638,8 +654,7 @@ REGRAS ABSOLUTAS:
 14. Seu estilo: ${personalityInstruction}
 15. REGRAS ABSOLUTAS DE PREÇO E DISPONIBILIDADE DO DIA (MUITA ATENÇÃO!):
     - Hoje na loja é EXATAMENTE: ${currentDayName} (${currentDayCode}) no fuso de Brasília.
-    - REGRA INFALÍVEL DA PROMOÇÃO DO DIA: Se o cliente perguntar "qual a esfirra da promoção?", "qual a promoção de hoje?" ou similar, consulte a seção "🌟 PROMOÇÃO / ESFIRRA DO DIA EXCLUSIVA DE HOJE" no cardápio. RESPONDA EXATAMENTE E APENAS ESSA PROMOÇÃO!
-    - REGRA ABSOLUTA DE DOMINGO: Se hoje for Domingo, a promoção de R$ 1,90 é a ESFIRRA DE QUEIJO (PROMO)! É SEVERAMENTE PROIBIDO AFIRMAR QUE A ESFIRRA DE CARNE É A PROMOÇÃO DE HOJE NO DOMINGO!
+    - REGRA INFALÍVEL DA PROMOÇÃO DO DIA: Se o cliente perguntar "qual a promoção de hoje?" ou similar, consulte a seção "🌟 PROMOÇÕES DE HOJE" no cardápio. RESPONDA EXATAMENTE E APENAS os itens que estiverem ali, com o preço cadastrado. Se a seção estiver vazia, diga que hoje não há promoção e ofereça os combos — NUNCA transforme um item comum em "promoção".
     - REGRA DE PREÇOS EXATOS: Diga o preço exato do produto HOJE de primeira! NUNCA invente preços como R$ 4,00 ou R$ 15,99 se eles não existirem no cardápio ativo da loja. Se um produto promocional de outro dia estiver indisponível hoje, NUNCA mencione o valor promocional dele hoje.
     - REGRA DE ITENS INDISPONÍVEIS: Produtos na seção "PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE" NÃO PODEM ser oferecidos nem vendidos hoje pelo valor promocional sob hipótese alguma.
 16. REGRA ABSOLUTA DE ATENDIMENTO 24/7 (MESMO COM CAIXA / LOJA FECHADO):
@@ -671,7 +686,7 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
     - Responda apenas com simpatia: "Recebemos a confirmação do seu pedido feito pelo Jotajá/iFood com sucesso! 🚀 Ele já deu entrada na nossa cozinha e está sendo preparado!"
 ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPLETO E PROATIVO!):
     - FOCO ABSOLUTO NO PEDIDO ATUAL:
-      Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta 2 esfirras", "muda pra pix", "troca o refri"):
+      Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta mais 2", "muda pra pix", "troca o refri"):
       a) Atualize o rascunho com os itens, recálculo de valor e confirmação natural.
       b) VERIFIQUE O QUE FALTA E PERGUNTE PROATIVAMENTE NA MESMA MENSAGEM:
          - Se não sabe o NOME DO CLIENTE (quando constar "Primeiro Nome: Não identificado" ou "Cliente WhatsApp"), PERGUNTE OBRIGATORIAMENTE: "Qual o seu nome para o cadastro do pedido?"
@@ -706,15 +721,12 @@ ${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS
     - O pedido rascunho anterior do cliente foi cancelado por ter ficado mais de 20 minutos sem resposta.
     - Na PRIMEIRA mensagem de retorno do cliente agora, diga exatamente neste tom carinhoso: "Olha, como você ficou muito tempo ausente, eu acabei parando o pedido por aqui! Mas que bom que voltou! 😊 Como posso te ajudar agora?"
     - Reinicie o atendimento com toda a simpatia!` : ""}
-32. REGRA ABSOLUTA PARA PROMOÇÕES DE R$ 1,90, ANÚNCIOS E CONSULTAS SOBRE AMANHÃ OU DIAS DA SEMANA ("Amanhã vai ter 1,90?", "Quais dias tem 1,90?", "Ué não era todo dia?"):
-    - É SEVERA E STRICTAMENTE PROIBIDO responder "pra amanhã eu ainda não tenho essa informação certinha", "não sei a de amanhã", "no momento não temos nenhuma por 1,90" ou qualquer frase sem certeza!
-    - SE O CLIENTE PERGUNTAR SE AMANHÃ VAI TER SABOR POR R$ 1,90 OU QUAL O SABOR DE AMANHÃ:
-      a) Consulte a seção "PROMOÇÃO E ITENS DE R$ 1,90 AMANHÃ (${tomorrowDayName})" no cardápio abaixo.
-      b) Se houver item/promoção programada para amanhã (ou se a loja tem promoção todo dia), RESPONDA COM TOTAL CERTEZA E SIMPATIA:
-         "Sim! Amanhã (${tomorrowDayName}) teremos promoção de R$ 1,90 sim! 😊 O sabor será [Nome do Sabor de Amanhã / Sabores Promocionais]! Lembramos que para entrega o pedido mínimo é de ${minimumOrderValue.toFixed(2).replace('.', ',')} reais."
-    - SE O CLIENTE PERGUNTAR QUAIS DIAS DA SEMANA TEM PROMOÇÃO (ex: "é todo dia?", "quais dias tem?"):
-      a) Consulte a seção "CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA" no cardápio abaixo.
-      b) Informe com exatidão os dias reais da semana que aquela loja específica oferece a promoção de R$ 1,90 (ex: "Aqui na nossa loja a promoção de R$ 1,90 rola de Segunda, Quarta e Sexta!" ou "Aqui na nossa loja temos promoção de R$ 1,90 TODOS OS DIAS sim! 😊"). NUNCA diga que não tem certeza sobre os dias da loja!
+32. CONSULTAS SOBRE PROMOÇÃO DE AMANHÃ OU DOS DIAS DA SEMANA ("amanhã vai ter promoção?", "quais dias tem?", "é todo dia?"):
+    - Você TEM essa informação no cardápio abaixo. É PROIBIDO responder "não sei a de amanhã", "ainda não tenho essa informação" ou qualquer frase de incerteza.
+    - SOBRE AMANHÃ: consulte a seção "PROMOÇÕES DE AMANHÃ (${tomorrowDayName})".
+      a) Se houver itens ali, responda com certeza, citando os itens e os preços cadastrados, e lembre o pedido mínimo de ${minimumOrderValue.toFixed(2).replace('.', ',')} reais para entrega.
+      b) Se a seção estiver vazia, diga com naturalidade que para amanhã não há promoção cadastrada e ofereça o que está disponível hoje. NUNCA invente item ou preço promocional.
+    - SOBRE OS DIAS DA SEMANA: consulte "CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA" e informe exatamente os dias que constam ali para ESTA loja. Se não houver cronograma, diga que as promoções variam e ofereça as de hoje.
 
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
