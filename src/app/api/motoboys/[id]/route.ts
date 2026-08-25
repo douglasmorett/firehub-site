@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { hashDeSenha } from "@/lib/motoboy-senha";
 
 // PUT - atualizar motoboy
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -27,7 +28,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     data: {
       ...(name !== undefined && { name: name.trim() }),
       ...(phone !== undefined && { phone: phone?.trim() || null }),
-      ...(password !== undefined && { password: password?.trim() || "123456" }),
+      // Campo em branco significa "não mexer na senha", não "voltar para a
+      // padrão". Do jeito anterior, salvar qualquer outro dado do cadastro com o
+      // campo vazio rebaixava a senha do entregador para 123456 sem avisar
+      // ninguém — inclusive a de quem já tinha trocado.
+      ...(password?.trim() ? { password: await hashDeSenha(password.trim()) } : {}),
       ...(paymentType !== undefined && { paymentType }),
       ...(dailyRate !== undefined && { dailyRate: dailyRate ? Number(dailyRate) : null }),
       ...(perDeliveryRate !== undefined && { perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null }),
@@ -37,7 +42,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     },
   });
 
-  return NextResponse.json(motoboy);
+  return NextResponse.json({ ...motoboy, password: undefined });
 }
 
 // DELETE - remover motoboy

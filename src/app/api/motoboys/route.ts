@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
 
 // GET - listar motoboys do franqueado
 export async function GET() {
@@ -13,14 +14,10 @@ export async function GET() {
 
   const targetFranchiseeId = user.ownerId || user.id;
 
-  // Garantir que todos os motoboys sem senha fiquem com a senha padrão "123456"
-  await prisma.motoboy.updateMany({
-    where: {
-      franchiseeId: targetFranchiseeId,
-      OR: [{ password: null }, { password: "" }]
-    },
-    data: { password: "123456" }
-  }).catch(() => {});
+  // Aqui havia um updateMany que gravava "123456" em texto puro em todo mundo
+  // que estivesse sem senha, a cada abertura da tela. Quem ainda não tem senha
+  // continua entrando com a padrão — a diferença é que ela é conferida no login
+  // e gravada como hash naquele momento, em vez de ser semeada no banco.
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -40,7 +37,7 @@ export async function GET() {
   });
 
   // Calculate earnings for each motoboy
-  const result = motoboys.map((mb) => {
+  const result = await Promise.all(motoboys.map(async (mb) => {
     const todayOrders = mb.orders || [];
     const deliveryCount = todayOrders.length;
     const daily = mb.dailyRate || 0;
@@ -56,14 +53,18 @@ export async function GET() {
 
     return {
       ...mb,
-      password: mb.password || "123456",
+      // A senha saía daqui em texto puro, para toda a lista, a cada carregamento
+      // da tela — bastava abrir a aba de rede do navegador. O painel não precisa
+      // dela: precisa saber quem ainda não trocou a padrão, e poder redefinir.
+      password: undefined,
+      senhaPadrao: await estaNaSenhaPadrao(mb.password),
       orders: undefined,
       todayDeliveryCount: deliveryCount,
       todayDeliveryFees: deliveryFees,
       todayDailyRate: daily,
       todayTotalEarnings: totalEarnings,
     };
-  });
+  }));
 
   return NextResponse.json(result);
 }
@@ -89,7 +90,7 @@ export async function POST(req: Request) {
       franchiseeId: targetFranchiseeId,
       name: name.trim(),
       phone: phone?.trim() || null,
-      password: password?.trim() || "123456",
+      password: await hashDeSenha(password?.trim() || "123456"),
       paymentType: paymentType || "PER_DELIVERY",
       dailyRate: dailyRate ? Number(dailyRate) : null,
       perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null,
@@ -98,5 +99,9 @@ export async function POST(req: Request) {
     },
   });
 
-  return NextResponse.json(motoboy, { status: 201 });
+  // A resposta devolvia o registro inteiro, com o campo password dentro.
+  return NextResponse.json(
+    { ...motoboy, password: undefined, senhaPadrao: !password?.trim() },
+    { status: 201 }
+  );
 }

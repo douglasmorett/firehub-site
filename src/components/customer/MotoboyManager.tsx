@@ -3,7 +3,9 @@ import { useState } from "react";
 import { Plus, Edit2, Trash2, Bike, Check, X, Phone, DollarSign, Search } from "lucide-react";
 
 type Motoboy = {
-  id: string; name: string; phone?: string; password?: string; active: boolean;
+  // password só existe na ida (definir/redefinir). A API não devolve mais o
+  // valor — devolve senhaPadrao, dizendo se o entregador ainda não trocou.
+  id: string; name: string; phone?: string; password?: string; senhaPadrao?: boolean; active: boolean;
   paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; notes?: string;
   todayDeliveryCount?: number; todayDeliveryFees?: number; todayDailyRate?: number; todayTotalEarnings?: number;
 };
@@ -16,7 +18,7 @@ const PAYMENT_TYPES = [
   { value: "PER_KM", label: "Por KM Percorrido" },
 ];
 
-const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "123456", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, notes: "" });
+const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, notes: "" });
 
 export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: Motoboy[] }) {
   const [motoboys, setMotoboys] = useState<Motoboy[]>(initialMotoboys);
@@ -32,7 +34,10 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
   );
 
   const openNew = () => { setEditing(empty()); setEditingId(null); };
-  const openEdit = (mb: Motoboy) => { setEditing({ ...mb }); setEditingId(mb.id); };
+  // A senha não vem mais do servidor, e o campo do formulário fica vazio: em
+  // branco quer dizer "não mexer na senha". Antes o input era preenchido com a
+  // senha em texto puro do entregador, à vista de quem estivesse perto da tela.
+  const openEdit = (mb: Motoboy) => { setEditing({ ...mb, password: "" }); setEditingId(mb.id); };
   const cancel = () => { setEditing(null); setEditingId(null); };
 
   const save = async () => {
@@ -113,8 +118,26 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
           </div>
         )}
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>🔑 Senha de Acesso ao App Entregador (Padrão: 123456)</label>
-          <input className="input-field" type="text" value={editing.password ?? "123456"} onChange={e => setEditing(p => ({ ...p, password: e.target.value }))} placeholder="Ex: 123456" />
+          <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
+            🔑 {editingId ? "Redefinir senha do App Entregador" : "Senha de Acesso ao App Entregador"}
+          </label>
+          <input
+            className="input-field"
+            type="password"
+            value={editing.password ?? ""}
+            onChange={e => setEditing(p => ({ ...p, password: e.target.value }))}
+            placeholder={editingId ? "Deixe em branco para manter a senha atual" : "Mínimo 6 caracteres (padrão: 123456)"}
+          />
+          <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: 4 }}>
+            A senha fica guardada criptografada e não pode mais ser consultada — nem por você. Se o
+            entregador esquecer, defina uma nova aqui.
+          </div>
+          {editingId && editing.senhaPadrao && (
+            <div style={{ fontSize: "0.75rem", color: "#B45309", marginTop: 6, fontWeight: 600 }}>
+              ⚠️ Este entregador ainda usa a senha padrão 123456. Qualquer pessoa que saiba o nome dele
+              entra no app de entregas — defina uma senha própria.
+            </div>
+          )}
         </div>
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Observações</label>
