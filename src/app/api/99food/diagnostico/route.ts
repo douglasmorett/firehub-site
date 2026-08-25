@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { diagnosticoAuth, appIdVisivel, food99Configurado, ERRO_SEM_AUTORIZACAO } from "@/lib/food99-api";
+import {
+  diagnosticoAuth,
+  appIdVisivel,
+  food99Configurado,
+  ERRO_SEM_AUTORIZACAO,
+  listarLojasVinculadas,
+} from "@/lib/food99-api";
 import { ler99Food } from "@/lib/webhook-99food-log";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +109,13 @@ export async function GET() {
 
   const autorizada = testes.find((t) => t.autorizada) || null;
 
+  // A lista de vínculos do app é a fonte da verdade sobre quem está conectado:
+  // vazia significa que NENHUMA loja autorizou o FireHub, e aí não adianta
+  // procurar defeito em webhook nem em parser. É também de onde sai o
+  // app_shop_id real de cada loja, que é o que a página de autorização não
+  // devolve.
+  const vinculos = await listarLojasVinculadas();
+
   const eventos = ler99Food();
   const pedidos99 = await prisma.customerOrder.count({
     where: { franchiseeId: lojaId, source: "99FOOD" },
@@ -151,6 +164,9 @@ export async function GET() {
     },
     appId: appIdVisivel(),
     autorizacao: { autorizada: !!autorizada, appShopIdValido: autorizada?.appShopId ?? null, testes },
+    lojasVinculadasAoApp: vinculos.ok
+      ? { ok: true, quantidade: vinculos.lojas.length, variante: vinculos.variante, lojas: vinculos.lojas }
+      : { ok: false, erro: vinculos.erro, tentativas: vinculos.tentativas },
     webhook: {
       urlQueDeveEstarNoPortal: "https://firehubfood.com.br/api/99food/webhook",
       eventosRecebidos: eventos.length,

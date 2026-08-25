@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { registrar99Food } from "@/lib/webhook-99food-log";
+import { parseJson99Food } from "@/lib/json-ids-longos";
+import { traduzirPedido99Food, type ItemTraduzido } from "@/lib/food99-pedido";
 
 /**
  * POST /api/99food/webhook
@@ -79,7 +81,9 @@ export async function POST(req: NextRequest) {
     // ali o reenvio é justamente o que salva o pedido.
     let payload: any;
     try {
-      payload = JSON.parse(bodyText);
+      // NÃO trocar por JSON.parse: os ids do 99Food têm 19 dígitos e o parse
+      // nativo os arredonda em silêncio. Ver lib/json-ids-longos.ts.
+      payload = parseJson99Food(bodyText);
     } catch {
       console.error("[99Food Webhook] Corpo não é JSON válido:", bodyText.slice(0, 300));
       registrar99Food({
@@ -100,31 +104,50 @@ export async function POST(req: NextRequest) {
     let updated = 0;
 
     for (const event of events) {
-      const merchantId = event.merchantId || event.storeId || event.merchant?.id;
+      // O OrderModel do 99Food pode vir embrulhado (`event.order`) ou solto no
+      // próprio evento. Reconhece-se pelo `order_id`, que é o único campo
+      // presente nas duas formas.
+      const pedidoBruto =
+        event.order && typeof event.order === "object" ? event.order : event.order_id ? event : null;
 
-      // O app_shop_id é o id que NÓS mandamos ao 99Food ao gerar a URL de
-      // autorização — ou seja, o id da loja no nosso banco. Quando ele vem, a
-      // amarração é exata e não sobra espaço para palpite: é o oposto do
-      // fallback lá embaixo, que só existe porque o formulário antigo pedia um
-      // merchantId digitado à mão e ele podia não bater com nada.
-      const appShopId =
-        event.app_shop_id || event.appShopId || event.shop_id || event.order?.app_shop_id;
+      const traduzido = pedidoBruto ? traduzirPedido99Food(pedidoBruto) : null;
 
-      const orderId = event.orderId || event.id || event.order?.id;
-      const displayId = event.displayId || event.orderReference || event.reference || orderId;
-      const eventType = event.eventType || event.fullCode || event.code || event.status || "";
+      // O id da loja no 99Food. `shop.shop_id` é o lugar dele no OrderModel;
+      // os outros nomes cobrem evento de status, que não carrega o pedido.
+      const merchantId =
+        traduzido?.shopId || event.shop_id || event.merchantId || event.storeId || event.merchant?.id;
+
+      // O app_shop_id é o identificador da loja DENTRO do vínculo — o mesmo que
+      // aparece em listarLojasVinculadas(). Quando ele vem, a amarração é exata
+      // e não sobra espaço para palpite; é o oposto do fallback lá embaixo, que
+      // só existe porque o formulário antigo pedia um merchantId digitado à mão.
+      const appShopId = traduzido?.appShopId || event.app_shop_id || event.appShopId;
+
+      const orderId = traduzido?.orderId || event.order_id || event.orderId || event.id;
+      const displayId =
+        traduzido?.numeroNoParceiro || event.order_index || event.displayId || event.reference || orderId;
+      const eventType = event.event || event.eventType || event.fullCode || event.code || event.status || "";
 
       if (!orderId) continue;
 
-      // 1ª tentativa — app_shop_id: é o nosso próprio id, então basta buscá-lo.
+      // 1ª tentativa — app_shop_id gravado no vínculo (campo food99AppId).
+      // É a amarração que a tela de conexão escreve quando o lojista escolhe a
+      // loja dele na lista de vinculadas.
       let franchisee = appShopId
-        ? await prisma.user.findUnique({ where: { id: String(appShopId) } })
+        ? await prisma.user.findFirst({ where: { food99AppId: String(appShopId) } })
         : null;
 
-      // 2ª — merchantId do 99Food, para quem conectou pelo formulário antigo.
+      // 2ª — o app_shop_id pode SER o nosso id, quando o 99Food aceita o valor
+      // que mandamos. Custa uma consulta e cobre esse caso sem depender de o
+      // vínculo ter sido gravado aqui antes.
+      if (!franchisee && appShopId) {
+        franchisee = await prisma.user.findUnique({ where: { id: String(appShopId) } }).catch(() => null);
+      }
+
+      // 3ª — shop_id do 99Food, para quem conectou pelo formulário antigo.
       if (!franchisee && merchantId) {
         franchisee = await prisma.user.findFirst({
-          where: { food99MerchantId: merchantId, role: "FRANCHISEE" },
+          where: { food99MerchantId: String(merchantId), role: "FRANCHISEE" },
         });
       }
 
@@ -164,122 +187,87 @@ export async function POST(req: NextRequest) {
       }
 
       // Pedido novo: orderNew (99Food) ou os nomes do iFood/OpenDelivery.
-      const isNewOrder = EVENTOS_PEDIDO_NOVO.has(normalizarEvento(eventType)) || !!event.order;
+      // Vale também quando o OrderModel veio junto, porque só o evento de
+      // pedido novo carrega o pedido inteiro.
+      const isNewOrder = EVENTOS_PEDIDO_NOVO.has(normalizarEvento(eventType)) || !!traduzido;
 
-      // Evento de pedido novo SEM o objeto do pedido no formato esperado:
-      // registra o payload cru. E assim que o formato real do 99Food aparece,
-      // em vez de a gente adivinhar a estrutura e errar em silencio.
-      if (isNewOrder && !event.order) {
+      // Evento de pedido novo SEM o pedido junto: registra o payload cru em vez
+      // de descartar em silêncio. É o que permite ajustar o parser ao que o
+      // 99Food realmente mandou, caso o formato mude.
+      if (isNewOrder && !traduzido) {
         registrar99Food({
           tipo: eventType || "(pedido novo)",
           reconhecido: false,
           pedidoCriado: false,
-          motivo: "pedido novo, mas sem campo event.order no formato esperado — payload cru abaixo",
+          motivo: "pedido novo, mas sem OrderModel reconhecível (faltou order_id) — payload cru abaixo",
           payload: event,
         });
-        console.warn(`[99Food Webhook] Pedido ${orderId} chegou em formato nao mapeado. Payload registrado em /api/store/integracoes/99food`);
+        console.warn(`[99Food Webhook] Pedido ${orderId} chegou em formato nao mapeado. Payload registrado em /api/99food/diagnostico`);
       }
 
-      if (isNewOrder && event.order) {
-        const oData = event.order;
+      if (isNewOrder && traduzido) {
         const existing = await prisma.customerOrder.findFirst({
           where: { openDeliveryOrderId: orderId },
         });
 
         if (!existing) {
-          const customer = oData.customer || {};
-          const delivery = oData.delivery || {};
-          const address = delivery.deliveryAddress || customer.address || {};
-          const payments = oData.payments?.methods || oData.payments || [];
-          const pmLabel = payments[0]?.method || payments[0]?.type || "99Food";
+          const p = traduzido;
 
-          const payMethod = pmLabel.toUpperCase().includes("PIX")
-            ? "Pix (99Food Pago Online)"
-            : pmLabel.toUpperCase().includes("CREDIT") || pmLabel.toUpperCase().includes("CRÉDITO")
-            ? "Cartão (99Food Pago Online)"
-            : pmLabel.toUpperCase().includes("DEBIT") || pmLabel.toUpperCase().includes("DÉBITO")
-            ? "Débito (99Food Pago Online)"
-            : `${pmLabel} (99Food Pago Online)`;
-
-          const totalAmount = oData.totalPrice ?? oData.total?.orderAmount ?? oData.totalAmount ?? 0;
-          const deliveryFee = oData.deliveryFee?.value ?? oData.deliveryFee ?? 0;
-
-          const items = (oData.items ?? []).map((i: any) => {
-            const subs = i.options || i.subItems || i.garnishItems || [];
-            const unitPrice = (i.totalPrice || i.price || 0) / (i.quantity || 1);
-            return {
-              price: unitPrice,
-              quantity: i.quantity ?? 1,
-              comboSelections: subs.length > 0
-                ? JSON.stringify(subs.map((s: any) => ({ name: s.name || "", quantity: s.quantity || 1, price: s.price || 0 })))
+          const items = p.itens.map((i: ItemTraduzido) => ({
+            price: i.precoUnitario,
+            quantity: i.quantidade,
+            // A observação do item entra junto dos complementos porque é ali
+            // que a comanda da cozinha lê o que veio escrito para o prato.
+            comboSelections:
+              i.complementos.length > 0 || i.observacao
+                ? JSON.stringify([
+                    ...i.complementos,
+                    ...(i.observacao ? [{ name: `Obs: ${i.observacao}`, quantity: 1, price: 0 }] : []),
+                  ])
                 : null,
-              menuProduct: {
-                connectOrCreate: {
-                  where: { id: i.id || "dummy_id" },
-                  create: {
-                    name: i.name || "Item 99Food",
-                    price: unitPrice,
-                    description: "",
-                    category: "99Food",
-                    franchiseeId: franchisee!.id,
-                  },
+            menuProduct: {
+              connectOrCreate: {
+                // O 99Food não manda o id do nosso cardápio, então o produto é
+                // criado a partir do nome. `dummy_id` aqui casaria com um
+                // produto real chamado assim; um id derivado do nome não.
+                where: { id: `99food_${franchisee!.id}_${i.nome}`.slice(0, 190) },
+                create: {
+                  id: `99food_${franchisee!.id}_${i.nome}`.slice(0, 190),
+                  name: i.nome,
+                  price: i.precoUnitario,
+                  description: "",
+                  category: "99Food",
+                  franchiseeId: franchisee!.id,
                 },
               },
-            };
-          });
-
-          const formattedAddress = [
-            address.streetName,
-            address.streetNumber,
-            address.neighborhood || address.district,
-            address.city,
-          ].filter(Boolean).join(", ") || address.formattedAddress || "";
-
-          const dByRaw = (
-            delivery.deliveredBy || delivery.deliveryBy ||
-            oData.deliveredBy || oData.deliveryBy ||
-            oData.logistics?.deliveryBy || oData.logistics?.deliveredBy ||
-            ""
-          ).toString().toUpperCase();
-
-          const deliveryBy = (
-            dByRaw.includes("99") ||
-            dByRaw.includes("LOGISTICS") ||
-            dByRaw.includes("PARTNER")
-          ) ? "99FOOD" : "MERCHANT";
-
-          const pickupCode = (
-            delivery.pickupCode ||
-            oData.pickupCode ||
-            oData.driver?.pickupCode ||
-            oData.logistics?.pickupCode ||
-            null
-          )?.toString().trim() || null;
+            },
+          }));
 
           await (prisma.customerOrder as any).create({
             data: {
               franchiseeId: franchisee.id,
               dailyOrderNumber: await generateDailyOrderNumber(franchisee.id),
-              customerName: customer.name || "Cliente 99Food",
-              customerPhone: customer.phone?.number || customer.phone || "",
-              customerAddress: formattedAddress,
+              customerName: p.cliente.nome,
+              customerPhone: p.cliente.telefone,
+              customerAddress: p.cliente.endereco,
               status: "NOVO",
-              paymentMethod: payMethod,
-              totalAmount,
-              deliveryFee: typeof deliveryFee === "number" ? deliveryFee : 0,
-              notes: oData.extraInfo || oData.notes || "",
+              paymentMethod: p.pagamento.texto,
+              totalAmount: p.total,
+              deliveryFee: p.taxaEntrega,
+              notes: p.observacoes,
               source: "99FOOD",
               openDeliveryOrderId: orderId,
               openDeliveryReference: displayId || "",
               openDeliveryChannel: "99FOOD",
-              deliveryBy,
-              ifoodPickupCode: pickupCode ?? undefined,
+              deliveryBy: p.entreguePor,
               items: { create: items },
             },
           });
           created++;
           registrar99Food({ tipo: eventType || "orderNew", reconhecido: true, pedidoCriado: true, payload: event });
-          console.log(`[99Food Webhook] ✅ Pedido #${displayId} criado!`);
+          console.log(
+            `[99Food Webhook] ✅ Pedido #${displayId} criado — ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}, ${p.entreguePor}`
+          );
         }
       } else if (orderId) {
         // Atualizações de status

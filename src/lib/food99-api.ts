@@ -1,3 +1,6 @@
+import { createHash } from "crypto";
+import { parseJson99Food } from "./json-ids-longos";
+
 /**
  * Cliente da API do 99Food (DiDi Food Open Platform).
  *
@@ -7,8 +10,9 @@
  * ── Quem é dono de quê ──────────────────────────────────────────────────────
  * O app_id e o app_secret são do FIREHUB, não do lojista. Existe um app só —
  * "FireHub", registrado pela Grupo Hakim — e todas as lojas passam por ele. O
- * que cada loja tem é um `app_shop_id` (o id dela no nosso banco) e um
- * `auth_token` próprio, emitido depois que o dono autoriza.
+ * que cada loja tem é um `app_shop_id` (o identificador dela DENTRO do
+ * vínculo, atribuído pelo 99Food no momento em que o lojista autoriza) e um
+ * `auth_token` próprio.
  *
  * Isso é o oposto do que a tela de Integrações pedia até agora: ela solicitava
  * App ID e Secret Key de cada lojista, como se fossem dele. Não são, e nenhum
@@ -17,13 +21,24 @@
  *
  * ── Fluxo de autoatendimento ────────────────────────────────────────────────
  * 1. O lojista clica em "Conectar 99Food" no painel dele.
- * 2. getAuthorizationUrl(lojaId) devolve uma URL do 99Food, gerada na hora.
+ * 2. getAuthorizationUrl() devolve uma URL do 99Food, gerada na hora.
  * 3. O lojista abre, entra com a conta DELE do 99Food e autoriza.
- * 4. getAuthToken(lojaId) passa a devolver o token da loja.
- * 5. Os pedidos começam a chegar no nosso webhook.
+ * 4. listarLojasVinculadas() mostra a loja recém-autorizada e o app_shop_id
+ *    que o 99Food deu a ela; é aí que a amarração com a nossa loja é gravada.
+ * 5. getAuthToken(app_shop_id) passa a devolver o token, e os pedidos começam
+ *    a chegar no webhook.
  *
- * Ninguém do FireHub precisa tocar em nada. É o mesmo desenho do iFood
- * distribuído.
+ * ── Por que o passo 4 existe ────────────────────────────────────────────────
+ * O desenho anterior pulava dele: mandava o nosso id da loja como app_shop_id
+ * em getUrl e depois perguntava o token por esse mesmo id. Parecia fechar, mas
+ * o endpoint IGNORA o app_shop_id — verificado mandando três valores
+ * diferentes (o nosso id, um texto qualquer, e nenhum) e recebendo URLs
+ * equivalentes, sem o parâmetro em nenhuma delas. O swagger ainda documenta
+ * uma URL com `appShopId` na query; a que o 99Food devolve hoje não tem.
+ *
+ * Consequência prática: o lojista autorizava de verdade e a nossa tela seguia
+ * dizendo "não conectado", porque perguntávamos por um id que o vínculo nunca
+ * teve. É preciso listar para descobrir.
  */
 
 const BASE = process.env.FOOD99_BASE_URL || "https://openapi.didi-food.com";
@@ -50,13 +65,32 @@ function credenciaisDoApp(): { appId: string; appSecret: string } | null {
   return { appId, appSecret };
 }
 
+/**
+ * Serializa o corpo mantendo id de 64 bits como NÚMERO, sem perder dígito.
+ *
+ * O 99Food espera `order_id` como integer, mas passar por `Number()` no
+ * JavaScript arredonda um id de 19 dígitos — o mesmo estrago que
+ * lib/json-ids-longos.ts conserta na entrada, só que na saída. Então o valor
+ * viaja como string até o último instante e as aspas são removidas no texto
+ * já serializado: é a única forma de emitir um inteiro que a linguagem não
+ * consegue representar.
+ */
+function serializarCorpo(corpo: any, idsCrus?: string[]): string {
+  const texto = JSON.stringify(corpo);
+  if (!idsCrus?.length) return texto;
+  return idsCrus.reduce(
+    (acc, campo) => acc.replace(new RegExp(`("${campo}":)"(-?\\d+)"`, "g"), "$1$2"),
+    texto
+  );
+}
+
 export function food99Configurado(): boolean {
   return credenciaisDoApp() !== null;
 }
 
 async function chamar<T = any>(
   caminho: string,
-  opcoes: { metodo?: "GET" | "POST"; query?: Record<string, string>; corpo?: any } = {}
+  opcoes: { metodo?: "GET" | "POST"; query?: Record<string, string>; corpo?: any; idsCrus?: string[] } = {}
 ): Promise<RespostaFood99<T>> {
   const url = new URL(`${BASE}${caminho}`);
   for (const [k, v] of Object.entries(opcoes.query || {})) {
@@ -66,7 +100,7 @@ async function chamar<T = any>(
   const res = await fetch(url.toString(), {
     method: opcoes.metodo || "GET",
     headers: { "Content-Type": "application/json" },
-    body: opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined,
+    body: opcoes.corpo ? serializarCorpo(opcoes.corpo, opcoes.idsCrus) : undefined,
     // O 99Food espera resposta rápida e nós também: melhor falhar e tentar de
     // novo do que segurar uma requisição do lojista por meio minuto.
     signal: AbortSignal.timeout(15000),
@@ -74,7 +108,10 @@ async function chamar<T = any>(
 
   const texto = await res.text();
   try {
-    return JSON.parse(texto) as RespostaFood99<T>;
+    // Mesmo cuidado da entrada do webhook: as respostas trazem shop_id e
+    // order_id de 19 dígitos, e o JSON.parse nativo os arredondaria. Um
+    // app_shop_id lido errado aqui é um vínculo que nunca mais fecha.
+    return parseJson99Food(texto) as RespostaFood99<T>;
   } catch {
     return { errno: -1, errmsg: `Resposta não-JSON do 99Food (HTTP ${res.status}): ${texto.slice(0, 200)}` };
   }
@@ -83,9 +120,11 @@ async function chamar<T = any>(
 /**
  * URL da página onde o LOJISTA autoriza o FireHub, com a conta dele.
  *
- * `app_shop_id` é o id da loja no nosso banco. É ele que amarra a autorização
- * à loja certa — e é o mesmo valor que volta depois em cada pedido, o que
- * elimina o palpite que o webhook fazia quando o merchantId não batia.
+ * ATENÇÃO: o `app_shop_id` mandado aqui é IGNORADO pelo 99Food hoje. A URL
+ * devolvida não o carrega, e mandar valores diferentes (ou nenhum) devolve a
+ * mesma página. Ele segue sendo enviado porque o swagger o exige, mas NÃO
+ * conte com ele para amarrar a autorização à loja: quem faz essa amarração é
+ * listarLojasVinculadas(), depois que o lojista autoriza.
  *
  * A URL carrega timestamp e assinatura, então tem validade curta: gere na hora
  * do clique, nunca guarde.
@@ -157,7 +196,8 @@ export async function confirmarPedido(authToken: string, orderId: string): Promi
   return chamar("/v1/order/order/confirm", {
     metodo: "POST",
     query: { auth_token: authToken },
-    corpo: { order_id: Number(orderId) },
+    corpo: { order_id: String(orderId) },
+    idsCrus: ["order_id"],
   });
 }
 
@@ -165,7 +205,8 @@ export async function cancelarPedido(authToken: string, orderId: string, motivo?
   return chamar("/v1/order/order/cancel", {
     metodo: "POST",
     query: { auth_token: authToken },
-    corpo: { order_id: Number(orderId), ...(motivo ? { reason: motivo } : {}) },
+    corpo: { order_id: String(orderId), ...(motivo ? { reason: motivo } : {}) },
+    idsCrus: ["order_id"],
   });
 }
 
@@ -173,7 +214,8 @@ export async function pedidoPronto(authToken: string, orderId: string): Promise<
   return chamar("/v1/order/order/ready", {
     metodo: "POST",
     query: { auth_token: authToken },
-    corpo: { order_id: Number(orderId) },
+    corpo: { order_id: String(orderId) },
+    idsCrus: ["order_id"],
   });
 }
 
@@ -181,7 +223,8 @@ export async function pedidoEntregue(authToken: string, orderId: string): Promis
   return chamar("/v1/order/order/delivered", {
     metodo: "POST",
     query: { auth_token: authToken },
-    corpo: { order_id: Number(orderId) },
+    corpo: { order_id: String(orderId) },
+    idsCrus: ["order_id"],
   });
 }
 
@@ -217,4 +260,109 @@ export async function diagnosticoAuth(appShopId: string): Promise<RespostaFood99
 /** O app_id é identificador público, não segredo — pode aparecer no diagnóstico. */
 export function appIdVisivel(): string | null {
   return credenciaisDoApp()?.appId ?? null;
+}
+
+// ── Lojas vinculadas ao app ─────────────────────────────────────────────────
+
+/**
+ * O `shop/list` exige um `sign`, e o algoritmo não está no swagger — ele diz
+ * "Signature generated as explained above" e o "above" é uma página do portal
+ * que não descreve a fórmula. Em vez de fixar um palpite e descobrir na
+ * produção que era outro, as variantes conhecidas do padrão DiDi ficam listadas
+ * aqui e o código tenta uma a uma até o 99Food aceitar.
+ *
+ * A que funcionar fica memorizada em `assinaturaBoa`, então o custo de
+ * tentativa é pago uma vez por processo, não a cada chamada.
+ */
+type Assinador = (params: Record<string, string | number>, segredo: string) => string;
+
+const md5 = (t: string) => createHash("md5").update(t, "utf8").digest("hex");
+
+/** Pares ordenados por chave — base comum a quase todas as variantes. */
+function paresOrdenados(params: Record<string, string | number>): [string, string][] {
+  return Object.keys(params)
+    .filter((k) => k !== "sign" && params[k] !== undefined && params[k] !== null)
+    .sort()
+    .map((k) => [k, String(params[k])]);
+}
+
+const VARIANTES: { nome: string; fn: Assinador }[] = [
+  {
+    nome: "md5(k=v&…&secret)",
+    fn: (p, s) => md5(paresOrdenados(p).map(([k, v]) => `${k}=${v}`).join("&") + "&" + s),
+  },
+  {
+    nome: "md5(k=v&…secret)",
+    fn: (p, s) => md5(paresOrdenados(p).map(([k, v]) => `${k}=${v}`).join("&") + s),
+  },
+  {
+    nome: "md5(kv…secret)",
+    fn: (p, s) => md5(paresOrdenados(p).map(([k, v]) => k + v).join("") + s),
+  },
+  {
+    nome: "md5(secret+k=v&…+secret)",
+    fn: (p, s) => md5(s + paresOrdenados(p).map(([k, v]) => `${k}=${v}`).join("&") + s),
+  },
+  {
+    nome: "md5(v…secret)",
+    fn: (p, s) => md5(paresOrdenados(p).map(([, v]) => v).join("") + s),
+  },
+  {
+    nome: "md5(k=v&…&key=secret)",
+    fn: (p, s) => md5(paresOrdenados(p).map(([k, v]) => `${k}=${v}`).join("&") + "&key=" + s),
+  },
+];
+
+/** Variante já confirmada nesta instância. Null = ainda não se sabe. */
+let assinaturaBoa: { nome: string; fn: Assinador } | null = null;
+
+export interface LojaVinculada {
+  shop_id?: string;
+  app_shop_id?: string;
+  shop_name?: string;
+  [k: string]: any;
+}
+
+/**
+ * Lojas atualmente vinculadas ao app FireHub no 99Food.
+ *
+ * É o que fecha o autoatendimento. A página de autorização NÃO carrega o
+ * app_shop_id (a doc mostra um exemplo com `appShopId` na query, mas a URL que
+ * o endpoint devolve hoje não tem esse parâmetro — foi verificado mandando
+ * três valores diferentes e recebendo a mesma URL). Ou seja: depois que o
+ * lojista autoriza, não há como saber por qual identificador perguntar pelo
+ * token dele. Esta listagem é a resposta: a loja recém-autorizada aparece aqui,
+ * com o app_shop_id que o 99Food atribuiu.
+ */
+export async function listarLojasVinculadas(): Promise<
+  { ok: true; lojas: LojaVinculada[]; variante: string } | { ok: false; erro: string; tentativas?: string[] }
+> {
+  const cred = credenciaisDoApp();
+  if (!cred) return { ok: false, erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados." };
+
+  const base = { app_id: Number(cred.appId), timestamp: Math.floor(Date.now() / 1000), page_no: 1, page_size: 100 };
+
+  const ordem = assinaturaBoa ? [assinaturaBoa, ...VARIANTES.filter((v) => v.nome !== assinaturaBoa!.nome)] : VARIANTES;
+  const tentativas: string[] = [];
+
+  for (const variante of ordem) {
+    const corpo = { ...base, sign: variante.fn(base, cred.appSecret) };
+    const r = await chamar<any>("/v1/shop/shop/list", { metodo: "POST", corpo, idsCrus: ["app_id"] });
+
+    if (r.errno === 0) {
+      assinaturaBoa = variante;
+      const d: any = r.data || {};
+      const lojas: LojaVinculada[] = d.shop_list || d.list || d.shops || (Array.isArray(d) ? d : []);
+      return { ok: true, lojas, variante: variante.nome };
+    }
+
+    tentativas.push(`${variante.nome} → ${r.errno} ${r.errmsg}`);
+
+    // Erro que não é de assinatura: insistir com outra fórmula não ajuda.
+    if (!/sign/i.test(r.errmsg || "")) {
+      return { ok: false, erro: `${r.errno} ${r.errmsg}`, tentativas };
+    }
+  }
+
+  return { ok: false, erro: "Nenhuma variante de assinatura foi aceita pelo 99Food.", tentativas };
 }
