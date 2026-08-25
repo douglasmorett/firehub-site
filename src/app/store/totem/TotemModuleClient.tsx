@@ -11,6 +11,7 @@ import {
   unbindTotemDevice, deleteTotemLicense, updateTotemConfig
 } from "./actions";
 import TotemCategoriesClient from "@/components/admin/TotemCategoriesClient";
+import MaquininhasClient from "@/components/admin/MaquininhasClient";
 
 export default function TotemModuleClient({ store, categories }: { store: any, categories?: any[] }) {
   const router = useRouter();
@@ -425,6 +426,16 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
       {/* Totem Categories Image Editor */}
       {store.totemEnabled && categories && (
         <TotemCategoriesClient categories={categories} storeSlug={store.slug} />
+      )}
+
+      {/* A maquininha fica aqui e não numa página própria porque ela existe em
+          função do totem: é nela que o cliente paga o pedido que fecha na tela
+          ao lado. Separar em outro menu obrigaria o lojista a descobrir sozinho
+          que os dois se ligam. */}
+      {store.totemEnabled && (
+        <MaquininhasClient
+          totens={(store.totemLicenses || []).map((l: any) => ({ id: l.id, label: l.label }))}
+        />
       )}
 
     </div>

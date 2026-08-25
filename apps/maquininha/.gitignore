@@ -13,3 +13,7 @@ captures/
 keystore.properties
 *.jks
 *.keystore
+
+# Caminho do SDK nesta máquina. Cada computador tem o seu — no notebook o
+# usuário do Windows é outro e o caminho muda.
+local.properties
