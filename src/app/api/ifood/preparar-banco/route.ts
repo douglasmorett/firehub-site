@@ -1,22 +1,17 @@
 /**
  * /api/ifood/preparar-banco
  *
- * Cria as colunas que o módulo Logistics precisa, sem passar pelo schema do
- * Prisma.
+ * Cria as colunas do código de entrega quando elas ainda não existem.
  *
- * O desvio é deliberado. Neste projeto, declarar um campo no schema antes de a
- * coluna existir no banco já derrubou a loja duas vezes: o Prisma Client passa
- * a pedir a coluna em todo SELECT de CustomerOrder e o erro derruba a tela
- * inteira, não só a funcionalidade nova. Como o `db push` aqui é manual, o
- * intervalo entre "subiu o código" e "alguém rodou a migração" é justamente a
- * janela perigosa.
+ * As colunas TAMBÉM estão declaradas no schema do Prisma, e é assim que tem que ser:
+ * o build deste projeto roda `prisma db push --accept-data-loss` antes do `next build`,
+ * e esse comando REMOVE do banco qualquer coluna que não esteja no schema. Deixá-las de
+ * fora — como estavam antes — fazia o próprio deploy apagá-las silenciosamente. Foi o que
+ * aconteceu: criadas à mão, sumiram no deploy seguinte.
  *
- * Por isso estas duas colunas são criadas por SQL e lidas por `$queryRaw`. Elas
- * não aparecem no schema, então nenhuma query existente muda de forma. Se um
- * dia forem promovidas a campos de verdade, basta declará-las — a coluna já vai
- * estar lá.
- *
- * `ADD COLUMN IF NOT EXISTS` torna a rota repetível sem efeito colateral.
+ * Então por que esta rota continua existindo? Porque o `db push` só roda no build. Se
+ * alguém subir o container sem rebuild, ou restaurar um backup antigo, esta rota conserta
+ * em um clique e sem terminal. `ADD COLUMN IF NOT EXISTS` torna a chamada repetível.
  */
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";

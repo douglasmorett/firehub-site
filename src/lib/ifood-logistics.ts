@@ -182,12 +182,11 @@ export function ehEventoDeCodigo(evento: any): boolean {
 /**
  * Registra que este pedido passou a exigir código de entrega.
  *
- * Grava por SQL bruto de propósito: as colunas existem no banco mas não no
- * schema do Prisma. Ver /api/ifood/preparar-banco para o porquê — resumindo,
- * declarar o campo antes de a coluna existir derruba toda query de
- * CustomerOrder, e aqui o `db push` é manual.
+ * Grava por SQL bruto porque o pedido é localizado pelo `ifoodOrderId`, e um
+ * UPDATE direto evita ler o registro só para descobrir o id interno.
  *
- * Nunca lança: um pedido sem a coluna criada ainda deve seguir o fluxo normal.
+ * Nunca lança: se a coluna faltar — banco restaurado de um backup antigo, por
+ * exemplo — o pedido ainda deve seguir o fluxo normal, só sem a marcação.
  */
 export async function marcarExigeCodigo(prisma: any, ifoodOrderId: string): Promise<boolean> {
   try {

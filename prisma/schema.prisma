@@ -577,6 +577,8 @@ model CustomerOrder {
   ifoodDriverStatus      String?            // REQUESTED, ASSIGNED, GOING_TO_ORIGIN, ARRIVED_AT_ORIGIN, COLLECTED, DISPATCHED, ARRIVED_AT_DESTINATION, DELIVERED, FAILED
   ifoodDriverRequestedAt DateTime?          // Quando o motoboy foi solicitado
   ifoodDeliveryEta       DateTime?          // Previsão de entrega
+  ifoodDropCodeRequired  Boolean  @default(false) // Pedido exige código de entrega (evento DELIVERY_DROP_CODE_REQUESTED)
+  ifoodDropCodeAt        DateTime?          // Quando o evento do código chegou
   // === OPEN DELIVERY / JOTAJA ===
   openDeliveryOrderId     String?   @unique   // ID do pedido no Open Delivery (idempotência)
   openDeliveryReference   String?             // Número de exibição do pedido (#1234)
