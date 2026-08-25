@@ -52,6 +52,10 @@ export default function IntegracoesHubClient({
   const [food99Msg, setFood99Msg] = useState("");
   /** Fica preenchido depois que o lojista abre a autorização — é o gatilho do "Já autorizei". */
   const [food99Aguardando, setFood99Aguardando] = useState(false);
+  /** Só aparece quando há mais de uma loja autorizada e não dá para adivinhar qual é a dele. */
+  const [food99Candidatos, setFood99Candidatos] = useState<
+    { appShopId: string; nome: string; shopId: string | null }[]
+  >([]);
 
   // iFood multi-integration state
   const [ifMerchant, setIfMerchant] = useState(ifoodMerchantId || "");
@@ -176,11 +180,40 @@ export default function IntegracoesHubClient({
       setFood99Connected(!!data.conectado);
       setFood99Disponivel(data.disponivel !== false);
       setFood99Msg(data.mensagem || "");
-      if (data.conectado) setFood99Aguardando(false);
+      setFood99Candidatos(data.candidatos || []);
+      if (data.conectado) {
+        setFood99Aguardando(false);
+        setFood99Candidatos([]);
+      }
     } catch {
       setFood99Msg("Não consegui falar com o servidor para checar o 99Food.");
     } finally {
       setFood99Loading(false);
+    }
+  };
+
+  /** Só usado no caso raro de haver mais de uma loja autorizada sem dono. */
+  const handleEscolher99Food = async (appShopId: string) => {
+    setFood99Saving(true);
+    try {
+      const res = await fetch("/api/99food/conectar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appShopId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.conectado) {
+        setFood99Connected(true);
+        setFood99Candidatos([]);
+        setFood99Aguardando(false);
+        showToast("✅ " + data.mensagem, "#10B981");
+      } else {
+        showToast(`⚠️ ${data.error || "Não consegui conectar essa loja"}`, "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão", "#EF4444");
+    } finally {
+      setFood99Saving(false);
     }
   };
 
@@ -224,6 +257,7 @@ export default function IntegracoesHubClient({
       const data = await res.json();
       setFood99Connected(!!data.conectado);
       setFood99Msg(data.mensagem || "");
+      setFood99Candidatos(data.candidatos || []);
       showToast(
         data.conectado ? "✅ 99Food conectado! Os pedidos chegam automaticamente." : `⏳ ${data.mensagem}`,
         data.conectado ? "#10B981" : "#F59E0B"
@@ -1236,6 +1270,32 @@ export default function IntegracoesHubClient({
                     </ol>
                     <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 10 }}>
                       Você não precisa de código, App ID nem Secret. A autorização é feita na sua própria conta.
+                    </div>
+                  </div>
+                )}
+
+                {/* Só aparece quando o 99Food tem mais de uma loja autorizada sem
+                    dono aqui dentro. Adivinhar seria despejar pedido na cozinha
+                    errada, então quem aponta é o lojista — e continua um clique. */}
+                {!food99Connected && food99Candidatos.length > 0 && (
+                  <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1E3A8A", marginBottom: 10 }}>
+                      Qual destas é a sua loja?
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {food99Candidatos.map((c) => (
+                        <button
+                          key={c.appShopId}
+                          onClick={() => handleEscolher99Food(c.appShopId)}
+                          disabled={food99Saving}
+                          style={{ textAlign: "left", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #93C5FD", background: "#fff", cursor: "pointer" }}
+                        >
+                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#1E3A8A" }}>{c.nome}</div>
+                          {c.shopId && (
+                            <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>ID {c.shopId}</div>
+                          )}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
