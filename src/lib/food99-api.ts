@@ -133,9 +133,13 @@ export async function getAuthorizationUrl(lojaId: string): Promise<{ url: string
   const cred = credenciaisDoApp();
   if (!cred) return { erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados no servidor." };
 
+  // app_id como STRING + idsCrus, nunca Number(): o app_id tem 19 dígitos
+  // (5764607734538831960) e Number() o entrega como 5764607734538832000. O
+  // 99Food responde a esse app inexistente com "110006 Can't get app".
   const r = await chamar<{ url: string }>("/v1/auth/authorizationpage/getUrl", {
     metodo: "POST",
-    corpo: { app_id: Number(cred.appId), app_shop_id: lojaId },
+    corpo: { app_id: cred.appId, app_shop_id: lojaId },
+    idsCrus: ["app_id"],
   });
 
   if (r.errno !== 0 || !r.data?.url) {
@@ -340,7 +344,11 @@ export async function listarLojasVinculadas(): Promise<
   const cred = credenciaisDoApp();
   if (!cred) return { ok: false, erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados." };
 
-  const base = { app_id: Number(cred.appId), timestamp: Math.floor(Date.now() / 1000), page_no: 1, page_size: 100 };
+  // app_id fica STRING aqui e sai como número cru na serialização (idsCrus).
+  // Number() o corromperia — são 19 dígitos — e o 99Food responderia
+  // "110006 Can't get app", que parece erro de app não cadastrado e não é.
+  // A assinatura também usa este valor, então precisa ser o dígito exato.
+  const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: 1, page_size: 100 };
 
   const ordem = assinaturaBoa ? [assinaturaBoa, ...VARIANTES.filter((v) => v.nome !== assinaturaBoa!.nome)] : VARIANTES;
   const tentativas: string[] = [];
