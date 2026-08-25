@@ -604,12 +604,32 @@ model CustomerOrder {
   // além disto, então é por este campo que o pedido é encontrado — daí o índice.
   posOrderId        String?
   posTerminalId     String?             // Em qual Point a cobrança subiu, para o operador saber em qual visor olhar
-  posStatus         String?             // Último status vindo do MP: created | processed | canceled | refunded | failed | expired | action_required
+  /// Estado da cobrança na maquininha. O campo guarda DOIS vocabulários, e a
+  /// caixa das letras é o que os separa — de propósito, para nunca colidirem:
+  ///
+  ///   minúsculas  = veio do Mercado Pago Point pela nuvem
+  ///                 (created, processed, canceled, refunded, failed, expired)
+  ///   MAIÚSCULAS  = veio do app dentro da maquininha PagBank
+  ///                 (AGUARDANDO_TERMINAL, NO_TERMINAL, PAGO, RECUSADO, ...)
+  ///
+  /// Ver ESTADOS_DA_COBRANCA em src/lib/terminal-app.ts. Quem for ler este
+  /// campo precisa saber de qual provedor o pedido é: comparar "PAGO" com a
+  /// lista de finalizados do MP dá falso negativo.
+  posStatus         String?
   // Quantas vezes esta comanda já foi mandada para a maquininha. Entra na
   // X-Idempotency-Key: a chave vale 24h no MP, então sem contador a segunda
   // tentativa (depois de um cancelamento ou de uma recusa) devolveria a ordem
   // antiga em vez de acender uma cobrança nova no visor.
   posTentativas     Int                 @default(0)
+  /// Comprovante da transação quando a cobrança é feita por app dentro da
+  /// maquininha (PagBank): bandeira, NSU, autorização, parcelas, tipo.
+  ///
+  /// No Point esses dados ficam na Order do lado do Mercado Pago e dá para
+  /// reconsultar quando precisar. No caminho PagBank não existe nuvem para
+  /// consultar: o que o app devolver é o único registro que vai existir. Sem
+  /// guardar, a loja não teria como contestar um chargeback nem conferir o
+  /// fechamento do dia contra o extrato da adquirente.
+  posDadosTransacao Json?
   // === MESA ===
   tableSessionId    String?             // Sessão de mesa vinculada
   tableSession      TableSession?       @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
@@ -780,6 +800,24 @@ model PosTerminal {
   updatedAt     DateTime  @updatedAt
 
   totemLicenses TotemLicense[]
+
+  /// Como o app instalado DENTRO da maquininha se identifica.
+  ///
+  /// A PagBank não tem API de nuvem para acender cobrança à distância: o que
+  /// existe é a PlugPagServiceWrapper, uma biblioteca de app Android que roda no
+  /// próprio terminal Smart POS. O desenho vira o inverso do Point — em vez de
+  /// o FireHub mandar a cobrança para a nuvem da adquirente, o app na
+  /// maquininha pergunta ao FireHub se tem cobrança esperando.
+  ///
+  /// Este token é o crachá desse app, no mesmo espírito do token do totem:
+  /// procurado no banco, sem assinatura, para não morrer quando um segredo de
+  /// ambiente mudar.
+  deviceToken   String?   @unique
+  /// Último ping do app. É o que diz no painel se a maquininha está de pé — sem
+  /// isso, terminal desligado e terminal sem rede são indistinguíveis, e o
+  /// operador fica olhando um pedido que nunca vai ser cobrado.
+  lastSeenAt    DateTime?
+  appVersion    String?
 
   // A mesma maquininha não pode ser cadastrada duas vezes na mesma loja: dois
   // registros para o mesmo terminal_id fariam o webhook casar com o cadastro errado.

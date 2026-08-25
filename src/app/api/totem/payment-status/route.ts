@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
         gatewayProvider: true,
         gatewayPaymentId: true,
         pagarmeStatus: true,
+        posStatus: true,
       },
     });
 
@@ -61,6 +62,13 @@ export async function GET(req: NextRequest) {
       aguardando: !pago && !cancelado,
       valor: order.totalAmount,
       provedor: order.gatewayProvider,
+      // Estado da cobrança no visor. Serve para a tela de espera dizer o que
+      // está acontecendo em vez de mostrar um giro genérico por 40 segundos:
+      // AGUARDANDO_TERMINAL = ainda não chegou na maquininha,
+      // NO_TERMINAL = está no visor, o cliente pode aproximar o cartão,
+      // RECUSADO = tentar outro cartão sem refazer o pedido.
+      cobranca: order.posStatus ?? null,
+      podeTentarDeNovo: order.posStatus === "RECUSADO",
     });
   } catch (err) {
     console.error("[Totem PaymentStatus] Erro:", err);

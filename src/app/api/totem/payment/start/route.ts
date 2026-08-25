@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { consultarOrdem, criarOrdemPoint } from "@/lib/mp-point";
+import { ESTADOS_DA_COBRANCA } from "@/lib/terminal-app";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,66 @@ export async function POST(req: NextRequest) {
         { error: "Pedido sem valor a cobrar.", code: "VALOR_INVALIDO" },
         { status: 409 },
       );
+    }
+
+    // ── MAQUININHA COM APP PRÓPRIO (PagBank) ─────────────────────────────────
+    // A PagBank não deixa acender cobrança à distância: quem cobra é um app
+    // Android rodando dentro do terminal Smart POS. O papel desta rota, nesse
+    // caminho, é só colocar o pedido na fila — o app pergunta em
+    // GET /api/pos/terminal/pendente e devolve o resultado em
+    // POST /api/pos/terminal/resultado.
+    //
+    // A checagem vem ANTES do token do Mercado Pago de propósito: uma loja que
+    // usa só PagBank não tem conta MP conectada, e exigir o token dela aqui
+    // travaria a venda por uma credencial que ela não precisa ter.
+    const terminalComApp = await prisma.posTerminal.findFirst({
+      where: {
+        franchiseeId: pedido.franchiseeId,
+        active: true,
+        provider: "PAGBANK_APP",
+        ...(terminalId && typeof terminalId === "string" ? { id: terminalId } : {}),
+      },
+      select: { id: true, label: true, lastSeenAt: true },
+      orderBy: { lastSeenAt: "desc" },
+    });
+
+    if (terminalComApp) {
+      // Maquininha que não dá sinal há mais de dois minutos provavelmente está
+      // desligada ou sem rede. Enfileirar a cobrança nela deixaria o cliente
+      // olhando um visor apagado até o pedido expirar.
+      const silencioEmMinutos = terminalComApp.lastSeenAt
+        ? (Date.now() - terminalComApp.lastSeenAt.getTime()) / 60_000
+        : Infinity;
+
+      if (silencioEmMinutos > 2) {
+        return NextResponse.json(
+          {
+            error: `A maquininha "${terminalComApp.label}" não está respondendo. Verifique se ela está ligada e conectada à internet.`,
+            code: "TERMINAL_OFFLINE",
+            ultimoContato: terminalComApp.lastSeenAt,
+          },
+          { status: 409 },
+        );
+      }
+
+      const { posTentativas } = await prisma.customerOrder.update({
+        where: { id: pedido.id },
+        data: {
+          posStatus: ESTADOS_DA_COBRANCA.aguardando,
+          posTerminalId: terminalComApp.id,
+          posTentativas: { increment: 1 },
+        },
+        select: { posTentativas: true },
+      });
+
+      return NextResponse.json({
+        success: true,
+        modo: "APP_NA_MAQUININHA",
+        terminal: { id: terminalComApp.id, label: terminalComApp.label },
+        tentativa: posTentativas,
+        // A tela do totem espera exatamente isto para entrar na tela de espera.
+        instrucao: `Pague na maquininha "${terminalComApp.label}"`,
+      });
     }
 
     const loja = await prisma.user.findUnique({
