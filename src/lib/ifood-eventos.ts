@@ -72,8 +72,29 @@ export async function processarEventosIfood(opts: {
         // Note que o código curto é DDCR, não DDC: este último é a mudança de
         // previsão de entrega, tratada logo abaixo como disputa.
         if (ehEventoDeCodigo(event)) {
-          const marcado = await marcarExigeCodigo(prisma, orderId);
-          log.push(`  🔐 Pedido ${orderId} exige código de entrega${marcado ? "" : " (pedido ainda não está no banco)"}`);
+          const marca = await marcarExigeCodigo(prisma, orderId);
+
+          // Confirmar o evento sem ter gravado nada era perdê-lo para sempre: o
+          // iFood não reenvia o que já foi reconhecido, e o pedido nunca ficaria
+          // elegível para o código de entrega. Acontece de verdade, porque o
+          // aviso do código pode chegar antes de o pedido ser gravado aqui.
+          //
+          // Então o evento fica na fila para a próxima rodada — mas só por um
+          // tempo: um evento órfão de pedido que nunca vai existir não pode
+          // rodar na fila para sempre.
+          const nascido = event.createdAt ? new Date(event.createdAt).getTime() : 0;
+          const velhoDemais = nascido > 0 && Date.now() - nascido > 30 * 60 * 1000;
+
+          if (marca === "sem-pedido" && !velhoDemais) {
+            log.push(`  🔐 Pedido ${orderId} exige código, mas ainda não chegou ao banco — evento fica na fila`);
+            continue;
+          }
+
+          log.push(
+            marca === "gravado"
+              ? `  🔐 Pedido ${orderId} exige código de entrega`
+              : `  🔐 Evento de código do pedido ${orderId} confirmado sem gravar (${marca})`,
+          );
           processedEventIds.push({ id: event.id, orderId, eventType: "DELIVERY_DROP_CODE_REQUESTED" });
           continue;
         }

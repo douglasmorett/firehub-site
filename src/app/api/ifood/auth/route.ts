@@ -437,6 +437,47 @@ export async function POST(req: NextRequest) {
     `clientId=${clientId.slice(0, 8)}…`
   );
 
+  // Tentativa 1.5: o mesmo código, mas pelo APLICATIVO DE TESTE.
+  //
+  // O código de ativação é amarrado ao clientId que o emitiu. Quem gera pela
+  // tela de homologação recebe um código do app de teste — e cola em
+  // /store/integracoes, uma tela que não sabe disso e não manda `app` nenhum.
+  // Sem esta tentativa, esse código é trocado com as credenciais de produção,
+  // falha, e cai direto na Tentativa 2 (sem verifier), que é justamente o
+  // caminho que produz token sem loja.
+  //
+  // Uma loja real conecta na Tentativa 1 e nunca chega aqui, então isto não
+  // muda nada para produção. E o verifier é MANTIDO: é ele que amarra o código
+  // à sessão de userCode daquela loja.
+  if (!res.ok && appConexao === "producao" && process.env.IFOOD_HOMOLOG_CLIENT_ID) {
+    try {
+      const teste = credenciaisDoApp("homologacao");
+      console.warn("[iFood Auth] Troca falhou no app de produção. Tentando pelo aplicativo de teste.");
+      const resTeste = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grantType: "authorization_code",
+          clientId: teste.clientId,
+          clientSecret: teste.clientSecret,
+          authorizationCode: rawCode,
+          ...(verifier ? { authorizationCodeVerifier: verifier } : {}),
+        }),
+      });
+      if (resTeste.ok) {
+        res = resTeste;
+        data = await resTeste.json();
+        // As credenciais gravadas na integração precisam ser as do app que de
+        // fato autorizou, senão a renovação futura falha.
+        clientId = teste.clientId;
+        clientSecret = teste.clientSecret;
+        console.log("[iFood Auth] Loja conectada pelo aplicativo de teste.");
+      }
+    } catch (e: any) {
+      console.warn("[iFood Auth] App de teste indisponível:", e?.message);
+    }
+  }
+
   // Tentativa 2: sem verifier.
   //
   // ⚠️ No fluxo DISTRIBUÍDO o authorizationCodeVerifier e obrigatorio — ele

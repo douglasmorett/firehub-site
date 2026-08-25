@@ -95,13 +95,17 @@ export default function TabCardapio() {
   }
 
   // ── cenário 1 ───────────────────────────────────────────
-  async function carregarCardapio() {
+  async function carregarCardapio(preferida?: string) {
     setCarregando(true);
     try {
       const d = await chamar("GET", "/api/ifood/catalog?itens=1");
       setCatalogos(d.catalogos ?? []);
       setCategorias(d.categorias ?? []);
-      if (!categoriaId && d.categorias?.[0]?.id) setCategoriaId(d.categorias[0].id);
+      // Forma funcional de propósito: sem ela, a categoria recém-criada era
+      // sobrescrita pela primeira do cardápio, porque este closure enxerga o
+      // categoriaId de antes da criação. No vídeo isso aparece como o item
+      // nascendo na categoria errada.
+      setCategoriaId((prev) => preferida || prev || d.categorias?.[0]?.id || "");
     } catch (e: any) {
       setErro(e.message);
     } finally {
@@ -115,7 +119,7 @@ export default function TabCardapio() {
       const d = await chamar("POST", "/api/ifood/catalog/categoria", { nome: nomeCategoria });
       const nova = d.categoria ?? d.data;
       if (nova?.id) setCategoriaId(nova.id);
-      await carregarCardapio();
+      await carregarCardapio(nova?.id);
     } catch (e: any) {
       setErro(e.message);
     } finally {
@@ -291,7 +295,7 @@ export default function TabCardapio() {
             <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: TINTA }}>
               Cenário 1 — Categoria e item
             </h3>
-            <button onClick={carregarCardapio} disabled={carregando} style={{ ...botao("#475569", !carregando), padding: "7px 12px", fontSize: "0.8rem" }}>
+            <button onClick={() => carregarCardapio()} disabled={carregando} style={{ ...botao("#475569", !carregando), padding: "7px 12px", fontSize: "0.8rem" }}>
               {carregando ? <Loader size={13} className="spin" /> : <RefreshCw size={13} />} Carregar cardápio
             </button>
           </div>

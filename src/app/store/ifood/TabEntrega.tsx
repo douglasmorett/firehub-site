@@ -16,6 +16,7 @@
  */
 import React, { useEffect, useState } from "react";
 import { Loader, RefreshCw, Bike, MapPin, Package, Home, KeyRound, Check, X } from "lucide-react";
+import { posicaoAtual } from "@/lib/ifood-logistics";
 
 const LARANJA = "#E8360C";
 const VERDE = "#16A34A";
@@ -45,12 +46,10 @@ const VEICULOS: { v: string; nome: string }[] = [
 const agora = () => new Date().toLocaleTimeString("pt-BR");
 const corDoStatus = (s: number) => (s >= 200 && s < 300 ? VERDE : s >= 400 && s < 500 ? "#D97706" : "#DC2626");
 
-function posicao(estado?: string | null) {
-  if (!estado) return 0;
-  if (estado === "DELIVERED") return ETAPAS.length + 1;
-  const i = ETAPAS.findIndex((e) => e.estado === estado);
-  return i < 0 ? 0 : i + 1;
-}
+// A contagem de etapas vem do lib, e não de uma cópia local: quando eram duas
+// implementações, a da tela continuou zerando a viagem em estados que o webhook
+// grava (COLLECTED, CONCLUDED) mesmo depois de o servidor já estar correto.
+const posicao = posicaoAtual;
 
 export default function TabEntrega() {
   const [pedidos, setPedidos] = useState<any[]>([]);
@@ -283,6 +282,17 @@ export default function TabEntrega() {
               <h4 style={{ margin: "0 0 0.9rem", fontSize: "0.9rem", fontWeight: 800, color: TINTA }}>
                 Viagem do entregador
               </h4>
+
+              {pos < 0 && (
+                /* Estado gravado por outro caminho (webhook, motoboy do iFood) com
+                   vocabulário que esta tela não conhece. Dizer isso é melhor que
+                   mostrar a viagem zerada e deixar clicar em algo que vai falhar. */
+                <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", color: "#92400E",
+                  borderRadius: 10, padding: "10px 13px", marginBottom: "0.9rem", fontSize: "0.84rem", lineHeight: 1.45 }}>
+                  Este pedido está em <strong>{String(sel.ifoodDriverStatus)}</strong>, um estado
+                  registrado fora desta tela. A viagem dele não pode ser conduzida por aqui.
+                </div>
+              )}
 
               {pos === 0 && (
                 <div style={{ display: "grid", gap: "0.7rem", marginBottom: "1rem", padding: "0.85rem", background: "#F8FAFC", borderRadius: 10 }}>

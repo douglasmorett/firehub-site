@@ -448,7 +448,7 @@ function TabLoja() {
   const load = async () => {
     setLoading(true); setError("");
     try {
-      const r = await fetch("/api/ifood/merchant");
+      const r = await fetch("/api/ifood/merchant?distribuido=1");
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Erro");
       setData(d);
@@ -562,7 +562,7 @@ function TabPausas() {
   const loadPausas = async () => {
     setLoading(true); setError("");
     try {
-      const r = await fetch("/api/ifood/interruptions");
+      const r = await fetch("/api/ifood/interruptions?distribuido=1");
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Erro ao listar pausas");
       setPausas(Array.isArray(d) ? d : []);
@@ -575,7 +575,7 @@ function TabPausas() {
   const createPausa = async () => {
     setCreating(true); setError(""); setSuccess("");
     try {
-      const r = await fetch("/api/ifood/interruptions", {
+      const r = await fetch("/api/ifood/interruptions?distribuido=1", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: desc, start, end }),
@@ -592,7 +592,7 @@ function TabPausas() {
   const removePausa = async (id: string) => {
     setRemoving(id); setError(""); setSuccess("");
     try {
-      const r = await fetch(`/api/ifood/interruptions/${id}`, { method: "DELETE" });
+      const r = await fetch(`/api/ifood/interruptions/${id}?distribuido=1`, { method: "DELETE" });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Erro ao remover pausa");
       setSuccess("✅ Pausa removida! Verifique no Portal do Parceiro.");
@@ -700,7 +700,7 @@ function TabHorarios() {
   const loadHours = async () => {
     setLoading(true); setError("");
     try {
-      const r = await fetch("/api/ifood/opening-hours");
+      const r = await fetch("/api/ifood/opening-hours?distribuido=1");
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Erro");
       setCurrent(d.openingHours);
@@ -713,7 +713,7 @@ function TabHorarios() {
   const saveHomologHours = async () => {
     setSaving(true); setError(""); setSuccess("");
     try {
-      const r = await fetch("/api/ifood/opening-hours", {
+      const r = await fetch("/api/ifood/opening-hours?distribuido=1", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(HOMOLOG_HOURS),
@@ -804,7 +804,7 @@ function IfoodLiveCheck({ type, triggerAfterAction }: { type: "pausas" | "horari
   const check = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/ifood/status");
+      const res = await fetch("/api/ifood/status?distribuido=1");
       const json = await res.json();
       setData(json);
       setCheckedAt(new Date());
@@ -850,9 +850,25 @@ function IfoodLiveCheck({ type, triggerAfterAction }: { type: "pausas" | "horari
         <div>
           {/* Status da loja */}
           <div style={{ display: "flex", gap: 10, marginBottom: "0.75rem", flexWrap: "wrap" }}>
-            <span style={{ padding: "5px 14px", borderRadius: 20, fontWeight: 800, fontSize: "0.85rem", background: data.status?.available ? "#DCFCE7" : "#FEE2E2", color: data.status?.available ? "#16A34A" : "#DC2626" }}>
-              {data.status?.available ? "🟢 LOJA ABERTA" : "🔴 LOJA FECHADA/PAUSADA"}
-            </span>
+            {(() => {
+              // O status vem como array na API de disponibilidade. Lendo
+              // `data.status?.available` direto, um array (que nunca tem essa
+              // propriedade) dava sempre undefined — e a loja aparecia como
+              // FECHADA mesmo aberta, bem no vídeo do cenário 2.
+              const itens = Array.isArray(data.status) ? data.status : data.status ? [data.status] : [];
+              const semDado = itens.length === 0;
+              const aberta = itens.some((s: any) => s.available === true);
+              const cor = semDado
+                ? { bg: "#F1F5F9", fg: "#475569", txt: "⚪ DISPONIBILIDADE NÃO INFORMADA" }
+                : aberta
+                  ? { bg: "#DCFCE7", fg: "#16A34A", txt: "🟢 LOJA ABERTA" }
+                  : { bg: "#FEE2E2", fg: "#DC2626", txt: "🔴 LOJA FECHADA/PAUSADA" };
+              return (
+                <span style={{ padding: "5px 14px", borderRadius: 20, fontWeight: 800, fontSize: "0.85rem", background: cor.bg, color: cor.fg }}>
+                  {cor.txt}
+                </span>
+              );
+            })()}
           </div>
           {/* Pausas */}
           <p style={{ margin: "0 0 0.5rem", fontSize: "0.78rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Pausas ativas no iFood</p>

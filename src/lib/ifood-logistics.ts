@@ -54,17 +54,38 @@ export const ETAPAS = [
 
 export type ChaveEtapa = (typeof ETAPAS)[number]["chave"];
 
-/** Quantas etapas já foram cumpridas, a partir do estado gravado. */
+/**
+ * A coluna `ifoodDriverStatus` é compartilhada: o webhook e o polling também
+ * escrevem nela, com um vocabulário próprio do iFood. Sem traduzir esses
+ * termos, um pedido que já saiu para entrega voltava a marcar zero etapas —
+ * a tela reabria o formulário de entregador e o código de entrega ficava
+ * desabilitado no meio da gravação.
+ */
+const APELIDOS: Record<string, string> = {
+  COLLECTED: "DISPATCHED",             // o iFood chama de coletado o que aqui é despachado
+  CONCLUDED: "ARRIVED_AT_DESTINATION", // pedido encerrado: a viagem passou por tudo
+};
+
+/**
+ * Quantas etapas já foram cumpridas.
+ * Devolve -1 quando o estado é de um vocabulário que esta tela não conhece —
+ * diferente de 0, que significa "viagem ainda não começou".
+ */
 export function posicaoAtual(estado?: string | null): number {
   if (!estado) return 0;
   if (estado === "DELIVERED") return ETAPAS.length + 1;
-  const i = ETAPAS.findIndex((e) => e.estado === estado);
-  return i < 0 ? 0 : i + 1;
+  // Pedido só solicitado, ou que falhou, não cumpriu etapa nenhuma: zero é o
+  // certo, e é o que libera a alocação do entregador.
+  if (estado === "REQUESTED" || estado === "FAILED") return 0;
+  const alvo = APELIDOS[estado] ?? estado;
+  const i = ETAPAS.findIndex((e) => e.estado === alvo);
+  return i >= 0 ? i + 1 : -1;
 }
 
-/** A próxima etapa que faz sentido, ou null quando a viagem acabou. */
+/** A próxima etapa que faz sentido, ou null quando não há uma. */
 export function proximaEtapa(estado?: string | null) {
   const pos = posicaoAtual(estado);
+  if (pos < 0) return null;
   return pos < ETAPAS.length ? ETAPAS[pos] : null;
 }
 
@@ -83,6 +104,15 @@ export function conferirSequencia(estadoAtual: string | null | undefined, etapa:
   const alvo = ETAPAS.findIndex((e) => e.chave === etapa);
   if (alvo < 0) throw new ErroSequencia("Etapa desconhecida.");
   const pos = posicaoAtual(estadoAtual);
+
+  // Estado gravado por outro caminho, com vocabulário que não é desta tela.
+  // Indexar ETAPAS com -1 daria undefined e um 500 sem explicação.
+  if (pos < 0) {
+    throw new ErroSequencia(
+      `Este pedido está em "${estadoAtual}", um estado registrado fora desta tela. ` +
+      "Não dá para seguir a viagem por aqui.",
+    );
+  }
 
   if (pos === alvo) return; // exatamente a próxima
 
@@ -188,7 +218,9 @@ export function ehEventoDeCodigo(evento: any): boolean {
  * Nunca lança: se a coluna faltar — banco restaurado de um backup antigo, por
  * exemplo — o pedido ainda deve seguir o fluxo normal, só sem a marcação.
  */
-export async function marcarExigeCodigo(prisma: any, ifoodOrderId: string): Promise<boolean> {
+export type ResultadoMarca = "gravado" | "sem-pedido" | "indisponivel";
+
+export async function marcarExigeCodigo(prisma: any, ifoodOrderId: string): Promise<ResultadoMarca> {
   try {
     const n = await prisma.$executeRaw`
       UPDATE "CustomerOrder"
@@ -196,10 +228,10 @@ export async function marcarExigeCodigo(prisma: any, ifoodOrderId: string): Prom
              "ifoodDropCodeAt" = NOW()
        WHERE "ifoodOrderId" = ${ifoodOrderId}
     `;
-    return n > 0;
+    return n > 0 ? "gravado" : "sem-pedido";
   } catch (e: any) {
     console.warn("[iFood logistics] não deu para marcar o código de entrega:", e?.message);
-    return false;
+    return "indisponivel";
   }
 }
 

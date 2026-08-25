@@ -257,12 +257,21 @@ export async function salvarItem(ctx: CtxCatalogo, item: ItemNovo) {
     optionGroups.push({
       id: grupoId,
       name: nomeGrupo,
+      optionGroupType: "OFFER_UNIT",
       min,
       max,
       status: validarStatus(grupo.status ?? "AVAILABLE"),
       optionIds,
     });
     idsGerados.grupos.push(registroGrupo);
+  }
+
+  // É AQUI que o grupo se liga ao item — pendurado no produto principal, não
+  // no objeto `item`. Enviar `item.optionGroups` não dá erro: a API ignora o
+  // campo, devolve 200, e o item nasce sem complemento nenhum. O cenário 2 da
+  // homologação reprovaria com o painel mostrando sucesso.
+  if (optionGroups.length) {
+    produtos[0].optionGroups = optionGroups.map((g) => ({ id: g.id, min: g.min, max: g.max }));
   }
 
   const resposta = await chamarComContexto(ctx, `${base(ctx.merchantId)}/items`, {
@@ -272,14 +281,12 @@ export async function salvarItem(ctx: CtxCatalogo, item: ItemNovo) {
         id: itemId,
         type: "DEFAULT",
         categoryId: item.categoryId,
-        // O vínculo item → produto e item → grupos não aparece nos exemplos da
-        // documentação, que omitem o miolo do objeto. Mandamos explícito: se a
-        // API ignorar, não custa nada; se exigir, já está lá.
+        // O vínculo item → produto vai explícito. Já o vínculo com os grupos de
+        // complemento NÃO mora aqui: ele pendura no produto, logo abaixo.
         productId,
         status,
         price: { value: preco },
         ...(item.externalCode ? { externalCode: item.externalCode } : {}),
-        ...(optionGroups.length ? { optionGroups: optionGroups.map((g) => g.id) } : {}),
       },
       products: produtos,
       optionGroups,
