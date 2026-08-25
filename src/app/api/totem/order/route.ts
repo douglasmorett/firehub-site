@@ -102,11 +102,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const store = await prisma.user.findUnique({
-      where: { id: licenca.franchiseeId },
-      select: { autoAcceptOrders: true },
-    });
-    const initialStatus = store?.autoAcceptOrders ? "ACEITO" : "NOVO";
+    // ── O PEDIDO DO TOTEM NASCE ESPERANDO PAGAMENTO ──────────────────────────
+    // Ele nascia com o status normal da loja e `kdsStage: "PRODUCTION"`: ia
+    // direto para a cozinha e para a impressora no instante em que o cliente
+    // tocava em "confirmar", antes de qualquer cartão. Quem desistisse na tela
+    // de pagamento — ou visse a cobrança recusada — já tinha o lanche sendo
+    // feito. No totem não há atendente para perceber isso.
+    //
+    // Agora quem promove o pedido é `confirmOrderPayment`, chamada quando o
+    // pagamento é confirmado de verdade: é ela que carimba `paymentPaidAt`,
+    // aplica o status da loja, gera a senha e despacha para o KDS e a
+    // impressora. A mesma função que o webhook do Mercado Pago usa.
+    const AGUARDANDO = "AGUARDANDO_PAGAMENTO";
 
     // Numeração DENTRO da transação que grava o pedido. Fora dela, o número é
     // consumido antes do insert e evapora se o insert falhar — foi o que abriu
@@ -124,10 +131,10 @@ export async function POST(req: NextRequest) {
           paymentMethod: paymentMethod || "Cartão (Maquininha)",
           totalAmount,
           deliveryFee: 0,
-          status: initialStatus,
+          status: AGUARDANDO,
           source: "TOTEM",
           notes: notes || null,
-          kdsStage: "PRODUCTION",
+          // Sem kdsStage: a comanda não existe para a cozinha até pagar.
           totemLicenseId: licenca.id,
           items: { create: orderItems },
         },
@@ -135,25 +142,17 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    // Daqui para baixo é consequência do pedido já gravado: nada pode derrubar
-    // a resposta. O cliente já está com o número dele na mão.
-    prisma.user
-      .update({ where: { id: licenca.franchiseeId }, data: { storeOrderCount: { increment: 1 } } })
-      .catch((e) => console.error("[Totem] contador de pedidos:", e));
-
-    // Baixa de estoque: o totem não fazia. Venda pelo autoatendimento saía do
-    // caixa sem sair do estoque, e o saldo ia descolando do real todo dia.
-    import("@/lib/stock")
-      .then(({ deductStockForOrder }) => deductStockForOrder(order.id))
-      .catch((e) => console.error("[Totem] baixa de estoque:", e));
-
-    import("@/lib/billing")
-      .then(({ trackSaleForBilling }) => trackSaleForBilling(licenca.franchiseeId))
-      .catch((e) => console.error("[Totem] faturamento:", e));
-
-    import("@/app/api/store/print-queue/route")
-      .then(({ pushJobToPrintQueue }) => pushJobToPrintQueue(licenca.franchiseeId, order))
-      .catch((e) => console.error("[Totem] impressão:", e));
+    // ── NADA DE CONSEQUÊNCIA ANTES DE PAGAR ──────────────────────────────────
+    // Aqui havia baixa de estoque, contagem de faturamento e envio para a fila
+    // de impressão, disparados no ato da criação. Junto com o `kdsStage`, era o
+    // pedido inteiro acontecendo antes do cartão: a comanda saía na impressora
+    // da cozinha, o insumo era debitado e a venda entrava no faturamento de um
+    // pedido que talvez nunca fosse pago.
+    //
+    // Os três passaram para `confirmOrderPayment`, que roda quando o pagamento
+    // é confirmado — pelo webhook do Mercado Pago, pelo app da maquininha ou
+    // pela confirmação do atendente no painel. Um caminho só, para os três não
+    // divergirem.
 
     return NextResponse.json({
       success: true,

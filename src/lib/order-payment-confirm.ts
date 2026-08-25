@@ -77,6 +77,27 @@ export async function confirmOrderPayment(orderId: string) {
     console.error("[ConfirmPayment] Billing error:", errBill);
   }
 
+  // Baixa de estoque no pagamento, não na criação.
+  //
+  // O pedido do totem debitava insumo no instante em que o cliente tocava em
+  // "confirmar", antes de qualquer cartão: quem desistia na tela de pagamento
+  // levava embora o estoque de um lanche que nunca foi feito. Aqui a baixa
+  // acontece uma vez só, quando o dinheiro entrou, e `deductStockForOrder` é
+  // idempotente — pedido confirmado duas vezes não debita duas vezes.
+  try {
+    const { deductStockForOrder } = await import("@/lib/stock");
+    deductStockForOrder(orderId).catch((e) =>
+      console.error("[ConfirmPayment] Baixa de estoque:", e)
+    );
+  } catch (errEstoque) {
+    console.error("[ConfirmPayment] Baixa de estoque:", errEstoque);
+  }
+
+  // Contador de pedidos da loja (Pay as You Grow).
+  prisma.user
+    .update({ where: { id: order.franchiseeId }, data: { storeOrderCount: { increment: 1 } } })
+    .catch((e) => console.error("[ConfirmPayment] Contador de pedidos:", e));
+
   // Notificação WhatsApp de pagamento confirmado
   try {
     const { sendOrderNotification } = await import("@/lib/order-notifications");

@@ -355,6 +355,23 @@ export async function PUT(req: Request) {
     );
   }
 
+  // ── ACEITAR UM PEDIDO QUE ESPERAVA PAGAMENTO É CONFIRMAR QUE PAGOU ────────
+  // O pedido do totem passou a nascer em AGUARDANDO_PAGAMENTO, e o cliente que
+  // escolhe "pagar no caixa" depende de alguém no balcão liberar. Se o
+  // atendente apenas mudasse o status por aqui, o pedido iria para a cozinha
+  // com `paymentPaidAt` nulo: apareceria como não pago no fechamento do dia e
+  // não geraria a senha que o cliente é chamado para retirar.
+  //
+  // `confirmOrderPayment` é a mesma função do webhook do gateway e do app da
+  // maquininha, e é idempotente — se o pagamento já tiver sido confirmado por
+  // outro caminho, ela não faz nada.
+  if (order.status === "AGUARDANDO_PAGAMENTO" && status !== "CANCELADO") {
+    const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
+    confirmOrderPayment(orderId).catch(err =>
+      console.error("[Status] Erro ao confirmar pagamento no balcão:", err)
+    );
+  }
+
   // Cancelou depois do ACEITO: o insumo já saiu do saldo, mas continua na
   // prateleira. Devolve o que a baixa consumiu — a própria função ignora
   // pedido que nunca chegou a baixar e não devolve duas vezes.
