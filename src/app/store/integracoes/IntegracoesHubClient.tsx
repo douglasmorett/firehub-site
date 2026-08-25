@@ -253,7 +253,10 @@ export default function IntegracoesHubClient({
   const handleVerificar99Food = async () => {
     setFood99Saving(true);
     try {
-      const res = await fetch("/api/99food/conectar");
+      // `procurar=1` autoriza o servidor a consultar a lista de lojas do
+      // 99Food, que só aceita uma chamada a cada 20s. Fica reservado para este
+      // botão — abrir a tela não pode gastar a janela.
+      const res = await fetch("/api/99food/conectar?procurar=1");
       const data = await res.json();
       setFood99Connected(!!data.conectado);
       setFood99Msg(data.mensagem || "");

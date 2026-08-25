@@ -59,7 +59,11 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const conexao = await estadoDaConexao(r.lojaId);
+  // Procurar vínculos custa a única chamada de 20s do shop/list, então só
+  // acontece a pedido — é o "Já autorizei". Abrir a tela de Integrações não
+  // pode consumir essa janela: com duas lojas abrindo junto, ambas veriam erro.
+  const procurar = req.nextUrl.searchParams.get("procurar") === "1";
+  const conexao = await estadoDaConexao(r.lojaId, procurar);
 
   // O que o 99Food respondeu vira o estado no banco. Sem isto, `food99Connected`
   // continuaria valendo o que o formulário antigo gravou — e ele é lido em
@@ -98,7 +102,7 @@ export async function GET(req: NextRequest) {
  * acabou de autorizar. Com mais de um, a escolha volta para a tela: adivinhar
  * aqui é o mesmo erro de despejar pedido na cozinha errada.
  */
-async function estadoDaConexao(lojaId: string) {
+async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   const direto = await getAuthToken(lojaId);
   if (direto.autorizada) {
     return {
@@ -126,16 +130,19 @@ async function estadoDaConexao(lojaId: string) {
     }
   }
 
+  const semVinculo = {
+    conectado: false,
+    disponivel: true,
+    erro: direto.erro,
+    mensagem: "Loja ainda não autorizada. Clique em conectar para autorizar no 99Food.",
+    candidatos: [] as { appShopId: string; nome: string; shopId: string | null }[],
+  };
+
+  if (!procurarVinculos) return semVinculo;
+
   const vinculos = await listarLojasVinculadas();
   if (!vinculos.ok) {
-    return {
-      conectado: false,
-      disponivel: true,
-      erro: direto.erro || vinculos.erro,
-      mensagem:
-        "Loja ainda não autorizada. Clique em conectar para autorizar no 99Food.",
-      candidatos: [] as { appShopId: string; nome: string; shopId: string | null }[],
-    };
+    return { ...semVinculo, erro: direto.erro || vinculos.erro, mensagem: vinculos.erro };
   }
 
   // Vínculos que ainda não pertencem a nenhuma loja do FireHub.
@@ -145,11 +152,14 @@ async function estadoDaConexao(lojaId: string) {
   });
   const tomados = new Set(jaAdotados.map((u) => u.food99AppId));
 
+  // O shop/list devolve só ids (app_id, shop_id, app_shop_id, city_id) — não
+  // manda shop_name. Então o rótulo cai no id da loja no 99Food, que é o que
+  // o lojista consegue conferir no painel dele.
   const orfaos = vinculos.lojas
     .filter((l) => l.app_shop_id && !tomados.has(String(l.app_shop_id)))
     .map((l) => ({
       appShopId: String(l.app_shop_id),
-      nome: String(l.shop_name || l.name || "Loja 99Food"),
+      nome: String(l.shop_name || l.name || `Loja 99Food ${l.shop_id ?? ""}`).trim(),
       shopId: l.shop_id != null ? String(l.shop_id) : null,
     }));
 

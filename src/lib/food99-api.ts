@@ -320,6 +320,26 @@ const VARIANTES: { nome: string; fn: Assinador }[] = [
 /** Variante já confirmada nesta instância. Null = ainda não se sabe. */
 let assinaturaBoa: { nome: string; fn: Assinador } | null = null;
 
+/**
+ * O `shop/list` aceita UMA chamada a cada 20 segundos — para o app inteiro,
+ * não por loja. Passando disso ele responde
+ * `10005 The calling frequency exceeds the setting：window: 20s, limit: 1`.
+ *
+ * Isso tem duas consequências que mudam o desenho:
+ *
+ * 1. Nada que rode em toda visita de tela pode chamar este endpoint. Com mais
+ *    de uma loja abrindo Integrações ao mesmo tempo, todas veriam erro.
+ * 2. Tentar as variantes de assinatura em sequência estoura o limite antes de
+ *    chegar à quarta — o 10005 vira "nenhuma variante funcionou", que é um
+ *    diagnóstico errado. Por isso o loop PARA no primeiro 10005 e diz o que
+ *    realmente houve.
+ *
+ * O cache abaixo absorve o caso comum: o lojista clica em "Já autorizei" duas
+ * ou três vezes seguidas, e só a primeira vira chamada de verdade.
+ */
+const JANELA_RATE_LIMIT_MS = 20_000;
+let cacheLojas: { em: number; lojas: LojaVinculada[]; variante: string } | null = null;
+
 export interface LojaVinculada {
   shop_id?: string;
   app_shop_id?: string;
@@ -344,13 +364,23 @@ export async function listarLojasVinculadas(): Promise<
   const cred = credenciaisDoApp();
   if (!cred) return { ok: false, erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados." };
 
+  // Dentro da janela do rate limit, devolve o que já se sabe em vez de gastar
+  // a única chamada permitida — o lojista clicando "Já autorizei" duas vezes
+  // seguidas é o caso comum, e a segunda não pode virar uma mensagem de erro.
+  if (cacheLojas && Date.now() - cacheLojas.em < JANELA_RATE_LIMIT_MS) {
+    return { ok: true, lojas: cacheLojas.lojas, variante: `${cacheLojas.variante} (cache)` };
+  }
+
   // app_id fica STRING aqui e sai como número cru na serialização (idsCrus).
   // Number() o corromperia — são 19 dígitos — e o 99Food responderia
   // "110006 Can't get app", que parece erro de app não cadastrado e não é.
   // A assinatura também usa este valor, então precisa ser o dígito exato.
   const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: 1, page_size: 100 };
 
-  const ordem = assinaturaBoa ? [assinaturaBoa, ...VARIANTES.filter((v) => v.nome !== assinaturaBoa!.nome)] : VARIANTES;
+  // Só a variante já confirmada, quando existe. Sem ela, todas — mas o loop
+  // para no primeiro 10005, senão as tentativas seguintes gastam a janela de
+  // 20s e o resultado vira "nenhuma assinatura serviu", diagnóstico errado.
+  const ordem = assinaturaBoa ? [assinaturaBoa] : VARIANTES;
   const tentativas: string[] = [];
 
   for (const variante of ordem) {
@@ -361,10 +391,19 @@ export async function listarLojasVinculadas(): Promise<
       assinaturaBoa = variante;
       const d: any = r.data || {};
       const lojas: LojaVinculada[] = d.shop_list || d.list || d.shops || (Array.isArray(d) ? d : []);
+      cacheLojas = { em: Date.now(), lojas, variante: variante.nome };
       return { ok: true, lojas, variante: variante.nome };
     }
 
     tentativas.push(`${variante.nome} → ${r.errno} ${r.errmsg}`);
+
+    if (r.errno === 10005 || /frequency/i.test(r.errmsg || "")) {
+      return {
+        ok: false,
+        erro: "O 99Food aceita uma consulta de lojas a cada 20 segundos. Espere um pouco e tente de novo.",
+        tentativas,
+      };
+    }
 
     // Erro que não é de assinatura: insistir com outra fórmula não ajuda.
     if (!/sign/i.test(r.errmsg || "")) {
