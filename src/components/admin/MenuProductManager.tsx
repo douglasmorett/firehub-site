@@ -662,6 +662,7 @@ export default function MenuProductManager({
     setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(true);
     setAvailableDaysMode("all"); setSelectedDays([]);
+    setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
     setShowForm(false); setEditingId(null);
   };
 
@@ -705,6 +706,7 @@ export default function MenuProductManager({
         }))
       })));
     } else { setComboGroups([]); }
+    setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
     setEditingId(p.id); setShowForm(true);
   };
 
@@ -842,6 +844,120 @@ export default function MenuProductManager({
         items: g.items.map((it: any) => it.id === itemId ? { ...it, [key]: val } : it)
       };
     }));
+  };
+
+  // ─── PERGUNTAS DO COMBO ─────────────────────────────────────────────────
+  // Estado da tela nova. Antes só dava para escolher item que JÁ existia no
+  // cardápio: para pôr um "Adicional de Catupiry" no combo, a loja tinha que
+  // abandonar o formulário, cadastrar o produto e voltar a montar o combo do
+  // zero. Agora cadastra ali mesmo.
+
+  /** Formulário de item novo aberto neste grupo (índice). */
+  const [novaOpcao, setNovaOpcao] = useState<{ gIdx: number; nome: string; acrescimo: string; obs: string } | null>(null);
+  const [salvandoOpcao, setSalvandoOpcao] = useState(false);
+  /** Seletor de item existente aberto neste grupo, com a busca digitada. */
+  const [seletorAberto, setSeletorAberto] = useState<number | null>(null);
+  const [buscaOpcao, setBuscaOpcao] = useState("");
+  /**
+   * Itens criados sem sair da tela. `availableItems` chega por prop e só se
+   * renova no router.refresh() — sem esta lista, o item recém-criado apareceria
+   * como "Item excluído do cardápio" até a página recarregar.
+   */
+  const [opcoesCriadas, setOpcoesCriadas] = useState<any[]>([]);
+
+  /**
+   * Cardápio + o que foi criado agora, sem repetição.
+   *
+   * A deduplicação por id importa: depois do router.refresh() o item criado
+   * volta dentro de `availableItems` e continua em `opcoesCriadas`. Seriam dois
+   * registros com o mesmo id na mesma lista — duas linhas idênticas no seletor
+   * e aviso de chave duplicada no React.
+   */
+  const catalogoDeOpcoes = useMemo(() => {
+    const porId = new Map<string, any>();
+    for (const p of [...availableItems, ...opcoesCriadas]) {
+      if (p?.id) porId.set(String(p.id), p);
+    }
+    return [...porId.values()];
+  }, [availableItems, opcoesCriadas]);
+
+  const moverGrupo = (idx: number, passo: number) => {
+    setComboGroups(prev => {
+      const destino = idx + passo;
+      if (destino < 0 || destino >= prev.length) return prev;
+      const copia = [...prev];
+      [copia[idx], copia[destino]] = [copia[destino], copia[idx]];
+      return copia;
+    });
+  };
+
+  const moverItemDoGrupo = (gIdx: number, itemId: string, passo: number) => {
+    setComboGroups(prev => prev.map((g, i) => {
+      if (i !== gIdx) return g;
+      const pos = g.items.findIndex((it: any) => it.id === itemId);
+      const destino = pos + passo;
+      if (pos < 0 || destino < 0 || destino >= g.items.length) return g;
+      const itens = [...g.items];
+      [itens[pos], itens[destino]] = [itens[destino], itens[pos]];
+      return { ...g, items: itens };
+    }));
+  };
+
+  /**
+   * Cadastra a opção e já pendura na pergunta.
+   *
+   * Nasce com preço ZERO de propósito: o que a loja cobra por um adicional é o
+   * acréscimo do ComboGroupItem, não o preço de tabela do produto. Preço zero é
+   * também o que mantém a opção fora dos cardápios de venda — `idsSoDeOpcaoDeCombo`
+   * esconde exatamente isso, e é o que impede que "Adicional de Catupiry" vire
+   * um card de R$ 0,00 na tela do garçom.
+   */
+  const criarOpcaoNaHora = async () => {
+    if (!novaOpcao) return;
+    const nome = novaOpcao.nome.trim();
+    if (!nome) { alert("Dê um nome ao item."); return; }
+
+    setSalvandoOpcao(true);
+    try {
+      const categoriaDeOpcoes =
+        dynCategories.find(c => c.name.trim().toLowerCase() === "adicionais")?.name || "Adicionais";
+
+      const res = await fetch("/api/admin/menu-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: nome,
+          description: novaOpcao.obs.trim() || nome,
+          price: 0,
+          category: categoriaDeOpcoes,
+          active: true,
+          isCombo: false,
+          isBeverage: false,
+        }),
+      });
+      if (!res.ok) { alert("Não consegui cadastrar o item."); return; }
+
+      const criado = await res.json();
+      if (!criado?.id) { alert("O item foi criado mas voltou sem id."); return; }
+
+      setOpcoesCriadas(prev => [...prev, criado]);
+
+      const acrescimo = parseFloat(novaOpcao.acrescimo.replace(",", ".")) || 0;
+      const gIdx = novaOpcao.gIdx;
+      setComboGroups(prev => prev.map((g, i) => {
+        if (i !== gIdx) return g;
+        if (g.items.some((it: any) => it.id === criado.id)) return g;
+        return { ...g, items: [...g.items, { id: criado.id, additionalPrice: acrescimo, maxPerItem: null, optionNote: null }] };
+      }));
+
+      // Mantém o formulário aberto: quem cadastra adicional cadastra vários
+      // seguidos, e fechar a cada um obrigaria a reabrir quatro vezes.
+      setNovaOpcao({ gIdx, nome: "", acrescimo: "", obs: "" });
+    } catch {
+      alert("Não consegui cadastrar o item.");
+    } finally {
+      setSalvandoOpcao(false);
+    }
   };
 
   const isHiddenIntegrationItem = (p: any) => {
@@ -1717,120 +1833,293 @@ export default function MenuProductManager({
               </label>
             </div>
 
-            {/* COMBO BUILDER */}
+            {/* ─── PERGUNTAS DO COMBO ──────────────────────────────────────
+                A tela era um "Construtor de Combo": título, mínimo e máximo
+                espremidos numa linha e um <select> com o cardápio inteiro para
+                achar o item. Quem monta cardápio conhece o modelo do iFood, e é
+                ele que está aqui: cada grupo é uma PERGUNTA ("Escolha seus
+                sabores", "Deseja adicionais?"), marcada obrigatória ou
+                opcional, e o item entra por dois caminhos — o que já existe no
+                cardápio, ou um novo cadastrado ali mesmo.
+
+                O segundo caminho é o que faltava: para pôr um "Adicional de
+                Catupiry" no combo, a loja precisava abandonar o formulário,
+                cadastrar o produto no cardápio e voltar a montar o combo do
+                zero. */}
             {isCombo && (
               <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#F8FAFC", borderRadius: "14px", border: "2px dashed #CBD5E1" }}>
-                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", marginBottom: "0.75rem", color: "#0F172A" }}>📦 Construtor de Combo</h4>
-                {comboGroups.map((group, gIdx) => (
-                  <div key={gIdx} style={{ marginBottom: "1.25rem", padding: "1rem", backgroundColor: "#FFF", borderRadius: "12px", border: "1px solid #E2E8F0", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
-                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "end" }}>
-                      <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Título do Grupo</label>
-                        <input className="input-field" value={group.title} onChange={e => updateGroup(gIdx, "title", e.target.value)} placeholder="Ex: Escolha suas esfirras" />
-                      </div>
-                      <div style={{ width: "90px" }}>
-                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Qtd Mín</label>
-                        <input
-                          className="input-field"
-                          type="number"
-                          min={0}
-                          value={group.minQty ?? group.maxQty}
-                          onChange={e => updateGroup(gIdx, "minQty", Math.max(0, parseInt(e.target.value) || 0))}
-                          title="0 deixa o grupo opcional — o cliente pode não escolher nada."
-                        />
-                      </div>
-                      <div style={{ width: "90px" }}>
-                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Qtd Máx</label>
-                        <input className="input-field" type="number" min={1} value={group.maxQty} onChange={e => updateGroup(gIdx, "maxQty", parseInt(e.target.value) || 1)} />
-                      </div>
-                      <button type="button" onClick={() => removeGroup(gIdx)} style={{ cursor: "pointer", color: "#EF4444", padding: "0.6rem", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "8px" }} title="Remover Grupo"><Trash2 size={16} /></button>
-                    </div>
+                <div style={{ marginBottom: "0.9rem" }}>
+                  <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>📦 Perguntas do combo</h4>
+                  <p style={{ fontSize: "0.75rem", color: "#64748B", margin: "4px 0 0" }}>
+                    Cada pergunta é uma escolha que o cliente faz. A ordem aqui é a ordem em que ele vê.
+                  </p>
+                </div>
 
-                    <div style={{ fontSize: "0.73rem", color: "#64748B", marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
-                      {(group.minQty ?? group.maxQty) === 0
-                        ? "Opcional — o cliente pode seguir sem escolher nada."
-                        : (group.minQty ?? group.maxQty) === group.maxQty
-                          ? `Obrigatório — exige exatamente ${group.maxQty} ${group.maxQty === 1 ? "escolha" : "escolhas"}.`
-                          : `Obrigatório — de ${group.minQty} a ${group.maxQty} escolhas.`}
-                    </div>
+                {comboGroups.length === 0 && (
+                  <div style={{ padding: "1.1rem", background: "#FFF", border: "1px dashed #CBD5E1", borderRadius: "12px", textAlign: "center", marginBottom: "0.9rem" }}>
+                    <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: 0 }}>Nenhuma pergunta ainda.</p>
+                    <p style={{ fontSize: "0.75rem", color: "#94A3B8", margin: "4px 0 0" }}>
+                      Ex: &quot;Escolha seus sabores&quot; (obrigatória) e &quot;Deseja adicionais?&quot; (opcional).
+                    </p>
+                  </div>
+                )}
 
-                    {/* Lista de Sabores / Itens Escolhidos */}
-                    <div style={{ marginBottom: "0.75rem" }}>
-                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>
-                        Sabores / Itens deste Grupo ({group.items.length} inseridos):
-                      </label>
+                {comboGroups.map((group, gIdx) => {
+                  const minimoDoGrupo = group.minQty ?? group.maxQty;
+                  const obrigatorio = minimoDoGrupo > 0;
+                  const formularioAberto = novaOpcao?.gIdx === gIdx;
+                  const seletorDesteGrupo = seletorAberto === gIdx;
+                  const candidatos = catalogoDeOpcoes
+                    .filter(item => item.id !== editingId)
+                    .filter(item => !group.items.some((it: any) => it.id === item.id))
+                    .filter(item => (item.name || "").toLowerCase().includes(buscaOpcao.trim().toLowerCase()));
+
+                  return (
+                    <div key={gIdx} style={{ marginBottom: "1rem", padding: "1rem", backgroundColor: "#FFF", borderRadius: "12px", border: "1px solid #E2E8F0", boxShadow: "0 2px 6px rgba(0,0,0,0.03)" }}>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "0.6rem" }}>
+                        <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#EFF6FF", color: "#1D4ED8", fontSize: "0.7rem", fontWeight: 800 }}>
+                          Pergunta {gIdx + 1}
+                        </span>
+                        <div style={{ flex: 1 }} />
+                        <button type="button" onClick={() => moverGrupo(gIdx, -1)} disabled={gIdx === 0} title="Subir pergunta"
+                          style={{ padding: "5px", borderRadius: "7px", border: "1px solid #E2E8F0", background: "#F8FAFC", color: gIdx === 0 ? "#CBD5E1" : "#475569", cursor: gIdx === 0 ? "default" : "pointer" }}>
+                          <ArrowUp size={14} />
+                        </button>
+                        <button type="button" onClick={() => moverGrupo(gIdx, 1)} disabled={gIdx === comboGroups.length - 1} title="Descer pergunta"
+                          style={{ padding: "5px", borderRadius: "7px", border: "1px solid #E2E8F0", background: "#F8FAFC", color: gIdx === comboGroups.length - 1 ? "#CBD5E1" : "#475569", cursor: gIdx === comboGroups.length - 1 ? "default" : "pointer" }}>
+                          <ArrowDown size={14} />
+                        </button>
+                        <button type="button" onClick={() => removeGroup(gIdx)} title="Remover pergunta"
+                          style={{ padding: "5px", borderRadius: "7px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#EF4444", cursor: "pointer" }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>O que o cliente escolhe aqui?</label>
+                      <input
+                        className="input-field"
+                        value={group.title}
+                        onChange={e => updateGroup(gIdx, "title", e.target.value)}
+                        placeholder="Ex: Escolha seus sabores"
+                      />
+
+                      <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-end", marginTop: "0.7rem", flexWrap: "wrap" }}>
+                        <div>
+                          <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: "4px" }}>Resposta</label>
+                          <div style={{ display: "flex", border: "1.5px solid #E2E8F0", borderRadius: "9px", overflow: "hidden" }}>
+                            <button type="button"
+                              onClick={() => { if (!obrigatorio) updateGroup(gIdx, "minQty", 1); }}
+                              style={{ padding: "8px 14px", border: "none", fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", background: obrigatorio ? "#2563EB" : "#FFF", color: obrigatorio ? "#FFF" : "#64748B" }}>
+                              Obrigatória
+                            </button>
+                            <button type="button"
+                              onClick={() => { if (obrigatorio) updateGroup(gIdx, "minQty", 0); }}
+                              style={{ padding: "8px 14px", border: "none", fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", background: !obrigatorio ? "#2563EB" : "#FFF", color: !obrigatorio ? "#FFF" : "#64748B" }}>
+                              Opcional
+                            </button>
+                          </div>
+                        </div>
+
+                        {obrigatorio && (
+                          <div style={{ width: "92px" }}>
+                            <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>Escolhe mín.</label>
+                            <input
+                              className="input-field"
+                              type="number"
+                              min={1}
+                              value={minimoDoGrupo}
+                              onChange={e => updateGroup(gIdx, "minQty", Math.max(1, parseInt(e.target.value) || 1))}
+                            />
+                          </div>
+                        )}
+
+                        <div style={{ width: "92px" }}>
+                          <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155" }}>No máx.</label>
+                          <input
+                            className="input-field"
+                            type="number"
+                            min={1}
+                            value={group.maxQty}
+                            onChange={e => updateGroup(gIdx, "maxQty", parseInt(e.target.value) || 1)}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: "0.73rem", color: "#64748B", margin: "0.5rem 0 0.85rem" }}>
+                        {!obrigatorio
+                          ? `Opcional — o cliente pode seguir sem escolher nada (até ${group.maxQty}).`
+                          : minimoDoGrupo === group.maxQty
+                            ? `Obrigatória — exige exatamente ${group.maxQty} ${group.maxQty === 1 ? "escolha" : "escolhas"}.`
+                            : `Obrigatória — de ${minimoDoGrupo} a ${group.maxQty} escolhas.`}
+                      </div>
 
                       {group.items.length === 0 ? (
-                        <div style={{ fontSize: "0.78rem", color: "#94A3B8", fontStyle: "italic", padding: "8px", background: "#F8FAFC", borderRadius: "8px", marginBottom: "8px" }}>
-                          Nenhum sabor ou item adicionado a este grupo ainda. Selecione abaixo para adicionar.
+                        <div style={{ fontSize: "0.78rem", color: "#94A3B8", fontStyle: "italic", padding: "10px", background: "#F8FAFC", borderRadius: "8px", marginBottom: "8px" }}>
+                          Nenhum item nesta pergunta ainda.
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
-                          {group.items.map((it) => {
-                            const targetProd = availableItems.find(p => p.id === it.id);
+                          {group.items.map((it: any, iIdx: number) => {
+                            const produto = catalogoDeOpcoes.find(p => p.id === it.id);
                             return (
-                              <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                                <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#1E293B" }}>
-                                  {targetProd ? targetProd.name : "Item Excluído"} {!targetProd?.active && "⏸️"}
-                                </span>
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                  <input
-                                    type="text"
-                                    placeholder="obs. (ex: 13cm)"
-                                    value={it.optionNote || ""}
-                                    onChange={e => updateGroupItemField(gIdx, it.id, "optionNote", e.target.value || null)}
-                                    title="Linha curta sob o nome da opção no cardápio."
-                                    style={{ width: "110px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.78rem" }}
-                                  />
-                                  <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Acréscimo R$:</label>
-                                  <input
-                                    type="number"
-                                    step="0.50"
-                                    min="0"
-                                    placeholder="0.00"
-                                    value={it.additionalPrice || 0}
-                                    onChange={e => updateGroupItemPrice(gIdx, it.id, parseFloat(e.target.value) || 0)}
-                                    style={{ width: "80px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
-                                  />
-                                  <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Máx:</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    placeholder="—"
-                                    value={it.maxPerItem ?? ""}
-                                    onChange={e => updateGroupItemField(gIdx, it.id, "maxPerItem", e.target.value ? Math.max(1, parseInt(e.target.value)) : null)}
-                                    title="Quantas vezes ESTA opção pode ser repetida. Vazio = só o limite do grupo."
-                                    style={{ width: "58px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
-                                  />
-                                  <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444" }} title="Remover Sabor">
-                                    <Trash2 size={15} />
+                              <div key={it.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", flexWrap: "wrap" }}>
+                                <div style={{ display: "flex", flexDirection: "column" }}>
+                                  <button type="button" onClick={() => moverItemDoGrupo(gIdx, it.id, -1)} disabled={iIdx === 0} title="Subir item"
+                                    style={{ background: "none", border: "none", padding: 0, lineHeight: 0, cursor: iIdx === 0 ? "default" : "pointer", color: iIdx === 0 ? "#CBD5E1" : "#64748B" }}>
+                                    <ArrowUp size={12} />
+                                  </button>
+                                  <button type="button" onClick={() => moverItemDoGrupo(gIdx, it.id, 1)} disabled={iIdx === group.items.length - 1} title="Descer item"
+                                    style={{ background: "none", border: "none", padding: 0, lineHeight: 0, cursor: iIdx === group.items.length - 1 ? "default" : "pointer", color: iIdx === group.items.length - 1 ? "#CBD5E1" : "#64748B" }}>
+                                    <ArrowDown size={12} />
                                   </button>
                                 </div>
+
+                                <span style={{ flex: 1, minWidth: "120px", fontSize: "0.82rem", fontWeight: 700, color: produto ? "#1E293B" : "#EF4444" }}>
+                                  {produto ? produto.name : "Item excluído do cardápio"} {produto && produto.active === false && "⏸️"}
+                                </span>
+
+                                <input
+                                  type="text"
+                                  placeholder="obs. (ex: 13cm)"
+                                  value={it.optionNote || ""}
+                                  onChange={e => updateGroupItemField(gIdx, it.id, "optionNote", e.target.value || null)}
+                                  title="Linha curta sob o nome da opção no cardápio."
+                                  style={{ width: "104px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.78rem" }}
+                                />
+                                <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>+R$</label>
+                                <input
+                                  type="number"
+                                  step="0.50"
+                                  min="0"
+                                  placeholder="0.00"
+                                  value={it.additionalPrice || 0}
+                                  onChange={e => updateGroupItemPrice(gIdx, it.id, parseFloat(e.target.value) || 0)}
+                                  title="Quanto este item soma ao preço do combo."
+                                  style={{ width: "76px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
+                                />
+                                <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Máx</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  placeholder="—"
+                                  value={it.maxPerItem ?? ""}
+                                  onChange={e => updateGroupItemField(gIdx, it.id, "maxPerItem", e.target.value ? Math.max(1, parseInt(e.target.value)) : null)}
+                                  title="Quantas vezes ESTE item pode ser repetido. Vazio = só o limite da pergunta."
+                                  style={{ width: "56px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
+                                />
+                                <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444" }} title="Tirar item da pergunta">
+                                  <Trash2 size={15} />
+                                </button>
                               </div>
                             );
                           })}
                         </div>
                       )}
-                    </div>
 
-                    {/* Seletor para adicionar novo item ao grupo */}
-                    <select
-                      onChange={e => { addGroupItem(gIdx, e.target.value); e.target.value = ""; }}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #3B82F6", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}
-                    >
-                      <option value="">➕ Adicionar Sabor / Item a este grupo...</option>
-                      {availableItems
-                        .filter(item => !group.items.some(it => it.id === item.id))
-                        .map(item => (
-                          <option key={item.id} value={item.id}>
-                            {item.name} {item.price ? `(R$ ${item.price.toFixed(2)})` : ""} {!item.active ? " [Pausado]" : ""}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                ))}
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <button type="button"
+                          onClick={() => { setSeletorAberto(seletorDesteGrupo ? null : gIdx); setBuscaOpcao(""); setNovaOpcao(null); }}
+                          style={{ flex: 1, minWidth: "180px", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #3B82F6", background: seletorDesteGrupo ? "#3B82F6" : "#EFF6FF", color: seletorDesteGrupo ? "#FFF" : "#1D4ED8", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}>
+                          <Search size={13} style={{ marginRight: "5px", verticalAlign: "-2px" }} />
+                          Item que já existe
+                        </button>
+                        <button type="button"
+                          onClick={() => { setNovaOpcao(formularioAberto ? null : { gIdx, nome: "", acrescimo: "", obs: "" }); setSeletorAberto(null); }}
+                          style={{ flex: 1, minWidth: "180px", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #16A34A", background: formularioAberto ? "#16A34A" : "#F0FDF4", color: formularioAberto ? "#FFF" : "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}>
+                          <Sparkles size={13} style={{ marginRight: "5px", verticalAlign: "-2px" }} />
+                          Cadastrar item novo
+                        </button>
+                      </div>
+
+                      {seletorDesteGrupo && (
+                        <div style={{ marginTop: "8px", padding: "10px", background: "#F8FAFC", border: "1px solid #BFDBFE", borderRadius: "10px" }}>
+                          <input
+                            autoFocus
+                            value={buscaOpcao}
+                            onChange={e => setBuscaOpcao(e.target.value)}
+                            placeholder="Buscar no cardápio..."
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.82rem", marginBottom: "8px" }}
+                          />
+                          <div style={{ maxHeight: "190px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+                            {candidatos.slice(0, 60).map(item => (
+                              <button key={item.id} type="button"
+                                onClick={() => { addGroupItem(gIdx, item.id); setBuscaOpcao(""); }}
+                                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "7px", border: "1px solid #E2E8F0", background: "#FFF", cursor: "pointer", textAlign: "left" }}>
+                                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#1E293B" }}>
+                                  {item.name} {item.active === false && " [Pausado]"}
+                                </span>
+                                <span style={{ fontSize: "0.75rem", color: "#64748B", whiteSpace: "nowrap" }}>
+                                  {item.price ? `R$ ${Number(item.price).toFixed(2)}` : "—"}
+                                </span>
+                              </button>
+                            ))}
+                            {candidatos.length === 0 && (
+                              <p style={{ fontSize: "0.78rem", color: "#94A3B8", margin: "4px 2px", fontStyle: "italic" }}>
+                                Nada com esse nome. Use &quot;Cadastrar item novo&quot; ao lado.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {formularioAberto && novaOpcao && (
+                        <div style={{ marginTop: "8px", padding: "12px", background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: "10px" }}>
+                          <p style={{ fontSize: "0.74rem", color: "#15803D", margin: "0 0 8px", fontWeight: 700 }}>
+                            O item entra só nesta pergunta — não vira produto avulso no cardápio.
+                          </p>
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
+                            <div style={{ flex: 2, minWidth: "160px" }}>
+                              <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#334155" }}>Nome do item</label>
+                              <input
+                                autoFocus
+                                value={novaOpcao.nome}
+                                onChange={e => setNovaOpcao(prev => prev ? { ...prev, nome: e.target.value } : prev)}
+                                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); criarOpcaoNaHora(); } }}
+                                placeholder="Ex: Adicional de Catupiry"
+                                style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.82rem" }}
+                              />
+                            </div>
+                            <div style={{ width: "108px" }}>
+                              <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#334155" }}>Acréscimo R$</label>
+                              <input
+                                value={novaOpcao.acrescimo}
+                                onChange={e => setNovaOpcao(prev => prev ? { ...prev, acrescimo: e.target.value } : prev)}
+                                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); criarOpcaoNaHora(); } }}
+                                placeholder="0,00"
+                                inputMode="decimal"
+                                style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 700, textAlign: "right" }}
+                              />
+                            </div>
+                            <div style={{ flex: 2, minWidth: "160px" }}>
+                              <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#334155" }}>Descrição (opcional)</label>
+                              <input
+                                value={novaOpcao.obs}
+                                onChange={e => setNovaOpcao(prev => prev ? { ...prev, obs: e.target.value } : prev)}
+                                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); criarOpcaoNaHora(); } }}
+                                placeholder="Ex: 40g de catupiry cremoso"
+                                style={{ width: "100%", padding: "8px 10px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.82rem" }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+                            <button type="button" onClick={criarOpcaoNaHora} disabled={salvandoOpcao}
+                              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 800, fontSize: "0.8rem", cursor: salvandoOpcao ? "default" : "pointer", opacity: salvandoOpcao ? 0.6 : 1 }}>
+                              {salvandoOpcao ? "Cadastrando..." : "Cadastrar e adicionar"}
+                            </button>
+                            <button type="button" onClick={() => setNovaOpcao(null)}
+                              style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#FFF", color: "#64748B", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+                              Fechar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
                 <button type="button" onClick={addGroup} className="btn btn-outline" style={{ width: "100%", fontSize: "0.85rem", borderRadius: "10px" }}>
-                  <Plus size={14} style={{ marginRight: "4px" }} /> Adicionar Grupo de Seleção
+                  <Plus size={14} style={{ marginRight: "4px" }} /> Adicionar pergunta
                 </button>
               </div>
             )}
