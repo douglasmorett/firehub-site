@@ -413,3 +413,27 @@ export async function listarLojasVinculadas(): Promise<
 
   return { ok: false, erro: "Nenhuma variante de assinatura foi aceita pelo 99Food.", tentativas };
 }
+
+/**
+ * Desfaz o vínculo da loja com o app FireHub, do lado do 99Food.
+ *
+ * O "Desconectar" da tela só limpava os campos do NOSSO banco. Como
+ * `conectado` passou a ser o que o 99Food responde, apagar aqui e deixar o
+ * vínculo de pé lá dava um botão que não desconecta: na consulta seguinte o
+ * token continuava existindo e a loja voltava a aparecer conectada.
+ *
+ * Pede o `auth_token` da própria loja, não as credenciais do app — quem
+ * desfaz o vínculo é quem o tem.
+ */
+export async function desvincularLoja(authToken: string): Promise<{ ok: true } | { ok: false; erro: string }> {
+  const r = await chamar("/v1/shop/shop/unbind", {
+    metodo: "POST",
+    corpo: { auth_token: authToken },
+  });
+  if (r.errno !== 0) return { ok: false, erro: `${r.errno} ${r.errmsg}` };
+
+  // A lista muda com o unbind, então o cache dela morre junto — senão uma
+  // loja recém-desvinculada continuaria aparecendo como candidata por 20s.
+  cacheLojas = null;
+  return { ok: true };
+}

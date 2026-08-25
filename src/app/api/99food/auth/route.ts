@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getAuthToken, desvincularLoja } from "@/lib/food99-api";
 
 export const dynamic = "force-dynamic";
 
@@ -35,54 +36,70 @@ export async function GET(req: NextRequest) {
   }
 
   if (step === "disconnect") {
-    await prisma.user.update({
+    const u = await prisma.user.findUnique({
       where: { email: session.user.email },
-      data: { food99Connected: false, food99MerchantId: null },
+      select: { id: true, ownerId: true, food99AppId: true },
+    });
+    if (!u) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+    const lojaId = u.ownerId || u.id;
+
+    // Desfaz o vínculo NO 99FOOD antes de limpar aqui. Antes esta rota só
+    // apagava os campos do nosso banco — e como "conectado" passou a ser o que
+    // o 99Food responde, o vínculo continuava de pé lá e a loja reaparecia
+    // conectada na consulta seguinte. Um botão de desconectar que não
+    // desconecta é pior do que não ter botão.
+    let desvinculou = false;
+    let aviso: string | undefined;
+
+    const token = await getAuthToken(u.food99AppId || lojaId);
+    if (token.autorizada) {
+      const r = await desvincularLoja(token.token.auth_token);
+      desvinculou = r.ok;
+      if (!r.ok) aviso = `O 99Food recusou o desvínculo: ${r.erro}`;
+    }
+
+    await prisma.user.update({
+      where: { id: lojaId },
+      data: { food99Connected: false, food99MerchantId: null, food99AppId: null },
     });
 
-    return NextResponse.json({ success: true, connected: false, message: "Loja 99Food desconectada." });
+    return NextResponse.json({
+      success: true,
+      connected: false,
+      desvinculou,
+      aviso,
+      message: desvinculou
+        ? "Loja 99Food desconectada."
+        : // Sem o desvínculo do lado deles, os pedidos podem continuar
+          // chegando no webhook. Dizer "desconectada" seco esconderia isso.
+          "Integração desligada no FireHub. Se o vínculo continuar no 99Food, desfaça também no painel deles.",
+    });
   }
 
   return NextResponse.json({ error: "step inválido" }, { status: 400 });
 }
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
-
-  const body = await req.json().catch(() => ({}));
-  const { merchantId, userCode } = body;
-
-  if (!merchantId) {
-    return NextResponse.json({ error: "Merchant ID (ID da Loja no 99Food) é obrigatório" }, { status: 400 });
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, ownerId: true },
-  });
-
-  if (!user) {
-    return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
-  }
-
-  const targetUserId = user.ownerId || user.id;
-
-  const updated = await prisma.user.update({
-    where: { id: targetUserId },
-    data: {
-      food99MerchantId: merchantId.trim(),
-      food99Connected: true,
+/**
+ * O POST que existia aqui gravava o merchantId digitado e marcava
+ * `food99Connected = true` sem falar com o 99Food uma única vez. Era essa
+ * rota que fazia a tela exibir '🟢 Conectado & Ativo' numa loja que nunca
+ * havia sido vinculada — e foi isso que escondeu, por dias, o motivo de
+ * nenhum pedido chegar.
+ *
+ * Foi removido em vez de só desligado da tela: qualquer pessoa com sessão
+ * conseguia marcar a própria loja como conectada, e a partir de agora esse
+ * booleano decide coisas de verdade (o fallback do webhook, que escolhe a
+ * dona de um pedido sem merchantId conhecido, e a cobrança em lib/billing.ts).
+ *
+ * Quem conecta é POST /api/99food/conectar, que devolve a página de
+ * autorização do 99Food e só marca conectado contra o token que eles emitem.
+ */
+export async function POST() {
+  return NextResponse.json(
+    {
+      error: 'Esta rota saiu do ar. Use POST /api/99food/conectar para gerar a autorização do lojista.',
     },
-    select: { id: true, email: true, food99MerchantId: true, food99Connected: true },
-  });
-
-  return NextResponse.json({
-    success: true,
-    connected: true,
-    merchantId: updated.food99MerchantId,
-    message: "Conexão 99Food realizada com sucesso!",
-  });
+    { status: 410 }
+  );
 }
