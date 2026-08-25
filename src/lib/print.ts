@@ -90,7 +90,8 @@ async function printToDevice(
   force = false,
   printerConfig?: PrinterConfig,
   columns?: number,
-  escposProfile?: EscPosProfile
+  escposProfile?: EscPosProfile,
+  semValores = false
 ): Promise<boolean> {
   try {
     const baseUrl = await getAssistantUrl();
@@ -143,6 +144,10 @@ async function printToDevice(
           ifoodPickupCode: (order as any).ifoodPickupCode,
           openDeliveryReference: (order as any).openDeliveryReference,
           source: (order as any).source,
+          // Comanda da cozinha. Assistente antigo ignora campo que não conhece,
+          // então mandar isto para uma loja que ainda não atualizou o Assistente
+          // não muda nada: o cupom sai como sempre saiu, com valores.
+          semValores,
           notes: order.notes,
           createdAt: order.createdAt,
           printerConfig: {
@@ -168,7 +173,9 @@ export async function printOrder(
   storeName: string,
   printerConfig: PrinterConfig,
   itemCategories: Record<string, string> = {}, // { "item name" => "categoria" }
-  force = false
+  force = false,
+  /** Comanda da cozinha: mesmos itens, sem preço nenhum na folha. */
+  semValores = false
 ): Promise<{ success: boolean; printed: number; attempted: boolean }> {
   const baseUrl = await getAssistantUrl();
   if (!baseUrl) return { success: false, printed: 0, attempted: false };
@@ -239,7 +246,8 @@ export async function printOrder(
       force,
       printerConfig,
       resolveColumns(printer) ?? printerConfig?.defaultColumns,
-      printer.escposProfile
+      printer.escposProfile,
+      semValores
     );
     if (result) printed++;
   }

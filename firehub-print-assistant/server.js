@@ -565,6 +565,25 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const INVERSE_ON = "\x1d\x42\x01";
   const INVERSE_OFF = "\x1d\x42\x00";
 
+  /**
+   * Pinta de preto a palavra BEBIDA numa linha JÁ montada e alinhada.
+   *
+   * Só a palavra, não a seta: é ela que o garçom procura de relance na pilha
+   * de comandas. Trocar só "BEBIDA" também é o que sobrevive à quebra de
+   * linha — `wrap` quebra nos espaços, então a palavra nunca chega partida.
+   */
+  const marcarBebida = (linha, ehBebida) =>
+    ehBebida ? linha.replace("BEBIDA", INVERSE_ON + "BEBIDA" + INVERSE_OFF) : linha;
+
+  // Comanda da COZINHA: mesmos itens, sem um preço na folha.
+  //
+  // O site tinha o botão "Cupom da Cozinha (Sem Valores)" desde sempre, e ele
+  // saía com valores: o sinalizador parava no meio do caminho e aqui não havia
+  // nada que o lesse. Quem monta o pedido na cozinha não precisa saber quanto
+  // custa, e cupom com preço circulando no salão é o tipo de papel que acaba
+  // na mão do cliente errado.
+  const semValores = order?.semValores === true;
+
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LF;
 
@@ -574,14 +593,22 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       const qty = item.qty || item.quantity || 1;
       const unitPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
       const price = unitPrice * qty;
-      const priceStr = "R$ " + price.toFixed(2).replace(".", ",");
+      const priceStr = semValores ? "" : "R$ " + price.toFixed(2).replace(".", ",");
       let name = cleanAscii(item.name || item.menuProduct?.name || "Item");
       name = name.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
 
       const isItemBev = isBeverageItem(item);
       const bevTag = isItemBev ? "  <=== BEBIDA" : "";
       const itemLabel = `${name}${bevTag}`;
-      res += makeBoxLine(`${qty}x ${itemLabel}`, priceStr);
+      // A inversão entra DEPOIS de montar a linha, nunca antes.
+      //
+      // INVERSE_ON e INVERSE_OFF são três bytes de controle cada, que o papel
+      // não imprime mas o `.length` do JavaScript conta. Se entrassem no rótulo
+      // antes de padLine, o alinhamento acharia a linha 6 caracteres mais longa
+      // e empurraria a coluna do preço para a esquerda — ou quebraria a linha no
+      // meio. É por isso que a faixa "CONTEM BEBIDA" sempre funcionou: lá a
+      // inversão envolve a linha inteira, já montada.
+      res += marcarBebida(makeBoxLine(`${qty}x ${itemLabel}`, priceStr), isItemBev);
 
       const comboSels = (() => {
         if (!item.comboSelections) return [];
@@ -600,7 +627,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
           const isSelBev = isBeverageName(selName);
           const selBevTag = isSelBev ? "  <=== BEBIDA" : "";
-          res += makeBoxText(`  - ${qPrefix}${selName}${selBevTag}`);
+          res += marcarBebida(makeBoxText(`  - ${qPrefix}${selName}${selBevTag}`), isSelBev);
         });
       }
 
@@ -617,6 +644,15 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   }
 
   // 5. TOTALS
+  // Na comanda da cozinha o papel acaba aqui: nada de subtotal, taxa, total,
+  // forma de pagamento nem "COBRAR DO CLIENTE".
+  if (semValores) {
+    res += LF + centerLine("-- COMANDA DA COZINHA --") + LF;
+    res += centerLine("(sem valores)") + LF;
+    res += LEFT + FEED + CUT;
+    return Buffer.from(res, "binary");
+  }
+
   res += LF;
   const subtotal = order.items?.reduce((sum, it) => sum + (getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
   res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));

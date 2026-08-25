@@ -1181,7 +1181,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const printingInProgressRef = useRef<Set<string>>(new Set());
 
-  const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false) => {
+  /**
+   * `semValores` é parâmetro à parte, e não derivado de `type`, de propósito.
+   *
+   * `type` já nascia "cozinha" e é o que toda impressão AUTOMÁTICA passa. Ligar
+   * o comportamento nele tiraria o preço de todo cupom que a loja imprime
+   * sozinha — que não é o que ninguém pediu. Só o botão "Cupom da Cozinha" pede.
+   */
+  const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false, semValores = false) => {
     if (!order) return;
     if (order.status === "CRIANDO_IA") {
       showToast("⚠️ O pedido ainda está sendo montado pela IA no WhatsApp. Aguarde a finalização para imprimir.", "#F59E0B");
@@ -1247,7 +1254,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // 2. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
     try {
       const { printOrder } = await import("@/lib/print");
-      const result = await printOrder(formattedOrder as any, storeName, activeConfig, {}, isManual);
+      const result = await printOrder(formattedOrder as any, storeName, activeConfig, {}, isManual, semValores);
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
         printedLocally = true;
@@ -2094,7 +2101,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
                 <button
                   onClick={() => {
-                    handlePrint(order, "cozinha", true);
+                    handlePrint(order, "cozinha", true, true);
                     setPrintSelectOrderId(null);
                   }}
                   style={{ padding: "12px", borderRadius: "10px", border: "1px solid #D1D5DB", background: "#F8FAFC", color: "#374151", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
