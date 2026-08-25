@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+# A chave de assinatura NUNCA entra no repositorio: o packageName e a assinatura
+# nao podem mudar depois de homologados no PagBank, entao perder ou vazar este
+# arquivo significa nao conseguir mais publicar atualizacao deste app.
+keystore.properties
+*.jks
+*.keystore

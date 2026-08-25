@@ -1,0 +1,39 @@
+# O Dockerfile faz `COPY . .` e não existia .dockerignore: todo deploy empacotava
+# node_modules, .next e o histórico inteiro do git e mandava para o servidor, para
+# depois refazer tudo lá dentro. Fora o tempo, isso incha a imagem com arquivo que
+# não roda em produção.
+
+# Dependências e build — o Dockerfile reinstala e recompila do zero
+node_modules
+.next
+out
+dist
+
+# Histórico e ferramentas do repositório
+.git
+.github
+.vscode
+.idea
+.claude
+.agents
+
+# O app Android da maquininha. Ele não faz parte do site: é compilado à parte,
+# vira APK e é instalado no terminal pela loja de aplicativos do PagBank.
+apps/maquininha
+
+# Segredos e ambiente — as variáveis chegam pelo Coolify, não pela imagem
+.env
+.env.*
+!.env.example
+
+# Scripts de diagnóstico avulsos e restos de trabalho
+tmp-*
+scratch
+*.log
+npm-debug.log*
+
+# Documentação de desenvolvimento. Ficam de fora só estes dois, nomeados: uma
+# regra ampla como `*.md` economizaria alguns kilobytes e criaria o risco de um
+# dia derrubar o build por um arquivo que passou a ser lido em tempo de compilação.
+CLAUDE.md
+AGENTS.md

@@ -7,7 +7,8 @@
     "build": "prisma generate && npx prisma db push --skip-generate --accept-data-loss && next build",
     "start": "next start -p 3001",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "extensao:build": "node scripts/build-extensao-chrome.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.50.1",

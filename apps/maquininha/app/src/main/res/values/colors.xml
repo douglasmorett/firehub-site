@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paleta escura de propósito. A maquininha fica no balcão, muitas vezes de frente
+  para a rua ou sob luz forte de cozinha; fundo escuro com texto claro e valor
+  gigante é o que se lê de longe e de lado.
+
+  Aprovado e recusado não se distinguem só pela cor: cada um tem título próprio
+  em texto grande. Quem não enxerga a diferença entre verde e vermelho continua
+  sabendo o que aconteceu.
+-->
+<resources>
+    <color name="fundo">#FF0F1216</color>
+    <color name="fundo_cartao">#FF1B222B</color>
+    <color name="texto">#FFF3F6F8</color>
+    <color name="texto_fraco">#FF95A3B0</color>
+    <color name="destaque">#FFFF6A2B</color>
+    <color name="destaque_apagado">#FF7A3416</color>
+
+    <color name="fundo_aprovado">#FF0B3D22</color>
+    <color name="aprovado">#FF3DD37F</color>
+
+    <color name="fundo_recusado">#FF43110E</color>
+    <color name="recusado">#FFFF6B5E</color>
+
+    <color name="atencao">#FFFFC24B</color>
+    <color name="cinza_botao">#FF2C3540</color>
+</resources>

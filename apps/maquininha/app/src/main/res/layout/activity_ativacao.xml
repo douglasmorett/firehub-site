@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/fundo"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ativacao_titulo"
+            android:textColor="@color/texto"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:lineSpacingExtra="4dp"
+            android:text="@string/ativacao_explicacao"
+            android:textColor="@color/texto_fraco"
+            android:textSize="16sp" />
+
+        <EditText
+            android:id="@+id/campoAtivacao"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/campo_texto"
+            android:hint="@string/ativacao_campo"
+            android:importantForAutofill="no"
+            android:inputType="number"
+            android:minHeight="64dp"
+            android:padding="14dp"
+            android:textColor="@color/texto"
+            android:textColorHint="@color/texto_fraco"
+            android:textSize="20sp"
+            android:typeface="monospace" />
+
+        <Button
+            android:id="@+id/botaoAtivar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/botao_principal"
+            android:minHeight="68dp"
+            android:text="@string/ativacao_botao"
+            android:textColor="@color/texto"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <!--
+          Caminho alternativo, e o que o app-demo oficial do PagBank usa: em vez
+          de o app coletar o código, ele entrega a ativação para o aplicativo de
+          boas-vindas do próprio PagBank. Na prática o terminal costuma chegar à
+          loja já ativado, e é bom ter as duas portas.
+        -->
+        <Button
+            android:id="@+id/botaoOnboarding"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/botao_secundario"
+            android:minHeight="64dp"
+            android:text="@string/ativacao_botao_onboarding"
+            android:textColor="@color/texto"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/mensagemAtivacao"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:lineSpacingExtra="4dp"
+            android:textColor="@color/atencao"
+            android:textSize="17sp"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

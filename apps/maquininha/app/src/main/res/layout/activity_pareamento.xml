@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ScrollView porque o teclado do terminal ocupa metade da tela: sem rolagem, o
+  botão de confirmar fica embaixo do teclado e o operador não consegue concluir.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/fundo"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pareamento_titulo"
+            android:textColor="@color/texto"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:lineSpacingExtra="4dp"
+            android:text="@string/pareamento_explicacao"
+            android:textColor="@color/texto_fraco"
+            android:textSize="16sp" />
+
+        <!--
+          digits restringe a digitação ao alfabeto hexadecimal. Não é enfeite: o
+          código tem 64 caracteres e um "O" no lugar de um zero produz um erro
+          que ninguém acha olhando.
+        -->
+        <EditText
+            android:id="@+id/campoCodigo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/campo_texto"
+            android:digits="0123456789abcdefABCDEF"
+            android:hint="@string/pareamento_campo"
+            android:importantForAutofill="no"
+            android:inputType="textNoSuggestions|textVisiblePassword"
+            android:minHeight="64dp"
+            android:padding="14dp"
+            android:textColor="@color/texto"
+            android:textColorHint="@color/texto_fraco"
+            android:textSize="18sp"
+            android:typeface="monospace" />
+
+        <Button
+            android:id="@+id/botaoParear"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/botao_principal"
+            android:minHeight="68dp"
+            android:text="@string/pareamento_botao"
+            android:textColor="@color/texto"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/mensagem"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:lineSpacingExtra="4dp"
+            android:textColor="@color/atencao"
+            android:textSize="17sp"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

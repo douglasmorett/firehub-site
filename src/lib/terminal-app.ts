@@ -107,6 +107,21 @@ export const ESTADOS_DA_COBRANCA = {
  */
 export const MINUTOS_ATE_DESTRAVAR = 5;
 
+/**
+ * Quantas recusas o mesmo pedido pode acumular antes de sair da fila.
+ *
+ * A fila entrega sempre o pedido mais antigo. Quem fecha o pedido no totem e vai
+ * embora sem passar o cartão deixa a cobrança na cabeça da fila: ela é recusada
+ * por tempo, volta para o começo e prende todos os pedidos seguintes num laço.
+ * Uma fila de almoço inteira ficaria parada por causa de uma pessoa que desistiu.
+ *
+ * Cinco é folgado para quem está tentando de verdade — dá para trocar de cartão
+ * quatro vezes — e curto o bastante para não segurar a fila por muito tempo.
+ * O pedido não é cancelado: sai da fila da maquininha e o operador ainda cobra
+ * pelo painel se o cliente voltar.
+ */
+export const TENTATIVAS_ATE_SAIR_DA_FILA = 5;
+
 /** O token novo de uma maquininha. Aleatório e longo: ele É a credencial. */
 export function gerarTokenDeTerminal(): string {
   const bytes = new Uint8Array(32);

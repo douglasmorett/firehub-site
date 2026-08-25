@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A homologacao do PagBank exige HTTPS com TLS 1.2 ou superior e proibe
+  cleartextTrafficPermitted="true". Aqui o texto puro fica barrado para tudo,
+  sem excecao de dominio: um "so para testar em rede local" esquecido no release
+  e motivo de reprovacao.
+
+  NAO ha certificate pinning aqui, e isso e deliberado. O certificado de
+  firehubfood.com.br e renovado automaticamente e troca de chave a cada
+  renovacao. Um pin errado nao derruba o servidor: derruba TODAS as maquininhas
+  ja instaladas no balcao dos clientes, ao mesmo tempo, e a unica saida seria
+  visitar cada loja com um APK novo.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

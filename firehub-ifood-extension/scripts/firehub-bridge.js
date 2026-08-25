@@ -5,9 +5,26 @@
  * Funcionalidades:
  * 1. Lê o contador exato da coluna 'Em Produção' a cada 2 segundos e envia pro background em tempo real.
  * 2. Exibe alerta elegante na tela do FireHub quando o portal do iFood for desconectado, com botão de reconexão direta (sem criar abas duplicadas).
+ * 3. Marca a presença da extensão no DOM para a página /store/extensao-ifood saber que já está instalada.
  */
 
 console.log("[FireHub Extension Bridge] ⚡ Conectado ao painel do FireHub em tempo real!");
+
+// ── PRESENÇA DA EXTENSÃO ──
+// O painel usa este atributo para trocar o botão "Instalar" por "Instalada".
+// Content script vive em mundo isolado, mas o DOM e os eventos são os mesmos.
+function anunciarPresenca() {
+  try {
+    const versao = chrome.runtime.getManifest().version;
+    document.documentElement.setAttribute("data-firehub-extension", versao);
+    window.dispatchEvent(new CustomEvent("firehub-extension-ready", { detail: { versao } }));
+  } catch (e) {}
+}
+
+anunciarPresenca();
+document.addEventListener("DOMContentLoaded", anunciarPresenca);
+// A página é SPA: se o React recriar o <html>, o atributo volta no próximo tick.
+setInterval(anunciarPresenca, 3000);
 
 let lastEmProducaoCount = -1;
 let lastSentTime = 0;

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  allowBackup ja esta desligado no manifesto; isto e o cinto do suspensorio para
+  a API 31+. O que este app guarda em disco e o token de 64 caracteres da
+  maquininha e a fila de resultados de cartao ainda nao confirmados. Nenhum dos
+  dois pode sair do aparelho: o token e credencial da loja, e a fila copiada
+  para outro aparelho faria dois terminais reenviarem o mesmo pagamento.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

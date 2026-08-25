@@ -1,15 +1,37 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
+
+const CHAVE_LEMBRAR = "fh_remember";
+const CHAVE_EMAIL = "fh_remember_email";
 
 export default function FireHubLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // Restaura o acesso lembrado: checkbox marcado e e-mail já preenchido.
+  // Quem desmarcou no login anterior não tem nada guardado e cai no formulário limpo.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(CHAVE_LEMBRAR) !== "true") return;
+      setRememberMe(true);
+      const salvo = localStorage.getItem(CHAVE_EMAIL);
+      if (salvo) {
+        setEmail(salvo);
+        passwordRef.current?.focus();
+      }
+    } catch {
+      // navegador com storage bloqueado: segue com o formulário em branco
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,16 +42,21 @@ export default function FireHubLoginPage() {
       email,
       password,
       redirect: false,
-      // rememberMe passado como cookie duração via callback de sessão
     });
 
     setLoading(false);
 
     if (res?.ok) {
-      // Salva preferência de lembrar acesso
-      if (rememberMe) {
-        localStorage.setItem("fh_remember", "true");
-      }
+      // Preferência de lembrar acesso: gravada quando marcada, apagada quando não.
+      try {
+        if (rememberMe) {
+          localStorage.setItem(CHAVE_LEMBRAR, "true");
+          localStorage.setItem(CHAVE_EMAIL, email);
+        } else {
+          localStorage.removeItem(CHAVE_LEMBRAR);
+          localStorage.removeItem(CHAVE_EMAIL);
+        }
+      } catch {}
       // Busca role para redirecionar corretamente
       const meRes = await fetch("/api/me");
       const meData = meRes.ok ? await meRes.json() : null;
@@ -101,6 +128,23 @@ export default function FireHubLoginPage() {
           margin-bottom: 20px;
         }
         .fhl-input:focus { border-color: #DC2626; }
+        .fhl-pass-wrap { position: relative; }
+        .fhl-input-pass { padding-right: 46px; }
+        .fhl-eye {
+          position: absolute;
+          top: 13px;
+          right: 12px;
+          background: none;
+          border: none;
+          padding: 2px;
+          line-height: 0;
+          color: #9CA3AF;
+          cursor: pointer;
+          border-radius: 6px;
+          transition: color 0.2s;
+        }
+        .fhl-eye:hover { color: #DC2626; }
+        .fhl-eye:focus-visible { outline: 2px solid #DC2626; outline-offset: 2px; }
         .fhl-btn {
           width: 100%;
           padding: 14px;
@@ -181,9 +225,12 @@ export default function FireHubLoginPage() {
         {error && <div className="fhl-error">⚠️ {error}</div>}
 
         <form onSubmit={handleSubmit}>
-          <label className="fhl-label">E-mail</label>
+          <label className="fhl-label" htmlFor="fhl-email">E-mail</label>
           <input
+            id="fhl-email"
+            name="email"
             type="email"
+            autoComplete="username"
             className="fhl-input"
             placeholder="seu@email.com"
             value={email}
@@ -191,23 +238,51 @@ export default function FireHubLoginPage() {
             required
           />
 
-          <label className="fhl-label">Senha</label>
-          <input
-            type="password"
-            className="fhl-input"
-            placeholder="••••••••"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-          />
+          <label className="fhl-label" htmlFor="fhl-password">Senha</label>
+          <div className="fhl-pass-wrap">
+            <input
+              id="fhl-password"
+              name="password"
+              ref={passwordRef}
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              className="fhl-input fhl-input-pass"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+            />
+            <button
+              type="button"
+              className="fhl-eye"
+              onClick={() => setShowPassword(v => !v)}
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              title={showPassword ? "Ocultar senha" : "Mostrar senha"}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
 
           {/* Lembrar acesso + Esqueci senha */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", marginTop: "-8px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.85rem", color: "#374151" }}>
+            <label
+              style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "0.85rem", color: "#374151" }}
+              title="Guarda seu e-mail neste computador e deixa esta opção já marcada no próximo acesso."
+            >
               <input
                 type="checkbox"
                 checked={rememberMe}
-                onChange={e => setRememberMe(e.target.checked)}
+                onChange={e => {
+                  const marcado = e.target.checked;
+                  setRememberMe(marcado);
+                  // Desmarcou: esquece na hora, mesmo que não chegue a entrar agora.
+                  if (!marcado) {
+                    try {
+                      localStorage.removeItem(CHAVE_LEMBRAR);
+                      localStorage.removeItem(CHAVE_EMAIL);
+                    } catch {}
+                  }
+                }}
                 style={{ accentColor: "#DC2626", width: "16px", height: "16px", cursor: "pointer" }}
               />
               Lembrar acesso

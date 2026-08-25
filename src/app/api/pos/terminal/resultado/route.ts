@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { autenticarTerminal, ESTADOS_DA_COBRANCA } from "@/lib/terminal-app";
+import {
+  autenticarTerminal,
+  ESTADOS_DA_COBRANCA,
+  TENTATIVAS_ATE_SAIR_DA_FILA,
+} from "@/lib/terminal-app";
 import { confirmOrderPayment } from "@/lib/order-payment-confirm";
 
 export const dynamic = "force-dynamic";
@@ -92,17 +96,57 @@ export async function POST(req: NextRequest) {
       // Recusado volta para a fila, não morre: o cliente costuma tentar outro
       // cartão na mesma hora, e obrigá-lo a refazer o pedido inteiro no totem
       // é o que faz desistir da compra.
-      await prisma.customerOrder.update({
+      // O contador sobe A CADA recusa, e não só quando o totem manda cobrar de
+      // novo. Ele entra no `userReference` que vai ao cartão: sem subir aqui, a
+      // segunda tentativa do mesmo pedido leva a MESMA referência da primeira,
+      // e as duas passagens ficam indistinguíveis no extrato da adquirente —
+      // que é exatamente o que se precisa consultar para saber se o cliente foi
+      // cobrado duas vezes.
+      const { posTentativas } = await prisma.customerOrder.update({
         where: { id: pedido.id },
         data: {
-          posStatus: ESTADOS_DA_COBRANCA.aguardando,
+          posTentativas: { increment: 1 },
           posTerminalId: null,
           // A recusa fica registrada mesmo voltando para a fila: três recusas
           // seguidas no mesmo pedido é o padrão de cartão clonado, e quem
           // fecha o caixa precisa conseguir enxergar isso.
           posDadosTransacao: { ...dadosDaTransacao, aprovado: false, motivo: motivoRecusa ?? null },
         },
+        select: { posTentativas: true },
       });
+
+      // ── PEDIDO ABANDONADO NÃO PODE PRENDER A FILA ────────────────────────
+      // A fila entrega sempre o mais antigo. O cliente que fecha o pedido no
+      // totem e vai embora sem passar o cartão deixa a cobrança dele na cabeça
+      // da fila; ela é recusada por tempo, volta para o começo, e prende TODOS
+      // os pedidos seguintes da loja num laço. Uma fila de almoço inteira ficaria
+      // parada por causa de uma pessoa que desistiu.
+      //
+      // Depois de algumas recusas o pedido sai da fila. Ele não é cancelado: o
+      // operador ainda cobra pelo painel se o cliente voltar.
+      const saiuDaFila = posTentativas >= TENTATIVAS_ATE_SAIR_DA_FILA;
+      await prisma.customerOrder.update({
+        where: { id: pedido.id },
+        data: {
+          posStatus: saiuDaFila ? ESTADOS_DA_COBRANCA.expirado : ESTADOS_DA_COBRANCA.aguardando,
+        },
+      });
+
+      if (saiuDaFila) {
+        console.warn(
+          `[Terminal] Pedido ${pedido.id} saiu da fila depois de ${posTentativas} tentativas sem pagamento.`,
+        );
+        return NextResponse.json({
+          success: true,
+          aprovado: false,
+          podeTentarDeNovo: false,
+          motivo: motivoRecusa ?? null,
+          saiuDaFila: true,
+          mensagem:
+            "Este pedido saiu da fila da maquininha depois de várias tentativas. " +
+            "Cobre pelo painel se o cliente voltar.",
+        });
+      }
 
       console.warn(
         `[Terminal] Cobrança recusada no pedido ${pedido.id} (${terminal.label}): ${motivoRecusa ?? "sem motivo informado"}`,

@@ -1,32 +1,55 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Download,
   Puzzle,
   CheckCircle,
+  CheckCircle2,
   AlertTriangle,
   Zap,
   Flame,
   Clock,
-  Bike,
   ShieldCheck,
   Sparkles,
   Bot,
   Layers,
-  HelpCircle,
-  Copy,
+  Pin,
+  MousePointerClick,
   ExternalLink,
-  Check
+  Store
 } from "lucide-react";
+
+// O ID sai do painel da Chrome Web Store quando o item é criado. Enquanto ele
+// não estiver na env, a página mostra "em publicação" em vez de link quebrado.
+const EXTENSION_ID = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID || "";
+const STORE_URL = EXTENSION_ID
+  ? `https://chromewebstore.google.com/detail/${EXTENSION_ID}`
+  : "";
 
 export default function ExtensaoIfoodPage() {
   const [selectedMotoboys, setSelectedMotoboys] = useState<number>(3);
   const [userCodeData, setUserCodeData] = useState<{ userCode: string; verifier: string } | null>(null);
   const [loadingCode, setLoadingCode] = useState(false);
-  const [copiedExtensionsUrl, setCopiedExtensionsUrl] = useState(false);
+  const [versaoInstalada, setVersaoInstalada] = useState<string | null>(null);
+
+  // A extensão carimba data-firehub-extension no <html> pelo content script.
+  useEffect(() => {
+    const checar = () => {
+      const versao = document.documentElement.getAttribute("data-firehub-extension");
+      setVersaoInstalada(versao || null);
+    };
+    checar();
+    window.addEventListener("firehub-extension-ready", checar);
+    const timer = setInterval(checar, 2000);
+    return () => {
+      window.removeEventListener("firehub-extension-ready", checar);
+      clearInterval(timer);
+    };
+  }, []);
+
+  const extensaoInstalada = Boolean(versaoInstalada);
 
   const handleConnectIfoodDirect = async () => {
     setLoadingCode(true);
@@ -43,18 +66,6 @@ export default function ExtensaoIfoodPage() {
     } finally {
       setLoadingCode(false);
     }
-  };
-
-  const handleOpenExtensionsPage = () => {
-    const extensionsUrl = "chrome://extensions";
-    try {
-      navigator.clipboard.writeText(extensionsUrl);
-    } catch {}
-    setCopiedExtensionsUrl(true);
-    setTimeout(() => setCopiedExtensionsUrl(false), 4000);
-
-    // Tenta abrir janela/aba com chrome://extensions
-    window.open("chrome://extensions", "_blank");
   };
 
   // Tabela Hakim por motoboys
@@ -129,46 +140,66 @@ export default function ExtensaoIfoodPage() {
                   {loadingCode ? "Gerando Código..." : "Conectar iFood via API Oficial (1-Clique)"}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleOpenExtensionsPage}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "14px 20px",
-                    borderRadius: 14,
-                    background: "#F8FAFC",
-                    border: "1.5px solid #CBD5E1",
-                    color: "#334155",
-                    fontWeight: 800,
-                    fontSize: "0.92rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  <Puzzle size={18} />
-                  Extensão Chrome
-                </button>
-
-                <a
-                  href="/api/download/extension"
-                  download="firehub-ifood-extension.zip"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "14px 20px",
-                    borderRadius: 14,
-                    background: "#F8FAFC",
-                    border: "1.5px solid #CBD5E1",
-                    color: "#334155",
-                    fontWeight: 800,
-                    fontSize: "0.92rem",
-                    textDecoration: "none",
-                  }}
-                >
-                  <Download size={18} /> Baixar (.ZIP)
-                </a>
+                {extensaoInstalada ? (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "14px 20px",
+                      borderRadius: 14,
+                      background: "#F0FDF4",
+                      border: "1.5px solid #86EFAC",
+                      color: "#166534",
+                      fontWeight: 900,
+                      fontSize: "0.92rem",
+                    }}
+                  >
+                    <CheckCircle2 size={18} />
+                    Extensão instalada (v{versaoInstalada})
+                  </div>
+                ) : STORE_URL ? (
+                  <a
+                    href={STORE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "14px 22px",
+                      borderRadius: 14,
+                      background: "#FFF",
+                      border: "2px solid #1A73E8",
+                      color: "#1A73E8",
+                      fontWeight: 900,
+                      fontSize: "0.95rem",
+                      textDecoration: "none",
+                      boxShadow: "0 4px 14px rgba(26, 115, 232, 0.18)",
+                    }}
+                  >
+                    <Puzzle size={18} />
+                    Instalar Extensão no Chrome
+                  </a>
+                ) : (
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "14px 20px",
+                      borderRadius: 14,
+                      background: "#F8FAFC",
+                      border: "1.5px dashed #CBD5E1",
+                      color: "#64748B",
+                      fontWeight: 800,
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    <Clock size={18} />
+                    Extensão em publicação na Chrome Web Store
+                  </div>
+                )}
               </div>
 
               {userCodeData && (
@@ -197,11 +228,13 @@ export default function ExtensaoIfoodPage() {
                 </div>
               )}
 
-              {copiedExtensionsUrl && (
-                <div style={{ background: "#EFF6FF", border: "1px solid #93C5FD", borderRadius: 10, padding: "10px 14px", fontSize: "0.82rem", color: "#1E4ED8", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-                  <Check size={16} /> <span>Endereço <b>chrome://extensions</b> copiado! Cole na barra de endereço do seu navegador Chrome para acessar diretamente a tela de extensões.</span>
-                </div>
-              )}
+              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 14px", fontSize: "0.8rem", color: "#475569", fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                <ShieldCheck size={16} color="#16A34A" />
+                <span>
+                  Instalação oficial pelo Google: <b>1 clique, sem baixar arquivo</b> e sem modo do desenvolvedor.
+                  A extensão se atualiza sozinha quando lançamos melhorias.
+                </span>
+              </div>
             </div>
           </div>
 
@@ -359,54 +392,73 @@ export default function ExtensaoIfoodPage() {
 
         {/* PASSO A PASSO DE INSTALAÇÃO */}
         <div style={{ background: "#FFF", borderRadius: 24, padding: "2rem", border: "1px solid #E2E8F0", boxShadow: "0 6px 20px rgba(0,0,0,0.04)", marginBottom: "2.5rem" }}>
-          <h2 style={{ fontSize: "1.4rem", fontWeight: 900, color: "#0F172A", margin: "0 0 1.5rem", textAlign: "center" }}>
-            📖 Instalação em 3 Passos Simples no Google Chrome
+          <h2 style={{ fontSize: "1.4rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px", textAlign: "center" }}>
+            📖 Instalação em 3 Passos no Google Chrome
           </h2>
+          <p style={{ fontSize: "0.85rem", color: "#64748B", textAlign: "center", margin: "0 0 1.5rem" }}>
+            Nada de baixar arquivo, descompactar pasta ou ligar modo do desenvolvedor. É pela loja oficial do Google.
+          </p>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1.25rem" }}>
-            
+
             <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: "#E8360C", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: "#1A73E8", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
                 1
               </div>
-              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Baixe o Arquivo .ZIP</h4>
-              <p style={{ fontSize: "0.82rem", color: "#64748B", lineHeight: 1.4, margin: 0 }}>
-                Clique no botão de download acima para baixar o arquivo <code style={{ background: "#E2E8F0", padding: "2px 6px", borderRadius: 4, color: "#E8360C" }}>firehub-ifood-extension.zip</code>. Extraia o conteúdo no seu computador.
+              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Clique em Instalar</h4>
+              <p style={{ fontSize: "0.82rem", color: "#64748B", lineHeight: 1.4, margin: "0 0 10px" }}>
+                O botão abre a página da extensão na <b>Chrome Web Store</b>. Clique em <b>"Usar no Chrome"</b> e confirme em <b>"Adicionar extensão"</b>.
               </p>
+              {STORE_URL ? (
+                <a
+                  href={STORE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    background: "#EFF6FF", border: "1px solid #93C5FD", color: "#1D4ED8",
+                    padding: "5px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 800,
+                    textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4
+                  }}
+                >
+                  <Store size={13} /> Abrir na Chrome Web Store
+                </a>
+              ) : (
+                <span style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>
+                  Link liberado assim que o Google aprovar a publicação.
+                </span>
+              )}
             </div>
 
             <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0" }}>
               <div style={{ width: 32, height: 32, borderRadius: 10, background: "#2563EB", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
                 2
               </div>
-              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Abra a Tela de Extensões</h4>
-              <p style={{ fontSize: "0.82rem", color: "#64748B", lineHeight: 1.4, margin: "0 0 10px" }}>
-                Cole <code style={{ background: "#DBEAFE", padding: "2px 6px", borderRadius: 4, color: "#1D4ED8", fontWeight: 800 }}>chrome://extensions</code> na barra do Chrome e ative o <b>"Modo do desenvolvedor"</b> no canto superior direito.
+              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Fixe o Ícone 🔥</h4>
+              <p style={{ fontSize: "0.82rem", color: "#64748B", lineHeight: 1.4, margin: 0 }}>
+                Clique na peça de quebra-cabeça <Puzzle size={13} style={{ verticalAlign: "-2px" }} /> ao lado da barra de endereço e no alfinete <Pin size={13} style={{ verticalAlign: "-2px" }} /> do FireHub. O ícone fica sempre à mão no computador do caixa.
               </p>
-              <button
-                type="button"
-                onClick={handleOpenExtensionsPage}
-                style={{
-                  background: "#EFF6FF", border: "1px solid #93C5FD", color: "#1D4ED8",
-                  padding: "5px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 800,
-                  cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4
-                }}
-              >
-                <Copy size={13} /> {copiedExtensionsUrl ? "Copiado!" : "Copiar chrome://extensions"}
-              </button>
             </div>
 
             <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0" }}>
               <div style={{ width: 32, height: 32, borderRadius: 10, background: "#E8360C", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
                 3
               </div>
-              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Carregar sem Compactação</h4>
+              <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Entre com sua Loja</h4>
               <p style={{ fontSize: "0.82rem", color: "#64748B", lineHeight: 1.4, margin: 0 }}>
-                Clique em <b>"Carregar sem compactação"</b> (Load Unpacked) e selecione a pasta extraída. O ícone 🔥 do FireHub aparecerá pronto no seu navegador!
+                Abra o ícone 🔥, faça login com o mesmo e-mail e senha do painel FireHub e escolha <b>Modo Automático</b>. Pronto: o robô já está cuidando do seu tempo de entrega.
               </p>
             </div>
 
           </div>
+
+          {extensaoInstalada && (
+            <div style={{ marginTop: "1.25rem", background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+              <CheckCircle2 size={18} color="#16A34A" />
+              <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#166534" }}>
+                Detectamos a extensão v{versaoInstalada} instalada neste computador. Só falta abrir o ícone 🔥 e entrar com sua loja.
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ORIENTAÇÃO AO LOJISTA */}
@@ -424,25 +476,46 @@ export default function ExtensaoIfoodPage() {
 
         {/* BOTTOM CTA */}
         <div style={{ textAlign: "center", marginTop: "3rem", paddingBottom: "2rem" }}>
-          <a
-            href="/api/download/extension"
-            download="firehub-ifood-extension.zip"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "16px 36px",
-              borderRadius: 16,
-              background: "linear-gradient(135deg, #E8360C 0%, #FF5722 100%)",
-              color: "#FFF",
-              fontWeight: 900,
-              fontSize: "1.1rem",
-              textDecoration: "none",
-              boxShadow: "0 8px 25px rgba(232, 54, 12, 0.4)",
-            }}
-          >
-            <Download size={22} /> Baixar Extensão do Chrome Agora (.ZIP)
-          </a>
+          {extensaoInstalada ? (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 36px", borderRadius: 16, background: "#F0FDF4", border: "2px solid #86EFAC", color: "#166534", fontWeight: 900, fontSize: "1.05rem" }}>
+              <CheckCircle2 size={22} /> Extensão instalada e pronta neste computador
+            </div>
+          ) : STORE_URL ? (
+            <>
+              <a
+                href={STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "16px 36px",
+                  borderRadius: 16,
+                  background: "linear-gradient(135deg, #E8360C 0%, #FF5722 100%)",
+                  color: "#FFF",
+                  fontWeight: 900,
+                  fontSize: "1.1rem",
+                  textDecoration: "none",
+                  boxShadow: "0 8px 25px rgba(232, 54, 12, 0.4)",
+                }}
+              >
+                <MousePointerClick size={22} /> Instalar Extensão no Chrome Agora
+              </a>
+              <p style={{ fontSize: "0.78rem", color: "#94A3B8", margin: "12px 0 0", fontWeight: 600 }}>
+                Instalação oficial pela Chrome Web Store • Atualização automática • Sem modo do desenvolvedor
+              </p>
+            </>
+          ) : (
+            <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "16px 36px", borderRadius: 16, background: "#F8FAFC", border: "1.5px dashed #CBD5E1" }}>
+              <span style={{ fontWeight: 900, fontSize: "1.02rem", color: "#475569", display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Clock size={20} /> Publicação em análise no Google
+              </span>
+              <span style={{ fontSize: "0.8rem", color: "#94A3B8", fontWeight: 600 }}>
+                Assim que for aprovada, o botão de instalar aparece aqui automaticamente.
+              </span>
+            </div>
+          )}
         </div>
 
       </div>

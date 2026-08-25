@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Todo texto de tela mora aqui, em português, porque é português que o operador
+  atrás do balcão lê. Não há tradução e nem deve haver: o app roda em terminal
+  PagBank, no Brasil.
+
+  Nenhuma string cita outra adquirente nem outra forma de pagamento. Isso é
+  regra de homologação, não estilo — uma menção dessas reprova o app.
+-->
+<resources>
+    <string name="nome_do_app">FireHub Maquininha</string>
+
+    <!-- Barra de status -->
+    <string name="canal_operacao">Operação da maquininha</string>
+    <string name="canal_chamada">Cobrança chegando</string>
+    <string name="aviso_iniciando">Iniciando…</string>
+    <string name="aviso_aguardando">Aguardando pedido</string>
+    <string name="aviso_sem_conexao">Sem conexão com o FireHub</string>
+    <string name="aviso_reenviando">Confirmando pagamento com o FireHub…</string>
+    <string name="aviso_conferindo_cartao">Conferindo com a maquininha se o cartão passou…</string>
+    <string name="chamada_titulo">Pagamento na maquininha</string>
+
+    <!-- Situações que travam a operação -->
+    <string name="erro_sem_pareamento">Esta maquininha ainda não foi ligada a uma loja.</string>
+    <string name="erro_terminal_nao_ativado">Este terminal ainda não foi ativado no PagBank.</string>
+    <string name="erro_sem_servico_pagbank">O serviço de pagamento do PagBank não está neste aparelho. Este app só funciona num terminal PagBank.</string>
+    <string name="erro_aprovado_sem_registro">O cartão foi aprovado, mas o FireHub recusou o registro deste pedido. NÃO cobre de novo: chame o responsável e anote o NSU.</string>
+    <string name="erro_sem_resposta_do_terminal">A maquininha não disse se o cartão passou. NÃO cobre de novo: o app está conferindo sozinho e avisa aqui.</string>
+
+    <!-- Recados para quem está no balcão, fora do fluxo de uma cobrança -->
+    <string name="aviso_pedido_abandonado">%1$s voltou %2$d vezes sem ninguém pagar e está segurando a fila. Cancele ou libere o pedido no painel do FireHub.</string>
+    <string name="travado_sem_conferencia">A maquininha não confirmou o que houve com o cartão da venda %1$s (%2$s). Procure esse código no extrato do PagBank.</string>
+    <string name="travado_ja_pago">%1$s já tem cartão aprovado nesta maquininha, mas o FireHub não aceita o registro. Não cobre de novo.</string>
+
+    <!-- Motivos que voltam para o servidor como recusa -->
+    <string name="recusa_cancelado">Cancelado na maquininha.</string>
+    <string name="recusa_sem_resposta">Ninguém escolheu a forma de pagamento a tempo.</string>
+    <string name="recusa_interrompida">A transação foi interrompida e o cartão não chegou a ser debitado.</string>
+    <string name="recusa_sem_servico">O serviço de pagamento do PagBank não está instalado no aparelho.</string>
+    <string name="recusa_nao_ativado">Terminal não ativado no PagBank.</string>
+    <string name="recusa_maquininha_muda">A maquininha não respondeu.</string>
+
+    <!-- Tela de operação -->
+    <string name="andamento_inicial">Aproxime, insira ou passe o cartão</string>
+    <string name="operacao_aguardando">Aguardando pedido</string>
+    <string name="operacao_sem_nome">Maquininha</string>
+    <string name="operacao_escolha">Como quer pagar?</string>
+    <string name="operacao_credito">CRÉDITO</string>
+    <string name="operacao_debito">DÉBITO</string>
+    <string name="operacao_voucher">VOUCHER</string>
+    <string name="operacao_cancelar">Cancelar</string>
+    <string name="operacao_aprovado">Pagamento aprovado</string>
+    <string name="operacao_recusado">Pagamento não aprovado</string>
+    <string name="operacao_senha">Pedido %1$s</string>
+    <string name="operacao_confirmando">Confirmando com o FireHub…</string>
+    <string name="operacao_conectado">Conectado</string>
+    <string name="operacao_desconectado">Sem conexão</string>
+    <string name="operacao_presos">%1$d pagamento(s) esperando confirmação do FireHub.</string>
+    <string name="operacao_travados">%1$d pagamento(s) precisam de atenção. Chame o responsável.</string>
+    <string name="operacao_ativar">Ativar terminal</string>
+    <string name="operacao_parear">Ligar a uma loja</string>
+    <string name="operacao_verificando">Verificando a maquininha…</string>
+    <string name="operacao_travados_dica">Segure o dedo neste aviso para marcá-lo como resolvido.</string>
+    <string name="operacao_limpar_titulo">Marcar como resolvido?</string>
+    <string name="operacao_limpar_texto">Isto apaga a lista de pagamentos que precisam de atenção. Só faça depois de conferir cada um com o responsável: o app não vai mais lembrar deles.</string>
+    <string name="operacao_limpar_sim">Já resolvi</string>
+    <string name="operacao_limpar_nao">Agora não</string>
+
+    <!-- Tela de pareamento -->
+    <string name="pareamento_titulo">Ligar esta maquininha a uma loja</string>
+    <string name="pareamento_explicacao">No painel do FireHub, abra Maquininhas, gere o código de pareamento e digite os 64 caracteres abaixo. O código aparece uma única vez.</string>
+    <string name="pareamento_campo">Código de pareamento</string>
+    <string name="pareamento_botao">Ligar à loja</string>
+    <string name="pareamento_validando">Falando com o FireHub…</string>
+    <string name="pareamento_tamanho">O código tem 64 caracteres, só números e as letras de A a F. Faltam %1$d.</string>
+    <string name="pareamento_invalido">Este código tem caracteres que não fazem parte do código de pareamento. Confira e digite de novo.</string>
+    <string name="pareamento_ok">Maquininha ligada à loja %1$s.</string>
+    <string name="pareamento_desconhecido">O FireHub não reconheceu este código. Gere um novo no painel, em Maquininhas, e digite de novo.</string>
+    <string name="pareamento_desativado">Esta maquininha está desativada no painel do FireHub. Ative em Maquininhas antes de continuar.</string>
+    <string name="pareamento_sem_rede">Não foi possível falar com o FireHub: %1$s Confira a internet do terminal e tente de novo.</string>
+
+    <!-- Tela de ativação -->
+    <string name="ativacao_titulo">Ativar o terminal no PagBank</string>
+    <string name="ativacao_explicacao">Este terminal ainda não está ativado para receber pagamento. Digite o código de ativação que o PagBank enviou, ou abra o aplicativo de ativação do próprio PagBank.</string>
+    <string name="ativacao_campo">Código de ativação</string>
+    <string name="ativacao_botao">Ativar</string>
+    <string name="ativacao_botao_onboarding">Abrir a ativação do PagBank</string>
+    <string name="ativacao_trabalhando">Ativando o terminal…</string>
+    <string name="ativacao_vazia">Digite o código de ativação.</string>
+    <string name="ativacao_ok">Terminal ativado.</string>
+    <string name="ativacao_falhou">Não foi possível ativar: %1$s</string>
+    <string name="ativacao_ja_ativado">Este terminal já está ativado.</string>
+    <string name="ativacao_sem_servico">O serviço de pagamento do PagBank não está neste aparelho.</string>
+</resources>

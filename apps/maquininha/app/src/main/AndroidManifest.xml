@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Fala com https://firehubfood.com.br. Vale lembrar que a APN do chip do
+      PagBank é PRIVADA: este domínio precisa estar na lista de endpoints
+      enviada na homologação, senão o app funciona no Wi-Fi da loja e fica mudo
+      no 4G. Trocar de domínio ou de IP depois disso exige abrir chamado.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Usada para escolher o ritmo do polling: no Wi-Fi da loja o app pergunta de
+      2 em 2 segundos, no chip ele desacelera para caber na franquia de dados.
+      Sem saber o transporte, so restaria escolher um ritmo unico e errado nos
+      dois casos.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      O AAR do WrapperPPS já declara esta permissão e ela entraria por merge,
+      mas fica repetida aqui de propósito: quem analisa a homologação lê este
+      arquivo, e uma permissão de pagamento que aparece "do nada" pelo merge
+      levanta pergunta que custa dias de SLA.
+    -->
+    <uses-permission android:name="br.com.uol.pagseguro.permission.MANAGE_PAYMENTS" />
+
+    <!--
+      O polling vive num serviço em primeiro plano. Se ele parasse quando o
+      operador sai da tela, o pedido pago no totem ficaria esperando para sempre
+      alguem voltar ao app.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!--
+      Tipo connectedDevice porque o trabalho do serviço é operar o leitor de
+      cartão do terminal. A alternativa óbvia, dataSync, tem teto de 6 horas por
+      dia a partir da API 34 - e uma loja abre 12. O terminal roda Android 11 no
+      maximo hoje, mas targetSdk 34 faz o Android aplicar as regras novas assim
+      que o parque atualizar.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!--
+      A maquininha vive na tomada e o terminal reinicia sozinho de madrugada.
+      Sem isto, o primeiro pedido da manha ficaria parado na fila esperando
+      alguém perceber que o app não subiu.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      Sem wake lock parcial, o Android suspende a CPU com a tela apagada e o
+      laco de polling para de rodar. O cliente pediria no totem e a maquininha
+      so acordaria no proximo toque. Custo de bateria e irrelevante num aparelho
+      permanentemente ligado na tomada.
+    -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- A partir da API 33 a notificação do serviço exige consentimento. Os
+         terminais atuais param na API 30, entao na pratica isto e reserva para
+         o dia em que o parque atualizar. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      SEM ESTA LINHA O APP NAO ABRE A TELA QUANDO CHEGA COBRANCA.
+
+      Da API 29 em diante o Android bloqueia startActivity a partir do
+      background, e a via oficial que sobra e o setFullScreenIntent de uma
+      notificacao. Mas o setFullScreenIntent so tem efeito se o app declarar
+      USE_FULL_SCREEN_INTENT: sem a permissao o Android nao devolve erro, ele
+      simplesmente REBAIXA a notificacao para um aviso comum na barra. O GPOS780
+      e o P2 rodam Android 11, ou seja, exatamente nessa faixa.
+
+      Nao esta na lista de permissoes proibidas do guia do PagBank (a lista
+      proibe SYSTEM_ALERT_WINDOW, que seria a outra forma de fazer isto). Cai no
+      "qualquer permissao nao mencionada sera analisada pontualmente", entao a
+      justificativa tem que ir junto no chamado de homologacao: o operador sai
+      do app para conferir uma coisa, chega cobranca, e sem isto ninguem ve o
+      pedido chegar - ele fica reservado nesta maquininha por cinco minutos com
+      o cliente parado no balcao.
+
+      A partir da API 34 esta permissao vira appop e so e concedida por padrao a
+      app de chamada ou alarme; o aviso ja usa CATEGORY_CALL, que e o que mais
+      se aproxima. CONFERIR NO TERMINAL antes de subir targetSdk 34 em parque
+      com Android 14.
+    -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!--
+      O app precisa checar se o PlugPagService está instalado antes de tentar
+      cobrar. A forma direta seria QUERY_ALL_PACKAGES, que está na lista de
+      permissões PROIBIDAS do PagBank. Declarando o pacote aqui a consulta
+      funciona sem pedir visibilidade de nada mais.
+    -->
+    <queries>
+        <package android:name="br.com.uol.pagseguro.plugpagservice" />
+        <package android:name="br.com.uol.pagseguro.onboarding" />
+    </queries>
+
+    <application
+        android:name=".AplicacaoDaMaquininha"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/nome_do_app"
+        android:theme="@style/TemaDaMaquininha"
+        android:networkSecurityConfig="@xml/seguranca_de_rede"
+        android:supportsRtl="false"
+        android:largeHeap="false"
+        android:testOnly="false"
+        android:usesCleartextTraffic="false"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/regras_de_backup">
+
+        <!--
+          Tela única de operação, a que fica no ar o dia inteiro.
+
+          launchMode singleTask porque o serviço traz esta tela para a frente
+          quando chega cobranca: sem isso, cada cobranca empilharia uma copia
+          nova da tela por cima da anterior.
+
+          screenOrientation portrait porque a tela do terminal é estreita e não
+          gira; deixar livre so abriria a porta para recriar a Activity no meio
+          de um pagamento.
+
+          configChanges evita que uma mudanca de teclado ou de tamanho destrua e
+          recrie a tela enquanto o cliente está com o cartão no leitor.
+        -->
+        <activity
+            android:name=".tela.OperacaoActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              O launcher do PagBank dispara esta ação quando o cliente encosta o
+              cartão ou aperta uma tecla na tela inicial do terminal. Com o
+              filtro, o app abre sozinho no gesto que o operador ja conhece.
+            -->
+            <intent-filter>
+                <action android:name="br.com.uol.pagseguro.PAYMENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".tela.PareamentoActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation" />
+
+        <activity
+            android:name=".tela.AtivacaoActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation" />
+
+        <!--
+          stopWithTask=false: fechar o app pela lista de recentes não pode
+          derrubar o serviço. O operador faz isso sem querer o tempo todo, e o
+          resultado seria a loja descobrindo horas depois que a maquininha parou
+          de receber pedido.
+        -->
+        <service
+            android:name=".servico.ServicoDeCobranca"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <receiver
+            android:name=".servico.ReceptorDeBoot"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <!-- Alguns terminais mandam QUICKBOOT em vez de BOOT_COMPLETED
+                     quando saem de um desligamento rapido. Ouvir os dois custa
+                     uma linha e evita a manhã em que o app não subiu. -->
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
