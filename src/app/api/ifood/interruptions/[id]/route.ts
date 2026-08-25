@@ -1,38 +1,37 @@
 /**
- * /api/ifood/interruptions/[id]/route.ts
- * Cenário 2 — Remove uma pausa específica
- *   DELETE → remove a pausa pelo interruptionId
+ * /api/ifood/interruptions/[id]
+ * Remove a pausa. O critério de aprovação é responder 204 sem conteúdo — e a
+ * pausa não aparecer mais na listagem seguinte.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { ifoodMutate, getMerchantIdForUser } from "@/lib/ifood-api";
+import { comContextoIfood } from "@/lib/ifood-rota";
+import { chamarComContexto, mensagemDeErro } from "@/lib/ifood-http";
 
 export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  const { id } = await params;
 
-  try {
-    const email = session.user?.email || "";
-    const merchantId = await getMerchantIdForUser(email);
-    const { id: interruptionId } = await params;
-
-    const res = await ifoodMutate(
-      `/merchant/v1.0/merchants/${merchantId}/interruptions/${interruptionId}`,
-      { method: "DELETE" }
+  return comContextoIfood(req, async ({ ctx }) => {
+    const r = await chamarComContexto(
+      ctx,
+      `/merchant/v1.0/merchants/${ctx.merchantId}/interruptions/${id}`,
+      { method: "DELETE" },
     );
 
-    if (!res.ok && res.status !== 204) {
-      const err = await res.text();
-      return NextResponse.json({ error: `iFood ${res.status}: ${err}` }, { status: res.status });
+    // 204 não tem corpo, e `ok` já cobre a faixa 2xx.
+    if (!r.ok) {
+      return NextResponse.json(
+        { error: mensagemDeErro(r), ifood: { status: r.status, origem: r.origem } },
+        { status: r.status === 0 ? 502 : r.status },
+      );
     }
 
-    return NextResponse.json({ success: true, removed: interruptionId });
-  } catch (err: any) {
-    console.error("[iFood Interruptions DELETE]", err.message);
-    return NextResponse.json({ error: err.message }, { status: 502 });
-  }
+    return NextResponse.json({
+      success: true,
+      removed: id,
+      ifood: { status: r.status, origem: r.origem, esperado: 204 },
+    });
+  });
 }

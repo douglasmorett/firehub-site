@@ -1,8 +1,10 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { Store, Clock, RefreshCw, Trash2, Plus, CheckCircle, ExternalLink, Loader, Wifi, WifiOff, Copy } from "lucide-react";
+import TabCardapio from "./TabCardapio";
+import TabEntrega from "./TabEntrega";
 
-type Tab = "loja" | "pausas" | "horarios" | "widget";
+type Tab = "loja" | "pausas" | "horarios" | "cardapio" | "entrega" | "widget";
 
 // ── Status da conexão ──────────────────────────────────────
 type ConnStatus = "idle" | "loading" | "ok" | "error";
@@ -378,6 +380,8 @@ export default function IfoodHomologacaoClient({
           {tabBtn("loja", "Loja", "🏪")}
           {tabBtn("pausas", "Pausas", "⏸️")}
           {tabBtn("horarios", "Horários", "🕐")}
+          {tabBtn("cardapio", "Cardápio", "📖")}
+          {tabBtn("entrega", "Entrega", "🛵")}
           {tabBtn("widget", "Widget Chat", "💬")}
         </div>
       )}
@@ -386,6 +390,8 @@ export default function IfoodHomologacaoClient({
       {connStatus === "ok" && tab === "loja" && <TabLoja />}
       {connStatus === "ok" && tab === "pausas" && <TabPausas />}
       {connStatus === "ok" && tab === "horarios" && <TabHorarios />}
+      {connStatus === "ok" && tab === "cardapio" && <TabCardapio />}
+      {connStatus === "ok" && tab === "entrega" && <TabEntrega />}
       {connStatus === "ok" && tab === "widget" && <TabWidget currentWidgetId={ifoodWidgetId} />}
     </div>
   );

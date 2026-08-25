@@ -57,7 +57,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
     const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
     if (merchantId) headers["x-polling-merchants"] = merchantId;
 
-    const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+    const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true", {
       method: "GET",
       headers,
     });

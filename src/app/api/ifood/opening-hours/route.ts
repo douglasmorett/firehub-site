@@ -1,57 +1,54 @@
 /**
- * /api/ifood/opening-hours/route.ts
- * Cenário 3 — Horário de Funcionamento
- *   GET → consulta horários cadastrados no iFood
- *   PUT → define novos horários de funcionamento
+ * /api/ifood/opening-hours
+ * Cenário 3 — os turnos de funcionamento.
+ *
+ * O iFood não trabalha com "das 10 às 19": trabalha com início e DURAÇÃO em
+ * minutos. Sábado das 10:00 às 19:00 é `{ start: "10:00", duration: 540 }`.
+ * Turnos sobrepostos voltam como 400, e isso também é testado.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { ifoodMutate, getMerchantIdForUser } from "@/lib/ifood-api";
+import { comContextoIfood } from "@/lib/ifood-rota";
+import { chamarComContexto, mensagemDeErro } from "@/lib/ifood-http";
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-
-  try {
-    const email = session.user?.email || "";
-    const merchantId = await getMerchantIdForUser(email);
-    const res  = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`);
-    const data = res.ok ? await res.json() : null;
-    return NextResponse.json({ merchantId, openingHours: data });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 502 });
-  }
+export async function GET(req: NextRequest) {
+  return comContextoIfood(req, async ({ ctx }) => {
+    const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/opening-hours`);
+    return NextResponse.json({
+      merchantId: ctx.merchantId,
+      openingHours: r.data ?? null,
+      ifood: { status: r.status, ok: r.ok, origem: r.origem },
+      ...(r.ok ? {} : { error: mensagemDeErro(r) }),
+    });
+  });
 }
 
 export async function PUT(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  return comContextoIfood(req, async ({ ctx, corpo }) => {
+    // A API aceita tanto o array de turnos quanto o objeto que os embrulha.
+    const payload = Array.isArray(corpo) ? corpo : (corpo?.shifts ?? corpo);
 
-  try {
-    const body = await req.json();
-    const email = session.user?.email || "";
-    const merchantId = await getMerchantIdForUser(email);
-
-    // iFood opening-hours PUT aceita array de shifts ou objeto com shifts
-    const payload = Array.isArray(body) ? body : (body.shifts || body);
-    console.log("[iFood Opening Hours PUT] Enviando:", JSON.stringify(payload, null, 2));
-
-    const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/opening-hours`, {
+    const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/opening-hours`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json().catch(() => ({}));
-    console.log("[iFood Opening Hours PUT] Resposta:", res.status, JSON.stringify(data));
-
-    if (!res.ok) {
-      return NextResponse.json({ error: `iFood ${res.status}`, details: data }, { status: res.status });
+    if (!r.ok) {
+      return NextResponse.json(
+        {
+          error: r.status === 400
+            ? "O iFood recusou os horários. Confira se não há turnos sobrepostos no mesmo dia."
+            : mensagemDeErro(r),
+          ifood: { status: r.status, origem: r.origem },
+          details: r.data ?? r.texto?.slice(0, 300),
+        },
+        { status: r.status === 0 ? 502 : r.status },
+      );
     }
 
-    return NextResponse.json({ success: true, result: data });
-  } catch (err: any) {
-    console.error("[iFood Opening Hours PUT] Erro:", err.message);
-    return NextResponse.json({ error: err.message }, { status: 502 });
-  }
+    return NextResponse.json({
+      success: true,
+      result: r.data,
+      ifood: { status: r.status, origem: r.origem, esperado: 201 },
+    });
+  });
 }

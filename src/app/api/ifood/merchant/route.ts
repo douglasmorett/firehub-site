@@ -1,41 +1,45 @@
 /**
- * /api/ifood/merchant/route.ts
- * Cenário 1 — Informações da Loja
- *   GET → lista todas as lojas do integrador + detalhes + status
+ * /api/ifood/merchant
+ * Cenário 1 da homologação de Merchant: as lojas vinculadas, os detalhes de uma
+ * delas e a disponibilidade.
+ *
+ * O campo `escopo` existe por um motivo específico: sem o módulo Merchant
+ * liberado no aplicativo, `GET /merchants` responde 200 com uma lista VAZIA em
+ * vez de 403. O erro não se anuncia, e já custou dias de diagnóstico procurando
+ * bug onde havia falta de permissão. Aqui isso é dito em voz alta.
  */
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { ifoodFetch, getMerchantIdForUser } from "@/lib/ifood-api";
+import { NextRequest, NextResponse } from "next/server";
+import { comContextoIfood } from "@/lib/ifood-rota";
+import { chamarComContexto } from "@/lib/ifood-http";
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+export async function GET(req: NextRequest) {
+  return comContextoIfood(req, async ({ ctx }) => {
+    const merchantId = ctx.merchantId;
 
-  try {
-    const email = session.user?.email || "";
-    const merchantId = await getMerchantIdForUser(email);
+    const [detalhe, disponibilidade, lista] = await Promise.all([
+      chamarComContexto(ctx, `/merchant/v1.0/merchants/${merchantId}`),
+      chamarComContexto(ctx, `/merchant/v1.0/merchants/${merchantId}/status`),
+      chamarComContexto(ctx, `/merchant/v1.0/merchants`),
+    ]);
 
-    // 1. Detalhes da loja
-    const detailRes = await ifoodFetch(`/merchant/v1.0/merchants/${merchantId}`);
-    const detail    = detailRes.ok ? await detailRes.json() : null;
-
-    // 2. Status de disponibilidade
-    const statusRes = await ifoodFetch(`/merchant/v1.0/merchants/${merchantId}/status`);
-    const status    = statusRes.ok ? await statusRes.json() : null;
-
-    // 3. Lista de lojas vinculadas ao integrador
-    const listRes = await ifoodFetch(`/merchant/v1.0/merchants`);
-    const list    = listRes.ok ? await listRes.json() : [];
+    const listaVazia = lista.ok && Array.isArray(lista.data) && lista.data.length === 0;
 
     return NextResponse.json({
       merchantId,
-      detail,
-      status,
-      list: Array.isArray(list) ? list : [list].filter(Boolean),
+      loja: ctx.label ?? null,
+      // Nomes preservados: a tela de homologação já lê estes campos.
+      detail: detalhe.data ?? null,
+      status: disponibilidade.data ?? null,
+      list: Array.isArray(lista.data) ? lista.data : [lista.data].filter(Boolean),
+      ifood: {
+        origem: detalhe.origem,
+        detalhe: detalhe.status,
+        disponibilidade: disponibilidade.status,
+        lista: lista.status,
+      },
+      escopo: listaVazia
+        ? "O iFood devolveu a lista de lojas vazia. Normalmente isso quer dizer que o módulo Merchant não está liberado para este aplicativo — peça o acesso em Permissões, no Portal do Desenvolvedor."
+        : null,
     });
-  } catch (err: any) {
-    console.error("[iFood Merchant]", err.message);
-    return NextResponse.json({ error: err.message }, { status: 502 });
-  }
+  });
 }

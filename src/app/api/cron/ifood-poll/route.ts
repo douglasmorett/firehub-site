@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     // Poll events do app CENTRALIZADO
     let events: any[] = [];
     if (token) {
-      const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+      const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true", {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
 
           distribuido.lojas++;
 
-          const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
+          const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true", {
             headers: {
               Authorization: `Bearer ${tokenLoja}`,
               "x-polling-merchants": loja.ifoodMerchantId as string,

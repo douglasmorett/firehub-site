@@ -15,6 +15,7 @@
  */
 import { prisma } from "./prisma";
 import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
+import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 
 export type ResultadoEventos = {
   created: number;
@@ -61,6 +62,21 @@ export async function processarEventosIfood(opts: {
         const isDispute = code === "HSD" || code === "CRR" || code === "DDC" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED" || event.fullCode === "DUE_DATE_CHANGE_REQUESTED";
 
         log.push(`  📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
+
+        // O iFood avisando que ESTE pedido vai exigir código de entrega na porta
+        // do cliente. Sem guardar isso, a tela do entregador não tem como saber
+        // que precisa pedir o código — e "não processa o evento
+        // DELIVERY_DROP_CODE_REQUESTED" está na lista oficial das reprovações
+        // mais comuns da homologação de Logistics.
+        //
+        // Note que o código curto é DDCR, não DDC: este último é a mudança de
+        // previsão de entrega, tratada logo abaixo como disputa.
+        if (ehEventoDeCodigo(event)) {
+          const marcado = await marcarExigeCodigo(prisma, orderId);
+          log.push(`  🔐 Pedido ${orderId} exige código de entrega${marcado ? "" : " (pedido ainda não está no banco)"}`);
+          processedEventIds.push({ id: event.id, orderId, eventType: "DELIVERY_DROP_CODE_REQUESTED" });
+          continue;
+        }
 
         // Handle cancellation or due date change REQUEST (negotiation)
         if (isDispute) {

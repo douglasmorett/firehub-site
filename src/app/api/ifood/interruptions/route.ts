@@ -1,64 +1,62 @@
 /**
- * /api/ifood/interruptions/route.ts
- * Cenário 2 — Interrupção da Loja (Pausas)
- *   GET  → lista pausas ativas
- *   POST → cria uma nova pausa
+ * /api/ifood/interruptions
+ * Cenário 2 — as pausas da loja.
+ *
+ * O status HTTP volta junto porque a homologação é avaliada por ele: criar uma
+ * pausa tem que responder 201, e o analista precisa ver isso durante o vídeo.
+ * Criar uma pausa em cima de outra tem que responder 409 InterruptionOverlap —
+ * caso que eles testam de propósito.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { ifoodFetch, ifoodMutate, getMerchantIdForUser } from "@/lib/ifood-api";
+import { comContextoIfood } from "@/lib/ifood-rota";
+import { chamarComContexto, mensagemDeErro } from "@/lib/ifood-http";
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+export async function GET(req: NextRequest) {
+  return comContextoIfood(req, async ({ ctx }) => {
+    const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/interruptions`);
 
-  try {
-    const email = session.user?.email || "";
-    const merchantId = await getMerchantIdForUser(email);
-    const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/interruptions`);
-
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: `iFood ${res.status}: ${err}` }, { status: res.status });
+    if (!r.ok) {
+      return NextResponse.json(
+        { error: mensagemDeErro(r), ifood: { status: r.status, origem: r.origem } },
+        { status: r.status === 0 ? 502 : r.status },
+      );
     }
 
-    const data = await res.json();
-    return NextResponse.json(Array.isArray(data) ? data : data?.interruptions ?? []);
-  } catch (err: any) {
-    console.error("[iFood Interruptions GET]", err.message);
-    return NextResponse.json({ error: err.message }, { status: 502 });
-  }
+    const lista = Array.isArray(r.data) ? r.data : ((r.data as any)?.interruptions ?? []);
+    // A tela antiga espera o array puro; o resto vem em campos extras que ela ignora.
+    return NextResponse.json(lista);
+  });
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-
-  try {
-    const body = await req.json();
-    const { description, start, end } = body;
-
+  return comContextoIfood(req, async ({ ctx, corpo }) => {
+    const { description, start, end } = corpo ?? {};
     if (!start || !end) {
-      return NextResponse.json({ error: "start e end são obrigatórios (ISO 8601)" }, { status: 400 });
+      return NextResponse.json({ error: "Informe o início e o fim da pausa." }, { status: 400 });
     }
 
-    const email = session.user?.email || "";
-    const merchantId = await getMerchantIdForUser(email);
-    const res = await ifoodMutate(`/merchant/v1.0/merchants/${merchantId}/interruptions`, {
+    const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/interruptions`, {
       method: "POST",
       body: JSON.stringify({ description: description || "Pausa temporária", start, end }),
     });
 
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      return NextResponse.json({ error: `iFood ${res.status}`, details: data }, { status: res.status });
+    if (!r.ok) {
+      return NextResponse.json(
+        {
+          error: r.status === 409
+            ? "Já existe uma pausa nesse intervalo (InterruptionOverlap)."
+            : mensagemDeErro(r),
+          ifood: { status: r.status, origem: r.origem },
+          details: r.data ?? r.texto?.slice(0, 300),
+        },
+        { status: r.status === 0 ? 502 : r.status },
+      );
     }
 
-    return NextResponse.json({ success: true, interruption: data });
-  } catch (err: any) {
-    console.error("[iFood Interruptions POST]", err.message);
-    return NextResponse.json({ error: err.message }, { status: 502 });
-  }
+    return NextResponse.json({
+      success: true,
+      interruption: r.data,
+      ifood: { status: r.status, origem: r.origem, esperado: 201 },
+    });
+  });
 }
