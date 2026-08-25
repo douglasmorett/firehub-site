@@ -375,6 +375,61 @@ export default function MenuProductManager({
     moveReorderItem(idx, reorderList.length - 1);
   };
 
+  // ─── ARRASTAR PARA REORDENAR ────────────────────────────────────────────
+  /**
+   * O que está sendo arrastado agora: em qual das duas listas e em que posição.
+   *
+   * A posição muda DURANTE o arrasto: quando o dedo (ou o mouse) passa por cima
+   * de outra linha, a lista já se reordena de verdade e `idx` acompanha o item.
+   * É o que faz a lista se mexer embaixo do dedo em vez de só desenhar uma
+   * linha de destino e reordenar no soltar.
+   */
+  const [arrasto, setArrasto] = useState<{ lista: "categoria" | "produto"; idx: number } | null>(null);
+
+  /**
+   * Enquanto arrasta, os ouvintes ficam na JANELA, não na linha.
+   *
+   * Preso à linha, o arrasto morreria assim que o ponteiro saísse dela — que é
+   * exatamente o que acontece ao arrastar rápido. Na janela, o gesto continua
+   * mesmo com o ponteiro fora de qualquer linha, e só termina no soltar.
+   */
+  useEffect(() => {
+    if (!arrasto) return;
+
+    const chaveAberta = expandedReorderCat;
+
+    const aoMover = (e: PointerEvent) => {
+      const sob = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const linha = sob?.closest("[data-ordem-idx]") as HTMLElement | null;
+      if (!linha) return;
+      if (linha.getAttribute("data-ordem-lista") !== arrasto.lista) return;
+
+      const destino = Number(linha.getAttribute("data-ordem-idx"));
+      if (!Number.isFinite(destino) || destino === arrasto.idx) return;
+
+      if (arrasto.lista === "categoria") {
+        moveReorderItem(arrasto.idx, destino);
+      } else {
+        const cat = reorderList.find(c => (c.name || "").toLowerCase().trim() === chaveAberta);
+        if (!cat) return;
+        moveProductInCat(cat.name, arrasto.idx, destino);
+      }
+      setArrasto({ lista: arrasto.lista, idx: destino });
+    };
+
+    const aoSoltar = () => setArrasto(null);
+
+    window.addEventListener("pointermove", aoMover);
+    window.addEventListener("pointerup", aoSoltar);
+    window.addEventListener("pointercancel", aoSoltar);
+    return () => {
+      window.removeEventListener("pointermove", aoMover);
+      window.removeEventListener("pointerup", aoSoltar);
+      window.removeEventListener("pointercancel", aoSoltar);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrasto, expandedReorderCat, reorderList, reorderProducts]);
+
   const handleSaveReorder = async (listToSave = reorderList) => {
     setSavingReorder(true);
     try {
@@ -2504,248 +2559,308 @@ export default function MenuProductManager({
       })()}
 
       {/* MODAL: REORDENAR CATEGORIAS */}
-      {showReorderModal && (
+      {/* ─── MODAL: REORDENAR CARDÁPIO ─────────────────────────────────────
+          Eram cartões de categoria empilhados numa coluna só, cada um abrindo
+          os produtos dentro de si como sanfona. Com 9 categorias a lista não
+          cabia — e como o contêiner era `flex-direction: column` com
+          `overflow-y: auto` SEM `flex-shrink: 0` nos filhos, os cartões eram
+          espremidos abaixo da altura natural: o texto de um vazava por cima do
+          outro e a tela ficava ilegível.
+
+          Agora são duas colunas: a barra de categorias à esquerda e, ao clicar
+          numa delas, os produtos daquela categoria ao lado. Cada coluna rola
+          por conta própria, e as linhas não encolhem mais.
+
+          Reordenar tem os dois caminhos: as setas, e arrastar segurando a alça
+          — que funciona com mouse e com o dedo, porque usa Pointer Events. */}
+      {showReorderModal && (() => {
+        const chaveSelecionada =
+          expandedReorderCat ?? (reorderList[0] ? (reorderList[0].name || "").toLowerCase().trim() : null);
+        const catSelecionada = reorderList.find(
+          c => (c.name || "").toLowerCase().trim() === chaveSelecionada
+        );
+        // Amarrado à categoria ENCONTRADA, não só à chave: se a categoria for
+        // renomeada ou removida com o modal aberto, a chave continua apontando
+        // para produtos que não têm mais dona — e as setas chamariam
+        // `catSelecionada.name` num undefined.
+        const produtosDaCat = catSelecionada && chaveSelecionada ? (reorderProducts[chaveSelecionada] || []) : [];
+
+        const estiloAlca = {
+          display: "flex", alignItems: "center", justifyContent: "center",
+          width: "26px", height: "26px", flexShrink: 0,
+          borderRadius: "7px", border: "1px solid #E2E8F0", background: "#F8FAFC",
+          color: "#94A3B8", cursor: "grab",
+          // Sem isto o navegador entende o gesto como rolagem e o arrasto nunca
+          // começa num tablet.
+          touchAction: "none" as const,
+        };
+
+        const estiloSeta = (desativada: boolean) => ({
+          padding: "4px 6px", borderRadius: "6px", border: "1px solid #CBD5E1",
+          background: "#FFF", cursor: desativada ? "not-allowed" : "pointer",
+          opacity: desativada ? 0.3 : 1, display: "flex", alignItems: "center",
+        });
+
+        return (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.75)", backdropFilter: "blur(8px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-          <div style={{ background: "#FFFFFF", borderRadius: "24px", width: "100%", maxWidth: "700px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.35)", position: "relative", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-            <button onClick={() => setShowReorderModal(false)} style={{ position: "absolute", top: "1.25rem", right: "1.25rem", background: "#F1F5F9", border: "none", borderRadius: "50%", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#64748B" }}>
+          <div style={{ background: "#FFFFFF", borderRadius: "24px", width: "100%", maxWidth: "980px", height: "min(88vh, 780px)", padding: "1.5rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.35)", position: "relative", display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <style>{`
+              .reordenar-corpo {
+                display: grid;
+                grid-template-columns: 300px 1fr;
+                gap: 12px;
+                flex: 1;
+                min-height: 0;
+              }
+              .reordenar-coluna {
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+                border: 1.5px solid #E2E8F0;
+                border-radius: 14px;
+                overflow: hidden;
+                background: #FFF;
+              }
+              .reordenar-lista {
+                flex: 1;
+                min-height: 0;
+                overflow-y: auto;
+                padding: 8px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                /* Arrastar com o mouse selecionaria o texto das linhas pelo
+                   caminho, pintando a lista de azul enquanto o gesto acontece —
+                   parece defeito. Numa lista que só serve para ordenar, não há
+                   nada para selecionar. */
+                user-select: none;
+                -webkit-user-select: none;
+              }
+              /* Duas colunas não cabem em tablet retrato: vira uma só, cada
+                 metade com altura própria para as duas continuarem visíveis. */
+              @media (max-width: 860px) {
+                .reordenar-corpo { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+              }
+              /* 44px é o alvo de toque recomendado — o mesmo que a tela de mesas
+                 já adota. Setas de 24px são impossíveis de acertar com o dedo. */
+              @media (pointer: coarse) {
+                .reordenar-lista button { min-height: 44px; }
+              }
+            `}</style>
+
+            <button onClick={() => setShowReorderModal(false)} style={{ position: "absolute", top: "1.1rem", right: "1.1rem", background: "#F1F5F9", border: "none", borderRadius: "50%", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#64748B", zIndex: 2 }}>
               <X size={18} />
             </button>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "0.5rem" }}>
-              <div style={{ width: "44px", height: "44px", borderRadius: "14px", background: "linear-gradient(135deg, #EDE9FE, #DDD6FE)", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(124,58,237,0.15)" }}>
-                <ArrowUpDown size={22} />
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+              <div style={{ width: "42px", height: "42px", borderRadius: "13px", background: "linear-gradient(135deg, #EDE9FE, #DDD6FE)", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <ArrowUpDown size={21} />
               </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>
-                  ↕️ Reordenar Cardápio (Ordem do Site)
+              <div style={{ minWidth: 0 }}>
+                <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>
+                  Reordenar Cardápio
                 </h3>
-                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#64748B" }}>
-                  Ordene as categorias e, clicando em uma delas, os produtos dentro dela.
+                <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
+                  Arraste pela alça <ArrowUpDown size={11} style={{ verticalAlign: "-1px" }} /> ou use as setas. Clique numa categoria para ordenar o que está dentro dela.
                 </p>
               </div>
             </div>
 
-            {/* BARRA DE ESTATÍSTICAS E AÇÕES RÁPIDAS */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", margin: "0.75rem 0 0.5rem 0", padding: "8px 12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "0.78rem", fontWeight: 700, color: "#475569" }}>
-                <span>📁 {reorderList.length} Categorias</span>
-                <span>•</span>
-                <span>🍔 {products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p)).length} Itens</span>
-                <span>•</span>
-                <span>📦 {products.filter(p => p.isCombo && !isHiddenIntegrationItem(p)).length} Combos</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "0.75rem 0", padding: "7px 12px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0", fontSize: "0.76rem", fontWeight: 700, color: "#475569", flexShrink: 0, flexWrap: "wrap" }}>
+              <span>📁 {reorderList.length} categorias</span>
+              <span>•</span>
+              <span>🍔 {products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p)).length} itens</span>
+              <span>•</span>
+              <span>📦 {products.filter(p => p.isCombo && !isHiddenIntegrationItem(p)).length} combos</span>
+              {categoriasMexidas.size > 0 && (
+                <span style={{ marginLeft: "auto", color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", fontWeight: 900 }}>
+                  {categoriasMexidas.size} {categoriasMexidas.size === 1 ? "categoria alterada" : "categorias alteradas"}
+                </span>
+              )}
+            </div>
+
+            <div className="reordenar-corpo">
+
+              {/* ── Coluna 1: as categorias ── */}
+              <div className="reordenar-coluna">
+                <div style={{ padding: "9px 12px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", fontSize: "0.76rem", fontWeight: 900, color: "#334155", flexShrink: 0 }}>
+                  CATEGORIAS
+                </div>
+                <div className="reordenar-lista">
+                  {reorderList.map((cat, idx) => {
+                    const chave = (cat.name || "").toLowerCase().trim();
+                    const selecionada = chave === chaveSelecionada;
+                    const arrastando = arrasto?.lista === "categoria" && arrasto.idx === idx;
+                    const qtd = (reorderProducts[chave] || []).length;
+
+                    return (
+                      <div
+                        key={cat.id || cat.name}
+                        data-ordem-lista="categoria"
+                        data-ordem-idx={idx}
+                        onClick={() => setExpandedReorderCat(chave)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "7px",
+                          padding: "7px 8px", borderRadius: "10px",
+                          border: selecionada ? "1.5px solid #7C3AED" : "1.5px solid #E2E8F0",
+                          background: selecionada ? "#F5F3FF" : "#FFF",
+                          cursor: "pointer",
+                          // O que faltava: sem isto o flex espreme as linhas
+                          // abaixo da altura natural e um texto vaza sobre o outro.
+                          flexShrink: 0,
+                          opacity: arrastando ? 0.45 : 1,
+                          boxShadow: arrastando ? "0 6px 18px rgba(124,58,237,0.25)" : "none",
+                        }}
+                      >
+                        <span
+                          onPointerDown={e => { e.stopPropagation(); setArrasto({ lista: "categoria", idx }); }}
+                          title="Segure e arraste para mover"
+                          style={estiloAlca}
+                        >
+                          <ArrowUpDown size={13} />
+                        </span>
+
+                        <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#7C3AED", background: "#EDE9FE", padding: "3px 6px", borderRadius: "6px", flexShrink: 0 }}>
+                          {idx + 1}º
+                        </span>
+
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>
+                          {cat.emoji || "🍽️"} {cat.name}
+                          <span style={{ marginLeft: "6px", fontSize: "0.7rem", fontWeight: 600, color: "#94A3B8" }}>
+                            {qtd}
+                          </span>
+                          {categoriasMexidas.has(chave) && (
+                            <span style={{ marginLeft: "5px", fontSize: "0.62rem", fontWeight: 900, color: "#059669", background: "#D1FAE5", padding: "1px 5px", borderRadius: "5px" }}>
+                              ✓
+                            </span>
+                          )}
+                        </span>
+
+                        <div style={{ display: "flex", gap: "3px", flexShrink: 0 }}>
+                          <button type="button" title="Subir 1 posição" disabled={idx === 0}
+                            onClick={e => { e.stopPropagation(); moveReorderItem(idx, idx - 1); }}
+                            style={estiloSeta(idx === 0)}>
+                            <ArrowUp size={13} />
+                          </button>
+                          <button type="button" title="Descer 1 posição" disabled={idx === reorderList.length - 1}
+                            onClick={e => { e.stopPropagation(); moveReorderItem(idx, idx + 1); }}
+                            style={estiloSeta(idx === reorderList.length - 1)}>
+                            <ArrowDown size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── Coluna 2: os produtos da categoria escolhida ── */}
+              <div className="reordenar-coluna">
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 12px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", flexShrink: 0, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "#334155", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {catSelecionada ? `${catSelecionada.emoji || "🍽️"} ${(catSelecionada.name || "").toUpperCase()}` : "SELECIONE UMA CATEGORIA"}
+                  </span>
+                  {catSelecionada && produtosDaCat.length > 0 && (
+                    <>
+                      <span style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>
+                        {produtosDaCat.length} {produtosDaCat.length === 1 ? "produto" : "produtos"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => resetProductOrder(catSelecionada.name)}
+                        title="Voltar à ordem alfabética"
+                        style={{ marginLeft: "auto", padding: "4px 10px", borderRadius: "7px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "0.7rem", fontWeight: 800, color: "#64748B", cursor: "pointer" }}
+                      >
+                        A→Z
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <div className="reordenar-lista">
+                  {!catSelecionada && (
+                    <p style={{ margin: "auto", fontSize: "0.82rem", color: "#94A3B8", textAlign: "center" }}>
+                      Clique numa categoria ao lado.
+                    </p>
+                  )}
+                  {catSelecionada && produtosDaCat.length === 0 && (
+                    <p style={{ margin: "auto", fontSize: "0.82rem", color: "#94A3B8", textAlign: "center" }}>
+                      Nenhum produto nesta categoria.
+                    </p>
+                  )}
+
+                  {produtosDaCat.map((prod, pIdx) => {
+                    const arrastando = arrasto?.lista === "produto" && arrasto.idx === pIdx;
+                    return (
+                      <div
+                        key={prod.id}
+                        data-ordem-lista="produto"
+                        data-ordem-idx={pIdx}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "8px",
+                          padding: "6px 8px", background: "#FFF",
+                          border: "1.5px solid #E9E5F8", borderRadius: "10px",
+                          flexShrink: 0,
+                          opacity: arrastando ? 0.45 : 1,
+                          boxShadow: arrastando ? "0 6px 18px rgba(124,58,237,0.25)" : "none",
+                        }}
+                      >
+                        <span
+                          onPointerDown={() => setArrasto({ lista: "produto", idx: pIdx })}
+                          title="Segure e arraste para mover"
+                          style={estiloAlca}
+                        >
+                          <ArrowUpDown size={13} />
+                        </span>
+
+                        <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#6D28D9", minWidth: "24px", flexShrink: 0 }}>
+                          {pIdx + 1}º
+                        </span>
+
+                        {prod.imageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={prod.imageUrl} alt="" style={{ width: "28px", height: "28px", borderRadius: "7px", objectFit: "cover", flexShrink: 0 }} />
+                        )}
+
+                        <span style={{ flex: 1, minWidth: 0, fontSize: "0.83rem", fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {prod.name}
+                          {prod.isCombo && (
+                            <span style={{ marginLeft: "6px", fontSize: "0.62rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "1px 5px", borderRadius: "5px" }}>
+                              COMBO
+                            </span>
+                          )}
+                        </span>
+
+                        <div style={{ display: "flex", gap: "3px", flexShrink: 0 }}>
+                          <button type="button" title="Mover para o topo" disabled={pIdx === 0}
+                            onClick={() => moveProductInCat(catSelecionada.name, pIdx, 0)}
+                            style={estiloSeta(pIdx === 0)}>
+                            <ChevronsUp size={13} />
+                          </button>
+                          <button type="button" title="Subir 1 posição" disabled={pIdx === 0}
+                            onClick={() => moveProductInCat(catSelecionada.name, pIdx, pIdx - 1)}
+                            style={estiloSeta(pIdx === 0)}>
+                            <ArrowUp size={13} />
+                          </button>
+                          <button type="button" title="Descer 1 posição" disabled={pIdx === produtosDaCat.length - 1}
+                            onClick={() => moveProductInCat(catSelecionada.name, pIdx, pIdx + 1)}
+                            style={estiloSeta(pIdx === produtosDaCat.length - 1)}>
+                            <ArrowDown size={13} />
+                          </button>
+                          <button type="button" title="Mover para o fim" disabled={pIdx === produtosDaCat.length - 1}
+                            onClick={() => moveProductInCat(catSelecionada.name, pIdx, produtosDaCat.length - 1)}
+                            style={estiloSeta(pIdx === produtosDaCat.length - 1)}>
+                            <ChevronsDown size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* LISTA SCROLLÁVEL DE CATEGORIAS */}
-            <div style={{ margin: "0.5rem 0", display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", flex: 1, paddingRight: "4px" }}>
-              {reorderList.map((cat, idx) => {
-                const catProds = products.filter(p => (p.category || "").toLowerCase().trim() === cat.name.toLowerCase().trim() && !isHiddenIntegrationItem(p));
-                const itemsCount = catProds.filter(p => !p.isCombo).length;
-                const combosCount = catProds.filter(p => p.isCombo).length;
-
-                return (
-                  <div
-                    key={cat.id || cat.name}
-                    style={{
-                      background: "#FFFFFF",
-                      borderRadius: "14px",
-                      border: "1.5px solid #E2E8F0",
-                      overflow: "hidden",
-                      boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
-                    }}
-                  >
-                    {/* Linha principal da Categoria */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "10px 14px",
-                        background: "#F8FAFC",
-                        borderBottom: "none",
-                        gap: "10px",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flex: 1 }}>
-                        <span style={{ fontSize: "0.82rem", fontWeight: 900, color: "#7C3AED", background: "#EDE9FE", padding: "4px 8px", borderRadius: "8px", minWidth: "32px", textAlign: "center" }}>
-                          {idx + 1}º
-                        </span>
-                        <div style={{ minWidth: 0 }}>
-                          <span style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0F172A" }}>
-                            {cat.emoji || "🍽️"} {cat.name}
-                          </span>
-                          <span style={{ marginLeft: "8px", fontSize: "0.75rem", fontWeight: 600, color: "#64748B" }}>
-                            ({catProds.length} {catProds.length === 1 ? "produto" : "produtos"}{itemsCount > 0 ? ` • ${itemsCount} itens` : ""}{combosCount > 0 ? ` • ${combosCount} combos` : ""})
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Botões de Reordenação */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <button
-                          type="button"
-                          onClick={() => moveReorderToTop(idx)}
-                          disabled={idx === 0}
-                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1, fontSize: "0.72rem", fontWeight: 700 }}
-                          title="Mover para o Topo"
-                        >
-                          <ChevronsUp size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveReorderItem(idx, idx - 1)}
-                          disabled={idx === 0}
-                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === 0 ? "not-allowed" : "pointer", opacity: idx === 0 ? 0.3 : 1 }}
-                          title="Subir 1 posição"
-                        >
-                          <ArrowUp size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveReorderItem(idx, idx + 1)}
-                          disabled={idx === reorderList.length - 1}
-                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === reorderList.length - 1 ? "not-allowed" : "pointer", opacity: idx === reorderList.length - 1 ? 0.3 : 1 }}
-                          title="Descer 1 posição"
-                        >
-                          <ArrowDown size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveReorderToBottom(idx)}
-                          disabled={idx === reorderList.length - 1}
-                          style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: idx === reorderList.length - 1 ? "not-allowed" : "pointer", opacity: idx === reorderList.length - 1 ? 0.3 : 1, fontSize: "0.72rem", fontWeight: 700 }}
-                          title="Mover para o Fim"
-                        >
-                          <ChevronsDown size={14} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Produtos da categoria — abre ao clicar na barra abaixo */}
-                    {(() => {
-                      const chave = cat.name.toLowerCase().trim();
-                      const listaProds = reorderProducts[chave] || [];
-                      const aberta = expandedReorderCat === chave;
-
-                      if (listaProds.length === 0) return null;
-
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setExpandedReorderCat(aberta ? null : chave)}
-                            style={{
-                              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-                              gap: "6px", padding: "7px", border: "none", borderTop: "1px solid #F1F5F9",
-                              background: aberta ? "#F5F3FF" : "#FFF", cursor: "pointer",
-                              fontSize: "0.76rem", fontWeight: 800,
-                              color: aberta ? "#6D28D9" : "#64748B",
-                            }}
-                          >
-                            {aberta ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
-                            {aberta ? "Fechar" : `Ordenar os ${listaProds.length} produtos desta categoria`}
-                            {categoriasMexidas.has(chave) && (
-                              <span style={{ marginLeft: "4px", fontSize: "0.68rem", fontWeight: 900, color: "#059669", background: "#D1FAE5", padding: "2px 6px", borderRadius: "6px" }}>
-                                alterada
-                              </span>
-                            )}
-                          </button>
-
-                          {aberta && (
-                            <div style={{ padding: "8px 10px 10px", background: "#FBFAFF", borderTop: "1px solid #EDE9FE" }}>
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px", gap: "8px", flexWrap: "wrap" }}>
-                                <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>
-                                  A ordem daqui é a que o cliente vê dentro de <strong>{cat.name}</strong>.
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => resetProductOrder(cat.name)}
-                                  style={{ padding: "3px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", fontSize: "0.68rem", fontWeight: 700, color: "#64748B", cursor: "pointer" }}
-                                  title="Voltar à ordem alfabética"
-                                >
-                                  A→Z
-                                </button>
-                              </div>
-
-                              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                                {listaProds.map((prod, pIdx) => (
-                                  <div
-                                    key={prod.id}
-                                    style={{
-                                      display: "flex", alignItems: "center", gap: "8px",
-                                      padding: "6px 9px", background: "#FFF",
-                                      border: "1px solid #E9E5F8", borderRadius: "9px",
-                                    }}
-                                  >
-                                    <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#6D28D9", minWidth: "26px" }}>
-                                      {pIdx + 1}º
-                                    </span>
-                                    {prod.imageUrl && (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img src={prod.imageUrl} alt="" style={{ width: "26px", height: "26px", borderRadius: "6px", objectFit: "cover", flexShrink: 0 }} />
-                                    )}
-                                    <span style={{ flex: 1, minWidth: 0, fontSize: "0.82rem", fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                      {prod.name}
-                                      {prod.isCombo && (
-                                        <span style={{ marginLeft: "6px", fontSize: "0.65rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "1px 5px", borderRadius: "5px" }}>
-                                          COMBO
-                                        </span>
-                                      )}
-                                    </span>
-
-                                    <div style={{ display: "flex", gap: "3px", flexShrink: 0 }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveProductInCat(cat.name, pIdx, 0)}
-                                        disabled={pIdx === 0}
-                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === 0 ? "not-allowed" : "pointer", opacity: pIdx === 0 ? 0.3 : 1 }}
-                                        title="Mover para o topo da categoria"
-                                      >
-                                        <ChevronsUp size={12} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveProductInCat(cat.name, pIdx, pIdx - 1)}
-                                        disabled={pIdx === 0}
-                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === 0 ? "not-allowed" : "pointer", opacity: pIdx === 0 ? 0.3 : 1 }}
-                                        title="Subir 1 posição"
-                                      >
-                                        <ArrowUp size={12} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveProductInCat(cat.name, pIdx, pIdx + 1)}
-                                        disabled={pIdx === listaProds.length - 1}
-                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === listaProds.length - 1 ? "not-allowed" : "pointer", opacity: pIdx === listaProds.length - 1 ? 0.3 : 1 }}
-                                        title="Descer 1 posição"
-                                      >
-                                        <ArrowDown size={12} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => moveProductInCat(cat.name, pIdx, listaProds.length - 1)}
-                                        disabled={pIdx === listaProds.length - 1}
-                                        style={{ padding: "4px 6px", borderRadius: "5px", border: "1px solid #CBD5E1", background: "#FFF", cursor: pIdx === listaProds.length - 1 ? "not-allowed" : "pointer", opacity: pIdx === listaProds.length - 1 ? 0.3 : 1 }}
-                                        title="Mover para o fim da categoria"
-                                      >
-                                        <ChevronsDown size={12} />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={{ display: "flex", gap: "10px", marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0" }}>
+            <div style={{ display: "flex", gap: "10px", marginTop: "0.9rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0", flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => setShowReorderModal(false)}
@@ -2771,7 +2886,8 @@ export default function MenuProductManager({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* MODAL: RENOMEAR CATEGORIA */}
       {editingCat && (
