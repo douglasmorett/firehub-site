@@ -45,9 +45,26 @@ export function checkRateLimit(
   return { allowed: true, remaining, resetIn };
 }
 
-/** Helper para extrair IP do request */
+/**
+ * Origem da requisição, para contagem de rate limit.
+ *
+ * Lia o PRIMEIRO endereço de X-Forwarded-For — que é justamente o que o cliente
+ * escreve. Bastava mandar um X-Forwarded-For inventado e diferente a cada
+ * requisição para cair sempre num balde novo: todo limite construído sobre isso
+ * era contornável com um cabeçalho.
+ *
+ * A ordem agora é: cabeçalho que o próprio proxy escreve primeiro; e, no
+ * encadeamento, o ÚLTIMO salto — o que o proxy mais próximo anexou — em vez do
+ * primeiro, que veio de fora.
+ */
 export function getClientIp(req: Request): string {
+  const direto = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip");
+  if (direto) return direto.trim();
+
   const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip") || "unknown";
+  if (forwarded) {
+    const saltos = forwarded.split(",").map(s => s.trim()).filter(Boolean);
+    if (saltos.length) return saltos[saltos.length - 1];
+  }
+  return "unknown";
 }

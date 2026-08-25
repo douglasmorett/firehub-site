@@ -3,6 +3,12 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
 import { decode } from "next-auth/jwt";
+import {
+  verificarFreioDeLogin,
+  registrarFalhaDeLogin,
+  limparFreioDeLogin,
+  origemDaRequisicao,
+} from "./login-throttle";
 
 if (!process.env.NEXTAUTH_SECRET) {
   throw new Error('NEXTAUTH_SECRET environment variable is not defined. Please set it in your .env file.');
@@ -53,6 +59,27 @@ export const authOptions: NextAuthOptions = {
         const emailInput = credentials.email.trim();
         const wantsAmbassador = credentials.isAmbassador === "true" || credentials.loginType === "ambassador";
 
+        // ── Freio de força bruta ────────────────────────────────────────────
+        //
+        // Este login não tinha limite nenhum de tentativas: um robô testava
+        // senhas contra a conta de um lojista o quanto quisesse. A trava conta
+        // por e-mail — que é o que o atacante precisa manter fixo para invadir
+        // uma conta específica — e não só por IP, que ele troca a cada envio.
+        //
+        // A verificação vem ANTES do bcrypt.compare de propósito: durante o
+        // bloqueio, nem a senha certa entra. Um bloqueio que abre para quem
+        // acertou é exatamente o que o robô está procurando.
+        const origem = origemDaRequisicao(req?.headers as any);
+        const freio = verificarFreioDeLogin(emailInput, origem);
+        if (freio.bloqueado) {
+          const minutos = Math.ceil(freio.esperarSegundos / 60);
+          throw new Error(
+            minutos > 1
+              ? `Muitas tentativas de login. Tente novamente em ${minutos} minutos.`
+              : "Muitas tentativas de login. Tente novamente em 1 minuto."
+          );
+        }
+
         // Se veio do portal do embaixador, prioriza a busca na tabela Ambassador
         if (wantsAmbassador) {
           const ambassador = await prisma.ambassador.findFirst({
@@ -61,6 +88,7 @@ export const authOptions: NextAuthOptions = {
           if (ambassador && ambassador.password) {
             const ambPasswordMatch = await bcrypt.compare(credentials.password.trim(), ambassador.password);
             if (ambPasswordMatch) {
+              limparFreioDeLogin(emailInput);
               return {
                 id: ambassador.id,
                 name: ambassador.name,
@@ -72,6 +100,7 @@ export const authOptions: NextAuthOptions = {
               };
             }
           }
+          registrarFalhaDeLogin(emailInput, origem);
           return null;
         }
 
@@ -85,6 +114,7 @@ export const authOptions: NextAuthOptions = {
         if (user) {
           const passwordMatch = await bcrypt.compare(credentials.password.trim(), user.password);
           if (passwordMatch) {
+            limparFreioDeLogin(emailInput);
             return {
               id: user.id,
               name: user.name,
@@ -104,6 +134,7 @@ export const authOptions: NextAuthOptions = {
         if (fallbackAmbassador && fallbackAmbassador.password) {
           const ambPasswordMatch = await bcrypt.compare(credentials.password.trim(), fallbackAmbassador.password);
           if (ambPasswordMatch) {
+            limparFreioDeLogin(emailInput);
             return {
               id: fallbackAmbassador.id,
               name: fallbackAmbassador.name,
@@ -116,6 +147,9 @@ export const authOptions: NextAuthOptions = {
           }
         }
 
+        // Chegou aqui: e-mail inexistente ou senha errada. As duas contam igual,
+        // porque distinguir uma da outra já entrega quais e-mails têm conta.
+        registrarFalhaDeLogin(emailInput, origem);
         return null;
       }
     })
