@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
+import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface TableItem {
@@ -298,8 +299,17 @@ export default function MesasPage() {
             return HIDDEN_CATS.has((p.category || "").toUpperCase().trim());
           };
 
+          // Adicionais e sabores são MenuProduct de R$ 0,00 que existem só para
+          // preencher a pergunta do combo. Viravam card no cardápio do garçom.
+          const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(data);
+
           const items = data
             .filter((p: any) => p.active !== false && !isIntegration(p))
+            // O cadastro tem um interruptor por canal e esta tela era a única
+            // que ignorava o dela: o que a loja desligava para a mesa continuava
+            // aparecendo aqui. Balcão já olha activePDV, totem já olha activeTotem.
+            .filter((p: any) => p.activeGarcom !== false)
+            .filter((p: any) => !soOpcaoDeCombo.has(p.id))
             .map((p: any) => ({
               id: p.id,
               name: p.name,
@@ -790,6 +800,34 @@ export default function MesasPage() {
     return () => clearTimeout(t);
   }, [showCloseModal, serviceFee, useServiceFee, waiterTip, selectedTable?.openSession?.id]);
 
+  // ─── MODAL DE COMBO ───────────────────────────────────────────────────────
+  // Esta página tem DOIS returns: o de lançar pedido e o da grade de mesas. O
+  // modal só era montado no da grade — então, na tela de pedido, tocar num
+  // combo guardava o produto e não desenhava nada. Para o garçom o toque
+  // simplesmente não pegava; o modal só aparecia depois do "Voltar", quando a
+  // grade enfim renderizava. Como constante, ele entra nas duas telas.
+  const modalDeCombo = comboProduct ? (
+    <ComboModal
+      product={comboProduct as any}
+      onClose={() => setComboProduct(null)}
+      onConfirm={(selections, extraSum, qty) => {
+        // O ComboModal devolve { grupoId: { nome: qtd } }; o carrinho das
+        // mesas guarda lista [{ name, quantity }]. Converte preservando a
+        // quantidade escolhida.
+        const lista: { name: string; quantity: number }[] = [];
+        for (const porGrupo of Object.values(selections || {})) {
+          for (const [nome, quantidade] of Object.entries((porGrupo || {}) as Record<string, number>)) {
+            if (Number(quantidade) > 0) lista.push({ name: nome, quantity: Number(quantidade) });
+          }
+        }
+        for (let i = 0; i < Math.max(1, qty || 1); i++) {
+          addToCart(comboProduct, lista, extraSum);
+        }
+        setComboProduct(null);
+      }}
+    />
+  ) : null;
+
   if (loading) {
     return (
       <div style={{
@@ -822,7 +860,7 @@ export default function MesasPage() {
             padding: "14px 20px", background: "#7C3AED",
             display: "flex", alignItems: "center", gap: 12,
           }}>
-            <button onClick={() => { setView("grid"); setCart([]); setMenuSearch(""); setMenuCat("Todos"); }}
+            <button onClick={() => { setView("grid"); setCart([]); setMenuSearch(""); setMenuCat("Todos"); setComboProduct(null); }}
               style={{
                 background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8,
                 color: "#fff", padding: "6px 14px", fontWeight: 700, fontSize: 14, cursor: "pointer",
@@ -1022,6 +1060,8 @@ export default function MesasPage() {
             </div>
           )}
         </div>
+
+        {modalDeCombo}
       </div>
     );
   }
@@ -1934,32 +1974,7 @@ export default function MesasPage() {
         </div>
       )}
 
-      {/* ── MODAL DE COMBO ──────────────────────────────────────────────
-          O componente já era importado (linha 5) e `comboProduct` já era
-          preenchido no clique (handleProductClick), mas o modal NUNCA era
-          renderizado: o garçom clicava num combo e não acontecia nada — o item
-          nem entrava na comanda. */}
-      {comboProduct && (
-        <ComboModal
-          product={comboProduct as any}
-          onClose={() => setComboProduct(null)}
-          onConfirm={(selections, extraSum, qty) => {
-            // O ComboModal devolve { grupoId: { nome: qtd } }; o carrinho das
-            // mesas guarda lista [{ name, quantity }]. Converte preservando a
-            // quantidade escolhida.
-            const lista: { name: string; quantity: number }[] = [];
-            for (const porGrupo of Object.values(selections || {})) {
-              for (const [nome, quantidade] of Object.entries((porGrupo || {}) as Record<string, number>)) {
-                if (Number(quantidade) > 0) lista.push({ name: nome, quantity: Number(quantidade) });
-              }
-            }
-            for (let i = 0; i < Math.max(1, qty || 1); i++) {
-              addToCart(comboProduct, lista, extraSum);
-            }
-            setComboProduct(null);
-          }}
-        />
-      )}
+      {modalDeCombo}
     </div>
   );
 }

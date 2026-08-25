@@ -81,3 +81,50 @@ export function disponivelHoje(availableDays: unknown, hoje = diaDaSemanaEmSaoPa
     return true;
   }
 }
+
+/**
+ * IDs dos produtos que existem SÓ para ser opção dentro de um combo.
+ *
+ * "4 Nuggets", "Adicional de Catupiry", "Adicional carne seca": para o banco
+ * são MenuProduct como qualquer outro, porque é assim que um ComboGroupItem
+ * aponta para eles. Mas ninguém vende um "Adicional de Catupiry" avulso — ele
+ * só faz sentido dentro da pergunta do combo que o oferece.
+ *
+ * Sem esta regra eles apareciam como card no cardápio do garçom, todos a
+ * R$ 0,00, empurrando o cardápio de verdade para baixo. Pior: lançar um deles
+ * somava zero na comanda — o garçom achava que tinha lançado o adicional e o
+ * cliente levava de graça.
+ *
+ * Três condições, e as três importam:
+ *   1. alguém o usa como opção de combo;
+ *   2. ele não tem grupos próprios — senão seria um combo vendável, e há
+ *      combo de preço base R$ 0,00 cujo valor inteiro está nas opções (o
+ *      "Nugget" da Hakim). Esse precisa continuar à venda;
+ *   3. o preço próprio é zero — quem tem preço se vende sozinho, como a
+ *      "Coca 500ml" que é item de cardápio E opção de combo.
+ *
+ * Recebe a lista COMPLETA do cardápio: quem é opção só se descobre olhando os
+ * combos dos outros.
+ */
+export function idsSoDeOpcaoDeCombo(produtos: any[]): Set<string> {
+  const usadosComoOpcao = new Set<string>();
+  for (const p of produtos || []) {
+    for (const grupo of p?.comboGroups || []) {
+      for (const item of grupo?.items || []) {
+        const id = item?.menuProduct?.id ?? item?.menuProductId;
+        if (id) usadosComoOpcao.add(String(id));
+      }
+    }
+  }
+
+  const soOpcao = new Set<string>();
+  if (usadosComoOpcao.size === 0) return soOpcao;
+
+  for (const p of produtos || []) {
+    if (!p?.id || !usadosComoOpcao.has(String(p.id))) continue;
+    if ((p.comboGroups || []).length > 0) continue;
+    if ((Number(p.price) || 0) > 0) continue;
+    soOpcao.add(String(p.id));
+  }
+  return soOpcao;
+}
