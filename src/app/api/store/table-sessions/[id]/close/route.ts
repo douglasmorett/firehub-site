@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 
 export async function POST(
   req: NextRequest,
@@ -59,10 +60,21 @@ export async function POST(
     // dinheiro é comum), mas falta não.
     const centavos = (n: number) => Math.round((Number(n) || 0) * 100);
 
-    let totalPaid = 0;
-    if (paymentMethods && Array.isArray(paymentMethods)) {
-      totalPaid = paymentMethods.reduce((sum: number, pm: any) => sum + (Number(pm?.amount) || 0), 0);
-    }
+    // ── QUEM MANDA É O QUE JÁ ESTÁ GRAVADO ────────────────────────────────
+    // As baixas agora são registradas uma a uma enquanto a mesa está aberta
+    // (rota `pagamentos`), então elas sobrevivem a tablet reiniciado e a troca
+    // de garçom. Havendo baixas gravadas, são ELAS que valem: aceitar o corpo
+    // por cima deixaria uma tela desatualizada apagar dinheiro que já entrou.
+    //
+    // O corpo continua valendo quando não há nada gravado — é o caminho de
+    // quem ainda está na tela antiga e o de liberar mesa sem consumo.
+    const jaGravados = lerPagamentos(tableSession.paymentMethods);
+    const pagamentosEfetivos =
+      jaGravados.length > 0
+        ? jaGravados
+        : lerPagamentos(Array.isArray(paymentMethods) ? paymentMethods : []);
+
+    const totalPaid = somarPagamentos(pagamentosEfetivos);
 
     const faltando = centavos(totalAmount) - centavos(totalPaid);
 
@@ -113,7 +125,7 @@ export async function POST(
           serviceFee,
           waiterTip: tipAmount > 0 ? tipAmount : undefined,
           waiterCommission: waiterCommission > 0 ? waiterCommission : undefined,
-          paymentMethods: paymentMethods ? paymentMethods : undefined
+          paymentMethods: pagamentosEfetivos.length > 0 ? (pagamentosEfetivos as any) : undefined
         }
       });
     });

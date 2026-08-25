@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
+import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface TableItem {
@@ -40,7 +41,13 @@ interface SessionOrder {
   totalAmount: number;
   createdAt: string;
   status: string;
-  items: { quantity: number; price: number; menuProduct: { name: string } }[];
+  items: {
+    quantity: number;
+    price: number;
+    menuProduct: { name: string };
+    /** Quem, na mesa, pediu este item. Nulo = lançado para a mesa toda. */
+    tableGuestId?: string | null;
+  }[];
 }
 
 /** Pessoa sentada na mesa. Vira uma coluna da conta na hora de rachar. */
@@ -63,21 +70,6 @@ interface ContaDividida {
     itens: { nome: string; quantidade: number; valor: number }[];
   }[];
   porIgual: number;
-}
-
-/** Uma linha de pagamento: quem pagou, como, e quanto. */
-interface Pagador {
-  uid: string;
-  nome: string;
-  metodo: string;
-  /** Já convertido, é o que vai para o servidor. */
-  valor: number;
-  /**
-   * O que está escrito no campo. Guardado separado porque o valor numérico
-   * não serve de `value`: zero viraria campo vazio e apagaria o "0" de quem
-   * está digitando "0,50"; e "12," some no meio da digitação.
-   */
-  texto: string;
 }
 
 interface SessionDetail {
@@ -227,7 +219,15 @@ export default function MesasPage() {
   const [pessoaAtiva, setPessoaAtiva] = useState<string | null>(null);
   const [conta, setConta] = useState<ContaDividida | null>(null);
   const [carregandoConta, setCarregandoConta] = useState(false);
-  const [pagadores, setPagadores] = useState<Pagador[]>([]);
+  /** Baixas já gravadas no servidor para esta mesa. */
+  const [pagamentosDaMesa, setPagamentosDaMesa] = useState<PagamentoDaMesa[]>([]);
+  /** De quem é o pagamento que está sendo digitado. Nulo = da mesa toda. */
+  const [donoPagamento, setDonoPagamento] = useState<string | null>(null);
+  const [formaPagamento, setFormaPagamento] = useState("Dinheiro");
+  const [valorPagamento, setValorPagamento] = useState("");
+  const [registrandoPagamento, setRegistrandoPagamento] = useState(false);
+  /** Menu de ações da pessoa tocada no painel da mesa. */
+  const [acaoPessoa, setAcaoPessoa] = useState<{ id: string; nome: string } | null>(null);
   const [novaPessoa, setNovaPessoa] = useState("");
   const [renomeando, setRenomeando] = useState<{ id: string; nome: string } | null>(null);
   const [verContaPorPessoa, setVerContaPorPessoa] = useState(true);
@@ -572,9 +572,12 @@ export default function MesasPage() {
   const abrirFechamento = async () => {
     const sessionId = selectedTable?.openSession?.id;
     if (!sessionId) return;
-    setPagadores([]);
     setShowCloseModal(true);
-    await carregarConta(sessionId, useServiceFee ? serviceFee : 0, Number(waiterTip) || 0);
+    setValorPagamento("");
+    await Promise.all([
+      carregarConta(sessionId, useServiceFee ? serviceFee : 0, Number(waiterTip) || 0),
+      carregarPagamentos(sessionId),
+    ]);
   };
 
   const closeSession = async () => {
@@ -593,14 +596,10 @@ export default function MesasPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // Cada linha vira um registro no fechamento: quem pagou, como e
-          // quanto. Antes ia sempre `amount: 0`, então a mesa fechava sem
-          // registro nenhum de quanto realmente entrou no caixa.
-          paymentMethods: pagamentosParaEnviar.map(pg => ({
-            method: pg.metodo,
-            amount: Number(pg.valor.toFixed(2)),
-            payer: pg.nome || undefined,
-          })),
+          // As baixas já estão gravadas na mesa, uma a uma. O servidor usa o
+          // que está no banco e ignora esta lista quando há algo lá — mandar
+          // junto só cobre a mesa liberada sem consumo nenhum.
+          paymentMethods: pagamentosDaMesa,
           serviceFeePercent: useServiceFee ? serviceFee : 0,
           waiterTip
         }),
@@ -611,7 +610,9 @@ export default function MesasPage() {
         setSelectedTable(null);
         setSessionDetail(null);
         setWaiterTip(0);
-        setPagadores([]);
+        setPagamentosDaMesa([]);
+        setDonoPagamento(null);
+        setValorPagamento("");
         setConta(null);
         setView("grid");
         await fetchTables();
@@ -626,30 +627,82 @@ export default function MesasPage() {
     }
   };
 
-  // ─── Pagadores ────────────────────────────────────────────────────────────
-  const novoPagador = (nome: string, valor: number, metodo = "Dinheiro"): Pagador => ({
-    uid: `${nome}-${valor}-${Math.random().toString(36).slice(2, 8)}`,
-    nome, metodo, valor,
-    texto: valor > 0 ? valor.toFixed(2).replace(".", ",") : "",
-  });
+  // ─── PAGAMENTOS DA MESA ───────────────────────────────────────────────────
+  // Cada baixa é gravada no servidor no instante em que o garçom registra. As
+  // linhas viviam só nesta tela e iam todas juntas no fechamento: fechar o
+  // modal, o tablet reiniciar ou outro garçom assumir a mesa apagava o que já
+  // tinha entrado, e a única cópia era a memória de quem estava lá.
 
-  const alterarPagador = (uid: string, campo: "nome" | "metodo", valor: string) => {
-    setPagadores(prev => prev.map(pg => pg.uid === uid ? { ...pg, [campo]: valor } : pg));
-  };
-
-  /** Vírgula é o separador que o teclado brasileiro entrega. */
-  const alterarValorDoPagador = (uid: string, texto: string) => {
+  /** "12,5" vira 12.5. Vírgula é o separador que o teclado brasileiro entrega. */
+  const lerValorDigitado = (texto: string) => {
     const limpo = [...texto].filter(c => (c >= "0" && c <= "9") || c === "," || c === ".").join("");
 
-    // Se tem vírgula, ela é o decimal e o ponto é separador de milhar
+    // Com vírgula, ela é o decimal e o ponto é separador de milhar
     // ("1.234,50"). Sem vírgula, o ponto é o decimal — que é o que sai do
     // teclado numérico de um notebook.
     const normalizado = limpo.includes(",")
       ? limpo.split(".").join("").split(",").join(".")
       : limpo;
 
-    const valor = Number(normalizado) || 0;
-    setPagadores(prev => prev.map(pg => pg.uid === uid ? { ...pg, texto: limpo, valor } : pg));
+    return Number(normalizado) || 0;
+  };
+
+  const paraCampo = (v: number) => (v > 0 ? v.toFixed(2).replace(".", ",") : "");
+
+  const carregarPagamentos = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetch(`/api/store/table-sessions/${sessionId}/pagamentos`);
+      if (res.ok) {
+        const data = await res.json();
+        setPagamentosDaMesa(Array.isArray(data.pagamentos) ? data.pagamentos : []);
+      }
+    } catch { /* silencioso: a tela continua com o que já tinha */ }
+  }, []);
+
+  const registrarPagamento = async () => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!sessionId) return;
+
+    const valor = lerValorDigitado(valorPagamento);
+    if (valor <= 0) { showToast("⚠️ Informe quanto foi recebido"); return; }
+
+    setRegistrandoPagamento(true);
+    try {
+      const res = await fetch(`/api/store/table-sessions/${sessionId}/pagamentos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ valor, metodo: formaPagamento, guestId: donoPagamento }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPagamentosDaMesa(data.pagamentos || []);
+        setValorPagamento("");
+        const dono = donoPagamento ? pessoas.find(p => p.id === donoPagamento)?.name : null;
+        showToast(`✅ ${fmt(valor)} de ${dono || "a mesa"} registrado`);
+      } else {
+        showToast(`❌ ${data.mensagem || "Não consegui registrar o pagamento"}`);
+      }
+    } catch {
+      showToast("❌ Erro de conexão");
+    } finally {
+      setRegistrandoPagamento(false);
+    }
+  };
+
+  /** Garçom digita errado. Sem isto, a saída seria fechar com valor que ninguém pagou. */
+  const apagarPagamento = async (uid: string) => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/store/table-sessions/${sessionId}/pagamentos?uid=${encodeURIComponent(uid)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setPagamentosDaMesa(data.pagamentos || []);
+      else showToast(`❌ ${data.mensagem || "Não consegui apagar"}`);
+    } catch {
+      showToast("❌ Erro de conexão");
+    }
   };
 
   const handleProductClick = (item: MenuItem) => {
@@ -796,16 +849,26 @@ export default function MesasPage() {
   const taxaFechamento = useServiceFee ? consumoFechamento * serviceFee / 100 : 0;
   const totalFechamento = consumoFechamento + taxaFechamento + (Number(waiterTip) || 0);
 
-  // Linha vazia não vira pagamento: o garçom abre um campo, desiste, e não
-  // pode sobrar um "R$ 0,00 no Pix" no relatório do caixa.
-  const pagamentosParaEnviar = pagadores.filter(pg => (Number(pg.valor) || 0) > 0);
-  const totalInformado = pagamentosParaEnviar.reduce((s, pg) => s + (Number(pg.valor) || 0), 0);
-  const faltaPagar = Math.max(0, totalFechamento - totalInformado);
-  const troco = Math.max(0, totalInformado - totalFechamento);
+  // O placar sai do que está GRAVADO, não do que está digitado na tela. É a
+  // mesma lista que o servidor confere no fechamento, então a tela nunca
+  // mostra a mesa zerada com o fechamento recusando por diferença.
+  const totalRecebido = pagamentosDaMesa.reduce((soma, p) => soma + (Number(p.amount) || 0), 0);
+  const faltaPagar = Math.max(0, totalFechamento - totalRecebido);
+  const troco = Math.max(0, totalRecebido - totalFechamento);
   // Mesa sem consumo (aberta por engano) fecha sem pagamento nenhum — exigir
-  // uma linha de R$ 0,00 só sujaria o relatório do caixa.
+  // uma baixa de R$ 0,00 só sujaria o relatório do caixa.
   const podeFechar = faltaPagar <= 0.01 &&
-    (pagamentosParaEnviar.length > 0 || totalFechamento <= 0.01);
+    (pagamentosDaMesa.length > 0 || totalFechamento <= 0.01);
+
+  /** Quanto já entrou em nome desta pessoa. */
+  const pagoDaPessoa = (guestId: string) =>
+    pagamentosDaMesa
+      .filter(p => p.guestId === guestId)
+      .reduce((soma, p) => soma + (Number(p.amount) || 0), 0);
+
+  /** O que ainda falta esta pessoa pagar — é o que a mesa vai zerando. */
+  const faltaDaPessoa = (pes: { id: string; aPagar: number }) =>
+    Math.max(0, pes.aPagar - pagoDaPessoa(pes.id));
 
   // Taxa e gorjeta entram no rateio, então mexer nelas muda quanto cada pessoa
   // deve. O debounce evita uma requisição por tecla digitada na gorjeta.
@@ -1370,9 +1433,9 @@ export default function MesasPage() {
                           }}
                         />
                       ) : (
-                        <span onClick={() => setRenomeando({ id: pes.id, nome: pes.name })}
-                          title="Tocar para renomear"
-                          style={{ fontSize: 12, fontWeight: 700, color: "#334155", cursor: "text" }}>
+                        <span onClick={() => setAcaoPessoa({ id: pes.id, nome: pes.name })}
+                          title="Tocar para lançar itens ou receber o pagamento"
+                          style={{ fontSize: 12, fontWeight: 700, color: "#334155", cursor: "pointer" }}>
                           {pes.name}
                           {pes.total > 0 && (
                             <span style={{ color: "#7C3AED", marginLeft: 6 }}>{fmt(pes.total)}</span>
@@ -1435,11 +1498,24 @@ export default function MesasPage() {
                         {fmt(order.totalAmount)}
                       </span>
                     </div>
-                    {order.items.map((item, j) => (
-                      <div key={j} style={{ fontSize: 12, color: "#64748B", paddingLeft: 4 }}>
-                        {item.quantity}x {item.menuProduct.name} — {fmt(item.price * item.quantity)}
-                      </div>
-                    ))}
+                    {order.items.map((item, j) => {
+                      // Pedido lançado antes de existir gente cadastrada na mesa
+                      // não tem dono, e é isso mesmo: ele é da mesa toda.
+                      const dono = item.tableGuestId
+                        ? pessoas.find(p => p.id === item.tableGuestId)
+                        : null;
+                      return (
+                        <div key={j} style={{ fontSize: 12, color: "#64748B", paddingLeft: 4 }}>
+                          {item.quantity}x {item.menuProduct.name} — {fmt(item.price * item.quantity)}
+                          <span style={{
+                            marginLeft: 6, fontSize: 11, fontWeight: 700,
+                            color: item.tableGuestId ? "#0369A1" : "#94A3B8",
+                          }}>
+                            {item.tableGuestId ? `👤 ${dono?.name || "cliente"}` : "🍽️ mesa"}
+                          </span>
+                        </div>
+                      );
+                    })}
                     <div style={{ fontSize: 10, color: "#CBD5E1", marginTop: 4 }}>
                       {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                     </div>
@@ -1685,8 +1761,8 @@ export default function MesasPage() {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span style={{ fontSize: 15, fontWeight: 800, color: "#7C3AED" }}>{fmt(pes.aPagar)}</span>
                               <button
-                                onClick={() => setPagadores(prev => [...prev, novoPagador(pes.nome, pes.aPagar)])}
-                                title="Adicionar como pagante"
+                                onClick={() => { setDonoPagamento(pes.id); setValorPagamento(paraCampo(faltaDaPessoa(pes))); }}
+                                title="Registrar o pagamento desta pessoa"
                                 className="mesa-chip"
                                 style={{
                                   border: "1px solid #DDD6FE", background: "#F5F3FF", color: "#7C3AED",
@@ -1711,9 +1787,26 @@ export default function MesasPage() {
                           )}
                         </div>
                       ))}
+                      {/* O que foi lançado para a mesa, item a item. Só o valor
+                          não bastava: na hora de conferir, alguém sempre pergunta
+                          "que R$ 32 são esses?" — e a resposta tem que estar na tela,
+                          não na memória do garçom. */}
                       {conta.itensDaMesa.valor > 0 && (
-                        <div style={{ padding: "8px 12px", background: "#F8FAFC", fontSize: 11, color: "#64748B", borderTop: "1px solid #F1F5F9" }}>
-                          🍽️ {fmt(conta.itensDaMesa.valor)} lançados sem dono foram divididos igualmente entre as {conta.pessoas.length} pessoas.
+                        <div style={{ padding: "10px 12px", background: "#F8FAFC", borderTop: "1px solid #F1F5F9" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "#475569" }}>🍽️ Lançado para a mesa toda</span>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: "#475569" }}>{fmt(conta.itensDaMesa.valor)}</span>
+                          </div>
+                          {conta.itensDaMesa.itens.length > 0 && (
+                            <div style={{ fontSize: 11, color: "#64748B", marginTop: 4, lineHeight: 1.5 }}>
+                              {conta.itensDaMesa.itens.map((it, j) => (
+                                <div key={j}>{it.quantidade}x {it.nome} — {fmt(it.valor)}</div>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>
+                            Dividido igualmente entre as {conta.pessoas.length} pessoas da mesa.
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1727,102 +1820,143 @@ export default function MesasPage() {
                 </div>
               )}
 
-              {/* ─── Como vai pagar ─── */}
+              {/* ─── Pagamentos recebidos ────────────────────────────────
+                  Uma baixa por vez, gravada na hora. O garçom recebe do
+                  Douglas, registra, a mesa desce; recebe da Isabela, registra,
+                  a mesa desce de novo; e fecha quando zerar. */}
               <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 8 }}>
-                💳 Como vai pagar
-              </div>
-
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-                <button onClick={() => setPagadores([novoPagador("", totalFechamento)])} className="mesa-chip" style={{
-                  padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff",
-                  color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                }}>Um pagante</button>
-
-                {conta && conta.pessoas.length > 0 && (
-                  <button onClick={() => setPagadores(conta.pessoas.map(pes => novoPagador(pes.nome, pes.aPagar)))}
-                    className="mesa-chip" style={{
-                      padding: "8px 12px", borderRadius: 10, border: "1px solid #DDD6FE", background: "#F5F3FF",
-                      color: "#7C3AED", fontSize: 12, fontWeight: 800, cursor: "pointer",
-                    }}>Cada um o que consumiu</button>
+                💳 Pagamentos recebidos
+                {pagamentosDaMesa.length > 0 && (
+                  <span style={{ marginLeft: 6, color: "#16A34A" }}>({fmt(totalRecebido)})</span>
                 )}
-
-                {[2, 3, 4, 5].map(n => (
-                  <button key={n} onClick={() => {
-                    // Divide em centavos e joga a sobra na primeira parte, senão
-                    // R$ 100 em 3 daria 3x R$ 33,33 e faltaria um centavo eterno.
-                    const cent = Math.round(totalFechamento * 100);
-                    const base = Math.floor(cent / n);
-                    setPagadores(Array.from({ length: n }, (_, i) =>
-                      novoPagador("", (base + (i === 0 ? cent - base * n : 0)) / 100)
-                    ));
-                  }} className="mesa-chip" style={{
-                    padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff",
-                    color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                  }}>÷{n}</button>
-                ))}
               </div>
 
-              {pagadores.length === 0 ? (
+              {pagamentosDaMesa.length === 0 ? (
                 <div style={{
-                  textAlign: "center", padding: 18, borderRadius: 12, border: "1.5px dashed #E2E8F0",
+                  textAlign: "center", padding: 14, borderRadius: 12, border: "1.5px dashed #E2E8F0",
                   color: "#94A3B8", fontSize: 13, marginBottom: 12,
                 }}>
-                  Escolha acima como a conta será dividida, ou adicione os pagantes um a um.
+                  Nenhum pagamento registrado ainda.
                 </div>
               ) : (
-                <div style={{ marginBottom: 12 }}>
-                  {pagadores.map(pg => (
-                    <div key={pg.uid} className="mesa-pagador" style={{
-                      display: "flex", gap: 6, alignItems: "center", marginBottom: 8,
+                <div style={{ border: "1px solid #E2E8F0", borderRadius: 12, overflow: "hidden", marginBottom: 12 }}>
+                  {pagamentosDaMesa.map((p, i) => (
+                    <div key={p.uid} style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
+                      borderBottom: i < pagamentosDaMesa.length - 1 ? "1px solid #F1F5F9" : "none",
+                      background: "#F0FDF4",
                     }}>
-                      <input
-                        placeholder="Quem"
-                        value={pg.nome}
-                        onChange={e => alterarPagador(pg.uid, "nome", e.target.value)}
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {p.guestName ? `👤 ${p.guestName}` : "🍽️ Da mesa"}
+                      </span>
+                      <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>{p.method}</span>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: "#15803D" }}>{fmt(p.amount)}</span>
+                      <button
+                        onClick={() => apagarPagamento(p.uid)}
+                        title="Apagar este pagamento"
                         style={{
-                          flex: "1 1 110px", minWidth: 0, padding: "10px 10px", borderRadius: 10,
-                          border: "1px solid #E2E8F0", fontSize: 13, fontFamily: "inherit", outline: "none",
-                        }}
-                      />
-                      <select
-                        value={pg.metodo}
-                        onChange={e => alterarPagador(pg.uid, "metodo", e.target.value)}
-                        style={{
-                          flex: "0 1 110px", padding: "10px 8px", borderRadius: 10, border: "1px solid #E2E8F0",
-                          fontSize: 13, fontFamily: "inherit", background: "#fff", cursor: "pointer",
-                        }}>
-                        {["Dinheiro", "Pix", "Débito", "Crédito", "Voucher"].map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="text" inputMode="decimal"
-                        value={pg.texto}
-                        placeholder="0,00"
-                        onChange={e => alterarValorDoPagador(pg.uid, e.target.value)}
-                        style={{
-                          flex: "0 1 100px", padding: "10px 10px", borderRadius: 10, border: "1px solid #E2E8F0",
-                          fontSize: 14, fontWeight: 700, textAlign: "right", fontFamily: "inherit", outline: "none",
-                        }}
-                      />
-                      <button onClick={() => setPagadores(prev => prev.filter(x => x.uid !== pg.uid))}
-                        title="Remover" style={{
                           border: "none", background: "#FEF2F2", color: "#DC2626", borderRadius: 8,
-                          width: 34, height: 38, fontSize: 14, cursor: "pointer", flexShrink: 0,
+                          width: 30, height: 30, fontSize: 13, cursor: "pointer", flexShrink: 0,
                         }}>✕</button>
                     </div>
                   ))}
                 </div>
               )}
 
-              <button onClick={() => setPagadores(prev => [...prev, novoPagador("", Number(faltaPagar.toFixed(2)))])}
-                style={{
-                  width: "100%", padding: "10px 0", borderRadius: 10, border: "1.5px dashed #A78BFA",
-                  background: "#fff", color: "#7C3AED", fontSize: 13, fontWeight: 800, cursor: "pointer",
-                  fontFamily: "inherit", marginBottom: 4,
-                }}>
-                + Adicionar pagamento{faltaPagar > 0.01 ? ` (${fmt(faltaPagar)})` : ""}
-              </button>
+              {faltaPagar > 0.01 && (
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#475569", marginBottom: 8 }}>
+                    Registrar pagamento — de quem?
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                    <button
+                      onClick={() => { setDonoPagamento(null); setValorPagamento(paraCampo(faltaPagar)); }}
+                      className="mesa-chip"
+                      style={{
+                        padding: "8px 12px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 800,
+                        border: donoPagamento === null ? "2px solid #7C3AED" : "1px solid #E2E8F0",
+                        background: donoPagamento === null ? "#F5F3FF" : "#fff",
+                        color: donoPagamento === null ? "#6D28D9" : "#475569",
+                      }}>
+                      🍽️ A mesa toda
+                    </button>
+
+                    {conta?.pessoas.map(pes => {
+                      const restante = faltaDaPessoa(pes);
+                      const quitada = restante <= 0.01;
+                      const escolhida = donoPagamento === pes.id;
+                      return (
+                        <button
+                          key={pes.id}
+                          onClick={() => { setDonoPagamento(pes.id); setValorPagamento(paraCampo(restante)); }}
+                          className="mesa-chip"
+                          style={{
+                            padding: "8px 12px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 800,
+                            border: escolhida ? "2px solid #7C3AED" : "1px solid #E2E8F0",
+                            background: escolhida ? "#F5F3FF" : quitada ? "#F0FDF4" : "#fff",
+                            color: escolhida ? "#6D28D9" : quitada ? "#15803D" : "#475569",
+                          }}>
+                          👤 {pes.nome} {quitada ? "✓ pago" : fmt(restante)}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <select
+                      value={formaPagamento}
+                      onChange={e => setFormaPagamento(e.target.value)}
+                      style={{
+                        flex: "1 1 110px", padding: "11px 8px", borderRadius: 10, border: "1px solid #E2E8F0",
+                        fontSize: 13, fontFamily: "inherit", background: "#fff", cursor: "pointer",
+                      }}>
+                      {["Dinheiro", "Pix", "Débito", "Crédito", "Voucher"].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={valorPagamento}
+                      placeholder="0,00"
+                      onChange={e => setValorPagamento(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") registrarPagamento(); }}
+                      style={{
+                        flex: "1 1 100px", minWidth: 0, padding: "11px 10px", borderRadius: 10,
+                        border: "1.5px solid #E2E8F0", fontSize: 15, fontWeight: 800, textAlign: "right",
+                        fontFamily: "inherit", outline: "none",
+                      }}
+                    />
+                    <button
+                      onClick={registrarPagamento}
+                      disabled={registrandoPagamento}
+                      style={{
+                        flex: "1 1 120px", padding: "12px 14px", borderRadius: 10, border: "none",
+                        background: "#16A34A", color: "#fff", fontSize: 13, fontWeight: 900,
+                        cursor: registrandoPagamento ? "default" : "pointer", fontFamily: "inherit",
+                        opacity: registrandoPagamento ? 0.6 : 1,
+                      }}>
+                      {registrandoPagamento ? "Registrando..." : "Registrar"}
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, alignSelf: "center" }}>Atalhos:</span>
+                    <button onClick={() => setValorPagamento(paraCampo(faltaPagar))} className="mesa-chip" style={{
+                      padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff",
+                      color: "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    }}>tudo que falta ({fmt(faltaPagar)})</button>
+                    {[2, 3, 4].map(n => (
+                      <button key={n} onClick={() => setValorPagamento(paraCampo(Math.floor((faltaPagar * 100) / n) / 100))}
+                        className="mesa-chip" style={{
+                          padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff",
+                          color: "#475569", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                        }}>÷{n}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ─── Rodapé: o placar do que falta ─── */}
@@ -1835,8 +1969,8 @@ export default function MesasPage() {
                 <span style={{ fontWeight: 700, color: "#334155" }}>{fmt(totalFechamento)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#64748B", marginBottom: 8 }}>
-                <span>Informado ({pagamentosParaEnviar.length} pagamento{pagamentosParaEnviar.length !== 1 ? "s" : ""})</span>
-                <span style={{ fontWeight: 700, color: "#334155" }}>{fmt(totalInformado)}</span>
+                <span>Recebido ({pagamentosDaMesa.length} pagamento{pagamentosDaMesa.length !== 1 ? "s" : ""})</span>
+                <span style={{ fontWeight: 700, color: "#334155" }}>{fmt(totalRecebido)}</span>
               </div>
 
               {faltaPagar > 0.01 ? (
@@ -1853,7 +1987,7 @@ export default function MesasPage() {
                   color: "#15803D", paddingTop: 8, borderTop: "1px solid #BBF7D0", marginBottom: 12,
                 }}>
                   <span>{troco > 0.01 ? "💵 Troco" : "✅ Conta fechada"}</span>
-                  <span>{troco > 0.01 ? fmt(troco) : fmt(totalInformado)}</span>
+                  <span>{troco > 0.01 ? fmt(troco) : fmt(totalRecebido)}</span>
                 </div>
               )}
 
@@ -2001,6 +2135,94 @@ export default function MesasPage() {
       )}
 
       {/* ─── Toast ─── */}
+      {/* ─── O QUE FAZER COM ESTA PESSOA ──────────────────────────────────
+          Dava para cadastrar quem estava na mesa e escrever o nome, e o nome
+          não levava a lugar nenhum: tocar nele só renomeava. A pessoa existia
+          na tela sem servir para nada. Agora o toque abre o que o garçom
+          realmente quer fazer com ela — lançar no nome dela, ou receber. */}
+      {acaoPessoa && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100,
+          display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 12,
+        }} onClick={() => setAcaoPessoa(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "#fff", borderRadius: 20, width: "100%", maxWidth: 460,
+            padding: 16, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            display: "flex", flexDirection: "column", gap: 8,
+          }}>
+            <div style={{ textAlign: "center", paddingBottom: 8, borderBottom: "1px solid #F1F5F9", marginBottom: 4 }}>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#1E293B" }}>👤 {acaoPessoa.nome}</div>
+              <div style={{ fontSize: 12, color: "#94A3B8" }}>
+                Mesa {selectedTable?.number}
+                {(() => {
+                  const p = pessoas.find(x => x.id === acaoPessoa.id);
+                  return p && p.total > 0 ? ` · consumiu ${fmt(p.total)}` : " · ainda não pediu nada";
+                })()}
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setPessoaAtiva(acaoPessoa.id);
+                setAcaoPessoa(null);
+                fetchMenu();
+                setView("order");
+              }}
+              style={{
+                padding: "15px 16px", borderRadius: 12, border: "none", background: "#7C3AED",
+                color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer",
+                fontFamily: "inherit", textAlign: "left",
+              }}>
+              🍽️ Lançar itens para {acaoPessoa.nome}
+            </button>
+
+            <button
+              onClick={() => {
+                setDonoPagamento(acaoPessoa.id);
+                setAcaoPessoa(null);
+                abrirFechamento();
+              }}
+              style={{
+                padding: "15px 16px", borderRadius: 12, border: "1.5px solid #16A34A",
+                background: "#F0FDF4", color: "#15803D", fontSize: 15, fontWeight: 800,
+                cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+              }}>
+              💵 Receber o pagamento de {acaoPessoa.nome}
+            </button>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => { setRenomeando({ id: acaoPessoa.id, nome: acaoPessoa.nome }); setAcaoPessoa(null); }}
+                style={{
+                  flex: 1, padding: "13px 12px", borderRadius: 12, border: "1px solid #E2E8F0",
+                  background: "#fff", color: "#475569", fontSize: 13, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                ✏️ Renomear
+              </button>
+              <button
+                onClick={() => { removerPessoa(acaoPessoa.id); setAcaoPessoa(null); }}
+                style={{
+                  flex: 1, padding: "13px 12px", borderRadius: 12, border: "1px solid #FECACA",
+                  background: "#FEF2F2", color: "#DC2626", fontSize: 13, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                🚪 Tirar da mesa
+              </button>
+            </div>
+
+            <button
+              onClick={() => setAcaoPessoa(null)}
+              style={{
+                padding: "13px 12px", borderRadius: 12, border: "none", background: "#F1F5F9",
+                color: "#64748B", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div style={{
           position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
