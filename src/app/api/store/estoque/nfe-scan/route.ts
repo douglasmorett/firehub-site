@@ -4,8 +4,12 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
 import { trackVisionUsage } from "@/lib/usage-tracker";
+import { lerImagemEnviada } from "@/lib/imagem-enviada";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// A foto da nota é lida do disco (fs), então esta rota precisa do runtime Node.
+export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
@@ -24,15 +28,16 @@ export async function POST(req: Request) {
     const franchiseeId = user.ownerId || user.id;
 
     const { imageUrl } = await req.json();
-    if (!imageUrl) return NextResponse.json({ error: "URL da imagem é obrigatória" }, { status: 400 });
 
-    // Fetch and convert image
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) return NextResponse.json({ error: "Não foi possível baixar a imagem" }, { status: 400 });
-    
-    const arrayBuffer = await imgRes.arrayBuffer();
-    const base64Data = Buffer.from(arrayBuffer).toString("base64");
-    const mimeType = imgRes.headers.get("content-type") || "image/jpeg";
+    // A foto vem do /api/upload, que grava em disco e devolve "/uploads/...".
+    // Fazer fetch dessa URL relativa estourava em "Failed to parse URL" dentro
+    // do undici, e aceitar URL de qualquer host era SSRF (bastava mandar
+    // http://169.254.169.254/). lerImagemEnviada lê o arquivo do disco e recusa
+    // o que não veio do upload deste site.
+    const imagem = await lerImagemEnviada(imageUrl, req);
+    if (!imagem.ok) return NextResponse.json({ error: imagem.erro }, { status: 400 });
+
+    const { base64: base64Data, mimeType } = imagem;
 
     const prompt = `Você é um assistente especialista em leitura de notas fiscais de COMPRA de insumos para restaurantes e estabelecimentos alimentícios.
 

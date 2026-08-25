@@ -34,6 +34,14 @@ const jobs = [
     intervalMs: 5 * 60_000, // 5 minutos — monitora saúde + alerta WhatsApp
   },
   {
+    // De hora em hora só para pegar cedo o insumo que acabou de cair no mínimo.
+    // Quem segura a repetição é a própria rota: um aviso por insumo a cada 24h
+    // e nada fora do horário comercial da loja.
+    name: 'estoque-alerta',
+    path: '/api/cron/estoque-alerta',
+    intervalMs: 60 * 60_000, // 1 hora
+  },
+  {
     name: 'billing-close',
     path: '/api/cron/billing-close',
     intervalMs: 60 * 60_000, // 1 hora (verifica internamente se é dia 1 às 03h)

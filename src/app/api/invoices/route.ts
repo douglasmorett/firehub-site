@@ -3,8 +3,12 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
+import { lerImagemEnviada } from "@/lib/imagem-enviada";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// A foto da nota é lida do disco (fs), então esta rota precisa do runtime Node.
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -21,15 +25,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Buscar a imagem do Vercel Blob
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) {
-      return NextResponse.json({ error: "Não foi possível baixar a imagem. Tente tirar a foto novamente." }, { status: 400 });
+    // O Vercel Blob saiu: hoje o /api/upload grava em disco e devolve uma URL
+    // relativa ("/uploads/invoices/..."), que o fetch do Node recusa com
+    // "Failed to parse URL". Passar a imageUrl crua para o fetch também era
+    // SSRF — um POST com http://169.254.169.254/ fazia o servidor buscar os
+    // metadados da nuvem. lerImagemEnviada lê do disco e recusa host de fora.
+    const imagem = await lerImagemEnviada(imageUrl, req);
+    if (!imagem.ok) {
+      return NextResponse.json({ error: imagem.erro }, { status: 400 });
     }
-    const arrayBuffer = await imgRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64Data = buffer.toString("base64");
-    const mimeType = imgRes.headers.get("content-type") || "image/jpeg";
+    const { base64: base64Data, mimeType } = imagem;
 
     // Enviar para o Gemini
     const prompt = `Você é um assistente ESPECIALISTA em leitura de TODOS os tipos de documentos fiscais brasileiros.

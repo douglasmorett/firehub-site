@@ -315,8 +315,15 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
       // 1. Upload
       const formData = new FormData();
       formData.append("file", file);
-      
-      const uploadRes = await fetch("/api/upload-image", {
+      // "invoices" é uma das pastas permitidas em src/lib/storage.ts, e é onde a
+      // rota de leitura procura o arquivo depois.
+      formData.append("type", "invoice");
+
+      // Era "/api/upload-image", rota que nunca existiu neste projeto (existem
+      // /api/upload e /api/upload-store-image). O 404 fazia o fluxo morrer em
+      // "Falha ao enviar imagem" antes de qualquer leitura — a foto da nota
+      // fiscal nunca chegou a ser processada uma vez sequer.
+      const uploadRes = await fetch("/api/upload", {
         method: "POST",
         body: formData
       });

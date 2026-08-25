@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { GoogleGenAI } from "@google/genai";
+import { lerImagemEnviada } from "@/lib/imagem-enviada";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// A foto do boleto é lida do disco (fs), então esta rota precisa do runtime Node.
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -23,10 +27,17 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const imgRes = await fetch(imageUrl);
-    const arrayBuffer = await imgRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64Data = buffer.toString("base64");
+    // O /api/upload devolve "/uploads/...", uma URL relativa que o fetch do Node
+    // recusa com "Failed to parse URL" — a leitura do boleto por foto nunca
+    // chegava ao Gemini. E o fetch da URL crua era SSRF: bastava mandar
+    // http://169.254.169.254/ para o servidor buscar host interno. Além disso
+    // este fetch nem checava imgRes.ok, então uma página de erro virava base64 e
+    // ia para a IA como se fosse o boleto.
+    const imagem = await lerImagemEnviada(imageUrl, req);
+    if (!imagem.ok) {
+      return NextResponse.json({ error: imagem.erro }, { status: 400 });
+    }
+    const { base64: base64Data, mimeType } = imagem;
 
     const prompt = `Você é um assistente financeiro especialista em ler boletos, faturas e contas a pagar.
 O usuário enviou uma foto de uma conta a pagar. Sua tarefa é extrair as seguintes informações:
@@ -52,7 +63,7 @@ Estrutura:
             {
                 inlineData: {
                     data: base64Data,
-                    mimeType: imgRes.headers.get("content-type") || "image/jpeg"
+                    mimeType
                 }
             }
         ],
