@@ -10,22 +10,35 @@
  * 4. Lojista entra em portal.ifood.com.br/apps/code e digita o userCode
  * 5. Nossa API troca o authorizationCode + verifier pelo accessToken final
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { segredoObrigatorio } from "@/lib/segredos";
+import { appEscolhido, clientIdDoApp, ErroCredencialApp } from "@/lib/ifood-app";
 
 const AUTH_BASE = "https://merchant-api.ifood.com.br/authentication/v1.0";
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-  const clientId = segredoObrigatorio("IFOOD_CLIENT_ID_DISTRIBUTED");
+  // ?app=homologacao gera o código pelo APLICATIVO DE TESTE. A homologação
+  // precisa ser gravada com ele, e o código de ativação de um aplicativo não
+  // serve para outro — gerar pelo app errado dá um código que a loja de teste
+  // aceita e que não autoriza nada de útil.
+  const corpo = await req.json().catch(() => ({}));
+  const app = appEscolhido(
+    new URL(req.url).searchParams.get("app") ?? corpo?.app ?? null,
+  );
 
-  if (!clientId) {
-    return NextResponse.json({ error: "IFOOD_CLIENT_ID_DISTRIBUTED não configurado" }, { status: 500 });
+  let clientId: string;
+  try {
+    clientId = clientIdDoApp(app);
+  } catch (e: any) {
+    if (e instanceof ErroCredencialApp) {
+      return NextResponse.json({ error: e.message, hint: e.hint }, { status: 503 });
+    }
+    throw e;
   }
 
   try {
@@ -69,6 +82,7 @@ export async function POST() {
 
     return NextResponse.json({
       success:  true,
+      app,
       userCode: data.userCode,
       verificationUrl,
       verifier: data.authorizationCodeVerifier,

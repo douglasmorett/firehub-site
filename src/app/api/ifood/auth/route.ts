@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
+import { appEscolhido, credenciaisDoApp, ErroCredencialApp } from "@/lib/ifood-app";
 import { prisma } from "@/lib/prisma";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
@@ -393,14 +394,23 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const clientId     = process.env.IFOOD_CLIENT_ID_DISTRIBUTED;
-  const clientSecret = process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED;
-  if (!clientId || !clientSecret) {
-    console.error("[iFood Auth] IFOOD_CLIENT_ID_DISTRIBUTED / IFOOD_CLIENT_SECRET_DISTRIBUTED ausentes.");
-    return NextResponse.json({
-      error: "Integração iFood indisponível no momento.",
-      hint: "As credenciais do aplicativo não estão configuradas no servidor. Avise o suporte.",
-    }, { status: 503 });
+  // O aplicativo usado na troca precisa ser o MESMO que gerou o código de
+  // ativação — o iFood amarra o authorizationCode ao clientId que o emitiu.
+  // Por isso a escolha vem do corpo da requisição, e não de uma env fixa.
+  const appConexao = appEscolhido(body?.app ?? null);
+  let clientId: string;
+  let clientSecret: string;
+  try {
+    const cred = credenciaisDoApp(appConexao);
+    clientId = cred.clientId;
+    clientSecret = cred.clientSecret;
+    console.log("[iFood Auth] Conectando pelo " + cred.rotulo + ".");
+  } catch (e: any) {
+    if (e instanceof ErroCredencialApp) {
+      console.error("[iFood Auth]", e.message);
+      return NextResponse.json({ error: e.message, hint: e.hint }, { status: 503 });
+    }
+    throw e;
   }
 
   const user = session.user?.email ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;
@@ -616,6 +626,22 @@ export async function POST(req: NextRequest) {
     if (userId) {
       // Garantir registro na tabela de integrações
       try {
+        // O token e as credenciais ficam gravados NA INTEGRAÇÃO, não só no
+        // usuário. Duas razões: numa conta com várias lojas cada uma passa a
+        // ter o seu token em vez de todas dividirem um só; e a renovação
+        // futura usa o clientId/clientSecret do aplicativo que autorizou esta
+        // loja — sem isso, uma loja conectada pelo aplicativo de teste tentaria
+        // renovar com as credenciais de produção e receberia recusa.
+        const credenciaisDaLoja = {
+          accessToken: data.accessToken ?? null,
+          refreshToken: data.refreshToken ?? null,
+          tokenExpiresAt: data.expiresIn
+            ? new Date(Date.now() + (data.expiresIn - 60) * 1000)
+            : null,
+          clientId,
+          clientSecret,
+        };
+
         await prisma.ifoodIntegration.upsert({
           where: { userId_merchantId: { userId, merchantId } },
           create: {
@@ -624,8 +650,9 @@ export async function POST(req: NextRequest) {
             merchantId,
             connected: true,
             active: true,
+            ...credenciaisDaLoja,
           },
-          update: { connected: true, active: true },
+          update: { connected: true, active: true, ...credenciaisDaLoja },
         });
       } catch (e: any) {
         console.warn("[iFood Auth] Aviso ao salvar integracao:", e?.message);

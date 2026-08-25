@@ -63,10 +63,14 @@ export default function IfoodHomologacaoClient({
     }
   };
 
-  const generateActivationCode = async () => {
+  const generateActivationCode = async (app: "producao" | "homologacao" = "producao") => {
     setGenLoading(true); setGenError(""); setGenCode(null); setGenVerifier(null);
     try {
-      const r = await fetch("/api/ifood/auth/code", { method: "POST" });
+      const r = await fetch("/api/ifood/auth/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app }),
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || JSON.stringify(d.details || "Erro"));
       // userCode é o que o lojista digita no portal.ifood.com.br/apps/code
@@ -323,8 +327,24 @@ export default function IfoodHomologacaoClient({
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Gere o código de ativação</p>
                       <p style={{ margin: "0 0 0.75rem", fontSize: "0.78rem", color: "#64748B" }}>Clique abaixo para gerar o código de 8 dígitos e insira no Portal do Parceiro iFood.</p>
-                      <button onClick={generateActivationCode} disabled={genLoading} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit", opacity: genLoading ? 0.7 : 1 }}>
+                      <button onClick={() => generateActivationCode("producao")} disabled={genLoading} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit", opacity: genLoading ? 0.7 : 1 }}>
                         {genLoading ? <><Loader size={15} /> Gerando...</> : "🔑 Gerar Código de Ativação"}
+                      </button>
+                      {/* A homologação tem que ser gravada com o APLICATIVO DE TESTE.
+                          O código de ativação de um aplicativo não serve para outro, então
+                          conectar a loja de teste exige gerar o código por aqui. */}
+                      <button
+                        onClick={() => generateActivationCode("homologacao")}
+                        disabled={genLoading}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 10,
+                          padding: "10px 18px", background: "#fff", color: "#0F5257",
+                          border: "1.5px solid #0F5257", borderRadius: 10, fontWeight: 800,
+                          fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit",
+                          opacity: genLoading ? 0.7 : 1,
+                        }}
+                      >
+                        🧪 Código para a loja de teste
                       </button>
                       {genError && <p style={{ margin: "0.5rem 0 0", fontSize: "0.78rem", color: "#DC2626", fontWeight: 700 }}>⚠️ {genError}</p>}
                       {genCode && (
