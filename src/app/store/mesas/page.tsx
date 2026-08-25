@@ -157,6 +157,10 @@ const ESTILO_TABLET = `
       border-top: 2px solid #E2E8F0;
       max-height: 44vh;
     }
+    /* Aberta, a comanda toma a tela: conferir sete itens é o que o garçom faz
+       antes de mandar para a cozinha, e é a hora em que ele mais precisa ver. */
+    .mesa-comanda.aberta { max-height: 86vh; }
+    .mesa-comanda-acao { display: inline-flex; }
     .mesa-produtos { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
     .mesa-detalhe {
       width: 100% !important;
@@ -164,6 +168,14 @@ const ESTILO_TABLET = `
       border-top: 2px solid #E2E8F0;
       max-height: 46vh;
     }
+  }
+
+  /* Em tela larga a comanda já é uma coluna inteira: não há o que expandir,
+     e oferecer "ver tudo" ali só confunde. */
+  .mesa-comanda-acao {
+    display: none;
+    align-items: center;
+    gap: 6px;
   }
 
   /* A barra de "quem está pedindo" rola na horizontal: uma mesa de 8 pessoas
@@ -258,6 +270,16 @@ export default function MesasPage() {
   const [menuSearch, setMenuSearch] = useState("");
   const [menuCat, setMenuCat] = useState("Todos");
   const [comboProduct, setComboProduct] = useState<MenuItem | null>(null);
+  /**
+   * Comanda ocupando quase a tela toda.
+   *
+   * Em tablet a comanda vive no rodapé com 44vh, e desses sobram ~25vh para a
+   * lista depois do cabeçalho, do total e do botão de enviar. Como cada linha
+   * tem botão de 44px (alvo de toque), sete itens dão uns 450px de conteúdo
+   * numa janela de 200px: o garçom precisava arrastar dentro de uma faixa de
+   * dois dedos para conferir o que lançou.
+   */
+  const [comandaAberta, setComandaAberta] = useState(false);
 
   // Close form
   const [serviceFee, setServiceFee] = useState(10);
@@ -943,7 +965,7 @@ export default function MesasPage() {
             }}>+ Pessoa</button>
           </div>
 
-          <div className="mesa-produtos" style={{ flex: 1, overflowY: "auto", padding: 12, alignContent: "start" }}>
+          <div className="mesa-produtos" style={{ flex: 1, overflowY: "auto", padding: 12, alignContent: "start", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}>
             {filteredMenu.map(p => {
               // Soma todas as linhas: o mesmo produto pode estar no carrinho
               // em nome de pessoas diferentes.
@@ -984,18 +1006,35 @@ export default function MesasPage() {
           </div>
         </div>
 
-        <div className="mesa-comanda" style={{
+        <div className={`mesa-comanda${comandaAberta ? " aberta" : ""}`} style={{
           borderLeft: "1px solid #E2E8F0", background: "#fff",
           display: "flex", flexDirection: "column",
         }}>
-          <div style={{
-            padding: "16px 18px", borderBottom: "1px solid #E2E8F0",
-            fontWeight: 800, fontSize: 16, color: "#1E293B",
-          }}>
-            🛒 Carrinho ({cartCount} {cartCount === 1 ? "item" : "itens"})
-          </div>
+          <button
+            type="button"
+            onClick={() => setComandaAberta(v => !v)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              width: "100%", padding: "14px 18px", borderBottom: "1px solid #E2E8F0",
+              background: "#fff", border: "none", borderRadius: 0, textAlign: "left",
+              fontFamily: "inherit", fontWeight: 800, fontSize: 16, color: "#1E293B",
+              cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            <span>🛒 Carrinho ({cartCount} {cartCount === 1 ? "item" : "itens"})</span>
+            <span className="mesa-comanda-acao" style={{
+              fontSize: 13, fontWeight: 800, color: "#7C3AED",
+              background: "#F5F3FF", padding: "6px 12px", borderRadius: 20,
+              whiteSpace: "nowrap",
+            }}>
+              {comandaAberta ? "▼ Recolher" : "▲ Ver tudo"}
+            </span>
+          </button>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px" }}>
+          {/* overscrollBehavior "contain": ao chegar no fim da lista, o gesto
+              parava de rolar o carrinho e passava a rolar o cardápio atrás —
+              o garçom tirava o dedo achando que a lista tinha acabado. */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}>
             {cart.length === 0 ? (
               <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}>
                 <div style={{ fontSize: 40, marginBottom: 8 }}>🍽️</div>
