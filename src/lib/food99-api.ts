@@ -190,3 +190,31 @@ export async function detalheDoPedido(authToken: string, orderId: string): Promi
     query: { auth_token: authToken, order_id: orderId },
   });
 }
+
+// ── Diagnóstico ─────────────────────────────────────────────────────────────
+
+/**
+ * Resposta CRUA do 99Food para a consulta de token de uma loja.
+ *
+ * `getAuthToken` acima traduz tudo que não é sucesso para `autorizada: false`,
+ * o que serve para a tela do lojista mas apaga a informação de que a gente
+ * precisa quando a integração não anda: o errno. "Não autorizada" (10101),
+ * "app_shop_id inexistente" e "assinatura inválida" viram a mesma frase, e não
+ * dá para saber se o lojista não clicou em autorizar ou se estamos perguntando
+ * pela loja errada.
+ *
+ * Foi exatamente essa ambiguidade que segurou o caso da Brasa Burguer: o
+ * lojista tinha autorizado, e a tela continuava dizendo "ainda não conectou".
+ */
+export async function diagnosticoAuth(appShopId: string): Promise<RespostaFood99<TokenDaLoja>> {
+  const cred = credenciaisDoApp();
+  if (!cred) return { errno: -2, errmsg: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados no servidor." };
+  return chamar<TokenDaLoja>("/v1/auth/authtoken/get", {
+    query: { app_id: cred.appId, app_secret: cred.appSecret, app_shop_id: appShopId },
+  });
+}
+
+/** O app_id é identificador público, não segredo — pode aparecer no diagnóstico. */
+export function appIdVisivel(): string | null {
+  return credenciaisDoApp()?.appId ?? null;
+}

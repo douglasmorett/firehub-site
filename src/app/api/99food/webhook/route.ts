@@ -101,18 +101,42 @@ export async function POST(req: NextRequest) {
 
     for (const event of events) {
       const merchantId = event.merchantId || event.storeId || event.merchant?.id;
+
+      // O app_shop_id é o id que NÓS mandamos ao 99Food ao gerar a URL de
+      // autorização — ou seja, o id da loja no nosso banco. Quando ele vem, a
+      // amarração é exata e não sobra espaço para palpite: é o oposto do
+      // fallback lá embaixo, que só existe porque o formulário antigo pedia um
+      // merchantId digitado à mão e ele podia não bater com nada.
+      const appShopId =
+        event.app_shop_id || event.appShopId || event.shop_id || event.order?.app_shop_id;
+
       const orderId = event.orderId || event.id || event.order?.id;
       const displayId = event.displayId || event.orderReference || event.reference || orderId;
       const eventType = event.eventType || event.fullCode || event.code || event.status || "";
 
       if (!orderId) continue;
 
-      // Buscar franqueado dono deste merchantId no 99Food
-      let franchisee = merchantId
-        ? await prisma.user.findFirst({
-            where: { food99MerchantId: merchantId, role: "FRANCHISEE" },
-          })
+      // 1ª tentativa — app_shop_id: é o nosso próprio id, então basta buscá-lo.
+      let franchisee = appShopId
+        ? await prisma.user.findUnique({ where: { id: String(appShopId) } })
         : null;
+
+      // 2ª — merchantId do 99Food, para quem conectou pelo formulário antigo.
+      if (!franchisee && merchantId) {
+        franchisee = await prisma.user.findFirst({
+          where: { food99MerchantId: merchantId, role: "FRANCHISEE" },
+        });
+      }
+
+      // Loja achada pelo app_shop_id mas ainda sem o merchantId gravado: grava
+      // agora. É a única hora em que o id da loja no 99Food aparece de graça, e
+      // sem ele as chamadas de volta (confirmar, pronto, entregue) não têm a
+      // quem se dirigir.
+      if (franchisee && merchantId && !franchisee.food99MerchantId) {
+        await prisma.user
+          .update({ where: { id: franchisee.id }, data: { food99MerchantId: String(merchantId) } })
+          .catch(() => {});
+      }
 
       // Fallback: SO quando existe exatamente 1 franqueado com 99Food ativo.
       // Antes pegava o mais antigo com findFirst, entao um merchantId

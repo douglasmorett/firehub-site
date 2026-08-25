@@ -43,13 +43,15 @@ export default function IntegracoesHubClient({
   const [jjLoading, setJjLoading] = useState(true);
   const [jjSaving, setJjSaving] = useState(false);
 
-  // 99Food state
-  const [food99MerchantId, setFood99MerchantId] = useState("");
-  const [food99AppId, setFood99AppId] = useState("");
-  const [food99SecretKey, setFood99SecretKey] = useState("");
+  // 99Food state — autoatendimento: quem responde se está conectado é o 99Food,
+  // não um formulário salvo. `food99Connected` vem de /api/99food/conectar.
   const [food99Connected, setFood99Connected] = useState(false);
   const [food99Loading, setFood99Loading] = useState(true);
   const [food99Saving, setFood99Saving] = useState(false);
+  const [food99Disponivel, setFood99Disponivel] = useState(true);
+  const [food99Msg, setFood99Msg] = useState("");
+  /** Fica preenchido depois que o lojista abre a autorização — é o gatilho do "Já autorizei". */
+  const [food99Aguardando, setFood99Aguardando] = useState(false);
 
   // iFood multi-integration state
   const [ifMerchant, setIfMerchant] = useState(ifoodMerchantId || "");
@@ -106,19 +108,11 @@ export default function IntegracoesHubClient({
       .catch(() => {})
       .finally(() => setJjLoading(false));
 
-    // Carregar dados da integração 99Food
-    fetch("/api/store/integracoes/99food")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.ok) {
-          setFood99MerchantId(data.merchantId || "");
-          setFood99AppId(data.appId || "");
-          setFood99SecretKey(data.secretKey || "");
-          setFood99Connected(!!data.connected);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setFood99Loading(false));
+    // Estado real da conexão 99Food — perguntado ao 99Food, não ao nosso banco.
+    // A rota antiga (/api/store/integracoes/99food) devolvia `connected` do
+    // formulário salvo, e era isso que pintava "🟢 Conectado & Ativo" numa loja
+    // que nunca havia recebido um pedido.
+    carregar99Food();
 
     fetch("/api/chatbot/config")
       .then(r => r.json())
@@ -167,27 +161,75 @@ export default function IntegracoesHubClient({
     }
   };
 
-  const handleSave99Food = async () => {
-    setFood99Saving(true);
+  /**
+   * Pergunta ao 99Food se a loja está conectada.
+   *
+   * `conectado` aqui é o token que o 99Food emitiu para esta loja — se ele não
+   * existe, a tela diz que não existe. É a diferença entre esta versão e a
+   * anterior, que escrevia "conectado" só porque alguém salvara um formulário.
+   */
+  const carregar99Food = async () => {
+    setFood99Loading(true);
     try {
-      const res = await fetch("/api/99food/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          merchantId: food99MerchantId,
-        }),
-      });
-
+      const res = await fetch("/api/99food/conectar");
       const data = await res.json();
-      if (res.ok && data.success) {
-        setFood99Connected(true);
-        showToast("✅ Integração 99Food ativada com sucesso!", "#10B981");
-        setOpenModal(null);
+      setFood99Connected(!!data.conectado);
+      setFood99Disponivel(data.disponivel !== false);
+      setFood99Msg(data.mensagem || "");
+      if (data.conectado) setFood99Aguardando(false);
+    } catch {
+      setFood99Msg("Não consegui falar com o servidor para checar o 99Food.");
+    } finally {
+      setFood99Loading(false);
+    }
+  };
+
+  /**
+   * Abre a autorização do 99Food na conta do próprio lojista.
+   *
+   * A janela é aberta ANTES do await de propósito: navegador bloqueia
+   * window.open que não nasce direto de um clique, e depois de um fetch o
+   * gesto já se perdeu. Então abre-se em branco no clique e troca-se a URL
+   * quando ela chega.
+   */
+  const handleConectar99Food = async () => {
+    setFood99Saving(true);
+    const janela = window.open("", "_blank");
+    try {
+      const res = await fetch("/api/99food/conectar", { method: "POST" });
+      const data = await res.json();
+
+      if (res.ok && data.url) {
+        if (janela) janela.location.href = data.url;
+        else window.location.href = data.url; // popup bloqueado: vai na mesma aba
+        setFood99Aguardando(true);
+        showToast("🔗 Autorize com a conta 99Food da sua loja e volte aqui", "#F59E0B");
       } else {
-        showToast(`⚠️ ${data.error || "Erro ao conectar 99Food"}`, "#EF4444");
+        janela?.close();
+        showToast(`⚠️ ${data.error || "O 99Food não devolveu a página de autorização"}`, "#EF4444");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao salvar 99Food", "#EF4444");
+      janela?.close();
+      showToast("⚠️ Erro de conexão ao falar com o 99Food", "#EF4444");
+    } finally {
+      setFood99Saving(false);
+    }
+  };
+
+  /** Depois de autorizar no site do 99Food, é isto que confirma do nosso lado. */
+  const handleVerificar99Food = async () => {
+    setFood99Saving(true);
+    try {
+      const res = await fetch("/api/99food/conectar");
+      const data = await res.json();
+      setFood99Connected(!!data.conectado);
+      setFood99Msg(data.mensagem || "");
+      showToast(
+        data.conectado ? "✅ 99Food conectado! Os pedidos chegam automaticamente." : `⏳ ${data.mensagem}`,
+        data.conectado ? "#10B981" : "#F59E0B"
+      );
+    } catch {
+      showToast("⚠️ Erro de conexão", "#EF4444");
     } finally {
       setFood99Saving(false);
     }
@@ -200,7 +242,7 @@ export default function IntegracoesHubClient({
       const res = await fetch("/api/99food/auth?step=disconnect");
       if (res.ok) {
         setFood99Connected(false);
-        setFood99MerchantId("");
+        setFood99Aguardando(false);
         showToast("✅ 99Food desconectado com sucesso", "#10B981");
         setOpenModal(null);
       }
@@ -1156,42 +1198,55 @@ export default function IntegracoesHubClient({
                   </div>
                 </div>
 
-                {food99Connected ? (
+                {food99Loading ? (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#475569" }}>Consultando o 99Food…</div>
+                  </div>
+                ) : food99Connected ? (
                   <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status da Conexão:</div>
                     <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>
-                      🟢 Loja Conectada e Sincronizada com 99Food
+                      🟢 Loja autorizada no 99Food
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#166534", marginTop: 4 }}>
+                      Os pedidos chegam sozinhos no painel. Não é preciso fazer mais nada.
                     </div>
                   </div>
                 ) : (
                   <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.75rem", color: "#B45309" }}>Status da Conexão:</div>
                     <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>
-                      ⚪ Integração Pendente — Insira o ID da sua Loja 99Food
+                      ⚪ Loja ainda não autorizada
+                    </div>
+                    {food99Msg && (
+                      <div style={{ fontSize: "0.78rem", color: "#92400E", marginTop: 4 }}>{food99Msg}</div>
+                    )}
+                  </div>
+                )}
+
+                {!food99Connected && (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>
+                      Como conectar (leva menos de um minuto)
+                    </div>
+                    <ol style={{ margin: 0, paddingLeft: 18, fontSize: "0.82rem", color: "#475569", lineHeight: 1.7 }}>
+                      <li>Clique em <b>Conectar com o 99Food</b> — abre o site deles.</li>
+                      <li>Entre com a <b>mesma conta 99Food onde você vê os pedidos</b> e autorize o FireHub.</li>
+                      <li>Volte para cá e clique em <b>Já autorizei</b>.</li>
+                    </ol>
+                    <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 10 }}>
+                      Você não precisa de código, App ID nem Secret. A autorização é feita na sua própria conta.
                     </div>
                   </div>
                 )}
 
-                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
-                  Conecte sua loja do 99Food para capturar pedidos automaticamente, sincronizar prazos e aceitar entregas diretamente no painel do FireHub.
-                </p>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
-                  <div>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Store size={14} color="#D97706" /> Merchant ID / ID da Loja (99Food)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Ex: 99f_store_88231"
-                      value={food99MerchantId}
-                      onChange={(e) => setFood99MerchantId(e.target.value)}
-                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                    />
+                {!food99Disponivel && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.8rem", color: "#991B1B" }}>
+                    A integração 99Food ainda não foi habilitada no servidor. Fale com o suporte do FireHub.
                   </div>
-                </div>
+                )}
 
-                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap" }}>
                   {food99Connected && (
                     <button
                       onClick={handleDisconnect99Food}
@@ -1207,13 +1262,24 @@ export default function IntegracoesHubClient({
                   >
                     Fechar
                   </button>
-                  <button
-                    onClick={handleSave99Food}
-                    disabled={food99Saving}
-                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(245,158,11,0.3)", opacity: food99Saving ? 0.7 : 1 }}
-                  >
-                    <Save size={16} /> {food99Saving ? "Conectando..." : "Conectar & Ativar 99Food"}
-                  </button>
+                  {food99Aguardando && !food99Connected && (
+                    <button
+                      onClick={handleVerificar99Food}
+                      disabled={food99Saving}
+                      style={{ padding: "10px 18px", borderRadius: "10px", border: "1.5px solid #D97706", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+                    >
+                      {food99Saving ? "Verificando…" : "Já autorizei"}
+                    </button>
+                  )}
+                  {!food99Connected && (
+                    <button
+                      onClick={handleConectar99Food}
+                      disabled={food99Saving || !food99Disponivel}
+                      style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99Disponivel ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(245,158,11,0.3)", opacity: food99Saving || !food99Disponivel ? 0.7 : 1 }}
+                    >
+                      <Save size={16} /> {food99Saving ? "Abrindo…" : "Conectar com o 99Food"}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

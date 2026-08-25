@@ -1,0 +1,164 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { diagnosticoAuth, appIdVisivel, food99Configurado, ERRO_SEM_AUTORIZACAO } from "@/lib/food99-api";
+import { ler99Food } from "@/lib/webhook-99food-log";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/99food/diagnostico
+ *
+ * Responde a única pergunta que importa quando um pedido do 99Food não aparece
+ * na cozinha: em qual das três pontas ele parou.
+ *
+ *   1. A loja autorizou o app?      → o 99Food responde, não o nosso banco.
+ *   2. O 99Food chamou o webhook?   → os eventos recebidos dizem.
+ *   3. O pedido virou pedido aqui?  → a contagem no banco diz.
+ *
+ * Por que isto existe: no dia 24/08 o pedido #403001 entrou no portal do 99Food
+ * (aceitação automática ligada) e não chegou ao FireHub. A tela dizia
+ * "🟢 Conectado & Ativo" porque alguém havia preenchido um formulário — nada
+ * neste sistema tinha falado com o 99Food uma única vez. Sem este diagnóstico,
+ * "conectado" e "recebendo pedido" eram indistinguíveis.
+ *
+ * ── O ponto cego do app_shop_id ─────────────────────────────────────────────
+ * O `app_shop_id` é o identificador que NÓS escolhemos para a loja ao gerar a
+ * URL de autorização, e é com ele que se pergunta pelo token depois. Se a URL
+ * que o lojista autorizou foi gerada com um valor e a consulta usa outro, o
+ * 99Food responde 10101 ("não autorizada") — a mesma resposta de quem nunca
+ * clicou. Por isso aqui todos os candidatos são testados, e não só o atual:
+ * é o que separa "o lojista não autorizou" de "autorizou sob outro id".
+ */
+
+interface Candidato {
+  rotulo: string;
+  appShopId: string;
+}
+
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    select: {
+      id: true,
+      ownerId: true,
+      email: true,
+      storeName: true,
+      food99MerchantId: true,
+      food99Connected: true,
+    },
+  });
+  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+  const lojaId = user.ownerId || user.id;
+
+  if (!food99Configurado()) {
+    return NextResponse.json({
+      ok: false,
+      parou_em: "servidor",
+      diagnostico:
+        "FOOD99_APP_ID / FOOD99_APP_SECRET não estão no ambiente. Sem as credenciais do app " +
+        "não há como consultar nem autorizar nada no 99Food.",
+    });
+  }
+
+  // Os três valores que já serviram de app_shop_id em algum momento desta
+  // integração. Testar todos é o que revela uma autorização amarrada ao id
+  // errado — invisível quando se consulta só o atual.
+  const candidatos: Candidato[] = [{ rotulo: "loja (usado hoje ao gerar a URL)", appShopId: lojaId }];
+  if (user.id !== lojaId) {
+    candidatos.push({ rotulo: "usuário logado (funcionário)", appShopId: user.id });
+  }
+  if (user.food99MerchantId && user.food99MerchantId !== lojaId) {
+    candidatos.push({ rotulo: "merchantId do 99Food (formulário antigo)", appShopId: user.food99MerchantId });
+  }
+
+  const testes = [];
+  for (const c of candidatos) {
+    const r = await diagnosticoAuth(c.appShopId);
+    testes.push({
+      ...c,
+      errno: r.errno,
+      errmsg: r.errmsg,
+      autorizada: r.errno === 0 && !!r.data?.auth_token,
+      // Prefixo só: confirma que veio token sem imprimir a credencial inteira.
+      tokenPrefixo: r.data?.auth_token ? `${r.data.auth_token.slice(0, 8)}…` : null,
+      expiraEm: r.data?.token_expiration_time
+        ? new Date(r.data.token_expiration_time * 1000).toISOString()
+        : null,
+      leitura:
+        r.errno === 0
+          ? "AUTORIZADA sob este app_shop_id."
+          : r.errno === ERRO_SEM_AUTORIZACAO
+          ? "O 99Food não conhece autorização para este app_shop_id."
+          : `Erro ${r.errno} — não é falta de autorização, é outra coisa.`,
+    });
+  }
+
+  const autorizada = testes.find((t) => t.autorizada) || null;
+
+  const eventos = ler99Food();
+  const pedidos99 = await prisma.customerOrder.count({
+    where: { franchiseeId: lojaId, source: "99FOOD" },
+  });
+
+  // A ordem importa: sem autorização o 99Food não tem por que mandar evento
+  // nenhum, então "webhook mudo" só vira suspeita do portal depois que a
+  // autorização estiver de pé.
+  let parou_em: string;
+  let diagnostico: string;
+
+  if (!autorizada) {
+    parou_em = "autorizacao";
+    diagnostico =
+      "Nenhum app_shop_id testado tem autorização no 99Food. Enquanto isso não mudar, " +
+      "nenhum pedido será entregue aqui — o lojista precisa abrir a URL de autorização " +
+      "e concluir com a conta 99Food da loja.";
+  } else if (eventos.length === 0) {
+    parou_em = "webhook";
+    diagnostico =
+      `A loja ESTÁ autorizada (app_shop_id "${autorizada.appShopId}"), mas o 99Food nunca chamou ` +
+      "o nosso webhook. Isso é configuração no portal de desenvolvedor deles: o Callback " +
+      "address do app precisa apontar para a URL abaixo. Nada no nosso código conserta isso.";
+  } else if (pedidos99 === 0) {
+    parou_em = "parser";
+    diagnostico =
+      "O 99Food chamou o webhook, mas nenhum pedido foi criado. O payload cru está em " +
+      "'ultimosEventos' — é com ele que o parser se ajusta ao formato real deles.";
+  } else {
+    parou_em = "nada";
+    diagnostico = `Integração de ponta a ponta: ${pedidos99} pedido(s) do 99Food no banco.`;
+  }
+
+  return NextResponse.json({
+    ok: true,
+    parou_em,
+    diagnostico,
+    loja: {
+      nome: user.storeName,
+      email: user.email,
+      lojaId,
+      merchantIdSalvo: user.food99MerchantId,
+      // Vale contrastar com a autorização real: este booleano é só o formulário
+      // antigo tendo sido salvo, e foi ele que exibiu "conectado" o tempo todo.
+      food99ConnectedNoBanco: user.food99Connected,
+    },
+    appId: appIdVisivel(),
+    autorizacao: { autorizada: !!autorizada, appShopIdValido: autorizada?.appShopId ?? null, testes },
+    webhook: {
+      urlQueDeveEstarNoPortal: "https://firehubfood.com.br/api/99food/webhook",
+      eventosRecebidos: eventos.length,
+      // Some no restart do container — um deploy recente zera esta lista, e
+      // lista vazia logo após deploy não prova que o 99Food não chamou.
+      observacao: "Registro em memória: reinicia junto com o container.",
+      ultimosEventos: eventos,
+    },
+    pedidos99NoBanco: pedidos99,
+  });
+}

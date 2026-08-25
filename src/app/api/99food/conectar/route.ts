@@ -56,6 +56,20 @@ export async function GET(req: NextRequest) {
 
   const resultado = await getAuthToken(r.lojaId);
 
+  // O que o 99Food respondeu vira o estado no banco. Sem isto, `food99Connected`
+  // continuaria valendo o que o formulário antigo gravou — e ele é lido em
+  // lugares que não têm como perguntar ao 99Food: o fallback do webhook (que
+  // decide de quem é um pedido sem merchantId conhecido) e o cálculo da
+  // mensalidade em lib/billing.ts, que cobra pela integração ativa. Uma loja
+  // marcada como conectada sem nunca ter autorizado entrava nos dois.
+  // Grava sempre em vez de comparar antes: o valor lido na sessão é o do
+  // usuário logado, e um funcionário tem o flag dele, não o da loja do dono —
+  // comparar com o valor errado deixaria a loja desatualizada justamente no
+  // caso em que ela está errada. A escrita é idempotente.
+  await prisma.user
+    .update({ where: { id: r.lojaId }, data: { food99Connected: resultado.autorizada } })
+    .catch(() => {});
+
   if (resultado.autorizada) {
     return NextResponse.json({
       conectado: true,
