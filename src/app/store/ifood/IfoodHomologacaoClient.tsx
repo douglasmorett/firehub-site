@@ -79,11 +79,13 @@ export default function IfoodHomologacaoClient({
   const testConnection = async (force = false) => {
     setConn("loading");
     try {
-      const url = `/api/ifood/auth?step=test${force ? "&force=true" : ""}`;
-      const r = await fetch(url);
+      // /api/ifood/conexao pergunta pela camada nova, que usa o token da
+      // própria loja. O teste antigo perguntava com o token do app
+      // centralizado e concluía "desconectada" para toda loja do distribuído.
+      const r = await fetch("/api/ifood/conexao?distribuido=1");
       const d = await r.json();
       setConnData(d);
-      setConn(d.connected ? "ok" : "error");
+      setConn(r.ok && d.connected ? "ok" : "error");
     } catch { setConn("error"); }
   };
 
@@ -364,6 +366,25 @@ export default function IfoodHomologacaoClient({
             </div>
           )}
         </>
+      )}
+
+      {/* Aviso de módulo não liberado — a diferença entre "reconectar a loja" e
+          "pedir acesso no Portal do Desenvolvedor" muda o que se deve fazer. */}
+      {connStatus === "ok" && connData?.moduloMerchant?.aviso && (
+        <div style={{
+          background: "#FFFBEB", border: "1.5px solid #FDE68A", color: "#92400E",
+          borderRadius: 12, padding: "12px 15px", marginBottom: "1rem", fontSize: "0.86rem", lineHeight: 1.5,
+        }}>
+          <strong style={{ display: "block", marginBottom: 3 }}>
+            Módulo Merchant sem liberação neste aplicativo
+          </strong>
+          {connData.moduloMerchant.aviso}
+          {connData.credenciais?.length > 0 && (
+            <span style={{ display: "block", marginTop: 6, fontSize: "0.78rem", opacity: 0.85 }}>
+              Token em uso: {connData.origem ?? "—"} · disponíveis: {connData.credenciais.join(", ")}
+            </span>
+          )}
+        </div>
       )}
 
       {/* Abas de Navegação */}
