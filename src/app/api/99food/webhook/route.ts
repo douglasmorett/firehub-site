@@ -4,6 +4,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { registrar99Food } from "@/lib/webhook-99food-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, type ItemTraduzido } from "@/lib/food99-pedido";
+import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
 
 /**
  * POST /api/99food/webhook
@@ -74,6 +75,28 @@ export async function POST(req: NextRequest) {
     if (!bodyText) {
       // Corpo vazio ainda recebe ACK: reenviar nao vai fazer aparecer.
       return NextResponse.json(ACK);
+    }
+
+    // ── De onde veio esta requisição ────────────────────────────────────────
+    //
+    // Esta rota não conferia nada: qualquer POST criava pedido na cozinha de
+    // uma loja, com os itens e o valor que o remetente quisesse. A verificação
+    // usa o corpo CRU — reserializar o JSON muda bytes e o hash deixa de bater.
+    //
+    // Enquanto FOOD99_WEBHOOK_SECRET não existir no ambiente, o pedido continua
+    // entrando e o log registra o aviso; assim que existir, requisição sem
+    // assinatura válida é recusada.
+    const assinatura99 = verificarAssinaturaHmac(
+      "FOOD99_WEBHOOK_SECRET",
+      bodyText,
+      req.headers.get("x-99food-signature") || req.headers.get("x-signature") || req.headers.get("x-hub-signature-256")
+    );
+    if (assinatura99.estado === "invalida") {
+      console.error(`[99Food Webhook] Origem não confirmada (${assinatura99.motivo}) — requisição recusada`);
+      return NextResponse.json({ errno: 401, errmsg: "unauthorized" }, { status: 401 });
+    }
+    if (assinatura99.estado === "sem-segredo") {
+      avisarWebhookSemSegredo("99Food", "FOOD99_WEBHOOK_SECRET");
     }
 
     // Payload ilegível é o único erro que merece ACK: reenviar o mesmo texto

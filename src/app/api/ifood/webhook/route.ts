@@ -51,11 +51,27 @@ export async function POST(req: NextRequest) {
   // Log payload recebido
   console.log(`[iFood Webhook] 📥 Request recebido: ${rawBody.slice(0, 300)}`);
 
-  // Em produção, valida assinatura mas não bloqueia se falhar para não perder pedidos
-  if (process.env.NODE_ENV === "production" && process.env.IFOOD_WEBHOOK_SECRET) {
+  // ── A assinatura passa a valer ───────────────────────────────────────────
+  //
+  // O código já calculava o HMAC e comparava — e então ignorava o resultado,
+  // com um aviso no log e "Processando mesmo assim". Toda a verificação existia
+  // e não protegia nada: qualquer POST criava pedido na cozinha da loja.
+  //
+  // O raciocínio original ("não bloquear para não perder pedidos") tem base real:
+  // recusar evento de pedido é pedido que some. Por isso a trava só age quando
+  // IFOOD_WEBHOOK_SECRET está configurado — que é o mesmo instante em que o
+  // iFood passa a assinar. Sem a variável, nada muda em relação a hoje, e o log
+  // diz o que falta.
+  if (process.env.IFOOD_WEBHOOK_SECRET) {
     if (!validateIfoodSignature(rawBody, signature)) {
-      console.warn("[iFood Webhook] ⚠️ Assinatura não bateu ou ausente. Processando mesmo assim.");
+      console.error("[iFood Webhook] Assinatura inválida ou ausente — requisição recusada.");
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+  } else if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[iFood Webhook] ⚠️ IFOOD_WEBHOOK_SECRET não configurada — requisição aceita SEM verificação de origem. " +
+      "Qualquer pessoa que conheça esta URL injeta um pedido falso na cozinha."
+    );
   }
 
   let events: any[];

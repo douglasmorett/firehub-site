@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
+import { avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
 
 /**
  * POST /api/jotaja/webhook
@@ -12,7 +13,17 @@ export const maxDuration = 30;
 // HMAC signature validation com timing-safe compare
 async function verifySignature(req: NextRequest, body: string): Promise<boolean> {
   const secret = process.env.JOTAJA_WEBHOOK_SECRET;
-  if (!secret) return true; // Skip se não configurado
+  if (!secret) {
+    // Antes era um "// Skip se não configurado" silencioso: sem a variável no
+    // ambiente, TODA requisição passava e nada no log dizia isso. Recusar de
+    // uma vez não dá: evento de pedido recusado é pedido que some da cozinha, e
+    // no JotaJá some para sempre — a API não tem listagem para recuperar depois.
+    //
+    // Então a porta fecha sozinha no instante em que a variável existir. Até lá,
+    // cada requisição não verificada deixa rastro.
+    avisarWebhookSemSegredo("JotaJá", "JOTAJA_WEBHOOK_SECRET");
+    return true;
+  }
 
   const signature = req.headers.get("x-signature") || req.headers.get("x-hub-signature-256") || "";
   if (!signature) return false;
