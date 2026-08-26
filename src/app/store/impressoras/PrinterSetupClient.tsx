@@ -182,6 +182,10 @@ export default function PrinterSetupClient({
                 escposProfile: pr.escposProfile,
                 copies: pr.copies || 1,
                 categories: pr.categories || [],
+                // Campos novos. O Assistente antigo ignora o que não conhece,
+                // e o novo usa para rotear o que vem pela fila da nuvem.
+                modulos: pr.modulos || [],
+                somenteBebidas: pr.somenteBebidas === true,
               })),
             }),
           }).catch(() => {});

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
@@ -104,6 +105,30 @@ export async function GET(req: NextRequest) {
         defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
         printers,
       },
+      // ── PARA QUEM ESTE PEDIDO VAI ──────────────────────────────────
+      //
+      // A mesa e o balcão imprimem por ESTA fila, não pelo navegador: o
+      // pedido nasce no servidor e o Assistente puxa sozinho. E o Assistente
+      // mandava tudo para `currentConfig.printer`, a impressora antiga —
+      // ignorando lista de impressoras, categoria, módulo e 'só bebida'. Era
+      // por isso que a comanda de mesa saía inteira na impressora do bar.
+      //
+      // Agora quem decide é o servidor, com as MESMAS regras do navegador
+      // (src/lib/roteamento-de-impressao.ts). O Assistente só imprime o que
+      // mandarem.
+      //
+      // Campo ADITIVO: Assistente antigo não conhece `destinos`, ignora, e
+      // continua imprimindo como sempre imprimiu. Nada regride para quem
+      // ainda não atualizou.
+      destinos: destinosDoPedido(printers, order as any).map(d => ({
+        printer: d.impressora.name,
+        copies: Number(d.impressora.copies) > 0 ? Number(d.impressora.copies) : 1,
+        paperWidth: d.impressora.paperWidth || pc?.defaultPaperWidth || "80mm",
+        columns: d.impressora.columns ?? undefined,
+        escposProfile: d.impressora.escposProfile ?? undefined,
+        somenteBebidas: d.impressora.somenteBebidas === true,
+        items: d.itens,
+      })),
       createdAt: order.createdAt.toISOString(),
     }));
 
