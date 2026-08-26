@@ -58,6 +58,13 @@ export default function PrinterSetupClient({
   // o de hoje — a ordem mentiria.
   const versaoDesatualizada = !!versaoInstalada && versaoInstalada !== VERSAO_ASSISTENTE_ATUAL;
 
+  const selo =
+    status === "connected"
+      ? { texto: "Conectado", fundo: "#F0FDF4", cor: "#16A34A", borda: "#BBF7D0" }
+      : status === "checking"
+        ? { texto: "Verificando...", fundo: "#F8FAFC", cor: "#64748B", borda: "#E2E8F0" }
+        : { texto: "Desconectado", fundo: "#FEF2F2", cor: "#DC2626", borda: "#FECACA" };
+
   const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
 
@@ -309,16 +316,32 @@ export default function PrinterSetupClient({
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 220 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, background: "#F0FDF4", border: "1.5px solid #BBF7D0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <CheckCircle size={20} color="#16A34A" />
+              <div style={{
+                width: 42, height: 42, borderRadius: 12, background: selo.fundo,
+                border: `1.5px solid ${selo.borda}`,
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <CheckCircle size={20} color={selo.cor} />
               </div>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {/* O selo era o literal "Conectado", verde, sempre. O estado
+                    `status` era calculado nas duas tentativas de conexão e nunca
+                    lido por ninguém: com o Assistente fechado, a tela continuava
+                    afirmando que estava conectado, e o único sinal era o "0
+                    impressora(s) detectada(s)" logo abaixo. */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 800, fontSize: "0.95rem" }}>Assistente FireHub</span>
-                  <span style={{ padding: "2px 8px", borderRadius: 20, background: "#F0FDF4", color: "#16A34A", fontSize: "0.68rem", fontWeight: 700, border: "1px solid #BBF7D0" }}>Conectado</span>
+                  <span style={{
+                    padding: "2px 8px", borderRadius: 20, fontSize: "0.68rem", fontWeight: 700,
+                    background: selo.fundo, color: selo.cor, border: `1px solid ${selo.borda}`,
+                  }}>{selo.texto}</span>
                 </div>
                 <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
-                  {availablePrinters.filter(p => /^(USB|LPT|COM)/i.test(p.port)).length || availablePrinters.length} impressora(s) detectada(s) no computador
+                  {status === "connected"
+                    ? `${availablePrinters.filter(p => /^(USB|LPT|COM)/i.test(p.port)).length || availablePrinters.length} impressora(s) detectada(s) no computador`
+                    : status === "checking"
+                      ? "Procurando o Assistente neste computador..."
+                      : "O Assistente não está aberto neste computador. Se já instalou, abra o programa; se não, baixe o instalador ao lado."}
                 </p>
                 {/* Sem isto não havia como saber, olhando a tela, qual build a loja
                     tem instalado — e duas lojas em versões diferentes imprimiam a
