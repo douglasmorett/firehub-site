@@ -79,6 +79,27 @@ export async function POST(req: NextRequest) {
 
   const p = traduzirPedido99Food(r.data);
 
+  // ── Conferir a tradução sem gravar nada ───────────────────────────────────
+  //
+  // O tradutor foi escrito contra o `OrderModel` do swagger, e nunca viu uma
+  // resposta real do `order/detail` — o webhook nem chegava a chamá-lo. Já
+  // aconteceu antes de o parser ler campos que o 99Food não manda (procurava
+  // `customer`/`items`/`totalPrice`, do iFood) e o pedido entrar com cliente
+  // vazio e total zero, sem erro nenhum no log.
+  //
+  // Com `apenasPrever`, dá para olhar um pedido REAL e conferir nome, endereço,
+  // itens e valor antes de deixar o primeiro cair na cozinha. Não cria nada.
+  if (body?.apenasPrever) {
+    return NextResponse.json({
+      ok: true,
+      apenasPrever: true,
+      traduzido: p,
+      // O cru serve para achar campo que o tradutor ignorou: se algo importante
+      // aparece aqui e não em `traduzido`, é o tradutor que está incompleto.
+      cruDoNoveNove: r.data,
+    });
+  }
+
   const existente = await prisma.customerOrder.findFirst({
     where: { openDeliveryOrderId: p.orderId || orderId },
     select: { id: true, dailyOrderNumber: true },
