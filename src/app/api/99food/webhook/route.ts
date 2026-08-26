@@ -4,7 +4,8 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { registrar99Food } from "@/lib/webhook-99food-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
-import { aplicarPedidoAlterado99 } from "@/lib/food99-status";
+import { aplicarPedidoAlterado99, tokenDaLoja } from "@/lib/food99-status";
+import { detalheDoPedido } from "@/lib/food99-api";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
 
 /**
@@ -21,14 +22,32 @@ import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-
  * pedidos estivessem chegando, o 99Food os trataria como não entregues e
  * entraria em reenvio.
  *
- * ── Os nomes dos eventos também estavam errados ─────────────────────────────
- * O código procurava PLACED / PLC / ORDER_PLACED / CONCLUDED / DSP — que são
- * convenções do iFood e do OpenDelivery. O 99Food manda orderNew, orderCancel,
- * orderFinish, deliveryStatus, orderCancelApply, orderRefundApply e
- * orderPartialCancel. Os nomes antigos ficam aceitos junto, porque não custa
- * nada e cobre payload de teste montado no padrão antigo.
+ * ── O formato real, e por que nenhum pedido entrava ─────────────────────────
  *
- * Fonte: developer-food.99app.com/pt-BR/openapi (Integration Guide).
+ * Em 26/08/2026 o log do portal de desenvolvedor deles mostrou o que ninguém
+ * tinha visto: **o 99Food sempre chamou este webhook**, com HTTP 200 e resposta
+ * `{"errno":0,"errmsg":"ok"}`, em ~55ms. O pedido morria aqui dentro.
+ *
+ * O evento de pedido novo é isto, e só isto:
+ *
+ *     {"app_id":5764607734538831960,
+ *      "app_shop_id":"cmt1hle8y0001ia04z3ss479k",
+ *      "type":"orderConfirm",
+ *      "timestamp":1787766276,
+ *      "data":{"order_id":5764684089013634116}}
+ *
+ * Quatro suposições erradas, e cada uma sozinha já bastava para descartar tudo:
+ *
+ *   1. o tipo vem em `type` — liam-se event/eventType/fullCode/code/status
+ *   2. o conteúdo vem em `data` — procurava-se `order` ou `order_id` na raiz
+ *   3. pedido novo é `orderConfirm` — esperava-se `orderNew`
+ *   4. o pedido NÃO vem junto: só o id. O resto é `GET order/order/detail`
+ *
+ * O item 4 é o que mais custou: havia um parser inteiro de OrderModel aqui
+ * dentro, escrito contra o swagger, para um payload que o webhook nunca manda.
+ *
+ * Fonte: log real em Gerenciamento de aplicativo → Monitoramento da API →
+ * Monitoramento de log da API, no developer-food.99app.com.
  */
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -41,8 +60,17 @@ function normalizarEvento(bruto: string): string {
   return (bruto || "").toString().toLowerCase().replace(/[^a-z]/g, "");
 }
 
+/**
+ * Evento de pedido novo.
+ *
+ * `orderConfirm` é o que o 99Food manda de verdade — confirmado no log do
+ * portal deles. `orderNew` está na documentação pública e nunca chegou; fica na
+ * lista porque não custa nada. Os outros são iFood/OpenDelivery, para payload
+ * de teste montado no padrão antigo.
+ */
 const EVENTOS_PEDIDO_NOVO = new Set([
-  "ordernew",                                    // 99Food
+  "orderconfirm",                                // 99Food — o real
+  "ordernew",                                    // 99Food — documentado
   "placed", "plc", "orderplaced", "new",         // iFood / OpenDelivery
 ]);
 
@@ -76,7 +104,15 @@ function statusDoEvento(evento: string): string | null {
     case "concluded":
     case "con":
       return "ENTREGUE";
-    case "deliverystatus":
+    // `deliveryStatus` NÃO entra aqui de propósito. Ele é logística do
+    // entregador, não status do pedido: o payload real é
+    // `{order_id, delivery_status:120, rider_name, rider_phone, rider_to_B_ETA}`
+    // e o 120 é o entregador indo BUSCAR na loja — a comida ainda está no
+    // balcão. Mapeá-lo para SAIU_ENTREGA tirava a comanda da cozinha antes da
+    // hora. Chegaram 8 desses para um pedido só, em 8 minutos.
+    //
+    // Os outros códigos de delivery_status ainda não são conhecidos; o evento
+    // fica registrado com o payload cru até dar para mapear com segurança.
     case "dispatched":
     case "dsp":
       return "SAIU_ENTREGA";
@@ -86,6 +122,14 @@ function statusDoEvento(evento: string): string | null {
     default:
       return null;
   }
+}
+
+/** Nome do entregador do 99, quando o evento de logística o traz. */
+function entregadorDoEvento(dados: any): string | null {
+  const nome = String(dados?.rider_name ?? "").trim();
+  if (!nome) return null;
+  const fone = String(dados?.rider_phone ?? "").trim();
+  return fone ? `${nome} (${fone})` : nome;
 }
 
 export async function POST(req: NextRequest) {
@@ -105,10 +149,24 @@ export async function POST(req: NextRequest) {
     // Enquanto FOOD99_WEBHOOK_SECRET não existir no ambiente, o pedido continua
     // entrando e o log registra o aviso; assim que existir, requisição sem
     // assinatura válida é recusada.
+    // ⚠️ NÃO defina FOOD99_WEBHOOK_SECRET sem antes acertar o algoritmo.
+    //
+    // O cabeçalho real deles é `didi-header-sign`, e o valor tem 32 hex
+    // (`ac8f6deb93955d388befd635b0adc304`) — tamanho de MD5, não de
+    // HMAC-SHA256, que é o que `verificarAssinaturaHmac` calcula. Lido do log
+    // do portal em 26/08/2026.
+    //
+    // Ou seja: com o segredo definido, TODA requisição do 99Food seria recusada
+    // com 401 e a integração pararia — trocando "não chega" por "não chega, e
+    // agora é culpa nossa". O cabeçalho certo já entra na lista para o dia em
+    // que a fórmula for confirmada com eles.
     const assinatura99 = verificarAssinaturaHmac(
       "FOOD99_WEBHOOK_SECRET",
       bodyText,
-      req.headers.get("x-99food-signature") || req.headers.get("x-signature") || req.headers.get("x-hub-signature-256")
+      req.headers.get("didi-header-sign") ||
+        req.headers.get("x-99food-signature") ||
+        req.headers.get("x-signature") ||
+        req.headers.get("x-hub-signature-256")
     );
     if (assinatura99.estado === "invalida") {
       console.error(`[99Food Webhook] Origem não confirmada (${assinatura99.motivo}) — requisição recusada`);
@@ -170,29 +228,54 @@ export async function POST(req: NextRequest) {
     //                       então um reenvio que cruze com ela não duplica.
     const trabalho = (async () => {
     for (const event of events) {
-      // O OrderModel do 99Food pode vir embrulhado (`event.order`) ou solto no
-      // próprio evento. Reconhece-se pelo `order_id`, que é o único campo
-      // presente nas duas formas.
+      // ── O formato REAL, lido do log do portal deles em 26/08/2026 ─────────
+      //
+      //   {"app_id":5764607734538831960,
+      //    "app_shop_id":"cmt1hle8y0001ia04z3ss479k",
+      //    "type":"orderConfirm",
+      //    "timestamp":1787766276,
+      //    "data":{"order_id":5764684089013634116}}
+      //
+      // Três coisas aqui derrubavam TODO evento, e o 99Food chamava desde o
+      // primeiro dia (HTTP 200, resposta "ok", ~55ms — está no log deles):
+      //
+      //   • o tipo vem em `type`, e a lista lida era
+      //     event/eventType/fullCode/code/status. `eventType` saía vazio.
+      //   • o conteúdo vem em `data`, não em `order`. Como `event.order_id`
+      //     também não existe na raiz, `orderId` ficava undefined e o
+      //     `continue` logo abaixo jogava o evento fora sem registrar nada.
+      //   • pedido novo é `orderConfirm`, não `orderNew`.
+      //
+      // Os nomes antigos seguem aceitos: não custam nada e cobrem payload de
+      // teste montado no padrão anterior.
+      const dados = event.data && typeof event.data === "object" ? event.data : event;
+
+      // O OrderModel completo só aparece se algum dia eles passarem a mandá-lo
+      // junto. Hoje NÃO vem — ver o bloco de busca em order/detail abaixo.
       const pedidoBruto =
-        event.order && typeof event.order === "object" ? event.order : event.order_id ? event : null;
+        event.order && typeof event.order === "object"
+          ? event.order
+          : dados.order_items || dados.receive_address
+          ? dados
+          : null;
 
       const traduzido = pedidoBruto ? traduzirPedido99Food(pedidoBruto) : null;
 
       // O id da loja no 99Food. `shop.shop_id` é o lugar dele no OrderModel;
       // os outros nomes cobrem evento de status, que não carrega o pedido.
       const merchantId =
-        traduzido?.shopId || event.shop_id || event.merchantId || event.storeId || event.merchant?.id;
+        traduzido?.shopId || dados.shop_id || event.shop_id || event.merchantId || event.storeId || event.merchant?.id;
 
-      // O app_shop_id é o identificador da loja DENTRO do vínculo — o mesmo que
-      // aparece em listarLojasVinculadas(). Quando ele vem, a amarração é exata
-      // e não sobra espaço para palpite; é o oposto do fallback lá embaixo, que
-      // só existe porque o formulário antigo pedia um merchantId digitado à mão.
+      // O app_shop_id é o identificador da loja DENTRO do vínculo. No payload
+      // real ele vem na RAIZ do evento, fora do `data` — e é ele que amarra o
+      // pedido à loja, porque o evento fino não traz shop_id nenhum.
       const appShopId = traduzido?.appShopId || event.app_shop_id || event.appShopId;
 
-      const orderId = traduzido?.orderId || event.order_id || event.orderId || event.id;
+      const orderId = traduzido?.orderId || dados.order_id || event.order_id || event.orderId || event.id;
       const displayId =
-        traduzido?.numeroNoParceiro || event.order_index || event.displayId || event.reference || orderId;
-      const eventType = event.event || event.eventType || event.fullCode || event.code || event.status || "";
+        traduzido?.numeroNoParceiro || dados.order_index || event.order_index || event.displayId || event.reference || orderId;
+      const eventType =
+        event.type || event.event || event.eventType || event.fullCode || event.code || event.status || "";
 
       // Evento sem order_id não vira pedido nem atualização, mas PRECISA ficar
       // registrado: é o que separa "o 99Food nunca chamou" de "chamou e a gente
@@ -293,32 +376,63 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Pedido novo: orderNew (99Food) ou os nomes do iFood/OpenDelivery.
-      // Vale também quando o OrderModel veio junto, porque só o evento de
-      // pedido novo carrega o pedido inteiro.
+      // Pedido novo: orderConfirm (o que o 99Food manda de verdade) ou os
+      // nomes documentados/legados. Vale também quando o OrderModel veio junto.
       const isNewOrder = EVENTOS_PEDIDO_NOVO.has(normalizarEvento(eventType)) || !!traduzido;
 
-      // Evento de pedido novo SEM o pedido junto: registra o payload cru em vez
-      // de descartar em silêncio. É o que permite ajustar o parser ao que o
-      // 99Food realmente mandou, caso o formato mude.
-      if (isNewOrder && !traduzido) {
-        registrar99Food({
-          tipo: eventType || "(pedido novo)",
-          reconhecido: false,
-          pedidoCriado: false,
-          motivo: "pedido novo, mas sem OrderModel reconhecível (faltou order_id) — payload cru abaixo",
-          payload: event,
-        });
-        console.warn(`[99Food Webhook] Pedido ${orderId} chegou em formato nao mapeado. Payload registrado em /api/99food/diagnostico`);
+      // ── O webhook do 99Food NÃO carrega o pedido ──────────────────────────
+      //
+      // O evento de pedido novo é literalmente isto:
+      //
+      //     {"app_id":…,"app_shop_id":"…","type":"orderConfirm",
+      //      "timestamp":…,"data":{"order_id":5764684089013634116}}
+      //
+      // Só o id. Nome do cliente, endereço, itens e valor não vêm — quem tem o
+      // pedido inteiro é `GET /v1/order/order/detail`. Todo o parser de
+      // OrderModel que morava aqui esperava um payload que nunca chegou, e é
+      // por isso que nenhum pedido do 99Food entrou até hoje.
+      //
+      // A busca custa uma ida à API deles dentro do webhook. Cabe: a resposta
+      // ao 99Food já corre contra o limite de 4,5s e, estourando, o ACK sai na
+      // frente e a gravação termina em segundo plano.
+      let pedido = traduzido;
+      if (isNewOrder && !pedido) {
+        const token = await tokenDaLoja(franchisee.id);
+        if (!token) {
+          registrar99Food({
+            tipo: eventType || "(pedido novo)",
+            reconhecido: true,
+            pedidoCriado: false,
+            motivo: `sem auth_token para a loja ${franchisee.id} — não deu para buscar o pedido ${orderId} em order/detail`,
+            payload: event,
+          });
+          console.error(`[99Food Webhook] Sem token da loja ${franchisee.id} — pedido ${orderId} não pôde ser buscado`);
+          continue;
+        }
+
+        const detalhe = await detalheDoPedido(token, String(orderId));
+        if (detalhe.errno !== 0 || !detalhe.data) {
+          registrar99Food({
+            tipo: eventType || "(pedido novo)",
+            reconhecido: true,
+            pedidoCriado: false,
+            motivo: `order/detail recusou o pedido ${orderId}: ${detalhe.errno} ${detalhe.errmsg}`,
+            payload: event,
+          });
+          // Erro NOSSO/deles ao buscar: deixa o lote falhar para o 99Food
+          // reenviar. É a única chance de o pedido ainda entrar.
+          throw new Error(`order/detail ${orderId}: ${detalhe.errno} ${detalhe.errmsg}`);
+        }
+        pedido = traduzirPedido99Food(detalhe.data);
       }
 
-      if (isNewOrder && traduzido) {
+      if (isNewOrder && pedido) {
         const existing = await prisma.customerOrder.findFirst({
           where: { openDeliveryOrderId: orderId },
         });
 
         if (!existing) {
-          const p = traduzido;
+          const p = pedido;
 
           const items = itens99ParaPrisma(p.itens, franchisee!.id);
 
@@ -439,11 +553,21 @@ export async function POST(req: NextRequest) {
           if (aplicado > 0) updated++;
         }
 
+        // Logística do 99: não mexe no status do pedido, mas dizer QUEM vem
+        // buscar e em que código é o que permite mapear o resto dos
+        // delivery_status sem precisar caçar no portal deles de novo.
+        const ehLogistica = normalizarEvento(eventType) === "deliverystatus";
+        const entregador = entregadorDoEvento(dados);
+
         registrar99Food({
           tipo: eventType || "(sem tipo)",
-          reconhecido: !!newStatus,
+          reconhecido: !!newStatus || ehLogistica,
           pedidoCriado: false,
-          motivo: !newStatus
+          motivo: ehLogistica
+            ? `logística do 99: delivery_status=${dados?.delivery_status ?? "?"}` +
+              (entregador ? `, entregador ${entregador}` : "") +
+              " — status do pedido NÃO muda por isto"
+            : !newStatus
             ? "evento não reconhecido"
             : aplicado > 0
             ? `status → ${newStatus}`
