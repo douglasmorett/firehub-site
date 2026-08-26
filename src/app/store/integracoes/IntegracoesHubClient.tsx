@@ -50,6 +50,8 @@ export default function IntegracoesHubClient({
   const [food99Saving, setFood99Saving] = useState(false);
   const [food99Disponivel, setFood99Disponivel] = useState(true);
   const [food99Msg, setFood99Msg] = useState("");
+  /** Qual loja do 99Food está ligada — nome, id e endereço, vindos do shop/detail. */
+  const [food99Loja, setFood99Loja] = useState<{ nome: string | null; shopId: string | null; endereco: string | null } | null>(null);
   /** Fica preenchido depois que o lojista abre a autorização — é o gatilho do "Já autorizei". */
   const [food99Aguardando, setFood99Aguardando] = useState(false);
   /** Só aparece quando há mais de uma loja autorizada e não dá para adivinhar qual é a dele. */
@@ -180,6 +182,7 @@ export default function IntegracoesHubClient({
       setFood99Connected(!!data.conectado);
       setFood99Disponivel(data.disponivel !== false);
       setFood99Msg(data.mensagem || "");
+      setFood99Loja(data.lojaNo99 || null);
       setFood99Candidatos(data.candidatos || []);
       if (data.conectado) {
         setFood99Aguardando(false);
@@ -292,6 +295,7 @@ export default function IntegracoesHubClient({
           setFood99Aguardando(false);
           setFood99Candidatos([]);
           setFood99Msg(data.mensagem || "");
+          setFood99Loja(data.lojaNo99 || null);
           showToast("✅ 99Food conectado! Os pedidos chegam automaticamente.", "#10B981");
           return;
         }
@@ -302,6 +306,7 @@ export default function IntegracoesHubClient({
         if (Array.isArray(data.candidatos) && data.candidatos.length > 0) {
           setFood99Candidatos(data.candidatos);
           setFood99Msg(data.mensagem || "");
+          setFood99Loja(data.lojaNo99 || null);
           setFood99Aguardando(false);
           return;
         }
@@ -336,6 +341,7 @@ export default function IntegracoesHubClient({
       const data = await res.json();
       setFood99Connected(!!data.conectado);
       setFood99Msg(data.mensagem || "");
+      setFood99Loja(data.lojaNo99 || null);
       setFood99Candidatos(data.candidatos || []);
       showToast(
         data.conectado ? "✅ 99Food conectado! Os pedidos chegam automaticamente." : `⏳ ${data.mensagem}`,
@@ -1318,9 +1324,18 @@ export default function IntegracoesHubClient({
                 ) : food99Connected ? (
                   <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status da Conexão:</div>
+                    {/* Dizer QUAL loja está ligada. "Loja autorizada" sozinho não
+                        deixa o lojista conferir se ligou a loja certa — e o erro
+                        só apareceria com pedido caindo na cozinha errada. */}
                     <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>
-                      🟢 Loja autorizada no 99Food
+                      🟢 {food99Loja?.nome ? `${food99Loja.nome} — autorizada no 99Food` : "Loja autorizada no 99Food"}
                     </div>
+                    {(food99Loja?.shopId || food99Loja?.endereco) && (
+                      <div style={{ fontSize: "0.73rem", color: "#166534", marginTop: 3, opacity: 0.9 }}>
+                        {food99Loja.endereco ? `${food99Loja.endereco} · ` : ""}
+                        <span style={{ fontFamily: "monospace" }}>ID {food99Loja.shopId}</span>
+                      </div>
+                    )}
                     <div style={{ fontSize: "0.78rem", color: "#166534", marginTop: 4 }}>
                       Os pedidos chegam sozinhos no painel. Não é preciso fazer mais nada.
                     </div>

@@ -286,6 +286,49 @@ export async function detalheDoPedido(authToken: string, orderId: string): Promi
   });
 }
 
+export interface LojaNoNoveNove {
+  nome: string | null;
+  shopId: string | null;
+  appShopId: string | null;
+  endereco: string | null;
+}
+
+/**
+ * Nome e dados da loja como ela aparece no 99Food.
+ *
+ * Existe porque a tela dizia só "🟢 Loja autorizada no 99Food", sem dizer QUAL.
+ * Com uma loja já é ruim (o lojista não confere se ligou a certa); com várias na
+ * mesma conta seria impossível saber qual desligar.
+ *
+ * `shop/list` não serve para isto — ele devolve só ids (app_id, shop_id,
+ * app_shop_id, city_id), sem nome. Quem tem o nome é o `shop/detail`, e ele
+ * pede o auth_token DA LOJA, não as credenciais do app.
+ *
+ * O cache existe porque a tela de Integrações abre com frequência e o nome
+ * muda raramente. Cinco minutos deixam a renomeação aparecer rápido sem
+ * transformar cada abertura de tela numa ida à API deles.
+ */
+const cacheLoja = new Map<string, { em: number; loja: LojaNoNoveNove }>();
+const VALIDADE_CACHE_LOJA_MS = 5 * 60_000;
+
+export async function detalheDaLoja(authToken: string): Promise<LojaNoNoveNove | null> {
+  const emCache = cacheLoja.get(authToken);
+  if (emCache && Date.now() - emCache.em < VALIDADE_CACHE_LOJA_MS) return emCache.loja;
+
+  const r = await chamar<any>("/v1/shop/shop/detail", { query: { auth_token: authToken } });
+  if (r.errno !== 0 || !r.data) return null;
+
+  const d = r.data;
+  const loja: LojaNoNoveNove = {
+    nome: d.name ? String(d.name).trim() : null,
+    shopId: d.shop_id != null ? String(d.shop_id) : null,
+    appShopId: d.app_shop_id ? String(d.app_shop_id) : null,
+    endereco: [d.address, d.poi_name].filter(Boolean).map((s: any) => String(s).trim())[0] || null,
+  };
+  cacheLoja.set(authToken, { em: Date.now(), loja });
+  return loja;
+}
+
 // ── Diagnóstico ─────────────────────────────────────────────────────────────
 
 /**

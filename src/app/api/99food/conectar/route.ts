@@ -7,6 +7,7 @@ import {
   getAuthToken,
   food99Configurado,
   listarLojasVinculadas,
+  detalheDaLoja,
 } from "@/lib/food99-api";
 
 export const dynamic = "force-dynamic";
@@ -102,15 +103,34 @@ export async function GET(req: NextRequest) {
  * acabou de autorizar. Com mais de um, a escolha volta para a tela: adivinhar
  * aqui é o mesmo erro de despejar pedido na cozinha errada.
  */
+/**
+ * Qual loja está ligada, com nome.
+ *
+ * A tela dizia só "🟢 Loja autorizada no 99Food", sem dizer qual — e o lojista
+ * não tinha como conferir se ligou a loja certa antes de os pedidos começarem a
+ * cair na cozinha. Com mais de uma loja na conta, seria impossível saber qual
+ * está desligando no botão de desconectar.
+ *
+ * Falhar aqui não derruba nada: sem o nome a tela volta ao texto genérico, mas
+ * o estado "conectado" continua valendo — ele vem do token, não daqui.
+ */
+async function comNomeDaLoja(token: string, expiraEm: number) {
+  const loja = await detalheDaLoja(token).catch(() => null);
+  return {
+    conectado: true,
+    disponivel: true,
+    expiraEm: new Date(expiraEm * 1000).toISOString(),
+    lojaNo99: loja,
+    mensagem: loja?.nome
+      ? `Loja "${loja.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
+      : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
+  };
+}
+
 async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   const direto = await getAuthToken(lojaId);
   if (direto.autorizada) {
-    return {
-      conectado: true,
-      disponivel: true,
-      expiraEm: new Date(direto.token.token_expiration_time * 1000).toISOString(),
-      mensagem: "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
-    };
+    return comNomeDaLoja(direto.token.auth_token, direto.token.token_expiration_time);
   }
 
   // Já adotamos um app_shop_id diferente do nosso id numa conexão anterior?
@@ -121,12 +141,7 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   if (loja?.food99AppId) {
     const porVinculo = await getAuthToken(loja.food99AppId);
     if (porVinculo.autorizada) {
-      return {
-        conectado: true,
-        disponivel: true,
-        expiraEm: new Date(porVinculo.token.token_expiration_time * 1000).toISOString(),
-        mensagem: "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
-      };
+      return comNomeDaLoja(porVinculo.token.auth_token, porVinculo.token.token_expiration_time);
     }
   }
 
