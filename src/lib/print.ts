@@ -42,7 +42,7 @@ type PrintOrder = {
  *
  * MANTENHA IGUAL a firehub-print-assistant/package.json ao gerar um instalador.
  */
-export const VERSAO_ASSISTENTE_ATUAL = "1.1.2";
+export const VERSAO_ASSISTENTE_ATUAL = "1.1.3";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 

@@ -1087,18 +1087,54 @@ setInterval(async () => {
       });
 
       for (const job of jobs) {
-        const alvo = currentConfig.printer;
-        const perfil = resolvePrinterProfile(alvo, job);
-        enqueuePrintJob({
-          printer: alvo,
-          order: job.order,
-          storeName: job.storeName || "FIREHUB",
-          copies: perfil.copies,
-          paperWidth: perfil.paperWidth,
-          columns: perfil.columns,
-          escposProfile: perfil.profile,
-          force: false
-        }).catch(() => {});
+        // O SERVIDOR ja decidiu para quem este pedido vai, com as mesmas
+        // regras do navegador: qual impressora, com quais itens, e se e uma
+        // comanda so de bebida.
+        //
+        // Antes daqui saia sempre `currentConfig.printer` — a impressora
+        // antiga, uma so, sem filtro nenhum. A mesa e o balcao imprimem por
+        // esta fila, entao categoria, modulo e 'so bebida' nunca valeram
+        // para eles: a comanda de mesa saia inteira na impressora do bar.
+        const destinos = Array.isArray(job.destinos) ? job.destinos.filter(d => d && d.printer) : [];
+
+        if (destinos.length === 0) {
+          // Loja sem impressora cadastrada, ou servidor antigo que ainda nao
+          // manda `destinos`. Comporta-se como sempre se comportou.
+          const alvo = currentConfig.printer;
+          const perfil = resolvePrinterProfile(alvo, job);
+          enqueuePrintJob({
+            printer: alvo,
+            order: job.order,
+            storeName: job.storeName || "FIREHUB",
+            copies: perfil.copies,
+            paperWidth: perfil.paperWidth,
+            columns: perfil.columns,
+            escposProfile: perfil.profile,
+            force: false
+          }).catch(() => {});
+          continue;
+        }
+
+        for (const destino of destinos) {
+          const perfil = resolvePrinterProfile(destino.printer, destino);
+          enqueuePrintJob({
+            printer: destino.printer,
+            // Os itens ja vem filtrados para ESTA impressora, e a marca de
+            // so-bebida viaja dentro do pedido porque e la que buildEscPos
+            // a le.
+            order: {
+              ...job.order,
+              items: Array.isArray(destino.items) ? destino.items : job.order?.items,
+              somenteBebidas: destino.somenteBebidas === true,
+            },
+            storeName: job.storeName || "FIREHUB",
+            copies: Number(destino.copies) > 0 ? Number(destino.copies) : perfil.copies,
+            paperWidth: destino.paperWidth || perfil.paperWidth,
+            columns: destino.columns || perfil.columns,
+            escposProfile: destino.escposProfile || perfil.profile,
+            force: false
+          }).catch(() => {});
+        }
       }
     }
   } catch (err) {
