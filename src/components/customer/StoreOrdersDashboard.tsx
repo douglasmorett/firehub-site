@@ -737,7 +737,19 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                     padding: "4px 8px", borderRadius: "6px", border: "2px solid #EF4444",
                     fontSize: "0.75rem", fontWeight: 800, color: "#DC2626",
                     background: "#FEF2F2", fontFamily: "inherit",
-                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "140px",
+                    // `maxWidth: 140px` cortava justamente o texto que mais
+                    // importa aqui: "🛵 Motoboy 99Food" aparecia como
+                    // "🛵 Motoboy 99F…", e a loja não conseguia ler de qual
+                    // parceiro é a entrega. `<select>` corta o texto em vez de
+                    // quebrar, então largura fixa é sempre aposta contra o
+                    // conteúdo — e o nome do parceiro muda (iFood, 99Food).
+                    //
+                    // `fit-content` no minWidth é o que resolve de verdade: o
+                    // item não encolhe abaixo do próprio texto, então o flex
+                    // container QUEBRA A LINHA em vez de espremer. Em tela
+                    // larga ele cresce; em tela estreita vai para a linha de
+                    // baixo inteiro. Nunca cortado.
+                    cursor: "pointer", flex: "1 1 auto", minWidth: "fit-content", maxWidth: "100%",
                     boxShadow: "0 0 0 1px #FCA5A5"
                   }}
                   title={`O sistema detectou como Entrega Parceira ${pInfo.partnerName}. Você pode alterar se estiver incorreto.`}
@@ -760,7 +772,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                     color: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#991B1B" : (order.motoboyId ? "#047857" : "#1E293B"),
                     background: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#FEE2E2" : (order.motoboyId ? "#ECFDF5" : "#F8FAFC"),
                     fontFamily: "inherit",
-                    cursor: "pointer", flex: 1, minWidth: "90px", maxWidth: "145px"
+                    // Mesmo motivo do seletor de parceiro acima: nome de motoboy
+                    // não tem tamanho previsível, e `<select>` corta em vez de
+                    // quebrar. Cresce com a tela, quebra a linha quando não cabe.
+                    cursor: "pointer", flex: "1 1 auto", minWidth: "fit-content", maxWidth: "100%"
                   }}
                   title={(order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "Pedido CANCELADO com Motoboy atribuído" : "Atribuir Motoboy da Loja"}
                 >
