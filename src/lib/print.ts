@@ -42,7 +42,7 @@ type PrintOrder = {
  *
  * MANTENHA IGUAL a firehub-print-assistant/package.json ao gerar um instalador.
  */
-export const VERSAO_ASSISTENTE_ATUAL = "1.1.1";
+export const VERSAO_ASSISTENTE_ATUAL = "1.1.2";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
@@ -58,6 +58,8 @@ type PrinterEntry = {
   columns?: number;
   /* Perfil de preambulo ESC/POS. Assistentes antigos ignoram este campo. */
   escposProfile?: EscPosProfile;
+  /* So bebida: mesmo dentro de combo, so a bebida sai nesta impressora. */
+  somenteBebidas?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.
      Ausente ou vazio = os dois, que e como toda loja configurada antes
      desta opcao existir continua funcionando. */
@@ -113,7 +115,8 @@ async function printToDevice(
   printerConfig?: PrinterConfig,
   columns?: number,
   escposProfile?: EscPosProfile,
-  semValores = false
+  semValores = false,
+  somenteBebidas = false
 ): Promise<boolean> {
   try {
     const baseUrl = await getAssistantUrl();
@@ -170,6 +173,10 @@ async function printToDevice(
           // então mandar isto para uma loja que ainda não atualizou o Assistente
           // não muda nada: o cupom sai como sempre saiu, com valores.
           semValores,
+          // Quem decide o que e bebida e o Assistente: a lista de palavras
+          // (com as do lojista) mora la, e duplica-la aqui criaria duas
+          // verdades que divergem no dia em que alguem editar so uma.
+          somenteBebidas,
           notes: order.notes,
           createdAt: order.createdAt,
           printerConfig: {
@@ -250,7 +257,16 @@ export async function printOrder(
 
     // Filtra itens por categoria se configurado
     let itemsToPrint = order.items;
-    if (printer.categories && printer.categories.length > 0) {
+
+    // Impressora so de bebida NAO passa pelo filtro de categoria, e isso e o
+    // ponto: o "Combo 2 + Guaravita" tem categoria "Combos", entao o filtro o
+    // descartava — e caia no resgate de 'nenhum item casou, imprime tudo',
+    // que mandava o combo INTEIRO para a impressora do bar. Aqui vai o pedido
+    // completo e o Assistente extrai so as bebidas, inclusive as de dentro do
+    // combo. Sem bebida nenhuma, ele nao imprime nada.
+    if (printer.somenteBebidas) {
+      itemsToPrint = order.items;
+    } else if (printer.categories && printer.categories.length > 0) {
       const matchesChannel = printer.categories.some(c => {
         const cLower = c.toLowerCase().trim();
         const srcLower = (order as any).source?.toLowerCase()?.trim() || "";
@@ -281,7 +297,8 @@ export async function printOrder(
       printerConfig,
       resolveColumns(printer) ?? printerConfig?.defaultColumns,
       printer.escposProfile,
-      semValores
+      semValores,
+      printer.somenteBebidas === true
     );
     if (result) printed++;
   }

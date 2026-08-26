@@ -29,6 +29,8 @@ type PrinterEntry = {
   // Quais mundos esta impressora atende. Ausente ou vazio = os dois, que e
   // como toda loja configurada antes desta opcao continua funcionando.
   modulos?: ModuloDePedido[];
+  // So bebida: mesmo dentro de combo, so a bebida sai nesta impressora.
+  somenteBebidas?: boolean;
 };
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
@@ -649,6 +651,28 @@ export default function PrinterSetupClient({
                   </option>
                 ))}
               </select>
+
+              {/* Sem o Assistente rodando aqui, a lista chega VAZIA e o select só
+                  oferece o placeholder — não havia como escolher impressora
+                  nenhuma. Dava para cadastrar largura, cópias e categorias e
+                  salvar tudo isso sem nome, que é uma impressora que nunca vai
+                  imprimir. Acontece o tempo todo com quem configura do escritório
+                  e não do balcão. */}
+              {availablePrinters.length === 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <input
+                    value={printer.name}
+                    onChange={e => updatePrinter(printer.id, { name: e.target.value })}
+                    placeholder="Ou digite o nome exato da impressora no Windows"
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px dashed #CBD5E1", fontSize: "0.88rem", fontFamily: "inherit", fontWeight: 600 }}
+                  />
+                  <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "4px 0 0", lineHeight: 1.4 }}>
+                    A lista está vazia porque o Assistente não está aberto neste computador.
+                    Você pode digitar o nome agora — ele precisa ser <strong>igual</strong> ao que
+                    aparece em Windows › Impressoras e scanners.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Largura da Bobina / Papel */}
@@ -759,6 +783,50 @@ export default function PrinterSetupClient({
               <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0" }}>
                 Os dois ligados = esta impressora recebe tudo. Pelo menos um precisa ficar ligado.
               </p>
+            </div>
+
+            {/* ── Só bebida ──
+                Filtrar por categoria não alcança a bebida que vem DENTRO de um
+                combo: o "Combo 2 + Guaravita" tem categoria "Combos", não
+                "Bebidas". A impressora do bar ou não recebia nada, ou recebia o
+                combo inteiro. */}
+            <div style={{ marginBottom: "1rem" }}>
+              <button
+                onClick={() => updatePrinter(printer.id, { somenteBebidas: !printer.somenteBebidas })}
+                style={{
+                  width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                  padding: "12px 14px", borderRadius: 12,
+                  border: printer.somenteBebidas ? "2px solid #2563EB" : "1.5px solid #E2E8F0",
+                  background: printer.somenteBebidas ? "#EFF6FF" : "#fff",
+                  color: printer.somenteBebidas ? "#1D4ED8" : "#64748B",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "0.88rem" }}>
+                  {printer.somenteBebidas ? "✓" : "○"} 🥤 Imprimir só bebida
+                </div>
+                <div style={{ fontSize: "0.76rem", fontWeight: 500, marginTop: 3, lineHeight: 1.4, opacity: 0.9 }}>
+                  Marcado, só as bebidas do pedido saem nesta impressora — e a bebida que
+                  estiver dentro de um combo sai sozinha na comanda, sem o resto do combo.
+                  Pedido sem bebida nenhuma não imprime nada aqui.
+                </div>
+              </button>
+              {printer.somenteBebidas && (
+                <p style={{ fontSize: "0.74rem", color: "#B45309", margin: "6px 0 0", fontWeight: 700 }}>
+                  Com isto ligado, a lista de categorias abaixo não vale para esta impressora.
+                </p>
+              )}
+              {/* Quem separa a bebida de dentro do combo é o Assistente — a lista
+                  de palavras que definem "bebida" mora lá. Num Assistente antigo
+                  o campo é ignorado, e como o site deixa de filtrar por categoria
+                  para esta impressora, o pedido INTEIRO sairia no bar. Pior do que
+                  antes, então o aviso precisa ser explícito. */}
+              {printer.somenteBebidas && versaoDesatualizada && (
+                <p style={{ fontSize: "0.74rem", color: "#DC2626", margin: "6px 0 0", fontWeight: 800, lineHeight: 1.4 }}>
+                  ⚠️ Este computador está com o Assistente {versaoInstalada}. A separação da bebida
+                  dentro do combo só funciona a partir da {VERSAO_ASSISTENTE_ATUAL} — até atualizar,
+                  esta impressora vai receber o pedido inteiro. Baixe o instalador lá em cima.
+                </p>
+              )}
             </div>
 
             {categories.length > 0 && (

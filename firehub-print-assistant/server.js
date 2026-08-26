@@ -562,6 +562,48 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     return false;
   });
 
+  // ── IMPRESSORA SO DE BEBIDA ──────────────────────────────────────────
+  //
+  // Filtrar por CATEGORIA nao resolve a bebida que vem dentro de um combo: o
+  // "Combo 2 + Guaravita" tem categoria "Combos", nao "Bebidas". A impressora
+  // do bar entao ou nao recebia nada, ou recebia o combo inteiro — e o
+  // barman lia uma comanda de comida para servir um refrigerante.
+  //
+  // Aqui a bebida e extraida de dentro do combo e vira uma linha propria. O
+  // preco dela sai ZERO de proposito: o valor pertence ao combo, nao a ela, e
+  // repetir o preco do combo em cada bebida somaria dinheiro que nao existe.
+  const somenteBebidas = order?.somenteBebidas === true;
+
+  const itensParaImprimir = (() => {
+    const todos = order.items || [];
+    if (!somenteBebidas) return todos;
+
+    const saida = [];
+    for (const item of todos) {
+      if (isBeverageItem(item)) { saida.push(item); continue; }
+
+      let escolhas = [];
+      try {
+        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
+        if (Array.isArray(parsed)) escolhas = parsed.filter(s => s && s.name && isBeverageName(s.name));
+      } catch {}
+
+      const qtdDoItem = item.qty || item.quantity || 1;
+      for (const sel of escolhas) {
+        saida.push({
+          name: `${sel.name}  (do ${cleanAscii(item.name || "combo")})`,
+          qty: (Number(sel.quantity) || 1) * qtdDoItem,
+          price: 0,
+          isBeverage: true,
+        });
+      }
+    }
+    return saida;
+  })();
+
+  // Nada de bebida neste pedido: esta impressora nao cospe papel em branco.
+  if (somenteBebidas && itensParaImprimir.length === 0) return null;
+
   const INVERSE_ON = "\x1d\x42\x01";
   const INVERSE_OFF = "\x1d\x42\x00";
 
@@ -587,9 +629,16 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LF;
 
-  if (order.items && order.items.length) {
+  if (somenteBebidas) {
+    res += LF + INVERSE_ON + banner("!! SO BEBIDAS DESTE PEDIDO !!", "!! SO BEBIDAS !!") + INVERSE_OFF + LF;
+  }
+
+  // A lista de itens e a filtrada; `order.items` continua sendo o segundo
+  // argumento de getItemEffectivePrice porque o rateio do desconto so fecha
+  // olhando o pedido INTEIRO, nao o pedaco que esta sendo impresso.
+  if (itensParaImprimir.length) {
     res += boxBorder;
-    order.items.forEach((item, idx) => {
+    itensParaImprimir.forEach((item, idx) => {
       const qty = item.qty || item.quantity || 1;
       const unitPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
       const price = unitPrice * qty;
@@ -644,6 +693,14 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   }
 
   // 5. TOTALS
+  // Comanda so de bebida tambem para aqui: ela mostra um pedaco do pedido, e
+  // um total embaixo de um pedaco seria um numero que nao corresponde a nada.
+  if (somenteBebidas) {
+    res += LF + centerLine("-- COMANDA DE BEBIDAS --") + LF;
+    res += LEFT + FEED + CUT;
+    return Buffer.from(res, "binary");
+  }
+
   // Na comanda da cozinha o papel acaba aqui: nada de subtotal, taxa, total,
   // forma de pagamento nem "COBRAR DO CLIENTE".
   if (semValores) {
@@ -959,12 +1016,21 @@ async function processPrintQueue() {
         continue;
       }
 
-      markOrderAsPrinted(order, targetPrinter);
-
       // Largura e perfil resolvidos POR IMPRESSORA (job -> printers[] -> global)
       const perfil = resolvePrinterProfile(targetPrinter, { paperWidth, columns, escposProfile });
       const cols = perfil.columns;
       const data = buildEscPos(order || {}, storeName || "FIREHUB", cols, perfil.profile);
+
+      // Impressora so de bebida num pedido sem bebida nenhuma: nao ha o que
+      // imprimir. Marcar como impresso aqui seria pior do que inutil — a
+      // trava anti-duplicidade guardaria um pedido que nunca saiu.
+      if (!data) {
+        console.log(`[PrintServer] Nada de bebida no pedido #${order?.dailyOrderNumber || order?.id}. ${targetPrinter} nao imprime.`);
+        resolve({ ok: true, skipped: true, message: "Sem bebidas neste pedido." });
+        continue;
+      }
+
+      markOrderAsPrinted(order, targetPrinter);
 
       for (let i = 0; i < copies; i++) {
         await rawPrint(targetPrinter, data);
