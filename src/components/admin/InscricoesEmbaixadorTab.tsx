@@ -78,6 +78,17 @@ export default function InscricoesEmbaixadorTab() {
     }
   }
 
+  async function apagar(id: string, nome: string) {
+    if (!confirm(`Apagar a inscrição de "${nome}"? Isto não desfaz cadastro de embaixador — só remove a candidatura desta lista.`)) return;
+    setSalvando(id);
+    try {
+      await fetch(`/api/admin/inscricoes-embaixador?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      setItens((prev) => prev.filter((i) => i.id !== id));
+    } finally {
+      setSalvando(null);
+    }
+  }
+
   const visiveis = filtro === "TODOS" ? itens : itens.filter((i) => i.status === filtro);
   const contar = (s: string) => itens.filter((i) => i.status === s).length;
 
@@ -188,6 +199,14 @@ export default function InscricoesEmbaixadorTab() {
                         <option key={s} value={s}>{CORES[s].rotulo}</option>
                       ))}
                     </select>
+                    <button
+                      onClick={() => apagar(i.id, i.fullName)}
+                      disabled={salvando === i.id}
+                      title="Apagar esta inscrição"
+                      style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#991B1B", fontWeight: 700, fontSize: "0.74rem", cursor: "pointer" }}
+                    >
+                      🗑 Apagar
+                    </button>
                   </div>
                 </div>
               </div>

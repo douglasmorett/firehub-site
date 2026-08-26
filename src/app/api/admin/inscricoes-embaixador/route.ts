@@ -85,3 +85,26 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ ok: true, id, status });
 }
+
+/**
+ * DELETE /api/admin/inscricoes-embaixador?id=…
+ *
+ * Formulário público recebe spam — é questão de tempo. Sem apagar, a única
+ * saída seria marcar tudo como RECUSADO, e a aba viraria um depósito que ninguém
+ * consegue limpar. Apagar aqui não desfaz nada: se a pessoa já virou embaixador,
+ * o cadastro dela vive na tabela Ambassador, que é outra e não é tocada.
+ */
+export async function DELETE(req: NextRequest) {
+  const auth = await exigirAdmin();
+  if ("erro" in auth) return auth.erro;
+
+  const id = String(req.nextUrl.searchParams.get("id") ?? "").trim();
+  if (!id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+
+  const afetados = await prisma.$executeRaw`
+    DELETE FROM "AmbassadorApplication" WHERE "id" = ${id}
+  `;
+  if (!afetados) return NextResponse.json({ error: "Inscrição não encontrada" }, { status: 404 });
+
+  return NextResponse.json({ ok: true, apagada: id });
+}
