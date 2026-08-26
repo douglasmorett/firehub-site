@@ -933,9 +933,29 @@ export default function MesasPage() {
   }
 
   if (view === "order" && selectedTable?.openSession) {
+    // ─── A TELA DE PEDIDO TOMA A JANELA INTEIRA ──────────────────────────
+    // Era `height: 100vh` dentro do layout de /store, que desenha antes o
+    // cabeçalho da loja, a barra de caixa/site e o banner do teste grátis, e só
+    // então <main>{children}</main>. A conta é simples: altura da página = tudo
+    // isso + 100vh. O que ficava no fim dos 100vh — o carrinho e o botão de
+    // enviar — nascia abaixo da dobra, e num tablet ninguém desconfia que
+    // precisa rolar a PÁGINA, porque o cardápio ali dentro já rola sozinho.
+    //
+    // O garçom então tocava nos produtos, via o número subir no canto do card e
+    // não encontrava como mandar para a mesa. Com combo dava certo por acidente:
+    // o modal abre por cima e tem o próprio botão de confirmar.
+    //
+    // `fixed` com `inset: 0` resolve na raiz — a tela passa a valer a janela
+    // real, não o que sobrou dela. É o que a tela do KDS já faz, pelo mesmo
+    // motivo. O "← Voltar" continua sendo a saída, então nada fica preso.
+    //
+    // zIndex 900: acima do cabeçalho da loja e abaixo dos modais desta página
+    // (fechamento 1000, ações da pessoa 1100, combo 9999).
     return (
       <div className="mesa-lancar" style={{
-        height: "100vh",
+        position: "fixed",
+        inset: 0,
+        zIndex: 900,
         fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
         background: "#F8FAFC",
       }}>
