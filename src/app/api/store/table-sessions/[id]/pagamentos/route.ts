@@ -51,11 +51,23 @@ async function abrirContexto(req: NextRequest, id: string) {
   }
   const lojaId = usuario.ownerId || usuario.id;
 
+  // O dono vem da MESA, não do campo solto da sessão.
+  //
+  // `TableSession.franchiseeId` é uma String sem chave estrangeira; quem tem a
+  // relação de verdade é `Table.franchiseeId`. O fechamento (close) sempre
+  // conferiu pela mesa, e esta rota conferia pela sessão — dois caminhos para o
+  // mesmo dono. Divergindo, daria para registrar dinheiro numa mesa que o
+  // fechamento depois recusa fechar, e o valor ficaria preso no meio.
   const mesa = await prisma.tableSession.findUnique({
     where: { id },
-    select: { id: true, franchiseeId: true, status: true, paymentMethods: true },
+    select: {
+      id: true,
+      status: true,
+      paymentMethods: true,
+      table: { select: { franchiseeId: true } },
+    },
   });
-  if (!mesa || mesa.franchiseeId !== lojaId) {
+  if (!mesa || mesa.table?.franchiseeId !== lojaId) {
     return { erro: NextResponse.json({ error: "Mesa não encontrada" }, { status: 404 }) };
   }
 
