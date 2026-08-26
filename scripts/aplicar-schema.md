@@ -6,6 +6,23 @@ produção — ver `5a953ac`. Enquanto os pré-requisitos de lá não forem aten
 (healthcheck configurado e start do container reproduzido localmente), o
 `db push` continua sendo feito à mão.
 
+## O `db push` saiu do `npm run build`
+
+Ele estava la, e derrubava todo deploy da Vercel — 18 horas seguidas de builds
+falhando em 13 segundos com `P1001: Cant reach database server`. A producao nao
+sentia nada, porque o Dockerfile roda `npx next build` direto e nunca chamou
+`npm run build`; hoje a producao e o Coolify em 107.170.79.194, construindo pelo
+`docker-compose.yml` -> `Dockerfile`.
+
+Ou seja: aquele `db push` nao aplicava schema em lugar nenhum que importasse, e
+so servia para quebrar o outro ambiente. O procedimento continua sendo o daqui.
+
+Para coluna nova sem ter a DATABASE_URL na mao, ha um caminho melhor: uma rota
+que roda o `ALTER TABLE` pela propria aplicacao, que ja esta conectada ao banco.
+Foi como entraram `MenuProduct.sortOrder` (`/api/admin/coluna-ordem`) e as tres
+colunas de preco por canal (`/api/admin/colunas-preco`). Aditivo, idempotente, e
+sem `criar=sim` na URL so consulta.
+
 ## Quando rodar
 
 Depois de qualquer mudança em `prisma/schema.prisma`. Hoje há duas pendentes, e
