@@ -625,6 +625,24 @@ export default function PrinterSetupClient({
                 style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontFamily: "inherit", background: "#fff", fontWeight: 600 }}
               >
                 <option value="">-- Selecione a impressora instalada no Windows --</option>
+                {/* A impressora salva pode não estar em `availablePrinters`: o
+                    Assistente ainda está conectando, está fechado, ou a impressora
+                    foi renomeada no Windows.
+
+                    Este select é CONTROLADO por `printer.name`. Quando nenhuma
+                    <option> tem esse valor, o React não "deixa em branco" — ele
+                    marca a primeira option não desabilitada, que é o placeholder
+                    acima. A tela dizia "-- Selecione --" com o nome intacto no
+                    banco, e o lojista concluía que não tinha salvado. Dava para
+                    ver a contradição na mesma linha: o botão "🧪 Testar" logo
+                    abaixo só aparece quando `printer.name` existe. */}
+                {printer.name && !availablePrinters.some(p => p.name === printer.name) && (
+                  <option value={printer.name}>
+                    {status === "connected"
+                      ? `⚠️ ${printer.name} (salva — não encontrada neste computador)`
+                      : `🖨️ ${printer.name} (salva)`}
+                  </option>
+                )}
                 {availablePrinters.map(p => (
                   <option key={p.name} value={p.name}>
                     🖨️ {p.name} {p.port ? `(${p.port})` : ""}
