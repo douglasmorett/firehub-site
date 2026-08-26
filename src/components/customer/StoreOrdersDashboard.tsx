@@ -524,8 +524,18 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
         {/* Conteúdo Principal — Telefone + Data + Timer */}
         <div style={{ fontSize: "0.82rem", lineHeight: "1.4" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", color: "#64748B", fontSize: "0.75rem", marginBottom: "4px" }}>
-            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1, fontWeight: 500 }}>
+          {/* Telefone e cronômetro dividiam a linha, e só o telefone encolhia:
+              `flex: 1` + `minWidth: 0` + ellipsis contra um cronômetro com
+              `flexShrink: 0`. Em tela estreita sobravam 57px para um número que
+              precisa de 106 — virava "📞 +55 …", e telefone pela metade não
+              serve para nada: ninguém liga para meio número.
+
+              Agora a LINHA quebra em vez de o número encolher. O `nowrap` fica
+              (número não pode partir no meio dos dígitos), mas com
+              `minWidth: fit-content` ele não cede espaço — quem desce para a
+              linha de baixo é o cronômetro. */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap", color: "#64748B", fontSize: "0.75rem", marginBottom: "4px" }}>
+            <span style={{ whiteSpace: "nowrap", minWidth: "fit-content", flex: "1 1 auto", fontWeight: 500 }}>
               📞 {order.customerPhone || "—"}
             </span>
             <span style={{ flexShrink: 0, fontSize: "0.74rem", fontWeight: 600, color: "#475569" }}>
