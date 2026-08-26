@@ -152,11 +152,10 @@ export default async function AdminSidebar() {
               <Sparkles size={18} style={{ marginRight: "10px", color: "#667eea" }} /> FireHub IA
             </a>
           )}
-          {(role === "ADMIN" || isFranchisee) && (
-            <a href="/admin/indique-ganhe" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "rgba(16, 185, 129, 0.08)", borderLeft: "3px solid #10B981" }}>
-              <span style={{marginRight: "10px"}}>🤝</span> Indique e Ganhe
-            </a>
-          )}
+          {/* Saiu o link "Indique e Ganhe". Ele apontava para /admin/indique-ganhe,
+              rota que nem existe neste projeto — dava 404 em quem clicasse. E o
+              programa de indicação self-service foi encerrado: as candidaturas a
+              embaixador agora chegam na aba "Inscrições" do painel admin. */}
 
           {/* ===== ADMIN ===== */}
           {role === "ADMIN" && (

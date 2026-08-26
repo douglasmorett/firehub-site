@@ -107,18 +107,21 @@ export default function Home() {
           <a href="#planos">Planos</a>
           <a href="#comparativo">Comparativo</a>
           <a href="#faq">FAQ</a>
-          <a href="/indique-ganhe" style={{
-            color: "#EF4444", 
-            fontWeight: 700, 
-            border: "2px solid #EF4444", 
-            padding: "8px 16px", 
-            borderRadius: "50px", 
+          {/* Era "🤝 Indique e Ganhe", aberto a qualquer lojista. O programa de
+              indicação self-service saiu: embaixador agora é cadastrado à mão
+              pela equipe, e esta porta serve para demonstrar interesse. */}
+          <a href="/seja-embaixador" style={{
+            color: "#EF4444",
+            fontWeight: 700,
+            border: "2px solid #EF4444",
+            padding: "8px 16px",
+            borderRadius: "50px",
             background: "rgba(239, 68, 68, 0.08)",
             display: "inline-flex",
             alignItems: "center",
             gap: "6px",
             transition: "all 0.2s"
-          }}>🤝 Indique e Ganhe</a>
+          }}>⭐ Embaixadores</a>
           <a href={LOGIN} className="btn-cta">🔑 Acessar</a>
         </div>
       </nav>

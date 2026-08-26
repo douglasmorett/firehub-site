@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { signIn } from "next-auth/react";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import AmbassadorsTab from "./AmbassadorsTab";
+import InscricoesEmbaixadorTab from "./InscricoesEmbaixadorTab";
 import AdminCostsTab from "./AdminCostsTab";
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -36,7 +37,7 @@ export default function AdminDashboardClient({
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
-  const [tab, setTab] = useState<"overview" | "lojistas" | "financeiro" | "ambassadors" | "custos">("overview");
+  const [tab, setTab] = useState<"overview" | "lojistas" | "financeiro" | "ambassadors" | "inscricoes" | "custos">("overview");
   const [lojistas, setLojistas] = useState<Lojista[]>(initialLojistas);
 
   // Modal de concessão de dias
@@ -194,6 +195,10 @@ export default function AdminDashboardClient({
             <div className="fha-nav-icon">🤝</div>
             Embaixadores
           </button>
+          <button onClick={() => setTab("inscricoes")} className={`fha-nav-item${tab === "inscricoes" ? " active" : ""}`} style={{ width: "100%", border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
+            <div className="fha-nav-icon">⭐</div>
+            Inscrições
+          </button>
           <button onClick={() => setTab("custos")} className={`fha-nav-item${tab === "custos" ? " active" : ""}`} style={{ width: "100%", border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
             <div className="fha-nav-icon">💰</div>
             Custos & P&L
@@ -228,6 +233,7 @@ export default function AdminDashboardClient({
               {tab === "lojistas" && "🏪 Gestão de Lojistas"}
               {tab === "financeiro" && "💰 Financeiro"}
               {tab === "ambassadors" && "🤝 Embaixadores"}
+              {tab === "inscricoes" && "⭐ Inscrições para embaixador"}
             </h1>
             <p style={{ color: "#64748B", fontSize: "0.78rem", margin: "2px 0 0" }}>
               {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
@@ -660,6 +666,7 @@ export default function AdminDashboardClient({
           )}
 
           {tab === "ambassadors" && <AmbassadorsTab />}
+          {tab === "inscricoes" && <InscricoesEmbaixadorTab />}
         {tab === "custos" && <AdminCostsTab />}
 
         </div>
