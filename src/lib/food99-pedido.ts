@@ -189,3 +189,44 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     itens: Array.isArray(o.order_items) ? o.order_items.map(traduzirItem) : [],
   };
 }
+
+/**
+ * Itens do 99Food no formato de `create` aninhado do Prisma.
+ *
+ * Estava escrito duas vezes, igual, no webhook e na importação manual — e agora
+ * uma terceira precisaria dele (o cancelamento parcial, que refaz os itens).
+ * Três cópias da mesma regra é onde uma delas começa a divergir em silêncio: a
+ * observação do item some de uma, o preço unitário fica errado na outra.
+ *
+ * O `id` do produto é derivado do NOME porque o 99Food não manda o id do nosso
+ * cardápio. Um id fixo casaria com um produto real de outra loja; este não sai
+ * do par (loja, nome).
+ */
+export function itens99ParaPrisma(itens: ItemTraduzido[], lojaId: string) {
+  return itens.map((i) => ({
+    price: i.precoUnitario,
+    quantity: i.quantidade,
+    // A observação do item entra junto dos complementos porque é ali que a
+    // comanda da cozinha lê o que veio escrito para o prato.
+    comboSelections:
+      i.complementos.length > 0 || i.observacao
+        ? JSON.stringify([
+            ...i.complementos,
+            ...(i.observacao ? [{ name: `Obs: ${i.observacao}`, quantity: 1, price: 0 }] : []),
+          ])
+        : null,
+    menuProduct: {
+      connectOrCreate: {
+        where: { id: `99food_${lojaId}_${i.nome}`.slice(0, 190) },
+        create: {
+          id: `99food_${lojaId}_${i.nome}`.slice(0, 190),
+          name: i.nome,
+          price: i.precoUnitario,
+          description: "",
+          category: "99Food",
+          franchiseeId: lojaId,
+        },
+      },
+    },
+  }));
+}

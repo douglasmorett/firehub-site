@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { registrar99Food } from "@/lib/webhook-99food-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
-import { traduzirPedido99Food, type ItemTraduzido } from "@/lib/food99-pedido";
+import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
+import { aplicarPedidoAlterado99 } from "@/lib/food99-status";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
 
 /**
@@ -45,11 +46,29 @@ const EVENTOS_PEDIDO_NOVO = new Set([
   "placed", "plc", "orderplaced", "new",         // iFood / OpenDelivery
 ]);
 
+/**
+ * Eventos em que o CLIENTE pede algo e a loja teria que responder.
+ *
+ * `orderCancelApply` (pedido de cancelamento) e `orderRefundApply` (reembolso
+ * por item faltando) só chegam se o app tiver optado por recebê-los em
+ * `POST /v1/shop/apply/set`. Por padrão — e é o estado de hoje — quem responde
+ * é o time de atendimento da própria DiDi.
+ *
+ * NÃO ligar esse opt-in enquanto não existir tela para a loja aceitar ou
+ * recusar: passar a receber a pergunta sem ter como responder é pior do que
+ * não recebê-la, porque tira da DiDi um caso que ela resolveria e o deixa sem
+ * dono. Enquanto isso, se algum chegar, fica registrado em vez de virar
+ * "evento não reconhecido" no meio dos outros.
+ */
+const EVENTOS_PEDIDO_DO_CLIENTE = new Set(["ordercancelapply", "orderrefundapply"]);
+
 /** Evento de mudança de status → status interno do FireHub. */
 function statusDoEvento(evento: string): string | null {
   switch (normalizarEvento(evento)) {
+    // ATENÇÃO: `orderPartialCancel` NÃO entra aqui. Ver o tratamento próprio
+    // mais abaixo — cancelamento PARCIAL é o cliente tirando um item, e cancelar
+    // o pedido inteiro por causa disso joga fora uma venda que continua de pé.
     case "ordercancel":
-    case "orderpartialcancel":
     case "cancelled":
     case "can":
       return "CANCELADO";
@@ -301,35 +320,7 @@ export async function POST(req: NextRequest) {
         if (!existing) {
           const p = traduzido;
 
-          const items = p.itens.map((i: ItemTraduzido) => ({
-            price: i.precoUnitario,
-            quantity: i.quantidade,
-            // A observação do item entra junto dos complementos porque é ali
-            // que a comanda da cozinha lê o que veio escrito para o prato.
-            comboSelections:
-              i.complementos.length > 0 || i.observacao
-                ? JSON.stringify([
-                    ...i.complementos,
-                    ...(i.observacao ? [{ name: `Obs: ${i.observacao}`, quantity: 1, price: 0 }] : []),
-                  ])
-                : null,
-            menuProduct: {
-              connectOrCreate: {
-                // O 99Food não manda o id do nosso cardápio, então o produto é
-                // criado a partir do nome. `dummy_id` aqui casaria com um
-                // produto real chamado assim; um id derivado do nome não.
-                where: { id: `99food_${franchisee!.id}_${i.nome}`.slice(0, 190) },
-                create: {
-                  id: `99food_${franchisee!.id}_${i.nome}`.slice(0, 190),
-                  name: i.nome,
-                  price: i.precoUnitario,
-                  description: "",
-                  category: "99Food",
-                  franchiseeId: franchisee!.id,
-                },
-              },
-            },
-          }));
+          const items = itens99ParaPrisma(p.itens, franchisee!.id);
 
           try {
             await (prisma.customerOrder as any).create({
@@ -393,6 +384,33 @@ export async function POST(req: NextRequest) {
             payload: event,
           });
         }
+      } else if (normalizarEvento(eventType) === "orderpartialcancel") {
+        // Cancelamento PARCIAL: o cliente tirou item, o pedido continua de pé.
+        // Antes isto caía no mesmo case do orderCancel e matava o pedido
+        // inteiro — a comanda saía da cozinha e a venda sumia do caixa porque
+        // o cliente desistiu de uma batata.
+        const r = await aplicarPedidoAlterado99(orderId);
+        if (r.ok) updated++;
+        registrar99Food({
+          tipo: eventType,
+          reconhecido: true,
+          pedidoCriado: false,
+          motivo: r.ok ? `cancelamento parcial aplicado — ${r.motivo}` : `cancelamento parcial NÃO aplicado: ${r.motivo}`,
+          payload: event,
+        });
+      } else if (EVENTOS_PEDIDO_DO_CLIENTE.has(normalizarEvento(eventType))) {
+        // Só chega se alguém tiver ligado o opt-in em /v1/shop/apply/set. Não
+        // está ligado, e não deve ser antes de existir tela para responder.
+        console.warn(`[99Food Webhook] ${eventType} recebido para ${orderId} — não há tela para a loja responder`);
+        registrar99Food({
+          tipo: eventType,
+          reconhecido: true,
+          pedidoCriado: false,
+          motivo:
+            "o CLIENTE está pedindo cancelamento/reembolso e o FireHub não tem tela para aceitar ou recusar. " +
+            "Enquanto o opt-in de /v1/shop/apply/set estiver desligado, quem responde é o atendimento da DiDi.",
+          payload: event,
+        });
       } else if (orderId) {
         // Atualizações de status
         const newStatus = statusDoEvento(eventType);
@@ -481,4 +499,30 @@ export async function POST(req: NextRequest) {
     registrar99Food({ tipo: "erro", reconhecido: false, pedidoCriado: false, motivo: err?.message, payload: null });
     return NextResponse.json({ errno: 1, errmsg: err?.message || "erro interno" }, { status: 500 });
   }
+}
+
+/**
+ * GET /api/99food/webhook
+ *
+ * Existe para o portal do 99Food conseguir SALVAR esta URL como Callback
+ * address.
+ *
+ * A rota só exportava POST, então qualquer GET aqui respondia 405. Muitas
+ * plataformas validam o endereço com um GET (ou HEAD) antes de aceitar o
+ * cadastro, e um 405 nessa hora é indistinguível de "URL inválida" — o campo
+ * simplesmente não salva, e do lado de cá o sintoma é exatamente o que a Brasa
+ * Burguer vive: loja autorizada, vínculo de pé, e o webhook nunca chamado.
+ *
+ * Não custa nada e pode ser o que destrava: responde o mesmo `{"errno":0,
+ * "errmsg":"ok"}` que o POST responde, que é o único corpo que o 99Food
+ * reconhece como sucesso. Nenhum pedido é criado por aqui — GET não carrega
+ * evento.
+ */
+export async function GET() {
+  return NextResponse.json(ACK);
+}
+
+/** Mesmo motivo do GET: validação por HEAD não pode esbarrar em 405. */
+export async function HEAD() {
+  return new Response(null, { status: 200 });
 }

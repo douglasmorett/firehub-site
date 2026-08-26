@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { tokenDaLoja } from "@/lib/food99-status";
-import { traduzirPedido99Food, type ItemTraduzido } from "@/lib/food99-pedido";
+import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export const dynamic = "force-dynamic";
@@ -92,30 +92,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const items = p.itens.map((i: ItemTraduzido) => ({
-    price: i.precoUnitario,
-    quantity: i.quantidade,
-    comboSelections:
-      i.complementos.length > 0 || i.observacao
-        ? JSON.stringify([
-            ...i.complementos,
-            ...(i.observacao ? [{ name: `Obs: ${i.observacao}`, quantity: 1, price: 0 }] : []),
-          ])
-        : null,
-    menuProduct: {
-      connectOrCreate: {
-        where: { id: `99food_${lojaId}_${i.nome}`.slice(0, 190) },
-        create: {
-          id: `99food_${lojaId}_${i.nome}`.slice(0, 190),
-          name: i.nome,
-          price: i.precoUnitario,
-          description: "",
-          category: "99Food",
-          franchiseeId: lojaId,
-        },
-      },
-    },
-  }));
+  const items = itens99ParaPrisma(p.itens, lojaId);
 
   const criado = await (prisma.customerOrder as any).create({
     data: {

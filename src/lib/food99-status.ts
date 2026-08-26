@@ -1,11 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import {
   getAuthToken,
+  refreshAuthToken,
   confirmarPedido,
   cancelarPedido,
   pedidoPronto,
   pedidoEntregue,
+  detalheDoPedido,
 } from "@/lib/food99-api";
+import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 
 /**
  * /src/lib/food99-status.ts
@@ -51,15 +54,7 @@ export function ehPedido99Food(pedido: {
 }
 
 /**
- * O `auth_token` da loja, tentando os dois identificadores possíveis.
- *
- * O vínculo pode ter nascido sob o nosso próprio id (é o caso da Brasa
- * Burguer) ou sob um app_shop_id escolhido pelo 99Food, que a tela de conexão
- * grava em `food99AppId`. Perguntar só pelo primeiro deixa metade das lojas de
- * fora — é o mesmo cuidado que /api/99food/conectar já tomava.
- */
-/**
- * O token vale semanas (o da Brasa Burguer expira em 24/09). Sem cache, TODA
+ * O token vale semanas (o da Brasa Burguer vence em 24/09). Sem cache, TODA
  * mudança de status pagaria uma ida ao 99Food só para redescobrir o mesmo
  * valor — e a loja movimentada, que muda status o dia inteiro, seria a mais
  * penalizada. A margem de 5 min evita usar um token que vence no meio da
@@ -67,6 +62,47 @@ export function ehPedido99Food(pedido: {
  */
 const cacheToken = new Map<string, { token: string; expiraEm: number }>();
 const MARGEM_EXPIRACAO_MS = 5 * 60_000;
+
+/** Renova quando falta menos que isto para vencer. Um dia dá folga de sobra. */
+const RENOVAR_FALTANDO_MS = 24 * 60 * 60_000;
+
+/**
+ * Token de UM identificador, renovando antes de vencer.
+ *
+ * ── O `refreshAuthToken` era código morto ───────────────────────────────────
+ *
+ * A função de renovar existe em food99-api.ts desde o começo e não era chamada
+ * de lugar nenhum — `grep` no projeto inteiro achava só a definição dela. O
+ * token da Brasa Burguer vence em 24/09/2026: naquele dia, com tudo o mais
+ * funcionando, a integração pararia sozinha e o sintoma seria idêntico ao de
+ * hoje (pedido não entra, ninguém sabe por quê).
+ *
+ * O iFood não tem esse buraco — `lib/ifood-token.ts` renova sozinho pelo
+ * refreshToken. Aqui a renovação passa a acontecer no uso, com um dia de
+ * antecedência, que é folga suficiente para uma loja que opera todo dia.
+ *
+ * O 99Food aceita uma renovação a cada dois minutos e, depois de renovar, o
+ * valor novo só aparece consultando de novo — daí a segunda chamada.
+ */
+async function tokenDeUmId(id: string): Promise<{ auth_token: string; token_expiration_time: number } | null> {
+  const r = await getAuthToken(id);
+  if (!r.autorizada) return null;
+
+  const venceEm = r.token.token_expiration_time * 1000;
+  if (venceEm - RENOVAR_FALTANDO_MS > Date.now()) return r.token;
+
+  console.log(`[99Food] Token de ${id} vence em ${new Date(venceEm).toISOString()} — renovando`);
+  const renovou = await refreshAuthToken(id);
+  if (!renovou) {
+    // Falhou a renovação: devolve o que existe. Um token que ainda não venceu
+    // continua servindo, e recusar aqui derrubaria a integração antes da hora.
+    console.warn(`[99Food] Renovação recusada para ${id} — seguindo com o token atual`);
+    return r.token;
+  }
+
+  const novo = await getAuthToken(id);
+  return novo.autorizada ? novo.token : r.token;
+}
 
 export async function tokenDaLoja(lojaId: string): Promise<string | null> {
   const emCache = cacheToken.get(lojaId);
@@ -77,16 +113,16 @@ export async function tokenDaLoja(lojaId: string): Promise<string | null> {
     return t.auth_token;
   };
 
-  const direto = await getAuthToken(lojaId);
-  if (direto.autorizada) return guardar(direto.token);
+  const direto = await tokenDeUmId(lojaId);
+  if (direto) return guardar(direto);
 
   const loja = await prisma.user.findUnique({
     where: { id: lojaId },
     select: { food99AppId: true },
   });
   if (loja?.food99AppId && loja.food99AppId !== lojaId) {
-    const porVinculo = await getAuthToken(loja.food99AppId);
-    if (porVinculo.autorizada) return guardar(porVinculo.token);
+    const porVinculo = await tokenDeUmId(loja.food99AppId);
+    if (porVinculo) return guardar(porVinculo);
   }
 
   cacheToken.delete(lojaId);
@@ -230,4 +266,68 @@ export async function sincronizar99Food(
   }
 
   return { ok: erros.length === 0, acoes, erros };
+}
+
+/**
+ * Cancelamento PARCIAL: o cliente tirou item, o pedido continua de pé.
+ *
+ * ── O que estava errado ─────────────────────────────────────────────────────
+ *
+ * `orderPartialCancel` caía no mesmo `case` do `orderCancel` e virava
+ * "CANCELADO". Ou seja: o cliente tirava a batata e o FireHub jogava fora o
+ * pedido inteiro — a comanda saía da cozinha, a venda sumia do caixa, e o
+ * cliente receberia um cancelamento que ninguém pediu. É o oposto do que o
+ * evento significa.
+ *
+ * ── Por que buscar o pedido de novo ─────────────────────────────────────────
+ *
+ * O evento diz que mudou, não diz para quanto ficou. O `order/detail` devolve o
+ * OrderModel inteiro já sem o que foi cancelado, então ele é a fonte da verdade
+ * — melhor do que tentar subtrair no escuro e errar o total que vai para o
+ * caixa. Os itens são refeitos a partir dele pelo mesmo tradutor que criou o
+ * pedido, para não existirem duas ideias do que é um item do 99Food.
+ */
+export async function aplicarPedidoAlterado99(
+  orderId99: string
+): Promise<{ ok: boolean; motivo: string }> {
+  const pedido = await prisma.customerOrder.findFirst({
+    where: { openDeliveryOrderId: orderId99 },
+    select: { id: true, franchiseeId: true, notes: true, status: true },
+  });
+  if (!pedido) return { ok: false, motivo: `pedido ${orderId99} não existe no FireHub` };
+
+  const token = await tokenDaLoja(pedido.franchiseeId);
+  if (!token) return { ok: false, motivo: "loja sem autorização válida no 99Food" };
+
+  const r = await detalheDoPedido(token, orderId99);
+  if (r.errno !== 0 || !r.data) {
+    return { ok: false, motivo: `order/detail recusou: ${r.errno} ${r.errmsg}` };
+  }
+
+  const p = traduzirPedido99Food(r.data);
+
+  // Aviso no topo das observações porque é o que a comanda imprime primeiro. A
+  // cozinha pode já ter começado a montar o que foi cancelado.
+  const aviso = "⚠️ PEDIDO ALTERADO PELO 99FOOD — confira os itens";
+  const notes = pedido.notes?.includes(aviso)
+    ? pedido.notes
+    : [aviso, p.observacoes || pedido.notes || ""].filter(Boolean).join(" | ");
+
+  await prisma.$transaction([
+    prisma.customerOrderItem.deleteMany({ where: { orderId: pedido.id } }),
+    (prisma.customerOrder as any).update({
+      where: { id: pedido.id },
+      data: {
+        totalAmount: p.total,
+        deliveryFee: p.taxaEntrega,
+        notes,
+        items: { create: itens99ParaPrisma(p.itens, pedido.franchiseeId) },
+      },
+    }),
+  ]);
+
+  console.log(
+    `[99Food] Pedido ${orderId99} alterado: agora ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}`
+  );
+  return { ok: true, motivo: `itens refeitos: ${p.itens.length} item(ns), total R$ ${p.total.toFixed(2)}` };
 }

@@ -236,7 +236,7 @@ export default function IntegracoesHubClient({
         if (janela) janela.location.href = data.url;
         else window.location.href = data.url; // popup bloqueado: vai na mesma aba
         setFood99Aguardando(true);
-        showToast("🔗 Autorize com a conta 99Food da sua loja e volte aqui", "#F59E0B");
+        showToast("🔗 Autorize na aba que abriu — esta tela conecta sozinha", "#F59E0B");
       } else {
         janela?.close();
         showToast(`⚠️ ${data.error || "O 99Food não devolveu a página de autorização"}`, "#EF4444");
@@ -249,7 +249,83 @@ export default function IntegracoesHubClient({
     }
   };
 
-  /** Depois de autorizar no site do 99Food, é isto que confirma do nosso lado. */
+  /**
+   * Conectar em UM clique: a tela confere sozinha enquanto o lojista autoriza.
+   *
+   * ── Por que não dá para fazer igual ao iFood ──────────────────────────────
+   *
+   * O iFood fecha o ciclo sozinho porque a autorização dele aceita
+   * `redirect_uri` e volta em /api/ifood/auth/callback. O 99Food não tem isso:
+   * o `/v1/auth/authorizationpage/getUrl` aceita SÓ `app_id` e `app_shop_id`
+   * (conferido no swagger), e a página deles não devolve nada para cá.
+   *
+   * Sem callback, o que sobrava era pedir o segundo clique — "Já autorizei" —
+   * e o lojista que fechasse a aba antes disso ficava desconectado sem saber
+   * por quê. Então quem pergunta passa a ser a tela, não a pessoa.
+   *
+   * ── A cadência tem dois ritmos, e não é detalhe ───────────────────────────
+   *
+   * `GET /conectar` só consulta o token da loja: é barato e sem limite.
+   * `?procurar=1` cai no `shop/list`, que aceita UMA chamada a cada 20s PARA O
+   * APP INTEIRO — com duas lojas conectando ao mesmo tempo, insistir nele faria
+   * as duas verem erro de excesso. Por isso o caro entra de 25 em 25s e o
+   * barato cobre o resto.
+   */
+  useEffect(() => {
+    if (!food99Aguardando || food99Connected || openModal !== "99food") return;
+
+    let cancelado = false;
+    let tentativas = 0;
+    const LIMITE = 48; // ~4 minutos a cada 5s
+
+    const conferir = async () => {
+      if (cancelado) return;
+      tentativas++;
+      const procurar = tentativas % 5 === 0;
+      try {
+        const res = await fetch(`/api/99food/conectar${procurar ? "?procurar=1" : ""}`);
+        const data = await res.json();
+        if (cancelado) return;
+
+        if (data.conectado) {
+          setFood99Connected(true);
+          setFood99Aguardando(false);
+          setFood99Candidatos([]);
+          setFood99Msg(data.mensagem || "");
+          showToast("✅ 99Food conectado! Os pedidos chegam automaticamente.", "#10B981");
+          return;
+        }
+
+        // Mais de uma loja autorizada sem dono aqui dentro: só o lojista sabe
+        // qual é a dele. Para o laço, senão a pergunta ficaria piscando embaixo
+        // de quem está tentando responder.
+        if (Array.isArray(data.candidatos) && data.candidatos.length > 0) {
+          setFood99Candidatos(data.candidatos);
+          setFood99Msg(data.mensagem || "");
+          setFood99Aguardando(false);
+          return;
+        }
+      } catch {
+        // Rede oscilou. O próximo tick tenta de novo — desistir na primeira
+        // falha devolveria o lojista ao clique manual sem necessidade.
+      }
+
+      if (!cancelado && tentativas >= LIMITE) {
+        setFood99Aguardando(false);
+        setFood99Msg(
+          "Não detectei a autorização. Se você já autorizou no 99Food, clique em Verificar agora."
+        );
+      }
+    };
+
+    const id = setInterval(conferir, 5000);
+    return () => {
+      cancelado = true;
+      clearInterval(id);
+    };
+  }, [food99Aguardando, food99Connected, openModal]);
+
+  /** Conferência manual — a automática acima cobre o caso normal. */
   const handleVerificar99Food = async () => {
     setFood99Saving(true);
     try {
@@ -1269,10 +1345,22 @@ export default function IntegracoesHubClient({
                     <ol style={{ margin: 0, paddingLeft: 18, fontSize: "0.82rem", color: "#475569", lineHeight: 1.7 }}>
                       <li>Clique em <b>Conectar com o 99Food</b> — abre o site deles.</li>
                       <li>Entre com a <b>mesma conta 99Food onde você vê os pedidos</b> e autorize o FireHub.</li>
-                      <li>Volte para cá e clique em <b>Já autorizei</b>.</li>
+                      <li>Pronto. Esta tela detecta sozinha e fica verde — <b>não precisa clicar em mais nada</b>.</li>
                     </ol>
                     <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 10 }}>
                       Você não precisa de código, App ID nem Secret. A autorização é feita na sua própria conta.
+                    </div>
+                  </div>
+                )}
+
+                {/* Sem isto o laço automático seria invisível e o lojista ficaria
+                    olhando uma tela parada, achando que precisa fazer algo. */}
+                {food99Aguardando && !food99Connected && (
+                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "12px 14px", borderRadius: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: "1.1rem" }}>⏳</span>
+                    <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
+                      <b>Esperando você autorizar no 99Food…</b><br />
+                      Pode deixar esta tela aberta — ela conecta sozinha assim que você concluir lá.
                     </div>
                   </div>
                 )}
@@ -1325,13 +1413,15 @@ export default function IntegracoesHubClient({
                   >
                     Fechar
                   </button>
-                  {food99Aguardando && !food99Connected && (
+                  {/* Reserva do laço automático: cobre a aba fechada cedo demais
+                      e o lojista que autorizou ontem e só voltou hoje. */}
+                  {!food99Connected && food99Disponivel && food99Candidatos.length === 0 && (
                     <button
                       onClick={handleVerificar99Food}
                       disabled={food99Saving}
                       style={{ padding: "10px 18px", borderRadius: "10px", border: "1.5px solid #D97706", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
                     >
-                      {food99Saving ? "Verificando…" : "Já autorizei"}
+                      {food99Saving ? "Verificando…" : "Verificar agora"}
                     </button>
                   )}
                   {!food99Connected && (
