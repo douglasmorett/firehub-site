@@ -73,6 +73,26 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url, 301);
   }
 
+  // ─── DOMÍNIO DA ICEBOX ────────────────────────────────────────────────────
+  // iceboxdistribuidora.com.br era servido por um projeto Vercel PRÓPRIO, que
+  // foi apagado. O domínio continuou na conta apontando para lugar nenhum, e
+  // quem tentava comprar recebia DEPLOYMENT_NOT_FOUND — a loja fechada sem
+  // ninguém perceber, porque nada no FireHub monitora esse domínio.
+  //
+  // As páginas sempre estiveram AQUI: /icebox/compras, /icebox/login e
+  // /icebox/cart. Então o domínio passa a ser servido por este projeto, e a
+  // raiz dele abre o catálogo em vez da página do FireHub.
+  //
+  // É rewrite e não redirect: o cliente continua vendo iceboxdistribuidora.com.br
+  // na barra de endereço, que é o domínio que ele conhece.
+  const hostSemPorta = hostDaRequisicao.split(":")[0];
+  const ehDominioIcebox = /^(www.)?iceboxdistribuidora.com.br$/i.test(hostSemPorta);
+  if (ehDominioIcebox && (pathname === "/" || pathname === "")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/icebox/compras";
+    return NextResponse.rewrite(url);
+  }
+
   // ─── CORS preflight for API routes ───
   if (pathname.startsWith("/api")) {
     if (request.method === "OPTIONS") {
