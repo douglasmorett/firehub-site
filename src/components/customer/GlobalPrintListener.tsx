@@ -181,6 +181,13 @@ export default function GlobalPrintListener() {
                     changeAmount: order.changeAmount,
                     ifoodReference: order.ifoodReference,
                     ifoodPickupCode: order.ifoodPickupCode,
+                    // `source` diz de onde o pedido veio, e sem ele o roteamento
+                    // não tem como escolher a impressora certa: toda comanda por
+                    // este caminho cairia como delivery, inclusive a da mesa. O
+                    // campo existia no pedido e só era usado num console.log —
+                    // por isso o roteamento por canal (iFood) também nunca valeu
+                    // aqui, só na tela de pedidos.
+                    source: order.source,
                     printerConfig: activePrinterConfig,
                     customBeverageKeywords: activePrinterConfig?.customBeverageKeywords || "",
                     autoBeverageTag: activePrinterConfig?.autoBeverageTag !== false,

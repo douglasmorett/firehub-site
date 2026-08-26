@@ -1,3 +1,9 @@
+import {
+  moduloDoPedido,
+  impressoraAtendeModulo,
+  type ModuloDePedido,
+} from "@/lib/modulo-do-pedido";
+
 /* ─────────────────────────────────────────────────────────────
    FireHub Print Engine
    Usa o Assistente FireHub (localhost:7891) para impressão
@@ -52,6 +58,10 @@ type PrinterEntry = {
   columns?: number;
   /* Perfil de preambulo ESC/POS. Assistentes antigos ignoram este campo. */
   escposProfile?: EscPosProfile;
+  /* Quais mundos esta impressora atende: salao, delivery, ou os dois.
+     Ausente ou vazio = os dois, que e como toda loja configurada antes
+     desta opcao existir continua funcionando. */
+  modulos?: ModuloDePedido[];
 };
 
 type PrinterConfig = {
@@ -209,6 +219,18 @@ export async function printOrder(
   }
 
   if (!printersToUse.length) return { success: false, printed: 0, attempted: true };
+
+  // ── DE QUE MUNDO E ESTE PEDIDO ─────────────────────────────────────────
+  // Categoria nunca soube de onde o pedido veio: a impressora do balcao
+  // cuspia a comanda do iFood no meio do salao, e nao havia como dizer
+  // "esta aqui e so para o delivery".
+  const modulo = moduloDoPedido((order as any).source);
+  const doModulo = printersToUse.filter(p => impressoraAtendeModulo(p.modulos, modulo));
+
+  // Nenhuma impressora configurada para este mundo: imprime em todas, em vez
+  // de engolir o pedido. Mesma regra que ja vale para a categoria que nao
+  // casa com ninguem — comanda que nao sai e prejuizo, comanda a mais e papel.
+  printersToUse = doModulo.length > 0 ? doModulo : printersToUse;
 
   // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
   const uniquePrinters: PrinterEntry[] = [];

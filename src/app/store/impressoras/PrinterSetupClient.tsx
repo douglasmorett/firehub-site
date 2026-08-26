@@ -2,6 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Printer, CheckCircle, Download, AlertCircle, Plus, Trash2, RefreshCw } from "lucide-react";
 import { VERSAO_ASSISTENTE_ATUAL } from "@/lib/print";
+import {
+  MODULOS,
+  impressoraAtendeModulo,
+  type ModuloDePedido,
+} from "@/lib/modulo-do-pedido";
 
 /* ─── Tipos ─────────────────────────────────────────────────── */
 type PrinterConfig = {
@@ -21,6 +26,9 @@ type PrinterEntry = {
   paperWidth?: "58mm" | "80mm"; // 58mm (32 colunas) ou 80mm (48 colunas)
   columns?: number;             // largura REAL medida pela regua (vazio = padrao da bobina)
   escposProfile?: "full" | "safe" | "legacy"; // perfil de preambulo ESC/POS
+  // Quais mundos esta impressora atende. Ausente ou vazio = os dois, que e
+  // como toda loja configurada antes desta opcao continua funcionando.
+  modulos?: ModuloDePedido[];
 };
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
@@ -200,12 +208,35 @@ export default function PrinterSetupClient({
       categories: [],
       copies: 1,
       paperWidth: "80mm",
+      // Explicito em vez de vazio: a tela mostra os dois marcados, e o lojista
+      // desmarca o que nao quer em vez de descobrir a regra do vazio.
+      modulos: ["salao", "delivery"],
     };
     setConfig(c => ({ ...c, printers: [...c.printers, p] }));
   };
 
   const removePrinter = (id: string) => {
     setConfig(c => ({ ...c, printers: c.printers.filter(p => p.id !== id) }));
+  };
+
+  /**
+   * Liga ou desliga um mundo nesta impressora.
+   *
+   * Desligar o ultimo nao faz nada de proposito. Lista vazia significa 'os
+   * dois' la no roteamento, entao desligar os dois acenderia os dois de volta —
+   * o lojista clicaria para tirar e veria ficar. Barrar o ultimo clique e o que
+   * mantem a tela dizendo a verdade.
+   */
+  const alternarModulo = (printer: PrinterEntry, modulo: ModuloDePedido) => {
+    const atuais: ModuloDePedido[] = MODULOS
+      .map(m => m.chave)
+      .filter(chave => impressoraAtendeModulo(printer.modulos, chave));
+
+    const ligado = atuais.includes(modulo);
+    if (ligado && atuais.length === 1) return;
+
+    const novos = ligado ? atuais.filter(c => c !== modulo) : [...atuais, modulo];
+    updatePrinter(printer.id, { modulos: novos });
   };
 
   const updatePrinter = (id: string, patch: Partial<PrinterEntry>) => {
@@ -498,6 +529,56 @@ export default function PrinterSetupClient({
           )}
         </div>
 
+        {/* ─── O QUE IMPRIME ONDE ────────────────────────────────────────
+            A loja pensa em dois mundos e eles têm impressoras diferentes. Antes,
+            a única coisa que separava impressoras era a lista de categorias — e
+            categoria não sabe de onde o pedido veio: a impressora do balcão
+            cuspia a comanda do iFood no meio do salão. */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem" }}>
+          <h2 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, color: "#0F172A" }}>📍 O que imprime onde</h2>
+          <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "4px 0 1rem" }}>
+            Seus pedidos chegam de dois lugares. Aqui você vê quais impressoras atendem cada um —
+            para mudar, use os botões dentro de cada impressora, mais abaixo.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+            {MODULOS.map(mod => {
+              const doModulo = config.printers.filter(p => p.name && impressoraAtendeModulo(p.modulos, mod.chave));
+              return (
+                <div key={mod.chave} style={{
+                  border: `1.5px solid ${doModulo.length > 0 ? "#E2E8F0" : "#FDE68A"}`,
+                  background: doModulo.length > 0 ? "#F8FAFC" : "#FFFBEB",
+                  borderRadius: 14, padding: "0.9rem 1rem",
+                }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>
+                    {mod.emoji} {mod.nome}
+                  </div>
+                  <p style={{ fontSize: "0.76rem", color: "#64748B", margin: "3px 0 8px", lineHeight: 1.4 }}>
+                    {mod.explica}
+                  </p>
+                  {doModulo.length > 0 ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {doModulo.map(p => (
+                        <span key={p.id} style={{
+                          padding: "3px 9px", borderRadius: 20, background: "#fff",
+                          border: "1px solid #CBD5E1", fontSize: "0.72rem", fontWeight: 700, color: "#334155",
+                        }}>
+                          🖨️ {p.label || p.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: "0.75rem", color: "#B45309", fontWeight: 700, margin: 0 }}>
+                      Nenhuma impressora escolhida. Enquanto ficar assim, estes pedidos saem em
+                      TODAS as impressoras — melhor sair demais do que não sair.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Impressoras cadastradas */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <h2 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, color: "#0F172A" }}>🖨️ Impressoras configuradas</h2>
@@ -626,6 +707,42 @@ export default function PrinterSetupClient({
             </div>
 
             {/* Categorias */}
+            {/* ── Quando esta impressora imprime ── */}
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", letterSpacing: "0.4px", display: "block", marginBottom: 6 }}>
+                QUANDO ESTA IMPRESSORA IMPRIME
+              </label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {MODULOS.map(mod => {
+                  const ligado = impressoraAtendeModulo(printer.modulos, mod.chave);
+                  return (
+                    <button
+                      key={mod.chave}
+                      onClick={() => alternarModulo(printer, mod.chave)}
+                      title={mod.explica}
+                      style={{
+                        flex: "1 1 200px", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                        padding: "10px 12px", borderRadius: 12,
+                        border: ligado ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                        background: ligado ? "#FEF2F2" : "#fff",
+                        color: ligado ? "#B71C1C" : "#64748B",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                        {ligado ? "✓" : "○"} {mod.emoji} {mod.nome}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.85 }}>
+                        {mod.explica}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0" }}>
+                Os dois ligados = esta impressora recebe tudo. Pelo menos um precisa ficar ligado.
+              </p>
+            </div>
+
             {categories.length > 0 && (
               <div>
                 <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6 }}>
