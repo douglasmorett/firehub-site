@@ -41,26 +41,13 @@ export default function CadastroPage() {
   const [step, setStep] = useState<1|2|3|4|5|6>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [trialDays, setTrialDays] = useState(15);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get("ref") || urlParams.get("codigo");
-      if (code) {
-        fetch(`${API}/api/check-ref?code=${code}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.type === "ambassador") {
-              setTrialDays(30);
-            } else {
-              setTrialDays(15);
-            }
-          })
-          .catch(() => setTrialDays(15));
-      }
-    }
-  }, []);
+  // 15 dias para todo mundo, inclusive quem chega por link de embaixador.
+  //
+  // Esta tela consultava /api/check-ref e anunciava 30 dias quando o código era
+  // de embaixador. Como o cadastro voltou a gravar 15 para todos, deixar isto
+  // aqui faria a página prometer 30 e a conta nascer com 15 — o lojista
+  // descobriria na metade do prazo. Os dois lados mudam juntos, sempre.
+  const trialDays = 15;
 
   // Step 1 - Qualificação
   const [nome, setNome] = useState("");

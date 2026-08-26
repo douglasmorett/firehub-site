@@ -118,10 +118,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Calcula o prazo de trial: 30 dias se tiver embaixador, senão 15 dias (inclusive para indique e ganhe normal)
-    const trialDays = ambassadorId ? 30 : 15;
+    // ── Teste grátis: 15 dias para TODO MUNDO ─────────────────────────────
+    //
+    // Era `ambassadorId ? 30 : 15` — quem entrava por link de embaixador ganhava
+    // o dobro. Voltou a ser 15 para todos, por decisão comercial (26/08/2026).
+    //
+    // Quem JÁ se cadastrou pelo link de 30 continua com 30: o prazo de cada
+    // loja fica gravado em `trialEndsAt` na hora do cadastro e nada o recalcula
+    // depois (só `/api/admin/grant-days`, que é manual e ESTENDE). Mudar a conta
+    // aqui só alcança cadastro novo.
+    const TRIAL_DIAS = 15;
     const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + trialDays);
+    trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DIAS);
 
     // Criar usuário com role FRANCHISEE (dono de restaurante)
     const user = await prisma.user.create({
