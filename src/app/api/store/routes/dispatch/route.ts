@@ -69,9 +69,27 @@ export async function POST(req: NextRequest) {
 
     // 2.5 Sync com plataformas externas (Jotajá + iFood) — assíncrono, não bloqueia resposta
     (async () => {
+      const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
       for (const ord of route.orders) {
+        // ── Sync 99Food ──
+        // Mesmo campo (`openDeliveryOrderId`), parceiro diferente. Sem esta
+        // separação, despachar a rota mandava o pedido do 99Food para a API do
+        // JotaJá e o 99 nunca sabia que a comida tinha saído.
+        if (ehPedido99Food(ord)) {
+          await sincronizar99Food(
+            {
+              openDeliveryOrderId: ord.openDeliveryOrderId!,
+              franchiseeId: ord.franchiseeId,
+              status: ord.status,
+              deliveryBy: ord.deliveryBy,
+            },
+            "SAIU_ENTREGA"
+          ).catch((err: any) =>
+            console.warn(`[Route Dispatch → 99Food] Erro sync ${ord.openDeliveryOrderId}:`, err?.message)
+          );
+        }
         // ── Sync Jotajá (Open Delivery) ──
-        if (ord.openDeliveryOrderId) {
+        if (ord.openDeliveryOrderId && !ehPedido99Food(ord)) {
           try {
             const { jotajaMutate } = await import("@/lib/jotaja-api");
             const odId = ord.openDeliveryOrderId;

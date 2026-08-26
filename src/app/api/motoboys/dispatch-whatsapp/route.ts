@@ -59,10 +59,30 @@ export async function POST(req: NextRequest) {
         (async () => {
           const orders = await prisma.customerOrder.findMany({
             where: { id: { in: orderIds } },
-            select: { id: true, openDeliveryOrderId: true, ifoodOrderId: true, status: true, franchiseeId: true },
+            select: {
+              id: true, openDeliveryOrderId: true, ifoodOrderId: true, status: true, franchiseeId: true,
+              // O canal decide o parceiro: o id do 99Food mora no mesmo campo
+              // do JotaJá, e sem isto o dispatch ia sempre para o JotaJá.
+              openDeliveryChannel: true, source: true, deliveryBy: true,
+            },
           });
+          const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
           for (const ord of orders) {
-            if (ord.openDeliveryOrderId) {
+            if (ehPedido99Food(ord)) {
+              // O 99Food não tem "dispatch": o aviso que existe é o `ready`, e
+              // é ele que solta o pedido do lado deles.
+              await sincronizar99Food(
+                {
+                  openDeliveryOrderId: ord.openDeliveryOrderId!,
+                  franchiseeId: ord.franchiseeId,
+                  status: ord.status,
+                  deliveryBy: ord.deliveryBy,
+                },
+                "SAIU_ENTREGA"
+              ).catch((err: any) =>
+                console.warn(`[Motoboy Dispatch → 99Food] Erro sync ${ord.openDeliveryOrderId}:`, err?.message)
+              );
+            } else if (ord.openDeliveryOrderId) {
               try {
                 const { jotajaMutate } = await import("@/lib/jotaja-api");
                 const r = await jotajaMutate(`/v1/orders/${ord.openDeliveryOrderId}/dispatch`, { method: "POST" }, ord.franchiseeId);

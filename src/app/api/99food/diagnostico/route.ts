@@ -57,12 +57,28 @@ export async function GET() {
       email: true,
       storeName: true,
       food99MerchantId: true,
+      // É por este campo que o webhook acha a loja na 1ª tentativa. Vazio aqui
+      // com vínculo existindo em 'lojasVinculadasAoApp' é exatamente o buraco
+      // que faz o pedido chegar e ser recusado.
+      food99AppId: true,
       food99Connected: true,
     },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const lojaId = user.ownerId || user.id;
+
+  // Os campos de 99Food que valem são os da LOJA, não os do usuário logado: um
+  // funcionário carrega os dele, sempre vazios, e o diagnóstico apontaria falta
+  // de vínculo numa loja vinculada. É a mesma armadilha que /conectar comenta
+  // ao gravar `food99Connected` sempre em `lojaId`.
+  const loja =
+    lojaId === user.id
+      ? user
+      : (await prisma.user.findUnique({
+          where: { id: lojaId },
+          select: { storeName: true, food99MerchantId: true, food99AppId: true, food99Connected: true },
+        })) || user;
 
   if (!food99Configurado()) {
     return NextResponse.json({
@@ -81,8 +97,14 @@ export async function GET() {
   if (user.id !== lojaId) {
     candidatos.push({ rotulo: "usuário logado (funcionário)", appShopId: user.id });
   }
-  if (user.food99MerchantId && user.food99MerchantId !== lojaId) {
-    candidatos.push({ rotulo: "merchantId do 99Food (formulário antigo)", appShopId: user.food99MerchantId });
+  if (loja.food99MerchantId && loja.food99MerchantId !== lojaId) {
+    candidatos.push({ rotulo: "merchantId do 99Food (formulário antigo)", appShopId: loja.food99MerchantId });
+  }
+  // O app_shop_id adotado na conexão é o candidato mais provável de todos — é o
+  // id sob o qual o vínculo REALMENTE nasceu. Faltava na lista, então uma loja
+  // conectada por adoção aparecia como "nunca autorizou".
+  if (loja.food99AppId && loja.food99AppId !== lojaId && loja.food99AppId !== loja.food99MerchantId) {
+    candidatos.push({ rotulo: "app_shop_id adotado na conexão", appShopId: loja.food99AppId });
   }
 
   const testes = [];
@@ -139,6 +161,16 @@ export async function GET() {
       `A loja ESTÁ autorizada (app_shop_id "${autorizada.appShopId}"), mas o 99Food nunca chamou ` +
       "o nosso webhook. Isso é configuração no portal de desenvolvedor deles: o Callback " +
       "address do app precisa apontar para a URL abaixo. Nada no nosso código conserta isso.";
+  } else if (pedidos99 === 0 && eventos.some((e) => e.motivo?.startsWith("RECUSADO"))) {
+    // Recusa por amarração e parser que não entendeu chegam aqui do mesmo
+    // jeito — nenhum pedido no banco — mas o conserto é em lugares opostos:
+    // um é um campo no banco, o outro é código. Separar os dois é o que evita
+    // mexer no parser quando o parser está certo.
+    parou_em = "amarracao";
+    diagnostico =
+      "O 99Food ENTREGOU o pedido e o nosso webhook o RECUSOU: não deu para dizer de qual loja ele é. " +
+      "Veja o 'motivo' em 'ultimosEventos' — ele traz o shop_id e o app_shop_id que vieram no pedido. " +
+      "O conserto é ligar esse app_shop_id à loja em Integrações → 99Food → 'Já autorizei', não mexer no parser.";
   } else if (pedidos99 === 0) {
     parou_em = "parser";
     diagnostico =
@@ -154,13 +186,14 @@ export async function GET() {
     parou_em,
     diagnostico,
     loja: {
-      nome: user.storeName,
+      nome: loja.storeName,
       email: user.email,
       lojaId,
-      merchantIdSalvo: user.food99MerchantId,
+      merchantIdSalvo: loja.food99MerchantId,
+      appShopIdSalvo: loja.food99AppId,
       // Vale contrastar com a autorização real: este booleano é só o formulário
       // antigo tendo sido salvo, e foi ele que exibiu "conectado" o tempo todo.
-      food99ConnectedNoBanco: user.food99Connected,
+      food99ConnectedNoBanco: loja.food99Connected,
     },
     appId: appIdVisivel(),
     autorizacao: { autorizada: !!autorizada, appShopIdValido: autorizada?.appShopId ?? null, testes },

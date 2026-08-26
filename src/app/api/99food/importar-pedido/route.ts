@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getAuthToken, detalheDoPedido } from "@/lib/food99-api";
+import { detalheDoPedido } from "@/lib/food99-api";
+import { tokenDaLoja } from "@/lib/food99-status";
 import { traduzirPedido99Food, type ItemTraduzido } from "@/lib/food99-pedido";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 
@@ -49,15 +50,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const auth = await getAuthToken(lojaId);
-  if (!auth.autorizada) {
+  // `tokenDaLoja` tenta o nosso id E o `food99AppId` — a página de autorização
+  // IGNORA o app_shop_id que mandamos, então o vínculo pode ter nascido com um
+  // id escolhido pelo 99Food. Perguntar só pelo nosso id fazia esta rota
+  // responder "Loja não está autorizada" justamente nas lojas conectadas por
+  // adoção de vínculo, que são as que mais precisam dela: o resgate manual
+  // existe exatamente para o pedido que o webhook não entregou.
+  const authToken = await tokenDaLoja(lojaId);
+  if (!authToken) {
     return NextResponse.json(
-      { error: auth.erro || "Loja não está autorizada no 99Food. Conecte a integração primeiro." },
+      { error: "Loja não está autorizada no 99Food. Conecte a integração primeiro." },
       { status: 409 }
     );
   }
 
-  const r = await detalheDoPedido(auth.token.auth_token, orderId);
+  const r = await detalheDoPedido(authToken, orderId);
   if (r.errno !== 0 || !r.data) {
     return NextResponse.json(
       {

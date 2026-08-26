@@ -126,6 +126,30 @@ export async function POST(req: NextRequest) {
     let created = 0;
     let updated = 0;
 
+    // ── O ACK do 99Food tem 6 segundos, e o trabalho nem sempre cabe ────────
+    //
+    // Medido contra a produção: um POST VAZIO nesta rota — que não toca o banco
+    // uma vez — voltou em 0,87s, 1,17s e 5,29s em três tentativas seguidas. O
+    // pedido de verdade acrescenta a isso a busca da loja, o número do dia, a
+    // conferência de duplicado e a gravação com os itens, tudo contra o Neon.
+    // Ou seja: estourar os 6s não é hipótese remota, é o caso ruim de uma
+    // rota que hoje já chega perto dele sem fazer nada.
+    //
+    // Estourando, o 99Food trata como não entregue e reenvia — e o reenvio cai
+    // numa rota que continua lenta, o que produz mais reenvio. A fila cresce
+    // sozinha e a cozinha vê o mesmo pedido várias vezes.
+    //
+    // Então o trabalho corre solto e a resposta espera por ele só até o limite:
+    //
+    //   terminou a tempo  → ACK, tudo gravado
+    //   falhou a tempo    → 500 de propósito, para o 99Food reenviar (é a única
+    //                       rede que existe entre um pedido e a cozinha nunca
+    //                       saber dele — não há endpoint de listagem para
+    //                       recuperar depois)
+    //   passou do limite  → ACK agora e o trabalho segue no container. A
+    //                       gravação é idempotente por openDeliveryOrderId,
+    //                       então um reenvio que cruze com ela não duplica.
+    const trabalho = (async () => {
     for (const event of events) {
       // O OrderModel do 99Food pode vir embrulhado (`event.order`) ou solto no
       // próprio evento. Reconhece-se pelo `order_id`, que é o único campo
@@ -151,7 +175,19 @@ export async function POST(req: NextRequest) {
         traduzido?.numeroNoParceiro || event.order_index || event.displayId || event.reference || orderId;
       const eventType = event.event || event.eventType || event.fullCode || event.code || event.status || "";
 
-      if (!orderId) continue;
+      // Evento sem order_id não vira pedido nem atualização, mas PRECISA ficar
+      // registrado: é o que separa "o 99Food nunca chamou" de "chamou e a gente
+      // não entendeu". Ver o bloco de `franchisee` abaixo para o porquê.
+      if (!orderId) {
+        registrar99Food({
+          tipo: eventType || "(sem tipo)",
+          reconhecido: false,
+          pedidoCriado: false,
+          motivo: "evento sem order_id — nada a criar nem a atualizar",
+          payload: event,
+        });
+        continue;
+      }
 
       // 1ª tentativa — app_shop_id gravado no vínculo (campo food99AppId).
       // É a amarração que a tela de conexão escreve quando o lojista escolhe a
@@ -200,12 +236,41 @@ export async function POST(req: NextRequest) {
           console.warn(
             `[99Food Webhook] merchantId "${merchantId}" nao mapeado e ha ${conectados.length}+ lojas conectadas — pedido ${orderId} recusado para nao cair na loja errada`
           );
+          registrar99Food({
+            tipo: eventType || "orderNew",
+            reconhecido: true,
+            pedidoCriado: false,
+            motivo:
+              `RECUSADO: shop_id "${merchantId}" / app_shop_id "${appShopId}" não batem com nenhuma loja, ` +
+              `e há ${conectados.length}+ lojas com 99Food ativo — não dá para adivinhar a dona sem arriscar ` +
+              `entregar na cozinha errada. Conserto: ligar a loja pelo app_shop_id em Integrações → 99Food.`,
+            payload: event,
+          });
           continue;
         }
       }
 
+      // ── Por que este descarte é registrado ────────────────────────────────
+      //
+      // Estes `continue` eram silenciosos: saíam só num console.warn que some
+      // no restart do container. Como o diagnóstico decide "parou_em" pelo
+      // tamanho desta lista, um pedido recusado aqui deixava a lista vazia — e
+      // o diagnóstico respondia "o 99Food nunca chamou o nosso webhook",
+      // mandando conferir o Callback address no portal deles. Ou seja: o
+      // sintoma de "chamou e a gente jogou fora" era idêntico ao de "nunca
+      // chamou", e os dois pedem conserto em lugares opostos.
       if (!franchisee) {
         console.warn(`[99Food Webhook] Nenhum franqueado encontrado para o pedido: ${orderId}`);
+        registrar99Food({
+          tipo: eventType || "orderNew",
+          reconhecido: true,
+          pedidoCriado: false,
+          motivo:
+            `RECUSADO: nenhuma loja do FireHub corresponde a shop_id "${merchantId}" / ` +
+            `app_shop_id "${appShopId}", e nenhuma loja está com o 99Food ativo. ` +
+            `O 99Food ENTREGOU o pedido — a amarração da loja é que falta.`,
+          payload: event,
+        });
         continue;
       }
 
@@ -266,52 +331,142 @@ export async function POST(req: NextRequest) {
             },
           }));
 
-          await (prisma.customerOrder as any).create({
-            data: {
-              franchiseeId: franchisee.id,
-              dailyOrderNumber: await generateDailyOrderNumber(franchisee.id),
-              customerName: p.cliente.nome,
-              customerPhone: p.cliente.telefone,
-              customerAddress: p.cliente.endereco,
-              status: "NOVO",
-              paymentMethod: p.pagamento.texto,
-              totalAmount: p.total,
-              deliveryFee: p.taxaEntrega,
-              notes: p.observacoes,
-              source: "99FOOD",
-              openDeliveryOrderId: orderId,
-              openDeliveryReference: displayId || "",
-              openDeliveryChannel: "99FOOD",
-              deliveryBy: p.entreguePor,
-              items: { create: items },
-            },
+          try {
+            await (prisma.customerOrder as any).create({
+              data: {
+                franchiseeId: franchisee.id,
+                dailyOrderNumber: await generateDailyOrderNumber(franchisee.id),
+                customerName: p.cliente.nome,
+                customerPhone: p.cliente.telefone,
+                customerAddress: p.cliente.endereco,
+                status: "NOVO",
+                paymentMethod: p.pagamento.texto,
+                totalAmount: p.total,
+                deliveryFee: p.taxaEntrega,
+                notes: p.observacoes,
+                source: "99FOOD",
+                openDeliveryOrderId: orderId,
+                openDeliveryReference: displayId || "",
+                openDeliveryChannel: "99FOOD",
+                deliveryBy: p.entreguePor,
+                items: { create: items },
+              },
+            });
+            created++;
+            registrar99Food({ tipo: eventType || "orderNew", reconhecido: true, pedidoCriado: true, payload: event });
+            console.log(
+              `[99Food Webhook] ✅ Pedido #${displayId} criado — ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}, ${p.entreguePor}`
+            );
+          } catch (errCriacao: any) {
+            // P2002 = violação de índice único (openDeliveryOrderId).
+            //
+            // O `findFirst` logo acima não fecha a corrida: o 99Food reenvia o
+            // mesmo evento quando não recebe o ACK em 6s, e duas entregas
+            // simultâneas passam as duas pela conferência antes de qualquer uma
+            // gravar. Sem este catch, a perdedora derruba o lote inteiro para o
+            // 500 lá embaixo — o que pede MAIS reenvio do mesmo evento, e os
+            // outros pedidos do mesmo lote pagam junto.
+            //
+            // Chegar aqui significa que o pedido ESTÁ gravado. É sucesso.
+            if (errCriacao?.code === "P2002") {
+              registrar99Food({
+                tipo: eventType || "orderNew",
+                reconhecido: true,
+                pedidoCriado: false,
+                motivo: `reenvio simultâneo: ${orderId} já havia sido gravado por outra entrega do mesmo evento`,
+                payload: event,
+              });
+              console.log(`[99Food Webhook] Pedido ${orderId} já existia (corrida de reenvio) — nada a fazer`);
+            } else {
+              throw errCriacao;
+            }
+          }
+        } else {
+          // Reenvio do 99Food de um pedido que já entrou. Não duplicar é o
+          // certo; sumir do registro, não — uma fila de reenvios é sinal de
+          // que o ACK não chegou lá, e sem esta linha isso fica invisível.
+          registrar99Food({
+            tipo: eventType || "orderNew",
+            reconhecido: true,
+            pedidoCriado: false,
+            motivo: `reenvio: pedido ${orderId} já estava no banco (#${existing.dailyOrderNumber})`,
+            payload: event,
           });
-          created++;
-          registrar99Food({ tipo: eventType || "orderNew", reconhecido: true, pedidoCriado: true, payload: event });
-          console.log(
-            `[99Food Webhook] ✅ Pedido #${displayId} criado — ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}, ${p.entreguePor}`
-          );
         }
       } else if (orderId) {
         // Atualizações de status
         const newStatus = statusDoEvento(eventType);
 
+        let aplicado = 0;
         if (newStatus) {
-          await (prisma.customerOrder as any).updateMany({
-            where: { openDeliveryOrderId: orderId },
+          // ── Não ressuscitar pedido encerrado ────────────────────────────
+          //
+          // O 99Food reenvia evento quando não recebe o ACK em 6s, e reenvio
+          // não chega na ordem original. Sem guarda, um `deliveryStatus`
+          // atrasado rebaixa para SAIU_ENTREGA um pedido que já foi ENTREGUE,
+          // e a comanda volta para a tela da cozinha depois de fechada. Pior:
+          // um `orderFinish` atrasado marcaria como entregue um pedido que a
+          // loja cancelou.
+          //
+          // CANCELADO é a exceção e passa por cima de tudo: cancelamento
+          // depois da entrega é estorno, e a loja precisa ficar sabendo.
+          const r = await (prisma.customerOrder as any).updateMany({
+            where: {
+              openDeliveryOrderId: orderId,
+              ...(newStatus === "CANCELADO" ? {} : { status: { notIn: ["ENTREGUE", "CANCELADO"] } }),
+            },
             data: { status: newStatus },
           });
-          updated++;
+          aplicado = r?.count ?? 0;
+          if (aplicado > 0) updated++;
         }
 
         registrar99Food({
           tipo: eventType || "(sem tipo)",
           reconhecido: !!newStatus,
           pedidoCriado: false,
-          motivo: newStatus ? `status → ${newStatus}` : "evento não reconhecido",
+          motivo: !newStatus
+            ? "evento não reconhecido"
+            : aplicado > 0
+            ? `status → ${newStatus}`
+            : `status ${newStatus} ignorado: pedido ${orderId} já encerrado ou inexistente aqui`,
           payload: event,
         });
       }
+    }
+
+    })();
+
+    // Margem para o ACK caber nos 6s do 99Food contando a viagem de rede.
+    const LIMITE_ACK_MS = 4500;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const desfecho = await Promise.race([
+      trabalho.then(() => "pronto" as const).catch((err) => { throw err; }),
+      new Promise<"demorou">((resolve) => {
+        timer = setTimeout(() => resolve("demorou"), LIMITE_ACK_MS);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+
+    if (desfecho === "demorou") {
+      // O trabalho continua; sem este catch, uma falha depois do ACK viraria
+      // unhandled rejection e poderia derrubar o processo — levando junto os
+      // outros pedidos que estivessem sendo gravados.
+      trabalho.catch((err) => {
+        console.error("[99Food Webhook] Erro DEPOIS do ACK (pedido pode não ter sido gravado):", err);
+        registrar99Food({
+          tipo: "erro-pos-ack",
+          reconhecido: false,
+          pedidoCriado: false,
+          motivo: `falhou depois do ACK, então o 99Food não vai reenviar: ${err?.message}`,
+          payload: null,
+        });
+      });
+      console.warn(
+        `[99Food Webhook] ⏱️ ${events.length} evento(s) passaram de ${LIMITE_ACK_MS}ms — ACK mandado agora, gravação segue em segundo plano`
+      );
+      return NextResponse.json(ACK);
     }
 
     console.log(`[99Food Webhook] ${events.length} evento(s): ${created} pedido(s) criado(s), ${updated} atualizado(s)`);

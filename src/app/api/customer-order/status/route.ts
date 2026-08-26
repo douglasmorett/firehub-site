@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { trackSaleForBilling } from "@/lib/billing";
+import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
 
 // Status que contam como venda confirmada para fins de faturamento
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
@@ -211,8 +212,35 @@ export async function PUT(req: Request) {
     }
   }
 
+  // ── Sync with 99Food ────────────────────────────────────────────────────
+  // O 99Food grava o id dele em `openDeliveryOrderId`, o mesmo campo do
+  // JotaJá. O bloco abaixo lia só a presença do campo, então TODO pedido do
+  // 99Food era mandado para a API do JotaJá com um id que não é dele: o 99Food
+  // nunca recebia o confirm (e cancela o pedido por isso), nunca recebia o
+  // ready (que é o que chama o entregador deles) e nunca recebia o cancel.
+  // Quem separa os dois é o canal, nunca a presença do id.
+  if (ehPedido99Food(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizar99Food(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+      },
+      status,
+      { motivo: cancelReason, reasonId: cancellationCode ? Number(cancellationCode) : undefined }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[99Food Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+    }
+  }
+
   // ── Sync with Jotajá (Open Delivery) ──
-  if (order.openDeliveryOrderId) {
+  if (order.openDeliveryOrderId && !ehPedido99Food(order)) {
     const syncErrors: string[] = [];
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");

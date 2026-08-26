@@ -196,39 +196,87 @@ export async function refreshAuthToken(lojaId: string): Promise<boolean> {
 // pedido chega mas a loja não consegue responder ao 99Food — e pedido não
 // confirmado a tempo é cancelado do lado deles.
 
+/**
+ * ── Cada uma destas tem uma forma DIFERENTE, e o swagger é quem manda ───────
+ *
+ * As quatro estavam escritas do mesmo jeito — POST, `auth_token` na query,
+ * `order_id` no corpo — como se fossem variações de uma só. Não são, e nenhuma
+ * das quatro estava certa. Isso passou despercebido porque nunca foram
+ * exercitadas: sem pedido chegando, nada aqui chegou a ser chamado uma vez.
+ *
+ *   confirm    POST, auth_token e order_id NO CORPO (os dois `required`)
+ *   cancel     POST, mesma coisa + `reason_id` inteiro, que é obrigatório
+ *   ready      GET, auth_token e order_id na QUERY
+ *   delivered  GET, na query — e só para entrega da própria loja
+ *
+ * Fonte: .99food-docs/swagger.yaml, /v1/order/order/*.
+ */
+
 export async function confirmarPedido(authToken: string, orderId: string): Promise<RespostaFood99> {
   return chamar("/v1/order/order/confirm", {
     metodo: "POST",
-    query: { auth_token: authToken },
-    corpo: { order_id: String(orderId) },
+    corpo: { auth_token: authToken, order_id: String(orderId) },
     idsCrus: ["order_id"],
   });
 }
 
-export async function cancelarPedido(authToken: string, orderId: string, motivo?: string): Promise<RespostaFood99> {
+/**
+ * Motivo do cancelamento pela loja.
+ *
+ * O swagger lista os códigos aceitos (1010, 1020, 1030, 1040, 1050, 1060,
+ * 1080) e NÃO diz o que cada um significa — o único com nome é o 1010, que é o
+ * exemplo do próprio documento. Então 1010 é o padrão daqui, e quem souber o
+ * código certo passa por cima. Mandar um código fora da lista é recusa na hora;
+ * não mandar nenhum também, porque `reason_id` é `required`.
+ */
+export const MOTIVOS_CANCELAMENTO_99 = new Set([1010, 1020, 1030, 1040, 1050, 1060, 1080]);
+export const MOTIVO_CANCELAMENTO_PADRAO = 1010;
+
+/**
+ * O código que chega da tela é do iFood (`501` e parentes), e o 99Food só
+ * aceita os sete da lista acima. Repassar o 501 direto seria trocar "cancelou
+ * no 99Food" por "o 99Food recusou o cancelamento" — com o cliente esperando
+ * uma comida que a loja já parou de fazer. Código de fora da lista vira o
+ * padrão, que cancela de verdade.
+ */
+function motivoValido(reasonId?: number): number {
+  return reasonId != null && MOTIVOS_CANCELAMENTO_99.has(reasonId)
+    ? reasonId
+    : MOTIVO_CANCELAMENTO_PADRAO;
+}
+
+export async function cancelarPedido(
+  authToken: string,
+  orderId: string,
+  motivo?: string,
+  reasonId?: number
+): Promise<RespostaFood99> {
   return chamar("/v1/order/order/cancel", {
     metodo: "POST",
-    query: { auth_token: authToken },
-    corpo: { order_id: String(orderId), ...(motivo ? { reason: motivo } : {}) },
+    corpo: {
+      auth_token: authToken,
+      order_id: String(orderId),
+      reason_id: motivoValido(reasonId),
+      ...(motivo ? { reason: motivo } : {}),
+    },
     idsCrus: ["order_id"],
   });
 }
 
 export async function pedidoPronto(authToken: string, orderId: string): Promise<RespostaFood99> {
   return chamar("/v1/order/order/ready", {
-    metodo: "POST",
-    query: { auth_token: authToken },
-    corpo: { order_id: String(orderId) },
-    idsCrus: ["order_id"],
+    query: { auth_token: authToken, order_id: String(orderId) },
   });
 }
 
+/**
+ * ATENÇÃO: o swagger diz "Only used for self-delivery orders". Num pedido que o
+ * entregador do 99 leva, quem dá baixa é a DiDi — chamar isto ali é, na melhor
+ * das hipóteses, um erro devolvido. Quem chama tem que conferir `deliveryBy`.
+ */
 export async function pedidoEntregue(authToken: string, orderId: string): Promise<RespostaFood99> {
   return chamar("/v1/order/order/delivered", {
-    metodo: "POST",
-    query: { auth_token: authToken },
-    corpo: { order_id: String(orderId) },
-    idsCrus: ["order_id"],
+    query: { auth_token: authToken, order_id: String(orderId) },
   });
 }
 

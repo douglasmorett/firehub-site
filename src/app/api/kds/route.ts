@@ -185,7 +185,14 @@ export async function PUT(req: NextRequest) {
 
   const order = await prisma.customerOrder.findUnique({
     where: { id: orderId },
-    select: { id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true, ifoodOrderId: true, openDeliveryOrderId: true },
+    // `openDeliveryChannel`/`source`/`deliveryBy` entram porque o id do 99Food
+    // mora no mesmo campo do JotaJá: sem o canal aqui, não há como saber para
+    // qual parceiro mandar o "pronto".
+    select: {
+      id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true,
+      ifoodOrderId: true, openDeliveryOrderId: true,
+      openDeliveryChannel: true, source: true, deliveryBy: true,
+    },
   });
 
   if (!order) {
@@ -260,7 +267,22 @@ export async function PUT(req: NextRequest) {
         }
       }
 
-      if (order.openDeliveryOrderId) {
+      // O "pronto" do KDS vale para os dois parceiros que usam este campo, mas
+      // a chamada é de cada um. Mandar pedido do 99Food para a API do JotaJá
+      // era avisar o parceiro errado e deixar o entregador do 99 sem chamado.
+      const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
+
+      if (ehPedido99Food(order)) {
+        await sincronizar99Food(
+          {
+            openDeliveryOrderId: order.openDeliveryOrderId!,
+            franchiseeId: order.franchiseeId,
+            status: order.status,
+            deliveryBy: order.deliveryBy,
+          },
+          "PRONTO"
+        ).catch((e) => console.warn("[KDS 99Food Sync Error]:", e?.message));
+      } else if (order.openDeliveryOrderId) {
         try {
           const { jotajaFetch } = await import("@/lib/jotaja-api");
           await jotajaFetch(`/v1/orders/${order.openDeliveryOrderId}/readyToPickup`, { method: "POST" }, order.franchiseeId);

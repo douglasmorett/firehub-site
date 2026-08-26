@@ -23,6 +23,7 @@ function groupOrders(orders: any[]) {
   const byMethod: Record<string, number> = {};
   let ifoodTotal = 0;
   let jotajaTotal = 0;
+  let food99Total = 0;
   let onlineTotal = 0;
 
   for (const o of orders) {
@@ -33,6 +34,14 @@ function groupOrders(orders: any[]) {
     if (o.source === "IFOOD" || o.ifoodOrderId) {
       ifoodTotal += amount;
       byMethod["IFOOD"] = (byMethod["IFOOD"] || 0) + amount;
+      continue;
+    }
+    // 99Food — TEM que vir antes do JotaJá: os dois gravam em
+    // `openDeliveryOrderId`, então a regra do JotaJá abaixo engolia a venda do
+    // 99Food e ela aparecia no fechamento como faturamento do parceiro errado.
+    if (o.source === "99FOOD" || String(o.openDeliveryChannel || "").toUpperCase() === "99FOOD") {
+      food99Total += amount;
+      byMethod["99FOOD"] = (byMethod["99FOOD"] || 0) + amount;
       continue;
     }
     // Jotajá (Open Delivery)
@@ -50,7 +59,7 @@ function groupOrders(orders: any[]) {
     byMethod[code] = (byMethod[code] || 0) + amount;
   }
 
-  return { byMethod, ifoodTotal, jotajaTotal, onlineTotal };
+  return { byMethod, ifoodTotal, jotajaTotal, food99Total, onlineTotal };
 }
 
 // GET — busca caixa aberto | preview de esperado | histórico | histórico do dia
@@ -95,7 +104,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const { byMethod, ifoodTotal, jotajaTotal, onlineTotal } = groupOrders(orders);
+    const { byMethod, ifoodTotal, jotajaTotal, food99Total, onlineTotal } = groupOrders(orders);
     // Adiciona troco de abertura no dinheiro
     byMethod["CASH"] = (byMethod["CASH"] || 0) + open.openingAmount;
 
@@ -108,6 +117,7 @@ export async function GET(req: NextRequest) {
       byMethod,
       ifoodTotal,
       jotajaTotal,
+      food99Total,
       onlineTotal,
       totalExpected,
       orderCount:    orders.length,
@@ -190,7 +200,7 @@ export async function PUT(req: NextRequest) {
     where: { status: "ENTREGUE", createdAt: { gte: register.openedAt } },
   });
 
-  const { byMethod, ifoodTotal, jotajaTotal, onlineTotal } = groupOrders(orders);
+  const { byMethod, ifoodTotal, jotajaTotal, food99Total, onlineTotal } = groupOrders(orders);
   byMethod["CASH"] = (byMethod["CASH"] || 0) + register.openingAmount;
 
   const expectedTotal = Object.values(byMethod).reduce((a, b) => a + b, 0);
@@ -242,7 +252,8 @@ export async function PUT(req: NextRequest) {
 
   const METHOD_LABELS: Record<string, string> = {
     CASH: "💵 Dinheiro", CARD_CREDIT: "💳 Cartão Crédito", CARD_DEBIT: "💳 Cartão Débito",
-    PIX: "📱 PIX", VOUCHER: "🎟️ Voucher", IFOOD: "🛵 iFood", JOTAJA: "📱 Jotajá", ONLINE: "💻 Online", OTHER: "🔄 Outro",
+    PIX: "📱 PIX", VOUCHER: "🎟️ Voucher", IFOOD: "🛵 iFood", JOTAJA: "📱 Jotajá",
+    "99FOOD": "🛵 99Food", ONLINE: "💻 Online", OTHER: "🔄 Outro",
   };
 
   const methodLines = Object.entries(byMethod)
