@@ -355,7 +355,10 @@ export default function IntegracoesHubClient({
   };
 
   const handleDisconnect99Food = async () => {
-    if (!confirm("Tem certeza que deseja desconectar o 99Food desta loja?")) return;
+    // A confirmação nomeia a loja: é a última chance de perceber que se está
+    // desligando a errada, e a partir daqui os pedidos dela param de chegar.
+    const alvo = food99Loja?.nome ? `"${food99Loja.nome}"` : "esta loja";
+    if (!confirm(`Desconectar ${alvo} do 99Food?\n\nOs pedidos dela param de chegar no FireHub até você conectar de novo.`)) return;
     setFood99Saving(true);
     try {
       const res = await fetch("/api/99food/auth?step=disconnect");
@@ -1419,7 +1422,10 @@ export default function IntegracoesHubClient({
                       disabled={food99Saving}
                       style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#991B1B", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
                     >
-                      Desconectar 99Food
+                      {/* Nomear o que o botão desliga. "Desconectar 99Food" não
+                          diz QUAL loja sai — e desligar a loja errada só se
+                          descobre quando os pedidos param de chegar. */}
+                      {food99Loja?.nome ? `Desconectar ${food99Loja.nome}` : "Desconectar 99Food"}
                     </button>
                   )}
                   <button
