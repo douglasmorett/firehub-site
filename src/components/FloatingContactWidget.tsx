@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { ehTelaSemWidget } from "@/lib/telas-sem-widget";
 
 const WA_URL = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20FireHub";
 
@@ -15,21 +16,16 @@ export default function FloatingContactWidget({
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(true);
 
-  // Não renderiza em telas de venda presencial ou KDS para não sobrepor botões.
+  // A lista morava aqui e não incluía a MESA — o widget sumia no balcão e
+  // continuava tapando o Total e o "Fechar Conta" da mesa do garçom. Virou
+  // regra única em @/lib/telas-sem-widget, que o widget de suporte também usa.
   //
-  // O totem entrou na lista pelo mesmo motivo, e por um pior: este widget é a
-  // venda do FireHub para o LOJISTA ("Quero saber mais sobre o FireHub"), e ele
-  // aparecia flutuando na frente do cliente que está comprando um lanche. Fixo
-  // com z-index 9999 no canto inferior direito, ficava exatamente por cima do
-  // "Ver carrinho" do quiosque — o dedo mirava o carrinho e abria o WhatsApp
-  // comercial.
-  if (
-    pathname?.startsWith("/store/venda-presencial") ||
-    pathname?.startsWith("/store/kds") ||
-    pathname?.startsWith("/totem")
-  ) {
-    return null;
-  }
+  // O `return null` também estava no lugar errado: vinha ANTES dos useEffect
+  // abaixo. Sair da função no meio faz o React contar menos hooks nesta
+  // renderização do que na anterior, e navegar de uma página comum para o KDS
+  // sem recarregar derrubava a tela com "rendered fewer hooks than expected".
+  // Agora a decisão é só um booleano aqui, e o return acontece depois de todos.
+  const escondido = ehTelaSemWidget(pathname);
 
   // Stop pulsing after first open
   useEffect(() => {
@@ -71,6 +67,8 @@ export default function FloatingContactWidget({
     };
     document.head.appendChild(script);
   }, [ifoodWidgetId, ifoodMerchantId]);
+
+  if (escondido) return null;
 
   return (
     <>

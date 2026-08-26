@@ -1,9 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+import { ehTelaSemWidget } from "@/lib/telas-sem-widget";
 import { MessageSquare, X, Send, User, CheckCircle2, Bot, ShieldCheck } from "lucide-react";
 
 export default function HumanSupportFloatingWidget() {
+  // Este botão é montado no layout de /store inteiro, então aparecia também na
+  // mesa, no balcão e no KDS — fixo no canto inferior direito, em cima do Total
+  // e do "Fechar Conta". Num tablet de garçom, o dedo mirava o valor da mesa e
+  // abria o chat de suporte.
+  const pathname = usePathname();
+  const escondido = ehTelaSemWidget(pathname);
+
   const [open, setOpen] = useState(false);
   const [chats, setChats] = useState<any[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
@@ -22,10 +31,15 @@ export default function HumanSupportFloatingWidget() {
   };
 
   useEffect(() => {
+    // Escondido não significa só invisível: sem isto, o tablet do garçom e a TV
+    // do KDS continuariam pedindo a lista de conversas a cada 4 segundos, o dia
+    // inteiro, para desenhar um botão que ninguém vê.
+    if (escondido) return;
     fetchChats();
     const interval = setInterval(fetchChats, 4000);
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [escondido]);
 
   const activeChat = chats.find((c) => c.jid === selectedChatJid);
 
@@ -75,6 +89,8 @@ export default function HumanSupportFloatingWidget() {
       fetchChats();
     } catch (e) {}
   };
+
+  if (escondido) return null;
 
   return (
     <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 9999, fontFamily: "sans-serif" }}>
