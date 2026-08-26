@@ -183,12 +183,48 @@ export default function KDSTelaPage() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasEnteredIds, setHasEnteredIds] = useState<Set<string>>(new Set());
 
-  // Estado para armazenar o último pedido finalizado para permitir desfazer baixa acidental
+  // Último pedido baixado, para desfazer a baixa acidental.
+  //
+  // Vivia SÓ em memória, e num tablet isso é quase não existir: o Chrome do
+  // Android descarta aba em segundo plano o tempo todo — tela apaga, troca de
+  // app, memória baixa — e ao voltar o botão estava apagado, dizendo
+  // "Desfazer Última Baixa" sem nada para desfazer. Quem despachou errado ficava
+  // sem saída, porque o outro caminho é atalho de teclado num aparelho sem teclado.
   const [lastCompletedOrder, setLastCompletedOrder] = useState<{
     order: Order;
     previousStage: "production" | "finishing";
   } | null>(null);
   const [isUndoing, setIsUndoing] = useState(false);
+
+  /**
+   * Onde a baixa recente fica guardada entre recargas.
+   *
+   * A chave leva a tela: duas telas de KDS no mesmo navegador (produção e
+   * finalização) não podem oferecer uma à outra o desfazer da baixa alheia.
+   */
+  const chaveDaBaixa = `firehub_kds_ultima_baixa_${stage || "x"}_${screenName || "x"}`;
+
+  // Meia hora. Passado isso, o pedido já saiu para o cliente e desfazer não é
+  // corrigir engano, é bagunçar o histórico do dia.
+  const VALIDADE_DA_BAIXA = 30 * 60 * 1000;
+
+  useEffect(() => {
+    try {
+      const bruto = localStorage.getItem(chaveDaBaixa);
+      if (!bruto) return;
+      const salvo = JSON.parse(bruto);
+      if (!salvo?.order?.id || !salvo?.previousStage) return;
+      if (!salvo.em || Date.now() - salvo.em > VALIDADE_DA_BAIXA) {
+        localStorage.removeItem(chaveDaBaixa);
+        return;
+      }
+      setLastCompletedOrder({ order: salvo.order, previousStage: salvo.previousStage });
+    } catch {
+      // Navegador com armazenamento bloqueado: o botão volta a valer só nesta
+      // sessão, que é exatamente o comportamento de antes. Nada quebra.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveDaBaixa]);
 
   const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
 
@@ -485,10 +521,11 @@ export default function KDSTelaPage() {
         stage === "production" ? "finish_production" : "finish_order";
 
       // Salva para poder desfazer a baixa caso tenha clicado por engano
-      setLastCompletedOrder({
-        order,
-        previousStage: stage === "production" ? "production" : "finishing",
-      });
+      const previousStage = stage === "production" ? "production" : "finishing";
+      setLastCompletedOrder({ order, previousStage });
+      try {
+        localStorage.setItem(chaveDaBaixa, JSON.stringify({ order, previousStage, em: Date.now() }));
+      } catch { /* sem armazenamento, vale só nesta sessão */ }
 
       // Show toast
       setToast({ orderId: order.id, label: `#${getDisplayOrderNumber(order)}` });
@@ -575,6 +612,7 @@ export default function KDSTelaPage() {
       toastTimerRef.current = setTimeout(() => setToast(null), 3000);
 
       setLastCompletedOrder(null);
+      try { localStorage.removeItem(chaveDaBaixa); } catch {}
       lastJsonRef.current = "";
       await fetchOrders();
     } catch (err) {
@@ -710,20 +748,41 @@ export default function KDSTelaPage() {
         }}
       >
         {/* ─── Header (single row, 2 groups to prevent Smart TV overlap) ─── */}
+        {/* ── O CABEÇALHO PRECISA CABER NUM TABLET ────────────────────────
+            Medido: numa linha só, este cabeçalho exige ~1107px — título, selo,
+            botão Desfazer e as abas Todos/Ímpares/Pares à esquerda; filtro de
+            categoria, contador e relógio à direita. Num tablet em retrato sobram
+            ~760px.
+
+            O grupo da esquerda tem `minWidth: 0` e por isso ENCOLHE, mas seus
+            filhos são todos `nowrap`: eles vazavam por cima do grupo da direita,
+            que é pintado depois no DOM e portanto fica por cima — cobrindo
+            justamente o botão Desfazer. O que passava da borda era cortado pelo
+            `overflow: hidden` do container. Era isso o 'embolando', e era por
+            isso que o Desfazer sumia numa tela onde ele existe e está montado.
+
+            `flexWrap` resolve sem tocar no desktop: acima de ~1110px nada quebra,
+            e abaixo disso a direita desce uma linha em vez de ser invadida.
+
+            ORDEM DAS CHAVES IMPORTA: em estilo inline do React o objeto é
+            aplicado na ordem em que está escrito, então `rowGap` precisa vir
+            DEPOIS de `gap` — senão o `gap: 10` sobrescreve o espaçamento vertical. */}
         <header
           style={{
             display: "flex",
             alignItems: "center",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             padding: "10px 20px",
             background: "linear-gradient(180deg, #111118 0%, #0d0d14 100%)",
             borderBottom: `2px solid ${accent}33`,
             flexShrink: 0,
             gap: 10,
+            rowGap: 8,
           }}
         >
           {/* ── Left group: Name + Badge + Undo + Filter Tabs ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", minWidth: 0, gap: 12, rowGap: 8 }}>
             <span
               style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px", whiteSpace: "nowrap" }}
             >
@@ -857,7 +916,7 @@ export default function KDSTelaPage() {
           </div>
 
           {/* ── Right group: Category + Count + Time ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0, gap: 12, rowGap: 8 }}>
             {/* Category Filter */}
             <div
               style={{
