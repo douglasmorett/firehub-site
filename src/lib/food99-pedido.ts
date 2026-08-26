@@ -57,23 +57,50 @@ export function quemEntrega99(deliveryType: unknown): "99FOOD" | "MERCHANT" {
 }
 
 /**
+ * Campos que o 99Food MASCARA em vez de deixar em branco.
+ *
+ * Visto num pedido real da Brasa Burguer (#403010): `name`, `house_number` e
+ * `poi_display_name` vieram todos com o texto literal "privacy protection".
+ * Tratar isso como valor normal imprime na comanda um cliente chamado
+ * "privacy protection" e o endereço
+ * "Rua Rio das Ostras, 116 - Nova Cidade, …, privacy protection, privacy
+ * protection, Rio das Ostras". O entregador é quem paga essa conta.
+ */
+const MASCARADO = /^(privacy\s*protection|protected|hidden|n\/?a|null|undefined|-+)$/i;
+
+/** Texto útil, ou vazio quando o 99Food mascarou o campo. */
+function util(valor: unknown): string {
+  const s = valor == null ? "" : String(valor).trim();
+  return MASCARADO.test(s) ? "" : s;
+}
+
+/**
  * Endereço do cliente em uma linha, na ordem que a comanda imprime.
  *
- * `house_number` só entra se `poi_address` ainda não terminar com ele: o 99Food
- * costuma mandar "Rua José de Almeida, 893" no poi_address e repetir "893" no
- * house_number, e concatenar os dois imprime "…, 893, 893" na comanda do
- * entregador.
+ * Duas limpezas, e as duas vieram de pedido real:
+ *
+ * 1. `house_number` só entra se `poi_address` ainda não terminar com ele — o
+ *    99Food manda "Rua José de Almeida, 893" e repete "893" à parte, o que
+ *    imprimiria "…, 893, 893".
+ * 2. Nada que já esteja escrito antes entra de novo. O `city` costuma vir
+ *    repetido ("… Rio das Ostras - RJ, Rio das Ostras"), e campo mascarado
+ *    apareceria duas vezes seguidas.
  */
 export function enderecoDoCliente(receiveAddress: any): string {
   const a = receiveAddress || {};
-  const partes = [a.poi_address, a.house_number, a.poi_display_name, a.city].map((p) =>
-    p == null ? "" : String(p).trim()
-  );
+  const partes = [a.poi_address, a.house_number, a.poi_display_name, a.city].map(util);
 
   const [rua, numero] = partes;
   if (numero && rua && new RegExp(`(^|[\\s,])${numero}\\s*$`).test(rua)) partes[1] = "";
 
-  return partes.filter(Boolean).join(", ");
+  const juntas: string[] = [];
+  for (const p of partes) {
+    if (!p) continue;
+    const jaEscrito = juntas.join(", ").toLowerCase();
+    if (jaEscrito.includes(p.toLowerCase())) continue;
+    juntas.push(p);
+  }
+  return juntas.join(", ");
 }
 
 /** Telefone com o código do país quando ele vem separado. */
@@ -166,18 +193,24 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   const totalCentavos =
     preco.real_pay_price ?? preco.customer_need_paying_money ?? preco.real_price ?? preco.order_price ?? 0;
 
+  // order_index é o número sequencial do dia na loja, que é o que o lojista vê
+  // no app do 99Food e o que ele vai procurar quando ligar reclamando.
+  const numeroNoParceiro = String(o.order_index ?? o.order_id ?? "");
+
   return {
     orderId: String(o.order_id ?? ""),
-    // order_index é o número sequencial do dia na loja, que é o que o lojista
-    // vê no app do 99Food e o que ele vai procurar quando ligar reclamando.
-    numeroNoParceiro: String(o.order_index ?? o.order_id ?? ""),
+    numeroNoParceiro,
     shopId: loja.shop_id != null ? String(loja.shop_id) : null,
     appShopId: loja.app_shop_id ? String(loja.app_shop_id) : null,
     cliente: {
+      // `util` derruba o "privacy protection" que o 99Food manda no lugar do
+      // nome. Sem isso a comanda sai com o cliente chamado "privacy protection"
+      // — e o número do 99 no lugar dá à cozinha algo que ela consegue casar
+      // com a tela do app deles.
       nome:
-        String(endereco.name ?? "").trim() ||
-        [endereco.first_name, endereco.last_name].filter(Boolean).join(" ").trim() ||
-        "Cliente 99Food",
+        util(endereco.name) ||
+        [util(endereco.first_name), util(endereco.last_name)].filter(Boolean).join(" ").trim() ||
+        (numeroNoParceiro ? `Cliente 99Food #${numeroNoParceiro}` : "Cliente 99Food"),
       telefone: telefoneDoCliente(endereco),
       endereco: enderecoDoCliente(endereco),
     },
