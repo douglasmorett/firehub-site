@@ -26,6 +26,18 @@ type PrintOrder = {
   createdAt?: string;
 };
 
+/**
+ * Versão do Assistente que o site distribui hoje em /downloads.
+ *
+ * Serve para a tela de impressoras dizer à loja que o programa dela está
+ * velho. O Assistente não tem atualização automática: cada loja fica na versão
+ * do dia em que instalou, e a única forma de perceber era comparar comandas
+ * impressas lado a lado.
+ *
+ * MANTENHA IGUAL a firehub-print-assistant/package.json ao gerar um instalador.
+ */
+export const VERSAO_ASSISTENTE_ATUAL = "1.1.0";
+
 export type EscPosProfile = "full" | "safe" | "legacy";
 
 type PrinterEntry = {

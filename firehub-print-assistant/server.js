@@ -1015,12 +1015,26 @@ setInterval(async () => {
 }, 3000);
 
 /* ─── Rotas ────────────────────────────────────────────────── */
+/**
+ * Versão REAL do Assistente que está rodando nesta máquina.
+ *
+ * O /status devolvia "2.0.0" fixo no código, que não mudava nunca e não
+ * correspondia ao package.json. Com isso não havia como saber, olhando de
+ * fora, qual build cada loja tem — e as lojas ficaram em versões diferentes
+ * sem ninguém perceber, cada uma congelada no dia em que instalou. Foi assim
+ * que a mesma comanda saiu com a BEBIDA em preto numa loja e em texto puro
+ * na outra.
+ */
+const VERSAO_ASSISTENTE = (() => {
+  try { return require("./package.json").version; } catch { return "desconhecida"; }
+})();
+
 app.get("/status", (req, res) => {
   const printers = listPrinters();
   res.json({
     ok: true,
     app: "FireHub-Thermal-Printer-v2",
-    version: "2.0.0",
+    version: VERSAO_ASSISTENTE,
     name: "FireHub Assistente de Impressão",
     printers,
     config: currentConfig

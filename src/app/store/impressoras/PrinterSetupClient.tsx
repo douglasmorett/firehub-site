@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { Printer, CheckCircle, Download, AlertCircle, Plus, Trash2, RefreshCw } from "lucide-react";
+import { VERSAO_ASSISTENTE_ATUAL } from "@/lib/print";
 
 /* ─── Tipos ─────────────────────────────────────────────────── */
 type PrinterConfig = {
@@ -48,6 +49,14 @@ export default function PrinterSetupClient({
   const [testingPrinter, setTestingPrinter] = useState<string | null>(null);
   const [rulerPrinter, setRulerPrinter] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  /** Versão do Assistente que está rodando neste computador. */
+  const [versaoInstalada, setVersaoInstalada] = useState<string | null>(null);
+
+  // Comparação literal de propósito: qualquer diferença é motivo de aviso.
+  // Comparar por ordem de versão exigiria confiar no formato que cada build
+  // antigo devolve, e havia build reportando "2.0.0" com código mais velho que
+  // o de hoje — a ordem mentiria.
+  const versaoDesatualizada = !!versaoInstalada && versaoInstalada !== VERSAO_ASSISTENTE_ATUAL;
 
   const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
@@ -78,6 +87,7 @@ export default function PrinterSetupClient({
         if (wsData) {
           setStatus("connected");
           setAvailablePrinters(wsData.printers || []);
+          setVersaoInstalada(wsData.version || null);
           if (userClicked) {
             alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(wsData.printers || []).length} impressora(s) detectada(s) no Windows.`);
           }
@@ -109,6 +119,7 @@ export default function PrinterSetupClient({
     if (connectedData) {
       setStatus("connected");
       setAvailablePrinters(connectedData.printers || []);
+      setVersaoInstalada((connectedData as any).version || null);
       if (userClicked) {
         alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(connectedData.printers || []).length} impressora(s) detectada(s) neste computador.`);
       }
@@ -309,6 +320,16 @@ export default function PrinterSetupClient({
                 <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
                   {availablePrinters.filter(p => /^(USB|LPT|COM)/i.test(p.port)).length || availablePrinters.length} impressora(s) detectada(s) no computador
                 </p>
+                {/* Sem isto não havia como saber, olhando a tela, qual build a loja
+                    tem instalado — e duas lojas em versões diferentes imprimiam a
+                    mesma comanda de jeitos diferentes sem ninguém entender por quê. */}
+                {versaoInstalada && (
+                  <p style={{ margin: "3px 0 0", fontSize: "0.72rem", fontWeight: 700, color: versaoDesatualizada ? "#B45309" : "#64748B" }}>
+                    {versaoDesatualizada
+                      ? `⚠️ Assistente ${versaoInstalada} — a versão atual é ${VERSAO_ASSISTENTE_ATUAL}. Baixe o instalador ao lado, desinstale o antigo e instale o novo.`
+                      : `Assistente ${versaoInstalada} — atualizado`}
+                  </p>
+                )}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
