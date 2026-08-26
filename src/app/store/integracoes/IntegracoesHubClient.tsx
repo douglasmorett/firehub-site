@@ -52,6 +52,8 @@ export default function IntegracoesHubClient({
   const [food99Msg, setFood99Msg] = useState("");
   /** Qual loja do 99Food está ligada — nome, id e endereço, vindos do shop/detail. */
   const [food99Loja, setFood99Loja] = useState<{ nome: string | null; shopId: string | null; endereco: string | null } | null>(null);
+  /** TODAS as lojas do 99Food desta conta. Uma conta pode ter várias. */
+  const [food99Lojas, setFood99Lojas] = useState<{ appShopId: string; shopId: string | null; label: string | null }[]>([]);
   /** Fica preenchido depois que o lojista abre a autorização — é o gatilho do "Já autorizei". */
   const [food99Aguardando, setFood99Aguardando] = useState(false);
   /** Só aparece quando há mais de uma loja autorizada e não dá para adivinhar qual é a dele. */
@@ -183,6 +185,7 @@ export default function IntegracoesHubClient({
       setFood99Disponivel(data.disponivel !== false);
       setFood99Msg(data.mensagem || "");
       setFood99Loja(data.lojaNo99 || null);
+      setFood99Lojas(data.lojas || []);
       setFood99Candidatos(data.candidatos || []);
       if (data.conectado) {
         setFood99Aguardando(false);
@@ -296,6 +299,7 @@ export default function IntegracoesHubClient({
           setFood99Candidatos([]);
           setFood99Msg(data.mensagem || "");
           setFood99Loja(data.lojaNo99 || null);
+          setFood99Lojas(data.lojas || []);
           showToast("✅ 99Food conectado! Os pedidos chegam automaticamente.", "#10B981");
           return;
         }
@@ -307,6 +311,7 @@ export default function IntegracoesHubClient({
           setFood99Candidatos(data.candidatos);
           setFood99Msg(data.mensagem || "");
           setFood99Loja(data.lojaNo99 || null);
+          setFood99Lojas(data.lojas || []);
           setFood99Aguardando(false);
           return;
         }
@@ -330,6 +335,33 @@ export default function IntegracoesHubClient({
     };
   }, [food99Aguardando, food99Connected, openModal]);
 
+  /**
+   * Desliga UMA loja do 99Food, sem tocar nas outras da conta.
+   *
+   * Diferente do "Desconectar", que desfaz o vínculo no 99Food e derruba a
+   * conta inteira: aqui sai só a filial escolhida. Por isso a confirmação
+   * nomeia a loja — desligar a errada só se descobre quando os pedidos dela
+   * param de chegar.
+   */
+  const handleDesligarLoja99 = async (appShopId: string, nome: string) => {
+    if (!confirm(`Desligar "${nome}" do FireHub?\n\nOs pedidos dela param de chegar. As outras lojas continuam funcionando.`)) return;
+    setFood99Saving(true);
+    try {
+      const res = await fetch(`/api/99food/conectar?appShopId=${encodeURIComponent(appShopId)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        showToast(`✅ "${data.desligada}" desligada`, "#10B981");
+        await carregar99Food();
+      } else {
+        showToast(`⚠️ ${data.error || "Não consegui desligar"}`, "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão", "#EF4444");
+    } finally {
+      setFood99Saving(false);
+    }
+  };
+
   /** Conferência manual — a automática acima cobre o caso normal. */
   const handleVerificar99Food = async () => {
     setFood99Saving(true);
@@ -342,6 +374,7 @@ export default function IntegracoesHubClient({
       setFood99Connected(!!data.conectado);
       setFood99Msg(data.mensagem || "");
       setFood99Loja(data.lojaNo99 || null);
+      setFood99Lojas(data.lojas || []);
       setFood99Candidatos(data.candidatos || []);
       showToast(
         data.conectado ? "✅ 99Food conectado! Os pedidos chegam automaticamente." : `⏳ ${data.mensagem}`,
@@ -1342,6 +1375,46 @@ export default function IntegracoesHubClient({
                     <div style={{ fontSize: "0.78rem", color: "#166534", marginTop: 4 }}>
                       Os pedidos chegam sozinhos no painel. Não é preciso fazer mais nada.
                     </div>
+
+                    {/* A lista só aparece com 2+ lojas: com uma, o cabeçalho
+                        acima já diz qual é, e repetir vira ruído. */}
+                    {food99Lojas.length > 1 && (
+                      <div style={{ marginTop: 12, borderTop: "1px solid #BBF7D0", paddingTop: 10 }}>
+                        <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#15803D", marginBottom: 8 }}>
+                          {food99Lojas.length} lojas do 99Food nesta conta
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {food99Lojas.map((l) => (
+                            <div key={l.appShopId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "#fff", border: "1px solid #D1FAE5", borderRadius: 10, padding: "8px 10px" }}>
+                              <div style={{ minWidth: "fit-content" }}>
+                                <div style={{ fontSize: "0.83rem", fontWeight: 800, color: "#0F172A" }}>{l.label || "Loja 99Food"}</div>
+                                {l.shopId && <div style={{ fontSize: "0.7rem", color: "#64748B", fontFamily: "monospace" }}>ID {l.shopId}</div>}
+                              </div>
+                              <button
+                                onClick={() => handleDesligarLoja99(l.appShopId, l.label || "esta loja")}
+                                disabled={food99Saving}
+                                style={{ minWidth: "fit-content", padding: "5px 12px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#991B1B", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}
+                              >
+                                Desligar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: "0.72rem", color: "#166534", marginTop: 8, lineHeight: 1.5 }}>
+                          A 1ª loja é gratuita. Cada loja adicional custa <strong>+R$50,00/mês</strong> na sua fatura.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Mesmo fluxo de autorização: a loja nova entra AO LADO da
+                        atual, em vez de substituí-la como acontecia antes. */}
+                    <button
+                      onClick={handleConectar99Food}
+                      disabled={food99Saving || !food99Disponivel}
+                      style={{ marginTop: 12, padding: "8px 14px", borderRadius: 10, border: "1.5px dashed #15803D", background: "#fff", color: "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
+                    >
+                      ➕ Conectar outra loja do 99Food
+                    </button>
                   </div>
                 ) : (
                   <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>

@@ -341,10 +341,18 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       linhasExtras.push(`iFood +${lojasIfood - 1} loja(s) R$${extraIfood.toFixed(2)}`);
     }
 
-    // 99Food segue a mesma regra. Hoje o schema guarda um único merchant por
-    // conta (User.food99MerchantId), então isto sempre dá 0 — fica pronto para
-    // quando existir o modelo multi-loja, sem precisar lembrar da regra depois.
-    const lojas99 = cycle.franchisee?.food99Connected ? 1 : 0;
+    // 99Food segue a mesma regra do iFood: a primeira é grátis, cada adicional
+    // custa EXTRA_STORE_FEE por mês.
+    //
+    // Até 26/08/2026 esta conta dava SEMPRE zero: `lojas99` vinha do booleano
+    // `food99Connected`, que nunca passa de 1. A regra existia no código e nunca
+    // cobrou ninguém. Agora conta as linhas de `Food99Store`.
+    //
+    // `contarLojas99` cai no booleano antigo quando a tabela está vazia — e
+    // isso importa mais aqui do que em qualquer outro lugar: contar 0 numa
+    // conta que já é cobrada apagaria a cobrança dela.
+    const { contarLojas99 } = await import("@/lib/food99-lojas");
+    const lojas99 = await contarLojas99(franchiseeId, !!cycle.franchisee?.food99Connected);
     const extra99 = Math.max(0, lojas99 - 1) * FIREHUB_PLAN.EXTRA_STORE_FEE;
     if (extra99 > 0) {
       taxasExtras += extra99;

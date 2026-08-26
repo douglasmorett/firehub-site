@@ -5,6 +5,7 @@ import { registrar99Food } from "@/lib/webhook-99food-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 import { aplicarPedidoAlterado99, tokenDaLoja } from "@/lib/food99-status";
+import { donoDoAppShopId, donoDoShopId } from "@/lib/food99-lojas";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
 
@@ -291,25 +292,30 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // 1ª tentativa — app_shop_id gravado no vínculo (campo food99AppId).
-      // É a amarração que a tela de conexão escreve quando o lojista escolhe a
-      // loja dele na lista de vinculadas.
-      let franchisee = appShopId
-        ? await prisma.user.findFirst({ where: { food99AppId: String(appShopId) } })
-        : null;
+      // ── De quem é este pedido ─────────────────────────────────────────────
+      //
+      // 1ª tentativa — a tabela de lojas (Food99Store), que é o que permite
+      // mais de uma loja do 99Food na mesma conta. `donoDoAppShopId` já cai
+      // sozinha nas colunas antigas do User quando a tabela não existe ou não
+      // tem a linha, então esta chamada NÃO substitui o caminho antigo: ela o
+      // embrulha. Com a tabela vazia, o comportamento é exatamente o de antes.
+      let franchisee = null as any;
+      if (appShopId) {
+        const donoId = await donoDoAppShopId(String(appShopId));
+        if (donoId) franchisee = await prisma.user.findUnique({ where: { id: donoId } }).catch(() => null);
+      }
 
       // 2ª — o app_shop_id pode SER o nosso id, quando o 99Food aceita o valor
       // que mandamos. Custa uma consulta e cobre esse caso sem depender de o
-      // vínculo ter sido gravado aqui antes.
+      // vínculo ter sido gravado aqui antes. (É como a Brasa Burguer está.)
       if (!franchisee && appShopId) {
         franchisee = await prisma.user.findUnique({ where: { id: String(appShopId) } }).catch(() => null);
       }
 
       // 3ª — shop_id do 99Food, para quem conectou pelo formulário antigo.
       if (!franchisee && merchantId) {
-        franchisee = await prisma.user.findFirst({
-          where: { food99MerchantId: String(merchantId), role: "FRANCHISEE" },
-        });
+        const donoId = await donoDoShopId(String(merchantId));
+        if (donoId) franchisee = await prisma.user.findUnique({ where: { id: donoId } }).catch(() => null);
       }
 
       // Loja achada pelo app_shop_id mas ainda sem o merchantId gravado: grava

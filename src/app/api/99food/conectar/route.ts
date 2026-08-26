@@ -9,6 +9,7 @@ import {
   listarLojasVinculadas,
   detalheDaLoja,
 } from "@/lib/food99-api";
+import { salvarLoja99, lojas99DaConta, desativarLoja99 } from "@/lib/food99-lojas";
 
 export const dynamic = "force-dynamic";
 
@@ -114,13 +115,27 @@ export async function GET(req: NextRequest) {
  * Falhar aqui não derruba nada: sem o nome a tela volta ao texto genérico, mas
  * o estado "conectado" continua valendo — ele vem do token, não daqui.
  */
-async function comNomeDaLoja(token: string, expiraEm: number) {
+async function comNomeDaLoja(lojaId: string, token: string, expiraEm: number) {
   const loja = await detalheDaLoja(token).catch(() => null);
+
+  // Mantém a tabela em dia sem depender de ninguém rodar a migração: toda vez
+  // que a tela confirma uma conexão, a loja é gravada (é idempotente). É o que
+  // faz a Brasa Burguer aparecer na lista sozinha, sem intervenção.
+  if (loja?.appShopId) {
+    await salvarLoja99({
+      userId: lojaId,
+      appShopId: loja.appShopId,
+      shopId: loja.shopId,
+      label: loja.nome,
+    }).catch(() => false);
+  }
+
   return {
     conectado: true,
     disponivel: true,
     expiraEm: new Date(expiraEm * 1000).toISOString(),
     lojaNo99: loja,
+    lojas: await lojas99DaConta(lojaId).catch(() => []),
     mensagem: loja?.nome
       ? `Loja "${loja.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
       : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
@@ -130,7 +145,7 @@ async function comNomeDaLoja(token: string, expiraEm: number) {
 async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   const direto = await getAuthToken(lojaId);
   if (direto.autorizada) {
-    return comNomeDaLoja(direto.token.auth_token, direto.token.token_expiration_time);
+    return comNomeDaLoja(lojaId, direto.token.auth_token, direto.token.token_expiration_time);
   }
 
   // Já adotamos um app_shop_id diferente do nosso id numa conexão anterior?
@@ -141,7 +156,7 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   if (loja?.food99AppId) {
     const porVinculo = await getAuthToken(loja.food99AppId);
     if (porVinculo.autorizada) {
-      return comNomeDaLoja(porVinculo.token.auth_token, porVinculo.token.token_expiration_time);
+      return comNomeDaLoja(lojaId, porVinculo.token.auth_token, porVinculo.token.token_expiration_time);
     }
   }
 
@@ -180,6 +195,15 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
 
   if (orfaos.length === 1) {
     const escolhido = orfaos[0];
+    // Grava nos DOIS lugares de propósito. A tabela é o que permite mais de uma
+    // loja por conta; as colunas do User continuam sendo o plano B de tudo que
+    // ainda as lê, e é o que garante que nada pare se a tabela não existir.
+    await salvarLoja99({
+      userId: lojaId,
+      appShopId: escolhido.appShopId,
+      shopId: escolhido.shopId,
+      label: escolhido.nome,
+    });
     await prisma.user.update({
       where: { id: lojaId },
       data: {
@@ -244,6 +268,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Essa loja do 99Food já está ligada a outra loja no FireHub." }, { status: 409 });
     }
 
+    // Tabela primeiro (é ela que aceita a segunda loja), colunas do User depois
+    // (plano B de tudo que ainda as lê). As colunas guardam a ÚLTIMA conectada
+    // — com uma loja é a dela, com várias é só reserva; quem manda é a tabela.
+    await salvarLoja99({
+      userId: r.lojaId,
+      appShopId: escolhido,
+      shopId: existe.shop_id != null ? String(existe.shop_id) : null,
+      label: existe.shop_name ? String(existe.shop_name) : null,
+    });
     await prisma.user.update({
       where: { id: r.lojaId },
       data: {
@@ -273,5 +306,62 @@ export async function POST(req: NextRequest) {
     instrucao:
       "Abra este link e entre com a conta que a sua loja usa no 99Food " +
       "(a mesma onde você vê os pedidos). Depois de autorizar, volte e atualize esta tela.",
+  });
+}
+
+/**
+ * DELETE /api/99food/conectar?appShopId=…
+ *
+ * Desliga UMA loja do 99Food da conta, sem tocar nas outras.
+ *
+ * É diferente de /api/99food/auth?step=disconnect, que desfaz o vínculo do lado
+ * do 99Food e limpa as colunas do User — ou seja, derruba a conta inteira. Com
+ * várias lojas, isso deixaria de ser o que o lojista quer na maioria das vezes:
+ * ele quer tirar a filial que fechou, não sair do 99Food.
+ *
+ * Aqui a linha só é marcada como inativa. O vínculo continua de pé no 99Food, e
+ * é por isso que a resposta diz isso com todas as letras: se ele quer parar de
+ * receber de verdade, precisa desfazer lá também.
+ */
+export async function DELETE(req: NextRequest) {
+  const r = await lojaDaSessao(req);
+  if ("erro" in r) return r.erro;
+
+  const appShopId = String(req.nextUrl.searchParams.get("appShopId") ?? "").trim();
+  if (!appShopId) {
+    return NextResponse.json({ error: "Informe qual loja (appShopId)." }, { status: 400 });
+  }
+
+  // Só desliga o que é da própria conta: sem esta conferência, um appShopId
+  // digitado na URL desligaria a loja do vizinho.
+  const minhas = await lojas99DaConta(r.lojaId);
+  const alvo = minhas.find((l) => l.appShopId === appShopId);
+  if (!alvo) {
+    return NextResponse.json({ error: "Essa loja não pertence a esta conta." }, { status: 404 });
+  }
+
+  const ok = await desativarLoja99(r.lojaId, appShopId);
+  if (!ok) {
+    return NextResponse.json({ error: "Não consegui desligar a loja agora." }, { status: 500 });
+  }
+
+  const restantes = await lojas99DaConta(r.lojaId);
+
+  // Sobrando zero, a conta deixa de ter 99Food ativo — e o booleano antigo
+  // precisa acompanhar, porque é ele que a cobrança e o fallback do webhook
+  // leem quando a tabela não responde.
+  if (restantes.length === 0) {
+    await prisma.user
+      .update({ where: { id: r.lojaId }, data: { food99Connected: false } })
+      .catch(() => {});
+  }
+
+  return NextResponse.json({
+    ok: true,
+    desligada: alvo.label || appShopId,
+    lojasRestantes: restantes.length,
+    aviso:
+      "A loja saiu do FireHub. O vínculo com o app continua de pé no 99Food — " +
+      "se quiser parar de receber pedido dela de vez, desfaça também no painel deles.",
   });
 }

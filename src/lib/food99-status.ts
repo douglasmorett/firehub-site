@@ -130,6 +130,42 @@ export async function tokenDaLoja(lojaId: string): Promise<string | null> {
 }
 
 /**
+ * TODOS os tokens da conta — um por loja do 99Food ligada nela.
+ *
+ * ── Por que uma lista, e não um token ───────────────────────────────────────
+ *
+ * Cada loja do 99Food tem `auth_token` próprio, e o pedido gravado aqui NÃO
+ * guarda de qual delas veio: `CustomerOrder` tem `openDeliveryOrderId`,
+ * `openDeliveryReference` e `openDeliveryChannel`, e nenhum sobra para o
+ * app_shop_id. Com uma loja por conta isso nunca importou — o token era um só.
+ *
+ * Com várias, usar o token da loja errada faz o 99Food recusar a confirmação, e
+ * o pedido é cancelado por falta dela. Então quem chama tenta os candidatos até
+ * a API aceitar, e passa a usar o que funcionou.
+ *
+ * A ordem importa: o caminho antigo (id da conta / food99AppId) vem PRIMEIRO,
+ * porque é ele que atende quem está em produção hoje. Quem tem uma loja só
+ * acerta na primeira tentativa, exatamente como antes.
+ */
+export async function tokensDaConta(lojaId: string): Promise<string[]> {
+  const tokens: string[] = [];
+  const juntar = (t: string | null) => {
+    if (t && !tokens.includes(t)) tokens.push(t);
+  };
+
+  juntar(await tokenDaLoja(lojaId));
+
+  const { lojas99DaConta } = await import("@/lib/food99-lojas");
+  for (const loja of await lojas99DaConta(lojaId)) {
+    if (loja.appShopId === lojaId) continue; // já coberto acima
+    const t = await tokenDeUmId(loja.appShopId).catch(() => null);
+    juntar(t?.auth_token ?? null);
+  }
+
+  return tokens;
+}
+
+/**
  * Estados que provam que o FireHub JÁ mandou cada aviso ao 99Food.
  *
  * A conta é assimétrica de propósito: um `confirm` repetido custa uma chamada
@@ -201,17 +237,41 @@ export async function sincronizar99Food(
     console.warn(`[99Food Sync] ⏱️ ${orderId} ${erro}`);
   };
 
-  const token = await tokenDaLoja(pedido.franchiseeId);
-  if (!token) {
+  // Uma conta pode ter mais de uma loja no 99Food, cada uma com token próprio,
+  // e o pedido não guarda de qual delas veio (não há campo). Então tentamos os
+  // candidatos até a API aceitar — e o primeiro da lista é o caminho antigo,
+  // que é o de quem está em produção hoje. Com uma loja só, acerta de primeira.
+  const candidatos = await tokensDaConta(pedido.franchiseeId);
+  if (candidatos.length === 0) {
     const erro = `loja ${pedido.franchiseeId} sem autorização válida no 99Food — ${novoStatus} de ${orderId} não foi avisado`;
     console.error(`[99Food Sync] ❌ ${erro}`);
     return { ok: false, acoes, erros: [erro] };
   }
+  // Assim que um token funciona, ele vira o único usado no resto desta
+  // operação: nada de repetir a busca a cada chamada.
+  let token = candidatos[0];
 
-  const executar = async (rotulo: string, fn: () => Promise<{ errno: number; errmsg: string }>) => {
+  const executar = async (rotulo: string, fn: (t: string) => Promise<{ errno: number; errmsg: string }>) => {
     if (Date.now() > prazo) return semTempo(rotulo);
     try {
-      const r = await fn();
+      let r = await fn(token);
+
+      // Token da loja errada: o 99Food recusa porque o pedido não é dessa loja.
+      // Só vale tentar outro quando a conta TEM outro — conta de uma loja só
+      // nunca entra aqui, e o custo continua sendo uma chamada.
+      if (r.errno !== 0 && candidatos.length > 1) {
+        for (const outro of candidatos) {
+          if (outro === token || Date.now() > prazo) continue;
+          const tentativa = await fn(outro);
+          if (tentativa.errno === 0) {
+            token = outro;
+            r = tentativa;
+            console.log(`[99Food Sync] token de outra loja da conta aceitou ${rotulo} de ${orderId}`);
+            break;
+          }
+        }
+      }
+
       // errno 0 é sucesso. O resto vira erro registrado em vez de exceção: uma
       // falha de sync não pode impedir a loja de tocar a operação dela.
       if (r.errno === 0) {
@@ -228,14 +288,14 @@ export async function sincronizar99Food(
   };
 
   if (novoStatus === "ACEITO" || novoStatus === "CONFIRMADO") {
-    await executar("confirm", () => confirmarPedido(token, orderId));
+    await executar("confirm", (t: string) => confirmarPedido(t, orderId));
   }
 
   if (novoStatus === "PRONTO" || novoStatus === "SAIU_ENTREGA") {
     if (!JA_CONFIRMOU.includes(pedido.status)) {
-      await executar("confirm (antes do ready)", () => confirmarPedido(token, orderId));
+      await executar("confirm (antes do ready)", (t: string) => confirmarPedido(t, orderId));
     }
-    await executar("ready", () => pedidoPronto(token, orderId));
+    await executar("ready", (t: string) => pedidoPronto(t, orderId));
   }
 
   if (novoStatus === "ENTREGUE") {
@@ -245,15 +305,15 @@ export async function sincronizar99Food(
     // lado deles — a loja entregaria a comida e levaria o cancelamento junto.
     if (!JA_PASSOU_PELO_READY.includes(pedido.status)) {
       if (!JA_CONFIRMOU.includes(pedido.status)) {
-        await executar("confirm (atrasado, antes do delivered)", () => confirmarPedido(token, orderId));
+        await executar("confirm (atrasado, antes do delivered)", (t: string) => confirmarPedido(t, orderId));
       }
-      await executar("ready (atrasado, antes do delivered)", () => pedidoPronto(token, orderId));
+      await executar("ready (atrasado, antes do delivered)", (t: string) => pedidoPronto(t, orderId));
     }
 
     // "Only used for self-delivery orders" — no pedido que o 99 entrega, a
     // baixa é deles. `deliveryBy` vem do `delivery_type` do próprio pedido.
     if (pedido.deliveryBy === "MERCHANT") {
-      await executar("delivered", () => pedidoEntregue(token, orderId));
+      await executar("delivered", (t: string) => pedidoEntregue(t, orderId));
     } else {
       console.log(
         `[99Food Sync] ℹ️ ${orderId} é entrega do 99 — 'delivered' não se aplica, quem dá baixa é a DiDi`
@@ -262,7 +322,7 @@ export async function sincronizar99Food(
   }
 
   if (novoStatus === "CANCELADO") {
-    await executar("cancel", () => cancelarPedido(token, orderId, opts.motivo, opts.reasonId));
+    await executar("cancel", (t: string) => cancelarPedido(t, orderId, opts.motivo, opts.reasonId));
   }
 
   return { ok: erros.length === 0, acoes, erros };
