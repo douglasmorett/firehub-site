@@ -848,8 +848,27 @@ app.post("/config", (req, res) => {
 /* ─── Deduplicação de Impressões (Trava de 2 HORAS anti-duplicidade) ─ */
 const printedOrdersCache = new Map();
 
-function getOrderDeduplicationKeys(order) {
+/**
+ * Chaves que identificam "este pedido JA foi impresso".
+ *
+ * Elas eram montadas so com dados do PEDIDO — id, referencia da plataforma,
+ * numero do dia, cliente+valor. O nome da impressora nao entrava em nenhuma.
+ *
+ * Com DUAS impressoras configuradas, o site manda um POST /print para cada uma
+ * (o laco em src/lib/print.ts esta correto, sem break). O primeiro imprimia; o
+ * segundo chegava milissegundos depois com o MESMO order.id, caia na trava de
+ * 2 horas e era engolido — respondendo ok:true, entao nem erro aparecia. Na
+ * pratica a loja configurava Cozinha e Bar e so a Cozinha imprimia, para
+ * sempre, sem nenhuma mensagem dizendo por que.
+ *
+ * Com a impressora na chave, a protecao continua inteira onde ela serve — o
+ * mesmo pedido duas vezes na MESMA impressora segue bloqueado — e para de
+ * bloquear o que nunca foi duplicata: o mesmo pedido em impressoras
+ * diferentes, que e exatamente o que a loja pediu ao cadastrar duas.
+ */
+function getOrderDeduplicationKeys(order, printerName) {
   if (!order) return [];
+  const imp = String(printerName || "").toLowerCase().trim();
   const cleanCustomer = String(order.customerName || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
   const amount = Number(order.totalAmount || 0).toFixed(2);
   const seq = order.dailyOrderNumber || order.orderSeqNumber || "";
@@ -861,12 +880,14 @@ function getOrderDeduplicationKeys(order) {
     order.openDeliveryOrderId ? `opd_${order.openDeliveryOrderId}` : null,
     seq ? `seq_${seq}` : null,
     (cleanCustomer && amount && amount !== "0.00") ? `cust_${cleanCustomer}_${amount}` : null
-  ].filter(Boolean);
+  ]
+    .filter(Boolean)
+    .map(k => `${imp}::${k}`);
 }
 
-function isOrderAlreadyPrinted(order) {
+function isOrderAlreadyPrinted(order, printerName) {
   if (!order) return false;
-  const keys = getOrderDeduplicationKeys(order);
+  const keys = getOrderDeduplicationKeys(order, printerName);
 
   const now = Date.now();
   for (const k of keys) {
@@ -878,10 +899,10 @@ function isOrderAlreadyPrinted(order) {
   return false;
 }
 
-function markOrderAsPrinted(order) {
+function markOrderAsPrinted(order, printerName) {
   if (!order) return;
   const now = Date.now();
-  const keys = getOrderDeduplicationKeys(order);
+  const keys = getOrderDeduplicationKeys(order, printerName);
 
   for (const k of keys) {
     printedOrdersCache.set(String(k), now);
@@ -919,7 +940,12 @@ async function processPrintQueue() {
 
       // Se for clique manual (force = true), previne duplo-clique acidental nos últimos 5s
       if (force) {
-        const manualKey = `manual_${order?.id || order?.openDeliveryReference || order?.dailyOrderNumber}`;
+        // A impressora entra aqui pelo mesmo motivo: sem ela, os dois jobs do
+        // mesmo pedido saem do navegador em sequencia imediata e o segundo cai
+        // sempre dentro dos 5 segundos. O proprio site ja conhecia a armadilha —
+        // printTestReceipt usa id `TESTE_${Date.now()}` justamente para dribla-la.
+        const impManual = String(targetPrinter || "").toLowerCase().trim();
+        const manualKey = `${impManual}::manual_${order?.id || order?.openDeliveryReference || order?.dailyOrderNumber}`;
         const lastManual = printedOrdersCache.get(manualKey);
         if (lastManual && (Date.now() - lastManual) < 5000) {
           console.log(`[PrintServer] ⚠️ Duplo clique manual ignorado no pedido #${order?.dailyOrderNumber || order?.id}.`);
@@ -927,13 +953,13 @@ async function processPrintQueue() {
           continue;
         }
         printedOrdersCache.set(manualKey, Date.now());
-      } else if (isOrderAlreadyPrinted(order)) {
+      } else if (isOrderAlreadyPrinted(order, targetPrinter)) {
         console.log(`[PrintServer] ⚠️ Pedido #${order?.dailyOrderNumber || order?.ifoodReference || order?.openDeliveryReference || order?.id} já impresso nos últimos 120 min. Ignorando duplicação automática.`);
         resolve({ ok: true, duplicated: true, message: "Pedido já impresso recentemente." });
         continue;
       }
 
-      markOrderAsPrinted(order);
+      markOrderAsPrinted(order, targetPrinter);
 
       // Largura e perfil resolvidos POR IMPRESSORA (job -> printers[] -> global)
       const perfil = resolvePrinterProfile(targetPrinter, { paperWidth, columns, escposProfile });
