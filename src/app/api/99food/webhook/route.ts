@@ -272,7 +272,13 @@ export async function POST(req: NextRequest) {
       // pedido à loja, porque o evento fino não traz shop_id nenhum.
       const appShopId = traduzido?.appShopId || event.app_shop_id || event.appShopId;
 
-      const orderId = traduzido?.orderId || dados.order_id || event.order_id || event.orderId || event.id;
+      // TEXTO, sempre. `openDeliveryOrderId` é String no banco, e um order_id
+      // que chegue como número derruba a consulta inteira com erro de tipo do
+      // Prisma. Na prática o id real tem 19 dígitos e o parseJson99Food já o
+      // entrega como string — mas depender disso é deixar a rota de pé por
+      // sorte, e um evento de teste com id curto já basta para quebrar.
+      const orderIdBruto = traduzido?.orderId || dados.order_id || event.order_id || event.orderId || event.id;
+      const orderId = orderIdBruto === null || orderIdBruto === undefined || orderIdBruto === "" ? "" : String(orderIdBruto);
       const displayId =
         traduzido?.numeroNoParceiro || dados.order_index || event.order_index || event.displayId || event.reference || orderId;
       const eventType =
