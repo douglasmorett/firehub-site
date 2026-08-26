@@ -376,9 +376,40 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Pedido novo: orderConfirm (o que o 99Food manda de verdade) ou os
-      // nomes documentados/legados. Vale também quando o OrderModel veio junto.
+      // Pedido novo. `orderNew` e `orderConfirm` chegam OS DOIS, com ~3s de
+      // diferença — visto no log deles no primeiro pedido que entrou:
+      //
+      //   17:08:21  orderNew      ← é este que cria
+      //   17:08:25  orderConfirm  ← o mesmo pedido, já gravado
+      //
+      // Por isso os dois estão em EVENTOS_PEDIDO_NOVO, e a conferência de
+      // duplicado logo abaixo é o que impede a comanda de sair duas vezes.
       const isNewOrder = EVENTOS_PEDIDO_NOVO.has(normalizarEvento(eventType)) || !!traduzido;
+
+      // ── Conferir ANTES de buscar ──────────────────────────────────────────
+      //
+      // Esta conferência ficava depois do `order/detail`, e o log deles mostrou
+      // a conta: no primeiro pedido real saíram DUAS chamadas ao detail em 3
+      // segundos — a segunda só para descobrir que o pedido já estava gravado.
+      // Como orderNew e orderConfirm sempre vêm em par, isso dobrava o consumo
+      // da API deles em TODO pedido, e reenvio por ACK atrasado multiplicaria
+      // mais ainda.
+      if (isNewOrder) {
+        const jaGravado = await prisma.customerOrder.findFirst({
+          where: { openDeliveryOrderId: orderId },
+          select: { id: true, dailyOrderNumber: true },
+        });
+        if (jaGravado) {
+          registrar99Food({
+            tipo: eventType || "orderNew",
+            reconhecido: true,
+            pedidoCriado: false,
+            motivo: `reenvio: pedido ${orderId} já estava no banco (#${jaGravado.dailyOrderNumber})`,
+            payload: event,
+          });
+          continue;
+        }
+      }
 
       // ── O webhook do 99Food NÃO carrega o pedido ──────────────────────────
       //
@@ -427,11 +458,11 @@ export async function POST(req: NextRequest) {
       }
 
       if (isNewOrder && pedido) {
-        const existing = await prisma.customerOrder.findFirst({
-          where: { openDeliveryOrderId: orderId },
-        });
-
-        if (!existing) {
+        // A conferência de duplicado já aconteceu lá em cima, antes de gastar
+        // uma chamada no order/detail. O que sobra aqui é a corrida: duas
+        // entregas do mesmo evento passando juntas pela conferência. Quem perde
+        // cai no P2002 logo abaixo, que trata como sucesso.
+        {
           const p = pedido;
 
           const items = itens99ParaPrisma(p.itens, franchisee!.id);
@@ -486,17 +517,6 @@ export async function POST(req: NextRequest) {
               throw errCriacao;
             }
           }
-        } else {
-          // Reenvio do 99Food de um pedido que já entrou. Não duplicar é o
-          // certo; sumir do registro, não — uma fila de reenvios é sinal de
-          // que o ACK não chegou lá, e sem esta linha isso fica invisível.
-          registrar99Food({
-            tipo: eventType || "orderNew",
-            reconhecido: true,
-            pedidoCriado: false,
-            motivo: `reenvio: pedido ${orderId} já estava no banco (#${existing.dailyOrderNumber})`,
-            payload: event,
-          });
         }
       } else if (normalizarEvento(eventType) === "orderpartialcancel") {
         // Cancelamento PARCIAL: o cliente tirou item, o pedido continua de pé.
