@@ -22,6 +22,7 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Senha", type: "password" },
         impersonateId: { label: "Impersonate", type: "text" },
+        returnToAdmin: { label: "ReturnToAdmin", type: "text" },
         isAmbassador: { label: "IsAmbassador", type: "text" },
         loginType: { label: "LoginType", type: "text" }
       },
@@ -43,8 +44,15 @@ export const authOptions: NextAuthOptions = {
                     role: targetUser.role as string,
                     city: targetUser.city as string | null,
                     storeName: targetUser.storeName || targetUser.name,
-                    permissions: targetUser.permissions as string
-                  };
+                    permissions: targetUser.permissions as string,
+                    // Quem entrou. Sem isto a impersonação era porta de mão
+                    // única: ela SUBSTITUI a sessão do admin pela da loja, e a
+                    // própria checagem acima (`role === "ADMIN"`) passava a
+                    // falhar — o admin perdia justamente a permissão que
+                    // precisaria para desfazer. A única saída era sair e entrar
+                    // de novo, a cada atendimento.
+                    impersonatedBy: (decoded as any).id || decoded.sub || null,
+                  } as any;
                 }
               }
             } catch (e) {
@@ -52,6 +60,46 @@ export const authOptions: NextAuthOptions = {
             }
           }
           return null;
+        }
+
+        // ── Voltar ao admin, sem senha e sem sair ─────────────────────────
+        //
+        // Só funciona sobre uma sessão que NASCEU de impersonação: quem decide
+        // o destino é o `impersonatedBy` gravado no token, nunca nada que venha
+        // na requisição. Sem esse campo, não há para onde voltar e a resposta é
+        // recusa — uma sessão comum de loja não vira admin por aqui.
+        //
+        // O papel do destino é conferido AGORA, no banco, e não pelo que o
+        // token diz. Admin rebaixado depois da impersonação não recupera acesso
+        // por causa de um token emitido quando ainda era.
+        if (credentials?.returnToAdmin === "true") {
+          const cookies = req?.headers?.cookie || "";
+          const sessionTokenMatch = cookies.match(/(?:next-auth\.session-token|__Secure-next-auth\.session-token)=([^;]+)/);
+          if (!sessionTokenMatch) return null;
+          try {
+            const decoded = await decode({ token: sessionTokenMatch[1], secret: process.env.NEXTAUTH_SECRET! });
+            const adminId = (decoded as any)?.impersonatedBy;
+            if (!adminId) return null;
+
+            const admin = await prisma.user.findUnique({ where: { id: String(adminId) } });
+            if (!admin || admin.role !== "ADMIN") return null;
+
+            return {
+              id: admin.id,
+              name: admin.name,
+              email: admin.email,
+              role: admin.role as string,
+              city: admin.city as string | null,
+              storeName: admin.storeName || admin.name,
+              permissions: admin.permissions as string,
+              // Volta a ser sessão normal: sem isto o admin ficaria marcado
+              // como "impersonando" para sempre, e a faixa nunca sumiria.
+              impersonatedBy: null,
+            } as any;
+          } catch (e) {
+            console.error("Erro ao voltar da impersonação:", e);
+            return null;
+          }
         }
 
         if (!credentials?.email || !credentials?.password) return null;
@@ -162,6 +210,10 @@ export const authOptions: NextAuthOptions = {
         token.city = (user as any).city;
         token.storeName = (user as any).storeName;
         token.permissions = (user as any).permissions;
+        // `?? null` em vez de `if (...)`: precisa APAGAR quando o login novo
+        // não carrega o campo. Só gravar quando existe deixaria o admin com a
+        // marca de impersonação grudada depois de voltar.
+        (token as any).impersonatedBy = (user as any).impersonatedBy ?? null;
       }
       return token;
     },
@@ -172,6 +224,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).city = token.city;
         (session.user as any).storeName = token.storeName;
         (session.user as any).permissions = token.permissions;
+        (session.user as any).impersonatedBy = (token as any).impersonatedBy || null;
       }
       return session;
     }

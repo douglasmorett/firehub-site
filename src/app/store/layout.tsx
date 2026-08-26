@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { CartProvider } from "@/components/CartProvider";
 import StoreTopNav from "@/components/customer/StoreTopNav";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import HideOnCompras from "@/components/HideOnCompras";
@@ -27,7 +28,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   try {
     user = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true },
+      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true },
     });
     console.log("[StoreLayout] Session Email:", session.user?.email, "| User Email from DB:", user?.email);
   } catch (err) {
@@ -39,7 +40,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     try {
       const owner = await prisma.user.findUnique({
         where: { id: user.ownerId },
-        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true },
+        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true },
       });
       if (owner) storeOwner = owner;
     } catch (e) {}
@@ -111,6 +112,13 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     <CartProvider>
       <GlobalPrintListener />
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#F5F5F5" }}>
+        {/* Só aparece quando a sessão nasceu do "Acessar" do admin. Fica ANTES
+            da barra da loja porque o ponto é ser a primeira coisa que se vê:
+            sem aviso, é questão de tempo até alguém do suporte fechar um caixa
+            achando que está na própria conta. */}
+        {(session.user as any)?.impersonatedBy && (
+          <ImpersonationBanner storeName={storeOwner?.storeName || user?.storeName || session.user?.name || "esta loja"} />
+        )}
         <StoreTopNav
           userName={session.user?.name || user?.name || ""}
           userCity={(session.user as any)?.city || storeOwner?.city || user?.city || ""}
