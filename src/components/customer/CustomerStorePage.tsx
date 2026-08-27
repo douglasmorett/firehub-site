@@ -718,23 +718,35 @@ export default function CustomerStorePage({
     }
   }, [mobileCartOpen]);
 
-  // Botão VOLTAR do celular com a sacola/checkout abertos: fecha a etapa em
-  // vez de sair do site. Checkout → volta para a sacola; sacola → cardápio.
+  // Botão VOLTAR do celular com a sacola aberta: fecha a etapa em vez de sair
+  // do site. Checkout → volta para a sacola; sacola → cardápio.
+  //
+  // O efeito depende SÓ de mobileCartOpen: com isCheckout nas deps, avançar
+  // para o checkout re-executava o efeito, o cleanup disparava history.back()
+  // e o popstate devolvia o cliente para a sacola — o "Continuar" não saía do
+  // lugar. A etapa atual vive num ref, fora do ciclo do efeito.
+  const isCheckoutRef = useRef(isCheckout);
+  isCheckoutRef.current = isCheckout;
   useEffect(() => {
-    if (!mobileCartOpen && !isCheckout) return;
+    if (!mobileCartOpen) return;
     let fechadoPeloBack = false;
     try { window.history.pushState({ fhSacola: true }, ""); } catch {}
     const onPop = () => {
-      fechadoPeloBack = true;
-      if (isCheckout) setIsCheckout(false);
-      else setMobileCartOpen(false);
+      if (isCheckoutRef.current) {
+        setIsCheckout(false);
+        // Devolve a entrada consumida: o próximo voltar fecha a sacola.
+        try { window.history.pushState({ fhSacola: true }, ""); } catch {}
+      } else {
+        fechadoPeloBack = true;
+        setMobileCartOpen(false);
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => {
       window.removeEventListener("popstate", onPop);
       if (!fechadoPeloBack) { try { window.history.back(); } catch {} }
     };
-  }, [mobileCartOpen, isCheckout]);
+  }, [mobileCartOpen]);
 
   const paymentOptions = (() => {
     const base: { k: string; l: string }[] = [];
