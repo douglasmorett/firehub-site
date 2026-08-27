@@ -886,8 +886,14 @@ function resolvePrinterProfile(printerName, jobHints) {
 }
 
 app.post("/config", (req, res) => {
-  const { franchiseeId, printer, paperWidth, printers, escposProfile } = req.body || {};
+  const { franchiseeId, printer, paperWidth, printers, escposProfile, domain } = req.body || {};
   if (franchiseeId) currentConfig.franchiseeId = franchiseeId;
+  // O host do FireHub, mandado pela tela de Impressoras. Sem ele o Assistente
+  // usava um padrão MORTO (firehubfood.com, sem .br) e a fila da nuvem nunca
+  // respondeu para ninguém. Só hostname válido entra — nada de URL completa.
+  if (typeof domain === "string" && /^[a-z0-9.-]+$/i.test(domain.trim()) && domain.trim().length > 3) {
+    currentConfig.domain = domain.trim();
+  }
   if (printer) currentConfig.printer = printer;
   if (paperWidth) currentConfig.paperWidth = paperWidth;
   if (escposProfile) currentConfig.escposProfile = escposProfile;
@@ -1076,7 +1082,7 @@ setInterval(async () => {
     if (!currentConfig.franchiseeId) return;
 
     const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
-    const domain = currentConfig.domain || "firehubfood.com";
+    const domain = currentConfig.domain || "firehubfood.com.br";
     const url = `https://${domain}/api/store/print-queue?franchiseeId=${encodeURIComponent(currentConfig.franchiseeId)}`;
     const res = await fetchFn(url);
     if (!res.ok) return;
@@ -1358,7 +1364,7 @@ async function verificarAtualizacao() {
   let versaoAlvo = null;
   try {
     const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
-    const domain = currentConfig.domain || "firehubfood.com";
+    const domain = currentConfig.domain || "firehubfood.com.br";
     const res = await fetchFn(`https://${domain}/api/assistente/versao`, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) return;
     const info = await res.json();

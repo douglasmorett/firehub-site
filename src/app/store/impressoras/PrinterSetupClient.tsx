@@ -171,6 +171,13 @@ export default function PrinterSetupClient({
               // franchiseeId e pre-requisito de seguranca: sem ele o polling
               // da nuvem nao sabe de qual loja puxar os pedidos.
               franchiseeId,
+              // O dominio NUNCA era enviado, e o padrao do Assistente era
+              // firehubfood.com (SEM .br) — um host morto. Resultado: a fila
+              // da nuvem nunca funcionou em loja nenhuma; toda impressao que
+              // saia vinha do navegador com o painel aberto. Mandar o host
+              // real daqui conserta ate assistente antigo ja instalado, na
+              // proxima vez que a loja salvar as impressoras.
+              domain: window.location.hostname,
               printer: firstPrinter.name,
               paperWidth: firstPrinter.paperWidth || "80mm",
               // Campo novo: assistente antigo ignora, assistente novo usa
