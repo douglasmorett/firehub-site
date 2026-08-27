@@ -386,7 +386,7 @@ export default function PrinterSetupClient({
                 {versaoInstalada && (
                   <p style={{ margin: "3px 0 0", fontSize: "0.72rem", fontWeight: 700, color: versaoDesatualizada ? "#B45309" : "#64748B" }}>
                     {versaoDesatualizada
-                      ? `⚠️ Assistente ${versaoInstalada} — a versão atual é ${VERSAO_ASSISTENTE_ATUAL}. Baixe o instalador ao lado, desinstale o antigo e instale o novo.`
+                      ? `⚠️ Assistente ${versaoInstalada} — a versão atual é ${VERSAO_ASSISTENTE_ATUAL}. Baixe o instalador ao lado e instale por cima (não precisa desinstalar). Esta é a última atualização manual: a partir da 1.2.0 ele se atualiza sozinho.`
                       : `Assistente ${versaoInstalada} — atualizado`}
                   </p>
                 )}

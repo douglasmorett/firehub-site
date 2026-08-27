@@ -1309,3 +1309,117 @@ function startServer(portIndex = 0) {
 }
 
 startServer(0);
+
+/* ─── Atualização automática ───────────────────────────────────────────
+ *
+ * O Assistente era congelado no dia da instalação: cada correção exigia
+ * baixar o instalador de novo, desinstalar e reinstalar — em CADA loja, à
+ * mão. Na prática ninguém fazia, e as lojas foram ficando cada uma numa
+ * versão (foi assim que a mesma comanda saía diferente em duas lojas).
+ *
+ * Agora ele se atualiza sozinho: pergunta ao servidor qual é a versão
+ * atual (a MESMA constante que a tela de Impressoras usa), e quando existe
+ * uma mais nova baixa o instalador oficial do site e o roda em modo
+ * silencioso (/S), que reinstala por cima no mesmo lugar e preserva a
+ * configuração — ela mora em %APPDATA%\FireHub, fora da pasta do programa.
+ * Ao final, religa o próprio executável. Quem estiver com o PC ligado e
+ * internet recebe a versão nova em até 6 horas, sem tocar em nada.
+ *
+ * Guarda-corpos, porque atualização que dá errado é impressora muda:
+ *   - download conferido por tamanho (instalador tem ~70MB; resposta de
+ *     erro tem bytes) antes de qualquer execução;
+ *   - versão que falhou não é tentada de novo por 24h (sem laço de queda);
+ *   - FIREHUB_UPDATE_DRY=1 faz tudo menos instalar — é o modo de teste;
+ *   - qualquer erro vira log e o Assistente segue imprimindo como está.
+ */
+const UPDATE_DRY = process.env.FIREHUB_UPDATE_DRY === "1";
+const VERSAO_LOCAL_UPDATE = process.env.FIREHUB_FAKE_VERSION || VERSAO_ASSISTENTE;
+let atualizacaoEmAndamento = false;
+const tentativasDeVersao = new Map(); // versao -> timestamp da última falha
+
+function logUpdate(msg) {
+  const linha = `[${new Date().toISOString()}] ${msg}`;
+  console.log("[AutoUpdate]", msg);
+  try { fs.appendFileSync(path.join(APP_DIR, "update.log"), linha + "\n"); } catch {}
+}
+
+function versaoRemotaEhMaisNova(remota, local) {
+  const a = String(remota || "").split(".").map((n) => parseInt(n, 10) || 0);
+  const b = String(local || "").split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] || 0) > (b[i] || 0)) return true;
+    if ((a[i] || 0) < (b[i] || 0)) return false;
+  }
+  return false;
+}
+
+async function verificarAtualizacao() {
+  if (atualizacaoEmAndamento) return;
+  let versaoAlvo = null;
+  try {
+    const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
+    const domain = currentConfig.domain || "firehubfood.com";
+    const res = await fetchFn(`https://${domain}/api/assistente/versao`, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return;
+    const info = await res.json();
+    if (!info?.versao || !info?.url) return;
+
+    versaoAlvo = info.versao;
+    if (!versaoRemotaEhMaisNova(info.versao, VERSAO_LOCAL_UPDATE)) return;
+
+    const ultimaFalha = tentativasDeVersao.get(info.versao) || 0;
+    if (Date.now() - ultimaFalha < 24 * 3600_000) return;
+
+    atualizacaoEmAndamento = true;
+    logUpdate(`Versão ${info.versao} disponível (local: ${VERSAO_LOCAL_UPDATE}). Baixando ${info.url}`);
+
+    const resExe = await fetchFn(info.url, { signal: AbortSignal.timeout(10 * 60_000) });
+    if (!resExe.ok) throw new Error(`download HTTP ${resExe.status}`);
+    const buf = Buffer.from(await resExe.arrayBuffer());
+
+    // Instalador de verdade tem dezenas de MB. Uma página de erro tem KB —
+    // executar isso seria rodar lixo com cara de .exe.
+    if (buf.length < 20 * 1024 * 1024) throw new Error(`download suspeito: só ${buf.length} bytes`);
+
+    const exePath = path.join(APP_DIR, `FireHub-Assistente-Update-${info.versao}.exe`);
+    fs.writeFileSync(exePath, buf);
+    logUpdate(`Baixado: ${exePath} (${(buf.length / 1048576).toFixed(1)} MB)`);
+
+    if (UPDATE_DRY) {
+      logUpdate("FIREHUB_UPDATE_DRY=1 — instalação NÃO executada (modo de teste).");
+      atualizacaoEmAndamento = false;
+      return;
+    }
+
+    // O instalador não sobrescreve arquivos de um programa aberto, então a
+    // sequência é: dispara um cmd órfão que espera este processo morrer,
+    // instala em silêncio no mesmo lugar (o NSIS lembra o diretório) e
+    // religa o executável. A config sobrevive porque mora em %APPDATA%.
+    const { spawn } = require("child_process");
+    const relancar = process.execPath && /\.exe$/i.test(process.execPath) && !/node\.exe$/i.test(process.execPath)
+      ? ` & start "" "${process.execPath}"`
+      : "";
+    const comando = `ping -n 4 127.0.0.1 >nul & "${exePath}" /S & ping -n 4 127.0.0.1 >nul${relancar}`;
+    logUpdate(`Instalando ${info.versao} em silêncio e reiniciando.`);
+    const filho = spawn("cmd.exe", ["/c", comando], { detached: true, stdio: "ignore", windowsHide: true });
+    filho.unref();
+
+    setTimeout(() => {
+      try {
+        const { app } = require("electron");
+        if (app) { app.quit(); return; }
+      } catch {}
+      process.exit(0);
+    }, 1500);
+  } catch (e) {
+    logUpdate(`Falha na atualização: ${e?.message}`);
+    // A versão que falhou fica marcada e não é tentada de novo por 24h —
+    // sem isso, um instalador corrompido no site viraria download em loop.
+    tentativasDeVersao.set(versaoAlvo || "ultima", Date.now());
+    atualizacaoEmAndamento = false;
+  }
+}
+
+// 90s depois de ligar (deixa a impressão subir primeiro) e a cada 6 horas.
+setTimeout(verificarAtualizacao, 90_000);
+setInterval(verificarAtualizacao, 6 * 3600_000);
