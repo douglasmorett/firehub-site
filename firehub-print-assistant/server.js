@@ -141,28 +141,124 @@ function dedupePrinters(list) {
   return res;
 }
 
-/**
- * Lista impressoras reais instaladas no Windows (Registry -> PowerShell UTF-8 -> WMI -> Plain Text)
+/* ─── Impressoras pelo registro do SISTEMA ───────────────────────────────
+ *
+ * O caminho HKCU (etapa 0) lê a lista do USUÁRIO logado, e ela vem vazia mais
+ * do que se imagina: instalação feita por outra conta, PC que entrou no
+ * domínio, Assistente rodando elevado (aí HKCU é a colmeia do administrador,
+ * não a de quem está no balcão). Quando isso acontece, sobravam só as três
+ * tentativas por PowerShell — e num PC de loja carregado o `Get-Printer` gasta
+ * o timeout só carregando o módulo PrintManagement a frio.
+ *
+ * Foi exatamente o que aconteceu na Hakim Centro em 27/08/2026: os quatro
+ * métodos falharam, o /status respondeu `printers: []`, e a tela de Impressoras
+ * abriu com o dropdown vazio — sem como trocar ou cadastrar impressora.
+ *
+ * HKLM\...\Print\Printers é a lista do SISTEMA: uma subchave por impressora
+ * instalada, independente de usuário e de elevação, lida pelo reg.exe em
+ * milissegundos e sem PowerShell nenhum. De quebra traz porta e driver, que o
+ * HKCU não traz — é com eles que a tela separa impressora de verdade de
+ * "Microsoft Print to PDF".
+ *
+ * `chcp 65001` porque o reg.exe escreve na página de código do console (850 no
+ * Windows pt-BR): sem isso, "Impressora Térmica" volta com o acento corrompido
+ * e o OpenPrinter não acha esse nome.
  */
+const CHAVE_IMPRESSORAS_SISTEMA = "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers";
+const PREFIXO_IMPRESSORAS_SISTEMA = "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\";
+
+function valorPorImpressoraNoRegistro(valor) {
+  const cmd = `cmd /c "chcp 65001>nul & reg query "${CHAVE_IMPRESSORAS_SISTEMA}" /s /v "${valor}""`;
+  const raw = execSync(cmd, { encoding: "utf-8", timeout: 6000, windowsHide: true });
+  const mapa = new Map();
+  const re = new RegExp("^\\s+" + valor + "\\s+REG_\\w+\\s*(.*)$", "i");
+  let atual = null;
+  for (const linha of raw.split(/\r?\n/)) {
+    if (linha.startsWith(PREFIXO_IMPRESSORAS_SISTEMA)) {
+      const nome = linha.slice(PREFIXO_IMPRESSORAS_SISTEMA.length).trim();
+      // `reg query` sem /s lista só as filhas diretas; a barra que sobra seria
+      // subchave de configuração (DsDriver, PrinterDriverData), não impressora.
+      atual = nome && !nome.includes("\\") ? nome : null;
+      if (atual && !mapa.has(atual)) mapa.set(atual, "");
+      continue;
+    }
+    const m = linha.match(re);
+    if (m && atual) mapa.set(atual, (m[1] || "").trim());
+  }
+  return mapa;
+}
+
+function impressorasPeloRegistroDoSistema() {
+  const portas = valorPorImpressoraNoRegistro("Port");
+  // O driver é um segundo `reg query` porque o reg.exe aceita um /v por vez.
+  // Custa milissegundos, e sem ele a tela nao consegue distinguir a termica.
+  let drivers = new Map();
+  try { drivers = valorPorImpressoraNoRegistro("Printer Driver"); } catch {}
+
+  const lista = [];
+  for (const [name, port] of portas) {
+    if (name) lista.push({ name, driver: drivers.get(name) || "", port: port || "", status: "online" });
+  }
+  return lista;
+}
+
+/**
+ * Lista impressoras reais instaladas no Windows
+ * (Registro do usuário -> Registro do sistema -> PowerShell UTF-8 -> WMI -> Texto puro)
+ *
+ * Guarda em `diagnosticoImpressoras` o que cada etapa devolveu. Quando a lista
+ * volta vazia, esse rastro aparece no /status: sem ele a unica coisa que se via
+ * era `printers: []`, sem dizer QUAL etapa falhou nem por que — e a loja fica a
+ * quilometros de distancia.
+ */
+let diagnosticoImpressoras = [];
+
 function listPrinters() {
   const list = [];
+  const diag = [];
+  const anota = (etapa, resultado) => diag.push(`${etapa}: ${resultado}`);
+  const encerra = () => { diagnosticoImpressoras = diag; };
 
-  // 0. REGISTRY WINDOWS PRINTERPORTS (Ultra-rápido, 2ms, 100% confiável no Windows sem depender de PowerShell)
+  // 0. OS DOIS REGISTROS, SOMADOS. Ambos custam milissegundos e nenhum e
+  // superconjunto do outro: o HKLM tem o que esta instalado na MAQUINA (com
+  // porta e driver), o HKCU tem as conexoes do USUARIO logado, que incluem
+  // impressora de rede mapeada so para ele. Somar os dois e a unica leitura que
+  // nao perde impressora — nenhuma loja passa a enxergar menos do que enxergava.
+  //
+  // O HKLM vem primeiro de proposito: `dedupePrinters` mantem a PRIMEIRA
+  // ocorrencia de cada nome, entao a entrada que sobrevive e a que traz porta e
+  // driver. Sem eles a tela nao separa a termica do "Microsoft Print to PDF" e
+  // o cadastro de impressora acaba chutando o primeiro nome da lista.
+  try {
+    const doSistema = impressorasPeloRegistroDoSistema();
+    for (const p of doSistema) list.push(p);
+    anota("registro do sistema (HKLM)", `${doSistema.length} impressora(s)`);
+  } catch (e05) {
+    anota("registro do sistema (HKLM)", `falhou - ${e05.message}`);
+  }
+
   try {
     const raw = execSync('reg query "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\PrinterPorts"', { encoding: "utf-8", timeout: 4000 });
     const lines = raw.split(/\r?\n/);
+    let achadas = 0;
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("HKEY_")) continue;
       const parts = trimmed.split(/\s{2,}/);
       if (parts.length >= 2) {
         const name = parts[0].trim();
-        if (name) list.push({ name, driver: "", port: "", status: "online" });
+        // A porta vem embutida no valor: "winspool,USB001,15,45".
+        const campos = String(parts[parts.length - 1] || "").split(",");
+        const port = campos.length > 1 ? campos[1].trim() : "";
+        if (name) { list.push({ name, driver: "", port, status: "online" }); achadas++; }
       }
     }
-  } catch (e0) {}
+    anota("registro do usuario (HKCU)", `${achadas} impressora(s)`);
+  } catch (e0) {
+    anota("registro do usuario (HKCU)", `falhou - ${e0.message}`);
+  }
 
-  if (list.length > 0) return dedupePrinters(list);
+  if (list.length > 0) { encerra(); return dedupePrinters(list); }
 
   // 1. Tenta Get-Printer com UTF-8 explícito
   try {
@@ -175,9 +271,12 @@ function listPrinters() {
         if (p && p.Name) list.push({ name: String(p.Name).trim(), driver: String(p.DriverName || "").trim(), port: String(p.PortName || "").trim(), status: "online" });
       }
     }
-  } catch (e1) {}
+    anota("PowerShell Get-Printer", `${list.length} impressora(s)`);
+  } catch (e1) {
+    anota("PowerShell Get-Printer", `falhou - ${e1.message}`);
+  }
 
-  if (list.length > 0) return dedupePrinters(list);
+  if (list.length > 0) { encerra(); return dedupePrinters(list); }
 
   // 2. Fallback Get-WmiObject Win32_Printer
   try {
@@ -190,9 +289,12 @@ function listPrinters() {
         if (p && p.Name) list.push({ name: String(p.Name).trim(), driver: String(p.DriverName || "").trim(), port: String(p.PortName || "").trim(), status: "online" });
       }
     }
-  } catch (e2) {}
+    anota("PowerShell Win32_Printer", `${list.length} impressora(s)`);
+  } catch (e2) {
+    anota("PowerShell Win32_Printer", `falhou - ${e2.message}`);
+  }
 
-  if (list.length > 0) return dedupePrinters(list);
+  if (list.length > 0) { encerra(); return dedupePrinters(list); }
 
   // 3. Fallback super simples em Texto Puro (uma linha por impressora)
   try {
@@ -202,10 +304,52 @@ function listPrinters() {
     for (const name of lines) {
       list.push({ name, driver: "", port: "", status: "online" });
     }
-  } catch (e3) {}
+    anota("PowerShell (Get-Printer).Name", `${list.length} impressora(s)`);
+  } catch (e3) {
+    anota("PowerShell (Get-Printer).Name", `falhou - ${e3.message}`);
+  }
 
+  encerra();
   return dedupePrinters(list);
 }
+
+/* ─── Cache da lista de impressoras ──────────────────────────────────────
+ *
+ * O /status chamava listPrinters() a cada chamada, e a tela do site desiste em
+ * 1,5s (AbortSignal.timeout no PrinterSetupClient). Num PC onde as duas etapas
+ * de registro falham, as tres de PowerShell podem levar mais de 20s somadas — o
+ * navegador aborta antes, a tela diz "Desconectado" e a loja conclui que o
+ * Assistente morreu, com ele rodando perfeitamente. Servir do cache faz o
+ * /status responder na hora, sempre.
+ *
+ * Consulta vazia NAO apaga o cache: uma falha passageira (antivirus ocupado,
+ * PowerShell frio) esvaziaria o dropdown de quem estava funcionando. Some so o
+ * que nunca foi encontrado.
+ */
+const TTL_CACHE_IMPRESSORAS = 30_000;
+let cacheDeImpressoras = { lista: [], quando: 0 };
+
+function listPrintersCached(forcar = false) {
+  const agora = Date.now();
+  if (!forcar && cacheDeImpressoras.quando && agora - cacheDeImpressoras.quando < TTL_CACHE_IMPRESSORAS) {
+    return cacheDeImpressoras.lista;
+  }
+  let lista = [];
+  try { lista = listPrinters(); } catch (e) { lista = []; }
+  if (lista.length > 0 || cacheDeImpressoras.lista.length === 0) {
+    cacheDeImpressoras = { lista, quando: agora };
+  }
+  return cacheDeImpressoras.lista;
+}
+
+// Aquece o cache logo depois de subir, para a primeira consulta da tela ja
+// encontrar a lista pronta em vez de pagar a deteccao inteira na hora.
+setTimeout(() => {
+  try {
+    const achadas = listPrintersCached(true);
+    console.log(`[Impressoras] ${achadas.length} encontrada(s) — ${diagnosticoImpressoras.join(" | ")}`);
+  } catch {}
+}, 1000);
 
 /**
  * Envia dados RAW para a impressora usando script PowerShell externo
@@ -1005,7 +1149,7 @@ async function processPrintQueue() {
     try {
       let targetPrinter = printer || currentConfig.printer;
       if (!targetPrinter) {
-        const detected = listPrinters();
+        const detected = listPrintersCached();
         if (detected.length > 0) targetPrinter = detected[0].name;
       }
       if (!targetPrinter) {
@@ -1176,17 +1320,25 @@ const VERSAO_ASSISTENTE = (() => {
 })();
 
 app.get("/status", (req, res) => {
-  const printers = listPrinters();
+  // ?fresh=1 ignora o cache — e o que o botao "Atualizar" da tela manda depois
+  // que a loja pluga uma impressora nova e quer ve-la aparecer agora.
+  const printers = listPrintersCached(req.query.fresh === "1");
   res.json({
     ok: true,
     app: "FireHub-Thermal-Printer-v2",
     version: VERSAO_ASSISTENTE,
     name: "FireHub Assistente de Impressão",
     printers,
+    // Por que a lista veio como veio. So aparece quando ela esta VAZIA, que e o
+    // unico caso em que interessa: e a diferenca entre saber qual etapa falhou
+    // e ficar adivinhando a quilometros da loja.
+    ...(printers.length === 0 ? { printersDiag: diagnosticoImpressoras } : {}),
     config: currentConfig
   });
 });
-app.get("/printers", (req, res) => res.json(listPrinters()));
+// ?fresh=1 refaz a deteccao ignorando o cache — e o que o botao "Atualizar" da
+// tela de Impressoras precisa depois de plugar uma impressora nova.
+app.get("/printers", (req, res) => res.json(listPrintersCached(req.query.fresh === "1")));
 
 app.post("/print", async (req, res) => {
   try {
@@ -1203,7 +1355,7 @@ app.post("/print-raw", async (req, res) => {
     const { printer, data, copies = 1 } = req.body;
     let targetPrinter = printer || currentConfig.printer;
     if (!targetPrinter) {
-      const detected = listPrinters();
+      const detected = listPrintersCached();
       if (detected.length > 0) targetPrinter = detected[0].name;
     }
     if (!targetPrinter || !data) return res.status(400).json({ error: "Dados ou impressora faltando" });
@@ -1220,7 +1372,7 @@ app.post("/print-test", async (req, res) => {
     const { printer, storeName, paperWidth, columns, escposProfile } = req.body;
     let targetPrinter = printer || currentConfig.printer;
     if (!targetPrinter) {
-      const detected = listPrinters();
+      const detected = listPrintersCached();
       if (detected.length > 0) targetPrinter = detected[0].name;
     }
     if (!targetPrinter) return res.status(400).json({ error: "Impressora não especificada" });
@@ -1261,7 +1413,7 @@ function attachWebSocket(httpServer) {
         type: "status",
         ok: true,
         app: "FireHub-Thermal-Printer-v2",
-        printers: listPrinters(),
+        printers: listPrintersCached(),
       }));
 
       ws.on("message", (msg) => {
@@ -1272,7 +1424,7 @@ function attachWebSocket(httpServer) {
               type: "status",
               ok: true,
               app: "FireHub-Thermal-Printer-v2",
-              printers: listPrinters(),
+              printers: listPrintersCached(),
             }));
           }
         } catch {}
@@ -1405,7 +1557,11 @@ async function verificarAtualizacao() {
     const relancar = process.execPath && /\.exe$/i.test(process.execPath) && !/node\.exe$/i.test(process.execPath)
       ? ` & start "" "${process.execPath}"`
       : "";
-    const comando = `ping -n 4 127.0.0.1 >nul & "${exePath}" /S & ping -n 4 127.0.0.1 >nul${relancar}`;
+    // ~5s antes de instalar (era ~3s): o Assistente precisa ter saido de
+    // verdade primeiro, e a saida agora tem uma rede de seguranca que dispara
+    // em 3s. Instalar por cima do executavel ainda aberto e o jeito conhecido
+    // de deixar a loja sem Assistente nenhum.
+    const comando = `ping -n 6 127.0.0.1 >nul & "${exePath}" /S & ping -n 4 127.0.0.1 >nul${relancar}`;
     logUpdate(`Instalando ${info.versao} em silêncio e reiniciando.`);
     const filho = spawn("cmd.exe", ["/c", comando], { detached: true, stdio: "ignore", windowsHide: true });
     filho.unref();
@@ -1413,7 +1569,21 @@ async function verificarAtualizacao() {
     setTimeout(() => {
       try {
         const { app } = require("electron");
-        if (app) { app.quit(); return; }
+        if (app) {
+          // `isQuitting` NAO era marcado aqui, e sem ela o quit simplesmente
+          // nao acontece: o main.js segura o fechamento da janela
+          // (`if (!app.isQuitting) e.preventDefault()`) para o programa seguir
+          // na bandeja. O Assistente continuava de pe e o instalador rodava por
+          // cima de um executavel EM USO — que e o momento exato em que uma
+          // atualizacao vira impressora muda. O menu "Sair" da bandeja sempre
+          // marcou; este caminho tinha ficado para tras.
+          app.isQuitting = true;
+          app.quit();
+          // Rede de seguranca: se ainda assim algo segurar o quit, sai na marra
+          // antes de o instalador tocar nos arquivos (ele espera ~5s).
+          setTimeout(() => { try { process.exit(0); } catch {} }, 1500);
+          return;
+        }
       } catch {}
       process.exit(0);
     }, 1500);

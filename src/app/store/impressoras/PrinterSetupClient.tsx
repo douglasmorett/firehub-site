@@ -122,9 +122,14 @@ export default function PrinterSetupClient({
     ];
     let connectedData = null;
 
+    // Clique explicito em "Atualizar" refaz a deteccao no Assistente em vez de
+    // servir do cache dele: e o que a loja espera depois de plugar a impressora
+    // agora. Assistente antigo ignora o parametro e responde como sempre.
+    const rota = userClicked ? "/status?fresh=1" : "/status";
+
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(1500) });
+        const res = await fetch(`${url}${rota}`, { signal: AbortSignal.timeout(1500) });
         const data = await res.json();
         if (data.ok && (data.app === "FireHub-Thermal-Printer-v2" || (data.printers && data.printers.length > 0))) {
           connectedData = data;
@@ -159,44 +164,55 @@ export default function PrinterSetupClient({
         body: JSON.stringify(config),
       });
 
+      // Este POST sai SEMPRE, mesmo sem nenhuma impressora cadastrada.
+      //
+      // Ele vivia dentro de um `if (firstPrinter)`, e isso derrubava calado a
+      // loja que ainda nao tinha cadastrado impressora: e este POST que entrega
+      // o `franchiseeId` ao Assistente, e sem esse id ele nem chega a consultar
+      // a fila da nuvem (server.js: `if (!currentConfig.franchiseeId) return`).
+      // Ou seja — a loja salvava, nada era enviado, e mesa e balcao continuavam
+      // sem imprimir sozinhos. Sem impressora cadastrada o Assistente cai na
+      // impressora padrao do Windows, que e melhor do que nao imprimir nada.
       const firstPrinter = config.printers[0];
-      if (firstPrinter) {
-        const ports = [7899, 7900, 7901, 7891];
-        for (const p of ports) {
-          fetch(`http://localhost:${p}/config`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              // Campos legados: honrados pelo assistente ja instalado.
-              // franchiseeId e pre-requisito de seguranca: sem ele o polling
-              // da nuvem nao sabe de qual loja puxar os pedidos.
-              franchiseeId,
-              // O dominio NUNCA era enviado, e o padrao do Assistente era
-              // firehubfood.com (SEM .br) — um host morto. Resultado: a fila
-              // da nuvem nunca funcionou em loja nenhuma; toda impressao que
-              // saia vinha do navegador com o painel aberto. Mandar o host
-              // real daqui conserta ate assistente antigo ja instalado, na
-              // proxima vez que a loja salvar as impressoras.
-              domain: window.location.hostname,
-              printer: firstPrinter.name,
-              paperWidth: firstPrinter.paperWidth || "80mm",
-              // Campo novo: assistente antigo ignora, assistente novo usa
-              // para resolver largura/perfil POR IMPRESSORA (Cozinha 80mm + Bar 58mm).
-              printers: config.printers.map(pr => ({
-                name: pr.name,
-                paperWidth: pr.paperWidth || "80mm",
-                columns: pr.columns,
-                escposProfile: pr.escposProfile,
-                copies: pr.copies || 1,
-                categories: pr.categories || [],
-                // Campos novos. O Assistente antigo ignora o que não conhece,
-                // e o novo usa para rotear o que vem pela fila da nuvem.
-                modulos: pr.modulos || [],
-                somenteBebidas: pr.somenteBebidas === true,
-              })),
-            }),
-          }).catch(() => {});
-        }
+      const ports = [7899, 7900, 7901, 7891];
+      for (const p of ports) {
+        fetch(`http://localhost:${p}/config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // Campos legados: honrados pelo assistente ja instalado.
+            // franchiseeId e pre-requisito de seguranca: sem ele o polling
+            // da nuvem nao sabe de qual loja puxar os pedidos.
+            franchiseeId,
+            // O dominio NUNCA era enviado, e o padrao do Assistente era
+            // firehubfood.com (SEM .br) — um host morto. Resultado: a fila
+            // da nuvem nunca funcionou em loja nenhuma; toda impressao que
+            // saia vinha do navegador com o painel aberto. Mandar o host
+            // real daqui conserta ate assistente antigo ja instalado, na
+            // proxima vez que a loja salvar as impressoras.
+            domain: window.location.hostname,
+            // Omitidos quando nao ha impressora: o Assistente so sobrescreve o
+            // que recebe preenchido (`if (printer)`), entao mandar string vazia
+            // seria pior — apagaria a impressora que ele ja conhece.
+            ...(firstPrinter
+              ? { printer: firstPrinter.name, paperWidth: firstPrinter.paperWidth || "80mm" }
+              : {}),
+            // Campo novo: assistente antigo ignora, assistente novo usa
+            // para resolver largura/perfil POR IMPRESSORA (Cozinha 80mm + Bar 58mm).
+            printers: config.printers.map(pr => ({
+              name: pr.name,
+              paperWidth: pr.paperWidth || "80mm",
+              columns: pr.columns,
+              escposProfile: pr.escposProfile,
+              copies: pr.copies || 1,
+              categories: pr.categories || [],
+              // Campos novos. O Assistente antigo ignora o que não conhece,
+              // e o novo usa para rotear o que vem pela fila da nuvem.
+              modulos: pr.modulos || [],
+              somenteBebidas: pr.somenteBebidas === true,
+            })),
+          }),
+        }).catch(() => {});
       }
 
       setSaved(true);
