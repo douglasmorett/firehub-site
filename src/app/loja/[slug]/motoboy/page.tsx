@@ -63,6 +63,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);
+        setBevKeywords(data.customBeverageKeywords || "");
       }
 
       // Load routes from localStorage
@@ -82,6 +83,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     }
   };
 
+  // GPS na tela: "ativo" é a loja conseguindo VER o entregador no mapa. Sem
+  // este estado, GPS negado no celular era invisível — o motoboy achava que
+  // estava sendo acompanhado e o mapa da roteirização ficava vazio.
+  const [gpsStatus, setGpsStatus] = useState<"buscando" | "ativo" | "negado">("buscando");
+
   useEffect(() => {
     if (!session) return;
 
@@ -91,28 +97,38 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     // Real-Time HTML5 Geolocation Tracking for Motoboy
     let watchId: number | null = null;
 
+    // O watchPosition dispara a cada ~1s andando de moto. Mandar tudo é uma
+    // requisição por segundo por entregador — e o mapa da loja atualiza a cada
+    // 10s, então o excesso é invisível para quem olha. 12s entre envios cobre.
+    let ultimoEnvio = 0;
     const sendLocation = (lat: number, lng: number) => {
+      const agora = Date.now();
+      if (agora - ultimoEnvio < 12_000) return;
+      ultimoEnvio = agora;
       fetch("/api/motoboys/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ motoboyId: session.motoboyId, lat, lng })
-      }).catch(e => console.warn("Erro enviando GPS do motoboy:", e));
+      }).then(() => setGpsStatus("ativo"))
+        .catch(e => console.warn("Erro enviando GPS do motoboy:", e));
     };
 
     if (typeof window !== "undefined" && "geolocation" in navigator) {
       // Immediate location update
       navigator.geolocation.getCurrentPosition(
         (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
-        (err) => console.warn("GPS motoboy:", err),
+        (err) => { console.warn("GPS motoboy:", err); if (err.code === err.PERMISSION_DENIED) setGpsStatus("negado"); },
         { enableHighAccuracy: true }
       );
 
       // Continuous tracking
       watchId = navigator.geolocation.watchPosition(
         (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
-        (err) => console.warn("Watch GPS error:", err),
+        (err) => { console.warn("Watch GPS error:", err); if (err.code === err.PERMISSION_DENIED) setGpsStatus("negado"); },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
       );
+    } else {
+      setGpsStatus("negado");
     }
 
     return () => {
@@ -187,10 +203,12 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // Beverage Confirmation Modal State
   const [beverageModalOrder, setBeverageModalOrder] = useState<any | null>(null);
   const [beveragesList, setBeveragesList] = useState<{ name: string; quantity: number }[]>([]);
+  /** Palavras de bebida personalizadas da loja — vêm junto com os pedidos. */
+  const [bevKeywords, setBevKeywords] = useState<string>("");
 
   // Initiate Delivery Flow (Checks for Beverages)
   const handleInitiateDelivery = (order: any) => {
-    const bevList = getBeveragesFromOrder(order);
+    const bevList = getBeveragesFromOrder(order, bevKeywords);
     if (bevList && bevList.length > 0) {
       setBeveragesList(bevList);
       setBeverageModalOrder(order);
@@ -200,22 +218,36 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   };
 
   // Mark Order as Delivered
+  //
+  // Chamava `PATCH /api/customer-order/status` — rota que só tem GET e PUT, e
+  // que exige a sessão do PAINEL, que o motoboy não tem. Todo toque devolvia
+  // 405, e como só se tratava o `res.ok`, o entregador via o spinner rodar e
+  // nada acontecia, sem mensagem nenhuma. A baixa acabava sendo feita à mão
+  // por alguém da loja. A rota nova valida a amarração (pedido atribuído a
+  // ESTE motoboy NESTA loja) e dispara os efeitos: parceiro, WhatsApp, fatura.
   const handleMarkDelivered = async (orderId: string) => {
+    if (!session) return;
     setUpdatingOrderId(orderId);
     try {
-      const res = await fetch("/api/customer-order/status", {
+      const res = await fetch("/api/motoboys/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, status: "ENTREGUE" })
+        body: JSON.stringify({ orderId, motoboyId: session.motoboyId, storeId: session.storeId })
       });
+      const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
+      if (res.ok && data.success) {
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "ENTREGUE" } : o));
         setToastMsg("✅ Entrega confirmada com sucesso!");
         setTimeout(() => setToastMsg(null), 3000);
+      } else {
+        // Falha SEM mensagem é o que escondeu este botão quebrado por meses.
+        setToastMsg(`⚠️ ${data.error || "Não consegui confirmar. Tente de novo."}`);
+        setTimeout(() => setToastMsg(null), 4500);
       }
     } catch (err) {
-      alert("Erro ao confirmar entrega!");
+      setToastMsg("⚠️ Sem conexão — a entrega NÃO foi confirmada. Tente de novo.");
+      setTimeout(() => setToastMsg(null), 4500);
     } finally {
       setUpdatingOrderId(null);
     }
@@ -382,12 +414,26 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         <div style={{ maxWidth: "600px", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ background: "#22C55E", width: "8px", height: "8px", borderRadius: "50%" }} />
+              <span style={{
+                background: gpsStatus === "ativo" ? "#22C55E" : gpsStatus === "negado" ? "#EF4444" : "#F59E0B",
+                width: "8px", height: "8px", borderRadius: "50%"
+              }} />
               <span style={{ fontWeight: 900, fontSize: "1.05rem" }}>🛵 {session.motoboyName}</span>
             </div>
             <p style={{ margin: "2px 0 0 0", fontSize: "0.78rem", color: "#94A3B8" }}>
               Loja: <b>{session.storeName}</b>
+              {" · "}
+              <b style={{ color: gpsStatus === "ativo" ? "#4ADE80" : gpsStatus === "negado" ? "#F87171" : "#FBBF24" }}>
+                {gpsStatus === "ativo" ? "GPS ativo" : gpsStatus === "negado" ? "GPS desligado" : "GPS…"}
+              </b>
             </p>
+            {/* GPS negado não pode ser silencioso: a loja monta rota olhando o
+                mapa, e um entregador invisível ali parece entregador parado. */}
+            {gpsStatus === "negado" && (
+              <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#FCA5A5", fontWeight: 700 }}>
+                ⚠️ Ative a localização do celular para a loja te ver no mapa.
+              </p>
+            )}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -680,17 +726,24 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         </div>
       )}
 
-      {/* Modal de Confirmação de Bebidas */}
+      {/* Modal de Confirmação de Bebidas
+          Clicar FORA fecha sem finalizar — igual ao "Ainda não". O toque fora é
+          o gesto natural de quem abriu sem querer, e a única coisa que nunca
+          pode acontecer aqui é fechar o modal E dar baixa junto. */}
       {beverageModalOrder && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", zIndex: 10000
-        }}>
-          <div style={{
-            background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "400px",
-            padding: "1.5rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)", textAlign: "center",
-            boxSizing: "border-box"
+        <div
+          onClick={() => setBeverageModalOrder(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", zIndex: 10000
           }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "400px",
+              padding: "1.5rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)", textAlign: "center",
+              boxSizing: "border-box"
+            }}>
             <div style={{
               width: "60px", height: "60px", borderRadius: "50%", background: "#EFF6FF",
               color: "#2563EB", display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -730,19 +783,23 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             </div>
 
             <p style={{ fontSize: "0.95rem", fontWeight: 900, color: "#1E293B", marginBottom: "1.25rem" }}>
-              Você entregou essas bebidas para o cliente?
+              Você entregou {beveragesList.length === 1
+                ? <>a bebida <b style={{ color: "#2563EB" }}>{beveragesList[0].quantity}x {beveragesList[0].name}</b>?</>
+                : <>TODAS essas {beveragesList.reduce((s, b) => s + b.quantity, 0)} bebidas?</>}
             </p>
 
             <div style={{ display: "flex", gap: "0.75rem" }}>
+              {/* "Ainda não" fecha SEM dar baixa: o pedido continua pendente
+                  para o motoboy voltar, pegar a bebida e confirmar depois. */}
               <button
                 type="button"
                 onClick={() => setBeverageModalOrder(null)}
                 style={{
-                  flex: 1, padding: "12px", background: "#F1F5F9", color: "#475569",
-                  border: "none", borderRadius: "12px", fontWeight: 800, cursor: "pointer", fontSize: "0.9rem"
+                  flex: 1, padding: "12px", background: "#FEF2F2", color: "#B91C1C",
+                  border: "1.5px solid #FCA5A5", borderRadius: "12px", fontWeight: 800, cursor: "pointer", fontSize: "0.9rem"
                 }}
               >
-                Voltar
+                ✋ Ainda não
               </button>
 
               <button
@@ -759,9 +816,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   gap: 6, boxShadow: "0 4px 14px rgba(22,163,74,0.4)"
                 }}
               >
-                <CheckCircle2 size={18} /> Entreguei
+                <CheckCircle2 size={18} /> Sim, entreguei
               </button>
             </div>
+
+            <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "10px 0 0" }}>
+              "Ainda não" mantém o pedido pendente — nada é finalizado.
+            </p>
           </div>
         </div>
       )}
@@ -770,9 +831,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       {toastMsg && (
         <div style={{
           position: "fixed", bottom: "20px", left: "50%", transform: "translateX(-50%)",
-          background: "#16A34A", color: "#fff", padding: "12px 24px", borderRadius: "30px",
+          // Erro em vermelho: o toast verde para tudo escondia falha de entrega.
+          background: toastMsg.startsWith("⚠️") ? "#DC2626" : "#16A34A",
+          color: "#fff", padding: "12px 24px", borderRadius: "30px",
           fontWeight: 800, fontSize: "0.9rem", boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
-          zIndex: 9999
+          zIndex: 99999, maxWidth: "92vw", textAlign: "center"
         }}>
           {toastMsg}
         </div>

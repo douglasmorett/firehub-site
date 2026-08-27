@@ -31,7 +31,24 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const storeId = searchParams.get("storeId");
+    let storeId = searchParams.get("storeId");
+
+    // Sem storeId, a loja vem da SESSÃO do painel — que é quem usa esta rota.
+    // O parâmetro solto continua aceito por compatibilidade, mas a posição em
+    // tempo real dos entregadores de uma loja não deveria depender só de saber
+    // o id dela; a sessão amarra a consulta a quem tem o painel aberto.
+    if (!storeId) {
+      const { getServerSession } = await import("next-auth/next");
+      const { authOptions } = await import("@/lib/auth");
+      const session = await getServerSession(authOptions).catch(() => null);
+      if (session?.user?.email) {
+        const user = await prisma.user.findUnique({
+          where: { email: session.user.email },
+          select: { id: true, ownerId: true },
+        });
+        if (user) storeId = user.ownerId || user.id;
+      }
+    }
 
     if (!storeId) {
       return NextResponse.json({ error: "storeId obrigatório" }, { status: 400 });

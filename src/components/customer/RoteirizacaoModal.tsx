@@ -248,6 +248,39 @@ export default function RoteirizacaoModal({
     fetchMotoboys();
   }, []);
 
+  // ── Posição dos motoboys AO VIVO ──────────────────────────────────────────
+  //
+  // A lista de motoboys era carregada UMA vez, na montagem — a posição no mapa
+  // era a de quando a tela abriu, congelada. O app do entregador manda GPS a
+  // cada ~12s; sem este poll, nada disso chegava ao mapa. Só as coordenadas
+  // são mescladas (por id): o resto do objeto (ganhos do dia etc.) fica como
+  // está, senão o poll apagaria campos que a listagem completa calculou.
+  useEffect(() => {
+    if (!isOpen) return;
+    let vivo = true;
+
+    const atualizarPosicoes = async () => {
+      try {
+        const res = await fetch("/api/motoboys/location");
+        if (!res.ok) return;
+        const data = await res.json();
+        const posPorId: Record<string, any> = {};
+        (data.motoboys || []).forEach((m: any) => { posPorId[m.id] = m; });
+        if (!vivo) return;
+        setMotoboys(prev => prev.map(mb => {
+          const pos = posPorId[(mb as any).id];
+          return pos
+            ? { ...mb, lastLat: pos.lastLat, lastLng: pos.lastLng, lastLocationUpdate: pos.lastLocationUpdate }
+            : mb;
+        }));
+      } catch {}
+    };
+
+    atualizarPosicoes();
+    const id = setInterval(atualizarPosicoes, 10_000);
+    return () => { vivo = false; clearInterval(id); };
+  }, [isOpen]);
+
   // Forçar resize do mapa instantaneamente ao abrir a modal pré-carregada
   useEffect(() => {
     if (isOpen && leafletMapRef.current) {
@@ -1140,75 +1173,64 @@ export default function RoteirizacaoModal({
 
   // Dispersor Anti-Sobreposição (Anti-Overlap Spider / Offset Lateral)
   // Agrupa pedidos com coordenadas idênticas ou muito próximas (< 15 metros) e distribui lado a lado ou em leque
-  const { displayCoordinatesMap, clusterCentersMap } = useMemo(() => {
+  // ── Anti-sobreposição em PIXELS, não em metros ────────────────────────────
+  //
+  // A versão anterior afastava pedidos empilhados deslocando a COORDENADA
+  // (~24 metros). Só que 24 metros viram ~1 pixel quando o mapa mostra a
+  // cidade inteira — dois pedidos no mesmo bairro continuavam um em cima do
+  // outro e só um número aparecia.
+  //
+  // Agora o marcador fica na coordenada EXATA (é ela que a haste do pino
+  // aponta) e o espalhamento acontece dentro do ícone: as bolas numeradas
+  // abrem em leque, cada uma com sua haste inclinada até o ponto real.
+  // Pixel não encolhe com zoom — em qualquer altura, todos os números
+  // aparecem lado a lado.
+  const { displayCoordinatesMap, clusterCentersMap, clusterFanMap } = useMemo(() => {
     const dispMap: Record<string, { lat: number; lng: number }> = {};
     const centersMap: Record<string, { lat: number; lng: number }> = {};
+    const fanMap: Record<string, { angulo: number; haste: number }> = {};
     const clusters: { baseLat: number; baseLng: number; orderIds: string[] }[] = [];
 
     deliveryOrders.forEach((order) => {
       const rawCoords = geocodedMap[order.id];
       if (!rawCoords) return;
 
-      // Procura cluster existente a menos de 0.00015 graus (~15 metros)
+      // O marcador fica no ponto real do endereço, sempre.
+      dispMap[order.id] = rawCoords;
+      centersMap[order.id] = rawCoords;
+
+      // ~50m de raio de agrupamento: pega o caso clássico (dois pedidos que a
+      // geocodificação resolveu para o MESMO ponto do bairro) e também os da
+      // mesma rua, que empilhavam quando o zoom afastava.
       let found = clusters.find((c) => {
         const dLat = Math.abs(c.baseLat - rawCoords.lat);
         const dLng = Math.abs(c.baseLng - rawCoords.lng);
-        return dLat < 0.00015 && dLng < 0.00015;
+        return dLat < 0.0005 && dLng < 0.0005;
       });
 
       if (found) {
         found.orderIds.push(order.id);
       } else {
-        clusters.push({
-          baseLat: rawCoords.lat,
-          baseLng: rawCoords.lng,
-          orderIds: [order.id],
-        });
+        clusters.push({ baseLat: rawCoords.lat, baseLng: rawCoords.lng, orderIds: [order.id] });
       }
     });
 
     clusters.forEach((cluster) => {
       const total = cluster.orderIds.length;
-      if (total === 1) {
-        const oId = cluster.orderIds[0];
-        dispMap[oId] = { lat: cluster.baseLat, lng: cluster.baseLng };
-        centersMap[oId] = { lat: cluster.baseLat, lng: cluster.baseLng };
-        return;
-      }
-
-      const cosLat = Math.cos((cluster.baseLat * Math.PI) / 180) || 1;
-      const radius = total === 2 ? 0.00022 : (0.00024 + Math.min(0.00010, total * 0.00003));
-
-      if (total === 2) {
-        // 2 pedidos: dispõe perfeitamente lado a lado (esquerda e direita na horizontal)
-        const id1 = cluster.orderIds[0];
-        const id2 = cluster.orderIds[1];
-        dispMap[id1] = {
-          lat: cluster.baseLat,
-          lng: cluster.baseLng - (radius / cosLat),
-        };
-        dispMap[id2] = {
-          lat: cluster.baseLat,
-          lng: cluster.baseLng + (radius / cosLat),
-        };
-        centersMap[id1] = { lat: cluster.baseLat, lng: cluster.baseLng };
-        centersMap[id2] = { lat: cluster.baseLat, lng: cluster.baseLng };
-      } else {
-        // 3 ou mais pedidos: distribui em leque/anel circular regular em torno do ponto central da rua/bairro
-        cluster.orderIds.forEach((oId, idx) => {
-          const angle = ((idx * 2 * Math.PI) / total) - (Math.PI / 2);
-          const offsetLat = radius * Math.sin(angle);
-          const offsetLng = (radius / cosLat) * Math.cos(angle);
-          dispMap[oId] = {
-            lat: cluster.baseLat + offsetLat,
-            lng: cluster.baseLng + offsetLng,
-          };
-          centersMap[oId] = { lat: cluster.baseLat, lng: cluster.baseLng };
-        });
-      }
+      cluster.orderIds.forEach((oId, idx) => {
+        if (total === 1) {
+          fanMap[oId] = { angulo: 0, haste: 30 };
+          return;
+        }
+        // Leque simétrico de -56° a +56°. Com 5+ no mesmo ponto, hastes
+        // alternam altura para as bolas intercalarem em duas fileiras.
+        const angulo = total === 1 ? 0 : -56 + (112 * idx) / (total - 1);
+        const haste = 34 + (total > 4 ? (idx % 2) * 20 : 0);
+        fanMap[oId] = { angulo, haste };
+      });
     });
 
-    return { displayCoordinatesMap: dispMap, clusterCentersMap: centersMap };
+    return { displayCoordinatesMap: dispMap, clusterCentersMap: centersMap, clusterFanMap: fanMap };
   }, [deliveryOrders, geocodedMap]);
 
   // Helper para centralizar manualmente a visão do mapa sob demanda do usuário
@@ -1320,18 +1342,8 @@ export default function RoteirizacaoModal({
       const coords = displayCoordinatesMap[order.id] || geocodedMap[order.id];
       if (!coords) return;
 
-      const baseCenter = clusterCentersMap[order.id];
-      // Se o pedido foi dispersado por estar no mesmo local de outro, desenha linha sutil até o ponto base
-      if (baseCenter && (Math.abs(baseCenter.lat - coords.lat) > 0.00003 || Math.abs(baseCenter.lng - coords.lng) > 0.00003)) {
-        const spiderLine = L.polyline([[baseCenter.lat, baseCenter.lng], [coords.lat, coords.lng]], {
-          color: "#94A3B8",
-          weight: 1.5,
-          dashArray: "3, 3",
-          opacity: 0.6,
-        }).addTo(map);
-        polylinesRef.current.push(spiderLine);
-      }
-
+      // O leque em pixels substituiu a "spider line": a haste inclinada do
+      // próprio pino é a linha até o ponto real do endereço.
       const isSelected = selectedOrderIds.includes(order.id);
       const selectedIndex = selectedOrderIds.indexOf(order.id);
       const isHovered = hoveredOrderId === order.id;
@@ -1363,24 +1375,47 @@ export default function RoteirizacaoModal({
         zIdx = 500;
       }
 
+      // Pino em leque: ponto no endereço exato + haste inclinada + bola com o
+      // número. O ângulo vem do cluster — pedidos no mesmo lugar abrem lado a
+      // lado, e como o deslocamento é em PIXELS dentro do ícone, nenhum zoom
+      // volta a empilhá-los. A bola contra-rotaciona para o número ficar reto.
+      const fan = clusterFanMap[order.id] || { angulo: 0, haste: 30 };
+
       const pinHtml = `
-        <div style="
-          background: ${bgColor}; color: #ffffff;
-          padding: 4px 9px; border-radius: 6px; font-size: 0.85rem; font-weight: 900;
-          border: 2px solid ${borderColor}; box-shadow: ${shadowCss};
-          transform: ${scaleCss}; transition: all 0.2s ease; display: inline-flex;
-          align-items: center; justify-content: center; min-width: 28px; height: 26px;
-          cursor: pointer;
-        ">
-          ${isSelected ? `<span style="font-size:0.7rem; margin-right:3px; opacity:0.9;">#</span>` : ""}${labelText}
+        <div style="position: relative; width: 0; height: 0;">
+          <!-- ponto exato do endereço -->
+          <div style="
+            position: absolute; left: -5px; top: -5px; width: 10px; height: 10px;
+            border-radius: 50%; background: ${bgColor}; border: 2px solid #ffffff;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.45); box-sizing: border-box;
+          "></div>
+          <!-- haste inclinada, da base até a bola -->
+          <div style="
+            position: absolute; left: -1.5px; top: ${-fan.haste}px; width: 3px; height: ${fan.haste}px;
+            background: ${bgColor}; border-radius: 2px; opacity: 0.9;
+            transform: rotate(${fan.angulo}deg); transform-origin: bottom center;
+          ">
+            <div style="
+              position: absolute; top: -24px; left: 50%;
+              transform: translateX(-50%) rotate(${-fan.angulo}deg) ${scaleCss};
+              background: ${bgColor}; color: #ffffff; min-width: 26px; height: 26px;
+              padding: 0 5px; border-radius: 13px; font-size: 0.82rem; font-weight: 900;
+              border: 2px solid ${borderColor}; box-shadow: ${shadowCss};
+              display: inline-flex; align-items: center; justify-content: center;
+              white-space: nowrap; cursor: pointer; transition: all 0.2s ease;
+              box-sizing: border-box;
+            ">
+              ${isSelected ? `<span style="font-size:0.7rem; margin-right:2px; opacity:0.9;">#</span>` : ""}${labelText}
+            </div>
+          </div>
         </div>
       `;
 
       const orderIcon = L.divIcon({
         html: pinHtml,
         className: `custom-order-pin-${order.id}`,
-        iconSize: [32, 28],
-        iconAnchor: [16, 14],
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
       });
 
       const orderMarker = L.marker([coords.lat, coords.lng], { icon: orderIcon, zIndexOffset: zIdx })
@@ -1405,6 +1440,13 @@ export default function RoteirizacaoModal({
       const mbLat = (mb as any).lastLat;
       const mbLng = (mb as any).lastLng;
       if (!mbLat || !mbLng) return;
+
+      // Posição parada há mais de 30 min não é posição — é onde o entregador
+      // ESTAVA quando fechou o app. Mostrar isso como "tempo real" faz a loja
+      // montar rota contando com alguém que talvez nem esteja trabalhando.
+      const atualizadoEm = (mb as any).lastLocationUpdate ? new Date((mb as any).lastLocationUpdate).getTime() : 0;
+      const minAtras = atualizadoEm ? Math.round((Date.now() - atualizadoEm) / 60000) : null;
+      if (minAtras !== null && minAtras > 30) return;
 
       const mbHtml = `
         <div style="
@@ -1437,7 +1479,9 @@ export default function RoteirizacaoModal({
 
       const mbMarker = L.marker([mbLat, mbLng], { icon: mbIcon, zIndexOffset: 950 })
         .addTo(map)
-        .bindPopup(`<b>🛵 Entregador ${mb.name}</b><br/>📍 Localização GPS em tempo real`);
+        .bindPopup(`<b>🛵 Entregador ${mb.name}</b><br/>📍 ${
+          minAtras === null ? "Localização GPS" : minAtras <= 1 ? "Atualizado agora" : `Atualizado há ${minAtras} min`
+        }`);
 
       markersRef.current.set(`MOTOBOY_${mb.id}`, mbMarker);
     });
@@ -1484,7 +1528,7 @@ export default function RoteirizacaoModal({
         }
       });
     }
-  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, storeAddress, storeCity]);
+  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, storeAddress, storeCity]);
 
   // Toggle order selection for forming a route
   const toggleOrderSelection = (id: string) => {
