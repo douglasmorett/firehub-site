@@ -44,9 +44,27 @@ async function pollIfoodEvents(sessionUserId?: string) {
     // fazia o iFood recusar a chamada inteira com
     // 403 "Some polling merchants are not authorized" (era o caso da Brasa
     // Burguer, que enchia o log a cada minuto). O cron de fundo já fazia certo.
-    const token = sessionUserId
+    let token = sessionUserId
       ? await getTokenDaLojaIfood(sessionUserId)
       : await getIfoodToken();
+    let origemDoToken: "distribuido" | "central" = sessionUserId ? "distribuido" : "central";
+
+    // ── QUANDO O DISTRIBUÍDO MORRE, O CENTRAL ASSUME ────────────────────────
+    //
+    // A loja pode estar conectada nos DOIS apps (distribuído e centralizado).
+    // Esta rota só tentava o distribuído: com o refresh_token dele inválido,
+    // ela devolvia o access_token velho e o iFood respondia
+    // 401 "token expired" a cada 5 segundos — o polling da loja parava de
+    // funcionar mesmo com o app central conectado e saudável.
+    //
+    // O resto do sistema já resolve assim (lib/ifood-token.ts tenta em
+    // cascata e só o `IFOOD_CENTRAL_FALLBACK=off` desliga o central). Aqui
+    // faltava a mesma rede de proteção.
+    if (!token && process.env.IFOOD_CENTRAL_FALLBACK !== "off") {
+      token = await getIfoodToken().catch(() => null as any);
+      origemDoToken = "central";
+      if (token) console.warn(`[iFood Poll] ↩️ loja ${sessionUserId}: token distribuído indisponível, usando o app CENTRAL.`);
+    }
 
     if (!token) {
       console.error(`[iFood Poll] ⚠️ loja ${sessionUserId} sem token utilizável — precisa reconectar o iFood`);
@@ -54,16 +72,34 @@ async function pollIfoodEvents(sessionUserId?: string) {
     }
 
     // Poll events from iFood
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
-    if (merchantId) headers["x-polling-merchants"] = merchantId;
+    const montarHeaders = (t: string): Record<string, string> => {
+      const h: Record<string, string> = { Authorization: `Bearer ${t}` };
+      if (merchantId) h["x-polling-merchants"] = merchantId;
+      return h;
+    };
 
-    const res = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true", {
-      method: "GET",
-      headers,
-    });
+    const url = "https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true";
+    let res = await fetch(url, { method: "GET", headers: montarHeaders(token) });
+
+    // 401 com token distribuído = token da loja venceu e não renovou. Antes o
+    // polling simplesmente desistia aqui; agora tenta o central uma vez.
+    if (res.status === 401 && origemDoToken === "distribuido" && process.env.IFOOD_CENTRAL_FALLBACK !== "off") {
+      const central = await getIfoodToken().catch(() => null as any);
+      if (central) {
+        console.warn(`[iFood Poll] ↩️ 401 no token da loja ${sessionUserId} — repetindo com o app CENTRAL.`);
+        // `token` PRECISA passar a ser o central: todo o resto desta rota
+        // (buscar detalhe do pedido, confirmar, dar ACK nos eventos) usa esta
+        // variável. Sem trocar aqui, o polling voltaria a funcionar e os
+        // passos seguintes continuariam batendo com o token morto.
+        token = central;
+        res = await fetch(url, { method: "GET", headers: montarHeaders(central) });
+        origemDoToken = "central";
+      }
+    }
+
     if (!res.ok) {
       const errBody = await res.text().catch(() => "");
-      console.error(`[iFood Poll] ❌ events:polling falhou: ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
+      console.error(`[iFood Poll] ❌ events:polling falhou (${origemDoToken}): ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`);
       return;
     }
 
