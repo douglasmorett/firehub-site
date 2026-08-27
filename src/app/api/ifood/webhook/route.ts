@@ -1,18 +1,8 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
-import crypto from "crypto";
 import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 
-// Valida assinatura HMAC do iFood (segurança)
-function validateIfoodSignature(body: string, signature: string | null): boolean {
-  if (!process.env.IFOOD_WEBHOOK_SECRET || !signature) return false;
-  const expected = crypto
-    .createHmac("sha256", process.env.IFOOD_WEBHOOK_SECRET)
-    .update(body)
-    .digest("hex");
-  return `sha256=${expected}` === signature;
-}
 
 import { parseOrderPaymentInfo } from "@/lib/payment-parser";
 
@@ -62,45 +52,60 @@ export async function POST(req: NextRequest) {
   // Log payload recebido
   console.log(`[iFood Webhook] 📥 Request recebido: ${rawBody.slice(0, 300)}`);
 
-  // Modo observação: descobre QUAL fórmula o iFood usa, sem recusar nada.
-  // Quando o log apontar a mesma fórmula em pedidos reais, dá para exigir
-  // assinatura com segurança — hoje, exigir às cegas pararia a operação.
-  if (!process.env.IFOOD_WEBHOOK_SECRET) {
+  // ── ASSINATURA: OBSERVAR AGORA, EXIGIR QUANDO OS DADOS DEIXAREM ──────────
+  //
+  // O modo observação já respondeu QUAL é a fórmula: os logs mostram
+  // "FÓRMULA ENCONTRADA — IFOOD_CLIENT_SECRET com hmac-sha256(corpo)". Só que
+  // mostram também que METADE dos eventos não bate com NENHUM dos segredos que
+  // temos (provável segundo app do iFood). Exigir hoje recusaria essa metade —
+  // e pedido recusado é pedido perdido.
+  //
+  // Por isso a exigência fica atrás de um interruptor: quando o log mostrar
+  // 100% de acerto, basta definir IFOOD_WEBHOOK_ENFORCE=true no servidor. Sem
+  // mexer em código, sem adivinhar valor de segredo.
+  const candidatosIfood = [
+    { rotulo: "IFOOD_WEBHOOK_SECRET", valor: process.env.IFOOD_WEBHOOK_SECRET },
+    { rotulo: "IFOOD_CLIENT_SECRET", valor: process.env.IFOOD_CLIENT_SECRET },
+    { rotulo: "IFOOD_CLIENT_SECRET_DISTRIBUTED", valor: process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED },
+    { rotulo: "IFOOD_HOMOLOG_CLIENT_SECRET", valor: process.env.IFOOD_HOMOLOG_CLIENT_SECRET },
+  ];
+  let assinaturaConfere = false;
+  try {
+    const { diagnosticarAssinatura } = await import("@/lib/webhook-assinatura");
+    // O código do evento entra no log: precisamos saber se é KEEPALIVE (ruído)
+    // ou um PEDIDO de verdade que estaria sendo recusado.
+    let codigoDoEvento = "?";
     try {
-      const { diagnosticarAssinatura } = await import("@/lib/webhook-assinatura");
+      const p = JSON.parse(rawBody);
+      const e = Array.isArray(p) ? p[0] : p;
+      codigoDoEvento = String(e?.fullCode || e?.code || "?");
+    } catch { /* corpo ilegível: segue como "?" */ }
+
+    assinaturaConfere = Boolean(
       diagnosticarAssinatura({
-        parceiro: "iFood",
+        parceiro: `iFood/${codigoDoEvento}`,
         corpoCru: rawBody,
         assinaturaRecebida: signature,
-        candidatos: [
-          { rotulo: "IFOOD_CLIENT_SECRET", valor: process.env.IFOOD_CLIENT_SECRET },
-          { rotulo: "IFOOD_CLIENT_SECRET_DISTRIBUTED", valor: process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED },
-          { rotulo: "IFOOD_HOMOLOG_CLIENT_SECRET", valor: process.env.IFOOD_HOMOLOG_CLIENT_SECRET },
-        ],
-      });
-    } catch { /* diagnóstico nunca pode derrubar o webhook */ }
+        candidatos: candidatosIfood,
+      })
+    );
+  } catch { /* diagnóstico nunca pode derrubar o webhook */ }
+
+  if (process.env.IFOOD_WEBHOOK_ENFORCE === "true" && !assinaturaConfere) {
+    console.error("[iFood Webhook] 🚫 Assinatura não confere e IFOOD_WEBHOOK_ENFORCE está ligado — recusado.");
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // ── A assinatura passa a valer ───────────────────────────────────────────
-  //
-  // O código já calculava o HMAC e comparava — e então ignorava o resultado,
-  // com um aviso no log e "Processando mesmo assim". Toda a verificação existia
-  // e não protegia nada: qualquer POST criava pedido na cozinha da loja.
-  //
-  // O raciocínio original ("não bloquear para não perder pedidos") tem base real:
-  // recusar evento de pedido é pedido que some. Por isso a trava só age quando
-  // IFOOD_WEBHOOK_SECRET está configurado — que é o mesmo instante em que o
-  // iFood passa a assinar. Sem a variável, nada muda em relação a hoje, e o log
-  // diz o que falta.
-  if (process.env.IFOOD_WEBHOOK_SECRET) {
-    if (!validateIfoodSignature(rawBody, signature)) {
-      console.error("[iFood Webhook] Assinatura inválida ou ausente — requisição recusada.");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  } else if (process.env.NODE_ENV === "production") {
+  // A recusa acontece no bloco acima (IFOOD_WEBHOOK_ENFORCE), que confere a
+  // assinatura contra TODOS os segredos conhecidos e tolera o prefixo
+  // "sha256=". A checagem antiga ficava aqui e era rígida demais: comparava só
+  // com IFOOD_WEBHOOK_SECRET e exigia o prefixo exato — ligar aquela variável
+  // recusaria até os eventos que sabemos serem legítimos.
+  if (!assinaturaConfere && process.env.NODE_ENV === "production" && process.env.IFOOD_WEBHOOK_ENFORCE !== "true") {
     console.warn(
-      "[iFood Webhook] ⚠️ IFOOD_WEBHOOK_SECRET não configurada — requisição aceita SEM verificação de origem. " +
-      "Qualquer pessoa que conheça esta URL injeta um pedido falso na cozinha."
+      "[iFood Webhook] ⚠️ Requisição aceita SEM assinatura confirmada. " +
+      "Ela só serve para dizer QUAL pedido buscar — o conteúdo vem da API do iFood, " +
+      "então um evento forjado não cria pedido. Para recusar, ligue IFOOD_WEBHOOK_ENFORCE=true."
     );
   }
 

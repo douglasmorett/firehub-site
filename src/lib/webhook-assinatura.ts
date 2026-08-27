@@ -162,9 +162,14 @@ export function diagnosticarAssinatura(params: {
     }
   }
 
+  // A "impressão digital" (começo e fim da assinatura) permite agrupar os que
+  // não bateram: se repetirem o mesmo padrão, é outro app do parceiro
+  // assinando com um segredo que não temos; se forem sempre diferentes e
+  // aleatórios, é alguém sondando a URL de fora.
   console.warn(
     `[${parceiro} Webhook] 🔎 diagnóstico: nenhuma fórmula conhecida bateu ` +
-    `(assinatura recebida tem ${recebida.length} caracteres; testados ${candidatos.filter(c => c.valor).length} segredo(s)). ` +
+    `(assinatura ${recebida.length} car., início "${recebida.slice(0, 8)}", fim "${recebida.slice(-4)}"; ` +
+    `testados ${candidatos.filter(c => c.valor).length} segredo(s)). ` +
     `A porta segue aberta de propósito — recusar aqui pararia os pedidos.`
   );
   return null;
