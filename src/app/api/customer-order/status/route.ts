@@ -368,6 +368,16 @@ export async function PUT(req: Request) {
     }
   }
 
+  // ── Emissão automática de NFC-e ──
+  // Se a loja marcou a forma de pagamento deste pedido em "emissão automática"
+  // (tela Fiscal → Configurações), a nota sai sozinha na conclusão. Fire and
+  // forget: falha de emissão vira FAILED na aba Notas fiscais, nunca erro aqui.
+  if (status === "ENTREGUE") {
+    import("@/lib/fiscal-automatico")
+      .then(({ emitirNfceAutomatica }) => emitirNfceAutomatica(orderId))
+      .catch(err => console.error("[Fiscal Auto] Erro ao disparar:", err?.message));
+  }
+
   // Atualiza faturamento do ciclo mensal se pedido foi confirmado
   if (BILLING_TRIGGER_STATUSES.includes(status)) {
     trackSaleForBilling(order.franchiseeId).catch(err =>

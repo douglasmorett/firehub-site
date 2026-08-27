@@ -31,6 +31,7 @@ export type MetaCampaignConfig = {
   weeklyBudgetBRL: number;   // Em REAIS. A Meta cobra na moeda da conta (BRL).
   semanasDeVeiculacao?: number; // Padrão 4. Define o teto de gasto e a data de fim.
   adCopy: string;
+  adDescription?: string; // Linha curta junto do botão (CTA) do anúncio
   adImageUrl: string;
   pageId: string;         // Página do Facebook do restaurante
 };
@@ -108,14 +109,29 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
   const adSetId = adSetRes.id;
 
   // 3. Upload da imagem para o criativo
+  //
+  // A Meta BAIXA a imagem da URL — "/uploads/..." relativa não existe para
+  // ela. E anúncio de comida sem foto não é anúncio: se o upload falhar, a
+  // criação PARA aqui com mensagem, em vez de publicar um criativo em branco
+  // e cobrar gestão dele (era o que o catch silencioso de antes fazia).
+  const imagemAbsoluta = /^https?:\/\//i.test(config.adImageUrl)
+    ? config.adImageUrl
+    : `${urlDoSite()}${config.adImageUrl.startsWith("/") ? "" : "/"}${config.adImageUrl}`;
+
   let imageHash = "";
   try {
     const imgRes = await metaPost(`/${acct}/adimages`, token, {
-      url: config.adImageUrl,
+      url: imagemAbsoluta,
     });
     imageHash = Object.values(imgRes.images as Record<string, any>)[0]?.hash ?? "";
-  } catch {
-    console.warn("[MetaAds] Falha no upload da imagem, usando hash vazio");
+  } catch (e: any) {
+    throw new Error(
+      `A Meta não aceitou a imagem do anúncio (${e?.message ?? "falha no upload"}). ` +
+      `Envie outra imagem e tente de novo.`
+    );
+  }
+  if (!imageHash) {
+    throw new Error("A Meta não devolveu a imagem do anúncio. Envie outra imagem e tente de novo.");
   }
 
   // 4. Criativo
@@ -126,7 +142,9 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
       link_data: {
         link:       `${urlDoSite()}/loja/${config.storeSlug}`,
         message:    config.adCopy,
-        image_hash: imageHash || undefined,
+        // A linha curta do CTA. O lojista editava na tela e o texto morria lá.
+        ...(config.adDescription ? { description: config.adDescription } : {}),
+        image_hash: imageHash,
         call_to_action: {
           type: "ORDER_NOW",
           value: { link: `${urlDoSite()}/loja/${config.storeSlug}` },
@@ -158,7 +176,13 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
  * Busca métricas de uma campanha
  */
 export async function getCampaignInsights(campaignId: string, accessToken: string) {
-  const url = `${META_BASE}/${campaignId}/insights?fields=spend,impressions,clicks,actions&date_preset=last_30d&access_token=${accessToken}`;
+  // action_values traz o VALOR das conversões do Pixel — é de onde sai a
+  // receita atribuída. Sem ele, `revenue` ficava 0 para sempre e o lojista
+  // nunca via retorno nenhum, mesmo vendendo pelos anúncios.
+  //
+  // date_preset=maximum: o campo é documentado como acumulado da campanha, e
+  // com last_30d o gasto exibido REGREDIA depois de 30 dias de veiculação.
+  const url = `${META_BASE}/${campaignId}/insights?fields=spend,impressions,clicks,actions,action_values&date_preset=maximum&access_token=${accessToken}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Meta API error: ${res.status}`);
   const data = await res.json();
@@ -168,12 +192,56 @@ export async function getCampaignInsights(campaignId: string, accessToken: strin
     (a: any) => a.action_type === "offsite_conversion.fb_pixel_purchase"
   )?.value ?? 0;
 
+  const revenue = (insight.action_values as any[])?.find(
+    (a: any) => a.action_type === "offsite_conversion.fb_pixel_purchase"
+  )?.value ?? 0;
+
   return {
     spend:       parseFloat(insight.spend ?? "0"),
     impressions: parseInt(insight.impressions ?? "0"),
     clicks:      parseInt(insight.clicks ?? "0"),
     orders:      parseInt(orders),
+    revenue:     parseFloat(revenue) || 0,
   };
+}
+
+/**
+ * O que a Meta diz sobre a campanha AGORA (effective_status).
+ *
+ * É a fonte da verdade para a cobrança: campanha pausada no Ads Manager ou
+ * encerrada pelo end_time continua "ACTIVE" no nosso banco — e sem esta
+ * consulta a gestão de R$ 50/semana seguiria sendo cobrada para sempre por
+ * uma campanha que não veicula.
+ */
+export async function statusEfetivoDaCampanha(
+  campaignId: string,
+  accessToken: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${META_BASE}/${campaignId}?fields=effective_status&access_token=${accessToken}`
+    );
+    if (!res.ok) return null;
+    const dados = await res.json();
+    return dados?.effective_status ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Recalcula o teto de gasto da campanha quando o orçamento semanal muda.
+ * Sem isto, subir o orçamento não subia o spend_cap — a campanha batia no
+ * teto calculado com o valor antigo e parava de veicular sem aviso.
+ */
+export async function atualizarTetoDaCampanha(
+  campaignId: string,
+  accessToken: string,
+  weeklyBudgetBRL: number,
+  semanas: number = 4
+) {
+  const teto = Math.round(weeklyBudgetBRL * Math.max(1, Math.min(semanas, 52)) * 100);
+  return metaPost(`/${campaignId}`, accessToken, { spend_cap: teto });
 }
 
 /**
@@ -206,6 +274,27 @@ export async function setCampaignStatus(
   campaignId: string, accessToken: string, status: "ACTIVE" | "PAUSED"
 ) {
   return metaPost(`/${campaignId}`, accessToken, { status });
+}
+
+/**
+ * Liga a entrega DE VERDADE: anúncio, conjunto e campanha.
+ *
+ * A Meta só veicula quando os TRÊS níveis estão ativos — e a criação nasce com
+ * os três pausados, de propósito. O bug que este helper corrige: o "retomar"
+ * ativava só a campanha, o conjunto e o anúncio continuavam PAUSED, e nada
+ * nunca entrava no ar — enquanto a gestão de R$ 50/semana era cobrada.
+ *
+ * Filhos primeiro: com a campanha ainda pausada, nada veicula até a última
+ * chamada. Se qualquer uma falhar, a campanha não liga — e quem chamou não
+ * deve cobrar nem dizer que ligou.
+ */
+export async function ativarCampanhaCompleta(
+  ids: { metaCampaignId: string; metaAdSetId?: string | null; metaAdId?: string | null },
+  accessToken: string
+) {
+  if (ids.metaAdId) await metaPost(`/${ids.metaAdId}`, accessToken, { status: "ACTIVE" });
+  if (ids.metaAdSetId) await metaPost(`/${ids.metaAdSetId}`, accessToken, { status: "ACTIVE" });
+  await metaPost(`/${ids.metaCampaignId}`, accessToken, { status: "ACTIVE" });
 }
 
 /**
@@ -468,9 +557,22 @@ export async function renovarTokenDoLojista(tokenAtual: string): Promise<string 
 export async function tokenAindaVale(token: string): Promise<boolean> {
   try {
     const res = await fetch(`${META_BASE}/me?fields=id&access_token=${token}`);
-    return res.ok;
+    if (res.ok) return true;
+    // Só declara o token MORTO quando a Meta diz isso com todas as letras
+    // (OAuthException, código 190). A versão antiga devolvia false para
+    // QUALQUER falha — um 429 ou uma instabilidade da Meta desligava o módulo
+    // de todas as lojas de uma vez, exigindo reconexão manual de cada uma.
+    if (res.status === 400 || res.status === 401) {
+      const dados: any = await res.json().catch(() => ({}));
+      const codigo = dados?.error?.code;
+      const tipo = dados?.error?.type;
+      return !(codigo === 190 || tipo === "OAuthException");
+    }
+    // 429/5xx/resposta estranha: indisponibilidade, não invalidez. Mantém.
+    return true;
   } catch {
-    return false;
+    // Falha de rede NOSSA não é prova contra o token do lojista.
+    return true;
   }
 }
 

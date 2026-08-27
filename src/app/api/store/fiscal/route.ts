@@ -39,6 +39,10 @@ const CAMPOS_PERMITIDOS = [
   "cfopPadrao",
   "csosnPadrao",
   "autoEmitPaymentMethods",
+  // Declaração do titular de que o certificado A1 foi enviado ao provedor.
+  // O FireHub não guarda o .pfx — quem confirma de verdade é a primeira
+  // emissão em homologação.
+  "temCertificado",
 ] as const;
 
 /** Campos que só o responsável pela loja altera — são a identidade fiscal dela. */
@@ -52,6 +56,19 @@ const CAMPOS_DO_TITULAR = new Set([
   "cscId",
   "provedor",
   "tokenDoProvedor",
+  "temCertificado",
+  // Série e endereço do emitente também são identidade fiscal: mudar a série
+  // fura a numeração na SEFAZ, e o endereço/código IBGE vai no XML de toda
+  // nota. STAFF de balcão não mexe.
+  "serie",
+  "logradouro",
+  "numero",
+  "complemento",
+  "bairro",
+  "municipio",
+  "codigoMunicipio",
+  "uf",
+  "cep",
 ]);
 
 export async function GET() {
@@ -169,21 +186,14 @@ export async function PUT(req: Request) {
         if (!Number.isFinite(valor)) continue;
       }
       if (campo === "uf" && typeof valor === "string") valor = valor.trim().toUpperCase();
+      if (campo === "temCertificado") valor = Boolean(valor);
+      // Segredos vazios não sobrescrevem: a tela manda o token/CSC apenas
+      // quando o lojista digita um novo — "" aqui significa "manter o salvo".
+      if ((campo === "tokenDoProvedor" || campo === "csc") && (typeof valor !== "string" || !valor.trim())) {
+        continue;
+      }
 
       config[campo] = valor;
-    }
-
-    if (recusados.length > 0) {
-      return NextResponse.json(
-        {
-          error: "sem_permissao",
-          mensagem:
-            "Só o responsável pela loja altera os dados de identidade fiscal: " +
-            recusados.join(", ") +
-            ".",
-        },
-        { status: 403 }
-      );
     }
 
     await prisma.user.update({ where: { id: lojaId }, data: { fiscalConfig: config } });
@@ -196,6 +206,18 @@ export async function PUT(req: Request) {
       // continua faltando, em vez de descobrir só na hora de emitir.
       pendencias,
       podeEmitir: pendencias.length === 0,
+      // STAFF pode salvar o operacional (ex.: formas de emissão automática),
+      // mas os campos de identidade fiscal são ignorados — e a resposta DIZ
+      // quais, em vez de rejeitar a gravação inteira com um 403 mudo.
+      ...(recusados.length > 0
+        ? {
+            camposIgnorados: recusados,
+            aviso:
+              "Alguns campos só o responsável pela loja altera e foram mantidos como estavam: " +
+              recusados.join(", ") +
+              ".",
+          }
+        : {}),
     });
   } catch (err: any) {
     console.error("[Fiscal Config PUT]", err);

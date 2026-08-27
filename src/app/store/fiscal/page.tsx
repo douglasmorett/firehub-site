@@ -10,16 +10,32 @@ import {
 
 type FiscalConfig = {
   enabled: boolean;
-  ambiente: "homologacao" | "producao";
+  // 1 = produção (vale de verdade), 2 = homologação (teste) — o MESMO número
+  // que vai no XML e que o servidor espera. A tela antiga mandava a string
+  // "homologacao"/"producao"; o servidor faz Number() e descartava em
+  // silêncio: o ambiente nunca chegava a ser salvo.
+  ambiente: number;
   cnpj: string;
-  ie: string;
+  inscricaoEstadual: string;
   razaoSocial: string;
   nomeFantasia: string;
-  regimeTributario: string;
-  certA1Url?: string;
-  certA1Password?: string;
-  cstDefault: string;
+  regimeTributario: number; // CRT: 1 Simples, 2 Simples c/ excesso, 3 Normal
+  logradouro: string;
+  numero: string;
+  complemento?: string;
+  bairro: string;
+  municipio: string;
+  codigoMunicipio: string;
+  uf: string;
+  cep: string;
+  serie: number;
+  provedor: string | null;
+  cscId: string;
   autoEmitPaymentMethods: string[];
+  // Presença dos segredos — o GET diz QUE existem, nunca o valor.
+  temTokenDoProvedor?: boolean;
+  temCsc?: boolean;
+  temCertificado?: boolean;
 };
 
 type FiscalProduct = {
@@ -54,17 +70,21 @@ type FiscalOrder = {
   createdAt: string;
   fiscalStatus?: string | null; // "EMITTED" | "PENDING" | "FAILED" | "CANCELED"
   fiscalInfo?: {
-    nfceNumber: string;
-    serie: string;
-    nfceKey: string;
-    protocol: string;
-    emittedAt: string;
-    ambiente: string;
-    impostosAproximados: number;
-    xmlUrl: string;
-    pdfUrl: string;
-    items: any[];
-  };
+    nfceNumber?: string;
+    serie?: string;
+    nfceKey?: string;
+    protocol?: string;
+    emittedAt?: string;
+    ambiente?: string;
+    impostosAproximados?: number;
+    xmlUrl?: string;
+    pdfUrl?: string;
+    items?: any[];
+    // Estados intermediários que a rota devolve quando NÃO houve emissão:
+    processando?: boolean;
+    ultimoErro?: string | null;
+    ultimaTentativaEm?: string | null;
+  } | null;
 };
 
 const FAQ_ITEMS = [
@@ -97,19 +117,34 @@ export default function StoreFiscalPage() {
 
   const [fiscalConfig, setFiscalConfig] = useState<FiscalConfig>({
     enabled: false,
-    ambiente: "homologacao",
+    ambiente: 2, // homologação: produção é escolha deliberada
     cnpj: "",
-    ie: "",
+    inscricaoEstadual: "",
     razaoSocial: "",
     nomeFantasia: "",
-    regimeTributario: "Simples Nacional",
-    cstDefault: "102",
+    regimeTributario: 1, // Simples Nacional: o caso da esmagadora maioria
+    logradouro: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    municipio: "",
+    codigoMunicipio: "",
+    uf: "",
+    cep: "",
+    serie: 1,
+    provedor: null,
+    cscId: "",
     // `ncmDefault: "2106.90.90"` saiu daqui. Aquele valor era gravado no
     // produto sem NCM e o produto passava a exibir "Regular" — o lojista via o
     // cardápio inteiro em ordem com o cadastro fiscal vazio. Cada produto tem
     // o NCM dele na tabela da Receita; não existe genérico que sirva.
     autoEmitPaymentMethods: ["PIX", "CREDIT_CARD", "DEBIT_CARD"],
   });
+  // Segredos digitados AGORA. Só entram no PUT quando preenchidos — mandar ""
+  // apagaria o que já está salvo no servidor.
+  const [tokenProvedorInput, setTokenProvedorInput] = useState("");
+  const [cscInput, setCscInput] = useState("");
+  const [testandoConexao, setTestandoConexao] = useState(false);
 
   // O que falta para esta loja emitir, conforme o servidor. Vazio = pronta.
   const [pendenciasFiscais, setPendenciasFiscais] = useState<{ campo: string; mensagem: string }[]>([]);
@@ -133,8 +168,10 @@ export default function StoreFiscalPage() {
   // Invoices state & Filters
   const [orders, setOrders] = useState<FiscalOrder[]>([]);
   const [searchOrder, setSearchOrder] = useState("");
-  const [dateFrom, setDateFrom] = useState(() => new Date().toISOString().split("T")[0]);
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+  // Data LOCAL, não toISOString (UTC): depois das 21h o padrão pulava para o
+  // dia seguinte e a tela abria "vazia" escondendo os pedidos do dia.
+  const [dateFrom, setDateFrom] = useState(() => new Date().toLocaleDateString("sv-SE"));
+  const [dateTo, setDateTo] = useState(() => new Date().toLocaleDateString("sv-SE"));
   const [selectedOrderForEmit, setSelectedOrderForEmit] = useState<FiscalOrder | null>(null);
   const [selectedOrderForDanfe, setSelectedOrderForDanfe] = useState<FiscalOrder | null>(null);
   const [emitCpfInput, setEmitCpfInput] = useState("");
@@ -248,19 +285,81 @@ export default function StoreFiscalPage() {
   };
 
   const saveFiscalConfig = async (newConfig?: Partial<FiscalConfig>) => {
-    const configToSave = { ...fiscalConfig, ...(newConfig || {}) };
+    const c = { ...fiscalConfig, ...(newConfig || {}) };
+    // Só os campos que o servidor aceita, com os NOMES e TIPOS que ele espera.
+    // A versão antiga mandava `ie`, `ambiente: "homologacao"` e regime por
+    // extenso — o servidor ignorava tudo em silêncio e o cadastro nunca
+    // avançava.
+    const payload: any = {
+      enabled: c.enabled,
+      ambiente: c.ambiente,
+      cnpj: c.cnpj,
+      inscricaoEstadual: c.inscricaoEstadual,
+      razaoSocial: c.razaoSocial,
+      nomeFantasia: c.nomeFantasia,
+      regimeTributario: c.regimeTributario,
+      logradouro: c.logradouro,
+      numero: c.numero,
+      complemento: c.complemento || "",
+      bairro: c.bairro,
+      municipio: c.municipio,
+      codigoMunicipio: c.codigoMunicipio,
+      uf: c.uf,
+      cep: c.cep,
+      serie: c.serie,
+      provedor: c.provedor,
+      cscId: c.cscId,
+      autoEmitPaymentMethods: c.autoEmitPaymentMethods,
+      temCertificado: Boolean(c.temCertificado),
+    };
+    if (tokenProvedorInput.trim()) payload.tokenDoProvedor = tokenProvedorInput.trim();
+    if (cscInput.trim()) payload.csc = cscInput.trim();
+
     try {
       const res = await fetch("/api/store/fiscal", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(configToSave),
+        body: JSON.stringify(payload),
       });
+      const dados = await res.json().catch(() => ({}));
       if (res.ok) {
-        setFiscalConfig(configToSave);
-        alert("Configurações Fiscais salvas com sucesso! 🛡️");
+        setFiscalConfig({
+          ...c,
+          temTokenDoProvedor: c.temTokenDoProvedor || Boolean(payload.tokenDoProvedor),
+          temCsc: c.temCsc || Boolean(payload.csc),
+        });
+        if (payload.tokenDoProvedor) setTokenProvedorInput("");
+        if (payload.csc) setCscInput("");
+        // O PUT devolve o retrato atualizado: mostrar na hora o que ainda
+        // falta vale mais que um "salvo com sucesso" genérico.
+        setPendenciasFiscais(dados.pendencias || []);
+        setPodeEmitir(Boolean(dados.podeEmitir));
+        alert(
+          (dados.podeEmitir
+            ? "Configurações salvas. Cadastro completo: esta loja PODE emitir NFC-e. ✅"
+            : `Configurações salvas. Ainda faltam ${dados.pendencias?.length ?? 0} item(ns) — veja a lista no topo da tela.`) +
+          (dados.aviso ? `\n\n${dados.aviso}` : "")
+        );
+      } else {
+        alert(dados.mensagem || dados.error || "Erro ao salvar.");
       }
     } catch {
       alert("Erro ao salvar.");
+    }
+  };
+
+  // Chama o provedor com o token salvo e traduz a resposta. Autenticou = o
+  // token vale; recusou = o lojista descobre AQUI, não na primeira emissão.
+  const handleTestarConexao = async () => {
+    setTestandoConexao(true);
+    try {
+      const res = await fetch("/api/store/fiscal/testar-conexao", { method: "POST" });
+      const dados = await res.json().catch(() => ({}));
+      alert(dados.mensagem || (res.ok ? "Conexão OK." : "Falha na conexão com o provedor."));
+    } catch {
+      alert("Não consegui falar com o servidor. Tente de novo.");
+    } finally {
+      setTestandoConexao(false);
     }
   };
 
@@ -298,9 +397,24 @@ export default function StoreFiscalPage() {
       const res = await fetch("/api/store/fiscal/emitir", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: selectedOrderForEmit.id }),
+        // O CPF digitado no modal VAI junto — antes o campo existia, o lojista
+        // preenchia, e o valor era descartado: a nota saía sem o documento.
+        body: JSON.stringify({
+          orderId: selectedOrderForEmit.id,
+          cpfCnpj: emitCpfInput.trim() || null,
+        }),
       });
       const dados = await res.json();
+
+      // 202 = a SEFAZ recebeu e ainda está processando. NÃO é sucesso (não há
+      // chave nem protocolo) e NÃO é falha (reemitir duplicaria) — é "aguarde
+      // e consulte". fetch trata 202 como res.ok, então o teste vem primeiro.
+      if (res.status === 202) {
+        alert(`${dados.mensagem || "A SEFAZ está processando esta nota."}\n\nUse "Consultar situação" em alguns segundos — não emita de novo.`);
+        setSelectedOrderForEmit(null);
+        fetchInvoices();
+        return;
+      }
 
       if (!res.ok) {
         // A resposta traz a lista do que falta. Mostrar item por item é o que
@@ -321,13 +435,58 @@ Protocolo: ${dados.protocolo}` +
 
 ${dados.aviso}` : "")
       );
-      if (andPrint && dados.urlDoDanfe) window.open(dados.urlDoDanfe, "_blank");
+      // Pelo proxy do servidor: a URL direta do provedor exige autenticação
+      // Basic e abria como 401 no navegador do lojista.
+      if (andPrint) window.open(`/api/store/fiscal/danfe?orderId=${selectedOrderForEmit.id}`, "_blank");
       setSelectedOrderForEmit(null);
       fetchInvoices();
     } catch {
       alert("Não consegui falar com o servidor. A nota NÃO foi emitida.");
     } finally {
       setEmitting(false);
+    }
+  };
+
+  // Consulta no provedor a situação real de uma nota que ficou "processando"
+  // (SEFAZ lenta). O servidor sincroniza o pedido: autorizada vira EMITTED.
+  const handleConsultarSituacao = async (order: any) => {
+    try {
+      const res = await fetch(`/api/store/fiscal/emitir?orderId=${order.id}`);
+      const dados = await res.json().catch(() => ({}));
+      if (res.ok && dados.success) {
+        alert(`Nota autorizada.\n\nChave: ${dados.chaveDeAcesso}\nProtocolo: ${dados.protocolo}`);
+      } else {
+        alert(dados.mensagem || dados.error || "Não consegui consultar a situação.");
+      }
+      fetchInvoices();
+    } catch {
+      alert("Não consegui falar com o servidor. Tente de novo.");
+    }
+  };
+
+  // Cancela a NFC-e na SEFAZ. O prazo é da SEFAZ (normalmente 30 min para
+  // NFC-e) — passou, a recusa dela volta na íntegra para o lojista ler.
+  const handleCancelarNota = async (order: any) => {
+    const justificativa = window.prompt(
+      "Justificativa do cancelamento (mínimo 15 caracteres — exigência da SEFAZ):"
+    );
+    if (justificativa === null) return;
+    if (justificativa.trim().length < 15) {
+      alert("A justificativa precisa ter pelo menos 15 caracteres.");
+      return;
+    }
+    if (!window.confirm("Cancelar esta nota na SEFAZ? O cancelamento é definitivo.")) return;
+    try {
+      const res = await fetch("/api/store/fiscal/cancelar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id, justificativa: justificativa.trim() }),
+      });
+      const dados = await res.json().catch(() => ({}));
+      alert(dados.mensagem || dados.error || (res.ok ? "Nota cancelada." : "Não consegui cancelar."));
+      fetchInvoices();
+    } catch {
+      alert("Não consegui falar com o servidor. Tente de novo.");
     }
   };
 
@@ -347,10 +506,17 @@ ${dados.aviso}` : "")
           body: JSON.stringify({ orderId: id }),
         });
         const dados = await res.json().catch(() => ({}));
+        // 202 (processando) não é autorizada: sem chave, sem protocolo. Conta
+        // como pendente com instrução de consultar — nunca como sucesso.
+        const autorizada = res.ok && res.status !== 202;
         resultados.push({
           numero: pedido?.dailyOrderNumber ?? id.slice(-5),
-          ok: res.ok,
-          motivo: res.ok ? undefined : (dados.mensagem || dados.error),
+          ok: autorizada,
+          motivo: autorizada
+            ? undefined
+            : res.status === 202
+              ? "SEFAZ processando — use Consultar situação, não reemita"
+              : (dados.mensagem || dados.error),
         });
       }
 
@@ -393,7 +559,11 @@ ${dados.aviso}` : "")
         alert(data.mensagem);
         setInutilNumIni(""); setInutilNumFin(""); setInutilJustif("");
       } else {
-        alert(data.error || "Erro ao inutilizar.");
+        // A mensagem explica; o slug do erro ("emissao_nao_configurada") não.
+        const lista = Array.isArray(data.pendencias) && data.pendencias.length > 0
+          ? "\n\n" + data.pendencias.slice(0, 6).map((x: any) => `• ${x.campo}: ${x.mensagem}`).join("\n")
+          : "";
+        alert((data.mensagem || data.error || "Erro ao inutilizar.") + lista);
       }
     } catch {
       alert("Erro de conexão.");
@@ -564,7 +734,7 @@ ${dados.aviso}` : "")
                         </div>
                         <div>
                           <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Inscrição Estadual (IE)</label>
-                          <input value={fiscalConfig.ie} onChange={e => setFiscalConfig(p => ({ ...p, ie: e.target.value }))} placeholder="Isento" style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                          <input value={fiscalConfig.inscricaoEstadual} onChange={e => setFiscalConfig(p => ({ ...p, inscricaoEstadual: e.target.value }))} placeholder="Obrigatória para emitir NFC-e" style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
                         </div>
                         <div>
                           <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Razão Social</label>
@@ -573,6 +743,18 @@ ${dados.aviso}` : "")
                         <div>
                           <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Nome Fantasia</label>
                           <input value={fiscalConfig.nomeFantasia || storeName} onChange={e => setFiscalConfig(p => ({ ...p, nomeFantasia: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Regime tributário (CRT) *</label>
+                          <select
+                            value={fiscalConfig.regimeTributario}
+                            onChange={e => setFiscalConfig(p => ({ ...p, regimeTributario: Number(e.target.value) }))}
+                            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem", background: "#fff" }}
+                          >
+                            <option value={1}>1 — Simples Nacional</option>
+                            <option value={2}>2 — Simples Nacional (excesso de sublimite)</option>
+                            <option value={3} disabled>3 — Regime Normal (em breve)</option>
+                          </select>
                         </div>
                       </div>
                       <button onClick={() => saveFiscalConfig()} style={{ marginTop: 14, padding: "8px 18px", background: "#7E22CE", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>Salvar Dados</button>
@@ -611,6 +793,159 @@ ${dados.aviso}` : "")
                             </label>
                           );
                         })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Accordion: Endereço fiscal — vai no XML de toda NFC-e */}
+                <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
+                  <div
+                    onClick={() => setOpenConfigSection(openConfigSection === "endereco" ? null : "endereco")}
+                    style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#16A34A" />
+                      </div>
+                      <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Endereço fiscal da empresa</span>
+                    </div>
+                    <ChevronRight size={18} color="#94A3B8" style={{ transform: openConfigSection === "endereco" ? "rotate(90deg)" : "none", transition: "0.2s" }} />
+                  </div>
+
+                  {openConfigSection === "endereco" && (
+                    <div style={{ padding: "0 1.5rem 1.5rem", borderTop: "1px solid #F1F5F9" }}>
+                      <p style={{ fontSize: "0.8rem", color: "#64748B", marginTop: 12 }}>
+                        É o endereço que consta no CNPJ — ele vai dentro do XML de cada nota. O código IBGE do
+                        município tem 7 dígitos e é diferente do CEP (busque por &quot;código IBGE + nome da cidade&quot;).
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12, marginTop: 12 }}>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Logradouro (rua/avenida) *</label>
+                          <input value={fiscalConfig.logradouro} onChange={e => setFiscalConfig(p => ({ ...p, logradouro: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Número *</label>
+                          <input value={fiscalConfig.numero} onChange={e => setFiscalConfig(p => ({ ...p, numero: e.target.value }))} placeholder='Sem número? "S/N"' style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Bairro *</label>
+                          <input value={fiscalConfig.bairro} onChange={e => setFiscalConfig(p => ({ ...p, bairro: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>CEP *</label>
+                          <input value={fiscalConfig.cep} onChange={e => setFiscalConfig(p => ({ ...p, cep: e.target.value }))} placeholder="00000-000" style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Município *</label>
+                          <input value={fiscalConfig.municipio} onChange={e => setFiscalConfig(p => ({ ...p, municipio: e.target.value }))} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", gap: 12 }}>
+                          <div>
+                            <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Código IBGE *</label>
+                            <input value={fiscalConfig.codigoMunicipio} onChange={e => setFiscalConfig(p => ({ ...p, codigoMunicipio: e.target.value }))} placeholder="7 dígitos" style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>UF *</label>
+                            <input value={fiscalConfig.uf} maxLength={2} onChange={e => setFiscalConfig(p => ({ ...p, uf: e.target.value.toUpperCase() }))} placeholder="RJ" style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem", textTransform: "uppercase" }} />
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={() => saveFiscalConfig()} style={{ marginTop: 14, padding: "8px 18px", background: "#7E22CE", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>Salvar Endereço</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Accordion: Provedor de emissão — quem assina e transmite à SEFAZ */}
+                <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
+                  <div
+                    onClick={() => setOpenConfigSection(openConfigSection === "provedor" ? null : "provedor")}
+                    style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#16A34A" />
+                      </div>
+                      <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Provedor de emissão (SEFAZ)</span>
+                    </div>
+                    <ChevronRight size={18} color="#94A3B8" style={{ transform: openConfigSection === "provedor" ? "rotate(90deg)" : "none", transition: "0.2s" }} />
+                  </div>
+
+                  {openConfigSection === "provedor" && (
+                    <div style={{ padding: "0 1.5rem 1.5rem", borderTop: "1px solid #F1F5F9" }}>
+                      <p style={{ fontSize: "0.8rem", color: "#64748B", marginTop: 12, lineHeight: 1.5 }}>
+                        A NFC-e é transmitida à SEFAZ por um provedor homologado. Crie sua conta no
+                        provedor, cadastre lá a empresa e o certificado A1, e cole aqui o token de acesso
+                        do ambiente escolhido (homologação e produção têm tokens diferentes).
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Provedor *</label>
+                          <select
+                            value={fiscalConfig.provedor || ""}
+                            onChange={e => setFiscalConfig(p => ({ ...p, provedor: e.target.value || null }))}
+                            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem", background: "#fff" }}
+                          >
+                            <option value="">Selecione…</option>
+                            <option value="focusnfe">Focus NFe</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>
+                            Token do provedor * {fiscalConfig.temTokenDoProvedor && <span style={{ color: "#16A34A" }}>— já cadastrado ✓</span>}
+                          </label>
+                          <input
+                            type="password"
+                            value={tokenProvedorInput}
+                            onChange={e => setTokenProvedorInput(e.target.value)}
+                            placeholder={fiscalConfig.temTokenDoProvedor ? "Preencher só para trocar" : "Cole o token aqui"}
+                            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Série da NFC-e *</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={fiscalConfig.serie}
+                            onChange={e => setFiscalConfig(p => ({ ...p, serie: Number(e.target.value) || 1 }))}
+                            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>ID do CSC (idToken) *</label>
+                          <input
+                            value={fiscalConfig.cscId}
+                            onChange={e => setFiscalConfig(p => ({ ...p, cscId: e.target.value }))}
+                            placeholder="Ex.: 000001"
+                            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }}
+                          />
+                        </div>
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>
+                            CSC — Código de Segurança do Contribuinte * {fiscalConfig.temCsc && <span style={{ color: "#16A34A" }}>— já cadastrado ✓</span>}
+                          </label>
+                          <input
+                            type="password"
+                            value={cscInput}
+                            onChange={e => setCscInput(e.target.value)}
+                            placeholder={fiscalConfig.temCsc ? "Preencher só para trocar" : "Obtido no portal da SEFAZ do seu estado"}
+                            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem" }}
+                          />
+                          <p style={{ fontSize: "0.75rem", color: "#94A3B8", margin: "4px 0 0" }}>
+                            O CSC assina o QR Code da NFC-e. Ele é emitido no portal da SEFAZ do seu estado (não é o token do provedor).
+                          </p>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                        <button onClick={() => saveFiscalConfig()} style={{ padding: "8px 18px", background: "#7E22CE", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer" }}>Salvar Provedor</button>
+                        <button
+                          onClick={handleTestarConexao}
+                          disabled={testandoConexao}
+                          style={{ padding: "8px 18px", background: "#fff", color: "#7E22CE", border: "1.5px solid #7E22CE", borderRadius: 8, fontWeight: 700, cursor: "pointer", opacity: testandoConexao ? 0.6 : 1 }}
+                        >
+                          {testandoConexao ? "Testando..." : "Testar conexão"}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -657,6 +992,23 @@ ${dados.aviso}` : "")
                           de acesso, na seção <strong>Provedor de emissão</strong>.
                         </p>
                       </div>
+                      {/* A confirmação é declaração do titular — o arquivo fica no
+                          provedor e o FireHub não tem como "ver" o certificado. O que
+                          confere de verdade é a primeira emissão em homologação. */}
+                      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 14, cursor: "pointer", fontSize: "0.85rem", fontWeight: 600, color: "#334155" }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(fiscalConfig.temCertificado)}
+                          onChange={e => saveFiscalConfig({ temCertificado: e.target.checked })}
+                          style={{ accentColor: "#7E22CE", width: 16, height: 16, marginTop: 2 }}
+                        />
+                        <span>
+                          Já enviei o certificado A1 (.pfx) no painel do provedor de emissão.
+                          <span style={{ display: "block", fontSize: "0.75rem", color: "#94A3B8", fontWeight: 400, marginTop: 2 }}>
+                            Marque somente depois de concluir o envio lá — sem o certificado no provedor, toda emissão será recusada.
+                          </span>
+                        </span>
+                      </label>
                     </div>
                   )}
                 </div>
@@ -679,15 +1031,22 @@ ${dados.aviso}` : "")
                   {openConfigSection === "amb" && (
                     <div style={{ padding: "0 1.5rem 1.5rem", borderTop: "1px solid #F1F5F9" }}>
                       <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-                        {(["homologacao", "producao"] as const).map(amb => (
+                        {/* 2 = homologação, 1 = produção — o número do XML, que é o
+                            que o servidor grava. A string antiga era descartada. */}
+                        {([2, 1] as const).map(amb => (
                           <button key={amb} onClick={() => saveFiscalConfig({ ambiente: amb })} style={{
                             padding: "8px 16px", borderRadius: 8, border: `1.5px solid ${fiscalConfig.ambiente === amb ? "#7E22CE" : "#CBD5E1"}`,
                             background: fiscalConfig.ambiente === amb ? "#F3E8FF" : "#fff", color: fiscalConfig.ambiente === amb ? "#7E22CE" : "#475569", fontWeight: 700, cursor: "pointer"
                           }}>
-                            {amb === "homologacao" ? "🧪 Homologação (Testes)" : "🚀 Produção (Validade Jurídica)"}
+                            {amb === 2 ? "🧪 Homologação (Testes)" : "🚀 Produção (Validade Jurídica)"}
                           </button>
                         ))}
                       </div>
+                      <p style={{ fontSize: "0.78rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginTop: 12, lineHeight: 1.5 }}>
+                        Nota emitida em <strong>homologação</strong> é teste e não tem valor fiscal.
+                        Só mude para produção depois de emitir com sucesso em homologação — e lembre
+                        que cada ambiente tem token e CSC próprios.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -831,7 +1190,17 @@ ${dados.aviso}` : "")
               <div style={{ display: "flex", gap: 10 }}>
                 <button
                   onClick={() => {
-                    const pendingIds = orders.filter(o => o.fiscalStatus !== "EMITTED").map(o => o.id);
+                    // Cancelado NÃO entra no lote: emitir NFC-e de venda
+                    // cancelada é pagar imposto sobre venda que não houve.
+                    // Nota em processamento também fica de fora — reemitir
+                    // duplicaria; o caminho dela é "Consultar situação".
+                    const pendingIds = orders
+                      .filter(o =>
+                        o.fiscalStatus !== "EMITTED" &&
+                        o.orderStatus !== "CANCELADO" &&
+                        !o.fiscalInfo?.processando
+                      )
+                      .map(o => o.id);
                     setSelectedBatchOrderIds(pendingIds);
                     setShowBatchEmitModal(true);
                   }}
@@ -977,6 +1346,16 @@ ${dados.aviso}` : "")
                     const createdDate = new Date(order.createdAt);
                     const dateStr = createdDate.toLocaleDateString("pt-BR") + " " + createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
                     const isEmitted = order.fiscalStatus === "EMITTED";
+                    // "Processando": a SEFAZ recebeu e ainda não respondeu —
+                    // reemitir duplicaria; o caminho certo é consultar.
+                    const isProcessing = !isEmitted && Boolean(order.fiscalInfo?.processando);
+                    const isFailed = !isEmitted && !isProcessing && order.fiscalStatus === "FAILED";
+                    const isNotaCancelada = order.fiscalStatus === "CANCELED";
+                    const isPedidoCancelado = order.orderStatus === "CANCELADO";
+                    const emittedAtStr = order.fiscalInfo?.emittedAt
+                      ? new Date(order.fiscalInfo.emittedAt).toLocaleDateString("pt-BR") + " " +
+                        new Date(order.fiscalInfo.emittedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+                      : null;
 
                     return (
                       <tr key={order.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
@@ -987,8 +1366,10 @@ ${dados.aviso}` : "")
                         <td style={{ padding: "10px", color: "#475569" }}>{dateStr}</td>
                         <td style={{ padding: "10px", textAlign: "right", fontWeight: 700 }}>{fmt(order.totalAmount)}</td>
                         <td style={{ padding: "10px", textAlign: "center" }}>
-                          <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: "#DCFCE7", color: "#15803D" }}>
-                            Concluído
+                          {/* Antes era "Concluído" carimbado em TODA linha —
+                              inclusive pedido cancelado. */}
+                          <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: isPedidoCancelado ? "#FEE2E2" : "#DCFCE7", color: isPedidoCancelado ? "#B91C1C" : "#15803D" }}>
+                            {isPedidoCancelado ? "Cancelado" : "Concluído"}
                           </span>
                         </td>
                         <td style={{ padding: "10px", color: "#334155" }}>{order.paymentMethod}</td>
@@ -997,17 +1378,50 @@ ${dados.aviso}` : "")
                           {isEmitted ? `${order.fiscalInfo?.serie}/${order.fiscalInfo?.nfceNumber}` : "Indefinido"}
                         </td>
                         <td style={{ padding: "10px", textAlign: "center", color: isEmitted ? "#475569" : "#94A3B8" }}>
-                          {isEmitted ? dateStr : "Indefinido"}
+                          {/* Data da EMISSÃO (fiscalInfo.emittedAt), não a do
+                              pedido — eram mostradas como a mesma coisa. */}
+                          {isEmitted ? (emittedAtStr || dateStr) : "—"}
                         </td>
                         <td style={{ padding: "10px", textAlign: "center" }}>
-                          <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: isEmitted ? "#DCFCE7" : "#F1F5F9", color: isEmitted ? "#15803D" : "#64748B" }}>
-                            {isEmitted ? "Autorizada" : "Indefinido"}
+                          <span
+                            title={isFailed ? (order.fiscalInfo?.ultimoErro || "") : undefined}
+                            style={{
+                              fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6,
+                              background: isEmitted ? "#DCFCE7" : isProcessing ? "#FEF3C7" : isFailed ? "#FEE2E2" : "#F1F5F9",
+                              color: isEmitted ? "#15803D" : isProcessing ? "#B45309" : isFailed ? "#B91C1C" : "#64748B",
+                            }}
+                          >
+                            {isEmitted ? "Autorizada" : isNotaCancelada ? "Nota cancelada" : isProcessing ? "Processando" : isFailed ? "Falhou" : "Não emitida"}
                           </span>
                         </td>
                         <td style={{ padding: "10px", textAlign: "center" }}>
                           {isEmitted ? (
-                            <button onClick={() => setSelectedOrderForDanfe(order)} style={{ background: "none", border: "none", cursor: "pointer" }} title="Ver DANFE">
-                              📄 Espelho
+                            <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+                              <button onClick={() => setSelectedOrderForDanfe(order)} style={{ background: "none", border: "none", cursor: "pointer" }} title="Espelho simplificado (conferência rápida)">
+                                📄 Espelho
+                              </button>
+                              {/* DANFE oficial via servidor: o link direto do provedor
+                                  exige autenticação e devolvia 401 no navegador. */}
+                              <button onClick={() => window.open(`/api/store/fiscal/danfe?orderId=${order.id}`, "_blank")} style={{ background: "none", border: "none", cursor: "pointer" }} title="DANFE oficial (PDF com QR Code)">
+                                🧾 DANFE
+                              </button>
+                              <button onClick={() => handleCancelarNota(order)} style={{ background: "none", border: "none", cursor: "pointer", color: "#B91C1C" }} title="Cancelar a nota na SEFAZ (prazo curto — normalmente 30 min)">
+                                ✕ Cancelar
+                              </button>
+                            </div>
+                          ) : isNotaCancelada ? (
+                            <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>—</span>
+                          ) : isPedidoCancelado ? (
+                            <span title="Pedido cancelado: não se emite nota de venda que não aconteceu." style={{ fontSize: "0.72rem", color: "#94A3B8" }}>
+                              Sem emissão
+                            </span>
+                          ) : isProcessing ? (
+                            <button
+                              onClick={() => handleConsultarSituacao(order)}
+                              title="A SEFAZ recebeu a nota e ainda não respondeu. Consulte em vez de reemitir."
+                              style={{ background: "#FEF3C7", border: "1px solid #B45309", color: "#B45309", borderRadius: 6, padding: "4px 8px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}
+                            >
+                              Consultar situação
                             </button>
                           ) : (
                             <button
@@ -1163,7 +1577,9 @@ ${dados.aviso}` : "")
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: "2px solid #0F172A", paddingBottom: 8 }}>
               <div>
                 <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#64748B" }}>DOCUMENTO AUXILIAR DA NFC-E</span>
-                <h2 style={{ margin: "2px 0 0", fontSize: "1.1rem", fontWeight: 900 }}>DANFE NFC-e nº {selectedOrderForDanfe.fiscalInfo?.nfceNumber || "15493"}</h2>
+                {/* Sem número inventado: "15493" fixo aparecia como fallback
+                    e virava "número da nota" aos olhos do lojista. */}
+                <h2 style={{ margin: "2px 0 0", fontSize: "1.1rem", fontWeight: 900 }}>DANFE NFC-e nº {selectedOrderForDanfe.fiscalInfo?.nfceNumber ?? "—"}</h2>
               </div>
               <button onClick={() => setSelectedOrderForDanfe(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem" }}>✕</button>
             </div>
@@ -1176,7 +1592,7 @@ ${dados.aviso}` : "")
 
             <h4 style={{ margin: "0 0 6px", fontSize: "0.85rem", fontWeight: 800 }}>Itens do Documento Fiscal</h4>
             <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8, padding: 10, marginBottom: 14, fontSize: "0.8rem" }}>
-              {selectedOrderForDanfe.fiscalInfo?.items.map((it: any, idx: number) => (
+              {(selectedOrderForDanfe.fiscalInfo?.items || []).map((it: any, idx: number) => (
                 <div key={idx} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <span>{it.quantity}x {it.name}</span>
                   <strong>{fmt(it.totalPrice)}</strong>
@@ -1371,7 +1787,7 @@ ${dados.aviso}` : "")
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#334155" }}>📋 Itens na Nota Fiscal</h3>
                 <button
-                  onClick={() => setFiscalItemsDraft([...fiscalItemsDraft, { name: "", price: 0, category: editingCombo.category || "Lanches", ncm: editingCombo.ncm || "2106.90.90", cfop: "5102", csosn: "102" }])}
+                  onClick={() => setFiscalItemsDraft([...fiscalItemsDraft, { name: "", price: 0, category: editingCombo.category || "Lanches", ncm: editingCombo.ncm || "", cfop: "5102", csosn: "102" }])}
                   style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                 >
                   <Plus size={12} /> Adicionar item
@@ -1486,7 +1902,28 @@ ${dados.aviso}` : "")
 
             {/* ── Validação / Resumo ── */}
             {fiscalItemsDraft.length > 0 && (() => {
-              const totalFiscal = fiscalItemsDraft.reduce((s: number, it: any) => s + (it.price || 0), 0);
+              // As linhas de um MESMO grupo são ALTERNATIVAS (o cliente escolhe
+              // maxQty entre elas), não itens somados. A conta antiga somava
+              // TODAS as opções e comparava com o preço do combo — combo de
+              // R$ 100 com 5 opções acusava "R$ 500 ≠ R$ 100" em vermelho,
+              // divergência falsa em praticamente todo combo real. A conta
+              // certa é a MENOR seleção válida: por grupo, a opção mais barata
+              // × quantidade de escolhas; linha avulsa (sem grupo) soma direto.
+              const grupos = new Map<string, { menor: number; qtd: number }>();
+              let avulsos = 0;
+              fiscalItemsDraft.forEach((it: any, i: number) => {
+                const preco = it.price || 0;
+                if (it.groupTitle) {
+                  const g = grupos.get(it.groupTitle);
+                  const qtd = Math.max(1, Number(it.groupMaxQty) || 1);
+                  if (!g || preco < g.menor) grupos.set(it.groupTitle, { menor: preco, qtd });
+                } else {
+                  avulsos += preco;
+                }
+              });
+              const totalFiscal = Number(
+                ([...grupos.values()].reduce((s, g) => s + g.menor * g.qtd, 0) + avulsos).toFixed(2)
+              );
               const diff = totalFiscal - editingCombo.price;
               const isValid = Math.abs(diff) < 0.02; // tolerância de centavos
               return (
@@ -1502,8 +1939,8 @@ ${dados.aviso}` : "")
                       <div style={{ fontWeight: 800, color: "#334155" }}>{fmt(editingCombo.price)}</div>
                     </div>
                     <div>
-                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Total itens NF ({fiscalItemsDraft.length} itens)</div>
-                      <div style={{ fontWeight: 800, color: totalFiscal === editingCombo.price ? "#16A34A" : "#EF4444" }}>{fmt(totalFiscal)}</div>
+                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Menor seleção possível ({fiscalItemsDraft.length} opções)</div>
+                      <div style={{ fontWeight: 800, color: isValid ? "#16A34A" : "#EF4444" }}>{fmt(totalFiscal)}</div>
                     </div>
                     <div>
                       <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Diferença</div>

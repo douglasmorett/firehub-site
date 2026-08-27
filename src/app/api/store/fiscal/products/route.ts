@@ -57,28 +57,43 @@ export async function PUT(req: Request) {
     const so = (v: unknown) => [...String(v ?? "")].filter((c) => c >= "0" && c <= "9").join("");
 
     if (ncm && so(ncm).length !== 8) problemas.push("NCM precisa ter 8 dígitos.");
-    if (cfop && so(cfop).length !== 4) problemas.push("CFOP precisa ter 4 dígitos.");
+    // As regras da lib (as mesmas que a emissão aplica). A validação local
+    // aceitava CFOP de entrada (1102) e CSOSN inexistente — o erro só
+    // aparecia na hora de emitir, com a fila esperando.
+    const { cfopValido, csosnValido, cstIcmsValido, origemValida } = await import("@/lib/fiscal-validacao");
+    if (cfop && !cfopValido(cfop)) problemas.push("CFOP: 4 dígitos começando em 5, 6 ou 7 (venda é saída).");
     if (cest && so(cest).length !== 7) problemas.push("CEST precisa ter 7 dígitos (ou ficar vazio).");
+    if (csosn && !(csosnValido(csosn) || cstIcmsValido(csosn))) {
+      problemas.push("Situação tributária: CSOSN de 3 dígitos (Simples) ou CST de 2 dígitos (Regime Normal).");
+    }
+    if (origem !== undefined && origem !== null && origem !== "" && !origemValida(origem)) {
+      problemas.push("Origem da mercadoria: 0 a 8.");
+    }
     if (problemas.length > 0) {
       return NextResponse.json({ error: "dados_invalidos", mensagem: problemas.join(" ") }, { status: 400 });
     }
 
+    // Só grava o que veio no corpo. O update antigo escrevia TODOS os campos
+    // em toda chamada: um PUT que só trazia o NCM resetava CFOP/CSOSN/PIS/
+    // COFINS personalizados para os padrões, em silêncio.
+    const data: any = {};
+    if ("ncm" in body) data.ncm = ncm ? so(ncm) : null;
+    if ("cest" in body) data.cest = cest ? so(cest) : null;
+    // 5102 (venda dentro do estado) e 102 (Simples, sem crédito) são os
+    // valores certos para a esmagadora maioria de restaurante.
+    if ("cfop" in body) data.cfop = cfop ? so(cfop) : "5102";
+    if ("origem" in body) data.origem = String(origem ?? "0") || "0";
+    if ("csosn" in body) data.csosn = csosn ? String(csosn).trim() : "102";
+    if ("pis" in body) data.pis = pis || "49";
+    if ("cofins" in body) data.cofins = cofins || "49";
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json({ error: "Nenhum campo fiscal para atualizar." }, { status: 400 });
+    }
+
     const updated = await prisma.menuProduct.updateMany({
       where: { id: productId, franchiseeId },
-      data: {
-        // Guardamos só os dígitos: é o formato que vai no XML, e evita o mesmo
-        // NCM entrar duas vezes escrito de jeitos diferentes.
-        ncm: ncm ? so(ncm) : null,
-        cest: cest ? so(cest) : null,
-        // 5102 (venda dentro do estado) e 102 (Simples, sem crédito) são os
-        // valores certos para a esmagadora maioria de restaurante, e diferente
-        // do NCM eles NÃO variam por produto — por isso seguem como padrão.
-        cfop: cfop ? so(cfop) : "5102",
-        origem: origem || "0",
-        csosn: csosn || "102",
-        pis: pis || "49",
-        cofins: cofins || "49",
-      },
+      data,
     });
 
     if (updated.count === 0) {

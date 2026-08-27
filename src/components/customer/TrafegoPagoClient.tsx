@@ -92,6 +92,11 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         facebook_denied: "Você negou a autorização no Facebook. Tente novamente.",
         missing_params: "Parâmetros faltando no retorno do Facebook.",
         token_exchange_failed: "Erro ao conectar com o Facebook. Tente novamente.",
+        sessao_expirada: "Sua sessão expirou durante a conexão. Entre de novo e reconecte o Facebook.",
+        link_expirado: "O link de conexão expirou. Clique em Conectar Facebook de novo.",
+        state_invalido: "A conexão não pôde ser validada por segurança. Tente conectar de novo.",
+        loja_divergente: "Esta conexão pertence a outra loja. Entre com a conta certa e tente de novo.",
+        sem_conta_de_anuncios: "Seu Facebook conectou, mas não tem uma conta de anúncios. Crie uma no Gerenciador de Anúncios do Facebook e reconecte.",
       };
       setNotification({ type: "error", message: msgs[error] || "Erro desconhecido." });
     }
@@ -289,6 +294,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         body: JSON.stringify({
           weeklyBudget: investment,
           adCopy: adCopy.trim(),
+          // A descrição editada ia para o estado e morria lá — nunca chegava
+          // ao criativo do anúncio.
+          adDescription: adDescription.trim() || undefined,
           adImageUrl: selectedImage || uploadPreview,
         }),
       });
@@ -326,6 +334,11 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         };
         setNotification({ type: "success", message: msgs[action] || "✅" });
         setEditingBudget(null);
+      } else {
+        // O servidor explica o que travou ("Token expirado", "orçamento
+        // recusado pelo Facebook"...) — engolir isso deixava o botão mudo.
+        const d = await res.json().catch(() => ({}));
+        setNotification({ type: "error", message: d.error || "Não consegui executar a ação. Tente de novo." });
       }
     } catch {
       setNotification({ type: "error", message: "Erro de conexão." });
@@ -696,7 +709,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   if (step === "creative") return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "0 1rem 4rem" }}>
       <Banner />
-      <button onClick={() => setStep("commitment")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
+      {/* "commitment" está no union mas nunca teve tela: voltar para lá caía
+          no dashboard vazio. O passo anterior real do criativo é o investimento. */}
+      <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
       <h2 style={{ fontSize: "1.6rem", fontWeight: 900, marginBottom: "0.25rem" }}>Configure seu anúncio</h2>
       <p style={{ color: "#6B7280", marginBottom: "2rem", fontSize: "0.9rem" }}>Escolha a imagem e confirme o texto. A IA já sugeriu um texto otimizado para você.</p>
 
@@ -1097,6 +1112,34 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                     <button onClick={() => handleAction(c.id, "resume")} disabled={actionLoading}
                       style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "4px 10px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#166534", display: "flex", alignItems: "center", gap: 4 }}>
                       <Play size={12} /> Retomar
+                    </button>
+                  )}
+                  {/* Os termos prometem "alterar o orçamento a qualquer momento"
+                      — e não existia botão nenhum. O editor usa a rota
+                      update_budget, que muda na Meta ANTES de gravar aqui. */}
+                  {editingBudget === c.id ? (
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <input
+                        type="number"
+                        min={70}
+                        value={newBudget}
+                        onChange={e => setNewBudget(Number(e.target.value) || 0)}
+                        style={{ width: 78, padding: "3px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.72rem" }}
+                      />
+                      <button onClick={() => handleAction(c.id, "update_budget", { weeklyBudget: newBudget })} disabled={actionLoading}
+                        style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8" }}>
+                        Salvar
+                      </button>
+                      <button onClick={() => setEditingBudget(null)}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.8rem", color: "#6B7280" }}>
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setEditingBudget(c.id); setNewBudget(c.weeklyBudget || 100); }} disabled={actionLoading}
+                      title="Alterar o investimento semanal (mínimo R$ 70)"
+                      style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "4px 10px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8" }}>
+                      💰 R$ {c.weeklyBudget || 100}/sem
                     </button>
                   )}
                 </div>

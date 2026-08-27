@@ -27,9 +27,35 @@ export async function PUT(
     });
     if (!combo) return NextResponse.json({ error: "Combo não encontrado" }, { status: 404 });
 
+    // O breakdown era gravado como veio — QUALQUER JSON entrava. Confere o
+    // formato ([{name, price, ncm?...}]) e o NCM de cada item antes de gravar.
+    let breakdown: any = null;
+    if (body.fiscalBreakdown != null) {
+      if (!Array.isArray(body.fiscalBreakdown) || body.fiscalBreakdown.length > 50) {
+        return NextResponse.json(
+          { error: "fiscalBreakdown precisa ser uma lista de até 50 itens." },
+          { status: 400 }
+        );
+      }
+      const soDigitos = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+      for (const item of body.fiscalBreakdown) {
+        if (!item || typeof item !== "object" || typeof item.name !== "string" || !item.name.trim()) {
+          return NextResponse.json({ error: "Cada item do combo precisa de um nome." }, { status: 400 });
+        }
+        const preco = Number(item.price);
+        if (!Number.isFinite(preco) || preco < 0) {
+          return NextResponse.json({ error: `Preço inválido no item "${item.name}".` }, { status: 400 });
+        }
+        if (item.ncm && soDigitos(item.ncm).length !== 8) {
+          return NextResponse.json({ error: `NCM do item "${item.name}" precisa ter 8 dígitos.` }, { status: 400 });
+        }
+      }
+      breakdown = body.fiscalBreakdown;
+    }
+
     const updated = await prisma.menuProduct.update({
       where: { id: comboId },
-      data: { fiscalBreakdown: body.fiscalBreakdown || null },
+      data: { fiscalBreakdown: breakdown },
     });
 
     return NextResponse.json({ success: true, combo: updated });

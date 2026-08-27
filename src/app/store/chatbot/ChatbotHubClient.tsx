@@ -1868,7 +1868,11 @@ export default function ChatbotHubClient() {
                     <div style={{ background: "#F5F3FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #DDD6FE" }}>
                       <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#6D28D9" }}>👀 Visualizações (Lidos)</div>
                       <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#5B21B6", marginTop: "2px" }}>
-                        {campaignHistory.reduce((acc: number, c: any) => acc + (c.viewedCount || 0), 0)} leituras
+                        {/* Leitura não é medida pelo WhatsApp por aqui. O número
+                            anterior era 76% dos envios, inventado no servidor. */}
+                        {campaignHistory.some((c: any) => typeof c.viewedCount === "number")
+                          ? `${campaignHistory.reduce((acc: number, c: any) => acc + (typeof c.viewedCount === "number" ? c.viewedCount : 0), 0)} leituras`
+                          : "—"}
                       </div>
                     </div>
 
@@ -1903,8 +1907,9 @@ export default function ChatbotHubClient() {
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       {campaignHistory.map((camp: any, i: number) => {
                         const totalSent = typeof camp.sentCount === "number" ? camp.sentCount : 0;
-                        const totalViewed = totalSent > 0 ? (camp.viewedCount || 0) : 0;
-                        const openRate = totalSent > 0 ? Math.round((totalViewed / totalSent) * 100) : 0;
+                        // null = não medido (mostrar "—", nunca um % inventado)
+                        const totalViewed = typeof camp.viewedCount === "number" ? camp.viewedCount : null;
+                        const openRate = totalViewed != null && totalSent > 0 ? Math.round((totalViewed / totalSent) * 100) : null;
 
                         return (
                           <div key={camp.id || i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
@@ -1950,7 +1955,7 @@ export default function ChatbotHubClient() {
                               <span style={{ color: "#CBD5E1" }}>|</span>
                               <span style={{ fontWeight: 800, color: "#2563EB" }}>✅ Entregues: <b>{totalSent} msgs</b></span>
                               <span style={{ color: "#CBD5E1" }}>|</span>
-                              <span style={{ fontWeight: 800, color: "#7C3AED" }}>👀 Visualizações (Lidos): <b>{totalViewed} clientes ({openRate}% taxa de abertura)</b></span>
+                              <span style={{ fontWeight: 800, color: "#7C3AED" }}>👀 Visualizações (Lidos): <b>{totalViewed != null ? `${totalViewed} clientes (${openRate}% taxa de abertura)` : "não medido"}</b></span>
                               <span style={{ color: "#CBD5E1" }}>|</span>
                               <span style={{ fontWeight: 800, color: "#047857" }}>🛒 Vendas: <b>{camp.convertedOrders || 0} pedidos</b></span>
                               <span style={{ color: "#CBD5E1" }}>|</span>

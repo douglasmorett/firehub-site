@@ -25,9 +25,11 @@ export async function GET(req: Request) {
     const whereClause: any = { franchiseeId };
 
     if (fromDate || toDate) {
+      // Dia LOCAL da loja (Brasil, -03:00), não UTC: com "Z", os pedidos das
+      // 21h em diante caíam no dia seguinte e sumiam do filtro de "hoje".
       whereClause.createdAt = {};
-      if (fromDate) whereClause.createdAt.gte = new Date(fromDate + "T00:00:00.000Z");
-      if (toDate) whereClause.createdAt.lte = new Date(toDate + "T23:59:59.999Z");
+      if (fromDate) whereClause.createdAt.gte = new Date(fromDate + "T00:00:00.000-03:00");
+      if (toDate) whereClause.createdAt.lte = new Date(toDate + "T23:59:59.999-03:00");
     }
 
     if (status && status !== "ALL") {
@@ -107,6 +109,10 @@ export async function GET(req: Request) {
         totalAmount: order.totalAmount,
         deliveryFee: order.deliveryFee || 0,
         createdAt: order.createdAt,
+        // Status OPERACIONAL do pedido. A tela precisa dele para não oferecer
+        // emissão de NFC-e de venda cancelada — imposto sobre venda que não
+        // aconteceu — e para não carimbar "Concluído" em tudo.
+        orderStatus: order.status,
         fiscalStatus: order.fiscalStatus || "PENDING",
         // `null` quando não houve emissão. A tela mostra "não emitida" em vez
         // de um documento inventado.
@@ -122,7 +128,16 @@ export async function GET(req: Request) {
               pdfUrl: fiscal.pdfUrl ?? null,
               items: itemsFormatted,
             }
-          : null,
+          : fiscal.processando || fiscal.ultimoErro
+            ? {
+                // Nota em processamento na SEFAZ ou última tentativa recusada:
+                // a tela precisa disso para oferecer "Consultar situação" e
+                // mostrar o motivo — sem inventar documento nenhum.
+                processando: Boolean(fiscal.processando),
+                ultimoErro: fiscal.ultimoErro ?? null,
+                ultimaTentativaEm: fiscal.ultimaTentativaEm ?? null,
+              }
+            : null,
         itens: itemsFormatted,
       };
     });

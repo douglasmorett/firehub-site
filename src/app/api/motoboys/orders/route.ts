@@ -199,6 +199,12 @@ export async function PATCH(req: NextRequest) {
         const { trackSaleForBilling } = await import("@/lib/billing");
         trackSaleForBilling(order.franchiseeId).catch(() => {});
       } catch {}
+      // NFC-e automática, se a loja marcou esta forma de pagamento na tela
+      // fiscal. Mesmo caminho da entrega confirmada pelo painel.
+      try {
+        const { emitirNfceAutomatica } = await import("@/lib/fiscal-automatico");
+        emitirNfceAutomatica(order.id).catch(() => {});
+      } catch {}
     })();
 
     return NextResponse.json({ success: true });

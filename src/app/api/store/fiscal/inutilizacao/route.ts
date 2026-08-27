@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { pendenciasParaEmitir, type ConfiguracaoFiscal } from "@/lib/fiscal-emissao";
+import {
+  pendenciasParaEmitir,
+  inutilizarNumeracao,
+  type ConfiguracaoFiscal,
+} from "@/lib/fiscal-emissao";
 
 export const dynamic = "force-dynamic";
 
@@ -83,19 +87,72 @@ export async function POST(req: Request) {
 
     // Nada de protocolo inventado: sem caminho até a SEFAZ, não houve
     // inutilização, e o lojista precisa saber disso agora.
-    return NextResponse.json(
-      {
-        error: "emissao_nao_configurada",
-        mensagem:
-          "A inutilização de numeração não foi executada. Ela é um ato junto à SEFAZ e exige " +
-          "certificado digital e provedor de emissão configurados — o que ainda não está " +
-          `pronto nesta loja (${pendencias.length} pendência(s)). Enquanto isso, inutilize a ` +
-          "faixa pelo portal da SEFAZ do seu estado.",
-        pendencias,
-        faixaSolicitada: { serie, numeroInicial, numeroFinal },
+    if (pendencias.length > 0) {
+      return NextResponse.json(
+        {
+          error: "emissao_nao_configurada",
+          mensagem:
+            "A inutilização de numeração não foi executada. Ela é um ato junto à SEFAZ e exige " +
+            "certificado digital e provedor de emissão configurados — o que ainda não está " +
+            `pronto nesta loja (${pendencias.length} pendência(s)). Enquanto isso, inutilize a ` +
+            "faixa pelo portal da SEFAZ do seu estado.",
+          pendencias,
+          faixaSolicitada: { serie, numeroInicial, numeroFinal },
+        },
+        { status: 409 }
+      );
+    }
+
+    // Cadastro completo: transmite a inutilização de verdade pelo provedor.
+    const resultado = await inutilizarNumeracao(config, {
+      serie: Number(serie),
+      numeroInicial: Number(numeroInicial),
+      numeroFinal: Number(numeroFinal),
+      justificativa: String(justificativa).trim(),
+    });
+
+    if (!resultado.ok) {
+      return NextResponse.json(
+        { error: resultado.motivo, mensagem: resultado.mensagem, detalhe: resultado.detalhe ?? null },
+        { status: resultado.motivo === "erro_de_comunicacao" ? 502 : 409 }
+      );
+    }
+
+    // Guarda o comprovante junto da configuração fiscal: o protocolo da SEFAZ
+    // é o documento que o lojista apresenta numa fiscalização.
+    const historico = Array.isArray((config as any).inutilizacoes)
+      ? (config as any).inutilizacoes
+      : [];
+    await prisma.user.update({
+      where: { id: lojaId },
+      data: {
+        fiscalConfig: {
+          ...(config as any),
+          inutilizacoes: [
+            ...historico,
+            {
+              serie: resultado.serie,
+              numeroInicial: resultado.numeroInicial,
+              numeroFinal: resultado.numeroFinal,
+              protocolo: resultado.protocolo,
+              statusSefaz: resultado.statusSefaz,
+              mensagemSefaz: resultado.mensagemSefaz,
+              justificativa: String(justificativa).trim(),
+              homologadaEm: resultado.homologadaEm,
+            },
+          ],
+        },
       },
-      { status: 409 }
-    );
+    });
+
+    return NextResponse.json({
+      success: true,
+      protocolo: resultado.protocolo,
+      mensagem:
+        `Inutilização homologada pela SEFAZ (${resultado.mensagemSefaz}). ` +
+        `Faixa ${resultado.numeroInicial}–${resultado.numeroFinal} da série ${resultado.serie}. ` +
+        `Protocolo: ${resultado.protocolo}.`,
+    });
   } catch (err: any) {
     console.error("[Fiscal Inutilizacao] Erro:", err);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });

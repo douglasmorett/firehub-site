@@ -50,12 +50,19 @@ async function processBackgroundCampaign(userId: string, targetFranchiseeId: str
 
           const updatedHistory = history.map((c: any) => {
             if (c.id === campaignId) {
-              const viewed = Math.round(sentSuccessCount * 0.76);
               return {
                 ...c,
                 sentCount: sentSuccessCount,
                 failedCount,
-                viewedCount: viewed,
+                // Leitura de mensagem NÃO é medida (o WhatsApp não devolve
+                // isso por aqui). O valor era inventado: 76% fixo dos envios,
+                // apresentado como dado real. Sem medição, o campo fica nulo
+                // e a tela mostra "—".
+                viewedCount: null,
+                // Carimbo de progresso: é o que impede o processador do GET
+                // de disparar EM PARALELO com este worker (mensagem duplicada
+                // para o cliente). O GET só assume se isto ficar parado.
+                lastProgressAt: new Date().toISOString(),
                 status: isDone ? "COMPLETED" : "DISPARANDO",
               };
             }
@@ -109,8 +116,13 @@ export async function GET(req: NextRequest) {
 
     const targetFranchiseeId = user.ownerId || user.id;
 
-    // 1. Buscar todos os contatos cadastrados e oriundos do WhatsApp (StoreCustomer)
+    // 1. Contatos DESTA loja: clientes com pelo menos um pedido aqui.
+    // StoreCustomer é uma tabela global da plataforma (o telefone é único no
+    // sistema inteiro) — sem este filtro, a rota devolvia a base de clientes
+    // de TODAS as lojas para qualquer lojista logado: vazamento de dados e
+    // munição para disparo em cima de cliente alheio.
     const storeCustomers = await prisma.storeCustomer.findMany({
+      where: { orders: { some: { franchiseeId: targetFranchiseeId } } },
       select: {
         id: true,
         name: true,
@@ -259,7 +271,17 @@ export async function GET(req: NextRequest) {
     const rawHistory = Array.isArray(chatbotConfig.campaignHistory) ? chatbotConfig.campaignHistory : [];
 
     // 4.5 Se houver disparo ativo em andamento (DISPARANDO), processa um lote de envios
-    const pendingCampIdx = rawHistory.findIndex((c: any) => c.status === "DISPARANDO");
+    //
+    // SÓ como resgate: o disparo normal é do worker em background iniciado no
+    // POST. Este processador rodava JUNTO com o worker — dois remetentes
+    // avançando o mesmo índice, cliente recebendo a campanha duas vezes.
+    // Agora ele apenas assume campanha ABANDONADA (worker morto num deploy):
+    // sem progresso há mais de 2 minutos.
+    const pendingCampIdx = rawHistory.findIndex((c: any) => {
+      if (c.status !== "DISPARANDO") return false;
+      const ultimo = c.lastProgressAt ? new Date(c.lastProgressAt).getTime() : 0;
+      return Date.now() - ultimo > 120_000;
+    });
     if (pendingCampIdx !== -1) {
       const activeCamp = rawHistory[pendingCampIdx];
       const targetPhones = activeCamp.targetPhones || [];
@@ -298,7 +320,9 @@ export async function GET(req: NextRequest) {
           ...activeCamp,
           sentCount,
           failedCount,
-          viewedCount: Math.round(sentCount * 0.76),
+          // Sem medição de leitura — nada de 76% inventado.
+          viewedCount: null,
+          lastProgressAt: new Date().toISOString(),
           status: isDone ? "COMPLETED" : "DISPARANDO",
         };
 
@@ -350,7 +374,8 @@ export async function GET(req: NextRequest) {
       const estimatedProfit = convertedRevenue * 0.40; // Margem média líquida de 40%
 
       const sentCount = camp.sentCount != null ? camp.sentCount : (camp.targetCount || 0);
-      const viewedCount = camp.viewedCount != null ? camp.viewedCount : Math.round(sentCount * 0.76);
+      // null = não medido. O fallback antigo fabricava 76% dos envios.
+      const viewedCount = camp.viewedCount != null ? camp.viewedCount : null;
 
       return {
         ...camp,
@@ -459,7 +484,10 @@ export async function POST(req: NextRequest) {
       const storeSlug = (user as any).slug || "loja";
       const storeUrl = `https://firehubfood.com.br/loja/${storeSlug}`;
 
-      const messageText = `Oi Rosangela, tudo bem? Sentimos sua falta! Tá sumida! 🍕\n\n` +
+      // Sem nome fixo: o teste vai para o número que o lojista digitou, e a
+      // mensagem real usa o nome do cliente — "Rosangela" hardcoded aqui fazia
+      // o teste chegar chamando qualquer pessoa de Rosangela.
+      const messageText = `Oi, tudo bem? Sentimos sua falta! Tá sumido(a)! 🍕\n\n` +
                           `Trouxemos 10% de desconto para você lanchar com a gente hoje!\n` +
                           `Use o cupom: *${coupon}* no nosso site:\n${storeUrl}`;
 
@@ -524,8 +552,13 @@ export async function POST(req: NextRequest) {
         targetCount: allTargetPhones.length,
         sentCount: 0,
         failedCount: 0,
-        viewedCount: 0,
+        // null = leitura não medida (nada de % inventado na tela).
+        viewedCount: null,
         targetPhones: allTargetPhones.slice(0, 2000), // Guarda os telefones para cálculo de vendas convertidas
+        // Nasce carimbada: o processador-resgate do GET só assume depois de
+        // 2 min SEM progresso — sem isto ele roubava a campanha do worker
+        // logo no primeiro poll e o cliente recebia mensagem duplicada.
+        lastProgressAt: new Date().toISOString(),
         status: "DISPARANDO",
         convertedOrders: 0,
         convertedRevenue: 0,

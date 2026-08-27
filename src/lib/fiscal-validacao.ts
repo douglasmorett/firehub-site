@@ -24,18 +24,30 @@ const somenteDigitos = (v: unknown): string => String(v ?? "").replace(/\D/g, ""
 
 // ─── CNPJ / CPF ──────────────────────────────────────────────────────────────
 
-/** Confere os dois dígitos verificadores do CNPJ. */
+/**
+ * Confere os dois dígitos verificadores do CNPJ.
+ *
+ * Aceita também o CNPJ ALFANUMÉRICO (vigente desde julho/2026): 12 posições
+ * de letras/números + 2 dígitos verificadores numéricos. No cálculo do DV,
+ * cada caractere vale seu código ASCII menos 48 (regra da Receita/SERPRO) —
+ * para dígitos isso dá o próprio número, então a conta continua valendo para
+ * o CNPJ tradicional.
+ */
 export function cnpjValido(entrada: unknown): boolean {
-  const c = somenteDigitos(entrada);
+  const c = String(entrada ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
   if (c.length !== 14) return false;
-  // Todos os dígitos iguais passam na conta do DV mas não existem como CNPJ.
-  if (/^(\d)\1{13}$/.test(c)) return false;
+  // Os dois DVs são SEMPRE numéricos, mesmo no formato alfanumérico.
+  if (!/^\d{2}$/.test(c.slice(12))) return false;
+  // Base inteiramente repetida passa na conta do DV mas não existe como CNPJ.
+  if (/^(.)\1{13}$/.test(c)) return false;
+
+  const valor = (ch: string): number => ch.charCodeAt(0) - 48;
 
   const digito = (base: string): number => {
     let peso = base.length - 7;
     let soma = 0;
     for (let i = 0; i < base.length; i++) {
-      soma += Number(base[i]) * peso--;
+      soma += valor(base[i]) * peso--;
       if (peso < 2) peso = 9;
     }
     const resto = soma % 11;
@@ -108,7 +120,12 @@ export function csosnValido(entrada: unknown): boolean {
 /** CST de ICMS (Regime Normal) — 2 dígitos da tabela B. */
 const CST_ICMS_VALIDOS = ["00", "10", "20", "30", "40", "41", "50", "51", "60", "70", "90"];
 export function cstIcmsValido(entrada: unknown): boolean {
-  return CST_ICMS_VALIDOS.includes(String(entrada ?? "").trim().padStart(2, "0"));
+  const v = String(entrada ?? "").trim();
+  // Vazio NÃO é CST: o padStart de antes transformava "" (e null) em "00",
+  // que está na tabela — produto sem CST passava na validação e a nota ia
+  // sem situação tributária para a SEFAZ recusar.
+  if (!/^\d{1,2}$/.test(v)) return false;
+  return CST_ICMS_VALIDOS.includes(v.padStart(2, "0"));
 }
 
 /** Origem da mercadoria: 0 a 8 (0 = nacional, que é o caso de quase tudo). */
@@ -196,16 +213,43 @@ export function pendenciasDoEmitente(d: DadosDoEmitente): Problema[] {
   };
 
   exigir(cnpjValido(d.cnpj), "cnpj", d.cnpj, "CNPJ inválido ou não preenchido. São 14 dígitos e os dois últimos são conferidos.");
-  exigir(
-    inscricaoEstadualValida(d.inscricaoEstadual, d.uf),
-    "inscricaoEstadual",
-    d.inscricaoEstadual,
-    'Inscrição Estadual inválida para a UF informada. Se a loja não tem inscrição, escreva "ISENTO".'
-  );
+  // Quem EMITE NFC-e obrigatoriamente tem Inscrição Estadual — "ISENTO" vale
+  // para destinatário, nunca para o emitente. Aceitar aqui mandava a IE vazia
+  // no XML (o replace tira as letras) e a SEFAZ rejeitava toda nota.
+  const ieDoEmitente = String(d.inscricaoEstadual ?? "").trim().toUpperCase();
+  if (ieDoEmitente === "ISENTO" || ieDoEmitente === "ISENTA") {
+    faltas.push({
+      campo: "inscricaoEstadual",
+      valor: ieDoEmitente,
+      mensagem:
+        "Quem emite NFC-e precisa de Inscrição Estadual ativa — \"ISENTO\" não vale para o emitente. " +
+        "Solicite a inscrição na SEFAZ do seu estado antes de emitir.",
+    });
+  } else {
+    exigir(
+      inscricaoEstadualValida(d.inscricaoEstadual, d.uf),
+      "inscricaoEstadual",
+      d.inscricaoEstadual,
+      "Inscrição Estadual inválida para a UF informada. Confira no cartão CNPJ / SEFAZ do estado."
+    );
+  }
   exigir(Boolean(d.razaoSocial?.trim()), "razaoSocial", d.razaoSocial, "Razão social é obrigatória — é o nome que consta no CNPJ.");
 
   const crt = Number(d.regimeTributario);
   exigir([1, 2, 3].includes(crt), "regimeTributario", d.regimeTributario, "Informe o regime: 1 Simples Nacional, 2 Simples com excesso de sublimite, 3 Regime Normal.");
+  // Regime Normal exige o grupo completo de ICMS por item (CST + base +
+  // alíquota + valor), que o FireHub ainda não coleta nem envia. Deixar
+  // configurar CRT 3 gerava nota com situação tributária vazia — rejeição
+  // críptica do provedor em TODA emissão, sem tela para corrigir.
+  if (crt === 3) {
+    faltas.push({
+      campo: "regimeTributario",
+      valor: "3",
+      mensagem:
+        "Regime Normal (CRT 3) ainda não é suportado pelo FireHub — hoje a emissão atende " +
+        "Simples Nacional (CRT 1 e 2). Fale com o suporte se sua loja é do Regime Normal.",
+    });
+  }
 
   exigir(Boolean(d.logradouro?.trim()), "logradouro", d.logradouro, "Endereço do emitente é obrigatório no XML.");
   exigir(Boolean(d.numero?.trim()), "numero", d.numero, 'Número do endereço é obrigatório. Sem número, escreva "S/N".');

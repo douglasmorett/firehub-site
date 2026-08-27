@@ -67,40 +67,17 @@ export async function GET(req: NextRequest) {
     // está vencido. Não precisamos de um campo systemBlocked pois o layout
     // já calcula isso em runtime (closedAt + 7 dias, que atualizaremos para 10).
 
-    // 3. Acumular taxa de Meta Ads nos ciclos ativos
-    const currentMonth = getCurrentYearMonth();
-    const activeCampaigns = await (prisma as any).metaAdsCampaign.findMany({
-      where: { status: "ACTIVE" },
-      select: { franchiseeId: true, weeklyBudget: true },
-    });
-
-    for (const campaign of activeCampaigns) {
-      try {
-        // Adicionar R$50/semana proporcional (R$7.14/dia) ao ciclo atual
-        const dailyFee = 50 / 7; // ~R$7.14/dia
-        await prisma.franchiseeBillingCycle.upsert({
-          where: {
-            franchiseeId_yearMonth: {
-              franchiseeId: campaign.franchiseeId,
-              yearMonth: currentMonth,
-            },
-          },
-          create: {
-            franchiseeId: campaign.franchiseeId,
-            yearMonth: currentMonth,
-            metaAdsFee: dailyFee,
-            status: "OPEN",
-          },
-          update: {
-            metaAdsFee: { increment: dailyFee },
-          },
-        });
-      } catch (err: any) {
-        log.push(`⚠️ Meta Ads fee ${campaign.franchiseeId}: ${err.message}`);
-      }
-    }
+    // 3. Taxa de Meta Ads — NÃO é cobrada aqui.
+    //
+    // Este bloco somava R$ 7,14 (50/7) ao ciclo A CADA EXECUÇÃO do cron, sem
+    // nenhuma idempotência: rodando de hora em hora, virava R$ 171/dia em vez
+    // de R$ 7,14 — e ainda por cima DUPLICAVA a cobrança que o
+    // /api/cron/meta-ads-sync já faz do jeito certo (R$ 50 por semana ATIVA,
+    // com trava em lastBilledAt). A gestão do tráfego pago tem um único
+    // cobrador: meta-ads-sync (semanal) + a ativação/criação da campanha.
 
     // 4. Acumular taxa de Totem nos ciclos ativos (R$100/mês por totem ativo)
+    const currentMonth = getCurrentYearMonth();
     const allActiveTotemStores = await prisma.totemLicense.groupBy({
       by: ["franchiseeId"],
       where: { active: true },

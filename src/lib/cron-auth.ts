@@ -24,22 +24,31 @@ export function verifyCronAuth(req: NextRequest): boolean {
 
   const cronSecret = process.env.CRON_SECRET;
 
-  // Se CRON_SECRET não está configurado, permite tudo (compatibilidade)
-  if (!cronSecret) return true;
+  // Com o secret configurado, o Bearer certo autoriza de qualquer origem.
+  if (cronSecret) {
+    const authHeader = req.headers.get("authorization");
+    if (authHeader === `Bearer ${cronSecret}`) return true;
+  }
 
-  // Chamadas internas do cron-runner (mesmo container) — bypass seguro
+  // Chamada interna do cron-runner (mesmo container, direto no localhost:3000).
+  //
+  // O critério antigo aceitava `x-forwarded-for: 127.0.0.1` — um header que o
+  // CLIENTE escreve. Qualquer pessoa na internet disparava billing-close,
+  // meta-ads-sync e afins com um curl. Agora:
+  //   • x-forwarded-for NUNCA autoriza nada;
+  //   • host localhost só vale se a requisição NÃO passou pelo proxy
+  //     (o Traefik/Coolify sempre carimba x-forwarded-*; a chamada interna do
+  //     cron-runner bate direto no Node e não tem esses headers).
   const host = req.headers.get("host") || "";
-  const forwardedFor = req.headers.get("x-forwarded-for") || "";
-  const isLocalCall =
-    host.startsWith("localhost") ||
-    host.startsWith("127.0.0.1") ||
-    host.startsWith("0.0.0.0") ||
-    forwardedFor.startsWith("127.0.0.1") ||
-    forwardedFor.startsWith("::1");
+  const veioDoProxy =
+    req.headers.has("x-forwarded-for") || req.headers.has("x-forwarded-host");
+  const hostLocal =
+    host.startsWith("localhost") || host.startsWith("127.0.0.1") || host.startsWith("0.0.0.0");
 
-  if (isLocalCall) return true;
+  if (hostLocal && !veioDoProxy) return true;
 
-  // Chamadas externas: exigem Bearer token
-  const authHeader = req.headers.get("authorization");
-  return authHeader === `Bearer ${cronSecret}`;
+  // Externo sem o Bearer correto: recusado — inclusive quando CRON_SECRET não
+  // está configurado (o fail-open antigo deixava a internet inteira rodar os
+  // crons; o caminho interno acima mantém a VPS funcionando sem secret).
+  return false;
 }

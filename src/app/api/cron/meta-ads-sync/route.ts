@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   let synced = 0;
 
   try {
-    const { getCampaignInsights, renovarTokenDoLojista, tokenAindaVale } =
+    const { getCampaignInsights, renovarTokenDoLojista, tokenAindaVale, statusEfetivoDaCampanha } =
       await import("@/lib/meta-ads");
 
     // ── RENOVAÇÃO DOS TOKENS ────────────────────────────────────────────────
@@ -82,6 +82,26 @@ export async function GET(req: NextRequest) {
       }
 
       try {
+        // A Meta é a fonte da verdade do status. Campanha pausada no Ads
+        // Manager ou encerrada pelo end_time continuava "ACTIVE" no banco — e
+        // a gestão de R$ 50/semana era cobrada PARA SEMPRE por uma campanha
+        // que não veicula. Se a Meta diz que não está ativa, o banco espelha
+        // e esta rodada não cobra nada.
+        const statusNaMeta = await statusEfetivoDaCampanha(
+          campaign.metaCampaignId,
+          campaign.franchisee.metaFbAccessToken
+        );
+        if (statusNaMeta && statusNaMeta !== "ACTIVE") {
+          const statusLocal =
+            ["ARCHIVED", "DELETED", "COMPLETED"].includes(statusNaMeta) ? "ENDED" : "PAUSED";
+          await (prisma as any).metaAdsCampaign.update({
+            where: { id: campaign.id },
+            data: { status: statusLocal, lastBilledAt: new Date(), updatedAt: new Date() },
+          });
+          log.push(`⏸️ ${campaign.id}: ${statusNaMeta} na Meta → ${statusLocal} aqui; cobrança interrompida`);
+          continue;
+        }
+
         const insights = await getCampaignInsights(
           campaign.metaCampaignId,
           campaign.franchisee.metaFbAccessToken
@@ -149,6 +169,7 @@ export async function GET(req: NextRequest) {
             impressions: (insights as any).impressions ?? 0,
             clicks: (insights as any).clicks ?? 0,
             ordersGenerated: (insights as any).orders ?? 0,
+            revenue: (insights as any).revenue ?? 0,
             // Só sobe se a taxa entrou no ciclo.
             ...(feeGravada ? { feeAccrued: newFeeAccrued, lastBilledAt: newLastBilledAt } : {}),
             updatedAt: new Date(),
