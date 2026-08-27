@@ -218,10 +218,14 @@ export default function CustomerStorePage({
     return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
   };
 
+  // "99food" entrou na lista: o webhook do 99Food cria pseudo-produtos nessa
+  // categoria (retratos do pedido, para a comanda) e eles estavam aparecendo
+  // como uma ABA comprável no cardápio público — itens duplicados, com preço
+  // congelado do dia do pedido, vendáveis de verdade.
   const isIntegrationCategory = (catName: string) => {
     if (!catName) return false;
     const c = catName.trim().toLowerCase();
-    return c === "jotajá" || c === "jotaja" || c === "jota já" || c === "ifood" || c.includes("jotajá") || c.includes("jotaja") || c.includes("ifood");
+    return c === "jotajá" || c === "jotaja" || c === "jota já" || c === "ifood" || c === "99food" || c.includes("jotajá") || c.includes("jotaja") || c.includes("ifood") || c.includes("99food");
   };
 
   const activeTodayProducts = useMemo(() => {

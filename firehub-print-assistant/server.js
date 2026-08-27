@@ -930,13 +930,25 @@ function getOrderDeduplicationKeys(order, printerName) {
   const amount = Number(order.totalAmount || 0).toFixed(2);
   const seq = order.dailyOrderNumber || order.orderSeqNumber || "";
 
+  // A chave cliente+valor SO vale quando o pedido NAO tem identidade propria
+  // (importacao manual sem id, payload avulso). Com id/referencia presentes,
+  // ela e um falso positivo em serie: o mesmo cliente pedindo DUAS VEZES o
+  // mesmo combo em 2h e um pedido novo legitimo — e em cardapio de preco
+  // fixo (99Food: 36,99 / 39,99 / 65,00) isso acontece toda noite. Foi
+  // flagrado em producao: Vagner pediu 2x o combo de 39,99 e a segunda
+  // comanda seria engolida por esta chave.
+  const temIdentidade = Boolean(order.id || order.ifoodReference || order.openDeliveryReference || order.openDeliveryOrderId);
+
   return [
     order.id ? `id_${order.id}` : null,
     order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
     order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null,
     order.openDeliveryOrderId ? `opd_${order.openDeliveryOrderId}` : null,
-    seq ? `seq_${seq}` : null,
-    (cleanCustomer && amount && amount !== "0.00") ? `cust_${cleanCustomer}_${amount}` : null
+    // seq_ na mesma condicao: a numeracao REINICIA a meia-noite, e numa loja
+    // que vira a madrugada o #1 de ontem as 23h colide com o #1 de hoje as
+    // 00h30 — dentro da janela de 2h, a comanda de hoje seria engolida.
+    (!temIdentidade && seq) ? `seq_${seq}` : null,
+    (!temIdentidade && cleanCustomer && amount && amount !== "0.00") ? `cust_${cleanCustomer}_${amount}` : null
   ]
     .filter(Boolean)
     .map(k => `${imp}::${k}`);
