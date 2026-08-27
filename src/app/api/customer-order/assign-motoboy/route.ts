@@ -15,6 +15,40 @@ export async function PATCH(req: NextRequest) {
   const { orderId, motoboyId, firehubOrderNumber } = await req.json();
   if (!orderId) return NextResponse.json({ error: "orderId obrigatório" }, { status: 400 });
 
+  // ── O PEDIDO PRECISA SER DESTA LOJA ───────────────────────────────────────
+  //
+  // Só se conferia "existe sessão". Qualquer conta logada mandava o id de um
+  // pedido de OUTRA loja e atribuía um motoboy a ele — inclusive um motoboy
+  // que não é da loja dona do pedido, disparando WhatsApp em nome dela.
+  const usuario = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true, role: true },
+  });
+  if (!usuario) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const lojaDaSessao = usuario.ownerId || usuario.id;
+
+  const pedidoAlvo = await prisma.customerOrder.findUnique({
+    where: { id: orderId },
+    select: { franchiseeId: true },
+  });
+  if (!pedidoAlvo) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+  if (usuario.role !== "ADMIN" && pedidoAlvo.franchiseeId !== lojaDaSessao) {
+    console.warn(`[assign-motoboy] 🚫 ${usuario.id} tentou mexer no pedido ${orderId} da loja ${pedidoAlvo.franchiseeId}.`);
+    return NextResponse.json({ error: "Este pedido não é desta loja" }, { status: 403 });
+  }
+
+  // O motoboy também tem que ser da loja: senão dava para "emprestar" o
+  // entregador de outra loja para um pedido seu.
+  if (motoboyId) {
+    const motoboyDaLoja = await prisma.motoboy.findFirst({
+      where: { id: String(motoboyId), franchiseeId: pedidoAlvo.franchiseeId },
+      select: { id: true },
+    });
+    if (!motoboyDaLoja) {
+      return NextResponse.json({ error: "Este entregador não é desta loja" }, { status: 403 });
+    }
+  }
+
   const order = await prisma.customerOrder.update({
     where: { id: orderId },
     data: {

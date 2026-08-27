@@ -125,6 +125,22 @@ export async function POST(req: Request) {
         precoUnitario = minimoDoProduto;
       }
 
+      // ── QUANTIDADE É INTEIRO POSITIVO ────────────────────────────────────
+      //
+      // Nada validava este campo. Com `quantity: -5` o total ficava NEGATIVO e
+      // dava para zerar o pedido inteiro (comida de graça) ou até gerar
+      // "crédito"; com 0.5 nascia meio hambúrguer na comanda; com 99999, um
+      // pedido impossível travando a cozinha. O carrinho manda o que quiser —
+      // quem decide é aqui.
+      const qtd = Number(item.quantity);
+      if (!Number.isInteger(qtd) || qtd < 1 || qtd > 200) {
+        throw Object.assign(
+          new Error(`Quantidade inválida para "${product.name}". Informe um número inteiro de 1 a 200.`),
+          { statusCode: 400 }
+        );
+      }
+      item.quantity = qtd;
+
       totalAmount += precoUnitario * item.quantity;
       // `notes` e a observacao POR ITEM ("sem cebola"). O carrinho ja mandava
       // (CustomerStorePage envia notes em cada item) e a impressao/KDS ja liam

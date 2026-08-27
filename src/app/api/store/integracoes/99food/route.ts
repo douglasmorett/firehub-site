@@ -34,7 +34,14 @@ export async function GET() {
       ok: true,
       merchantId: user.food99MerchantId || "",
       appId: user.food99AppId || "",
-      secretKey: user.food99SecretKey || "",
+      // O segredo NÃO volta em texto puro. Ele autentica a loja no 99Food:
+      // devolvê-lo colocava a credencial no navegador, ao alcance de qualquer
+      // XSS ou extensão instalada na máquina do lojista. A tela só precisa
+      // saber se existe — e os 4 últimos caracteres para ele reconhecer qual é.
+      temSecretKey: Boolean(user.food99SecretKey),
+      secretKeyMascarada: user.food99SecretKey
+        ? `••••••••${String(user.food99SecretKey).slice(-4)}`
+        : "",
       connected: !!user.food99Connected,
       webhookUrl: "https://firehubfood.com.br/api/99food/webhook",
       userEmail: user.email,
@@ -81,7 +88,12 @@ export async function POST(req: NextRequest) {
       data: {
         food99MerchantId: merchantId ? merchantId.trim() : null,
         food99AppId: appId ? appId.trim() : null,
-        food99SecretKey: secretKey ? secretKey.trim() : null,
+        // Campo vazio MANTÉM o segredo salvo. Como o GET passou a devolvê-lo
+        // mascarado, um "salvar" sem redigitar mandaria vazio e apagaria a
+        // credencial — derrubando a integração da loja sem ninguém pedir.
+        ...(secretKey && String(secretKey).trim()
+          ? { food99SecretKey: String(secretKey).trim() }
+          : {}),
         food99Connected: connected !== undefined ? connected : true,
       },
       select: {

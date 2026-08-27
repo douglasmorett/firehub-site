@@ -594,7 +594,11 @@ export default function CustomerStorePage({
     setMyOrdersLoading(true);
     setMyOrdersSearched(true);
     try {
-      const res = await fetch(`/api/store-customer?phone=${encodeURIComponent(clean)}`);
+      // A loja vai junto: a rota passou a escopar a busca por ela (sem isso,
+      // o telefone puxava pedidos de TODAS as lojas — dado de cliente alheio).
+      const res = await fetch(
+        `/api/store-customer?phone=${encodeURIComponent(clean)}&franchiseeId=${encodeURIComponent(franchisee.id)}`
+      );
       if (res.ok) {
         const d = await res.json();
         setMyOrdersList(d.orders || []);

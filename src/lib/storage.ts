@@ -112,6 +112,24 @@ async function otimizarImagem(buffer: Buffer, mime: string): Promise<{ buffer: B
   return { buffer, ext: ALLOWED[mime] || "bin" };
 }
 
+/**
+ * Confere o tipo REAL pelos primeiros bytes (magic number).
+ *
+ * O `file.type` é escrito por quem envia — um .html renomeado para .png chega
+ * declarando `image/png` e passava direto. Como os uploads são servidos do
+ * nosso domínio, isso vira XSS com a sessão da vítima. Os bytes não mentem.
+ */
+function tipoRealPelosBytes(buf: Buffer): string | null {
+  const b = buf;
+  if (b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "image/gif";
+  if (b.slice(0, 4).toString("ascii") === "RIFF" && b.slice(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  if (b.slice(0, 4).toString("ascii") === "%PDF") return "application/pdf";
+  return null;
+}
+
 export async function saveUploadedFile(file: File, folder?: string | null): Promise<SavedFile> {
   const mime = (file.type || "").toLowerCase();
   if (!ALLOWED[mime]) {
@@ -122,6 +140,12 @@ export async function saveUploadedFile(file: File, folder?: string | null): Prom
   }
 
   const original = Buffer.from(await file.arrayBuffer());
+
+  // O conteúdo tem que ser mesmo o que o envio declara.
+  const real = tipoRealPelosBytes(original);
+  if (!real || !ALLOWED[real]) {
+    throw new Error("O conteúdo do arquivo não corresponde a uma imagem ou PDF válido.");
+  }
   const { buffer, ext } = await otimizarImagem(original, mime);
 
   const dir = sanitizeFolder(folder);

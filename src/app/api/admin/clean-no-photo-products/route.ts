@@ -5,26 +5,33 @@ import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+/**
+ * Apaga produtos sem foto do cardápio da PRÓPRIA loja.
+ *
+ * ── O QUE ESTAVA ERRADO AQUI ────────────────────────────────────────────────
+ *
+ * Era um GET sem autenticação e com um fallback fatal: quando NÃO havia sessão,
+ * o código caía na conta `contatohakim` — a loja do dono — e apagava os
+ * produtos dela. Bastava alguém abrir a URL (ou embutir `<img src="...">` num
+ * site qualquer, que o navegador de qualquer pessoa dispararia) para o cardápio
+ * do dono perder itens, sem login nenhum e sem rastro de quem foi.
+ *
+ * Agora: exige sessão, age SEMPRE na loja de quem chamou (fallback removido) e
+ * responde a POST — GET é o método que um `<img>` consegue disparar sozinho.
+ */
+export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
     let franchiseeId: string | null = null;
-
-    if (session?.user?.email) {
-      const u = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true, ownerId: true }
-      });
-      if (u) franchiseeId = u.ownerId || u.id;
-    }
-
-    if (!franchiseeId) {
-      const hakimUser = await prisma.user.findFirst({
-        where: { email: { contains: "contatohakim" } },
-        select: { id: true, ownerId: true }
-      });
-      if (hakimUser) franchiseeId = hakimUser.ownerId || hakimUser.id;
-    }
+    const u = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, ownerId: true }
+    });
+    if (u) franchiseeId = u.ownerId || u.id;
 
     if (!franchiseeId) {
       return NextResponse.json({ error: "Franqueado não encontrado" }, { status: 404 });
@@ -73,8 +80,4 @@ export async function GET(req: Request) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
-
-export async function POST(req: Request) {
-  return GET(req);
 }

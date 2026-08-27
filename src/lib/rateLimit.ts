@@ -53,18 +53,27 @@ export function checkRateLimit(
  * requisição para cair sempre num balde novo: todo limite construído sobre isso
  * era contornável com um cabeçalho.
  *
- * A ordem agora é: cabeçalho que o próprio proxy escreve primeiro; e, no
- * encadeamento, o ÚLTIMO salto — o que o proxy mais próximo anexou — em vez do
- * primeiro, que veio de fora.
+ * A ordem agora prioriza o ÚLTIMO salto de X-Forwarded-For — o endereço que o
+ * proxy MAIS PRÓXIMO (Traefik/Coolify) anexa, e que o cliente não consegue
+ * forjar (o que ele manda fica ANTES na lista). Só se não houver XFF é que se
+ * recorre a cf-connecting-ip / x-real-ip.
+ *
+ * Por que NÃO confiar em x-real-ip / cf-connecting-ip primeiro: nesta infra
+ * (atrás do Traefik, sem Cloudflare) nada garante que o proxy sobrescreva
+ * esses cabeçalhos. Um atacante mandava `x-real-ip: <aleatório>` a cada
+ * requisição, caía sempre num balde novo e furava todo rate-limit — brute
+ * force de senha, flood de pedidos, enumeração. O XFF-último-salto é o único
+ * valor que o proxy sempre carimba.
  */
 export function getClientIp(req: Request): string {
-  const direto = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip");
-  if (direto) return direto.trim();
-
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
     const saltos = forwarded.split(",").map(s => s.trim()).filter(Boolean);
     if (saltos.length) return saltos[saltos.length - 1];
   }
+
+  const direto = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip");
+  if (direto) return direto.trim();
+
   return "unknown";
 }

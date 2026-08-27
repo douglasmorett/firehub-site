@@ -51,6 +51,13 @@ export async function GET(req: NextRequest) {
 // POST /api/customer-order/review — Enviar Avaliação do Cliente (1 a 5 estrelas)
 export async function POST(req: NextRequest) {
   try {
+    // Rota pública: sem teto, dá para varrer ids de pedido e despejar nota.
+    const { checkRateLimit, getClientIp } = await import("@/lib/rateLimit");
+    const { allowed } = checkRateLimit(`avaliacao:${getClientIp(req)}`, { windowMs: 60_000, maxRequests: 10 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Muitas avaliações seguidas. Aguarde 1 minuto." }, { status: 429 });
+    }
+
     const body = await req.json();
     const { orderId, rating, comment } = body;
 
@@ -72,13 +79,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
     }
 
-    const review = await prisma.storeReview.upsert({
+    // ── AVALIAÇÃO SE ESCREVE UMA VEZ ────────────────────────────────────────
+    //
+    // Era um `upsert` numa rota pública: com o id de um pedido, qualquer um
+    // SOBRESCREVIA a nota já dada — trocar o 5 estrelas de um concorrente por
+    // 1, em escala, era um laço de repetição. Agora a primeira avaliação vale;
+    // as seguintes são recusadas.
+    const jaAvaliado = await prisma.storeReview.findUnique({
       where: { orderId },
-      update: {
-        rating: Math.round(rating),
-        comment: comment?.trim() || null,
-      },
-      create: {
+      select: { id: true },
+    });
+    if (jaAvaliado) {
+      return NextResponse.json(
+        { error: "Este pedido já foi avaliado.", jaAvaliado: true },
+        { status: 409 }
+      );
+    }
+
+    const review = await prisma.storeReview.create({
+      data: {
         orderId,
         franchiseeId: order.franchiseeId,
         customerId: order.customerId || null,

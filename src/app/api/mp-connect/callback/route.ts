@@ -22,6 +22,37 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/store/integracoes?mp_error=no_code", req.url));
   }
 
+  // ── O `state` DECIDE SE ESTE RETORNO É LEGÍTIMO ──────────────────────────
+  //
+  // Sem esta conferência, o callback gravava o token de QUALQUER `code` na
+  // conta de QUEM ESTIVESSE LOGADO. O ataque é de um clique: o fraudador
+  // inicia o OAuth com a conta Mercado Pago DELE, guarda o `code` e faz o
+  // lojista abrir esse endereço (link no WhatsApp, imagem num site). A conta
+  // de recebimento da loja vira a do fraudador e todo pagamento dos clientes
+  // passa a cair para ele — sem o lojista perceber.
+  //
+  // Agora o retorno só vale com o state assinado por NÓS, dentro da validade,
+  // e emitido para a MESMA loja que está na sessão.
+  const { lerState } = await import("@/lib/meta-oauth-state");
+  const conferido = lerState(req.nextUrl.searchParams.get("state"));
+  if (!conferido.ok) {
+    console.warn(`[MP Connect] 🚫 state recusado (${conferido.motivo}).`);
+    return NextResponse.redirect(new URL("/store/integracoes?mp_error=state_invalido", req.url));
+  }
+
+  const usuarioDaSessao = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    select: { id: true, ownerId: true },
+  });
+  const lojaDaSessao = usuarioDaSessao?.ownerId || usuarioDaSessao?.id;
+  if (!lojaDaSessao || conferido.dados.franchiseeId !== lojaDaSessao) {
+    console.error(
+      `[MP Connect] 🚨 Conexão recusada: state emitido para a loja ${conferido.dados.franchiseeId}, ` +
+      `mas a sessão é da loja ${lojaDaSessao}.`
+    );
+    return NextResponse.redirect(new URL("/store/integracoes?mp_error=loja_divergente", req.url));
+  }
+
   try {
     const { accessToken, refreshToken, mpUserId } = await exchangeMpOAuthCode(code);
 

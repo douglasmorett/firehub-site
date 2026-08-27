@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { segredoObrigatorio } from "@/lib/segredos";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,14 @@ export const dynamic = "force-dynamic";
  * Fix 5: Agora além de pingar, verifica cada instância ativa
  * e força reconexão se estiver offline — crítico para madrugada.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Este cron era o único sem autenticação: qualquer anônimo o disparava e,
+  // com ele, varria as instâncias de WhatsApp de todas as lojas e forçava
+  // reconexões — abuso de recurso e mapa da operação de graça.
+  if (!verifyCronAuth(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
   const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 

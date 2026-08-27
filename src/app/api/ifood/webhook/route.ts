@@ -45,11 +45,41 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
+  // Teto de vazão: o iFood manda rajadas legítimas em hora de pico, então o
+  // limite é alto de propósito — ele existe para barrar flood e tentativa de
+  // adivinhar merchantId em massa, não para atrapalhar movimento real.
+  const { checkRateLimit, getClientIp } = await import("@/lib/rateLimit");
+  const ipOrigem = getClientIp(req);
+  const vazao = checkRateLimit(`ifood-webhook:${ipOrigem}`, { windowMs: 60_000, maxRequests: 600 });
+  if (!vazao.allowed) {
+    console.warn(`[iFood Webhook] 🚦 Vazão excedida de ${ipOrigem} — requisição descartada.`);
+    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
+  }
+
   const rawBody = await req.text();
   const signature = req.headers.get("x-ifood-signature");
 
   // Log payload recebido
   console.log(`[iFood Webhook] 📥 Request recebido: ${rawBody.slice(0, 300)}`);
+
+  // Modo observação: descobre QUAL fórmula o iFood usa, sem recusar nada.
+  // Quando o log apontar a mesma fórmula em pedidos reais, dá para exigir
+  // assinatura com segurança — hoje, exigir às cegas pararia a operação.
+  if (!process.env.IFOOD_WEBHOOK_SECRET) {
+    try {
+      const { diagnosticarAssinatura } = await import("@/lib/webhook-assinatura");
+      diagnosticarAssinatura({
+        parceiro: "iFood",
+        corpoCru: rawBody,
+        assinaturaRecebida: signature,
+        candidatos: [
+          { rotulo: "IFOOD_CLIENT_SECRET", valor: process.env.IFOOD_CLIENT_SECRET },
+          { rotulo: "IFOOD_CLIENT_SECRET_DISTRIBUTED", valor: process.env.IFOOD_CLIENT_SECRET_DISTRIBUTED },
+          { rotulo: "IFOOD_HOMOLOG_CLIENT_SECRET", valor: process.env.IFOOD_HOMOLOG_CLIENT_SECRET },
+        ],
+      });
+    } catch { /* diagnóstico nunca pode derrubar o webhook */ }
+  }
 
   // ── A assinatura passa a valer ───────────────────────────────────────────
   //
@@ -123,7 +153,9 @@ export async function GET(req: NextRequest) {
 
   for (const event of data ?? []) {
     try {
-      await processIfoodEvent(event);
+      // Confiável: estes eventos vieram do events:polling da API do iFood,
+      // autenticado com o nosso token — não da internet aberta.
+      await processIfoodEvent(event, undefined, true);
     } catch (err) {
       console.error("[iFood Polling] Erro ao processar evento:", event?.id, err);
     }
@@ -147,7 +179,12 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── Processa um evento do iFood ──────────────────────────────────────────
-async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
+/**
+ * @param origemConfiavel  `true` só para eventos que NÓS buscamos na API do
+ *   iFood (o polling). O webhook é `false`: o corpo dele vem da internet e
+ *   qualquer um pode postar.
+ */
+async function processIfoodEvent(event: any, franchiseeIdOverride?: string, origemConfiavel = false) {
   const { code, orderId, merchantId } = event;
   if (!orderId) return;
 
@@ -178,7 +215,21 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string) {
       return;
     }
 
-    const orderData = event.data ?? await fetchIfoodOrderDetails(orderId, token);
+    // ── O PEDIDO VEM DA API DO IFOOD, NUNCA DO CORPO DA REQUISIÇÃO ──────────
+    //
+    // Antes era `event.data ?? fetch(...)`: bastava um POST nesta URL com um
+    // `data` inventado (itens, preços, endereço) para nascer um pedido FALSO
+    // na cozinha da loja — sem passar pelo iFood em momento nenhum. Combinado
+    // com a assinatura que não é exigida enquanto o segredo não existe, era
+    // injeção direta na operação.
+    //
+    // Agora o corpo do webhook serve só para dizer QUAL pedido olhar; o
+    // conteúdo vem sempre do iFood, autenticado com o token da loja. Id
+    // inventado devolve 404 e nada é criado. O polling continua podendo usar
+    // o que já trouxe, porque aquilo saiu da API deles.
+    const orderData = (origemConfiavel && event.data)
+      ? event.data
+      : await fetchIfoodOrderDetails(orderId, token);
     if (!orderData) {
       console.error(`[iFood Webhook] ❌ Falha ao buscar detalhes do pedido ${orderId}`);
       return;

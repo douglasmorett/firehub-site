@@ -83,6 +83,13 @@ export async function GET(
         // O nome carrega timestamp + hash aleatório, então nunca é reaproveitado:
         // pode cachear para sempre sem risco de servir imagem velha.
         "Cache-Control": "public, max-age=31536000, immutable",
+        // Sem isto, o navegador podia "adivinhar" o tipo real do arquivo e
+        // executar como HTML/JS algo enviado como imagem — XSS servido do
+        // NOSSO domínio, com acesso à sessão de quem abrisse.
+        "X-Content-Type-Options": "nosniff",
+        // Arquivo enviado por usuário nunca é renderizado como página: abre
+        // como recurso ou baixa, nunca como documento com scripts.
+        "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
       },
     });
   }

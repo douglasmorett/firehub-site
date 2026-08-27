@@ -81,7 +81,16 @@ export default function AiChatClient() {
 
   // Renderizar markdown simples
   const renderContent = (text: string) => {
-    return text
+    // ESCAPA o HTML ANTES de aplicar o markdown: sem isto, um conteúdo com
+    // `<img src=x onerror=...>` (a IA ecoando entrada do usuário, ou texto
+    // colado) era injetado como HTML executável no dangerouslySetInnerHTML.
+    // Depois de escapar, só as tags que ESTE código gera (<strong>/<em>/
+    // <code>/<br>) chegam ao DOM.
+    const escapado = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    return escapado
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
       .replace(/`(.*?)`/g, '<code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;font-size:0.85em">$1</code>')

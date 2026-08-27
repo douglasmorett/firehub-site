@@ -64,6 +64,28 @@ export async function POST(req: Request) {
         select: { id: true, franchiseeId: true, totalAmount: true, pagarmeStatus: true, pagarmeOrderId: true },
       });
 
+      // ── O PAGAMENTO CONFIRMADO TEM QUE SER DESTE PEDIDO ───────────────────
+      //
+      // A confirmação acima pergunta ao Pagar.me se o `pagarmeOrderId` está
+      // pago — mas quem escolhe os DOIS campos do evento é quem manda o POST.
+      // Faltava amarrar um no outro: bastava pegar um pagamento real de R$ 1
+      // (o próprio, feito de propósito) e enviá-lo junto com o `code` de
+      // QUALQUER outro pedido para quitá-lo. Comida cara paga com R$ 1, e o
+      // valor ainda entrava no faturamento da loja como recebido.
+      //
+      // Agora o id do gateway precisa ser o que está gravado NESTE pedido.
+      if (!order) {
+        console.warn(`[Pagar.me Webhook] 🚫 Pedido ${event.orderId} não existe — evento ignorado.`);
+        return NextResponse.json({ received: true, confirmed: false }, { status: 202 });
+      }
+      if (!order.pagarmeOrderId || order.pagarmeOrderId !== event.pagarmeOrderId) {
+        console.error(
+          `[Pagar.me Webhook] 🚨 FRAUDE BARRADA: o pagamento ${event.pagarmeOrderId} não pertence ao ` +
+          `pedido ${event.orderId} (gravado: ${order.pagarmeOrderId || "nenhum"}).`
+        );
+        return NextResponse.json({ received: true, confirmed: false }, { status: 202 });
+      }
+
       // 2. Atualiza o status do pedido
       await prisma.customerOrder.updateMany({
         where: { id: event.orderId, pagarmeStatus: { not: "paid" } },

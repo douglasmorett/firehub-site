@@ -20,6 +20,19 @@ export async function POST(
     return NextResponse.json({ error: "Valor da dívida inválido" }, { status: 400 });
   }
 
+
+  // ── O FUNCIONÁRIO PRECISA SER DESTA LOJA ────────────────────────────────
+  //
+  // Só se conferia "existe sessão": qualquer lojista logado mandava o id de um
+  // funcionário de OUTRA loja e editava/desativava o cadastro dele — ou, no
+  // caso do fiado, lançava dívida e baixa em nome da loja alheia (dinheiro).
+  const _usuario = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    select: { id: true, ownerId: true, role: true },
+  });
+  if (!_usuario) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const _lojaDaSessao = _usuario.ownerId || _usuario.id;
+
   const employee = await prisma.storeEmployee.findUnique({
     where: { id: employeeId },
     select: { id: true, franchiseeId: true, name: true, phone: true },
@@ -27,6 +40,10 @@ export async function POST(
 
   if (!employee) {
     return NextResponse.json({ error: "Cliente fiado não encontrado" }, { status: 404 });
+  }
+  if (_usuario.role !== "ADMIN" && employee.franchiseeId !== _lojaDaSessao) {
+    console.warn(`[fiado] 🚫 ${_usuario.id} tentou lançar dívida em funcionário da loja ${employee.franchiseeId}.`);
+    return NextResponse.json({ error: "Este cadastro não é desta loja" }, { status: 403 });
   }
 
   // Cria o registro da dívida manual como um CustomerOrder (fiado) sem itens

@@ -21,17 +21,38 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanEmail = String(email).toLowerCase().trim();
+
+    // ── FREIO DE FORÇA BRUTA ────────────────────────────────────────────────
+    // Esta rota é aberta (CORS *) e não tinha limite nenhum: dava para testar
+    // senha à vontade contra a conta de um lojista, sem passar pelo /login.
+    const { verificarFreioDeLogin, registrarFalhaDeLogin, limparFreioDeLogin, origemDaRequisicao } =
+      await import("@/lib/login-throttle");
+    const origem = origemDaRequisicao(req.headers as any);
+    const freio = verificarFreioDeLogin(cleanEmail, origem);
+    if (freio.bloqueado) {
+      return NextResponse.json(
+        { error: `Muitas tentativas. Tente novamente em ${Math.ceil(freio.esperarSegundos / 60)} minuto(s).` },
+        { status: 429, headers: corsHeaders }
+      );
+    }
+
+    // ── E-MAIL EXATO ────────────────────────────────────────────────────────
+    //
+    // Havia um `startsWith(cleanEmail.split("@")[0])` aqui: mandando
+    // "contato@qualquercoisa.com" o banco devolvia a PRIMEIRA conta cujo
+    // e-mail começa com "contato" — a do dono, por exemplo. A senha ainda era
+    // conferida, mas o alvo do teste passava a ser uma conta que o atacante
+    // nem digitou, e sem freio dava para varrer prefixos curtos contra contas
+    // de alto valor. E-mail é chave exata, não prefixo.
     const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: cleanEmail },
-          { email: { startsWith: cleanEmail.split("@")[0] } },
-        ]
-      },
+      where: { email: { equals: cleanEmail, mode: "insensitive" } },
     });
 
     if (!user) {
-      return NextResponse.json({ error: "E-mail não cadastrado no FireHub" }, { status: 401, headers: corsHeaders });
+      // Mesma resposta de senha errada: dizer "e-mail não cadastrado" entrega
+      // quais e-mails existem na plataforma.
+      registrarFalhaDeLogin(cleanEmail, origem);
+      return NextResponse.json({ error: "E-mail ou senha inválidos" }, { status: 401, headers: corsHeaders });
     }
 
     let isValid = false;
@@ -42,12 +63,19 @@ export async function POST(req: NextRequest) {
     // SEGURANÇA: Senha validada EXCLUSIVAMENTE via bcrypt — sem bypass
 
     if (!isValid) {
-      return NextResponse.json({ error: "Senha incorreta para esta loja" }, { status: 401, headers: corsHeaders });
+      registrarFalhaDeLogin(cleanEmail, origem);
+      return NextResponse.json({ error: "E-mail ou senha inválidos" }, { status: 401, headers: corsHeaders });
     }
+
+    limparFreioDeLogin(cleanEmail);
+
+    const { criarTokenDeExtensao } = await import("@/lib/extensao-token");
 
     return NextResponse.json({
       success: true,
-      token: user.id,
+      // Token ASSINADO. Era o `user.id` cru — e o id da loja é público no
+      // cardápio, então qualquer um o usava como credencial da extensão.
+      token: criarTokenDeExtensao(user.id),
       storeName: user.storeName || user.name || "Hakim Centro",
       email: user.email,
     }, { headers: corsHeaders });

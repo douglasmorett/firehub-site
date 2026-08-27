@@ -31,7 +31,7 @@ export async function OPTIONS() {
 }
 
 /** Resolve a loja alvo a partir da sessao do painel ou do token da extensao. */
-async function resolveStore(req: NextRequest) {
+async function resolveStore(req: NextRequest, paraEscrita = false) {
   const session = await getServerSession(authOptions);
   const sessionUserId = (session?.user as any)?.id as string | undefined;
 
@@ -47,11 +47,25 @@ async function resolveStore(req: NextRequest) {
   }
 
   if (!user && urlToken) {
-    // O token aceita SOMENTE o id (cuid). Antes aceitava tambem o e-mail e o
-    // ifoodMerchantId: quem soubesse o e-mail da loja escrevia configuracao
-    // dela. E-mail nao e credencial.
+    // O id da loja NAO e credencial: ele e publico no cardapio (franchisee.id
+    // vai para o navegador em toda pagina de loja). Aceita-lo como token
+    // deixava qualquer um ESCREVER a configuracao de ETA de qualquer loja —
+    // bastava copiar o id do cardapio.
+    //
+    // Agora escrita exige token ASSINADO (lib/extensao-token). O formato
+    // antigo segue valendo so para leitura, para nao derrubar a extensao ja
+    // instalada ate o proximo login dela.
+    const { lerTokenDeExtensao } = await import("@/lib/extensao-token");
+    const leitura = lerTokenDeExtensao(urlToken);
+
+    if (!leitura.valido) return null;
+    if (paraEscrita && !leitura.assinado) {
+      console.warn("[eta-config] Escrita recusada: token no formato antigo (id cru). Refaca o login na extensao.");
+      return null;
+    }
+
     user = await prisma.user.findFirst({
-      where: { id: urlToken },
+      where: { id: leitura.userId },
       select: { id: true, ownerId: true, role: true, name: true },
     });
   }
@@ -110,7 +124,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const ctx = await resolveStore(req);
+    const ctx = await resolveStore(req, true);
     if (!ctx) {
       return NextResponse.json({ error: "Loja nao identificada" }, { status: 401, headers: corsHeaders });
     }

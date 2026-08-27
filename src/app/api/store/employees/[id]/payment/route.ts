@@ -20,6 +20,18 @@ export async function POST(
     return NextResponse.json({ error: "Valor do abatimento inválido" }, { status: 400 });
   }
 
+  // ── O FUNCIONÁRIO PRECISA SER DESTA LOJA ────────────────────────────────
+  //
+  // A rota só exigia sessão: qualquer lojista logado registrava abatimento de
+  // dívida (fiado) no cliente de OUTRA loja — apagando dívida real de dinheiro
+  // no caixa alheio.
+  const _usuario = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    select: { id: true, ownerId: true, role: true },
+  });
+  if (!_usuario) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const _lojaDaSessao = _usuario.ownerId || _usuario.id;
+
   const employee = await prisma.storeEmployee.findUnique({
     where: { id: employeeId },
     select: { id: true, franchiseeId: true, name: true },
@@ -27,6 +39,10 @@ export async function POST(
 
   if (!employee) {
     return NextResponse.json({ error: "Funcionário não encontrado" }, { status: 404 });
+  }
+  if (_usuario.role !== "ADMIN" && employee.franchiseeId !== _lojaDaSessao) {
+    console.warn(`[fiado] 🚫 ${_usuario.id} tentou abater dívida em cliente da loja ${employee.franchiseeId}.`);
+    return NextResponse.json({ error: "Este cadastro não é desta loja" }, { status: 403 });
   }
 
   // Cria o registro do abatimento de dívida

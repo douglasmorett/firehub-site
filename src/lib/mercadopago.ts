@@ -102,10 +102,22 @@ export async function refundMpPayment(paymentId: string, customToken?: string): 
   }
 }
 
+/**
+ * URL de conexão da conta Mercado Pago da loja.
+ *
+ * O `state` vai ASSINADO (mesmo esquema do OAuth do Meta). Antes era o id da
+ * loja em texto puro e o callback nem olhava para ele: bastava induzir um
+ * lojista logado a abrir `/api/mp-connect/callback?code=<code do atacante>`
+ * para a conta de RECEBIMENTO dele ser trocada pela do atacante — todo
+ * pagamento da loja passava a cair na conta de outra pessoa.
+ */
 export function getMpOnboardingUrl(restaurantId: string): string {
   const mpAppId = process.env.MP_APP_ID || "";
   const redirectUri = encodeURIComponent(`${process.env.NEXTAUTH_URL}/api/mp-connect/callback`);
-  return `https://auth.mercadopago.com.br/authorization?client_id=${mpAppId}&response_type=code&platform_id=mp&state=${restaurantId}&redirect_uri=${redirectUri}`;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { criarState } = require("./meta-oauth-state") as typeof import("./meta-oauth-state");
+  const state = encodeURIComponent(criarState(restaurantId));
+  return `https://auth.mercadopago.com.br/authorization?client_id=${mpAppId}&response_type=code&platform_id=mp&state=${state}&redirect_uri=${redirectUri}`;
 }
 
 export async function exchangeMpOAuthCode(code: string): Promise<{

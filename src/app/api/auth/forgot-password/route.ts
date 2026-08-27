@@ -41,11 +41,19 @@ export async function POST(req: NextRequest) {
       select: { id: true, email: true, name: true },
     });
 
+    // ── SEM DIZER QUAIS E-MAILS EXISTEM ─────────────────────────────────────
+    //
+    // Responder "E-mail não cadastrado" transformava esta rota numa lista de
+    // clientes: bastava testar endereços e anotar quais davam erro. Com a lista
+    // em mãos, o passo seguinte é força bruta de senha nas contas certas.
+    //
+    // A resposta agora é a MESMA existindo ou não a conta. Quem tem conta
+    // recebe o e-mail; quem não tem, não recebe nada — e não fica sabendo.
     if (!user) {
-      return NextResponse.json(
-        { error: "E-mail não cadastrado em nosso sistema." },
-        { status: 400 }
-      );
+      console.warn(`[forgot-password] Pedido para e-mail sem conta (resposta neutra).`);
+      // Mesmo formato do caminho de sucesso — inclusive as chaves — para não
+      // haver como distinguir os dois pela resposta.
+      return NextResponse.json({ ok: true, provider: "enviado" });
     }
 
     const resetToken = crypto.randomBytes(32).toString("hex");

@@ -60,7 +60,10 @@ export async function GET(req: NextRequest) {
 
   // Alterar o schema do banco é coisa de dono da loja ou da matriz — não de
   // funcionário com acesso ao painel.
-  const ehDono = user.role === "ADMIN" || !user.ownerId;
+  // DDL em produção é ato de ADMIN, e só. A condição antiga (`|| !user.ownerId`)
+  // liberava para QUALQUER dono de loja — todo franqueado tem ownerId nulo —,
+  // então qualquer cliente logado criava/alterava coluna no banco de todos.
+  const ehDono = user.role === "ADMIN";
   if (!ehDono) {
     return NextResponse.json(
       { error: "Só o dono da loja ou a matriz podem aplicar isto." },

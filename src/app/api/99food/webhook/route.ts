@@ -135,6 +135,18 @@ function entregadorDoEvento(dados: any): string | null {
 
 export async function POST(req: NextRequest) {
   try {
+    // Teto de vazão por origem: alto para não atrapalhar rajada legítima em
+    // hora de pico, suficiente para barrar flood e varredura de app_shop_id.
+    // Devolve o ACK deles no formato certo — um 429 cru faria o 99Food tratar
+    // como falha nossa e reenviar em loop.
+    const { checkRateLimit, getClientIp } = await import("@/lib/rateLimit");
+    const ipOrigem = getClientIp(req);
+    const vazao = checkRateLimit(`99food-webhook:${ipOrigem}`, { windowMs: 60_000, maxRequests: 600 });
+    if (!vazao.allowed) {
+      console.warn(`[99Food Webhook] 🚦 Vazão excedida de ${ipOrigem} — requisição descartada.`);
+      return NextResponse.json({ errno: 429, errmsg: "too many requests" }, { status: 429 });
+    }
+
     const bodyText = await req.text();
     if (!bodyText) {
       // Corpo vazio ainda recebe ACK: reenviar nao vai fazer aparecer.
@@ -175,6 +187,39 @@ export async function POST(req: NextRequest) {
     }
     if (assinatura99.estado === "sem-segredo") {
       avisarWebhookSemSegredo("99Food", "FOOD99_WEBHOOK_SECRET");
+
+      // Modo observação: o `didi-header-sign` tem 32 hex (cara de MD5), e não
+      // os 64 do HMAC-SHA256 que a verificação acima calcula — por isso ligar
+      // o segredo hoje recusaria TODO pedido verdadeiro. Aqui a assinatura
+      // real é confrontada com uma matriz de fórmulas usando os segredos que
+      // já temos; quando o log apontar a que bate, a exigência pode ser ligada
+      // com certeza. Nada é recusado por causa deste bloco.
+      try {
+        const { diagnosticarAssinatura } = await import("@/lib/webhook-assinatura");
+        diagnosticarAssinatura({
+          parceiro: "99Food",
+          corpoCru: bodyText,
+          assinaturaRecebida:
+            req.headers.get("didi-header-sign") ||
+            req.headers.get("x-99food-signature") ||
+            req.headers.get("x-signature"),
+          candidatos: [
+            { rotulo: "FOOD99_APP_SECRET", valor: process.env.FOOD99_APP_SECRET },
+            { rotulo: "FOOD99_WEBHOOK_SECRET", valor: process.env.FOOD99_WEBHOOK_SECRET },
+          ],
+          // O esquema da DiDi costuma assinar os campos do evento, não o corpo.
+          extras: (() => {
+            try {
+              const e = JSON.parse(bodyText);
+              const campos: Record<string, string> = {};
+              for (const k of ["app_id", "app_shop_id", "type", "timestamp"]) {
+                if (e?.[k] !== undefined) campos[k] = String(e[k]);
+              }
+              return campos;
+            } catch { return {}; }
+          })(),
+        });
+      } catch { /* diagnóstico nunca pode derrubar o webhook */ }
     }
 
     // Payload ilegível é o único erro que merece ACK: reenviar o mesmo texto

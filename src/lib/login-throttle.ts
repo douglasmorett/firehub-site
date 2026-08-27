@@ -135,18 +135,19 @@ export function origemDaRequisicao(headers: { get?: (n: string) => string | null
     return Array.isArray(bruto) ? bruto[0] : (bruto || "");
   };
 
-  // Cabeçalhos escritos pelo próprio proxy vêm primeiro: o cliente não os
-  // controla. X-Forwarded-For fica por último e, dele, vale o ÚLTIMO endereço —
-  // o que o proxy mais próximo anexou — e não o primeiro, que é o que o cliente
-  // mandou e que qualquer um pode inventar.
-  const direto = pegar("cf-connecting-ip") || pegar("x-real-ip");
-  if (direto) return direto.trim();
-
+  // X-Forwarded-For ÚLTIMO salto primeiro: é o endereço que o proxy mais
+  // próximo (Traefik) carimba, e que o cliente não forja (o que ele manda fica
+  // ANTES na lista). cf-connecting-ip / x-real-ip só como reserva — nesta infra
+  // (sem Cloudflare) o cliente pode inventá-los, e confiar neles primeiro
+  // deixava o freio de brute-force contornável trocando o cabeçalho.
   const encadeado = pegar("x-forwarded-for");
   if (encadeado) {
     const saltos = encadeado.split(",").map(s => s.trim()).filter(Boolean);
     if (saltos.length) return saltos[saltos.length - 1];
   }
+
+  const direto = pegar("cf-connecting-ip") || pegar("x-real-ip");
+  if (direto) return direto.trim();
 
   return "desconhecida";
 }

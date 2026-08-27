@@ -101,7 +101,20 @@ export async function PUT(req: Request) {
   const isStoreMember = userStoreIds.includes(order.franchiseeId) ||
                         (order.franchisee?.ownerId && userStoreIds.includes(order.franchisee.ownerId));
 
-  if (role !== "ADMIN" && role !== "FRANQUEADO" && role !== "LOJA" && !isStoreMember) {
+  // ── SER LOJISTA NÃO É SER DONO DESTE PEDIDO ───────────────────────────────
+  //
+  // A condição anterior era `role !== "ADMIN" && role !== "FRANQUEADO" &&
+  // role !== "LOJA" && !isStoreMember`: como TODO lojista tem role FRANQUEADO
+  // ou LOJA, a expressão virava falsa antes de olhar `isStoreMember` — e a
+  // verificação de dono nunca rodava. Na prática, qualquer conta de loja
+  // mandava um orderId de OUTRA loja e mudava o status: cancelava o pedido do
+  // concorrente, marcava como entregue, disparava WhatsApp para o cliente
+  // dele. Dono só é dispensado quando é ADMIN de verdade.
+  if (role !== "ADMIN" && !isStoreMember) {
+    console.warn(
+      `[Status] 🚫 Tentativa cross-tenant: usuário ${currentUser.id} (role ${role}) ` +
+      `tentou alterar o pedido ${orderId} da loja ${order.franchiseeId}.`
+    );
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
