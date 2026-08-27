@@ -811,7 +811,7 @@ export default function RoteirizacaoModal({
     // Carregar cache local de geocodificação
     let localCache: Record<string, { lat: number; lng: number }> = {};
     try {
-      const stored = localStorage.getItem("firehub_geo_cache");
+      const stored = localStorage.getItem("firehub_geo_cache_v2");
       if (stored) localCache = JSON.parse(stored);
     } catch {}
 
@@ -893,10 +893,26 @@ export default function RoteirizacaoModal({
       const updatedCache = { ...localCache };
       let hasNewCache = false;
 
+      // O ritmo vale para TODA chamada, não só entre endereços: um endereço
+      // difícil dispara até 5 tentativas em sequência, e eram elas que
+      // estouravam o limite mesmo com o lote devagar.
+      let ultimaChamadaNominatim = 0;
+
       const fetchNominatim = async (query: string) => {
         try {
+          const espera = ultimaChamadaNominatim + 1100 - Date.now();
+          if (espera > 0) await new Promise((r) => setTimeout(r, espera));
+          ultimaChamadaNominatim = Date.now();
+          // Duas formas de perguntar: texto solto (q=) ou campos estruturados
+          // (street=/city=/…, marcados com __params=1). A estruturada acerta
+          // rua onde o texto solto falha, porque o Nominatim não precisa
+          // adivinhar o que é rua, o que é bairro e o que é cidade.
+          const ehEstruturada = query.includes("__params=1");
+          const url = ehEstruturada
+            ? `https://nominatim.openstreetmap.org/search?format=json&limit=1&${query.replace("&__params=1", "")}`
+            : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+            url,
             { headers: { "User-Agent": "FireHub-Roteirizacao/2.0" }, signal: AbortSignal.timeout(3500) }
           );
           if (res.ok) {
@@ -945,11 +961,13 @@ export default function RoteirizacaoModal({
         return achado || doDicionario;
       };
 
-      // A política de uso do Nominatim é 1 requisição por segundo. Estava em 4
-      // em paralelo a cada 120 ms (~33/s) — abuso que faz o serviço bloquear o
-      // IP, e aí NENHUM endereço geocodifica. Com o cache de endereço e o de
-      // centróide por bairro, 2 por vez já resolve a tela rápido.
-      const BATCH_SIZE = 2;
+      // A política de uso do Nominatim é 1 requisição por segundo — e não é
+      // aviso vazio: em 26/08 o IP da loja estava tomando 429 em TODA busca, e
+      // é assim que rua existente "não resolve" e o pino cai no centróide do
+      // bairro. 2 por vez a cada 600ms (~3/s) ainda estourava o limite.
+      // De 1 em 1, com 1,1s entre elas, o bloqueio não acontece; o cache de
+      // endereço garante que cada um só paga esse preço uma vez.
+      const BATCH_SIZE = 1;
       for (let i = 0; i < toGeocode.length; i += BATCH_SIZE) {
         if (!isMounted) break;
         const batch = toGeocode.slice(i, i + BATCH_SIZE);
@@ -963,8 +981,24 @@ export default function RoteirizacaoModal({
             // Em cidades como Rio das Ostras, existem várias "Rua Três", "Rua A", etc. em bairros distintos.
             // Por isso, a busca OBRIGATORIAMENTE ancora no BAIRRO e valida proximidade (< 2.5km do centróide do bairro).
 
+            // 0. Busca ESTRUTURADA (street=/city=): o Nominatim resolve muito
+            // melhor quando cada campo vai no lugar certo do que adivinhando a
+            // gramática de um texto solto — é a diferença entre achar a "Rua
+            // da Fonte" e cair no centróide do bairro. A validação pelo
+            // centróide continua valendo: rua homônima de outro bairro é
+            // descartada igual.
+            if (item.streetName) {
+              const ruaComNumero = item.houseNumber ? `${item.houseNumber} ${item.streetName}` : item.streetName;
+              const res0 = await fetchNominatim(
+                `street=${encodeURIComponent(ruaComNumero)}&city=${encodeURIComponent(storeCity)}&state=RJ&country=Brasil&countrycodes=br&__params=1`
+              );
+              if (res0 && (!bCentroid || calculateHaversineKm(res0.lat, res0.lng, bCentroid.lat, bCentroid.lng) <= 2.8)) {
+                coords = res0;
+              }
+            }
+
             // 1. Tentativa 1: Rua + Número + Bairro + Cidade (Ponto exato no bairro certo)
-            if (item.streetName && item.houseNumber && item.neighborhood) {
+            if (!coords && item.streetName && item.houseNumber && item.neighborhood) {
               const query1 = `${item.streetName}, ${item.houseNumber}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
               const res1 = await fetchNominatim(query1);
               if (res1) {
@@ -1032,12 +1066,12 @@ export default function RoteirizacaoModal({
         if (isMounted) {
           setGeocodedMap({ ...updatedMap });
         }
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 120)); // o limitador de 1,1s por chamada é quem dita o ritmo
       }
 
       if (hasNewCache) {
         try {
-          localStorage.setItem("firehub_geo_cache", JSON.stringify(updatedCache));
+          localStorage.setItem("firehub_geo_cache_v2", JSON.stringify(updatedCache));
         } catch {}
       }
 
@@ -1219,13 +1253,16 @@ export default function RoteirizacaoModal({
       const total = cluster.orderIds.length;
       cluster.orderIds.forEach((oId, idx) => {
         if (total === 1) {
-          fanMap[oId] = { angulo: 0, haste: 30 };
+          // Sozinho: gota clássica, reta, ponta no endereço. Sem cabo nenhum.
+          fanMap[oId] = { angulo: 0, haste: 0 };
           return;
         }
-        // Leque simétrico de -56° a +56°. Com 5+ no mesmo ponto, hastes
-        // alternam altura para as bolas intercalarem em duas fileiras.
-        const angulo = total === 1 ? 0 : -56 + (112 * idx) / (total - 1);
-        const haste = 34 + (total > 4 ? (idx % 2) * 20 : 0);
+        // Empilhados: o leque inclina as gotas (-56° a +56°) e um pequeno cabo
+        // afilado — da MESMA cor, contínuo com a gota — afasta as bolas o
+        // suficiente para não se tocarem. Com 4+ no mesmo ponto, os cabos
+        // alternam comprimento e as gotas intercalam em duas fileiras.
+        const angulo = -56 + (112 * idx) / (total - 1);
+        const haste = 14 + (total > 3 ? (idx % 2) * 18 : 0);
         fanMap[oId] = { angulo, haste };
       });
     });
@@ -1375,37 +1412,47 @@ export default function RoteirizacaoModal({
         zIdx = 500;
       }
 
-      // Pino em leque: ponto no endereço exato + haste inclinada + bola com o
-      // número. O ângulo vem do cluster — pedidos no mesmo lugar abrem lado a
-      // lado, e como o deslocamento é em PIXELS dentro do ícone, nenhum zoom
-      // volta a empilhá-los. A bola contra-rotaciona para o número ficar reto.
-      const fan = clusterFanMap[order.id] || { angulo: 0, haste: 30 };
+      // Gota clássica de mapa: a ponta toca o endereço e o número fica numa
+      // bola branca dentro dela. Pedidos empilhados abrem em leque — a gota
+      // inclina em torno da própria ponta, com um cabo afilado da mesma cor
+      // quando precisa de distância. Tudo em PIXELS: nenhum zoom reempilha.
+      // A bola interna contra-rotaciona para o número ficar sempre reto.
+      const fan = clusterFanMap[order.id] || { angulo: 0, haste: 0 };
+      const alturaCentro = 41 + fan.haste; // ponta→centro da gota (17 + 24 + cabo)
 
       const pinHtml = `
         <div style="position: relative; width: 0; height: 0;">
-          <!-- ponto exato do endereço -->
           <div style="
-            position: absolute; left: -5px; top: -5px; width: 10px; height: 10px;
-            border-radius: 50%; background: ${bgColor}; border: 2px solid #ffffff;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.45); box-sizing: border-box;
-          "></div>
-          <!-- haste inclinada, da base até a bola -->
-          <div style="
-            position: absolute; left: -1.5px; top: ${-fan.haste}px; width: 3px; height: ${fan.haste}px;
-            background: ${bgColor}; border-radius: 2px; opacity: 0.9;
-            transform: rotate(${fan.angulo}deg); transform-origin: bottom center;
+            position: absolute; left: 0; top: 0; width: 0; height: 0;
+            transform: rotate(${fan.angulo}deg) ${scaleCss}; transition: transform 0.2s ease;
           ">
+            ${fan.haste > 0 ? `
+            <!-- cabo afilado, contínuo com a gota (só quando há leque) -->
             <div style="
-              position: absolute; top: -24px; left: 50%;
-              transform: translateX(-50%) rotate(${-fan.angulo}deg) ${scaleCss};
-              background: ${bgColor}; color: #ffffff; min-width: 26px; height: 26px;
-              padding: 0 5px; border-radius: 13px; font-size: 0.82rem; font-weight: 900;
-              border: 2px solid ${borderColor}; box-shadow: ${shadowCss};
-              display: inline-flex; align-items: center; justify-content: center;
-              white-space: nowrap; cursor: pointer; transition: all 0.2s ease;
-              box-sizing: border-box;
+              position: absolute; left: -4px; top: ${-(fan.haste + 6)}px; width: 0; height: 0;
+              border-left: 4px solid transparent; border-right: 4px solid transparent;
+              border-top: ${fan.haste + 6}px solid ${bgColor};
+              filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
+            "></div>` : ""}
+            <!-- a gota: quadrado com 3 cantos redondos, girado 45° -->
+            <div style="
+              position: absolute; left: -17px; top: ${-alturaCentro - 17}px;
+              width: 34px; height: 34px; border-radius: 50% 50% 50% 0;
+              transform: rotate(-45deg); background: ${bgColor};
+              border: 2.5px solid ${borderColor}; box-shadow: ${shadowCss};
+              display: flex; align-items: center; justify-content: center;
+              cursor: pointer; box-sizing: border-box;
             ">
-              ${isSelected ? `<span style="font-size:0.7rem; margin-right:2px; opacity:0.9;">#</span>` : ""}${labelText}
+              <div style="
+                transform: rotate(${45 - fan.angulo}deg);
+                background: #ffffff; color: #0F172A; min-width: 21px; height: 21px;
+                padding: 0 3px; border-radius: 50%; font-size: 0.72rem; font-weight: 900;
+                display: inline-flex; align-items: center; justify-content: center;
+                white-space: nowrap; box-shadow: inset 0 1px 2px rgba(0,0,0,0.18);
+                box-sizing: border-box;
+              ">
+                ${labelText}
+              </div>
             </div>
           </div>
         </div>
@@ -1477,11 +1524,18 @@ export default function RoteirizacaoModal({
         iconAnchor: [30, 44],
       });
 
+      // Data e hora COMPLETAS da última atualização: "há X min" sozinho não
+      // diz se foi hoje — e uma posição de ontem lida como "de agora" faz a
+      // loja esperar um entregador que nem está trabalhando.
+      const dataHora = atualizadoEm
+        ? new Date(atualizadoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+        : null;
       const mbMarker = L.marker([mbLat, mbLng], { icon: mbIcon, zIndexOffset: 950 })
         .addTo(map)
         .bindPopup(`<b>🛵 Entregador ${mb.name}</b><br/>📍 ${
           minAtras === null ? "Localização GPS" : minAtras <= 1 ? "Atualizado agora" : `Atualizado há ${minAtras} min`
-        }`);
+        }${dataHora ? `<br/><span style="color:#64748B;font-size:0.78rem;">🕒 ${dataHora}</span>` : ""}`)
+        .bindTooltip(dataHora ? `${mb.name} · ${dataHora}` : mb.name, { direction: "top", offset: [0, -40] });
 
       markersRef.current.set(`MOTOBOY_${mb.id}`, mbMarker);
     });

@@ -122,8 +122,25 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       setGpsStatus("negado");
     }
 
+    // Celular no bolso suspende o JavaScript da aba — o watch para junto. Na
+    // volta ao primeiro plano, manda a posição NA HORA (zerando o freio de
+    // 12s): é o momento em que a loja mais precisa saber onde ele está.
+    const aoVoltar = () => {
+      if (document.visibilityState !== "visible") return;
+      if ("geolocation" in navigator) {
+        ultimoEnvio = 0;
+        navigator.geolocation.getCurrentPosition(
+          (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+
     return () => {
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", aoVoltar);
       if (watchId !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchId);
       }
@@ -219,6 +236,25 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const handleMarkDelivered = async (orderId: string) => {
     if (!session) return;
     setUpdatingOrderId(orderId);
+
+    // A confirmação de entrega É uma posição conhecida: o motoboy está na
+    // porta do cliente. Registrar aqui garante um "onde ele esteve por
+    // último" no mapa mesmo quando o rastreio contínuo falhou o dia todo —
+    // e sem esperar resposta, para não atrasar a baixa.
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          fetch("/api/motoboys/location", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ motoboyId: session.motoboyId, lat: pos.coords.latitude, lng: pos.coords.longitude })
+          }).then(() => setGpsStatus("ativo")).catch(() => {});
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+      );
+    }
+
     try {
       const res = await fetch("/api/motoboys/orders", {
         method: "PATCH",
