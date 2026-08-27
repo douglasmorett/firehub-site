@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
           { name: { contains: slugName, mode: "insensitive" } },
         ]
       },
-      select: { id: true, name: true, slug: true, storeAddress: true, city: true }
+      select: { id: true, name: true, storeName: true, slug: true, storeAddress: true, city: true }
     });
 
     if (!storeUser) {
@@ -136,7 +136,9 @@ export async function POST(req: NextRequest) {
       // A tela usa isto para cobrar a troca de quem ainda está na senha padrão.
       mustChangePassword: conferencia.ehPadrao,
       storeId: storeUser.id,
-      storeName: storeUser.name,
+      // O nome DA LOJA, nao o nome civil do dono: o app do motoboy exibia
+      // "Loja: Jorge Luis Mingordo Cesario Junior" em vez de "Brasa Burguer".
+      storeName: storeUser.storeName || storeUser.name,
       storeAddress: storeUser.storeAddress || storeUser.city || "",
       motoboy: {
         id: motoboy.id,
@@ -145,7 +147,7 @@ export async function POST(req: NextRequest) {
       },
       store: {
         id: storeUser.id,
-        name: storeUser.name,
+        name: storeUser.storeName || storeUser.name,
         storeAddress: storeUser.storeAddress || storeUser.city || "",
         city: storeUser.city || ""
       }
