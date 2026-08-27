@@ -46,13 +46,40 @@ export async function GET(req: NextRequest) {
           include: {
             menuProduct: true
           }
+        },
+        // Nome e cor da rota, para o app dizer DE QUAL rota cada parada é.
+        // Antes o app tentava ler isso do localStorage do próprio celular —
+        // dados que só existiam no navegador da LOJA, nunca no do motoboy.
+        routeSchedule: {
+          select: { id: true, routeNumber: true, color: true }
         }
       },
       orderBy: { createdAt: "desc" },
       take: 100
     });
 
-    return NextResponse.json({ success: true, orders, customBeverageKeywords });
+    // A sequência da parada (1º, 2º, 3º…) mora numa coluna fora do schema
+    // (ver /api/admin/coluna-sequencia-rota), então vem por SQL cru e é
+    // mesclada aqui. Sem a coluna, todo mundo fica sem sequência e o app
+    // ordena como sempre ordenou — nada quebra.
+    let sequencias: Record<string, number> = {};
+    try {
+      const ids = orders.map((o) => o.id);
+      if (ids.length > 0) {
+        const rows = await prisma.$queryRaw<{ id: string; routeSequence: number | null }[]>`
+          SELECT "id", "routeSequence" FROM "CustomerOrder"
+          WHERE "id" = ANY(${ids}) AND "routeSequence" IS NOT NULL
+        `;
+        rows.forEach((r) => { if (r.routeSequence != null) sequencias[r.id] = Number(r.routeSequence); });
+      }
+    } catch {}
+
+    const ordersComSequencia = orders.map((o) => ({
+      ...o,
+      routeSequence: sequencias[o.id] ?? null,
+    }));
+
+    return NextResponse.json({ success: true, orders: ordersComSequencia, customBeverageKeywords });
 
   } catch (err: any) {
     console.error("[Motoboy Orders API Error]", err);

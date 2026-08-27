@@ -39,7 +39,6 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
   // Orders & Routes State
   const [orders, setOrders] = useState<any[]>([]);
-  const [createdRoutes, setCreatedRoutes] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -65,17 +64,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         setOrders(data.orders || []);
         setBevKeywords(data.customBeverageKeywords || "");
       }
-
-      // Load routes from localStorage
-      const savedRoutes = localStorage.getItem("firehub_created_routes");
-      if (savedRoutes) {
-        const allRoutes = JSON.parse(savedRoutes);
-        const myRoutes = allRoutes.filter((r: any) =>
-          r.motoboyName.toLowerCase().includes(session.motoboyName.toLowerCase()) ||
-          session.motoboyName.toLowerCase().includes(r.motoboyName.toLowerCase())
-        );
-        setCreatedRoutes(myRoutes);
-      }
+      // O localStorage "firehub_created_routes" que era lido aqui só existia no
+      // navegador da LOJA — no celular do motoboy estava sempre vazio. A rota
+      // (nome, cor, sequência) agora vem do servidor, junto com cada pedido.
     } catch (err) {
       console.error("Erro ao carregar pedidos do motoboy:", err);
     } finally {
@@ -254,7 +245,20 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   };
 
   // Filter Active vs Completed Orders
-  const activeOrders = orders.filter(o => o.status !== "ENTREGUE" && o.status !== "CANCELADO" && o.status !== "CANCELED");
+  //
+  // A ordem aqui é a ordem em que o motoboy RODA. Vinha por data de criação
+  // DESC (mais novo primeiro) — o inverso de qualquer rota. Agora: primeiro a
+  // sequência que a loja montou no mapa (routeSequence 1º, 2º, 3º…); quem não
+  // tem sequência entra depois, do pedido mais antigo para o mais novo, que é
+  // a ordem justa de atendimento.
+  const activeOrders = orders
+    .filter(o => o.status !== "ENTREGUE" && o.status !== "CANCELADO" && o.status !== "CANCELED")
+    .sort((a, b) => {
+      const sa = a.routeSequence ?? Infinity;
+      const sb = b.routeSequence ?? Infinity;
+      if (sa !== sb) return sa - sb;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
   const completedOrders = orders.filter(o => o.status === "ENTREGUE");
 
   // Change Password State
@@ -544,9 +548,22 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                     </span>
                   </div>
 
-                  <span style={{ background: "#EFF6FF", color: "#1D4ED8", fontSize: "0.75rem", fontWeight: 800, padding: "3px 8px", borderRadius: "6px" }}>
-                    {order.source || order.platform || "Direto"}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {/* A mesma rota, com o mesmo nome e a mesma cor que a loja
+                        vê no mapa — motoboy e loja falando da mesma coisa. */}
+                    {order.routeSchedule?.routeNumber && (
+                      <span style={{
+                        background: order.routeSchedule.color || "#3B82F6", color: "#fff",
+                        fontSize: "0.72rem", fontWeight: 900, padding: "3px 8px", borderRadius: "6px",
+                        border: "1px solid rgba(255,255,255,0.4)"
+                      }}>
+                        🗺️ {order.routeSchedule.routeNumber}
+                      </span>
+                    )}
+                    <span style={{ background: "#EFF6FF", color: "#1D4ED8", fontSize: "0.75rem", fontWeight: 800, padding: "3px 8px", borderRadius: "6px" }}>
+                      {order.source || order.platform || "Direto"}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Customer Details */}

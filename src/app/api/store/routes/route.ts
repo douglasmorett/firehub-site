@@ -155,6 +155,25 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // ── A ORDEM das paradas, que morria aqui ────────────────────────────────
+    //
+    // `orderIds` chega na sequência que a loja montou no mapa (1º, 2º, 3º…) e
+    // essa ordem não era gravada em lugar nenhum: o app do motoboy ordenava
+    // por data de criação DESC e o entregador rodava a rota de trás pra
+    // frente. A coluna `routeSequence` vive FORA do schema.prisma (ver
+    // /api/admin/coluna-sequencia-rota), daí o SQL cru — e o try/catch:
+    // enquanto a coluna não existir, a rota continua funcionando sem
+    // sequência, exatamente como sempre funcionou.
+    try {
+      for (let i = 0; i < orderIds.length; i++) {
+        await prisma.$executeRaw`
+          UPDATE "CustomerOrder" SET "routeSequence" = ${i + 1} WHERE "id" = ${String(orderIds[i])}
+        `;
+      }
+    } catch (e: any) {
+      console.warn("[Rotas] routeSequence não gravada (coluna ausente?):", e?.message?.slice(0, 120));
+    }
+
     const fullRoute = await prisma.routeSchedule.findUnique({
       where: { id: newRoute.id },
       include: {
