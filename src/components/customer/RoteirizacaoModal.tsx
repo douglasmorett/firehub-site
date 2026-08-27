@@ -585,6 +585,9 @@ export default function RoteirizacaoModal({
       "Floresta das Gaivotas", "Enseada das Gaivotas", "Praiamar", "Praia Âncora", "Praia Ancora",
       "Residencial Praia Âncora", "Residencial Praia Ancora", "Village Rio das Ostras", "Bosque D'Areia",
       "Bosque da Praia", "Reduto da Paz", "Colinas", "Chácara Mariléa", "Chacara Marilea", "Chacara Marileia",
+      // "Mariléia" com É+I é como MUITO cliente escreve — e não batia com
+      // nenhuma grafia da lista, então o bairro não era reconhecido.
+      "Chácara Mariléia", "Jardim Mariléia",
       "Jardim Mariléa", "Jardim Marilea", "Jardim Marileia", "Novo Rio das Ostras", "Extensão Novo Rio das Ostras",
       "Extensao Novo Rio das Ostras", "Recanto Rio das Ostras", "Bairro Operário", "Bairro Operario",
       "Parque São Jorge", "Parque Sao Jorge", "Extensão do Bosque", "Extensao do Bosque",
@@ -670,6 +673,16 @@ export default function RoteirizacaoModal({
       .replace(/\bapto\s*\d+\w*/gi, "")
       .replace(/\bapt\s*\d+\w*/gi, "")
       .replace(/\bbloco\s*\w+/gi, "")
+      .replace(/[\.,\s\-]+$/, "")
+      .trim();
+
+    // O bairro sai LIMPO de complemento. "Jardim Mariléia (301)" — com o
+    // número do apartamento grudado — não bate com dicionário, com o
+    // Nominatim nem com nada: o pedido caía no centro da cidade por causa de
+    // um parêntese. Complemento não é bairro.
+    neighborhood = neighborhood
+      .replace(/\s*\([^)]*\)\s*/g, " ")
+      .replace(/\b(?:apto?|apartamento|casa|bloco|fundos|sobrado)\b.*$/i, "")
       .replace(/[\.,\s\-]+$/, "")
       .trim();
 
@@ -930,6 +943,37 @@ export default function RoteirizacaoModal({
         return null;
       };
 
+      // ── PHOTON: o geocodificador que perdoa erro de digitação ───────────
+      //
+      // O Nominatim exige a grafia exata: "Rua Cacheoira de Macacu" (digitada
+      // errada pelo cliente) não acha "Cachoeira de Macacu" nunca. O Photon
+      // (photon.komoot.io, gratuito, mesma base OSM) faz busca FUZZY — é o que
+      // dá ao mapa a tolerância do Google que a "motinha" usa. Entra depois
+      // das tentativas exatas e antes de desistir para o bairro, com a mesma
+      // validação anti-homônimo. O `lat/lon` de viés puxa os resultados para
+      // perto da loja.
+      const fetchPhoton = async (query: string) => {
+        try {
+          const espera = ultimaChamadaNominatim + 1100 - Date.now();
+          if (espera > 0) await new Promise((r) => setTimeout(r, espera));
+          ultimaChamadaNominatim = Date.now();
+          const res = await fetch(
+            `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=default&lat=${defaultCenter.lat}&lon=${defaultCenter.lng}`,
+            { signal: AbortSignal.timeout(3500) }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const f = data?.features?.[0];
+            if (f?.geometry?.coordinates?.length === 2) {
+              const lat = f.geometry.coordinates[1];
+              const lng = f.geometry.coordinates[0];
+              if (!isPointInSea(lat, lng)) return { lat, lng };
+            }
+          }
+        } catch {}
+        return null;
+      };
+
       // ── CENTRÓIDE DO BAIRRO ────────────────────────────────────────────
       // O centróide não serve só de chute inicial: ele é o VALIDADOR. Um
       // resultado do Nominatim a mais de 2,8 km dele é descartado (regra
@@ -1029,6 +1073,24 @@ export default function RoteirizacaoModal({
               if (res3) {
                 if (!bCentroid || calculateHaversineKm(res3.lat, res3.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
                   coords = res3;
+                }
+              }
+            }
+
+            // 3.5. PHOTON (busca fuzzy): pega a rua digitada com erro
+            // ("cacheoira" → "Cachoeira") que as tentativas exatas perderam.
+            // Validação dupla: perto do centróide do bairro quando ele existe,
+            // e nunca a mais de 15 km da loja — resultado solto de outra
+            // cidade não entra.
+            if (!coords && item.streetName) {
+              const resF = await fetchPhoton(
+                `${item.streetName}${item.houseNumber ? ` ${item.houseNumber}` : ""}, ${item.neighborhood || ""}, ${storeCity}`
+              );
+              if (resF) {
+                const pertoDoBairro = !bCentroid || calculateHaversineKm(resF.lat, resF.lng, bCentroid.lat, bCentroid.lng) <= 2.8;
+                const pertoDaLoja = calculateHaversineKm(resF.lat, resF.lng, defaultCenter.lat, defaultCenter.lng) <= 15;
+                if (pertoDoBairro && pertoDaLoja) {
+                  coords = resF;
                 }
               }
             }
