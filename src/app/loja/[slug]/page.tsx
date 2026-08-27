@@ -77,13 +77,35 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       // no meio do cardápio.
       where: { active: true, activeDelivery: true, franchiseeId: franchisee.id },
       orderBy: await orderByCardapio(),
-      include: {
+      // SELECT explícito: com include, TODAS as colunas do produto iam
+      // serializadas para o HTML público — inclusive `cost` (o CUSTO de
+      // insumo do lojista, visível para qualquer concorrente com F12) e os
+      // dados fiscais. Vai só o que o cardápio mostra.
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        price: true,
+        imageUrl: true,
+        category: true,
+        isCombo: true,
+        comboConfig: true,
+        tags: true,
         comboGroups: {
           orderBy: { sortOrder: 'asc' },
-          include: {
+          select: {
+            id: true,
+            title: true,
+            maxQty: true,
+            minQty: true,
+            sortOrder: true,
             items: {
-              include: {
-                menuProduct: { select: { id: true, name: true, active: true, imageUrl: true } }
+              select: {
+                id: true,
+                additionalPrice: true,
+                maxPerItem: true,
+                optionNote: true,
+                menuProduct: { select: { id: true, name: true, active: true, imageUrl: true, description: true, price: true } }
               }
             }
           }

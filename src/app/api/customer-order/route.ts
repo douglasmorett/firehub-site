@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     const franchisee = await prisma.user.findFirst({
       where: franchiseeId ? { id: franchiseeId } : { slug: franchiseeSlug },
       select: {
-        id: true, slug: true, storeName: true, storeOpen: true, storePause: true,
+        id: true, slug: true, storeName: true, storeOpen: true, storePause: true, storeHours: true,
         autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true
       }
     });
@@ -39,6 +39,22 @@ export async function POST(req: Request) {
     // Verificar se loja está operando
     if (franchisee.storeOpen === false) {
       return NextResponse.json({ error: "Loja fechada no momento." }, { status: 400 });
+    }
+
+    // Fora do HORÁRIO de funcionamento também é fechada. Só o front avisava:
+    // uma aba aberta desde antes do fechamento (ou um POST direto) criava
+    // pedido de madrugada — que tocava na loja vazia e nunca seria feito.
+    // Pedido AGENDADO passa: ele é para quando a loja estiver aberta.
+    const ehAgendado = Boolean(body.scheduledDatetime || body.scheduledDate || body.isScheduled);
+    if (!ehAgendado) {
+      const { isStoreOpen } = await import("@/lib/store-hours");
+      const statusAgora = isStoreOpen(franchisee.storeHours as any);
+      if (!statusAgora.open) {
+        return NextResponse.json(
+          { error: `Loja fechada agora${statusAgora.text ? ` — ${statusAgora.text.toLowerCase()}` : ""}.` },
+          { status: 400 }
+        );
+      }
     }
 
     // Verificar pausa programada

@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useMemo } from "react";
-import { X, Plus, Minus, Check, AlertCircle } from "lucide-react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { X, Plus, Minus, Check } from "lucide-react";
 import { precoMinimoDoProduto } from "@/lib/preco-combo";
 
 export type ComboGroupData = {
@@ -74,6 +74,24 @@ interface ComboModalProps {
   onConfirm: (selections: Selections, extraSum: number, qty: number, notes?: string) => void;
 }
 
+/**
+ * Página de produto em bottom-sheet.
+ *
+ * Serve para COMBO (grupos de escolha) e para PRODUTO SIMPLES (sem grupos:
+ * vira a tela de detalhe com foto, descrição, observação e quantidade — o
+ * clique no card deixou de jogar o item direto na sacola).
+ *
+ * Decisões de celular, na ordem do que doía:
+ * - O rodapé com o botão de confirmar era a parte que "sumia" (popup 92vh
+ *   centralizado + teclado aberto). Agora o sheet ocupa a tela com dvh — que
+ *   acompanha teclado e barra do navegador — e o rodapé é fixo e sempre
+ *   visível.
+ * - Em grupo de escolha múltipla, só o "+" de 30px adicionava; tocar na LINHA
+ *   não fazia nada e parecia que faltava botão. A linha inteira agora soma.
+ * - O botão VOLTAR do celular fechava o SITE (o modal não entrava no
+ *   history). Agora fecha o modal, como em app.
+ * - Toque no fundo escuro descartava tudo sem perguntar.
+ */
 export default function ComboModal({ product, onClose, onConfirm }: ComboModalProps) {
   const groups = product.comboGroups || [];
   const [comboQty, setComboQty] = useState(1);
@@ -85,6 +103,38 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
     groups.forEach(g => { init[g.id] = preenchimentoForcado(g); });
     return init;
   });
+
+  // Retrato do estado inicial: é o que separa "abriu e fechou" de "escolheu e
+  // vai perder" na confirmação do backdrop.
+  const estadoInicial = useRef<string>("");
+  useEffect(() => {
+    estadoInicial.current = JSON.stringify({ s: selections, n: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const groupRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Botão VOLTAR do celular fecha o modal em vez de sair do site. A entrada
+  // extra no history é consumida no unmount quando o fechamento veio do X.
+  useEffect(() => {
+    let fechadoPeloBack = false;
+    try { window.history.pushState({ fhProduto: true }, ""); } catch {}
+    const onPop = () => { fechadoPeloBack = true; onCloseRef.current(); };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      if (!fechadoPeloBack) { try { window.history.back(); } catch {} }
+    };
+  }, []);
+
+  // O cardápio não rola atrás do produto aberto.
+  useEffect(() => {
+    const anterior = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = anterior; };
+  }, []);
 
   const getGroupTotal = (gId: string) =>
     Object.values(selections[gId] || {}).reduce((s, v) => s + v, 0);
@@ -185,61 +235,51 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
   const handleSubmit = () => {
     if (!allComplete) {
       setAttemptedSubmit(true);
+      // Mostra ONDE falta: sem isto o botão parecia simplesmente quebrado —
+      // o grupo pendente podia estar rolado para fora da tela.
+      const pendente = groups.find(g => !isGroupComplete(g));
+      if (pendente) {
+        groupRefs.current[pendente.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
       return;
     }
     onConfirm(selections, extraSum, comboQty, notes.trim());
   };
 
+  const tentarFechar = () => {
+    const mexeu = JSON.stringify({ s: selections, n: notes.trim() && "x" || "" }) !== estadoInicial.current || notes.trim().length > 0;
+    if (mexeu && !window.confirm("Descartar as escolhas deste item?")) return;
+    onClose();
+  };
+
+  const ehProdutoSimples = groups.length === 0;
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        backgroundColor: "rgba(15, 23, 42, 0.7)",
-        backdropFilter: "blur(4px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "0.75rem",
-      }}
-      onClick={onClose}
-    >
+    <div className="fh-sheet-backdrop" onClick={tentarFechar}>
       <div
-        style={{
-          backgroundColor: "#FFFFFF",
-          borderRadius: "20px",
-          width: "100%",
-          maxWidth: "540px",
-          maxHeight: "92vh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          boxShadow: "0 25px 60px -12px rgba(0, 0, 0, 0.35)",
-          position: "relative",
-          animation: "modalFadeIn 0.2s ease-out",
-        }}
+        className="fh-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={product.name}
         onClick={e => e.stopPropagation()}
       >
-        {/* CLOSE BUTTON */}
+        {/* CLOSE BUTTON — 44px: no polegar, 34px errava e fechava do lado */}
         <button
-          onClick={onClose}
+          onClick={tentarFechar}
           style={{
             position: "absolute",
-            top: "14px",
-            right: "14px",
+            top: "12px",
+            right: "12px",
             zIndex: 10,
-            width: "34px",
-            height: "34px",
-            minWidth: "34px",
-            minHeight: "34px",
-            maxWidth: "34px",
-            maxHeight: "34px",
+            width: "44px",
+            height: "44px",
+            minWidth: "44px",
+            minHeight: "44px",
             aspectRatio: "1 / 1",
             padding: 0,
             borderRadius: "50%",
-            backgroundColor: "rgba(255, 255, 255, 0.9)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            backgroundColor: "rgba(255, 255, 255, 0.92)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
             border: "none",
             cursor: "pointer",
             display: "flex",
@@ -252,14 +292,14 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
           }}
           title="Fechar"
         >
-          <X size={18} />
+          <X size={20} />
         </button>
 
         {/* SCROLLABLE BODY */}
-        <div style={{ flex: 1, overflowY: "auto", paddingBottom: "1rem" }}>
+        <div style={{ flex: 1, overflowY: "auto", paddingBottom: "1rem", WebkitOverflowScrolling: "touch" }}>
           {/* HERO BANNER */}
           {product.imageUrl ? (
-            <div style={{ width: "100%", height: "200px", position: "relative", backgroundColor: "#F1F5F9" }}>
+            <div className="fh-sheet-hero" style={{ width: "100%", position: "relative", backgroundColor: "#F1F5F9" }}>
               <img
                 src={product.imageUrl}
                 alt={product.name}
@@ -283,11 +323,11 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               {product.name}
             </h2>
             {product.description && (
-              <p style={{ fontSize: "0.85rem", color: "#64748B", margin: "0 0 10px 0", lineHeight: 1.45 }}>
+              <p style={{ fontSize: "0.9rem", color: "#64748B", margin: "0 0 10px 0", lineHeight: 1.5 }}>
                 {product.description}
               </p>
             )}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "#059669" }}>
                 {/* Com preço base 0, o "a partir de" é o MÍNIMO do produto, não a
                     base crua — senão um pastel cujo valor inteiro está no tamanho
@@ -322,6 +362,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               return (
                 <div
                   key={group.id}
+                  ref={el => { groupRefs.current[group.id] = el; }}
                   style={{
                     backgroundColor: "#FFFFFF",
                     borderRadius: "14px",
@@ -405,12 +446,18 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                       const qty = selections[group.id]?.[optName] || 0;
                       const isSelected = qty > 0;
                       const addPrice = item.additionalPrice || 0;
+                      const grupoCheio = total >= max;
+                      const tetoDoItem = Number(item.maxPerItem) > 0 ? Number(item.maxPerItem) : max;
 
                       return (
                         <div
                           key={item.id}
                           onClick={() => {
+                            // A LINHA INTEIRA responde ao toque — antes, em
+                            // grupo múltiplo, só o "+" de 30px adicionava e o
+                            // toque na linha caía no vazio ("cadê o botão?").
                             if (isSingle) handleSelectSingle(group.id, optName);
+                            else updateQty(group.id, optName, 1);
                           }}
                           style={{
                             display: "flex",
@@ -420,8 +467,9 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                             borderRadius: "10px",
                             backgroundColor: isSelected ? "#F0FDF4" : "#FFFFFF",
                             border: isSelected ? "1.5px solid #86EFAC" : "1px solid #F1F5F9",
-                            cursor: isSingle ? "pointer" : "default",
+                            cursor: "pointer",
                             transition: "all 0.15s ease",
+                            minHeight: "56px",
                           }}
                         >
                           {/* Item Info */}
@@ -430,7 +478,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                               <img
                                 src={item.menuProduct.imageUrl}
                                 alt={optName}
-                                style={{ width: "42px", height: "42px", borderRadius: "8px", objectFit: "cover", flexShrink: 0 }}
+                                style={{ width: "46px", height: "46px", borderRadius: "8px", objectFit: "cover", flexShrink: 0 }}
                               />
                             )}
                             <div style={{ minWidth: 0 }}>
@@ -466,15 +514,13 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                           {isSingle ? (
                             <div
                               style={{
-                                width: "22px",
-                                height: "22px",
-                                minWidth: "22px",
-                                minHeight: "22px",
-                                maxWidth: "22px",
-                                maxHeight: "22px",
+                                width: "24px",
+                                height: "24px",
+                                minWidth: "24px",
+                                minHeight: "24px",
                                 aspectRatio: "1 / 1",
                                 borderRadius: "50%",
-                                border: isSelected ? "6px solid #10B981" : "2px solid #CBD5E1",
+                                border: isSelected ? "7px solid #10B981" : "2px solid #CBD5E1",
                                 backgroundColor: "#FFFFFF",
                                 flexShrink: 0,
                                 boxSizing: "border-box",
@@ -491,12 +537,10 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                     updateQty(group.id, optName, -1);
                                   }}
                                   style={{
-                                    width: "30px",
-                                    height: "30px",
-                                    minWidth: "30px",
-                                    minHeight: "30px",
-                                    maxWidth: "30px",
-                                    maxHeight: "30px",
+                                    width: "40px",
+                                    height: "40px",
+                                    minWidth: "40px",
+                                    minHeight: "40px",
                                     aspectRatio: "1 / 1",
                                     padding: 0,
                                     borderRadius: "50%",
@@ -512,11 +556,11 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                     lineHeight: 1,
                                   }}
                                 >
-                                  <Minus size={14} strokeWidth={2.5} />
+                                  <Minus size={16} strokeWidth={2.5} />
                                 </button>
                               )}
                               {qty > 0 && (
-                                <span style={{ fontWeight: 800, fontSize: "0.88rem", minWidth: "18px", textAlign: "center", color: "#0F172A" }}>
+                                <span style={{ fontWeight: 800, fontSize: "0.95rem", minWidth: "20px", textAlign: "center", color: "#0F172A" }}>
                                   {qty}
                                 </span>
                               )}
@@ -526,31 +570,29 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                   e.stopPropagation();
                                   updateQty(group.id, optName, 1);
                                 }}
-                                disabled={total >= max}
+                                disabled={grupoCheio || qty >= tetoDoItem}
                                 style={{
-                                  width: "30px",
-                                  height: "30px",
-                                  minWidth: "30px",
-                                  minHeight: "30px",
-                                  maxWidth: "30px",
-                                  maxHeight: "30px",
+                                  width: "40px",
+                                  height: "40px",
+                                  minWidth: "40px",
+                                  minHeight: "40px",
                                   aspectRatio: "1 / 1",
                                   padding: 0,
                                   borderRadius: "50%",
                                   border: "none",
-                                  backgroundColor: total >= max ? "#E2E8F0" : "#10B981",
-                                  color: total >= max ? "#94A3B8" : "#FFFFFF",
-                                  cursor: total >= max ? "not-allowed" : "pointer",
+                                  backgroundColor: grupoCheio || qty >= tetoDoItem ? "#E2E8F0" : "#10B981",
+                                  color: grupoCheio || qty >= tetoDoItem ? "#94A3B8" : "#FFFFFF",
+                                  cursor: grupoCheio || qty >= tetoDoItem ? "not-allowed" : "pointer",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
-                                  boxShadow: total >= max ? "none" : "0 2px 6px rgba(16, 185, 129, 0.3)",
+                                  boxShadow: grupoCheio || qty >= tetoDoItem ? "none" : "0 2px 6px rgba(16, 185, 129, 0.3)",
                                   flexShrink: 0,
                                   boxSizing: "border-box",
                                   lineHeight: 1,
                                 }}
                               >
-                                <Plus size={15} strokeWidth={2.5} />
+                                <Plus size={17} strokeWidth={2.5} />
                               </button>
                             </div>
                           )}
@@ -579,10 +621,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                 rows={2}
                 style={{
                   width: "100%",
-                  padding: "8px 10px",
+                  padding: "10px 12px",
                   borderRadius: "8px",
                   border: "1px solid #CBD5E1",
-                  fontSize: "0.82rem",
+                  // 16px: abaixo disso o iOS dá zoom automático ao focar e a
+                  // tela "pula" com o rodapé fixo logo abaixo.
+                  fontSize: "16px",
                   fontFamily: "inherit",
                   outline: "none",
                   resize: "none",
@@ -594,16 +638,17 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
           </div>
         </div>
 
-        {/* STICKY FOOTER */}
+        {/* STICKY FOOTER — sempre visível: é o botão de CONFIRMAR o item */}
         <div
           style={{
-            padding: "0.85rem 1.25rem",
+            padding: "0.85rem 1.25rem calc(0.85rem + env(safe-area-inset-bottom, 0px))",
             borderTop: "1px solid #E2E8F0",
             backgroundColor: "#FFFFFF",
             boxShadow: "0 -4px 16px rgba(0,0,0,0.06)",
             display: "flex",
             alignItems: "center",
             gap: "12px",
+            flexShrink: 0,
           }}
         >
           {/* Main Combo Quantity Stepper */}
@@ -613,7 +658,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               alignItems: "center",
               gap: "6px",
               backgroundColor: "#F1F5F9",
-              padding: "4px 8px",
+              padding: "4px 6px",
               borderRadius: "12px",
               border: "1px solid #E2E8F0",
             }}
@@ -623,9 +668,11 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               onClick={() => setComboQty(q => Math.max(1, q - 1))}
               disabled={comboQty <= 1}
               style={{
-                width: "28px",
-                height: "28px",
-                borderRadius: "8px",
+                width: "40px",
+                height: "40px",
+                minWidth: "40px",
+                minHeight: "40px",
+                borderRadius: "10px",
                 border: "none",
                 backgroundColor: comboQty <= 1 ? "transparent" : "#FFFFFF",
                 color: comboQty <= 1 ? "#CBD5E1" : "#1E293B",
@@ -636,18 +683,20 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                 boxShadow: comboQty <= 1 ? "none" : "0 1px 3px rgba(0,0,0,0.1)",
               }}
             >
-              <Minus size={14} strokeWidth={2.5} />
+              <Minus size={16} strokeWidth={2.5} />
             </button>
-            <span style={{ fontWeight: 800, fontSize: "0.95rem", minWidth: "22px", textAlign: "center", color: "#0F172A" }}>
+            <span style={{ fontWeight: 800, fontSize: "1rem", minWidth: "24px", textAlign: "center", color: "#0F172A" }}>
               {comboQty}
             </span>
             <button
               type="button"
               onClick={() => setComboQty(q => q + 1)}
               style={{
-                width: "28px",
-                height: "28px",
-                borderRadius: "8px",
+                width: "40px",
+                height: "40px",
+                minWidth: "40px",
+                minHeight: "40px",
+                borderRadius: "10px",
                 border: "none",
                 backgroundColor: "#FFFFFF",
                 color: "#1E293B",
@@ -658,7 +707,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                 boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
               }}
             >
-              <Plus size={14} strokeWidth={2.5} />
+              <Plus size={16} strokeWidth={2.5} />
             </button>
           </div>
 
@@ -668,29 +717,71 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
             onClick={handleSubmit}
             style={{
               flex: 1,
+              minHeight: "54px",
               padding: "0.85rem 1rem",
               borderRadius: "12px",
               border: "none",
-              cursor: allComplete ? "pointer" : "default",
+              cursor: "pointer",
               backgroundColor: allComplete ? "#059669" : "#E2E8F0",
               color: allComplete ? "#FFFFFF" : "#64748B",
               fontWeight: 800,
-              fontSize: "0.92rem",
+              fontSize: "0.95rem",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: "8px",
               boxShadow: allComplete ? "0 4px 14px rgba(5, 150, 105, 0.35)" : "none",
               transition: "all 0.2s ease",
             }}
           >
-            <span>{allComplete ? "Adicionar ao Pedido" : "Selecione as opções obrigatórias"}</span>
-            <span style={{ fontSize: "1rem" }}>R$ {grandTotal.toFixed(2).replace(".", ",")}</span>
+            <span>
+              {allComplete
+                ? (ehProdutoSimples ? "Adicionar à sacola" : "Confirmar item")
+                : "Selecione as opções obrigatórias"}
+            </span>
+            <span style={{ fontSize: "1.05rem", whiteSpace: "nowrap" }}>R$ {grandTotal.toFixed(2).replace(".", ",")}</span>
           </button>
         </div>
       </div>
 
       <style>{`
-        @keyframes modalFadeIn {
+        .fh-sheet-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          background-color: rgba(15, 23, 42, 0.7);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+        }
+        .fh-sheet {
+          background-color: #fff;
+          width: 100%;
+          max-width: 540px;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          position: relative;
+          border-radius: 20px 20px 0 0;
+          box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.3);
+          animation: fhSheetUp 0.25s ease-out;
+          /* dvh acompanha teclado e barra do navegador: o rodapé de confirmar
+             nunca fica fora da tela. vh é o fallback de navegador antigo. */
+          max-height: 94vh;
+          max-height: 94dvh;
+        }
+        .fh-sheet-hero { height: 220px; }
+        @media (min-width: 640px) {
+          .fh-sheet-backdrop { align-items: center; padding: 0.75rem; }
+          .fh-sheet { border-radius: 20px; max-height: 92vh; animation: fhModalFadeIn 0.2s ease-out; }
+          .fh-sheet-hero { height: 240px; }
+        }
+        @keyframes fhSheetUp {
+          from { opacity: 0.6; transform: translateY(40%); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fhModalFadeIn {
           from { opacity: 0; transform: scale(0.96) translateY(8px); }
           to { opacity: 1; transform: scale(1) translateY(0); }
         }

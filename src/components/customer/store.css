@@ -1,5 +1,5 @@
 /* ===== SAIPOS-STYLE STORE ===== */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* Inter vem do layout raiz — @import aqui duplicava a fonte e bloqueava o primeiro paint. */
 
 .saipos-store {
   min-height: 100vh;
@@ -175,7 +175,8 @@
   padding: 0.65rem 0.65rem 0.65rem 42px;
   border-radius: 12px;
   border: 1.5px solid #E2E8F0;
-  font-size: 0.9rem;
+  /* 16px: menos que isso o iOS Safari da zoom automatico ao focar */
+  font-size: 16px;
   outline: none;
   background: #F8FAFC;
   transition: border 0.2s;
@@ -207,7 +208,7 @@
   background: #fff;
   border-bottom: 1px solid #E2E8F0;
   position: sticky;
-  top: 52px;
+  top: 60px;
   z-index: 40;
   padding: 0.6rem 1.25rem;
   scrollbar-width: none;
@@ -285,13 +286,15 @@
 }
 
 .store-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
   margin-bottom: 1.75rem;
 }
 
 /* PRODUCT CARD */
 .product-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   background: #fff;
   border-radius: 12px;
   padding: 0.75rem 1rem;
@@ -311,11 +314,18 @@
 }
 
 .product-img {
-  width: 72px;
-  height: 72px;
-  border-radius: 10px;
+  /* Foto grande a DIREITA, como os apps que o cliente ja usa: a ordem
+     no DOM segue img primeiro, o order inverte so no visual. */
+  order: 2;
+  width: 104px;
+  height: 104px;
+  border-radius: 12px;
   object-fit: cover;
   flex-shrink: 0;
+}
+
+.product-info {
+  order: 1;
 }
 
 .product-info {
@@ -354,7 +364,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
@@ -665,7 +675,8 @@
   padding: 0.7rem;
   border-radius: 10px;
   border: 1.5px solid #E2E8F0;
-  font-size: 0.9rem;
+  /* 16px: abaixo disso o iOS da zoom automatico em cada campo do checkout */
+  font-size: 16px;
   outline: none;
   box-sizing: border-box;
 }
@@ -717,7 +728,7 @@
 /* MOBILE BOTTOM BAR */
 .mob-bar {
   position: fixed;
-  bottom: 1rem;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 2rem);
@@ -728,6 +739,7 @@
 
 .mob-bar-btn {
   width: 100%;
+  min-height: 56px;
   padding: 0.9rem 1.25rem;
   border: none;
   cursor: pointer;
@@ -890,12 +902,17 @@
   }
 
   .product-img {
-    width: 60px;
-    height: 60px;
+    width: 96px;
+    height: 96px;
   }
 
   .product-card {
     padding: 0.6rem 0.75rem;
+  }
+
+  /* A barra flutuante da sacola cobria o ultimo produto da lista. */
+  .saipos-store {
+    padding-bottom: 104px;
   }
 }
 

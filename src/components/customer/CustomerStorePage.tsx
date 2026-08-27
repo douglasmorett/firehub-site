@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useDeferredValue } from "react";
 import {
   ShoppingCart,
   Plus,
@@ -25,8 +25,11 @@ import {
   Trash2,
   Edit3
 } from "lucide-react";
-import ComboModal from "./ComboModal";
-import PaymentGateway from "./PaymentGateway";
+import dynamic from "next/dynamic";
+// Fora do bundle inicial do cardapio: ~1.300 linhas que so entram em cena
+// quando o cliente abre um produto ou paga online.
+const ComboModal = dynamic(() => import("./ComboModal"), { ssr: false });
+const PaymentGateway = dynamic(() => import("./PaymentGateway"), { ssr: false });
 import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
@@ -101,6 +104,35 @@ export default function CustomerStorePage({
 }) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCheckout, setIsCheckout] = useState(false);
+
+  // ── SACOLA QUE SOBREVIVE ────────────────────────────────────────────────
+  // O carrinho vivia só no useState: trocar de app para pegar o cupom no
+  // WhatsApp, atualizar a página ou o navegador descartar a aba = sacola
+  // zerada e venda perdida. Persiste por loja, com validade curta (preço de
+  // cardápio muda; e quem manda no valor final é sempre o servidor).
+  const cartStorageKey = `fh_cart_${franchisee.slug || franchisee.id}`;
+  const cartHydrated = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(cartStorageKey);
+      if (raw) {
+        const salvo = JSON.parse(raw);
+        if (salvo && Array.isArray(salvo.items) && salvo.items.length > 0 && Date.now() - (salvo.at || 0) < 6 * 60 * 60 * 1000) {
+          setCart(salvo.items);
+        }
+      }
+    } catch { /* storage bloqueado: segue sem persistência */ }
+    cartHydrated.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!cartHydrated.current) return;
+    try {
+      if (cart.length === 0) localStorage.removeItem(cartStorageKey);
+      else localStorage.setItem(cartStorageKey, JSON.stringify({ at: Date.now(), items: cart }));
+    } catch { /* idem */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("Todos");
@@ -120,10 +152,13 @@ export default function CustomerStorePage({
   const hasOnlinePayment =
     PAGAMENTO_ONLINE_ATIVO && franchisee.hasOnlinePayment !== false;
   const [paymentMethod, setPaymentMethod] = useState(() => (hasOnlinePayment ? "PIX" : "DINHEIRO"));
+  // "Troco para quanto?" — sem isso o motoboy chega sem troco e a entrega
+  // trava na porta. Vazio = não precisa de troco.
+  const [trocoPara, setTrocoPara] = useState("");
 
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
-  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; isFreeShipping?: boolean } | null>(null);
+  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; pct?: number; isFreeShipping?: boolean } | null>(null);
   const [showCouponInput, setShowCouponInput] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState("");
@@ -183,6 +218,9 @@ export default function CustomerStorePage({
 
   const storeName = franchisee.storeName || franchisee.name;
   const storeStatus = isStoreOpen(franchisee.storeHours as any);
+  // Fechada AGORA por qualquer motivo: horário, chave manual ou pausa. É o
+  // que desarma o botão de finalizar antes de o cliente preencher tudo.
+  const lojaFechadaAgora = !storeStatus.open || franchisee.storeOpen === false;
 
   // Verificar pausa programada
   const isPaused = (() => {
@@ -272,16 +310,19 @@ export default function CustomerStorePage({
     return (storeRating?.reviews || []).filter(r => r.rating >= 4);
   }, [storeRating]);
 
+  // Adia o filtro para depois do paint da tecla: a digitacao fica fluida
+  // mesmo com cardapio grande.
+  const deferredSearch = useDeferredValue(searchTerm);
   const filtered = useMemo(() => {
-    if (!searchTerm) return activeTodayProducts;
-    const s = searchTerm.toLowerCase().trim();
+    if (!deferredSearch) return activeTodayProducts;
+    const s = deferredSearch.toLowerCase().trim();
     return activeTodayProducts.filter(p => {
       const pCat = (p.category || "").toLowerCase();
       const pName = p.name.toLowerCase();
       const pDesc = (p.description || "").toLowerCase();
       return pName.includes(s) || pDesc.includes(s) || pCat.includes(s);
     });
-  }, [activeTodayProducts, searchTerm]);
+  }, [activeTodayProducts, deferredSearch]);
 
   const grouped: Record<string, MenuProduct[]> = useMemo(() => {
     const g: Record<string, MenuProduct[]> = {};
@@ -427,10 +468,14 @@ export default function CustomerStorePage({
   const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null)
     ? deliveryFee
     : 0;
+  // Cupom percentual recalcula sobre o carrinho ATUAL — o valor gravado no
+  // "Aplicar" congelava e divergia do total quando o cliente mexia na sacola.
   const discount = couponApplied
     ? (couponApplied.isFreeShipping
         ? 0
-        : couponApplied.discount)
+        : (couponApplied as any).pct != null
+          ? cartTotal * (Number((couponApplied as any).pct) / 100)
+          : couponApplied.discount)
     : 0;
   const itemsTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied);
   const finalTotal = itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
@@ -453,8 +498,19 @@ export default function CustomerStorePage({
           notes: itemNotes || ""
         }];
       }
-      const ex = prev.find(i => i.id === product.id && !i.comboSelections);
-      if (ex) return prev.map(i => (i.id === product.id && !i.comboSelections) ? { ...i, quantity: i.quantity + (qty || 1) } : i);
+      // Produto simples COM observação vira linha própria: agrupar "sem
+      // cebola" com o mesmo item sem observação apagava o recado da cozinha.
+      if (itemNotes && itemNotes.trim()) {
+        return [...prev, {
+          ...product,
+          id: product.id + '_' + Date.now(),
+          price: finalPrice,
+          quantity: qty || 1,
+          notes: itemNotes.trim()
+        }];
+      }
+      const ex = prev.find(i => i.id === product.id && !i.comboSelections && !(i as any).notes);
+      if (ex) return prev.map(i => (i.id === product.id && !i.comboSelections && !(i as any).notes) ? { ...i, quantity: i.quantity + (qty || 1) } : i);
       return [...prev, { ...product, price: finalPrice, quantity: qty || 1 }];
     });
     trackPixelEvent("AddToCart", { content_name: product.name, value: finalPrice * (qty || 1), currency: "BRL" });
@@ -465,6 +521,12 @@ export default function CustomerStorePage({
     if (e && e.quantity > 1) return prev.map(i => i.id === id ? { ...i, quantity: i.quantity - 1 } : i);
     return prev.filter(i => i.id !== id);
   });
+
+  // +1 numa linha JÁ existente da sacola. O "+" chamava addToCart de novo e,
+  // para combo (ou item com observação), isso criava uma LINHA DUPLICADA em
+  // vez de subir a quantidade.
+  const incrementInCart = (id: string) =>
+    setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: i.quantity + 1 } : i));
 
   const deleteFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
   const clearCart = () => setCart([]);
@@ -515,8 +577,13 @@ export default function CustomerStorePage({
       }
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    let rafId = 0;
+    const onScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => { rafId = 0; handleScroll(); });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { window.removeEventListener("scroll", onScroll); if (rafId) cancelAnimationFrame(rafId); };
   }, [categories, searchTerm, selectedCategory]);
 
   const fetchMyOrders = async (phoneToFetch?: string) => {
@@ -561,7 +628,7 @@ export default function CustomerStorePage({
         setCouponApplied({ code: found.code, discount: fixedVal, isFreeShipping: false });
       } else {
         const pct = typeof found.discount === "number" ? found.discount : 10;
-        setCouponApplied({ code: found.code, discount: cartTotal * (pct / 100), isFreeShipping: false });
+        setCouponApplied({ code: found.code, discount: cartTotal * (pct / 100), pct, isFreeShipping: false });
       }
       setCouponLoading(false);
     } else {
@@ -578,7 +645,7 @@ export default function CustomerStorePage({
           const isFree = d.type === "free_shipping";
           const isFixed = d.type === "fixed";
           const calcDiscount = isFree ? (deliveryFee || 0) : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);
-          setCouponApplied({ code: cleanCode, discount: calcDiscount, isFreeShipping: isFree });
+          setCouponApplied({ code: cleanCode, discount: calcDiscount, pct: (!isFree && !isFixed) ? (d.discount || 10) : undefined, isFreeShipping: isFree });
         } else {
           setCouponError("Cupom inválido ou expirado.");
           setCouponApplied(null);
@@ -650,6 +717,24 @@ export default function CustomerStorePage({
       };
     }
   }, [mobileCartOpen]);
+
+  // Botão VOLTAR do celular com a sacola/checkout abertos: fecha a etapa em
+  // vez de sair do site. Checkout → volta para a sacola; sacola → cardápio.
+  useEffect(() => {
+    if (!mobileCartOpen && !isCheckout) return;
+    let fechadoPeloBack = false;
+    try { window.history.pushState({ fhSacola: true }, ""); } catch {}
+    const onPop = () => {
+      fechadoPeloBack = true;
+      if (isCheckout) setIsCheckout(false);
+      else setMobileCartOpen(false);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      if (!fechadoPeloBack) { try { window.history.back(); } catch {} }
+    };
+  }, [mobileCartOpen, isCheckout]);
 
   const paymentOptions = (() => {
     const base: { k: string; l: string }[] = [];
@@ -855,14 +940,17 @@ export default function CustomerStorePage({
           setDeliveryMessage(data.message || "");
         }
       } else {
-        setDeliveryFee(defaultStoreFee);
-        setDeliveryFeeCalculated(true);
-        setDeliveryAvailable(true);
+        // Sem resposta valida nao se assume taxa nem area: pede novo calculo.
+        setDeliveryFee(null);
+        setDeliveryFeeCalculated(false);
+        setDeliveryAvailable(false);
+        setDeliveryMessage("Não consegui calcular a entrega agora. Toque em Recalcular.");
       }
     } catch {
-      setDeliveryFee(defaultStoreFee);
-      setDeliveryFeeCalculated(true);
-      setDeliveryAvailable(true);
+      setDeliveryFee(null);
+      setDeliveryFeeCalculated(false);
+      setDeliveryAvailable(false);
+      setDeliveryMessage("Não consegui calcular a entrega agora. Toque em Recalcular.");
     } finally {
       setDeliveryCalculating(false);
     }
@@ -902,6 +990,12 @@ export default function CustomerStorePage({
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    // Primeiro de tudo: fechou, não cria pedido — com o motivo e o horário,
+    // não um "Loja fechada.." genérico depois do formulário inteiro.
+    if (lojaFechadaAgora) {
+      alert(`🔴 A loja está fechada agora${!storeStatus.open && storeStatus.text ? ` — ${storeStatus.text}` : ""}. Seus itens ficam na sacola para quando abrir!`);
+      return;
+    }
     if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
       alert(`⚠️ O pedido mínimo desta loja é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.`);
       return;
@@ -943,6 +1037,12 @@ export default function CustomerStorePage({
           customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? finalAddress : null,
           deliveryType, paymentMethod, notes,
+          // Troco em dinheiro: vai para a cozinha/motoboy junto do pedido.
+          changeAmount: (() => {
+            if (paymentMethod !== "DINHEIRO" || !trocoPara.trim()) return null;
+            const v = parseFloat(trocoPara.replace(",", "."));
+            return Number.isFinite(v) && v >= finalTotal ? v : null;
+          })(),
           deliveryFee: effectiveDeliveryFee,
           couponCode: couponApplied?.code || null,
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
@@ -953,7 +1053,10 @@ export default function CustomerStorePage({
         const d = await res.json();
         trackPixelEvent("Purchase", { value: finalTotal, currency: "BRL", order_id: d.orderId });
         const pmUpper = (paymentMethod || "").toUpperCase();
-        const isOnline = ONLINE_METHODS.some(m => pmUpper.includes(m));
+        // Comparação EXATA: com includes(), "PIX_ENTREGA".includes("PIX") era
+        // true e o cliente do pagamento na entrega caía no modal do gateway —
+        // que está desligado — com o pedido JÁ criado na cozinha.
+        const isOnline = ONLINE_METHODS.includes(pmUpper);
         if (isOnline) {
           setPendingOrderId(d.orderId);
           setPendingAmount(finalTotal);
@@ -983,9 +1086,16 @@ export default function CustomerStorePage({
   useEffect(() => {
     if (!orderSuccess) return;
     const poll = setInterval(async () => {
+      // Em segundo plano nao gasta bateria/rede do cliente.
+      if (document.visibilityState === "hidden") return;
       try {
         const r = await fetch(`/api/customer-order/status?id=${orderSuccess}`);
-        if (r.ok) { const d = await r.json(); setTrackingStatus(d.status); }
+        if (r.ok) {
+          const d = await r.json();
+          setTrackingStatus(d.status);
+          // Estado final: nada mais vai mudar — para de consultar.
+          if (d.status === "ENTREGUE" || d.status === "CANCELADO") clearInterval(poll);
+        }
       } catch {}
     }, 5000);
     return () => clearInterval(poll);
@@ -1127,8 +1237,10 @@ export default function CustomerStorePage({
           {!isCheckout && cart.length > 0 && (
             <button
               type="button"
-              onClick={clearCart}
-              style={{ background: "none", border: "none", color: "#64748B", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em" }}
+              // Um toque aqui apagava a sacola INTEIRA sem perguntar — e o
+              // botão fica a um dedo do X de fechar. Confirmação obrigatória.
+              onClick={() => { if (window.confirm("Esvaziar a sacola? Todos os itens serão removidos.")) clearCart(); }}
+              style={{ background: "none", border: "none", color: "#64748B", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em", padding: "10px 8px" }}
             >
               Limpar
             </button>
@@ -1197,8 +1309,8 @@ export default function CustomerStorePage({
 
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "4px", borderTop: "1px dashed #F1F5F9" }}>
                       <button
-                        onClick={() => removeFromCart(item.id)}
-                        style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "0.75rem", cursor: "pointer", padding: "2px 0", fontWeight: 600 }}
+                        onClick={() => deleteFromCart(item.id)}
+                        style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "0.8rem", cursor: "pointer", padding: "8px 0", fontWeight: 600 }}
                       >
                         Remover
                       </button>
@@ -1208,12 +1320,12 @@ export default function CustomerStorePage({
                           type="button"
                           onClick={() => removeFromCart(item.id)}
                           style={{
-                            width: "22px",
-                            height: "22px",
-                            minWidth: "22px",
-                            minHeight: "22px",
-                            maxWidth: "22px",
-                            maxHeight: "22px",
+                            width: "34px",
+                            height: "34px",
+                            minWidth: "34px",
+                            minHeight: "34px",
+                            maxWidth: "34px",
+                            maxHeight: "34px",
                             borderRadius: "50%",
                             background: "#FFFFFF",
                             border: "1.5px solid #CBD5E1",
@@ -1240,14 +1352,14 @@ export default function CustomerStorePage({
                         </span>
                         <button
                           type="button"
-                          onClick={() => addToCart(item, item.comboSelections, 0, 1, item.notes)}
+                          onClick={() => incrementInCart(item.id)}
                           style={{
-                            width: "22px",
-                            height: "22px",
-                            minWidth: "22px",
-                            minHeight: "22px",
-                            maxWidth: "22px",
-                            maxHeight: "22px",
+                            width: "34px",
+                            height: "34px",
+                            minWidth: "34px",
+                            minHeight: "34px",
+                            maxWidth: "34px",
+                            maxHeight: "34px",
                             borderRadius: "50%",
                             background: "#16A34A",
                             border: "none",
@@ -1299,7 +1411,7 @@ export default function CustomerStorePage({
                           <div style={{ fontSize: "0.72rem", color: "#15803D" }}>
                             {couponApplied.isFreeShipping
                               ? "Frete Grátis Aplicado!"
-                              : `Desconto de R$ ${couponApplied.discount.toFixed(2).replace(".", ",")}`}
+                              : `Desconto de R$ ${discount.toFixed(2).replace(".", ",")}`}
                           </div>
                         </div>
                         <button onClick={() => setCouponApplied(null)} style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>Remover</button>
@@ -1437,19 +1549,24 @@ export default function CustomerStorePage({
                 >
                   🛵 Entrega (Delivery)
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDeliveryType("PICKUP");
-                    setDeliveryFee(0);
-                    setDeliveryFeeCalculated(true);
-                    setDeliveryAvailable(true);
-                    setDeliveryMessage("Retirada no balcão selecionada.");
-                  }}
-                  className={`checkout-type-btn ${deliveryType === "PICKUP" ? "active" : ""}`}
-                >
-                  🛍️ Retirar no Balcão
-                </button>
+                {/* Loja "Somente Delivery" não oferece retirada: o botão
+                    existia mesmo assim e o cliente escolhia um modo que a
+                    loja não atende. */}
+                {!franchisee.storeDeliveryOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeliveryType("PICKUP");
+                      setDeliveryFee(0);
+                      setDeliveryFeeCalculated(true);
+                      setDeliveryAvailable(true);
+                      setDeliveryMessage("Retirada no balcão selecionada.");
+                    }}
+                    className={`checkout-type-btn ${deliveryType === "PICKUP" ? "active" : ""}`}
+                  >
+                    🛍️ Retirar no Balcão
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1470,8 +1587,10 @@ export default function CustomerStorePage({
               <input
                 className="checkout-input"
                 type="tel"
+                maxLength={16}
+                autoComplete="tel"
                 value={customerPhone}
-                onChange={e => setCustomerPhone(e.target.value)}
+                onChange={e => setCustomerPhone(e.target.value.replace(/[^ds()+-]/g, ""))}
                 placeholder="Ex: (11) 99999-9999"
               />
             </div>
@@ -1519,6 +1638,7 @@ export default function CustomerStorePage({
                     <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Número *</label>
                     <input
                       className="checkout-input"
+                      inputMode="numeric"
                       value={customerNumber}
                       onChange={e => setCustomerNumber(e.target.value)}
                       placeholder="Ex: 98 ou S/N"
@@ -1787,9 +1907,36 @@ export default function CustomerStorePage({
               <label className="checkout-label">Forma de Pagamento</label>
               <div className="checkout-type-row" style={{ flexWrap: "wrap" }}>
                 {paymentOptions.map(pm => (
-                  <button key={pm.k} type="button" onClick={() => setPaymentMethod(pm.k)} className={`checkout-type-btn ${paymentMethod === pm.k ? "active" : ""}`} style={{ flex: "1 1 30%", fontSize: "0.78rem" }}>{pm.l}</button>
+                  <button key={pm.k} type="button" onClick={() => setPaymentMethod(pm.k)} className={`checkout-type-btn ${paymentMethod === pm.k ? "active" : ""}`} style={{ flex: "1 1 30%", fontSize: "0.78rem", minHeight: "44px" }}>{pm.l}</button>
                 ))}
               </div>
+              {/* Dinheiro sem pergunta de troco = motoboy sem troco na porta. */}
+              {paymentMethod === "DINHEIRO" && (
+                <div style={{ marginTop: "8px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#92400E", display: "block", marginBottom: "4px" }}>
+                    💵 Troco para quanto? <span style={{ fontWeight: 500 }}>(deixe vazio se não precisar)</span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={trocoPara}
+                    onChange={e => setTrocoPara(e.target.value.replace(/[^\d.,]/g, ""))}
+                    placeholder={`Ex: ${Math.ceil((finalTotal + 10) / 10) * 10}`}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #FCD34D", fontSize: "16px", outline: "none", boxSizing: "border-box", background: "#fff" }}
+                  />
+                  {(() => {
+                    const v = parseFloat(trocoPara.replace(",", "."));
+                    if (trocoPara.trim() && Number.isFinite(v) && v > 0 && v < finalTotal) {
+                      return (
+                        <div style={{ fontSize: "0.75rem", color: "#DC2626", fontWeight: 600, marginTop: "4px" }}>
+                          O valor é menor que o total do pedido (R$ {finalTotal.toFixed(2).replace(".", ",")}).
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              )}
             </div>
 
             <div>
@@ -1880,28 +2027,32 @@ export default function CustomerStorePage({
             </button>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {/* Loja fechada: o botão AVISA em vez de deixar preencher tudo
+                  para levar um alert genérico no último clique. */}
               <button
                 type="button"
                 onClick={handleCheckout}
-                disabled={loading}
+                disabled={loading || lojaFechadaAgora}
                 style={{
                   width: "100%",
                   padding: "13px",
                   borderRadius: "12px",
                   border: "none",
-                  background: "linear-gradient(135deg, #059669, #047857)",
-                  color: "#FFFFFF",
+                  background: lojaFechadaAgora ? "#E2E8F0" : "linear-gradient(135deg, #059669, #047857)",
+                  color: lojaFechadaAgora ? "#64748B" : "#FFFFFF",
                   fontWeight: 900,
                   fontSize: "0.95rem",
-                  cursor: loading ? "not-allowed" : "pointer",
-                  boxShadow: "0 4px 14px rgba(5, 150, 105, 0.35)",
+                  cursor: loading || lojaFechadaAgora ? "not-allowed" : "pointer",
+                  boxShadow: lojaFechadaAgora ? "none" : "0 4px 14px rgba(5, 150, 105, 0.35)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "6px"
                 }}
               >
-                {loading ? "Enviando pedido..." : `✓ Finalizar Pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`}
+                {lojaFechadaAgora
+                  ? `🔴 Loja fechada${!storeStatus.open && storeStatus.text ? ` • ${storeStatus.text}` : ""}`
+                  : loading ? "Enviando pedido..." : `✓ Finalizar Pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`}
               </button>
             </div>
           )}
@@ -1942,7 +2093,7 @@ export default function CustomerStorePage({
       {/* BANNER PANORÂMICO */}
       {franchisee.storeBanner && (
         <div className="store-banner">
-          <img src={franchisee.storeBanner} alt={storeName} />
+          <img src={franchisee.storeBanner} alt={storeName} fetchPriority="high" decoding="async" />
           <div className="store-banner-overlay" />
         </div>
       )}
@@ -2224,7 +2375,7 @@ export default function CustomerStorePage({
                   return (
                     <div
                       key={`highlight_${p.id}`}
-                      onClick={() => p.isCombo ? setComboProduct(p) : q === 0 && addToCart(p)}
+                      onClick={() => setComboProduct(p)}
                       style={{
                         backgroundColor: "#FFFFFF",
                         borderRadius: "16px",
@@ -2283,7 +2434,7 @@ export default function CustomerStorePage({
                             type="button"
                             onClick={e => {
                               e.stopPropagation();
-                              p.isCombo ? setComboProduct(p) : addToCart(p);
+                              setComboProduct(p);
                             }}
                             style={{
                               padding: "6px 14px",
@@ -2317,7 +2468,7 @@ export default function CustomerStorePage({
                 {prods.map(p => {
                   const q = getQty(p.id);
                   return (
-                    <div key={p.id} className={`product-card ${q > 0 ? "in-cart" : ""}`} onClick={() => p.isCombo ? setComboProduct(p) : q === 0 && addToCart(p)}>
+                    <div key={p.id} className={`product-card ${q > 0 ? "in-cart" : ""}`} onClick={() => setComboProduct(p)}>
                       {p.imageUrl && <img src={p.imageUrl} alt="" className="product-img" loading="lazy" decoding="async" />}
                       <div className="product-info">
                         <div className="product-name">
@@ -2372,12 +2523,12 @@ export default function CustomerStorePage({
                         )}
                         <p className="product-price">
                           {precoVariaPorEscolha(p as any) && <span className="product-price-from">A partir de </span>}
-                          R$ {precoMinimoDoProduto(p as any).toFixed(2)}
+                          R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
                         </p>
                       </div>
                       <div className="product-actions">
                         {q === 0 ? (
-                          <button className="add-btn" onClick={e => { e.stopPropagation(); p.isCombo ? setComboProduct(p) : addToCart(p); }}><Plus size={18} /></button>
+                          <button className="add-btn" onClick={e => { e.stopPropagation(); setComboProduct(p); }}><Plus size={18} /></button>
                         ) : (
                           <div className="qty-controls">
                             <button className="qty-btn-minus" onClick={e => { e.stopPropagation(); removeFromCart(p.id); }}><Minus size={14} /></button>
@@ -2638,7 +2789,7 @@ export default function CustomerStorePage({
         <div className="mob-bar">
           <button className="mob-bar-btn" onClick={() => setMobileCartOpen(true)}>
             <span>🛒 Ver sacola ({cartCount})</span>
-            <span>R$ {finalTotal.toFixed(2)}</span>
+            <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
           </button>
         </div>
       )}
@@ -2652,8 +2803,11 @@ export default function CustomerStorePage({
         </div>
       )}
 
-      {/* COMBO MODAL COM PADRÃO IFOOD */}
-      {comboProduct && comboProduct.isCombo && (comboProduct.comboGroups?.length || comboProduct.comboConfig) && (
+      {/* TELA DE PRODUTO (bottom-sheet) — combo E produto simples.
+          Antes só combos abriam; produto simples caía direto na sacola com um
+          toque em qualquer ponto do card: compra acidental na rolagem, sem
+          descrição completa, sem observação e sem o botão claro de confirmar. */}
+      {comboProduct && (
         <ComboModal
           product={{
             id: comboProduct.id,
@@ -2661,11 +2815,20 @@ export default function CustomerStorePage({
             description: comboProduct.description,
             price: comboProduct.price,
             imageUrl: comboProduct.imageUrl,
-            comboGroups: comboProduct.comboGroups || []
+            comboGroups: (comboProduct.isCombo && comboProduct.comboGroups) || []
           }}
           onClose={() => setComboProduct(null)}
           onConfirm={(selections, extraSum, qty, comboNotes) => {
-            addToCart(comboProduct, selections, extraSum, qty, comboNotes);
+            const temGrupos = Boolean(comboProduct.isCombo && comboProduct.comboGroups?.length);
+            // Produto sem grupos não carrega comboSelections vazio — senão a
+            // sacola e a cozinha tratariam um item simples como combo.
+            addToCart(
+              comboProduct,
+              temGrupos ? selections : undefined,
+              temGrupos ? extraSum : 0,
+              qty,
+              comboNotes
+            );
             setComboProduct(null);
           }}
         />
@@ -2803,7 +2966,7 @@ export default function CustomerStorePage({
                       key={`promo_${p.id}`}
                       onClick={() => {
                         setShowPromotionsModal(false);
-                        p.isCombo ? setComboProduct(p) : addToCart(p);
+                        setComboProduct(p);
                       }}
                       style={{
                         background: "#FFFFFF",
@@ -3024,6 +3187,9 @@ export default function CustomerStorePage({
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(0, 0, 0, 0.65)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", backdropFilter: "blur(4px)" }}
           onClick={async () => {
+            // Um toque ACIDENTAL fora do modal cancelava o pedido inteiro sem
+            // perguntar — no meio do Pix, com o QR na tela.
+            if (!window.confirm("Cancelar o pagamento? O pedido será cancelado.")) return;
             setShowPayment(false);
             if (pendingOrderId) {
               try {
