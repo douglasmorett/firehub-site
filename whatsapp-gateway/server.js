@@ -98,6 +98,50 @@ function apagarSessaoDoContato(instanceName, jid) {
   return apagados;
 }
 
+// ── LID → TELEFONE ──────────────────────────────────────────────────────────
+//
+// O WhatsApp está migrando os contatos para LID (um id interno, "220104...@lid")
+// no lugar do JID de telefone. Mensagem cifrada para o endereço @lid chega no
+// aparelho e NÃO decifra: vira "Aguardando mensagem" para sempre. E não adianta
+// renegociar a sessão — a autocura acima descartava, o envio seguinte falhava
+// igual, e o ciclo recomeçava (foi exatamente o que apareceu no log:
+// retransmissão 1 → 2 → descartada → 1 → 2 → descartada).
+//
+// A cura é endereçar pelo TELEFONE. O Baileys mantém o mapa LID↔telefone das
+// conversas que já viu; a chamada é opcional porque a API mudou de lugar entre
+// versões — se não existir, devolvemos o JID original e nada piora.
+async function resolverParaTelefone(sock, jid) {
+  const texto = String(jid || "");
+  if (!texto.endsWith("@lid")) return texto;
+
+  try {
+    const mapa = sock?.signalRepository?.lidMapping;
+    const candidatos = [
+      mapa?.getPNForLID?.bind(mapa),
+      mapa?.getPNFromLID?.bind(mapa),
+    ].filter(Boolean);
+
+    for (const resolver of candidatos) {
+      const pn = await resolver(texto);
+      const achado = String(pn || "");
+      if (achado.includes("@s.whatsapp.net")) {
+        console.log(`[WhatsApp Gateway] 🔗 LID ${texto} resolvido para ${achado}`);
+        return achado;
+      }
+      if (/^\d{10,15}$/.test(achado)) {
+        const comSufixo = `${achado}@s.whatsapp.net`;
+        console.log(`[WhatsApp Gateway] 🔗 LID ${texto} resolvido para ${comSufixo}`);
+        return comSufixo;
+      }
+    }
+  } catch (err) {
+    console.warn(`[WhatsApp Gateway] Aviso ao resolver LID ${texto}:`, err.message);
+  }
+
+  console.warn(`[WhatsApp Gateway] ⚠️ LID ${texto} sem telefone conhecido; enviando para o próprio LID (pode não decifrar).`);
+  return texto;
+}
+
 function registrarPedidoDeRetransmissao(instanceName, key) {
   const jid = key?.remoteJid;
   if (!jid || String(jid).endsWith("@g.us")) return;
@@ -408,6 +452,19 @@ async function getOrCreateSocket(instanceName) {
 
       console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}" (isAudio: ${isAudio})`);
 
+      // Conversa endereçada por LID: descobrir o telefone AQUI e mandar junto.
+      // O FireHub já procura `senderAlt` entre os candidatos e pontua telefone
+      // brasileiro acima de tudo — preenchendo este campo, a resposta passa a
+      // sair para o telefone em vez do @lid, que é o que não decifra.
+      let senderAlt = "";
+      if (String(remoteJid).endsWith("@lid")) {
+        const telefoneReal = await resolverParaTelefone(sock, remoteJid);
+        if (telefoneReal !== remoteJid) senderAlt = telefoneReal;
+        // O que o Baileys entregou nesta mensagem, para não ficar no escuro
+        // caso o mapa não tenha o contato.
+        console.log(`[WhatsApp Gateway] 🪪 LID recebido. key=${JSON.stringify(msg.key)} senderAlt="${senderAlt}"`);
+      }
+
       try {
         const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
         await fetch(webhookUrl, {
@@ -420,6 +477,7 @@ async function getOrCreateSocket(instanceName) {
               key: msg.key,
               message: payloadMessage,
               sender: remoteJid,
+              senderAlt,
               pushName: msg.pushName || "",
               // Conta empresarial verificada. Cliente de verdade nunca tem esse
               // campo; robô institucional (InfinityPay, banco, marketplace) tem.
@@ -741,9 +799,12 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
 
   // Se o número já for um JID completo (@s.whatsapp.net ou @lid), envia diretamente para ele
   const cleanNum = String(number).trim();
-  const jid = (cleanNum.includes("@s.whatsapp.net") || cleanNum.includes("@lid"))
+  const jidBruto = (cleanNum.includes("@s.whatsapp.net") || cleanNum.includes("@lid"))
     ? cleanNum
     : `${cleanNum.replace(/\D/g, "")}@s.whatsapp.net`;
+  // Endereço @lid não decifra no aparelho do destinatário — sempre tentar o
+  // telefone antes de enviar. Ver resolverParaTelefone no topo do arquivo.
+  const jid = await resolverParaTelefone(session.sock, jidBruto);
 
   try {
     const enviada = await session.sock.sendMessage(jid, { text });
@@ -777,9 +838,11 @@ app.post("/message/sendMedia/:instanceName", async (req, res) => {
   }
 
   const cleanNum = String(number || "").trim();
-  const jid = (cleanNum.includes("@s.whatsapp.net") || cleanNum.includes("@lid"))
+  const jidBrutoMidia = (cleanNum.includes("@s.whatsapp.net") || cleanNum.includes("@lid"))
     ? cleanNum
     : `${cleanNum.replace(/\D/g, "")}@s.whatsapp.net`;
+  // Mesma regra do texto: mídia para @lid também não decifra.
+  const jid = await resolverParaTelefone(session.sock, jidBrutoMidia);
 
   const mediaUrl = mediaMessage?.media || mediaMessage?.url || directMediaUrl;
   const caption = mediaMessage?.caption || directCaption || "";
