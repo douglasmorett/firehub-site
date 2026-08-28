@@ -13,11 +13,16 @@ function priceVal(val: any): number {
 }
 
 /**
- * Universal payment parser for iFood, JotaJá, PDV, and Website orders.
+ * Universal payment parser for iFood, JotaJá, Brendi, PDV, and Website orders.
  * Strictly checks offline vs online payment flags to ensure delivery motoboys
  * ALWAYS know when to collect payment at delivery.
+ *
+ * BRENDI usa o mesmo bloco `payments` do Open Delivery (Abrasel) que o JotaJá:
+ * methods[] + prepaid/pending. Errar aqui cobra o cliente duas vezes (ou deixa
+ * o motoboy sem saber que precisa cobrar) — por isso a decisão online/offline
+ * é sempre por flag explícita, nunca por adivinhação.
  */
-export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA' | 'PDV' | 'SITE' = 'IFOOD'): ParsedPaymentInfo {
+export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA' | 'BRENDI' | 'PDV' | 'SITE' = 'IFOOD'): ParsedPaymentInfo {
   const paymentsObj = orderData?.payments || {};
   const paymentMethods = paymentsObj.methods ?? (Array.isArray(paymentsObj) ? paymentsObj : []);
   const paymentList = Array.isArray(paymentMethods) ? paymentMethods : [];
@@ -37,26 +42,41 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
   for (const payment of listToIterate) {
     const rawName = (payment.name || payment.description || '').toString().trim();
     const rawMethod = (payment.method || '').toString().toUpperCase();
+    // A Brendi manda valores em minúsculas ('credit', 'online' — visto na doc
+    // da Saipos): sem normalizar a caixa do `type`, o pagamento online dela
+    // cairia em "Cobrar na Entrega" e o cliente seria cobrado DUAS vezes.
+    // Uppercase aqui não muda a decisão de nenhum canal que já mandava
+    // maiúsculo — só deixa de punir quem manda minúsculo.
+    const rawType = (payment.type || '').toString().toUpperCase();
+
+    // 'PARTNET_PAYMENT' (sic — typo do próprio contrato, preservado na doc da
+    // Saipos) é como a Brendi marca pagamento processado pela PLATAFORMA: é
+    // pago online por definição. Aceitamos também a grafia corrigida, para o
+    // dia em que consertarem o typo do lado deles.
+    const isPartnerPayment = rawMethod === 'PARTNET_PAYMENT' || rawMethod === 'PARTNER_PAYMENT';
 
     const isCash = rawMethod === 'CASH' || rawMethod.includes('DINHEIR') || rawName.toLowerCase().includes('dinheir');
 
-    const pChange = payment.changeFor ?? payment.cash?.changeFor;
+    // `change` sem sufixo é a variação Open Delivery que a Brendi usa para o
+    // troco (JotaJá/iFood usam changeFor) — sem ele o motoboy sai sem troco.
+    const pChange = payment.changeFor ?? payment.cash?.changeFor ?? payment.change;
     if (pChange !== undefined && pChange !== null) {
       changeAmountTotal += Number(pChange);
       hasChange = true;
     }
 
     const pOffline = payment.prepaid === false ||
-      payment.type === 'OFFLINE' ||
-      payment.type === 'PENDING' ||
+      rawType === 'OFFLINE' ||
+      rawType === 'PENDING' ||
       isCash;
 
     const pOnline = payment.prepaid === true ||
-      payment.type === 'ONLINE' ||
-      payment.type === 'PREPAID' ||
-      payment.method === 'DIGITAL_WALLET' ||
-      payment.method === 'ONLINE' ||
-      payment.method === 'IFOOD_PAY';
+      rawType === 'ONLINE' ||
+      rawType === 'PREPAID' ||
+      isPartnerPayment ||
+      rawMethod === 'DIGITAL_WALLET' ||
+      rawMethod === 'ONLINE' ||
+      rawMethod === 'IFOOD_PAY';
 
     if (pOffline) anyExplicitOffline = true;
     if (pOnline) anyOnlinePrepaid = true;
@@ -72,8 +92,8 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
       baseName = 'Crédito';
     } else if (rawMethod.includes('PIX') || rawName.toLowerCase().includes('pix')) {
       baseName = 'Pix';
-    } else if (rawMethod === 'DIGITAL_WALLET' || rawMethod === 'ONLINE' || rawMethod === 'IFOOD_PAY' || rawMethod === 'APP') {
-      baseName = source === 'JOTAJA' ? 'JotaJá App' : 'iFood App';
+    } else if (rawMethod === 'DIGITAL_WALLET' || rawMethod === 'ONLINE' || rawMethod === 'IFOOD_PAY' || rawMethod === 'APP' || isPartnerPayment) {
+      baseName = source === 'JOTAJA' ? 'JotaJá App' : source === 'BRENDI' ? 'Brendi App' : 'iFood App';
     }
 
     let displayMethod = rawName || baseName;

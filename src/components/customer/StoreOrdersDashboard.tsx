@@ -502,10 +502,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             #{seqNum} — {order.customerName}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
+            {/* Brendi ganha roxo (violeta #EDE9FE/#6D28D9) — tom diferente do
+                lilás da IA (#F3E8FF/#7C3AED) de propósito: os dois convivem na
+                mesma tela e o atendente distingue o canal pela cor. */}
             <span style={{
               padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
-              background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
-              color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
+              background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "BRENDI" ? "#EDE9FE" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
+              color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "BRENDI" ? "#6D28D9" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
             }}>
               {order.status === "CRIANDO_IA"
                 ? "🤖 IA criando..."
@@ -513,6 +516,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 ? "🤖 IA Whats"
                 : order.source === "IFOOD"
                 ? `iFood #${order.ifoodReference || ""}`
+                : order.source === "BRENDI"
+                ? `Brendi #${order.openDeliveryReference || ""}`
                 : order.source === "JOTAJA"
                 ? `Jotajá #${order.openDeliveryReference || ""}`
                 : order.source === "PDV"
@@ -915,17 +920,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     ifood: boolean;
     "99food": boolean;
     jotaja: boolean;
+    brendi: boolean;
     retirada: boolean;
     site: boolean;
   }>({
     ifood: true,
     "99food": true,
     jotaja: true,
+    brendi: true,
     retirada: true,
     site: true,
   });
 
-  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "retirada" | "site") => {
+  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "retirada" | "site") => {
     setSelectedChannels(prev => ({
       ...prev,
       [ch]: !prev[ch]
@@ -1900,12 +1907,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const matchesChannelFilter = (o: any) => {
     const isIfood = o.source === "IFOOD" || Boolean(o.ifoodOrderId) || Boolean(o.ifoodReference);
     const is99Food = o.source === "99FOOD" || o.openDeliveryChannel === "99FOOD" || (o.source === "OPEN_DELIVERY" && String(o.openDeliveryChannel).includes("99"));
-    const isJotaja = o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD");
+    const isBrendi = o.source === "BRENDI" || o.openDeliveryChannel === "BRENDI";
+    // O JotaJá era o "resto" do Open Delivery (todo pedido com
+    // openDeliveryOrderId que não fosse 99Food) — com a Brendi gravando o id
+    // dela no MESMO campo, o pedido dela cairia aqui e o filtro Brendi do
+    // usuário não teria efeito nenhum. Canal decide; presença de campo não.
+    const isJotaja = !isBrendi && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
     const isRetirada = o.deliveryType === "PICKUP" || o.deliveryType === "TAKEOUT" || o.deliveryType === "BALCAO" || o.source === "PDV" || Boolean(o.tableNumber);
-    const isSite = !isIfood && !is99Food && !isJotaja && !isRetirada;
+    const isSite = !isIfood && !is99Food && !isBrendi && !isJotaja && !isRetirada;
 
     if (isIfood && selectedChannels.ifood) return true;
     if (is99Food && selectedChannels["99food"]) return true;
+    if (isBrendi && selectedChannels.brendi) return true;
     if (isJotaja && selectedChannels.jotaja) return true;
     if (isRetirada && selectedChannels.retirada) return true;
     if (isSite && selectedChannels.site) return true;
@@ -2630,7 +2643,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     (order as any).isPrepaid === true
                   );
 
-                  const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : "Online";
+                  const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : order.source === "BRENDI" ? "Brendi" : "Online";
 
                   let baseMethod = translatePayment(payMethodRaw).replace(/\s*\([^)]*\)/gi, "").trim();
                   if (!baseMethod) baseMethod = "Cartão";
@@ -2951,7 +2964,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           ? `O cliente solicitou o reembolso de um item pelo iFood.`
           : isDueDate
           ? `O cliente pediu atualização do tempo de entrega pelo iFood.`
-          : `O cliente solicitou o cancelamento ${(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : "pelo iFood"}`;
+          : `O cliente solicitou o cancelamento ${(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : (disputeOrder as any).source === "BRENDI" ? "pela Brendi" : "pelo iFood"}`;
 
         const boxBg = isResend ? "#EFF6FF" : isRefund ? "#ECFDF5" : "#FEF3C7";
         const boxBorder = isResend ? "#93C5FD" : isRefund ? "#A7F3D0" : "#FDE68A";
@@ -2985,7 +2998,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ background: "#F9FAFB", borderRadius: "8px", padding: "10px", marginBottom: "16px", fontSize: "0.8rem", color: "#4B5563" }}>
                 <strong>Cliente:</strong> {disputeOrder.customerName} — {disputeOrder.customerPhone}<br/>
                 <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
-                {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? "Jotajá" : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
+                {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? ((disputeOrder as any).source === "BRENDI" ? "Brendi" : "Jotajá") : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
               </div>
               {/* Campo de motivo para resposta */}
               <div style={{ marginBottom: "16px" }}>
@@ -3006,7 +3019,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
-                      if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
+                      // Canal decide a rota: BRENDI antes do JotaJá porque os
+                      // dois compartilham o openDeliveryOrderId — e a rota da
+                      // Brendi fala `acao` (nasceu em português), não `action`.
+                      if ((disputeOrder as any).source === "BRENDI" && (disputeOrder as any).openDeliveryOrderId) {
+                        r = await fetch("/api/customer-order/brendi-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, acao: "deny_cancellation", reason }) });
+                      } else if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
                         r = await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, action: "deny_cancellation", reason }) });
                       } else {
                         r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "deny", denyReason: reason }) });
@@ -3025,7 +3043,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
-                      if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
+                      // Mesma separação por canal do botão de recusa acima.
+                      if ((disputeOrder as any).source === "BRENDI" && (disputeOrder as any).openDeliveryOrderId) {
+                        r = await fetch("/api/customer-order/brendi-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, acao: "accept_cancellation" }) });
+                      } else if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
                         r = await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, action: "accept_cancellation" }) });
                       } else {
                         r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "accept" }) });
@@ -3500,6 +3521,36 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                 >
                   <img src="/images/logos/jotaja.png" alt="Jotajá" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                </button>
+
+                {/* Brendi — botão textual roxo (mesma cor do badge) porque ainda
+                    não existe logo dela em /images/logos; um <img> com src
+                    quebrado viraria um botão invisível que o lojista clicaria
+                    sem ver o estado. */}
+                <button
+                  type="button"
+                  onClick={() => toggleChannel("brendi")}
+                  title={selectedChannels.brendi ? "Brendi: Ativo (Clique para filtrar)" : "Brendi: Oculto (Clique para exibir)"}
+                  style={{
+                    height: "26px",
+                    padding: "2px 7px",
+                    borderRadius: "6px",
+                    border: selectedChannels.brendi ? "1.5px solid #8B5CF6" : "1.5px solid #CBD5E1",
+                    background: selectedChannels.brendi ? "#F5F3FF" : "#F1F5F9",
+                    color: selectedChannels.brendi ? "#5B21B6" : "#64748B",
+                    filter: selectedChannels.brendi ? "none" : "grayscale(100%) opacity(0.35)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "3px",
+                    fontSize: "0.72rem",
+                    fontWeight: 800,
+                    boxShadow: selectedChannels.brendi ? "0 1px 3px rgba(139,92,246,0.15)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "0.82rem" }}>💬</span>
+                  <span>Brendi</span>
                 </button>
 
                 {/* Retirada / Balcão */}

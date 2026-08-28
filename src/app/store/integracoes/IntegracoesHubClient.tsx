@@ -11,6 +11,10 @@ export default function IntegracoesHubClient({
   facebookPixelId: initialFacebookPixelId,
   pagarmeRecipientId,
   mpConnected,
+  brendiClientId,
+  brendiMerchantId,
+  brendiConnected: initialBrendiConnected,
+  brendiHasSecret,
   initialIfoodIntegrations,
 }: {
   ifoodMerchantId?: string;
@@ -21,10 +25,14 @@ export default function IntegracoesHubClient({
   facebookPixelId?: string;
   pagarmeRecipientId?: string;
   mpConnected?: boolean;
+  brendiClientId?: string;
+  brendiMerchantId?: string;
+  brendiConnected?: boolean;
+  brendiHasSecret?: boolean;
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | "brendi" | null>(null);
 
   // Meta Pixel state
   const [pixelId, setPixelId] = useState(initialFacebookPixelId || "");
@@ -42,6 +50,18 @@ export default function IntegracoesHubClient({
   const [jjHasSecret, setJjHasSecret] = useState(false);
   const [jjLoading, setJjLoading] = useState(true);
   const [jjSaving, setJjSaving] = useState(false);
+
+  // Brendi credentials state — mesmo desenho do JotaJá (Open Delivery por
+  // loja): o lojista cola credenciais geradas no painel da Brendi. As props do
+  // servidor pintam a tela de primeira (vêm de SQL cru no page.tsx, porque as
+  // colunas brendi* ainda não vivem no Prisma Client); o GET no mount apenas
+  // re-confere — o secret nunca viaja em prop nem em resposta nenhuma.
+  const [brClientId, setBrClientId] = useState(brendiClientId || "");
+  const [brClientSecret, setBrClientSecret] = useState("");
+  const [brMerchantId, setBrMerchantId] = useState(brendiMerchantId || "");
+  const [brConnected, setBrConnected] = useState(!!initialBrendiConnected);
+  const [brHasSecret, setBrHasSecret] = useState(!!brendiHasSecret);
+  const [brSaving, setBrSaving] = useState(false);
 
   // 99Food state — autoatendimento: quem responde se está conectado é o 99Food,
   // não um formulário salvo. `food99Connected` vem de /api/99food/conectar.
@@ -116,6 +136,23 @@ export default function IntegracoesHubClient({
       .catch(() => {})
       .finally(() => setJjLoading(false));
 
+    // Estado da Brendi re-conferido no servidor. As props já pintaram a tela;
+    // esta chamada existe porque a rota garante as colunas no boot
+    // (ensureBrendiColumns) e porque `hasSecret` de verdade mora no banco —
+    // se a rota ainda não existir/responder, as props seguem valendo.
+    fetch("/api/store/integracoes/brendi")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok) {
+          setBrClientId(data.clientId || "");
+          setBrClientSecret(""); // o secret nunca volta do servidor
+          setBrHasSecret(!!data.hasSecret);
+          setBrMerchantId(data.merchantId || "");
+          setBrConnected(!!data.connected);
+        }
+      })
+      .catch(() => {});
+
     // Estado real da conexão 99Food — perguntado ao 99Food, não ao nosso banco.
     // A rota antiga (/api/store/integracoes/99food) devolvia `connected` do
     // formulário salvo, e era isso que pintava "🟢 Conectado & Ativo" numa loja
@@ -166,6 +203,44 @@ export default function IntegracoesHubClient({
       showToast("⚠️ Erro de conexão ao salvar JotaJá", "#EF4444");
     } finally {
       setJjSaving(false);
+    }
+  };
+
+  const handleSaveBrendi = async () => {
+    setBrSaving(true);
+    try {
+      const res = await fetch("/api/store/integracoes/brendi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: brClientId,
+          clientSecret: brClientSecret,
+          merchantId: brMerchantId,
+          connected: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        // Verde = a Brendi autenticou a credencial de verdade (oauth/token no
+        // servidor), nunca o simples fato de o formulário ter sido salvo —
+        // lição do 99Food, que pintava "Conectado" em loja que nunca recebeu
+        // um pedido.
+        setBrConnected(!!data.autenticou);
+        setBrHasSecret(true);
+        setBrClientSecret("");
+        showToast(
+          data.autenticou ? "✅ Integração Brendi salva e ativada!" : `⚠️ ${data.message}`,
+          data.autenticou ? "#10B981" : "#F59E0B"
+        );
+        if (data.autenticou) setOpenModal(null);
+      } else {
+        showToast(`⚠️ ${data.error || "Erro ao salvar Brendi"}`, "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão ao salvar Brendi", "#EF4444");
+    } finally {
+      setBrSaving(false);
     }
   };
 
@@ -666,6 +741,16 @@ export default function IntegracoesHubClient({
       gradient: "linear-gradient(135deg, #F59E0B, #D97706)",
       badge: food99Connected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Integração direta com o 99Food para captura e gerenciamento automático de pedidos.",
+    },
+    {
+      id: "brendi" as const,
+      category: "channels",
+      title: "Brendi",
+      subtitle: "Cardápio digital + IA no WhatsApp",
+      icon: "🤖",
+      gradient: "linear-gradient(135deg, #8B5CF6, #6D28D9)",
+      badge: brConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Pedidos do cardápio e da IA da Brendi caem direto no FireHub via Open Delivery, com status sincronizado.",
     },
   ];
 
@@ -1527,6 +1612,99 @@ export default function IntegracoesHubClient({
                       <Save size={16} /> {food99Saving ? "Abrindo…" : "Conectar com o 99Food"}
                     </button>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* 🤖 MODAL: BRENDI */}
+            {openModal === "brendi" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #8B5CF6, #6D28D9)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    🤖
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Brendi</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Cardápio digital + IA no WhatsApp (Open Delivery)</span>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+                  Gere as credenciais em <strong>app.brendi.com.br &rarr; Integrações &rarr; API Pública</strong> e cole abaixo.
+                  A Brendi mostra o Client Secret <strong>uma única vez</strong> — cole aqui na mesma hora em que criar a integração.
+                </p>
+
+                {/* O webhook acelera a chegada do pedido, mas não é obrigatório:
+                    o FireHub busca sozinho a cada minuto. Dizer isso aqui evita
+                    o lojista achar que errou algo quando pular este passo. */}
+                <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#5B21B6", lineHeight: 1.5, marginBottom: "20px" }}>
+                  <strong>📡 No painel da Brendi, cadastre este webhook:</strong>
+                  <div style={{ fontFamily: "monospace", fontSize: "0.76rem", wordBreak: "break-all", margin: "4px 0" }}>
+                    https://firehubfood.com.br/api/brendi/webhook
+                  </div>
+                  Ele faz o pedido chegar na hora — e mesmo sem ele o FireHub busca os pedidos sozinho a cada minuto.
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Key size={14} color="#8B5CF6" /> Client ID (Brendi)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Cole aqui o Client ID gerado no painel da Brendi"
+                      value={brClientId}
+                      onChange={e => setBrClientId(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <ShieldCheck size={14} color="#8B5CF6" /> Client Secret (Brendi)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder={brHasSecret ? "•••••••• já configurado — deixe em branco para manter" : "Cole aqui o Client Secret (a Brendi mostra uma única vez)"}
+                      value={brClientSecret}
+                      onChange={e => setBrClientSecret(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                    {brHasSecret && (
+                      <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "4px 0 0" }}>
+                        Campo em branco mantém o segredo atual — ele nunca é devolvido para o navegador.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Store size={14} color="#8B5CF6" /> Merchant ID (Código da Loja na Brendi)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Cole aqui o Merchant ID da sua loja"
+                      value={brMerchantId}
+                      onChange={e => setBrMerchantId(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveBrendi}
+                    disabled={brSaving}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #8B5CF6, #6D28D9)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(139,92,246,0.3)", opacity: brSaving ? 0.7 : 1 }}
+                  >
+                    <Save size={16} /> {brSaving ? "Salvando..." : "Salvar e Ativar Brendi"}
+                  </button>
                 </div>
               </div>
             )}

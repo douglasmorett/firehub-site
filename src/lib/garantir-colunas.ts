@@ -80,3 +80,63 @@ export async function garantirColunasDePreco(): Promise<void> {
       "Se o cardápio servir 500, rode /api/admin/colunas-preco?criar=sim (ADMIN) ou o SQL acima à mão."
   );
 }
+
+/**
+ * ── Colunas da integração Brendi (Open Delivery) ────────────────────────────
+ *
+ * Mesma categoria das colunas de preço: instruções fixas, aditivas e
+ * idempotentes (`ADD COLUMN IF NOT EXISTS` de coluna NULÁVEL + índice
+ * `IF NOT EXISTS` — rodar mil vezes é igual a uma). Elas precisam existir no
+ * banco ANTES de os campos entrarem no schema.prisma — regra da casa desde o
+ * incidente do MenuProduct.sortOrder: campo no schema com coluna ausente é 500
+ * em produção. Enquanto o schema não as conhece, todo acesso é por SQL cru
+ * (brendi-api.ts), então esta garantia é o único pré-requisito de banco da
+ * integração inteira.
+ *
+ * O índice em brendiMerchantId existe porque é a coluna de AMARRAÇÃO
+ * pedido→loja: cada evento de polling resolve a dona por
+ * `merchant.id == brendiMerchantId`, e essa busca roda a cada pedido — não
+ * pode virar seq scan na tabela de usuários.
+ */
+const INSTRUCOES_BRENDI = [
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiClientId" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiClientSecret" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiMerchantId" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiConnected" BOOLEAN DEFAULT false`,
+  `CREATE INDEX IF NOT EXISTS "User_brendiMerchantId_idx" ON "User"("brendiMerchantId")`,
+];
+
+/**
+ * Uma vez por processo — mas só marca DEPOIS de conseguir. As rotas da Brendi
+ * chamam esta função defensivamente no topo (custo zero após o primeiro
+ * sucesso); se o boot pegou o banco num soluço, é a próxima requisição que
+ * conserta, em vez de o processo inteiro ficar marcado como "já garantiu"
+ * sem ter garantido.
+ */
+let brendiColunasOk = false;
+
+export async function garantirColunasBrendi(): Promise<void> {
+  if (brendiColunasOk) return;
+
+  // Ambiente sem banco de verdade (dev local usa .env higienizado): não há o
+  // que garantir. Marca como resolvido para não repetir o aviso a cada rota.
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia de colunas Brendi.");
+    brendiColunasOk = true;
+    return;
+  }
+
+  try {
+    for (const sql of INSTRUCOES_BRENDI) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    brendiColunasOk = true;
+    console.log("[Boot] ✅ Colunas da integração Brendi garantidas no banco.");
+  } catch (err: any) {
+    // NUNCA lança: falhar aqui não pode impedir o boot nem derrubar uma rota
+    // que só chamou por precaução. Sem as colunas, o gate natural segura tudo
+    // (nenhuma loja aparece conectada) — o log diz o que conferir.
+    console.error(`[Boot] 🛑 Garantia de colunas Brendi falhou: ${err?.message}`);
+  }
+}

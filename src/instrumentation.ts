@@ -9,6 +9,9 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
-  const { garantirColunasDePreco } = await import("./lib/garantir-colunas");
+  const { garantirColunasDePreco, garantirColunasBrendi } = await import("./lib/garantir-colunas");
   await garantirColunasDePreco();
+  // Colunas brendi* no banco ANTES de qualquer rota da integração rodar —
+  // elas ainda não estão no schema.prisma, então o boot é quem garante a ordem.
+  await garantirColunasBrendi();
 }

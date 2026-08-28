@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { trackSaleForBilling } from "@/lib/billing";
 import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
+import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
 
 // Status que contam como venda confirmada para fins de faturamento
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
@@ -252,8 +253,40 @@ export async function PUT(req: Request) {
     }
   }
 
+  // ── Sync with Brendi (Open Delivery) ────────────────────────────────────
+  // A Brendi grava o id dela no MESMO `openDeliveryOrderId` do JotaJá e do
+  // 99Food — quem separa os três é o canal (openDeliveryChannel/source), nunca
+  // a presença do campo. `ehPedidoBrendi` decide por canal e o ramo JotaJá
+  // logo abaixo exclui explicitamente os canais irmãos, senão o pedido da
+  // Brendi cairia lá e o confirm iria para a API errada (o exato incidente do
+  // 99Food descrito acima).
+  if (ehPedidoBrendi(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarBrendi(
+      {
+        // O registro de resgate manual usa o sufixo `_recovered`; a API da
+        // Brendi só conhece o UUID limpo (mesma normalização do brendi-action).
+        openDeliveryOrderId: order.openDeliveryOrderId!.replace(/_recovered$/, ""),
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Brendi Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+    }
+  }
+
   // ── Sync with Jotajá (Open Delivery) ──
-  if (order.openDeliveryOrderId && !ehPedido99Food(order)) {
+  // Decisão por CANAL: o JotaJá é o "resto" do Open Delivery só depois de
+  // excluir 99Food E Brendi — presença de openDeliveryOrderId não diz de quem
+  // o pedido é.
+  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order)) {
     const syncErrors: string[] = [];
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");

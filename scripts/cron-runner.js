@@ -24,6 +24,15 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Brendi fala o mesmo Open Delivery do JotaJá, e o polling é a via
+    // PRIMÁRIA (o webhook é só acelerador de latência): é este ciclo de 60s
+    // que garante o pedido mesmo com o push mudo. Enquanto nenhuma loja tiver
+    // brendiConnected=true a rota responde vazio — custo zero.
+    name: 'brendi-poll',
+    path: '/api/cron/brendi-poll',
+    intervalMs: 60_000, // 1 minuto
+  },
+  {
     name: 'gateway-keepalive',
     path: '/api/cron/gateway-keepalive',
     intervalMs: 5 * 60_000, // 5 minutos

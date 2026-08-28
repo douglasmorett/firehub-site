@@ -684,7 +684,98 @@ async function pollJotajaEvents(sessionUserId?: string) {
   }
 }
 
-// GET: Fast polling endpoint - returns orders + auto-polls iFood & Jotaja
+// Throttle Brendi polling PER-STORE — Map PRÓPRIO, não o do JotaJá: a chave é
+// a mesma loja, e dividir o Map faria o poll de um canal consumir a janela de
+// 2s do outro (um canal "calaria" o irmão a cada ciclo do dashboard).
+const lastBrendiPollMap = new Map<string, number>();
+
+async function pollBrendiEvents(franchiseeId?: string) {
+  // Sem loja não há credencial: a Brendi é multi-tenant estrito (credencial no
+  // banco, sem fallback ENV — lição JotaJá), então poll "global" não existe.
+  if (!franchiseeId) return;
+
+  const now = Date.now();
+  const lastPoll = lastBrendiPollMap.get(franchiseeId) || 0;
+  if (now - lastPoll < 2_000) return;
+
+  lastBrendiPollMap.set(franchiseeId, now);
+
+  try {
+    const { getBrendiCredentials, brendiFetch, brendiMutate } = await import("@/lib/brendi-api");
+    const { processBrendiEvent } = await import("@/lib/processBrendiEvent");
+
+    // Gate real: flag `brendiConnected` gravada só após o oauth/token da Brendi
+    // autenticar de verdade. Loja sem credencial (ou com colunas brendi* ainda
+    // não criadas) devolve null aqui e o poll simplesmente não roda.
+    const creds = await getBrendiCredentials(franchiseeId);
+    if (!creds || !creds.connected) return;
+
+    const res = await brendiFetch("/v1/events:polling", franchiseeId).catch(err => {
+      console.warn("[Brendi Poll] Erro de rede no polling:", err.message);
+      return null;
+    });
+    if (!res || !res.ok) {
+      if (res) {
+        const errBody = await res.text().catch(() => "");
+        console.error(`[Brendi Poll] events:polling falhou: ${res.status} - ${errBody.slice(0, 200)}`);
+      }
+      return;
+    }
+
+    const eventsText = await res.text();
+    const events = eventsText ? JSON.parse(eventsText) : [];
+    if (!events || events.length === 0) return;
+
+    const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
+    for (const event of events) {
+      const result = await processBrendiEvent(event, { targetFranchiseeId: franchiseeId });
+      const eid = event.eventId || event.id;
+
+      // Mesma regra do JotaJá (mesmo contrato Abrasel): o ACK apaga o evento do
+      // feed em definitivo e não há endpoint de listagem para recuperá-lo
+      // depois. Só ackamos se o pedido realmente existir no banco — "skipped"
+      // sem gravação ficaria na fila para o cron retentar.
+      let podeAckar = result.action !== "error";
+      if (podeAckar && event.orderId) {
+        const gravado = await prisma.customerOrder.findFirst({
+          where: {
+            OR: [
+              { openDeliveryOrderId: event.orderId },
+              { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
+            ],
+          } as any,
+          select: { id: true },
+        });
+        if (!gravado) {
+          podeAckar = false;
+          console.error(`[Brendi Poll] ⛔ SEM ACK ${event.orderId}: ${result.action} não gravou pedido (${result.message || "-"}) — fica na fila`);
+        }
+      }
+
+      if (podeAckar && eid) {
+        processedEvents.push({
+          id: eid,
+          orderId: event.orderId || "",
+          eventType: event.eventType || event.fullCode || event.code || "",
+        });
+      }
+      if (result.action === "error") {
+        console.error(`[Brendi Poll] ERRO ${result.orderId}: ${result.message}`);
+      } else {
+        console.log(`[Brendi Poll] ${result.action} - ${result.orderId}${result.message ? ": " + result.message : ""}`);
+      }
+    }
+
+    if (processedEvents.length > 0) {
+      await brendiMutate("POST", "/v1/events/acknowledgment", processedEvents, franchiseeId);
+      console.log(`[Brendi Poll] ${processedEvents.length}/${events.length} eventos acknowledged`);
+    }
+  } catch (err) {
+    console.error("[Brendi Poll] Erro geral:", err);
+  }
+}
+
+// GET: Fast polling endpoint - returns orders + auto-polls iFood, Jotaja & Brendi
 export async function GET(req: NextRequest) {
   try {
     let email = "";
@@ -707,6 +798,7 @@ export async function GET(req: NextRequest) {
       await Promise.allSettled([
         pollIfoodEvents(targetFranchiseeId),
         pollJotajaEvents(targetFranchiseeId),
+        pollBrendiEvents(targetFranchiseeId),
       ]);
     } catch (err) {
       console.error("[Poll] Erro no polling:", err);
