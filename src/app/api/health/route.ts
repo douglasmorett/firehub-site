@@ -33,11 +33,51 @@ export async function GET() {
 
   const allOk = Object.values(checks).every((c) => c.ok);
 
+  // ── O schema declara colunas que o banco tem? ────────────────────────────
+  //
+  // A pior falha deste projeto é muda: campo declarado no schema.prisma sem a
+  // coluna correspondente no banco faz o Prisma montar SELECT com ela, e TODA
+  // consulta àquela tabela passa a servir 500 — foi assim que /loja caiu duas
+  // vezes. O boot cria as colunas (src/lib/garantir-colunas.ts), mas até agora
+  // não havia como saber, de fora, se ele conseguiu.
+  //
+  // Fica FORA do `allOk` de propósito: devolver 503 aqui faria o Coolify e o
+  // monitor externo tratarem como app fora do ar e reiniciarem o container em
+  // laço, o que não conserta coluna nenhuma. Isto é diagnóstico, não semáforo.
+  let esquema: { ok: boolean; faltando: string[]; erro?: string };
+  try {
+    const ESPERADAS: [string, string][] = [
+      ["StockTransaction", "stockLotId"], ["StockTransaction", "franchiseeId"],
+      ["StockTransaction", "userId"], ["StockTransaction", "sourceRef"],
+      ["KitchenItem", "stockItemId"], ["KitchenItem", "labelSize"],
+      ["User", "labelFieldsConfig"], ["StockItem", "active"],
+      ["MenuProduct", "priceSalao"], ["MenuProduct", "priceDelivery"],
+    ];
+    const cols = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
+      SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
+      WHERE table_schema = current_schema()
+    `;
+    const tem = new Set(cols.map((c) => `${c.tabela}.${c.coluna}`));
+    const faltando = ESPERADAS.filter(([t, c]) => !tem.has(`${t}.${c}`)).map(([t, c]) => `${t}.${c}`);
+
+    const tabelas = await prisma.$queryRaw<{ t: string }[]>`
+      SELECT table_name AS t FROM information_schema.tables
+      WHERE table_schema = current_schema() AND table_name IN ('StockLot', 'CashMovement')
+    `;
+    const temTabela = new Set(tabelas.map((r) => r.t));
+    for (const t of ["StockLot", "CashMovement"]) if (!temTabela.has(t)) faltando.push(`tabela ${t}`);
+
+    esquema = { ok: faltando.length === 0, faltando };
+  } catch (e: any) {
+    esquema = { ok: false, faltando: [], erro: String(e?.message || "").slice(0, 120) };
+  }
+
   return NextResponse.json(
     {
       status: allOk ? "healthy" : "degraded",
       uptime: uptimeSeconds,
       memory: `${heapUsedMB}MB / ${heapTotalMB}MB`,
+      esquema,
       checks,
       timestamp: new Date().toISOString(),
       responseTime: Date.now() - start,
