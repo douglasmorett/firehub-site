@@ -1,4 +1,5 @@
 import { segredoObrigatorio } from "./segredos";
+import { paraEnvioWhatsApp } from "./telefone";
 /**
  * src/lib/server-monitor.ts
  * Sistema de monitoramento interno com alertas via WhatsApp.
@@ -55,8 +56,12 @@ async function instanciaDoFireHub(): Promise<string> {
  * como avisado um aviso que não saiu.
  */
 export async function avisarNumeroPeloFireHub(phone: string, message: string): Promise<boolean> {
-  const numero = String(phone || "").replace(/\D/g, "");
-  if (numero.length < 10) return false;
+  // Precisa sair com o 55. `storePhone` é o que o lojista digitou —
+  // "(22) 99213-4504" vira "22992134504" só tirando os não-dígitos, e o
+  // WhatsApp lê isso como DDI 22: o primeiro aviso de queda foi para um
+  // destino que não existe.
+  const numero = paraEnvioWhatsApp(phone);
+  if (!numero) return false;
 
   const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
   const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");

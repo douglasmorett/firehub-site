@@ -49,6 +49,35 @@ export function telefoneCanonico(bruto: string | null | undefined): string {
 }
 
 /**
+ * O número no formato que o WhatsApp exige para RECEBER uma mensagem:
+ * 55 + DDD + número, com o nono dígito PRESERVADO.
+ *
+ * É o oposto de `telefoneCanonico`, e os dois não se substituem. O canônico
+ * existe para COMPARAR duas formas do mesmo número, e para isso ele descarta o
+ * nono dígito — mandar mensagem para o resultado dele entregaria no número
+ * errado, ou em nenhum.
+ *
+ * O 55 não é detalhe: `storePhone` é gravado como o lojista digitou —
+ * "(22) 99213-4504". Só tirando os não-dígitos sai "22992134504", e o gateway
+ * monta "22992134504@s.whatsapp.net", que o WhatsApp lê como DDI 22. Foi assim
+ * que o primeiro aviso de "seu robô caiu" saiu para um destino inexistente.
+ *
+ * Devolve "" quando não dá para ter certeza — quem chama deve tratar como
+ * "sem telefone utilizável" e registrar, nunca chutar.
+ */
+export function paraEnvioWhatsApp(bruto: string | null | undefined): string {
+  let d = String(bruto || "").replace(/\D/g, "");
+  if (d.startsWith("0")) d = d.replace(/^0+/, "");
+
+  // Já veio com DDI do Brasil: 55 + DDD(2) + 8 ou 9 dígitos.
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) return d;
+  // Sem DDI: DDD(2) + 8 ou 9 dígitos.
+  if (d.length === 10 || d.length === 11) return "55" + d;
+
+  return "";
+}
+
+/**
  * Os dois números são a mesma linha?
  *
  * Devolve `false` quando qualquer um dos lados não vira forma canônica —

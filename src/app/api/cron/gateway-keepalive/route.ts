@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { segredoObrigatorio } from "@/lib/segredos";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { avisarNumeroPeloFireHub } from "@/lib/server-monitor";
+import { paraEnvioWhatsApp } from "@/lib/telefone";
 
 export const dynamic = "force-dynamic";
 
@@ -153,14 +154,31 @@ export async function GET(req: NextRequest) {
         // e volta sozinha — avisar nela treinaria o lojista a ignorar o aviso,
         // que é a pior coisa que pode acontecer com um alerta.
         const caiuFazTempo = agora - caiuEm >= AVISAR_APOS_MS;
-        const podeReavisar = agora - avisadoEm >= REPETIR_AVISO_MS;
-        const deveAvisar = caiuFazTempo && podeReavisar;
+        const numeroDoLojista = paraEnvioWhatsApp(user.storePhone);
+
+        // Guardar PARA QUEM o aviso foi tem uma razão prática: o primeiro
+        // disparo saiu sem o 55 (destino inexistente) e mesmo assim ficou
+        // marcado como enviado, o que calaria o alerta por 24h justamente na
+        // loja caída. Quando o número de destino muda — inclusive por correção
+        // de formato — o aviso é refeito na hora, sem esperar o dia.
+        const mudouODestino = (config.avisoEnviadoPara || "") !== numeroDoLojista;
+        const podeReavisar = agora - avisadoEm >= REPETIR_AVISO_MS || mudouODestino;
+        const deveAvisar = caiuFazTempo && podeReavisar && Boolean(numeroDoLojista);
+
+        // Loja caída e sem telefone utilizável ficaria muda para sempre, sem
+        // ninguém saber. O alerta então é para NÓS, no log.
+        if (caiuFazTempo && !numeroDoLojista) {
+          console.warn(
+            `[Keep-Alive] 📵 ${instanceName} (${user.storeName || user.name}) está fora e não tem telefone válido cadastrado ` +
+            `(storePhone: "${user.storePhone || ""}"). Ninguém será avisado até alguém corrigir o cadastro.`,
+          );
+        }
 
         let avisoSaiu = false;
         if (deveAvisar) {
           const nomeDaLoja = user.storeName || user.name || "sua loja";
           avisoSaiu = await avisarNumeroPeloFireHub(
-            user.storePhone || "",
+            numeroDoLojista,
             [
               `⚠️ *O robô de WhatsApp de ${nomeDaLoja} desconectou.*`,
               ``,
@@ -193,6 +211,7 @@ export async function GET(req: NextRequest) {
               avisoDesconexaoEm: avisoSaiu
                 ? new Date(agora).toISOString()
                 : (config.avisoDesconexaoEm ?? null),
+              avisoEnviadoPara: avisoSaiu ? numeroDoLojista : (config.avisoEnviadoPara ?? null),
             },
           },
         });
