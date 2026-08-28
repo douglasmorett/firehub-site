@@ -28,6 +28,7 @@ import {
   getMetaAccounts,
   descobrirPixelDaConta,
   escolherMelhorContaDeAnuncios,
+  listarTodasAsContasDeAnuncio,
 } from "@/lib/meta-ads";
 import { lerState } from "@/lib/meta-oauth-state";
 
@@ -79,26 +80,29 @@ export async function GET(req: NextRequest) {
       return voltarCom("token_exchange_failed");
     }
 
-    const { accounts, pages } = await getMetaAccounts(accessToken);
+    const { pages } = await getMetaAccounts(accessToken);
 
-    // NÃO pegar `accounts[0]`: quem já anunciou costuma ter a conta velha
-    // (encerrada) junto da que usa hoje, e a ordem da Meta não tem relação com
-    // qual delas presta. Ver escolherMelhorContaDeAnuncios — o dono ficou com o
-    // módulo travado em "conta desativada" tendo uma conta ativa na mesma lista.
-    const contaEscolhida = escolherMelhorContaDeAnuncios(accounts);
+    // A busca das contas passa por TODOS os caminhos (pessoais + de cada
+    // business): a conta que o lojista usa costuma viver dentro do Business
+    // Manager, e por `/me/adaccounts` ela simplesmente não aparece.
+    //
+    // E a escolha NÃO pode ser `[0]`: quem já anunciou tem a conta velha
+    // encerrada ao lado da atual. Na conta do dono as duas coisas se somaram —
+    // o módulo gravou uma conta encerrada e disse "sua conta está desativada"
+    // enquanto a conta boa nem tinha sido consultada.
+    const { contas, porCaminho, erros } = await listarTodasAsContasDeAnuncio(accessToken);
+    const contaEscolhida = escolherMelhorContaDeAnuncios(contas);
     const adAccountId = contaEscolhida?.id ?? null;
     const pageId = pages?.[0]?.id ?? null;
 
-    if (Array.isArray(accounts) && accounts.length > 1) {
-      console.log(
-        `[Meta Ads] Loja ${lojaDaSessao}: ${accounts.length} contas de anúncio; escolhida ${adAccountId} ` +
-          `(status ${contaEscolhida?.account_status}). Demais: ` +
-          accounts
-            .filter((c: any) => c?.id !== adAccountId)
-            .map((c: any) => `${c.id}=${c.account_status}`)
-            .join(", ")
-      );
-    }
+    console.log(
+      `[Meta Ads] Loja ${lojaDaSessao}: ${contas.length} conta(s) de anúncio. ` +
+        `Escolhida ${adAccountId} (status ${contaEscolhida?.account_status}, via ${porCaminho[adAccountId as string] || "?"}). ` +
+        (contas.length > 1
+          ? `Demais: ${contas.filter((c: any) => c.id !== adAccountId).map((c: any) => `${c.id}=${c.account_status}`).join(", ")}. `
+          : "") +
+        (erros.length ? `Erros: ${erros.join(" | ")}` : "")
+    );
 
     // Descobre o Pixel na hora da conexão. Sem ele não há medição de pedido, e
     // pedir para o lojista achar o ID sozinho é atrito que a maioria não vence.

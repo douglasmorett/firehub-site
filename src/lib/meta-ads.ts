@@ -372,6 +372,90 @@ export async function getMetaAccounts(accessToken: string) {
 }
 
 /**
+ * TODAS as contas de anúncio que este token alcança — não só as pessoais.
+ *
+ * ── Por que não basta /me/adaccounts ────────────────────────────────────────
+ * Esse endpoint lista as contas em que a PESSOA é usuária direta. Quem
+ * organiza o negócio como a Meta manda tem a conta dentro de um Business
+ * Manager, e ali ela some dessa lista.
+ *
+ * Foi o caso do dono em 28/08/2026: `/me/adaccounts` devolvia apenas uma conta
+ * encerrada (status 101), enquanto a conta que ele realmente usa — ativa, com
+ * histórico de veiculação — pertencia ao business "Fire Delivery" e nunca
+ * chegava até aqui. O módulo dizia "sua conta de anúncios está desativada" e
+ * não havia nada que o lojista pudesse fazer na tela para sair disso.
+ *
+ * Agora se varre também cada business: as contas que ele POSSUI
+ * (owned_ad_accounts) e as que ele administra para terceiros
+ * (client_ad_accounts) — este segundo caso é o de agência, comum em quem
+ * contrata alguém para cuidar do marketing.
+ *
+ * Falha de um caminho não derruba os outros: cada erro é registrado e o que
+ * deu certo continua valendo — é melhor achar uma conta do que nenhuma.
+ */
+export async function listarTodasAsContasDeAnuncio(accessToken: string): Promise<{
+  contas: any[];
+  porCaminho: Record<string, string>;
+  erros: string[];
+}> {
+  const CAMPOS = "id,name,account_status,currency,funding_source,funding_source_details,disable_reason";
+  const contasPorId = new Map<string, any>();
+  const porCaminho: Record<string, string> = {};
+  const erros: string[] = [];
+
+  const guardar = (lista: any[], caminho: string) => {
+    for (const c of lista || []) {
+      if (!c?.id) continue;
+      if (!contasPorId.has(c.id)) {
+        contasPorId.set(c.id, c);
+        porCaminho[c.id] = caminho;
+      }
+    }
+  };
+
+  const buscar = async (url: string, caminho: string) => {
+    try {
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json?.error) {
+        erros.push(`${caminho}: ${json.error.message || "erro"}`);
+        return [];
+      }
+      guardar(json?.data ?? [], caminho);
+      return json?.data ?? [];
+    } catch (e: any) {
+      erros.push(`${caminho}: ${String(e?.message).slice(0, 80)}`);
+      return [];
+    }
+  };
+
+  // 1. As contas pessoais.
+  await buscar(`${META_BASE}/me/adaccounts?fields=${CAMPOS}&limit=100&access_token=${accessToken}`, "pessoal");
+
+  // 2. As contas de cada business — o caminho que faltava.
+  try {
+    const resNegocios = await fetch(`${META_BASE}/me/businesses?fields=id,name&limit=50&access_token=${accessToken}`);
+    const negocios = (await resNegocios.json())?.data ?? [];
+    for (const negocio of negocios) {
+      if (!negocio?.id) continue;
+      const rotulo = negocio.name ? `negócio "${negocio.name}"` : `negócio ${negocio.id}`;
+      await buscar(
+        `${META_BASE}/${negocio.id}/owned_ad_accounts?fields=${CAMPOS}&limit=100&access_token=${accessToken}`,
+        `${rotulo} (própria)`
+      );
+      await buscar(
+        `${META_BASE}/${negocio.id}/client_ad_accounts?fields=${CAMPOS}&limit=100&access_token=${accessToken}`,
+        `${rotulo} (gerenciada)`
+      );
+    }
+  } catch (e: any) {
+    erros.push(`negócios: ${String(e?.message).slice(0, 80)}`);
+  }
+
+  return { contas: [...contasPorId.values()], porCaminho, erros };
+}
+
+/**
  * Escolhe a MELHOR conta de anúncios entre as que o lojista tem.
  *
  * ── Por que isto existe ─────────────────────────────────────────────────────
