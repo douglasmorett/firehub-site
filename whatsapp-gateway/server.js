@@ -566,6 +566,48 @@ app.post("/instance/limpar-sessao-do-contato/:instanceName", (req, res) => {
   return res.json({ success: true, jid, arquivosApagados: total, porInstancia });
 });
 
+/**
+ * POST /instance/renegociar-todas-as-conversas/:instanceName
+ *
+ * Mutirão: descarta a sessão de criptografia de TODOS os contatos da loja
+ * (ou de todas, com "todas"). Existe porque a podridão não estava num contato
+ * só — pegou o dono, motoboys e parte dos clientes, e curar um a um exigiria
+ * saber de antemão quem está quebrado, que é justamente o que não dá para ver.
+ *
+ * É seguro: apaga SÓ os arquivos `session-*`. As credenciais da loja
+ * (`creds.json`), as nossas prekeys e as chaves de grupo continuam onde estão —
+ * ninguém desconecta e ninguém lê QR. O custo é uma busca de prekeys a mais no
+ * próximo envio de cada conversa, diluída no ritmo normal de uso.
+ */
+app.post("/instance/renegociar-todas-as-conversas/:instanceName", (req, res) => {
+  const raiz = path.join(__dirname, "data", "sessions");
+  const alvos = req.params.instanceName === "todas"
+    ? fs.readdirSync(raiz, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
+    : [req.params.instanceName];
+
+  const porInstancia = {};
+  for (const instancia of alvos) {
+    let apagados = 0;
+    try {
+      for (const arquivo of fs.readdirSync(path.join(raiz, instancia))) {
+        // SÓ "session-". "pre-key-", "sender-key-", "app-state-" e "creds.json"
+        // são nossos e apagá-los derrubaria a loja.
+        if (!arquivo.startsWith("session-")) continue;
+        fs.rmSync(path.join(raiz, instancia, arquivo), { force: true });
+        apagados++;
+      }
+    } catch (err) {
+      console.warn(`[WhatsApp Gateway] Aviso ao renegociar ${instancia}:`, err.message);
+    }
+    porInstancia[instancia] = apagados;
+  }
+
+  pedidosDeRetransmissao.clear();
+  const total = Object.values(porInstancia).reduce((a, b) => a + b, 0);
+  console.log(`[WhatsApp Gateway] 🧹 Mutirão: ${total} sessão(ões) descartada(s) em ${alvos.length} instância(s); tudo renegocia no próximo envio`);
+  return res.json({ success: true, sessoesDescartadas: total, porInstancia });
+});
+
 // 3.5 Reset Instância (limpa sessão corrompida e força novo QR Code)
 app.delete("/instance/reset/:instanceName", async (req, res) => {
   const { instanceName } = req.params;
