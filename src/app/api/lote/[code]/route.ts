@@ -149,7 +149,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
   // A chave vem do cliente para sobreviver a um reenvio da MESMA intenção
   // (rede ruim, botão apertado duas vezes). Sem ela, cada envio seria uma
   // baixa nova — que é exatamente o que se quer evitar num celular de cozinha.
-  const sourceRef = String(corpo?.sourceRef || "").slice(0, 120) || null;
+  //
+  // MAS ela é PREFIXADA AQUI com a loja e o lote, e nunca aceita crua: o índice
+  // é único no sistema inteiro, então uma chave escolhida pelo cliente podia
+  // colidir com a de OUTRA loja — e a resposta "já foi feita" devolveria a
+  // movimentação alheia, fazendo a baixa desta loja simplesmente não acontecer,
+  // com a tela dizendo que aconteceu. O sufixo do cliente continua sendo o que
+  // torna o reenvio idempotente; o prefixo é o que impede que ele alcance
+  // qualquer coisa fora desta loja.
+  const sufixo = String(corpo?.sourceRef || "").replace(/[^\w:.-]/g, "").slice(0, 80);
+  const sourceRef = sufixo ? `l:${loja.franchiseeId}:${lote.id}:${sufixo}` : null;
   if (sourceRef) {
     const jaFeita = await prisma.stockTransaction.findUnique({ where: { sourceRef } });
     if (jaFeita) {
@@ -177,11 +186,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
         },
       });
 
-      const item = await tx.stockItem.update({
-        // franchiseeId no WHERE da escrita: entre conferir e gravar, o insumo
-        // pode ter sido apagado ou movido.
-        where: { id: lote.stockItemId! },
+      // `updateMany` de propósito, e não `update`: é o único jeito de levar o
+      // franchiseeId DENTRO do WHERE da escrita. O `update` exige chave única,
+      // então a conferência de dono ficaria só na leitura anterior — e entre
+      // conferir e gravar o insumo pode ter sido apagado ou movido de loja.
+      const alterados = await tx.stockItem.updateMany({
+        where: { id: lote.stockItemId!, franchiseeId: loja.franchiseeId },
         data: { quantity: { increment: delta } },
+      });
+      if (alterados.count === 0) {
+        // Aborta a transação inteira: a movimentação criada acima desaparece
+        // junto, em vez de ficar um lançamento órfão sem saldo correspondente.
+        throw new Error("INSUMO_FORA_DA_LOJA");
+      }
+      const item = await tx.stockItem.findUnique({
+        where: { id: lote.stockItemId! },
         select: { id: true, name: true, quantity: true, unit: true },
       });
 
@@ -207,6 +226,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
   } catch (e: any) {
     // Corrida no índice único: outra requisição gravou a mesma intenção entre
     // a conferência e o insert. Devolver a original é o comportamento certo.
+    if (String(e?.message) === "INSUMO_FORA_DA_LOJA") {
+      return NextResponse.json({ error: "Este insumo não pertence mais a esta loja." }, { status: 409 });
+    }
     if (sourceRef && String(e?.code) === "P2002") {
       const original = await prisma.stockTransaction.findUnique({ where: { sourceRef } });
       if (original) return NextResponse.json({ ok: true, duplicado: true, movimentacao: original });

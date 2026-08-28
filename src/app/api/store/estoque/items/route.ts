@@ -24,8 +24,13 @@ export async function GET(req: Request) {
     const franchiseeId = await getFranchiseeId(session);
     if (!franchiseeId) return NextResponse.json({ error: "Lojista não encontrado" }, { status: 404 });
 
+    // `active: false` é insumo ARQUIVADO (ver o DELETE abaixo). Ele continua
+    // no banco com histórico e fichas técnicas inteiros — só sai da lista.
+    // `null` conta como ativo: a coluna nasceu depois dos insumos que já
+    // existiam, e um `active: true` cru sumiria com o estoque de todo mundo
+    // no primeiro deploy.
     const items = await prisma.stockItem.findMany({
-      where: { franchiseeId },
+      where: { franchiseeId, NOT: { active: false } },
       orderBy: { name: "asc" }
     });
 
@@ -143,9 +148,27 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "Item não encontrado" }, { status: 404 });
     }
 
-    await prisma.stockItem.delete({ where: { id } });
+    // ── ARQUIVAR, NUNCA APAGAR ────────────────────────────────────────────
+    //
+    // Era `prisma.stockItem.delete` FÍSICO. A cascata do schema levava junto,
+    // em silêncio e sem volta:
+    //   · TODAS as StockTransaction do insumo — o histórico inteiro dele;
+    //   · TODAS as ProductRecipe que o usam — ou seja, a linha desse insumo
+    //     na ficha técnica de TODOS os produtos do cardápio.
+    // Um clique na lixeira apagava semanas de cadastro de ficha técnica de
+    // produtos que nem estavam na tela, e nada avisava. O `active` de
+    // soft-delete já existia documentado no schema e nenhuma rota usava.
+    //
+    // Arquivar preserva histórico e ficha técnica: o insumo some da lista e da
+    // busca, e a baixa automática do que já estava configurado continua
+    // funcionando — que é o comportamento que o lojista espera de "remover da
+    // minha lista", e não "apagar a contabilidade".
+    await prisma.stockItem.updateMany({
+      where: { id, franchiseeId },
+      data: { active: false },
+    });
 
-    return NextResponse.json({ success: true, message: "Item removido com sucesso." });
+    return NextResponse.json({ success: true, message: "Insumo arquivado." });
   } catch (error: any) {
     console.error("[Stock Items DELETE] Erro:", error);
     return NextResponse.json({ error: error.message || "Erro interno" }, { status: 500 });
