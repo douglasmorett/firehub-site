@@ -866,6 +866,30 @@ export async function processBrendiEvent(
             },
           });
           createSuccess = true;
+
+          // ── BAIXA DE ESTOQUE ──────────────────────────────────────────────
+          //
+          // Não existia neste caminho. O único gatilho do sistema era a
+          // TRANSIÇÃO para ACEITO, e o pedido importado já nasce no status
+          // final — nunca transita. A ficha técnica do produto-espelho é
+          // resolvida em src/lib/stock.ts pelo nome no cardápio. Idempotente
+          // por `sourceRef`, e sem await para não segurar a importação.
+          try {
+            const criado = await prisma.customerOrder.findFirst({
+              where: { franchiseeId: franchisee.id, openDeliveryOrderId: orderId } as any,
+              select: { id: true },
+              orderBy: { createdAt: "desc" },
+            });
+            if (criado) {
+              const { deductStockForOrder } = await import("@/lib/stock");
+              deductStockForOrder(criado.id).catch((e) =>
+                console.error(`[Brendi] Baixa de estoque falhou para ${orderId}:`, e?.message)
+              );
+            }
+          } catch (e: any) {
+            console.error(`[Brendi] Não consegui disparar a baixa de ${orderId}:`, e?.message);
+          }
+
           break; // Sucesso — sai do loop de retry
         } catch (createErr: any) {
           lastCreateError = createErr;

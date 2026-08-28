@@ -543,6 +543,43 @@ export async function processarEventosIfood(opts: {
           log.push(`  ✅ Pedido CRIADO: ${orderId} (status: ${initialStatus})`);
           created++;
 
+          // ── BAIXA DE ESTOQUE DO PEDIDO DE MARKETPLACE ─────────────────────
+          //
+          // Não existia. `deductStockForOrder` aparecia ZERO vezes neste
+          // arquivo e em todos os outros caminhos de plataforma (99Food,
+          // Jotajá, Brendi, chatbot, API de parceiro) — ou seja, o iFood não
+          // tirava UM GRAMA do estoque, e para a maioria das lojas de delivery
+          // ele é a maior parte do faturamento.
+          //
+          // E não bastava esperar o gatilho de sempre: o único era a TRANSIÇÃO
+          // para ACEITO (api/customer-order/status), e o pedido importado JÁ
+          // NASCE em ACEITO quando vem confirmado — nunca transita para o
+          // status em que já está. Por isso a chamada é aqui, na criação.
+          //
+          // A resolução da ficha técnica do produto-espelho está em
+          // src/lib/stock.ts (procura o produto do cardápio com o mesmo nome).
+          // É idempotente por `sourceRef` único, então uma reimportação do
+          // mesmo pedido não baixa de novo.
+          //
+          // Fora da transação e sem await, como todos os outros chamadores: a
+          // baixa não pode segurar nem derrubar a importação do pedido — comida
+          // que não entra é pior que saldo que atrasa um segundo.
+          try {
+            const pedidoCriado = await prisma.customerOrder.findFirst({
+              where: { ifoodOrderId: orderId, franchiseeId: eventFranchisee.id },
+              select: { id: true },
+              orderBy: { createdAt: "desc" },
+            });
+            if (pedidoCriado) {
+              const { deductStockForOrder } = await import("@/lib/stock");
+              deductStockForOrder(pedidoCriado.id).catch((e) =>
+                console.error(`[iFood] Baixa de estoque falhou para ${orderId}:`, e?.message)
+              );
+            }
+          } catch (e: any) {
+            console.error(`[iFood] Não consegui disparar a baixa de ${orderId}:`, e?.message);
+          }
+
           // Auto-confirm
           //
           // ⚠️ Só para pedido RECENTE. Quando uma loja conecta pela primeira

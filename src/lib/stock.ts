@@ -357,7 +357,62 @@ export async function deductStockForOrder(orderId: string) {
           }
         };
 
-        for (const recipeItem of menuProduct?.recipeItems ?? []) {
+        // ── O PRODUTO-ESPELHO DO MARKETPLACE NÃO TEM, E NÃO PODE TER, FICHA ──
+        //
+        // Pedido de iFood/99Food/Jotajá/Brendi não aponta para o produto do
+        // cardápio: o importador cria um ESPELHO (`ifood-<itemId>`) com
+        // `active:false` e `category:"iFood"`. E a tela de fichas técnicas
+        // exclui exatamente isso — não existe lugar no sistema onde esse
+        // produto possa receber ficha. Ou seja, a baixa do marketplace era
+        // estruturalmente impossível, e é a maior parte do faturamento da
+        // maioria das lojas de delivery.
+        //
+        // A saída sem obrigar o lojista a cadastrar nada duas vezes: quando o
+        // item não tem receita própria, procurar no cardápio DESTA loja um
+        // produto ativo com o mesmo nome e usar a ficha dele. É a ligação que
+        // o lojista faria à mão, feita sozinha — e é exatamente o nome que ele
+        // cadastrou nas duas pontas, porque o cardápio do iFood sai daqui.
+        //
+        // Nome não casa? Não inventa nada: fica sem baixa, e o log diz qual
+        // produto ficou de fora para a tela poder cobrar a ligação depois.
+        let receita = menuProduct?.recipeItems ?? [];
+        if (receita.length === 0 && rotuloDoItem && rotuloDoItem !== "produto removido") {
+          const real = await tx.menuProduct.findFirst({
+            where: {
+              franchiseeId: order.franchiseeId,
+              active: true,
+              name: { equals: rotuloDoItem, mode: "insensitive" },
+              // Nunca casar com outro espelho: dois espelhos com o mesmo nome
+              // fariam a baixa apontar para um produto que também não tem ficha.
+              NOT: { id: { startsWith: "ifood-" } },
+              recipeItems: { some: {} },
+            },
+            select: {
+              id: true,
+              recipeItems: {
+                select: {
+                  stockItemId: true,
+                  quantityConsumed: true,
+                  stockItem: { select: { name: true, unit: true } },
+                },
+              },
+            },
+          });
+          if (real) {
+            receita = real.recipeItems as typeof receita;
+            console.log(
+              `[Stock] "${rotuloDoItem}" veio do marketplace sem ficha própria; ` +
+                `usando a ficha técnica do produto do cardápio (${real.id}).`
+            );
+          } else if (menuProduct && !menuProduct.recipeItems?.length) {
+            console.warn(
+              `[Stock] ⚠️ "${rotuloDoItem}" (pedido ${order.id}) não tem ficha técnica e ` +
+                `não achei produto de mesmo nome no cardápio — nada foi baixado por este item.`
+            );
+          }
+        }
+
+        for (const recipeItem of receita) {
           somarConsumo(
             recipeItem.stockItemId,
             recipeItem.stockItem.name,
@@ -431,20 +486,51 @@ export async function deductStockForOrder(orderId: string) {
             `[Stock] Deduzindo ${amountToDeduct}${consumo.unidade} de "${consumo.nome}" para ${item.quantity}x "${rotuloDoItem}" (${consumo.origens.join(" + ")})`
           );
 
+          // ── A GARANTIA DE UMA VEZ SÓ MORA NO ÍNDICE, NÃO NA BUSCA ────────
+          //
+          // A idempotência era um `notes: { contains: "id: " + orderId }`:
+          // busca por SUBSTRING, em coluna sem índice, e SEM filtro de loja —
+          // varria as movimentações de todas as lojas do sistema a cada venda.
+          // Pior: qualquer funcionário podia plantar esse texto no campo de
+          // observação de um lançamento manual e fazer a baixa automática de
+          // um pedido de OUTRA loja ser pulada para sempre.
+          //
+          // E ela não segurava a corrida real: a rota de status dispara esta
+          // função duas vezes em paralelo no mesmo request, e um findFirst sem
+          // constraint deixa as duas passarem — baixa dobrada.
+          //
+          // Agora quem garante é o banco: `sourceRef` é @unique, e a chave é
+          // determinística por (pedido, insumo). A segunda gravação viola o
+          // índice e a baixa não acontece duas vezes, aconteça o que acontecer
+          // com a ordem das chamadas.
           await tx.stockTransaction.create({
             data: {
               stockItemId,
+              franchiseeId: order.franchiseeId,
+              sourceRef: `sale:${order.id}:${stockItemId}`,
               quantity: -amountToDeduct,
               type: "SALE",
               notes: `Baixa automática - Pedido #${order.id.slice(-6)} (id: ${order.id})`,
             },
           });
 
-          const saldoDepois = await tx.stockItem.update({
-            where: { id: stockItemId },
+          // `updateMany` com franchiseeId no WHERE da escrita. O `update` por id
+          // puro escrevia no saldo sem nunca conferir de quem era o insumo —
+          // era a única escrita de estoque do sistema sem essa proteção, e a
+          // rota de pedido de mesa aceita menuProductId de outra loja.
+          const alterados = await tx.stockItem.updateMany({
+            where: { id: stockItemId, franchiseeId: order.franchiseeId },
             data: { quantity: { decrement: amountToDeduct } },
-            select: { id: true, name: true, quantity: true, unit: true },
           });
+          if (alterados.count === 0) {
+            // Insumo de outra loja (ou apagado entre ler e gravar): aborta tudo,
+            // em vez de deixar a movimentação registrada sem saldo correspondente.
+            throw new Error(`INSUMO_FORA_DA_LOJA:${stockItemId}`);
+          }
+          const saldoDepois = (await tx.stockItem.findUnique({
+            where: { id: stockItemId },
+            select: { id: true, name: true, quantity: true, unit: true },
+          }))!;
 
           // Saldo negativo não trava a venda: quando a baixa roda o pedido já foi
           // aceito e a comida está com o cliente — abortar aqui só produziria um
@@ -486,7 +572,24 @@ export async function deductStockForOrder(orderId: string) {
         })
       );
     }
-  } catch (error) {
+  } catch (error: any) {
+    // P2002 no `sourceRef` é o RESULTADO ESPERADO da corrida, não um defeito:
+    // a rota de status dispara esta função duas vezes em paralelo no mesmo
+    // request (uma direta e outra dentro de confirmOrderPayment). A segunda
+    // bate no índice único e a transação inteira volta atrás — que é
+    // exatamente o que impede a baixa dobrada. Logar como erro faria o time
+    // caçar um problema que na verdade é a proteção funcionando.
+    if (String(error?.code) === "P2002") {
+      console.log(`[Stock] Baixa do pedido ${orderId} já estava registrada (corrida evitada).`);
+      return;
+    }
+    if (String(error?.message || "").startsWith("INSUMO_FORA_DA_LOJA:")) {
+      console.error(
+        `[Stock] 🛑 Pedido ${orderId} tentou baixar insumo que não é desta loja ` +
+          `(${String(error.message).split(":")[1]}). Nada foi gravado.`
+      );
+      return;
+    }
     console.error(`[Stock] Erro ao realizar baixa de estoque para pedido ${orderId}:`, error);
   }
 }
@@ -537,7 +640,7 @@ export async function restoreStockForOrder(orderId: string) {
           notes: { contains: `id: ${orderId}` },
           ...(ultimaDevolucao ? { createdAt: { gt: ultimaDevolucao.createdAt } } : {}),
         },
-        select: { stockItemId: true, quantity: true },
+        select: { id: true, stockItemId: true, quantity: true, franchiseeId: true },
       });
 
       // Pedido cancelado antes do ACEITO nunca baixou nada — não é erro.
@@ -556,14 +659,27 @@ export async function restoreStockForOrder(orderId: string) {
         await tx.stockTransaction.create({
           data: {
             stockItemId: sale.stockItemId,
+            franchiseeId: sale.franchiseeId,
             quantity: amountToRestore,
             type: "INPUT",
             notes: `Devolução por cancelamento - Pedido #${orderId.slice(-6)} (cancel id: ${orderId})`,
           },
         });
 
-        await tx.stockItem.update({
-          where: { id: sale.stockItemId },
+        // Libera a chave da baixa que está sendo desfeita.
+        //
+        // `sourceRef` é determinístico por (pedido, insumo) e único no banco.
+        // Sem soltar aqui, o pedido cancelado e REACEITO — a tela de pedidos
+        // deixa voltar de CANCELADO para ACEITO — bateria no índice e a baixa
+        // nunca mais aconteceria: o insumo ficaria no saldo para sempre. A
+        // trava tem que valer contra repetição, não contra reabertura.
+        await tx.stockTransaction.update({
+          where: { id: sale.id },
+          data: { sourceRef: null },
+        });
+
+        await tx.stockItem.updateMany({
+          where: { id: sale.stockItemId, ...(sale.franchiseeId ? { franchiseeId: sale.franchiseeId } : {}) },
           data: { quantity: { increment: amountToRestore } },
         });
 
