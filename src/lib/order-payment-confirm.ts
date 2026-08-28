@@ -93,6 +93,28 @@ export async function confirmOrderPayment(orderId: string) {
     console.error("[ConfirmPayment] Baixa de estoque:", errEstoque);
   }
 
+  // ── PURCHASE PARA O META, PELO SERVIDOR ─────────────────────────────────
+  //
+  // Este é o ponto do pedido de pagamento ONLINE: a venda só existe quando o
+  // dinheiro entra. Quem desiste na tela do cartão não pode virar conversão —
+  // além de inflar o número, ensina o algoritmo a buscar mais gente que
+  // abandona.
+  //
+  // O pedido de "pagar na entrega" NÃO chega aqui (ele nunca é confirmado, o
+  // `paymentPaidAt` fica nulo para sempre): esse dispara na criação, em
+  // api/customer-order/route.ts.
+  //
+  // Reenvio de webhook é inofensivo: o `event_id` é determinístico por pedido,
+  // então o Meta reconhece o mesmo evento e conta uma venda só.
+  try {
+    const { dispararCompraNoMeta } = await import("@/lib/meta-purchase");
+    dispararCompraNoMeta(orderId).catch((e) =>
+      console.error("[ConfirmPayment] Meta CAPI:", e)
+    );
+  } catch (errMeta) {
+    console.error("[ConfirmPayment] Meta CAPI:", errMeta);
+  }
+
   // Contador de pedidos da loja (Pay as You Grow).
   prisma.user
     .update({ where: { id: order.franchiseeId }, data: { storeOrderCount: { increment: 1 } } })

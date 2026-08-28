@@ -99,14 +99,31 @@ export default function FacebookPixel({ pixelId }: { pixelId: string }) {
  * Vai para o pixel DA LOJA quando existir; se a loja não configurou pixel,
  * cai no comportamento antigo (`track`), para não perder a métrica agregada.
  */
-export const trackPixelEvent = (event: string, params?: Record<string, any>) => {
+export const trackPixelEvent = (
+  event: string,
+  params?: Record<string, any>,
+  /**
+   * ID do evento, para DEDUPLICAÇÃO com a API de Conversões.
+   *
+   * O servidor manda o MESMO evento (src/lib/meta-purchase.ts). O Meta só
+   * entende que são o mesmo se os dois carregarem este id — senão a venda
+   * conta DUAS vezes: o ROAS dobra no relatório, o lojista acha que está indo
+   * bem, e o algoritmo aprende errado. É um estrago pior que não ter CAPI.
+   *
+   * Use `idDoEventoDeCompra(orderId)` de src/lib/meta-capi.ts para calcular —
+   * nunca um número aleatório, que nunca casaria com o do servidor.
+   */
+  eventID?: string
+) => {
   if (typeof window === "undefined" || !window.fbq) return;
 
+  const opts = eventID ? { eventID } : undefined;
+
   if (pixelDaLojaAtual) {
-    window.fbq("trackSingle", pixelDaLojaAtual, event, params);
+    window.fbq("trackSingle", pixelDaLojaAtual, event, params, opts);
     return;
   }
-  window.fbq("track", event, params);
+  window.fbq("track", event, params, opts);
 };
 
 // Eventos padrão para delivery:

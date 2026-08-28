@@ -37,6 +37,33 @@ export default function IntegracoesHubClient({
   // Meta Pixel state
   const [pixelId, setPixelId] = useState(initialFacebookPixelId || "");
   const [pixelSaving, setPixelSaving] = useState(false);
+  // Token da API de Conversões. Nunca volta do servidor preenchido — é segredo
+  // de escrita no Gerenciador de Eventos da loja. Vazio significa "não mexer".
+  const [capiToken, setCapiToken] = useState("");
+  const [capiTestando, setCapiTestando] = useState(false);
+  const [capiResultado, setCapiResultado] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const handleTestarCapi = async () => {
+    setCapiTestando(true);
+    setCapiResultado(null);
+    try {
+      const res = await fetch("/api/meta-ads/testar-capi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pixelId, token: capiToken }),
+      });
+      const d = await res.json();
+      setCapiResultado(
+        res.ok && d.ok
+          ? { ok: true, msg: `Deu certo. O Meta recebeu o evento de teste. Abra o Gerenciador de Eventos → Testar eventos e use o código ${d.testEventCode} para vê-lo aparecer.` }
+          : { ok: false, msg: d.erro || d.error || "Não consegui enviar. Confira o pixel e o token." }
+      );
+    } catch {
+      setCapiResultado({ ok: false, msg: "Sem conexão com o servidor. Tente de novo." });
+    } finally {
+      setCapiTestando(false);
+    }
+  };
 
   // WhatsApp state
   const [waConnected, setWaConnected] = useState(false);
@@ -665,6 +692,10 @@ export default function IntegracoesHubClient({
         body: JSON.stringify({
           facebookPixelId: pixelId,
           metaPixelId: pixelId,
+          // Só envia quando o lojista digitou algo. Campo vazio significa
+          // "não mexer" — o token nunca volta preenchido do servidor, então
+          // mandar vazio apagaria um token já configurado.
+          ...(capiToken ? { metaCapiToken: capiToken } : {}),
         })
       });
       if (res.ok) {
@@ -938,12 +969,61 @@ export default function IntegracoesHubClient({
                   </span>
                 </div>
 
+                {/* ── API DE CONVERSÕES ────────────────────────────────────
+                    O pixel do navegador perde de 30% a 50% dos eventos para
+                    bloqueador de anúncio, iOS e Safari. O que se perde não é
+                    relatório — é o SINAL que o Meta usa para decidir a quem
+                    mostrar o anúncio. Explicado aqui, onde a dúvida aparece. */}
+                <div style={{ background: "#F8FAFC", borderRadius: "14px", padding: "16px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#1E293B", display: "block", marginBottom: "6px" }}>
+                    Token da API de Conversões <span style={{ fontWeight: 600, color: "#64748B" }}>— opcional, mas muda muito</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Cole aqui o token gerado no Meta"
+                    value={capiToken}
+                    onChange={(e) => setCapiToken(e.target.value.trim())}
+                    style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontFamily: "monospace", outline: "none" }}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "8px", display: "block", lineHeight: 1.5 }}>
+                    Com ele, a venda é enviada ao Meta <strong>pelo nosso servidor</strong>, e não só pelo navegador do
+                    cliente. Entre 30% e 50% das vendas não chegam pelo navegador (bloqueador de anúncio, iPhone,
+                    Safari) — e o que não chega o Meta não usa para achar mais clientes parecidos.
+                    <br /><br />
+                    Onde pegar: <em>Gerenciador de Eventos &rarr; sua fonte de dados &rarr; Configurações &rarr;
+                    API de Conversões &rarr; Gerar token de acesso</em>.
+                  </span>
+
+                  {pixelId && capiToken && (
+                    <button
+                      onClick={handleTestarCapi}
+                      disabled={capiTestando}
+                      style={{ marginTop: "12px", padding: "10px 16px", borderRadius: "10px", border: "1.5px solid #1877F2", background: "#fff", color: "#1877F2", fontWeight: 800, fontSize: "0.82rem", cursor: capiTestando ? "default" : "pointer", opacity: capiTestando ? 0.6 : 1 }}
+                    >
+                      {capiTestando ? "Enviando..." : "Enviar evento de teste"}
+                    </button>
+                  )}
+
+                  {capiResultado && (
+                    <div style={{
+                      marginTop: "12px", padding: "12px 14px", borderRadius: "10px", fontSize: "0.8rem", lineHeight: 1.5,
+                      background: capiResultado.ok ? "#ECFDF3" : "#FEF2F2",
+                      border: `1px solid ${capiResultado.ok ? "#ABEFC6" : "#FECACA"}`,
+                      color: capiResultado.ok ? "#15803D" : "#B71C1C",
+                      fontWeight: 700,
+                    }}>
+                      {capiResultado.msg}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#1E40AF", marginBottom: "24px" }}>
                   <strong>💡 Eventos Rastreados Automáticos:</strong>
                   <ul style={{ margin: "4px 0 0 0", paddingLeft: "16px" }}>
                     <li><code>PageView</code>: Sempre que alguém abre seu cardápio</li>
                     <li><code>AddToCart</code>: Quando o cliente escolhe um produto</li>
-                    <li><code>Purchase</code>: Quando o pedido é finalizado</li>
+                    <li><code>InitiateCheckout</code>: Quando começa a finalizar</li>
+                    <li><code>Purchase</code>: Quando o pedido é fechado — com o valor da venda</li>
                   </ul>
                 </div>
 

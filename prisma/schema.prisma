@@ -69,6 +69,17 @@ model User {
   metaFbAccessToken String?        @db.Text  // Token OAuth do Facebook (longa duração)
   metaAdAccountId   String?        // act_XXXXXXX — conta de anúncios
   metaPixelId       String?        // Pixel Meta instalado no cardápio
+  /// Token da API de Conversões (CAPI), gerado no Gerenciador de Eventos do
+  /// Meta. É o que permite mandar a venda pelo SERVIDOR.
+  ///
+  /// O pixel do navegador perde de 30% a 50% dos eventos para bloqueador de
+  /// anúncio, iOS e Safari — e o que se perde não é relatório, é o SINAL que o
+  /// Meta usa para decidir a quem mostrar o anúncio. Campanha com metade do
+  /// sinal otimiza pela metade.
+  ///
+  /// É um segredo por loja: dá acesso de escrita ao Gerenciador de Eventos
+  /// dela. Nunca sai numa resposta de API para o navegador.
+  metaCapiToken     String?        @db.Text
   // Cota de imagens geradas por IA para anúncio. O pacote de R$50/semana
   // inclui 10 gerações; sem teto, um lojista indeciso clicando "gerar outra"
   // consumiria boa parte da margem sozinho (cada imagem custa ~R$0,21).

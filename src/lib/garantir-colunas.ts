@@ -255,6 +255,10 @@ const INSTRUCOES_LOTES = [
   // jeito, porque nada além desta tela lê o campo.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "labelFieldsConfig" JSONB`,
 
+  // Token da API de Conversões do Meta. Sem ele a venda só existe pelo pixel do
+  // navegador, que perde de 30% a 50% dos eventos.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaCapiToken" TEXT`,
+
   // Soft-delete no insumo. Hoje a lixeira faz DELETE físico e a cascata leva
   // TODO o histórico de movimentação junto (schema:1153) e as fichas técnicas
   // que referenciam o insumo (:1167) — perda silenciosa e irreversível.
@@ -301,7 +305,7 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
           AND (
             (table_name = 'StockTransaction' AND column_name IN ('stockLotId','franchiseeId','userId','sourceRef'))
             OR (table_name = 'KitchenItem'    AND column_name IN ('stockItemId','labelSize'))
-            OR (table_name = 'User'           AND column_name IN ('labelFieldsConfig'))
+            OR (table_name = 'User'           AND column_name IN ('labelFieldsConfig','metaCapiToken'))
             OR (table_name = 'StockItem'      AND column_name IN ('active'))
             OR (table_name = 'StockLot'       AND column_name IN ('recebidoPorId','recebidoEm'))
           )
@@ -311,7 +315,7 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
         "StockTransaction.stockLotId", "StockTransaction.franchiseeId",
         "StockTransaction.userId", "StockTransaction.sourceRef",
         "KitchenItem.stockItemId", "KitchenItem.labelSize",
-        "User.labelFieldsConfig", "StockItem.active",
+        "User.labelFieldsConfig", "User.metaCapiToken", "StockItem.active",
         "StockLot.recebidoPorId", "StockLot.recebidoEm",
       ]) {
         if (!tem.has(esperada)) faltando.push(esperada);

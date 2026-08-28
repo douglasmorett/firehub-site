@@ -329,6 +329,24 @@ export async function POST(req: Request) {
       sendOrderNotification(order.id, "CREATED").catch(err =>
         console.warn("[CustomerOrder] Erro ao enviar notificação CREATED:", err)
       );
+
+      // ── PURCHASE PARA O META, PELO SERVIDOR ───────────────────────────────
+      //
+      // Só no pagamento na entrega, e é aqui de propósito: nesse fluxo o pedido
+      // JÁ É a venda — não existe confirmação depois. `paymentPaidAt` fica nulo
+      // para sempre, então ancorar o evento em `confirmOrderPayment` mandaria
+      // ZERO conversão para o tráfego real das lojas.
+      //
+      // O pedido de pagamento ONLINE não passa por aqui: ele dispara em
+      // order-payment-confirm.ts, quando o dinheiro entra. Disparar na criação
+      // contaria como venda quem desiste na tela do cartão — inflando o número
+      // e ensinando o algoritmo a buscar mais gente que abandona.
+      //
+      // Sem await: o Meta não pode segurar a resposta do pedido.
+      const { dispararCompraNoMeta } = await import("@/lib/meta-purchase");
+      dispararCompraNoMeta(order.id).catch(err =>
+        console.error("[Meta CAPI] Falha ao enviar Purchase:", err)
+      );
     }
 
     // Se auto-aceito e não-online, contabiliza no faturamento e deduz estoque imediatamente

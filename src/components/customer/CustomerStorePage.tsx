@@ -1067,7 +1067,26 @@ export default function CustomerStorePage({
       });
       if (res.ok) {
         const d = await res.json();
-        trackPixelEvent("Purchase", { value: finalTotal, currency: "BRL", order_id: d.orderId });
+        // O `eventID` é o que faz o Meta entender que este Purchase e o que o
+        // SERVIDOR manda (src/lib/meta-purchase.ts) são o MESMO evento, e contar
+        // uma venda só. Sem ele, toda venda contaria duas vezes — o ROAS dobra
+        // e o algoritmo aprende errado.
+        //
+        // `content_ids` habilita o Anúncio Dinâmico: é o que permite o anúncio
+        // mostrar exatamente o prato que a pessoa olhou.
+        trackPixelEvent(
+          "Purchase",
+          {
+            value: finalTotal,
+            currency: "BRL",
+            order_id: d.orderId,
+            content_type: "product",
+            content_ids: cart.map(i => i.id.split("_")[0]),
+            contents: cart.map(i => ({ id: i.id.split("_")[0], quantity: i.quantity })),
+            num_items: cart.reduce((s, i) => s + i.quantity, 0),
+          },
+          `purchase:${d.orderId}`
+        );
         const pmUpper = (paymentMethod || "").toUpperCase();
         // Comparação EXATA: com includes(), "PIX_ENTREGA".includes("PIX") era
         // true e o cliente do pagamento na entrega caía no modal do gateway —
