@@ -18,6 +18,11 @@
  * código falhasse, `exchangeCodeForToken` devolvia undefined sem lançar, o
  * Prisma ignorava o campo e o registro ficava com `metaAdsEnabled: true` sem
  * token nenhum — e a tela exibia "✅ Facebook conectado!".
+ *
+ * PENDENTE (precisa de rota + tela, não cabe aqui): a Página escolhida ainda
+ * não pode ser TROCADA pelo lojista. A conta de anúncios já tem saída própria
+ * (POST /api/meta-ads/escolher-conta). Enquanto a Página não tiver a mesma,
+ * quem administra várias Páginas depende do acerto automático abaixo.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -28,6 +33,7 @@ import {
   getMetaAccounts,
   descobrirPixelDaConta,
   escolherMelhorContaDeAnuncios,
+  escolherMelhorPagina,
   listarTodasAsContasDeAnuncio,
 } from "@/lib/meta-ads";
 import { lerState } from "@/lib/meta-oauth-state";
@@ -93,7 +99,17 @@ export async function GET(req: NextRequest) {
     const { contas, porCaminho, erros } = await listarTodasAsContasDeAnuncio(accessToken);
     const contaEscolhida = escolherMelhorContaDeAnuncios(contas);
     const adAccountId = contaEscolhida?.id ?? null;
-    const pageId = pages?.[0]?.id ?? null;
+
+    // A Página que ASSINA o anúncio tinha o mesmo defeito da conta: era
+    // `pages[0]`, a ordem que a Meta devolveu. `pages_show_list` traz TODA
+    // Página em que a pessoa tem qualquer papel — a antiga, a do sócio, a do
+    // parente onde ela é só Analista. Analista não anuncia: o POST
+    // /adcreatives é recusado e o lojista leva o JSON cru da Meta no último
+    // passo, depois de montar o criativo inteiro. Agora prefere quem tem a
+    // tarefa ADVERTISE; se a Meta não informar tarefas, mantém a ordem dela
+    // (bloquear por falta de dado tiraria do ar quem está funcionando).
+    const paginaEscolhida = escolherMelhorPagina(pages);
+    const pageId = paginaEscolhida?.id ?? null;
 
     console.log(
       `[Meta Ads] Loja ${lojaDaSessao}: ${contas.length} conta(s) de anúncio. ` +
@@ -104,20 +120,51 @@ export async function GET(req: NextRequest) {
         (erros.length ? `Erros: ${erros.join(" | ")}` : "")
     );
 
+    // A Página escolhida vai no log pelo mesmo motivo da conta: quando o
+    // lojista reclamar que o anúncio saiu assinado pela marca errada, dá para
+    // ver aqui quais eram as candidatas e por que esta ganhou.
+    console.log(
+      `[Meta Ads] Loja ${lojaDaSessao}: ${pages?.length ?? 0} Página(s). ` +
+        `Escolhida ${pageId ?? "nenhuma"} ("${paginaEscolhida?.name ?? "?"}", ` +
+        `tarefas: ${
+          Array.isArray(paginaEscolhida?.tasks) && paginaEscolhida.tasks.length
+            ? paginaEscolhida.tasks.join("/")
+            : "não informadas pela Meta"
+        })` +
+        ((pages?.length ?? 0) > 1
+          ? `. Demais: ${pages
+              .filter((p: any) => p?.id !== pageId)
+              .map((p: any) => `${p.id}="${p.name ?? "?"}"`)
+              .join(", ")}`
+          : "")
+    );
+
     // Descobre o Pixel na hora da conexão. Sem ele não há medição de pedido, e
     // pedir para o lojista achar o ID sozinho é atrito que a maioria não vence.
     const pixel = adAccountId ? await descobrirPixelDaConta(adAccountId, accessToken) : null;
 
-    // Sem conta de anúncios não há como veicular. Guarda o token (a conta pode
-    // ser escolhida depois) mas NÃO liga o módulo, para a tela não prometer o
-    // que não existe.
+    // Sem conta de anúncios — ou sem Página — não há como veicular. Guarda o
+    // token (a conta pode ser trocada depois em /api/meta-ads/escolher-conta)
+    // mas NÃO liga o módulo, para a tela não prometer o que não existe.
     await prisma.user.update({
       where: { id: lojaDaSessao },
       data: {
         metaFbAccessToken: accessToken,
         metaAdAccountId: adAccountId,
         metaFbPageId: pageId,
-        metaAdsEnabled: Boolean(adAccountId),
+        // Liga o módulo só quando existem AS DUAS pontas — conta e Página.
+        // `metaAdsEnabled` não é enfeite de tela: `detectarUsoDaLoja`
+        // (lib/billing.ts) conta "Meta Ads" como uso da loja no fechamento do
+        // mês. Ligar uma loja sem Página é cobrar mensalidade por um módulo que
+        // não consegue nem criar o criativo.
+        //
+        // E aqui NUNCA se desliga: `metaAdsEnabled` é o filtro do cron que
+        // renova o token da loja (api/cron/meta-ads-sync). Se uma reconexão
+        // voltasse incompleta — permissão desmarcada no diálogo do Facebook —
+        // desligar deixaria o token morrer com campanha veiculando na Meta,
+        // gastando o cartão do lojista sem ninguém acompanhando. Desligar é
+        // atribuição do cron, que já faz isso quando o token de fato morre.
+        ...(adAccountId && pageId ? { metaAdsEnabled: true } : {}),
         // Só grava o pixel se descobriu algum — não apaga o que o lojista já
         // tenha configurado à mão na tela de Integrações.
         ...(pixel?.id ? { metaPixelId: pixel.id } : {}),
@@ -125,6 +172,13 @@ export async function GET(req: NextRequest) {
     });
 
     if (!adAccountId) return voltarCom("sem_conta_de_anuncios");
+
+    // Anúncio é publicado POR uma Página; sem ela o criativo não existe. Isto
+    // passava batido: a tela dizia "✅ Facebook conectado!", o lojista escolhia
+    // imagem, escrevia o texto, apertava Publicar — e só então recebia o erro
+    // cru da Meta, sem nada na tela para resolver. Falhar agora custa um clique
+    // e diz o que fazer.
+    if (!pageId) return voltarCom("sem_pagina_do_facebook");
 
     const investimento = conferido.dados.investment;
     const extra = investimento ? `&budget=${investimento}` : "";

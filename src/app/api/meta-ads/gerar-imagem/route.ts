@@ -13,11 +13,15 @@
  * política ou chave ausente não consomem cota — cobrar por tentativa frustrada
  * é o tipo de coisa que faz o lojista desconfiar do produto.
  */
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { saveDataUrl } from "@/lib/storage";
+import { UPLOADS_ROOT } from "@/lib/storage";
+import { prepararImagemDeAnuncio } from "@/lib/imagem-anuncio";
 import {
   gerarImagemDeAnuncio,
   semanaDeReferencia,
@@ -25,6 +29,47 @@ import {
 } from "@/lib/imagem-ia";
 
 export const dynamic = "force-dynamic";
+
+/** Teto de sanidade: a IA devolve ~1,8 MB; acima disso é resposta estranha. */
+const MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Grava a imagem da IA como criativo pronto e devolve a URL pública.
+ *
+ * ── Por que não usa mais `saveDataUrl` ──────────────────────────────────────
+ * `saveDataUrl` passa por `otimizarImagem` (lib/storage.ts), que é a regra das
+ * fotos de cardápio: reduz para 900px e converte em WebP. O PNG 1024×1024 da
+ * IA chegava na Meta como WebP de 900px — abaixo do 1080 que a Meta recomenda
+ * para feed e fora do JPEG que o módulo diz entregar. Aqui a imagem sai pelo
+ * MESMO caminho do upload do lojista (1080×1080 JPEG), para que as três abas
+ * — cardápio, upload e IA — mandem exatamente o mesmo tipo de arquivo.
+ *
+ * E a pasta: `saveDataUrl(..., "meta-ads/<loja>")` nunca existiu. Como
+ * "meta-ads" não está na lista fechada de `sanitizeFolder`, o valor virava
+ * "produtos" em silêncio e todo criativo caía junto com as fotos de cardápio
+ * de todas as lojas.
+ */
+async function gravarCriativoDaIA(dataUri: string, lojaId: string): Promise<string> {
+  const m = /^data:([^;,]+);base64,([\s\S]+)$/.exec(dataUri);
+  if (!m) throw new Error("A IA devolveu a imagem num formato que não sei ler.");
+
+  const bruto = Buffer.from(m[2], "base64");
+  if (bruto.length > MAX_BYTES) throw new Error("A imagem gerada veio grande demais.");
+
+  const quadrada = await prepararImagemDeAnuncio(
+    new File([new Uint8Array(bruto)], "ia", { type: m[1].toLowerCase() })
+  );
+  const bytes = Buffer.from(await quadrada.arrayBuffer());
+
+  const loja = lojaId.replace(/[^a-zA-Z0-9_-]/g, "") || "sem-loja";
+  const nome = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}-anuncio.jpg`;
+  const destino = path.join(UPLOADS_ROOT, "marketing", loja);
+
+  await mkdir(destino, { recursive: true });
+  await writeFile(path.join(destino, nome), bytes);
+
+  return `/uploads/marketing/${loja}/${nome}`;
+}
 
 type Loja = {
   id: string;
@@ -121,7 +166,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: gerado.motivo, mensagem: mensagens[gerado.motivo] }, { status: 502 });
   }
 
-  const salvo = await saveDataUrl(gerado.imagem.dataUri, `meta-ads/${lojaId}`);
+  // Gravação dentro de try: se a imagem veio da IA mas não conseguiu virar
+  // arquivo, o lojista precisa de uma mensagem e de outra tentativa — não de um
+  // 500 mudo. E a cota continua intacta, porque não existe imagem para usar.
+  let url: string;
+  try {
+    url = await gravarCriativoDaIA(gerado.imagem.dataUri, lojaId);
+  } catch (err: any) {
+    console.error(`[MetaAds IA] imagem gerada mas não gravada (loja ${lojaId}):`, err);
+    return NextResponse.json(
+      {
+        error: "erro",
+        mensagem:
+          "A imagem foi criada mas não consegui salvá-la. Tente de novo — " +
+          "esta tentativa não gastou nada da sua cota.",
+      },
+      { status: 502 }
+    );
+  }
 
   // Débito só depois de a imagem existir de verdade.
   const atualizado = await prisma.user.update({
@@ -134,7 +196,7 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json({
-    url: salvo.url,
+    url,
     cotaSemanal: COTA_SEMANAL_DE_IMAGENS,
     usadas: atualizado.metaIaGeracoesUsadas,
     restantes: Math.max(0, COTA_SEMANAL_DE_IMAGENS - atualizado.metaIaGeracoesUsadas),

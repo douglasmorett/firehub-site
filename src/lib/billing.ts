@@ -253,7 +253,7 @@ export async function trackSaleForBilling(franchiseeId: string) {
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const yearMonth = getCurrentYearMonth(0, tz);
 
-  await ensureCycle(franchiseeId, yearMonth);
+  const cycle = await ensureCycle(franchiseeId, yearMonth);
 
   const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0 || user?.isFranqueadoHakim === true || user?.email?.toLowerCase() === "contatohakim@gmail.com";
 
@@ -270,7 +270,16 @@ export async function trackSaleForBilling(franchiseeId: string) {
 
   const totalSales = agg._sum.totalAmount ?? 0;
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
-  const pendingVal = isExempt ? 0 : amountDue;
+
+  // As taxas já acumuladas no ciclo (tráfego pago, totem) entram no pendente.
+  //
+  // Este update SOBRESCREVIA `amountPending` com a mensalidade pura a cada
+  // pedido confirmado — apagando, várias vezes por dia, os R$ 50/semana de
+  // gestão que o cron do Meta Ads tinha somado ali. O fechamento recalcula tudo
+  // e o boleto saía certo, mas as telas de admin que leem esta coluna mostravam
+  // um valor menor do que o que a loja ia receber.
+  const taxasDoCiclo = (cycle.metaAdsFee ?? 0) + (cycle.totemFee ?? 0);
+  const pendingVal = isExempt ? 0 : parseFloat((amountDue + taxasDoCiclo).toFixed(2));
 
   await prisma.franchiseeBillingCycle.update({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
@@ -349,7 +358,13 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const isentoPorTeste = emTeste && totalSales === 0;
 
   const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage);
-  const mensalidadePendente = isSpecialStore ? 0 : Math.max(0, amountDue - cycle.amountOffset);
+
+  // Quem NÃO paga mensalidade: loja isenta, quem não usou nada e quem está em
+  // teste sem ter vendido. Isto era decidido lá embaixo, no bloco que zera o
+  // ciclo inteiro — e era exatamente por isso que as taxas de serviço prestado
+  // iam junto (ver o bloco de taxas extras abaixo).
+  const mensalidadePerdoada = isSpecialStore || isentoPorTeste || !hasUsage;
+  const mensalidadePendente = mensalidadePerdoada ? 0 : Math.max(0, amountDue - cycle.amountOffset);
 
   // Taxas fixas do mês, por fora do 1% sobre as vendas.
   //
@@ -390,8 +405,19 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += extra99;
       linhasExtras.push(`99Food +${lojas99 - 1} loja(s) R$${extra99.toFixed(2)}`);
     }
+  }
 
-    // Taxas acumuladas no ciclo por outros módulos (tráfego pago, totens).
+  // Taxas acumuladas no ciclo por outros módulos (tráfego pago, totens).
+  //
+  // Ficavam dentro do `if (!isentoPorTeste)` acima, e isso APAGAVA serviço já
+  // prestado: loja em teste que rodou campanha o mês inteiro acumulava R$ 50
+  // por semana no ciclo, o fechamento pulava o bloco, gravava PAID e o dinheiro
+  // sumia — sem adiar, sem recurso, porque nada reprocessa ciclo fechado. O
+  // período de teste isenta a mensalidade que nasce do USO sem venda (é o que o
+  // comentário acima diz); tráfego pago e totem não são presunção de uso, são
+  // serviço entregue, cobrado semana a semana e anunciado na própria tela do
+  // módulo ("acumulada e incluída na fatura do mês seguinte").
+  if (!isSpecialStore) {
     if (cycle.metaAdsFee > 0) {
       taxasExtras += cycle.metaAdsFee;
       linhasExtras.push(`Tráfego pago R$${cycle.metaAdsFee.toFixed(2)}`);
@@ -405,8 +431,13 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const ifoodExtraCharge = taxasExtras;
   const amountPending = parseFloat((mensalidadePendente + taxasExtras).toFixed(2));
 
-  // Nada a cobrar, loja isenta, ou ainda dentro do período de teste
-  if (amountPending < 1 || (!hasUsage) || isSpecialStore || isentoPorTeste) {
+  // Nada a cobrar ou loja isenta.
+  //
+  // `!hasUsage` e `isentoPorTeste` saíram desta condição: os dois já zeram a
+  // MENSALIDADE em `mensalidadePerdoada`, e mantê-los aqui zerava junto a taxa
+  // de serviço já prestado — a única coisa que ainda havia para cobrar nesses
+  // casos. Sem taxa acumulada o resultado é idêntico ao de antes.
+  if (isSpecialStore || amountPending < 1) {
     await prisma.franchiseeBillingCycle.update({
       where: { id: cycle.id },
       data: {
@@ -467,8 +498,15 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       // Vencimento: dia 5 do próximo mês
       const due = new Date(y, m, 5).toISOString().split("T")[0];
 
-      const chargeDescription = linhasExtras.length > 0
-        ? `FireHub ${yearMonth} — Mensalidade R$${mensalidadePendente.toFixed(2)} + ${linhasExtras.join(" + ")}`
+      // A mensalidade só entra na descrição quando existe: com ela perdoada
+      // (teste sem venda) e só a taxa de tráfego a cobrar, o boleto dizia
+      // "Mensalidade R$0,00 + ...".
+      const linhasDaFatura = [
+        ...(mensalidadePendente > 0 ? [`Mensalidade R$${mensalidadePendente.toFixed(2)}`] : []),
+        ...linhasExtras,
+      ];
+      const chargeDescription = linhasDaFatura.length > 0
+        ? `FireHub ${yearMonth} — ${linhasDaFatura.join(" + ")}`
         : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$100 · máx R$400)`;
 
       const payload: any = {
@@ -530,7 +568,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     where: { id: cycle.id },
     data: {
       totalSales,
-      amountDue,
+      // Mensalidade perdoada (teste / sem uso) mas com taxa a cobrar: gravar o
+      // `amountDue` cheio faria o painel do admin mostrar uma dívida que não
+      // está no boleto.
+      amountDue: mensalidadePerdoada ? 0 : amountDue,
       amountPending,
       status: "CLOSED",
       closedAt: new Date(),
@@ -568,6 +609,9 @@ export async function getCurrentCycleView(franchiseeId: string) {
       amountDue: 0,
       amountOffset: 0,
       amountPending: 0,
+      // Mesma forma em todos os retornos, para o painel nunca ter que testar se
+      // o campo existe.
+      taxas: { trafegoPago: 0, totem: 0 },
       status: "PAID",
       isExempt: true,
     };
@@ -615,19 +659,39 @@ export async function getCurrentCycleView(franchiseeId: string) {
       amountDue: devidoAgora,
       amountOffset: 0,
       amountPending: devidoAgora,
+      taxas: { trafegoPago: 0, totem: 0 },
       status: "OPEN", isExempt: false,
       cobrancaPorUso: previsaoPorUso,
     };
   }
 
-  const amountDue = Math.max(cycle.amountDue, devidoAgora);
+  // Taxas de serviço já acumuladas no mês (R$ 50 por semana de tráfego pago,
+  // R$ 100 por totem).
+  //
+  // Esta função ignorava as duas: o lojista com campanha ativa via "Pendente
+  // R$ 100,00" o mês inteiro e recebia um boleto de R$ 300,00 no dia 1 — a
+  // primeira vez que o número aparecia para ele. O fechamento sempre somou as
+  // taxas (ver `taxasExtras`), então painel e fatura divergiam por construção,
+  // que é justamente o que o comentário acima promete que não acontece mais.
+  const trafegoPago = cycle.metaAdsFee ?? 0;
+  const totem = cycle.totemFee ?? 0;
+  const taxasDoCiclo = trafegoPago + totem;
+
+  const mensalidadePrevista = Math.max(cycle.amountDue, devidoAgora);
+  // O abatimento de pagamentos online desconta a MENSALIDADE, não as taxas —
+  // mesma conta do fechamento, para o painel bater com o boleto.
+  const mensalidadePendente = Math.max(0, mensalidadePrevista - cycle.amountOffset);
 
   return {
     yearMonth: cycle.yearMonth,
     totalSales: vendasDoMes,
-    amountDue,
+    amountDue: parseFloat((mensalidadePrevista + taxasDoCiclo).toFixed(2)),
     amountOffset: cycle.amountOffset,
-    amountPending: parseFloat(Math.max(0, amountDue - cycle.amountOffset).toFixed(2)),
+    amountPending: parseFloat((mensalidadePendente + taxasDoCiclo).toFixed(2)),
+    // Discriminado para o painel poder mostrar a linha em vez de só inflar o
+    // total — "por que subiu R$ 200?" tem que ter resposta na tela.
+    mensalidadePrevista,
+    taxas: { trafegoPago, totem },
     status: cycle.status,
     isExempt: false,
     asaasBoletoUrl: cycle.asaasBoletoUrl,
