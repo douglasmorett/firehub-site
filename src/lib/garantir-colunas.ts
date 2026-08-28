@@ -238,6 +238,12 @@ const INSTRUCOES_LOTES = [
        FOREIGN KEY ("stockLotId") REFERENCES "StockLot"("id") ON DELETE SET NULL ON UPDATE CASCADE;
    EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
 
+  // Quem RECEBEU o lote. Na franquia a fábrica imprime a etiqueta e a LOJA lê o
+  // QR para dar entrada — imprimir não põe nada em estoque nenhum.
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "recebidoPorId" TEXT`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "recebidoEm" TIMESTAMP(3)`,
+  `CREATE INDEX IF NOT EXISTS "StockLot_recebidoPorId_idx" ON "StockLot"("recebidoPorId")`,
+
   // A ponte escolhida UMA vez na tela: "este item de cozinha vira este insumo".
   // Sem ela o QR não sabe o que movimentar.
   `ALTER TABLE "KitchenItem" ADD COLUMN IF NOT EXISTS "stockItemId" TEXT`,
@@ -297,6 +303,7 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
             OR (table_name = 'KitchenItem'    AND column_name IN ('stockItemId','labelSize'))
             OR (table_name = 'User'           AND column_name IN ('labelFieldsConfig'))
             OR (table_name = 'StockItem'      AND column_name IN ('active'))
+            OR (table_name = 'StockLot'       AND column_name IN ('recebidoPorId','recebidoEm'))
           )
       `;
       const tem = new Set(cols.map((c) => `${c.tabela}.${c.coluna}`));
@@ -305,6 +312,7 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
         "StockTransaction.userId", "StockTransaction.sourceRef",
         "KitchenItem.stockItemId", "KitchenItem.labelSize",
         "User.labelFieldsConfig", "StockItem.active",
+        "StockLot.recebidoPorId", "StockLot.recebidoEm",
       ]) {
         if (!tem.has(esperada)) faltando.push(esperada);
       }

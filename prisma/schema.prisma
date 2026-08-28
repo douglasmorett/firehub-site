@@ -1289,6 +1289,17 @@ model StockLot {
   /// porcionou, mudou a validade).
   impressoes    Int      @default(1)
 
+  /// QUEM RECEBEU. `franchiseeId` é quem IMPRIMIU a etiqueta — na franquia, a
+  /// fábrica. A loja que recebe a mercadoria lê o QR e é NESSE momento que o
+  /// insumo entra no estoque dela: imprimir não põe nada em estoque nenhum.
+  ///
+  /// Enquanto for null, o lote está "em trânsito" e qualquer loja da rede pode
+  /// recebê-lo. Depois de preenchido, só essa loja movimenta — e uma segunda
+  /// leitura em outra loja avisa que a etiqueta já foi recebida, em vez de
+  /// deixar a mesma mercadoria entrar duas vezes em lugares diferentes.
+  recebidoPorId String?
+  recebidoEm    DateTime?
+
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

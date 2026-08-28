@@ -44,12 +44,12 @@ export default function ScanDoLoteClient({
   const [quantidade, setQuantidade] = useState<number>(lote?.quantidadeRestante ?? 1);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
-  const [feito, setFeito] = useState<null | { quantidade: number; saldo: number; unidade: string }>(null);
+  const [feito, setFeito] = useState<null | { quantidade: number; saldo: number; unidade: string; entrada?: boolean }>(null);
 
   const passo = (lote?.unit === "un" ? 1 : 0.1);
   const arred = (n: number) => Number(n.toFixed(3));
 
-  const movimentar = async (acao: "SAIDA" | "DESCARTE") => {
+  const movimentar = async (acao: "SAIDA" | "DESCARTE" | "ENTRADA") => {
     setErro("");
     setEnviando(true);
     try {
@@ -68,6 +68,7 @@ export default function ScanDoLoteClient({
         quantidade,
         saldo: d.insumo?.quantity ?? 0,
         unidade: d.insumo?.unit || lote?.unit || "un",
+        entrada: acao === "ENTRADA",
       });
     } catch {
       setErro("Sem conexão. A baixa NÃO foi registrada — tente de novo quando o sinal voltar.");
@@ -83,10 +84,12 @@ export default function ScanDoLoteClient({
       <Moldura nomeDaLoja={nomeDaLoja} cor={c} icone="check" palavra="Pronto" titulo={lote?.productName || "Baixa registrada"}>
         <div style={{ background: c.claro, border: `1px solid ${c.borda}`, borderRadius: 12, padding: 16 }}>
           <div style={{ fontSize: "0.95rem", color: c.texto, fontWeight: 800, lineHeight: 1.5 }}>
-            Saíram {feito.quantidade} {feito.unidade} do estoque.
+            {feito.entrada
+              ? `Entraram ${feito.quantidade} ${feito.unidade} no estoque.`
+              : `Saíram ${feito.quantidade} ${feito.unidade} do estoque.`}
           </div>
           <div style={{ fontSize: "0.85rem", color: "#475569", marginTop: 6 }}>
-            Restam <strong>{arred(feito.saldo)} {feito.unidade}</strong> de {lote?.insumo?.name}.
+            Agora você tem <strong>{arred(feito.saldo)} {feito.unidade}</strong> de {lote?.productName}.
           </div>
         </div>
         <div style={{ flexGrow: 1 }} />
@@ -103,17 +106,16 @@ export default function ScanDoLoteClient({
     const c = CORES.semValidade;
     return (
       <Moldura nomeDaLoja={nomeDaLoja} cor={c} icone="busca" palavra="Não encontrada"
-               titulo={estado === "CODIGO_INVALIDO" ? "Esse código não parece uma etiqueta" : "Esta etiqueta não é desta loja"}>
+               titulo={estado === "CODIGO_INVALIDO" ? "Esse código não parece uma etiqueta" : "Não achei esta etiqueta"}>
         <div style={{ fontSize: "0.9rem", color: "#475569", lineHeight: 1.55 }}>
           {estado === "CODIGO_INVALIDO"
             ? "O código de uma etiqueta do FireHub tem 8 caracteres. Confira se leu o QR certo."
-            : "O código não existe aqui, pertence a outra loja, ou a etiqueta foi excluída. Nada foi movimentado."}
+            : "Este código não existe no sistema, ou a etiqueta foi excluída. Nada foi movimentado."}
         </div>
         <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: 14 }}>
-          <div style={rotulo}>Você está em</div>
-          <div style={{ fontSize: "1rem", fontWeight: 800, color: "#0F172A", marginTop: 4 }}>{nomeDaLoja}</div>
-          <div style={{ fontSize: "0.79rem", color: "#64748B", marginTop: 7, lineHeight: 1.45 }}>
-            Se você tem mais de uma loja, troque no topo do FireHub e escaneie de novo.
+          <div style={{ fontSize: "0.86rem", color: "#334155", lineHeight: 1.5 }}>
+            Se o QR está sujo ou molhado, <strong>digite os 8 caracteres</strong> impressos embaixo dele —
+            é para isso que eles saem na etiqueta.
           </div>
         </div>
         <div style={{ flexGrow: 1 }} />
@@ -132,6 +134,80 @@ export default function ScanDoLoteClient({
         <div style={{ fontSize: "0.9rem", color: "#475569", lineHeight: 1.55 }}>
           Isso costuma se resolver sozinho em alguns minutos. Se continuar, avise o suporte e diga este código.
         </div>
+        <div style={{ flexGrow: 1 }} />
+        <Codigo codigo={codigo} />
+      </Moldura>
+    );
+  }
+
+  // ── A RECEBER: a mercadoria chegou e ainda não entrou em estoque nenhum ──
+  //
+  // É o estado MAIS COMUM do fluxo: a fábrica etiqueta, a loja lê e recebe.
+  // Imprimir não põe nada em estoque — é esta leitura que põe.
+  if (estado === "A_RECEBER") {
+    const venceuNaChegada = lote?.estadoDePrazo === "vencido";
+    const c = venceuNaChegada ? CORES.vencido : CORES.info;
+    return (
+      <Moldura nomeDaLoja={nomeDaLoja} cor={c} icone={venceuNaChegada ? "x" : "entrada"}
+               palavra={venceuNaChegada ? "Chegou vencido" : "Dar entrada"}
+               titulo={lote?.productName || ""}>
+        {venceuNaChegada ? (
+          <div style={{ background: c.claro, border: `1px solid ${c.borda}`, borderRadius: 12, padding: 14, fontSize: "0.88rem", color: c.texto, fontWeight: 800, lineHeight: 1.45 }}>
+            {lote.textoDePrazo}. Confira com quem entregou antes de dar entrada — o produto já chegou fora do prazo.
+          </div>
+        ) : (
+          <div style={{ fontSize: "0.9rem", color: "#475569", lineHeight: 1.55 }}>
+            Este produto ainda não está no seu estoque. Confirme a quantidade que chegou e dê entrada.
+          </div>
+        )}
+
+        <Fatos lote={lote} />
+
+        {erro && (
+          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: "12px 14px", fontSize: "0.86rem", color: "#B71C1C", fontWeight: 700, lineHeight: 1.45 }}>{erro}</div>
+        )}
+
+        <div style={{ flexGrow: 1 }} />
+        <Codigo codigo={codigo} />
+
+        <Rodape>
+          <div>
+            <div style={{ ...rotulo, marginBottom: 7 }}>Quanto chegou</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button onClick={() => setQuantidade(q => Math.max(passo, arred(q - passo)))} style={btnPasso} aria-label="Diminuir">−</button>
+              <div style={{ flexGrow: 1, height: 56, border: "1px solid #CBD5E1", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "1.3rem", color: "#0F172A" }}>
+                {arred(quantidade)} {lote?.unit}
+              </div>
+              <button onClick={() => setQuantidade(q => arred(q + passo))} style={btnPasso} aria-label="Aumentar">+</button>
+            </div>
+          </div>
+
+          <button onClick={() => movimentar("ENTRADA")} disabled={enviando} style={btnPrimario(venceuNaChegada ? "#B71C1C" : "#15803D")}>
+            {enviando ? "Registrando..." : `Dar entrada de ${arred(quantidade)} ${lote?.unit}`}
+          </button>
+        </Rodape>
+      </Moldura>
+    );
+  }
+
+  // ── JÁ RECEBIDA POR OUTRA LOJA ──────────────────────────────────────────
+  //
+  // Erro honesto, e não "não encontrada": a mercadoria existe, só entrou no
+  // estoque de outro lugar. É o que evita a mesma caixa ser lançada duas vezes
+  // em duas lojas — o erro caro deste fluxo.
+  if (estado === "RECEBIDA_POR_OUTRA") {
+    const c = CORES.atencao;
+    return (
+      <Moldura nomeDaLoja={nomeDaLoja} cor={c} icone="alerta" palavra="Já recebida" titulo={lote?.productName || ""}>
+        <div style={{ background: c.claro, border: `1px solid ${c.borda}`, borderRadius: 12, padding: 14, fontSize: "0.88rem", color: c.texto, fontWeight: 700, lineHeight: 1.5 }}>
+          Esta etiqueta já entrou no estoque de <strong>{lote?.recebidaPor || "outra loja"}</strong>.
+          Nada foi movimentado aqui.
+        </div>
+        <div style={{ fontSize: "0.88rem", color: "#475569", lineHeight: 1.55 }}>
+          Se a mercadoria é sua, avise a fábrica — a etiqueta pode ter ido para o lugar errado, ou alguém
+          leu por engano.
+        </div>
+        <Fatos lote={lote} />
         <div style={{ flexGrow: 1 }} />
         <Codigo codigo={codigo} />
       </Moldura>
@@ -310,7 +386,7 @@ function Moldura({
 }: {
   nomeDaLoja: string;
   cor: { fundo: string; claro: string; borda: string; texto: string };
-  icone: "check" | "x" | "alerta" | "busca" | "voltar";
+  icone: "check" | "x" | "alerta" | "busca" | "voltar" | "entrada";
   palavra: string;
   titulo: string;
   children: React.ReactNode;
@@ -346,5 +422,6 @@ function Icone({ tipo }: { tipo: string }) {
   if (tipo === "alerta") return <svg {...comum}><path d="M12 17h.01" /><path d="M12 9v4" /><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /></svg>;
   if (tipo === "busca") return <svg {...comum}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /><path d="M8 11h6" /></svg>;
   if (tipo === "voltar") return <svg {...comum}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></svg>;
+  if (tipo === "entrada") return <svg {...comum}><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /><path d="M5 21h14" /></svg>;
   return <svg {...comum}><path d="M21.801 10A10 10 0 1 1 17 3.335" /><path d="m9 11 3 3L22 4" /></svg>;
 }

@@ -58,9 +58,11 @@ export default async function PaginaDoLote({ params }: { params: Promise<{ code:
       include: { stockItem: { select: { id: true, name: true, unit: true, quantity: true } } },
     });
 
-    // Compara a loja DEPOIS de achar: código de outra loja responde igual a
-    // código inexistente, para não confirmar que aquele código existe.
-    if (achado && achado.franchiseeId === franchiseeId && achado.active) {
+    // NÃO filtra por loja de propósito. `franchiseeId` é quem IMPRIMIU a
+    // etiqueta — na franquia, a fábrica. A loja que RECEBE lê o QR, e é nesse
+    // momento que o insumo entra no estoque dela. Filtrar por loja bloquearia
+    // exatamente o caso principal.
+    if (achado && achado.active) {
       lote = {
         id: achado.id,
         code: achado.code,
@@ -76,7 +78,21 @@ export default async function PaginaDoLote({ params }: { params: Promise<{ code:
         insumo: achado.stockItem,
       };
 
-      if (!achado.stockItemId || !achado.stockItem) {
+      if (!achado.recebidoPorId) {
+        // Primeira leitura: a mercadoria chegou e ainda não entrou em estoque
+        // nenhum. Qualquer loja da rede pode receber.
+        estado = "A_RECEBER";
+      } else if (achado.recebidoPorId !== franchiseeId) {
+        // Erro honesto, e não "não encontrada": a etiqueta existe, só entrou no
+        // estoque de outro lugar. Dizer isso é o que evita a mesma caixa ser
+        // lançada duas vezes em duas lojas.
+        estado = "RECEBIDA_POR_OUTRA";
+        const outra = await prisma.user.findUnique({
+          where: { id: achado.recebidoPorId },
+          select: { storeName: true, name: true },
+        });
+        lote.recebidaPor = outra?.storeName || outra?.name || "outra loja";
+      } else if (!achado.stockItemId || !achado.stockItem) {
         estado = "SEM_INSUMO_VINCULADO";
       } else {
         const recente = await prisma.stockTransaction.findFirst({

@@ -6,11 +6,21 @@ import { temEstruturaDeLotes } from "@/lib/garantir-colunas";
 import { normalizarCodigo, codigoPlausivel, estadoDePrazo, textoDePrazo } from "@/lib/lote";
 
 /**
- * O que o QR da etiqueta resolve, e por onde a baixa acontece.
+ * O que o QR da etiqueta resolve, e por onde o insumo entra e sai do estoque.
  *
- * Quem chega aqui veio da câmera do celular, está de pé na cozinha e tem uma
- * mão livre. Então TODO caminho de saída desta rota é um estado nomeado que a
- * tela sabe desenhar — nunca um 500, nunca uma tela branca.
+ * ── O FLUXO, QUE É DE FRANQUIA ──────────────────────────────────────────────
+ *
+ * Quem IMPRIME a etiqueta (`franchiseeId`) e quem RECEBE a mercadoria
+ * (`recebidoPorId`) são partes diferentes: a fábrica produz e etiqueta, a loja
+ * recebe e lê o QR. **Imprimir não põe nada em estoque nenhum** — o insumo entra
+ * no estoque da LOJA no momento em que ela lê o código.
+ *
+ * Por isso a busca NÃO filtra por loja: filtrar bloquearia exatamente o caso
+ * principal, que é a loja lendo a etiqueta que a fábrica imprimiu.
+ *
+ * Quem chega aqui veio da câmera do celular, está de pé e tem uma mão livre.
+ * Todo caminho de saída é um estado nomeado que a tela sabe desenhar — nunca um
+ * 500, nunca uma tela branca.
  */
 
 async function lojaDaSessao() {
@@ -51,44 +61,59 @@ export async function GET(_req: Request, ctx: { params: Promise<{ code: string }
   if (!(await temEstruturaDeLotes())) {
     return NextResponse.json({ estado: "RECURSO_INDISPONIVEL", codigo, nomeDaLoja: loja.nomeDaLoja });
   }
-
   if (!codigoPlausivel(codigo)) {
     return NextResponse.json({ estado: "CODIGO_INVALIDO", codigo, nomeDaLoja: loja.nomeDaLoja });
   }
 
-  // Busca pelo código SEM filtrar por loja, e só depois compara: assim um
-  // código de outra loja responde "não encontrada" (o mesmo que um código
-  // inexistente) em vez de confirmar, pela diferença de resposta, que aquele
-  // código existe em algum lugar do sistema.
   const lote = await prisma.stockLot.findUnique({
     where: { code: codigo },
-    include: {
-      stockItem: { select: { id: true, name: true, unit: true, quantity: true } },
-    },
+    include: { stockItem: { select: { id: true, name: true, unit: true, quantity: true } } },
   });
 
-  if (!lote || lote.franchiseeId !== loja.franchiseeId || !lote.active) {
+  if (!lote || !lote.active) {
     return NextResponse.json({ estado: "NAO_ENCONTRADA", codigo, nomeDaLoja: loja.nomeDaLoja });
   }
 
-  if (!lote.stockItemId || !lote.stockItem) {
+  const dados = comEstado(lote);
+
+  // ── AINDA NÃO RECEBIDA: é a primeira leitura ─────────────────────────────
+  // Qualquer loja da rede pode receber. O código tem 8 caracteres num alfabeto
+  // de 30 (656 bilhões de combinações), então não há enumeração viável — e
+  // receber é reversível pelo estorno, com autor gravado.
+  if (!lote.recebidoPorId) {
     return NextResponse.json({
-      estado: "SEM_INSUMO_VINCULADO",
+      estado: "A_RECEBER",
       codigo,
       nomeDaLoja: loja.nomeDaLoja,
-      lote: comEstado(lote),
+      lote: dados,
     });
   }
 
-  // "Já dei baixa nessa agora há pouco": a última movimentação deste lote feita
-  // por esta mesma pessoa, nos últimos 2 minutos. É o caso real de escanear
-  // duas vezes sem perceber — o scanner dispara fácil em duplicidade.
-  const agora = Date.now();
+  // ── RECEBIDA POR OUTRA LOJA ──────────────────────────────────────────────
+  // Erro honesto, e não "não encontrada": a mercadoria existe, só entrou no
+  // estoque de outro lugar. Dizer isso evita a mesma caixa ser lançada duas
+  // vezes em duas lojas — que é o erro caro deste fluxo.
+  if (lote.recebidoPorId !== loja.franchiseeId) {
+    const outra = await prisma.user.findUnique({
+      where: { id: lote.recebidoPorId },
+      select: { storeName: true, name: true },
+    });
+    return NextResponse.json({
+      estado: "RECEBIDA_POR_OUTRA",
+      codigo,
+      nomeDaLoja: loja.nomeDaLoja,
+      recebidaPor: outra?.storeName || outra?.name || "outra loja",
+      recebidaEm: lote.recebidoEm,
+      lote: dados,
+    });
+  }
+
+  // ── É MINHA: saída, ou os estados de borda ───────────────────────────────
   const recente = await prisma.stockTransaction.findFirst({
     where: {
       stockLotId: lote.id,
       userId: loja.userId,
-      createdAt: { gte: new Date(agora - 2 * 60 * 1000) },
+      createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -97,21 +122,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ code: string }
     estado: recente ? "JA_MOVIMENTADO" : lote.quantidadeRestante <= 0 ? "LOTE_ZERADO" : "OK",
     codigo,
     nomeDaLoja: loja.nomeDaLoja,
-    lote: comEstado(lote),
+    lote: dados,
     ultimaMovimentacao: recente
-      ? { id: recente.id, quantidade: Math.abs(recente.quantity), tipo: recente.type, quando: recente.createdAt, porQuem: loja.email }
+      ? { id: recente.id, quantidade: Math.abs(recente.quantity), tipo: recente.type, quando: recente.createdAt }
       : null,
   });
 }
 
-/**
- * POST — dá saída (ou estorna) a partir da etiqueta.
- *
- * Idempotência por `sourceRef` único: o cliente manda a mesma chave se repetir
- * o envio, e a segunda gravação bate no índice em vez de dobrar a baixa. É a
- * correção estrutural do rastreio por substring em `notes` que o resto do
- * módulo usava.
- */
 export async function POST(req: Request, ctx: { params: Promise<{ code: string }> }) {
   const { code } = await ctx.params;
   const codigo = normalizarCodigo(code);
@@ -126,8 +143,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
   try { corpo = await req.json(); } catch { }
 
   const acao = String(corpo?.acao || "SAIDA").toUpperCase();
-  if (acao !== "SAIDA" && acao !== "ESTORNO" && acao !== "DESCARTE") {
+  if (!["ENTRADA", "SAIDA", "ESTORNO", "DESCARTE"].includes(acao)) {
     return NextResponse.json({ error: "Ação desconhecida." }, { status: 400 });
+  }
+
+  const lote = await prisma.stockLot.findUnique({ where: { code: codigo } });
+  if (!lote || !lote.active) {
+    return NextResponse.json({ error: "Etiqueta não encontrada." }, { status: 404 });
   }
 
   const bruto = typeof corpo?.quantidade === "string"
@@ -138,32 +160,126 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
     return NextResponse.json({ error: "Informe uma quantidade maior que zero." }, { status: 400 });
   }
 
-  const lote = await prisma.stockLot.findUnique({ where: { code: codigo } });
-  if (!lote || lote.franchiseeId !== loja.franchiseeId || !lote.active) {
-    return NextResponse.json({ error: "Etiqueta não encontrada nesta loja." }, { status: 404 });
-  }
-  if (!lote.stockItemId) {
-    return NextResponse.json({ error: "Este lote ainda não está ligado a um insumo do estoque." }, { status: 400 });
-  }
-
-  // A chave vem do cliente para sobreviver a um reenvio da MESMA intenção
-  // (rede ruim, botão apertado duas vezes). Sem ela, cada envio seria uma
-  // baixa nova — que é exatamente o que se quer evitar num celular de cozinha.
-  //
-  // MAS ela é PREFIXADA AQUI com a loja e o lote, e nunca aceita crua: o índice
-  // é único no sistema inteiro, então uma chave escolhida pelo cliente podia
-  // colidir com a de OUTRA loja — e a resposta "já foi feita" devolveria a
-  // movimentação alheia, fazendo a baixa desta loja simplesmente não acontecer,
-  // com a tela dizendo que aconteceu. O sufixo do cliente continua sendo o que
-  // torna o reenvio idempotente; o prefixo é o que impede que ele alcance
-  // qualquer coisa fora desta loja.
+  // Chave de idempotência PREFIXADA no servidor com a loja e o lote. O índice é
+  // único no sistema inteiro: chave escolhida pelo cliente podia colidir com a
+  // de outra loja, e a resposta "já foi feita" devolveria a movimentação alheia
+  // — a baixa desta loja simplesmente não aconteceria, com a tela dizendo que
+  // aconteceu. O sufixo do cliente é o que torna o reenvio idempotente.
   const sufixo = String(corpo?.sourceRef || "").replace(/[^\w:.-]/g, "").slice(0, 80);
   const sourceRef = sufixo ? `l:${loja.franchiseeId}:${lote.id}:${sufixo}` : null;
   if (sourceRef) {
     const jaFeita = await prisma.stockTransaction.findUnique({ where: { sourceRef } });
-    if (jaFeita) {
-      return NextResponse.json({ ok: true, duplicado: true, movimentacao: jaFeita });
+    if (jaFeita) return NextResponse.json({ ok: true, duplicado: true, movimentacao: jaFeita });
+  }
+
+  /* ─── ENTRADA: a loja recebendo a mercadoria ──────────────────────────────
+   *
+   * É AQUI que o insumo entra no estoque. Imprimir não põe nada em lugar
+   * nenhum: a fábrica etiqueta, a loja lê e recebe.
+   *
+   * O insumo é encontrado ou CRIADO pelo nome do produto, no estoque desta
+   * loja. Criar sozinho é o que faz a promessa "só clica e usa" ser verdade —
+   * exigir cadastro prévio faria a primeira leitura de toda loja nova terminar
+   * num beco sem saída.
+   */
+  if (acao === "ENTRADA") {
+    if (lote.recebidoPorId && lote.recebidoPorId !== loja.franchiseeId) {
+      return NextResponse.json(
+        { error: "Esta etiqueta já foi recebida por outra loja." },
+        { status: 409 }
+      );
     }
+    if (lote.recebidoPorId === loja.franchiseeId) {
+      return NextResponse.json({ error: "Esta etiqueta já foi recebida." }, { status: 409 });
+    }
+
+    const nome = String(lote.productName || "").trim();
+    if (!nome) return NextResponse.json({ error: "A etiqueta não tem nome de produto." }, { status: 400 });
+
+    try {
+      const resultado = await prisma.$transaction(async (tx) => {
+        let insumo = await tx.stockItem.findFirst({
+          where: { franchiseeId: loja.franchiseeId, name: { equals: nome, mode: "insensitive" } },
+        });
+        if (!insumo) {
+          insumo = await tx.stockItem.create({
+            data: {
+              franchiseeId: loja.franchiseeId,
+              name: nome,
+              quantity: 0,
+              unit: lote.unit || "un",
+            },
+          });
+        } else if (!insumo.active) {
+          // Insumo arquivado que volta a chegar: desarquiva em vez de criar um
+          // paralelo com o mesmo nome, que quebraria a ficha técnica.
+          await tx.stockItem.update({ where: { id: insumo.id }, data: { active: true } });
+        }
+
+        await tx.stockTransaction.create({
+          data: {
+            stockItemId: insumo.id,
+            stockLotId: lote.id,
+            franchiseeId: loja.franchiseeId,
+            userId: loja.userId,
+            sourceRef,
+            quantity: Math.abs(quantidade),
+            type: "INPUT",
+            notes: `Entrada por etiqueta ${codigo}${corpo?.observacao ? " — " + String(corpo.observacao).slice(0, 160) : ""}`,
+          },
+        });
+
+        await tx.stockItem.updateMany({
+          where: { id: insumo.id, franchiseeId: loja.franchiseeId },
+          data: { quantity: { increment: Math.abs(quantidade) } },
+        });
+
+        const atualizado = await tx.stockLot.update({
+          where: { id: lote.id },
+          data: {
+            recebidoPorId: loja.franchiseeId,
+            recebidoEm: new Date(),
+            stockItemId: insumo.id,
+            quantidadeRestante: Math.abs(quantidade),
+            quantidadeInicial: Math.abs(quantidade),
+            unit: insumo.unit,
+            status: "ATIVO",
+          },
+        });
+
+        const saldo = await tx.stockItem.findUnique({
+          where: { id: insumo.id },
+          select: { id: true, name: true, quantity: true, unit: true },
+        });
+
+        return { lote: atualizado, insumo: saldo };
+      });
+
+      return NextResponse.json({
+        ok: true,
+        recebido: true,
+        lote: comEstado(resultado.lote),
+        insumo: resultado.insumo,
+      });
+    } catch (e: any) {
+      if (sourceRef && String(e?.code) === "P2002") {
+        const original = await prisma.stockTransaction.findUnique({ where: { sourceRef } });
+        if (original) return NextResponse.json({ ok: true, duplicado: true, movimentacao: original });
+      }
+      console.error("[Lote] Falha na entrada:", e?.message);
+      return NextResponse.json({ error: "Não consegui dar entrada. Tente de novo." }, { status: 500 });
+    }
+  }
+
+  /* ─── SAÍDA / DESCARTE / ESTORNO: só quem recebeu movimenta ──────────────── */
+  if (lote.recebidoPorId !== loja.franchiseeId) {
+    return NextResponse.json(
+      { error: "Esta etiqueta ainda não foi recebida por esta loja." },
+      { status: 409 }
+    );
+  }
+  if (!lote.stockItemId) {
+    return NextResponse.json({ error: "Este lote não está ligado a nenhum insumo." }, { status: 400 });
   }
 
   const ehSaida = acao !== "ESTORNO";
@@ -172,7 +288,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
 
   try {
     const resultado = await prisma.$transaction(async (tx) => {
-      // Saldo e histórico na MESMA transação, como o resto do módulo já faz.
       const mov = await tx.stockTransaction.create({
         data: {
           stockItemId: lote.stockItemId!,
@@ -186,19 +301,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
         },
       });
 
-      // `updateMany` de propósito, e não `update`: é o único jeito de levar o
-      // franchiseeId DENTRO do WHERE da escrita. O `update` exige chave única,
-      // então a conferência de dono ficaria só na leitura anterior — e entre
-      // conferir e gravar o insumo pode ter sido apagado ou movido de loja.
+      // franchiseeId DENTRO do WHERE da escrita: o `update` exige chave única,
+      // então a conferência de dono ficaria só na leitura anterior.
       const alterados = await tx.stockItem.updateMany({
         where: { id: lote.stockItemId!, franchiseeId: loja.franchiseeId },
         data: { quantity: { increment: delta } },
       });
-      if (alterados.count === 0) {
-        // Aborta a transação inteira: a movimentação criada acima desaparece
-        // junto, em vez de ficar um lançamento órfão sem saldo correspondente.
-        throw new Error("INSUMO_FORA_DA_LOJA");
-      }
+      if (alterados.count === 0) throw new Error("INSUMO_FORA_DA_LOJA");
+
       const item = await tx.stockItem.findUnique({
         where: { id: lote.stockItemId! },
         select: { id: true, name: true, quantity: true, unit: true },
@@ -224,8 +334,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
       lote: comEstado(resultado.lote),
     });
   } catch (e: any) {
-    // Corrida no índice único: outra requisição gravou a mesma intenção entre
-    // a conferência e o insert. Devolver a original é o comportamento certo.
     if (String(e?.message) === "INSUMO_FORA_DA_LOJA") {
       return NextResponse.json({ error: "Este insumo não pertence mais a esta loja." }, { status: 409 });
     }
@@ -234,6 +342,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
       if (original) return NextResponse.json({ ok: true, duplicado: true, movimentacao: original });
     }
     console.error("[Lote] Falha ao movimentar:", e?.message);
-    return NextResponse.json({ error: "Não consegui registrar a baixa. Tente de novo." }, { status: 500 });
+    return NextResponse.json({ error: "Não consegui registrar. Tente de novo." }, { status: 500 });
   }
 }
