@@ -67,18 +67,27 @@ export default function FireHubLoginPage() {
       //
       // Só caminho interno é aceito: um `callbackUrl` absoluto vindo da barra
       // de endereço mandaria o lojista recém-logado para fora do sistema.
+      //
+      // Sem `callbackUrl` — que é o caminho de todo dia, quem digita /login e
+      // entra — `bruto` vem vazio, e `new URL("", origin)` NÃO estoura: resolve
+      // para a própria raiz do site. O destino saía "/" e o lojista recém-logado
+      // era despejado na landing de vendas do FireHub. Por isso a string vazia
+      // sai fora ANTES do `new URL`, e "/" é recusado explicitamente abaixo: a
+      // landing nunca é destino de quem acabou de entrar.
       const bruto = new URLSearchParams(window.location.search).get("callbackUrl") || "";
       let destino = "";
-      try {
-        // Aceita "/store/estoque" e também a URL absoluta deste mesmo site
-        // (é o formato que o middleware grava, com `request.url`).
-        const u = new URL(bruto, window.location.origin);
-        if (u.origin === window.location.origin && u.pathname.startsWith("/") && !u.pathname.startsWith("//")) {
-          destino = u.pathname + u.search;
-        }
-      } catch {}
-      // Nunca voltar para o próprio login: viraria laço.
-      if (destino.startsWith("/login")) destino = "";
+      if (bruto) {
+        try {
+          // Aceita "/store/estoque" e também a URL absoluta deste mesmo site
+          // (é o formato que o middleware grava, com `request.url`).
+          const u = new URL(bruto, window.location.origin);
+          if (u.origin === window.location.origin && u.pathname.startsWith("/") && !u.pathname.startsWith("//")) {
+            destino = u.pathname + u.search;
+          }
+        } catch {}
+      }
+      // Nunca voltar para o próprio login (viraria laço) nem para a landing.
+      if (destino === "/" || destino.startsWith("/login")) destino = "";
 
       if (destino) {
         window.location.href = destino;

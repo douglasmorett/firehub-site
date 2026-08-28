@@ -160,9 +160,16 @@ export async function middleware(request: NextRequest) {
 
     if (!token) {
       const loginUrl = safeUrl("/login", request.url);
-      if (request.url && !request.url.includes("[SENSITIVE]")) {
+      // Caminho RELATIVO, nunca `request.url`. Dentro do container o Next
+      // resolve `request.url` com o host interno, e o redirect saía com
+      // `callbackUrl=https://0.0.0.0:3000/store` — visto em produção. O login
+      // recusa esse endereço (origem diferente, e com razão: seria porta para
+      // mandar lojista logado para fora), então o destino era descartado e
+      // ninguém voltava para a página que tentou abrir.
+      const destino = request.nextUrl.pathname + request.nextUrl.search;
+      if (destino.startsWith("/") && !destino.startsWith("//")) {
         try {
-          loginUrl.searchParams.set("callbackUrl", request.url);
+          loginUrl.searchParams.set("callbackUrl", destino);
         } catch (e) {}
       }
       return NextResponse.redirect(loginUrl);
