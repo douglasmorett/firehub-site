@@ -5,7 +5,10 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { GoogleGenAI } from "@google/genai";
 import { trackGeminiUsage } from "@/lib/usage-tracker";
 import { normalizeStoreHours } from "@/lib/store-hours";
-import { precoMinimoDoProduto, precoVariaPorEscolha } from "./preco-combo";
+import { precoMinimoDoProduto, precoVariaPorEscolha, minimoExigidoDoGrupo } from "./preco-combo";
+import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
+import { aplicarPrecoNoCardapio } from "./preco-por-canal";
+import { mesmoTelefone, telefoneCanonico } from "./telefone";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -133,18 +136,33 @@ export async function processChatbotAI(
   }
 
   // Buscar cardápio ao vivo da loja, pedidos por código/telefone e nome do cliente
-  const [products, categories, searchedOrders, customerRecord] = await Promise.all([
+  const [produtosCrus, categories, searchedOrders, customerCandidates] = await Promise.all([
     prisma.menuProduct.findMany({
-      where: { franchiseeId: targetFranchiseeId, active: true },
+      // O espelho do iFood/Jotajá/99Food fica de FORA do que o robô oferece.
+      // São cópias do mesmo prato criadas pela sincronização, muitas vezes com
+      // preço de canal (que embute a comissão da plataforma). Sem este filtro o
+      // robô listava o mesmo item duas vezes com valores diferentes e podia
+      // cotar o preço do iFood para quem pede direto no WhatsApp.
+      where: { franchiseeId: targetFranchiseeId, active: true, ...SEM_PRODUTO_DE_INTEGRACAO },
       select: {
-        id: true, name: true, description: true, price: true, category: true,
+        id: true, name: true, description: true, price: true, priceDelivery: true, category: true,
         isCombo: true, isBeverage: true, availableDays: true, tags: true,
         // Sem os grupos, o robô não sabe que o "Nugget" custa R$ 0,00 de base e
         // tem o valor todo nas opções — e acabava lançando o pedido por zero.
         comboGroups: {
           select: {
-            id: true, title: true, maxQty: true,
-            items: { select: { additionalPrice: true, menuProduct: { select: { name: true, price: true } } } },
+            // `minQty` é OBRIGATÓRIO aqui, e a falta dele foi o bug do
+            // "pastel de R$ 131,40".
+            //
+            // `precoMinimoDoProduto` pergunta quantas escolhas cada grupo
+            // EXIGE. Quando `minQty` não vem, ela cai na regra antiga e assume
+            // que o grupo exige `maxQty` itens — então um grupo OPCIONAL de
+            // adicionais com maxQty alto entrava no preço mínimo multiplicado.
+            // O cardápio (que seleciona minQty) mostrava "a partir de R$ 21,90"
+            // no Camarão com Catupiry enquanto o robô dizia R$ 131,40 ao
+            // cliente no WhatsApp, com o mesmo produto e a mesma função.
+            id: true, title: true, maxQty: true, minQty: true,
+            items: { select: { additionalPrice: true, menuProduct: { select: { id: true, name: true, price: true } } } },
           },
         },
       },
@@ -185,13 +203,26 @@ export async function processChatbotAI(
       orderBy: { createdAt: "desc" },
       take: 5,
     }) : Promise.resolve([]),
-    clientPhoneDigits ? prisma.storeCustomer.findFirst({
+    clientPhoneDigits ? prisma.storeCustomer.findMany({
       where: {
         phone: { contains: clientPhoneDigits.slice(-8) },
       },
-      select: { name: true }
-    }) : Promise.resolve(null),
+      select: { name: true, phone: true },
+      take: 20,
+    }) : Promise.resolve([]),
   ]);
+
+  // O robô fala pelo WhatsApp: é o canal DELIVERY. Se a loja cadastrou preço
+  // próprio de delivery, é ele que vale — na cotação E na gravação do pedido,
+  // porque este mesmo array desce até syncAiOrderToDatabase. Loja sem preço por
+  // canal continua no `price` normal, sem mudança nenhuma.
+  const products = aplicarPrecoNoCardapio(produtosCrus as any[], "delivery");
+
+  // O `contains` dos 8 dígitos finais é só o funil (aproveita o índice); quem
+  // decide é a comparação canônica com DDD — sem ela, o cliente de outro DDD
+  // com o mesmo final era cumprimentado pelo nome de um desconhecido.
+  const customerRecord =
+    (customerCandidates || []).find((c: any) => mesmoTelefone(c.phone, clientPhoneDigits)) || null;
 
   // Filtrar APENAS os pedidos que pertencem EXCLUSIVAMENTE a este cliente/telefone ou aos códigos digitados por ele
   let recentOrders: any[] = searchedOrders.filter((o: any) => {
@@ -235,6 +266,12 @@ export async function processChatbotAI(
   const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "";
   const storeLink = customMenuUrl || defaultStoreLink;
   const storeLinkMsg = storeLink ? ` Por favor, faça seu pedido direto pelo nosso cardápio: ${storeLink}` : "";
+
+  // Cardápio em arquivo (foto ou PDF) que o lojista sobe na aba do chatbot.
+  // Só entra em cena quando o cliente recusa o site — a prioridade é sempre
+  // vender pelo link, onde o pedido cai sozinho e sem erro de digitação.
+  const cardapioArquivoUrl = String(chatbotConfig.menuFileUrl || "").trim();
+  const cardapioArquivoTipo = String(chatbotConfig.menuFileType || "").trim().toLowerCase();
 
   const personalityMap: Record<string, string> = {
     SIMPATICO: "muito simpático, acolhedor e fofo. Use carinho, emojis (😊, 🥰, 🍕) e demonstre felicidade.",
@@ -311,8 +348,19 @@ export async function processChatbotAI(
       .map((h: any) => `${h.day || h.dayName || "Dia"}: ${formatDayHours(h)}`)
       .join("\n");
 
-    const now = new Date();
-    const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    // ── O DIA TEM QUE SER O DA LOJA, NÃO O DO SERVIDOR ──────────────────────
+    //
+    // Era `new Date().getDay()`, que responde no fuso do servidor (UTC). Das
+    // 21h às 24h de Brasília o servidor já virou o dia: o robô lia a linha de
+    // AMANHÃ e dizia "hoje a loja está fechada" com a loja aberta e cheia — ou
+    // anunciava um horário que não era o de hoje. Pior: a frase usava
+    // `currentDayName` (calculado certo, no fuso da loja), então o texto dizia
+    // "Hoje (Quinta)" enquanto lia a linha de sexta.
+    //
+    // `currentDayCode` já vem do fuso da loja; a lista de horários começa na
+    // segunda, então é só mapear.
+    const INDICE_DO_DIA: Record<string, number> = { SEG: 0, TER: 1, QUA: 2, QUI: 3, SEX: 4, SAB: 5, DOM: 6 };
+    const dayIdx = INDICE_DO_DIA[currentDayCode] ?? 0;
     const today = hoursArr[dayIdx];
     if (today && today.active) {
       const todayFormatted = formatDayHours(today);
@@ -342,7 +390,14 @@ export async function processChatbotAI(
 
   const seenProductKeys = new Set<string>();
 
+  // Itens que só existem como OPÇÃO dentro de um combo (o "Frango" do combo
+  // de pastel, por exemplo) são cadastrados soltos e com preço zero. Se
+  // entram na lista, o robô os anuncia como prato vendável — e por R$ 0,00.
+  // Eles continuam aparecendo como escolha dentro do combo a que pertencem.
+  const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(products);
+
   products.forEach((p: any) => {
+    if (soOpcaoDeCombo.has(String(p.id))) return;
     const rawCleanName = (p.name || "").split("|")[0].trim();
     const uniqueKey = `${rawCleanName.toLowerCase()}_${p.price}`;
 
@@ -402,13 +457,54 @@ export async function processChatbotAI(
       // pedido saía por outro valor. Agora a cotação usa o mesmo mínimo que a
       // gravação, e o produto é marcado como "a partir de" para o robô não
       // prometer preço fechado no que varia por escolha.
-      const precoParaCotar = Math.max(p.price || 0, precoMinimoDoProduto(p as any));
+      const precoBase = Number(p.price) || 0;
+      const precoParaCotar = Math.max(precoBase, precoMinimoDoProduto(p as any));
       const varia = precoVariaPorEscolha(p as any);
       const priceFormatted = precoParaCotar.toFixed(2).replace(".", ",");
       const rotuloPreco = varia
         ? `PREÇO A PARTIR DE R$ ${priceFormatted} (varia conforme a opção escolhida — PERGUNTE a opção antes de fechar)`
         : `PREÇO EXATO E OBRIGATÓRIO = R$ ${priceFormatted}`;
-      const line = `- ${isCombo ? "COMBO REAL DA LOJA" : "PRODUTO"}: "${rawCleanName}" (${p.category}) ➔ ${rotuloPreco}${tagsNotice}${p.description ? ` — ${p.description}` : ""}`;
+
+      // ── AS OPÇÕES COM PREÇO, UMA POR UMA ──────────────────────────────────
+      //
+      // Antes só ia o "a partir de". O modelo ficava sem saber quanto custa o
+      // Tradicional, o Baby, o sabor com adicional — e, perguntado, INVENTAVA.
+      // Foi assim que o cliente da Pastel da Paulista ouviu "o tradicional tá
+      // saindo por R$ 131,40".
+      //
+      // Grupo de escolha única e obrigatória (Tamanho) recebe o preço ABSOLUTO
+      // daquela opção (base + adicional), que é como o cliente pensa: "o
+      // Tradicional custa X". Grupo de adicional continua como "+R$ X".
+      const linhasDeOpcoes: string[] = [];
+      for (const g of (p as any).comboGroups || []) {
+        const itens = (g.items || []).filter((i: any) => i?.menuProduct?.name);
+        if (itens.length === 0) continue;
+
+        const max = Math.max(1, Number(g.maxQty) || 1);
+        const min = minimoExigidoDoGrupo(g as any);
+        const ehEscolhaDeVariante = min > 0 && max === 1;
+        const comoEscolher = min === 0
+          ? `opcional, até ${max}`
+          : min === max
+            ? `obrigatório, escolha ${min}`
+            : `obrigatório, de ${min} a ${max}`;
+
+        const opcoes = itens.map((i: any) => {
+          const add = Number(i.additionalPrice) || 0;
+          const nome = i.menuProduct.name;
+          if (ehEscolhaDeVariante) {
+            const absoluto = (precoBase + add).toFixed(2).replace(".", ",");
+            return `${nome} = R$ ${absoluto}`;
+          }
+          return add > 0 ? `${nome} +R$ ${add.toFixed(2).replace(".", ",")}` : `${nome} (sem custo)`;
+        });
+
+        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}): ${opcoes.join(" | ")}`);
+      }
+
+      const line =
+        `- ${isCombo ? "COMBO REAL DA LOJA" : "PRODUTO"}: "${rawCleanName}" (${p.category}) ➔ ${rotuloPreco}${tagsNotice}${p.description ? ` — ${p.description}` : ""}` +
+        (linhasDeOpcoes.length > 0 ? `\n${linhasDeOpcoes.join("\n")}` : "");
 
       if (!seenProductKeys.has(uniqueKey)) {
         seenProductKeys.add(uniqueKey);
@@ -588,7 +684,12 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   } else if (!clientPhoneDigits || clientPhoneDigits.length < 10) {
     phoneInstruction = `\n11. ALERTA DE TELEFONE (MUITO IMPORTANTE): O sistema não conseguiu capturar o telefone do cliente automaticamente (pode ser uma integração de Instagram/Facebook). SUA PRIMEIRA AÇÃO, ANTES DE QUALQUER OUTRA COISA (ANOTAR PEDIDO OU MANDAR LINK), DEVE SER PERGUNTAR O TELEFONE DE WHATSAPP COM DDD DO CLIENTE! (Ex: "Oi! Pra começarmos o seu atendimento, qual é o seu WhatsApp de contato com DDD para colocarmos no seu pedido?")`;
   }
-  if (user.notificationPhone && clientPhoneDigits && user.notificationPhone.replace(/\D/g, "").includes(clientPhoneDigits.slice(-8))) {
+  // MODO DONO: só com o número IGUAL ao cadastrado, DDD incluído.
+  //
+  // Era `notificationPhone.includes(telefoneDoCliente.slice(-8))`: oito dígitos
+  // é o número local SEM DDD, então cliente de outro DDD com o mesmo final
+  // recebia faturamento do dia, total de pedidos e status do caixa da loja.
+  if (user.notificationPhone && mesmoTelefone(user.notificationPhone, clientPhoneDigits)) {
     try {
       const todayOrders = await prisma.customerOrder.findMany({
         where: { franchiseeId: targetFranchiseeId, createdAt: { gte: startOfToday }, status: { not: "CANCELADO" } },
@@ -633,6 +734,26 @@ REGRAS ABSOLUTAS:
      a) O cliente pedir o cardápio, fotos ou o link de pedido.
      b) Como COMPLEMENTO depois de já ter respondido preços, sabores ou opções.
      c) O cliente perguntar por promoções ou cupons ativos (dizendo antes quais são).
+   - REGRA DE FERRO DOS PREÇOS (a mais importante de todas):
+     a) Todo valor que você disser tem que estar ESCRITO no cardápio acima. Você não calcula
+        preço, não estima, não arredonda e não deduz. Se o número não está lá, você não o diz.
+     b) Item com opções mostra "A partir de R$ X" e a lista de opções com o valor de cada uma.
+        NUNCA some os adicionais todos para dar um preço: adicional é ESCOLHA do cliente, e
+        somar tudo produz valores absurdos (um pastel de R$ 21,90 já foi cotado a R$ 131,40 assim).
+        Diga o "a partir de" e pergunte o que ele quer incluir.
+     c) Ao somar o total do pedido, some SÓ o que o cliente pediu: preço do item + as opções que
+        ELE escolheu + a taxa de entrega. Confira a conta antes de mandar.
+     d) Se você não tem certeza de um preço, NÃO CHUTE. Diga que vai confirmar e mande o link do
+        cardápio, ou chame o atendente. Preço errado gera briga no balcão e prejuízo para a loja.
+     e) Nunca prometa desconto, cortesia, frete grátis ou "mantenho o valor que te falei" por
+        conta própria. Se errou um preço, peça desculpa e informe o valor correto do cardápio.
+   - REGRA DO CARDÁPIO EM ARQUIVO (nesta ordem, sem pular etapa):
+     1º) Pediu o cardápio? Mande SEMPRE o link do site primeiro (${storeLink}). A loja
+         prefere vender pelo site: lá o cliente vê foto, escolhe as opções e o pedido cai
+         certinho, sem erro de digitação.
+     2º) Se o cliente disser que NÃO quer o site e prefere pedir por aqui mesmo pelo WhatsApp:
+         ${cardapioArquivoUrl ? "escreva a marca [[ENVIAR_CARDAPIO]] no fim da sua resposta — o sistema envia a foto/PDF do cardapio automaticamente. Nesse caso nao descreva o cardapio inteiro: diga so algo curto como Claro! Segue nosso cardapio e coloque a marca." : "a loja nao tem arquivo de cardapio carregado, entao liste os itens por escrito com os precos exatos, como voce ja faz."}
+     3º) NUNCA mande a marca [[ENVIAR_CARDAPIO]] antes de ter oferecido o link do site.
 6. REGRAS DE CONSULTA E STATUS DE PEDIDO DO DIA (JOTAJA, IFOOD, SITE E WHATSAPP):
    - Você tem acesso EM TEMPO REAL aos pedidos do dia cadastrados no sistema da loja (Jotajá, iFood, Site e WhatsApp) listados no campo "PEDIDOS RECENTES DO CLIENTE / PEDIDOS ATIVOS DO DIA" abaixo.
    - Quando o cliente perguntar sobre o pedido ("Chega dentro da prévia?", "cadê meu pedido?", "meu pedido já saiu?", "tá demorando?", "onde tá meu pedido?", "já fiz o pedido"):
@@ -709,6 +830,21 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       a) Você DEVE imediatamente incluir a tag JSON de finalização:
          [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome", "address": "Endereço", "paymentMethod": "Forma", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": true}]]
       b) Diga ao cliente: "Perfeito! Seu pedido foi confirmado e enviado para a cozinha! Te avisamos assim que sair para entrega! 🚀"
+    - CAMPO "customerPhone": se o sistema NÃO capturou o WhatsApp do cliente (regra 11) e você
+      perguntou o número, coloque o que ele respondeu em "customerPhone" (só dígitos, com DDD).
+      Sem esse campo, nesses casos, o pedido NÃO é gravado e o cliente fica esperando comida
+      que ninguém está preparando.
+    - FORMATO OBRIGATÓRIO DE CADA ITEM (o campo "options" é o que garante o preço certo):
+      {"name": "NOME EXATO COMO ESTÁ NO CARDÁPIO", "quantity": 2, "options": ["Sabor escolhido", "Adicional escolhido"]}
+      a) "name" tem que ser o nome EXATO do cardápio acima, copiado letra por letra. Não invente,
+         não abrevie, não junte dois produtos num item só. Nome que não existe é DESCARTADO e o
+         cliente recebe menos do que pediu.
+      b) "options" leva TODA escolha que o cliente fez dentro do produto: o sabor, o tamanho, cada
+         adicional. Escreva cada uma com o nome EXATO que aparece nas opções daquele produto.
+      c) Se o cliente escolheu uma opção que custa a mais e você NÃO colocar em "options", a loja
+         cobra a menos e perde dinheiro. Se o cliente não escolheu nada, mande "options": [].
+      d) Antes de fechar, DIGA ao cliente quando a escolha dele tem acréscimo: "o bacon vem +R$ 3,00,
+         fica R$ 28,90". Nunca deixe o cliente descobrir o acréscimo só no total.
 22. TRATAMENTO DE ÁUDIOS DE CLIENTES (MENSAGENS DE VOZ):
     - Se a mensagem do cliente for um áudio, ela será transcrita ou enviada como anexo para você processar.
     - ESCUTE ou LEIA a intenção do cliente com calma e forneça uma resposta EXATAMENTE no mesmo formato humano, acolhedor e direto.
@@ -929,24 +1065,54 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 
         // ── SINCRONIZAR PEDIDO IA EM TEMPO REAL ──
         let rawJsonPayload = "";
-        const tagStartIdx = cleanText.indexOf("[[");
-        
-        if (tagStartIdx !== -1) {
-          const tagContent = cleanText.substring(tagStartIdx);
-          // Extrai o conteúdo entre o primeiro { e o último }
-          const jsonStart = tagContent.indexOf("{");
+        // ── SÓ O PEDIDO_IA SAI DAQUI ────────────────────────────────────────
+        //
+        // Antes este trecho fazia `cleanText.substring(0, indexOf("[["))`:
+        // jogava fora TUDO a partir do primeiro colchete duplo. Três estragos,
+        // e o primeiro era mudo:
+        //
+        // 1) ÁUDIO VIRAVA SILÊNCIO. A regra 22 manda a IA começar a resposta
+        //    com [[TRANSCRICAO: ...]]. O corte começava no índice 0, a resposta
+        //    ficava string vazia, e o webhook só envia `if (aiResponse.reply)` —
+        //    string vazia é falsa. Cliente mandava áudio e não recebia NADA.
+        // 2) "CHAMAR ATENDENTE" NUNCA ACONTECIA. Quem processa esse marcador é
+        //    o webhook, lendo o texto que sai daqui. Como ele era removido
+        //    antes, a transferência para humano jamais era acionada.
+        // 3) TEXTO DEPOIS DA TAG SUMIA. Tag no meio da resposta apagava tudo o
+        //    que vinha depois dela.
+        //
+        // Agora tiramos cirurgicamente o bloco [[PEDIDO_IA: {...}]] — que é o
+        // único que o cliente não pode ver e o webhook não usa — e deixamos os
+        // outros marcadores passarem para quem sabe tratá-los.
+        const inicioPedido = cleanText.indexOf("[[PEDIDO_IA");
+
+        if (inicioPedido !== -1) {
+          const trecho = cleanText.substring(inicioPedido);
+          const jsonStart = trecho.indexOf("{");
           if (jsonStart !== -1) {
-            let jsonEnd = tagContent.lastIndexOf("}");
-            if (jsonEnd > jsonStart) {
-              rawJsonPayload = tagContent.substring(jsonStart, jsonEnd + 1);
-            } else {
-              // Se o JSON foi truncado sem '}', tenta fechar o JSON automaticamente
-              rawJsonPayload = tagContent.substring(jsonStart) + '}]}]}';
-            }
+            const jsonEnd = trecho.lastIndexOf("}");
+            rawJsonPayload = jsonEnd > jsonStart
+              ? trecho.substring(jsonStart, jsonEnd + 1)
+              // JSON cortado no meio (resposta truncada): tenta fechar.
+              : trecho.substring(jsonStart) + "}]}]}";
           }
-          // REGRA DE SEGURANÇA IMPERDIÁVEL: Corta TUDO a partir do '[[' da mensagem final enviada ao WhatsApp
-          cleanText = cleanText.substring(0, tagStartIdx).trim();
+
+          // Remove do "[[PEDIDO_IA" até o "]]" que o fecha. Sem "]]" (resposta
+          // truncada), vai até o fim — não há texto legítimo depois de um JSON
+          // que nem terminou.
+          const fechamento = cleanText.indexOf("]]", inicioPedido);
+          cleanText = (
+            cleanText.substring(0, inicioPedido) +
+            (fechamento !== -1 ? cleanText.substring(fechamento + 2) : "")
+          ).trim();
         }
+
+        // Rede de segurança: qualquer [[...]] que não seja um marcador conhecido
+        // do webhook é lixo do modelo e não pode chegar ao cliente.
+        cleanText = cleanText
+          .replace(/\[\[(?!TRANSCRICAO|CHAMAR_ATENDENTE|ENVIAR_CARDAPIO)[\s\S]*?\]\]/g, "")
+          .replace(/[ \t]{2,}/g, " ")
+          .trim();
 
         if (rawJsonPayload) {
           try {
@@ -960,10 +1126,39 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
               try { orderPayload = JSON.parse(repaired); } catch {}
             }
 
-            if (orderPayload && Array.isArray(orderPayload.items) && clientPhoneDigits) {
+            // ── DE QUEM É ESTE PEDIDO ───────────────────────────────────────
+            //
+            // A condição era `&& clientPhoneDigits`: sem telefone no JID, o
+            // pedido inteiro era descartado SEM UMA LINHA DE LOG — enquanto a IA
+            // já tinha dito ao cliente "pedido confirmado, foi para a cozinha".
+            // Cliente esperando comida que não existia em lugar nenhum.
+            //
+            // Acontece de verdade quando o WhatsApp entrega um LID em vez do
+            // número, e sempre nas integrações de Instagram/Facebook. Para esses
+            // casos a regra 11 do prompt já manda a IA PEDIR o telefone — só que
+            // o que o cliente respondia era ignorado. Agora é usado.
+            const telefoneDitoPeloCliente = String(
+              orderPayload?.customerPhone || orderPayload?.phone || ""
+            ).replace(/\D/g, "");
+            const telefoneDoPedido =
+              clientPhoneDigits && clientPhoneDigits.length >= 10
+                ? clientPhoneDigits
+                : telefoneCanonico(telefoneDitoPeloCliente)
+                  ? telefoneDitoPeloCliente
+                  : "";
+
+            if (orderPayload && Array.isArray(orderPayload.items) && !telefoneDoPedido) {
+              console.error(
+                "[Chatbot AI] 🛑 Pedido NÃO gravado: sem telefone utilizável. " +
+                  `Loja=${targetFranchiseeId} itens=${orderPayload.items.length}. ` +
+                  "A IA precisa perguntar o WhatsApp do cliente (regra 11)."
+              );
+            }
+
+            if (orderPayload && Array.isArray(orderPayload.items) && telefoneDoPedido) {
               await syncAiOrderToDatabase({
                 franchiseeId: targetFranchiseeId,
-                customerPhone: clientPhoneDigits,
+                customerPhone: telefoneDoPedido,
                 customerName: rawCustomerName || customerFirstName || "Cliente WhatsApp",
                 payload: orderPayload,
                 storeProducts: products,
@@ -1080,20 +1275,42 @@ async function syncAiOrderToDatabase({
     formattedCustomerPhone = customerPhone;
   }
 
-  // Busca pedido rascunho em aberto ou pedido recente nos últimos 20 minutos para evitar duplicidades
+  // ── QUAL PEDIDO ESTE PAYLOAD ATUALIZA ───────────────────────────────────
+  //
+  // Duas coisas estavam erradas aqui, e uma escondia a outra.
+  //
+  // 1) A BUSCA NUNCA ACHAVA NADA. Era
+  //      `customerPhone: { contains: phoneClean.slice(-8) }`
+  //    mas `customerPhone` é gravado FORMATADO — "(11) 98765-4321". Os oito
+  //    dígitos finais crus são "87654321", e no texto formatado eles aparecem
+  //    como "8765-4321", com hífen no meio: `contains` nunca casava. Resultado:
+  //    cada mensagem da conversa abria um pedido NOVO em vez de atualizar o
+  //    rascunho, enchendo a tela da loja de duplicatas do mesmo cliente.
+  //
+  // 2) QUANDO CASASSE, CASARIA DEMAIS. O filtro aceitava ACEITO e PREPARANDO:
+  //    o cliente cujo pedido já estava na chapa mandava "manda uma coca" e o
+  //    código apagava os itens do pedido em produção e regravava só a coca. Um
+  //    "deixa pra lá" cancelava comida já sendo feita.
+  //
+  // Agora: comparação por telefone canônico (DDD incluído, nono dígito
+  // tolerado) feita em memória, e só pedido que a loja AINDA NÃO ACEITOU pode
+  // ser reescrito. Pedido aceito é intocável — vira pedido separado, que é o
+  // que a regra 28 do prompt já manda a IA combinar com o cliente.
   const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-  const existingDraft = await prisma.customerOrder.findFirst({
+  const candidatosDeRascunho = await prisma.customerOrder.findMany({
     where: {
       franchiseeId,
-      customerPhone: { contains: phoneClean.slice(-8) },
       OR: [
         { status: "CRIANDO_IA" },
-        { createdAt: { gte: twentyMinutesAgo }, status: { in: ["NOVO", "ACEITO", "PREPARANDO"] } }
-      ]
+        { createdAt: { gte: twentyMinutesAgo }, status: "NOVO" },
+      ],
     },
     include: { items: true },
     orderBy: { createdAt: "desc" },
+    take: 50,
   });
+  const existingDraft =
+    candidatosDeRascunho.find((o) => mesmoTelefone(o.customerPhone, phoneClean)) || null;
 
   // Extrai nome real do cliente se o robô capturou no payload da IA
   const payloadName = (payload.customerName || payload.name || "").trim();
@@ -1106,6 +1323,9 @@ async function syncAiOrderToDatabase({
     prisma.storeCustomer.upsert({
       where: { phone: phoneClean },
       update: { name: finalCustomerName, updatedAt: new Date() },
+      // Senha vazia = conta ainda não reivindicada. A tela de cadastro
+      // reconhece esse estado e deixa o cliente definir a senha dele depois,
+      // em vez de responder "telefone já cadastrado" e trancá-lo do lado de fora.
       create: { phone: phoneClean, name: finalCustomerName, password: "" },
     }).catch((e) => console.error("[Chatbot AI] Erro ao salvar StoreCustomer:", e));
   }
@@ -1148,41 +1368,108 @@ async function syncAiOrderToDatabase({
     return;
   }
 
+  /** Normaliza para comparar nome: sem acento, sem pontuação, espaço único. */
+  const chaveDeNome = (s: string) =>
+    String(s || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
   const orderItemsData = (payload.items || [])
     .map((it: any) => {
-      const matchedProduct = storeProducts.find(
-        (p) => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim()
-      ) || storeProducts.find(
-        (p) => p.name.toLowerCase().includes((it.name || "").toLowerCase()) || (it.name || "").toLowerCase().includes(p.name.toLowerCase())
-      );
+      const pedido = chaveDeNome(it.name);
+      if (!pedido) return null;
 
-      // GUILHOTINA ANTI-ALUCINAÇÃO: Se a IA tentou lançar um produto que não existe, bloqueamos a entrada dele no pedido.
-      if (!matchedProduct) return null;
+      // ── COMO O PRODUTO É RECONHECIDO ────────────────────────────────────
+      //
+      // Antes era substring nos DOIS sentidos: bastava um nome conter o outro.
+      // Com isso "Pastel de Carne" casava com "Pastel de Carne com Catupiry" —
+      // e o pedido saía com o item errado, no preço errado. Pior: a ordem do
+      // cardápio decidia quem ganhava, então o mesmo pedido dava resultado
+      // diferente conforme o cadastro da loja.
+      //
+      // Agora: nome exato; senão, o candidato que CONTÉM o pedido inteiro —
+      // e apenas se houver um único candidato. Dois ou mais é ambiguidade real
+      // ("pastel" com vinte sabores), e aí não se adivinha: o item é recusado
+      // e a loja confere na tela em vez de mandar a coisa errada para a cozinha.
+      const exato = storeProducts.filter((sp) => chaveDeNome(sp.name) === pedido);
+      let candidatos = exato;
+      if (candidatos.length === 0) {
+        candidatos = storeProducts.filter((sp) => {
+          const nome = chaveDeNome(sp.name);
+          return nome.startsWith(pedido + " ") || nome.includes(" " + pedido + " ") || nome.endsWith(" " + pedido);
+        });
+      }
+      const matchedProduct = candidatos.length === 1 ? candidatos[0] : exato[0];
 
-      // REGRA DE SEGURANÇA SUPREMA E ANTI-ALUCINAÇÃO DE PREÇOS:
-      // NUNCA usar o preço inventado pela IA no payload! Usar sempre o preço REAL do produto cadastrado no banco de dados!
-      //
-      // Só que "preço real" não é sempre `matchedProduct.price`: em produto
-      // cujo valor está nas opções (o "Nugget" da Hakim tem base R$ 0,00 e
-      // custa 9,90 / 19,90 / 39,80 conforme a quantidade escolhida), a base é
-      // zero. Em 01/08/2026 saiu exatamente assim um pedido de Nugget lançado
-      // pelo robô por R$ 0,00.
-      //
-      // O robô ainda não conduz a escolha dentro do combo, então aqui se cobra
-      // no mínimo o menor preço possível do produto — nunca zero. Quando ele
-      // souber perguntar a opção, passa a usar precoUnitarioDoItem.
-      const precoMinimo = precoMinimoDoProduto(matchedProduct as any);
-      const realPrice = Math.max(matchedProduct.price || 0, precoMinimo);
-      if (realPrice !== (matchedProduct.price || 0)) {
+      // GUILHOTINA ANTI-ALUCINAÇÃO: produto que não existe (ou nome ambíguo)
+      // não entra no pedido.
+      if (!matchedProduct) {
         console.warn(
-          `[Chatbot AI] "${matchedProduct.name}" tem preço variável por opção; base R$ ${matchedProduct.price} — lançando pelo mínimo R$ ${realPrice}.`
+          `[Chatbot AI] item "${it.name}" descartado: ${candidatos.length === 0 ? "não existe no cardápio" : candidatos.length + " produtos com esse nome (ambíguo)"}.`
+        );
+        return null;
+      }
+
+      // ── PREÇO: NUNCA O QUE A IA ESCREVEU ────────────────────────────────
+      //
+      // O valor sai sempre do cadastro. Mas "o preço do cadastro" não é só
+      // `price`: em produto cujo valor mora nas opções (o "Nugget" da Hakim tem
+      // base R$ 0,00 e custa 9,90 / 19,90 / 39,80 conforme a escolha), a base é
+      // zero — e em 01/08/2026 saiu um Nugget lançado por R$ 0,00.
+      //
+      // A correção anterior cobrava o MÍNIMO do produto, o que parou o R$ 0,00
+      // mas criou outro rombo: cliente que escolhia a opção cara pagava o preço
+      // da barata. Agora as escolhas que a IA anotou são casadas com os itens
+      // dos grupos e somadas de verdade; o mínimo continua como piso, para o
+      // caso de a IA não ter registrado escolha nenhuma.
+      const escolhas: string[] = Array.isArray(it.options)
+        ? it.options.map((o: any) => (typeof o === "string" ? o : o?.name)).filter(Boolean)
+        : [];
+
+      let somaDasOpcoes = 0;
+      const naoCasadas: string[] = [];
+      for (const escolha of escolhas) {
+        const chave = chaveDeNome(escolha);
+        if (!chave) continue;
+        let achou = false;
+        for (const grupo of (matchedProduct as any).comboGroups || []) {
+          const item = (grupo.items || []).find(
+            (gi: any) => chaveDeNome(gi?.menuProduct?.name) === chave
+          );
+          if (item) {
+            somaDasOpcoes += Number(item.additionalPrice) || 0;
+            achou = true;
+            break;
+          }
+        }
+        if (!achou) naoCasadas.push(escolha);
+      }
+      if (naoCasadas.length > 0) {
+        console.warn(
+          `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${naoCasadas.join(", ")} — não cobradas.`
         );
       }
-      const quantity = Math.max(1, parseInt(it.quantity) || 1);
+
+      const precoMinimo = precoMinimoDoProduto(matchedProduct as any);
+      const comEscolhas = (Number(matchedProduct.price) || 0) + somaDasOpcoes;
+      const realPrice = Math.round(Math.max(comEscolhas, precoMinimo) * 100) / 100;
+
+      if (realPrice !== (Number(matchedProduct.price) || 0)) {
+        console.warn(
+          `[Chatbot AI] "${matchedProduct.name}": base R$ ${matchedProduct.price}, opções R$ ${somaDasOpcoes.toFixed(2)}, mínimo R$ ${precoMinimo.toFixed(2)} — lançado por R$ ${realPrice.toFixed(2)}.`
+        );
+      }
+
+      // Quantidade também é da casa, não da IA: teto para o modelo não lançar
+      // 9999 unidades por engano de leitura.
+      const quantity = Math.min(200, Math.max(1, parseInt(it.quantity) || 1));
 
       return {
         menuProductId: matchedProduct.id,
-        name: matchedProduct.name,
+        name: escolhas.length > 0 ? `${matchedProduct.name} (${escolhas.join(", ")})` : matchedProduct.name,
         quantity,
         price: realPrice,
       };

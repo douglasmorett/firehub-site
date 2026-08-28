@@ -35,7 +35,12 @@ import {
 export default function ChatbotHubClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "disparos" | "phone" | "notifications" | "test" | "diagnostic">("qr");
+  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "disparos" | "cardapio" | "phone" | "notifications" | "test" | "diagnostic">("qr");
+  // Cardápio em arquivo: o robô manda a foto/PDF quando o cliente recusa o site.
+  const [menuFileSaving, setMenuFileSaving] = useState(false);
+  const [menuFileMsg, setMenuFileMsg] = useState<string>("");
+  // Reparo do "Aguardando mensagem" (aba Diagnóstico).
+  const [reparandoSessao, setReparandoSessao] = useState(false);
 
   // Configuração principal
   const [config, setConfig] = useState<any>({
@@ -426,7 +431,17 @@ export default function ChatbotHubClient() {
       });
 
       if (res.ok) {
-        showToast("✅ Configurações salvas!", "#10B981");
+        // A rota recusa campos que não são do lojista. Se recusou justamente o
+        // que ele acabou de mexer, dizer "salvo" seria mentira.
+        const retorno = await res.json().catch(() => ({}));
+        const recusados: string[] = Array.isArray(retorno?.recusados) ? retorno.recusados : [];
+        const mexidos = Object.keys(newFields || {});
+        const perdidos = mexidos.filter((c) => recusados.includes(c));
+        if (perdidos.length > 0) {
+          showToast(`⚠️ Não foi possível salvar: ${perdidos.join(", ")}`, "#EF4444");
+        } else {
+          showToast("✅ Configurações salvas!", "#10B981");
+        }
       }
     } catch (err) {
       console.error("[ChatbotHub] Erro ao salvar:", err);
@@ -646,6 +661,16 @@ export default function ChatbotHubClient() {
             }}
           >
             <Radio size={16} /> 📢 Disparos
+          </button>
+          <button
+            onClick={() => setActiveTab("cardapio")}
+            style={{
+              padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
+              background: activeTab === "cardapio" ? "linear-gradient(135deg, #10B981, #059669)" : "rgba(255,255,255,0.1)", color: "#fff",
+              display: "flex", alignItems: "center", gap: "8px", boxShadow: activeTab === "cardapio" ? "0 4px 12px rgba(16,185,129,0.3)" : "none"
+            }}
+          >
+            📄 Cardápio em Arquivo
           </button>
           <button
             onClick={() => setActiveTab("test")}
@@ -1974,6 +1999,135 @@ export default function ChatbotHubClient() {
           })()}
 
           {/* ABA 4: TESTAR ENVIO */}
+          {activeTab === "cardapio" && (
+            <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "16px", padding: "24px", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <h3 style={{ color: "#fff", fontSize: "1.15rem", fontWeight: 800, margin: "0 0 6px" }}>
+                📄 Cardápio em Arquivo
+              </h3>
+              <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.88rem", margin: "0 0 20px", lineHeight: 1.6 }}>
+                Suba a foto ou o PDF do seu cardápio. Quando o cliente pedir o cardápio no WhatsApp,
+                o robô manda <strong style={{ color: "#10B981" }}>primeiro o link do site</strong> (é lá que o pedido
+                cai sozinho, sem erro de digitação). Só se o cliente disser que prefere pedir pelo WhatsApp
+                mesmo é que ele envia este arquivo. Sem arquivo carregado, ele lista os itens por escrito,
+                como já faz hoje.
+              </p>
+
+              <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "12px", padding: "14px 16px", marginBottom: "20px" }}>
+                <div style={{ color: "#6EE7B7", fontSize: "0.8rem", fontWeight: 800, marginBottom: "6px" }}>ORDEM QUE O ROBÔ SEGUE</div>
+                <div style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.83rem", lineHeight: 1.8 }}>
+                  1️⃣ Manda o link do site &nbsp;→&nbsp; 2️⃣ Cliente recusa? Manda este arquivo &nbsp;→&nbsp; 3️⃣ Sem arquivo? Escreve os itens
+                </div>
+              </div>
+
+              {config.menuFileUrl ? (
+                <div style={{ marginBottom: "18px" }}>
+                  <div style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.85rem", fontWeight: 700, marginBottom: "10px" }}>
+                    ✅ Cardápio carregado
+                  </div>
+                  {String(config.menuFileUrl).toLowerCase().endsWith(".pdf") ? (
+                    <a href={config.menuFileUrl} target="_blank" rel="noreferrer"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "16px 20px", borderRadius: "12px",
+                        background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#FCA5A5",
+                        textDecoration: "none", fontWeight: 700, fontSize: "0.9rem" }}>
+                      📕 Ver PDF do cardápio
+                    </a>
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={config.menuFileUrl} alt="Cardápio da loja"
+                      style={{ maxWidth: "100%", maxHeight: "380px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.15)", display: "block" }} />
+                  )}
+                  <button
+                    onClick={async () => {
+                      setMenuFileSaving(true); setMenuFileMsg("");
+                      try {
+                        const r = await fetch("/api/store/marketing", {
+                          method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ action: "save_menu_file", menuFileUrl: "" }),
+                        });
+                        const j = await r.json();
+                        if (!r.ok) throw new Error(j.error || "Falha ao remover");
+                        setConfig((prev: any) => ({ ...prev, menuFileUrl: "", menuFileType: "" }));
+                        setMenuFileMsg("Cardápio removido. O robô volta a listar os itens por escrito.");
+                      } catch (e: any) {
+                        setMenuFileMsg(e?.message || "Falha ao remover");
+                      } finally { setMenuFileSaving(false); }
+                    }}
+                    disabled={menuFileSaving}
+                    style={{ marginTop: "14px", display: "block", padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(239,68,68,0.4)",
+                      background: "rgba(239,68,68,0.12)", color: "#FCA5A5", fontWeight: 700, fontSize: "0.83rem",
+                      cursor: menuFileSaving ? "not-allowed" : "pointer", opacity: menuFileSaving ? 0.6 : 1 }}
+                  >
+                    🗑️ Remover cardápio
+                  </button>
+                </div>
+              ) : (
+                <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.86rem", marginBottom: "18px", padding: "24px",
+                  border: "1px dashed rgba(255,255,255,0.2)", borderRadius: "12px", textAlign: "center" }}>
+                  Nenhum cardápio carregado ainda.
+                </div>
+              )}
+
+              <label style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "12px 22px", borderRadius: "12px",
+                background: menuFileSaving ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #10B981, #059669)", color: "#fff",
+                fontWeight: 800, fontSize: "0.88rem", cursor: menuFileSaving ? "not-allowed" : "pointer" }}>
+                {menuFileSaving ? "Enviando..." : config.menuFileUrl ? "🔄 Trocar arquivo" : "📤 Enviar cardápio (foto ou PDF)"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,application/pdf"
+                  disabled={menuFileSaving}
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    const arquivo = e.target.files?.[0];
+                    // O input é limpo já: sem isso, escolher o MESMO arquivo depois de
+                    // um erro não dispara onChange de novo e a tela parece travada.
+                    e.target.value = "";
+                    if (!arquivo) return;
+                    if (arquivo.size > 8 * 1024 * 1024) {
+                      setMenuFileMsg("Arquivo acima de 8 MB. Reduza a imagem ou o PDF e tente de novo.");
+                      return;
+                    }
+                    setMenuFileSaving(true); setMenuFileMsg("");
+                    try {
+                      const fd = new FormData();
+                      fd.append("file", arquivo);
+                      fd.append("type", "marketing");
+                      const up = await fetch("/api/upload", { method: "POST", body: fd });
+                      const uj = await up.json();
+                      if (!up.ok || !uj.url) throw new Error(uj.error || "Falha no upload");
+
+                      const r = await fetch("/api/store/marketing", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "save_menu_file", menuFileUrl: uj.url }),
+                      });
+                      const j = await r.json();
+                      if (!r.ok) throw new Error(j.error || "Falha ao salvar");
+
+                      setConfig((prev: any) => ({
+                        ...prev,
+                        menuFileUrl: uj.url,
+                        menuFileType: String(uj.url).toLowerCase().endsWith(".pdf") ? "pdf" : "image",
+                      }));
+                      setMenuFileMsg("Cardápio salvo! O robô já pode enviar quando o cliente pedir.");
+                    } catch (err: any) {
+                      setMenuFileMsg(err?.message || "Falha ao enviar o arquivo");
+                    } finally { setMenuFileSaving(false); }
+                  }}
+                />
+              </label>
+
+              {menuFileMsg && (
+                <div style={{ marginTop: "14px", color: "rgba(255,255,255,0.8)", fontSize: "0.85rem" }}>
+                  {menuFileMsg}
+                </div>
+              )}
+
+              <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.78rem", marginTop: "18px", lineHeight: 1.6 }}>
+                Aceita PNG, JPG, WEBP ou PDF, até 8 MB. Foto costuma funcionar melhor: abre direto na conversa,
+                enquanto o PDF o cliente precisa tocar para baixar.
+              </p>
+            </div>
+          )}
+
           {activeTab === "test" && (
             <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
@@ -2058,6 +2212,50 @@ export default function ChatbotHubClient() {
                     </span>
                   </div>
                 ))}
+              </div>
+
+              {/* REPARO DO "AGUARDANDO MENSAGEM": a mensagem sai daqui, chega no
+                  aparelho do dono/motoboy, mas aparece "Aguardando mensagem.
+                  Essa ação pode levar alguns instantes." — criptografia da
+                  conversa apodreceu no gateway. O reinício renegocia as sessões
+                  SEM deslogar (não pede QR de novo). */}
+              <div style={{ marginTop: "14px", padding: "14px 16px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "12px" }}>
+                <div style={{ fontSize: "0.84rem", fontWeight: 800, color: "#92400E", marginBottom: "6px" }}>
+                  🔐 Mensagens chegando como &quot;Aguardando mensagem&quot;?
+                </div>
+                <p style={{ margin: "0 0 10px", fontSize: "0.8rem", color: "#78350F", lineHeight: 1.55 }}>
+                  Quando os avisos do robô aparecem assim no celular (do dono, dos motoboys ou de um cliente),
+                  a criptografia daquela conversa travou. Reinicie a conexão abaixo — <strong>não desconecta
+                  e não pede QR Code de novo</strong>. Se depois disso algum contato ainda ver o aviso,
+                  peça para ele mandar um &quot;oi&quot; para o número da loja: isso destrava a conversa dele na hora.
+                </p>
+                <button
+                  onClick={async () => {
+                    if (reparandoSessao) return;
+                    setReparandoSessao(true);
+                    try {
+                      const r = await fetch("/api/chatbot/reparar-sessao", { method: "POST" });
+                      const j = await r.json().catch(() => ({}));
+                      if (r.ok) {
+                        showToast("🔄 " + (j.message || "Instância reiniciada!"), "#10B981");
+                      } else {
+                        showToast("⚠️ " + (j.error || "Falha ao reiniciar"), "#EF4444");
+                      }
+                    } catch {
+                      showToast("⚠️ Falha ao falar com o servidor", "#EF4444");
+                    } finally {
+                      setReparandoSessao(false);
+                    }
+                  }}
+                  disabled={reparandoSessao}
+                  style={{
+                    padding: "10px 18px", borderRadius: "10px", border: "none", fontWeight: 800, fontSize: "0.84rem",
+                    background: reparandoSessao ? "#FCD34D" : "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff",
+                    cursor: reparandoSessao ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {reparandoSessao ? "Reiniciando..." : "🔄 Reparar conexão do WhatsApp"}
+                </button>
               </div>
             </div>
           )}

@@ -142,6 +142,42 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   throw new Error("Servidor de WhatsApp indisponível no momento. Certifique-se de que o Gateway está ativo.");
 }
 
+/**
+ * Quanto tempo o robô fica "digitando..." antes de a mensagem sair.
+ *
+ * ── POR QUE NÃO É UMA CONTA FIXA ────────────────────────────────────────────
+ *
+ * Era `text.length * 40`, limitado entre 1,5s e 8s. Determinístico: a mesma
+ * resposta saía sempre com exatamente o mesmo atraso, e duas mensagens de
+ * mesmo tamanho eram idênticas no relógio. É assinatura de automação, e é
+ * disso que o antispam do WhatsApp vive — o custo de ser detectado é o número
+ * da loja banido, com a loja sem atendimento no meio do movimento.
+ *
+ * Gente de verdade não digita em velocidade constante: hesita antes de
+ * começar, acelera no meio, para para pensar. O que se imita aqui:
+ *
+ *  - um tempinho de leitura antes de começar a digitar;
+ *  - velocidade sorteada a cada mensagem, na faixa de quem digita rápido no
+ *    celular (mais ou menos 22 a 45 ms por caractere);
+ *  - uma variação final de ±15%, para dois envios do MESMO texto nunca
+ *    levarem o mesmo tempo.
+ *
+ * O teto de 12s existe porque acima disso o cliente acha que ninguém viu a
+ * mensagem dele e manda "oi?" de novo.
+ */
+function tempoDeDigitacao(texto: string): number {
+  const caracteres = (texto || "").length;
+  const msPorCaractere = 22 + Math.random() * 23;
+  const leitura = 600 + Math.random() * 1400;
+  const bruto = leitura + caracteres * msPorCaractere;
+  const comVariacao = bruto * (0.85 + Math.random() * 0.3);
+  // O TETO também é sorteado. Com teto fixo, toda resposta longa (listagem de
+  // cardápio, resumo de pedido) saía exatamente em 12,000 ms — o mesmo valor
+  // constante que estávamos tentando eliminar, só que no outro extremo.
+  const teto = 9_000 + Math.random() * 4_000;
+  return Math.round(Math.min(Math.max(comVariacao, 1200), teto));
+}
+
 export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: string, text: string) {
   const isInstanceName = userIdOrInstance.startsWith("firehub_");
   const instanceName = isInstanceName ? userIdOrInstance : `firehub_${userIdOrInstance.slice(-10)}`;
@@ -164,7 +200,7 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
   } catch {}
 
   try {
-    const typingDelay = Math.min(Math.max(text.length * 40, 1500), 8000);
+    const typingDelay = tempoDeDigitacao(text);
 
     const res = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
       method: "POST",
@@ -191,7 +227,22 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
   }
 }
 
-export async function sendEvolutionMediaUrl(userIdOrInstance: string, toPhone: string, mediaUrl: string, caption?: string) {
+/**
+ * Envia mídia por URL.
+ *
+ * O `tipo` existe porque o cardápio da loja pode ser PDF, e PDF enviado como
+ * "image" chega quebrado no WhatsApp — o aparelho tenta desenhar o arquivo e
+ * mostra um retângulo cinza. Documento precisa ir como "document", com nome de
+ * arquivo, senão o cliente recebe algo sem título que ninguém abre.
+ */
+export async function sendEvolutionMediaUrl(
+  userIdOrInstance: string,
+  toPhone: string,
+  mediaUrl: string,
+  caption?: string,
+  tipo: "image" | "document" = "image",
+  nomeDoArquivo?: string,
+) {
   const isInstanceName = userIdOrInstance.startsWith("firehub_");
   const instanceName = isInstanceName ? userIdOrInstance : `firehub_${userIdOrInstance.slice(-10)}`;
   const number = (toPhone.includes("@s.whatsapp.net") || toPhone.includes("@lid"))
@@ -224,9 +275,10 @@ export async function sendEvolutionMediaUrl(userIdOrInstance: string, toPhone: s
       body: JSON.stringify({
         number,
         mediaMessage: {
-          mediatype: "image",
+          mediatype: tipo,
           caption: caption || "",
           media: mediaUrl,
+          ...(tipo === "document" ? { fileName: nomeDoArquivo || "cardapio.pdf" } : {}),
         },
         options: { delay: 1200, presence: "composing" },
       }),
@@ -318,6 +370,74 @@ export async function disconnectEvolutionInstance(userId: string) {
   } catch (err) {
     console.error("[Evolution API Gateway] Erro ao desconectar instância:", err);
   }
+}
+
+/**
+ * Reinicia a instância SEM deslogar — o remédio para o "Aguardando mensagem".
+ *
+ * ── O QUE É O "AGUARDANDO MENSAGEM" ─────────────────────────────────────────
+ *
+ * "Aguardando mensagem. Essa ação pode levar alguns instantes." no aparelho de
+ * quem recebe significa que a mensagem CHEGOU, mas cifrada com uma sessão que
+ * o aparelho não consegue abrir. A conversa entre o número da loja e cada
+ * contato tem sua própria sessão de criptografia; quando a do lado do gateway
+ * apodrece (redeploy que voltou estado antigo, prekeys esgotadas, instância
+ * duplicada), TUDO que a loja envia àquele contato vira esse aviso — para
+ * sempre, até a sessão ser refeita.
+ *
+ * Atinge principalmente dono e motoboys: são conversas onde o robô SÓ envia
+ * (aviso de pedido, rota). Cliente conversa COM o robô, e cada mensagem
+ * recebida renova a sessão do lado de cá — por isso cliente quase nunca vê o
+ * problema.
+ *
+ * O restart derruba e recria a conexão da instância, forçando o Baileys a
+ * renegociar sessão e repor prekeys, sem perder o pareamento (não pede QR).
+ * Se depois do restart algum contato AINDA ficar preso, o desencalhe manual é
+ * aquele contato mandar qualquer "oi" para o número da loja — a mensagem
+ * recebida obriga a sessão nova dos dois lados.
+ *
+ * A Evolution mudou o verbo entre versões (v1: PUT, v2: POST); tenta os dois.
+ */
+export async function restartEvolutionInstance(userId: string): Promise<boolean> {
+  const instanceName = `firehub_${userId.slice(-10)}`;
+  let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
+  let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { chatbotConfig: true },
+    });
+    const config = (user?.chatbotConfig as any) || {};
+    if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
+    if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
+  } catch {}
+
+  const headers = {
+    "apikey": apiKey,
+    "Bypass-Tunnel-Remainder": "true",
+    "User-Agent": "FireHub",
+  };
+
+  for (const metodo of ["PUT", "POST"] as const) {
+    try {
+      const res = await fetch(`${baseUrl}/instance/restart/${instanceName}`, {
+        method: metodo,
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) return true;
+      // 404/405 = verbo da outra versão; qualquer outro erro não melhora
+      // trocando o verbo.
+      if (res.status !== 404 && res.status !== 405) {
+        console.error(`[Evolution API Gateway] Restart de ${instanceName} respondeu ${res.status}.`);
+        return false;
+      }
+    } catch (err) {
+      console.error(`[Evolution API Gateway] Erro no restart (${metodo}) de ${instanceName}:`, err);
+    }
+  }
+  return false;
 }
 
 export async function getEvolutionAudioBase64(userIdOrInstance: string, messageKey: any, messageObj: any): Promise<string | null> {

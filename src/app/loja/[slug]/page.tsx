@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { orderByCardapio } from "@/lib/menu-order";
+import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { notFound } from "next/navigation";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 
@@ -86,6 +87,9 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
         name: true,
         description: true,
         price: true,
+        // Consumido logo abaixo por aplicarPrecoNoCardapio e REMOVIDO do
+        // payload: o HTML público mostra um preço só, já resolvido.
+        priceDelivery: true,
         imageUrl: true,
         category: true,
         isCombo: true,
@@ -150,12 +154,17 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
     };
   }
 
+  // Este É o delivery: se a loja tem preço próprio do canal, é ele que o
+  // cliente vê — e a coluna sai do payload, para o HTML público mostrar um
+  // preço só. Loja sem preço por canal continua exatamente como era.
+  const menuComPrecoDoCanal = aplicarPrecoNoCardapio(menuProducts as any[], "delivery");
+
   return (
-    <CustomerStorePage 
-      franchisee={franchisee as any} 
-      menuProducts={menuProducts as any} 
+    <CustomerStorePage
+      franchisee={franchisee as any}
+      menuProducts={menuComPrecoDoCanal as any}
       storeCategories={storeCategories as any}
-      storeRating={storeRating} 
+      storeRating={storeRating}
     />
   );
 }

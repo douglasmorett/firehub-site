@@ -215,18 +215,42 @@ async function handleIncomingMessage(body: any, instance: string) {
       data.from,
     ].filter(Boolean);
 
-    const isCleanPhoneJid = (c: string) => {
-      if (typeof c !== "string") return false;
-      if (c.includes("@lid") || c.includes("@broadcast") || c.includes("@g.us")) return false;
+    // ── QUAL DESSES É O TELEFONE DE VERDADE ──────────────────────────────────
+    //
+    // O filtro anterior só recusava LID quando a string trazia "@lid" — e os
+    // campos `sender`/`participant` chegam como número PURO. Um LID (o id
+    // interno que o WhatsApp usa para o contato) tem 15-16 dígitos e passava
+    // na régua "entre 10 e 15": foi assim que o pedido saiu com o telefone
+    // "+143181391917166", que não existe. O motoboy liga e não é ninguém.
+    //
+    // Agora os candidatos são PONTUADOS em vez de aceitos por ordem: telefone
+    // brasileiro bem formado ganha de tudo, e número comprido demais para ser
+    // telefone é descartado.
+    const pontuar = (c: string): number => {
+      if (typeof c !== "string") return -1;
+      if (c.includes("@lid") || c.includes("@broadcast") || c.includes("@g.us")) return -1;
       const digits = c.replace(/\D/g, "");
-      // WhatsApp LIDs (Linked Devices/Proxy IDs) usually have a very specific prefix or format,
-      // but standard WhatsApp phone numbers globally can be up to 15 digits (E.164).
-      // We assume it's a valid phone JID if it doesn't have the LID suffix and has valid length.
-      return digits.length >= 10 && digits.length <= 15 && !digits.startsWith("22010");
+      if (!digits || digits.startsWith("22010")) return -1;
+
+      const temSufixoDeContato = c.includes("@s.whatsapp.net") || c.includes("@c.us");
+      // Brasil: 55 + DDD(2) + 8 ou 9 dígitos = 12 ou 13. É o caso da quase
+      // totalidade dos clientes e o formato que o resto do sistema espera.
+      const ehBrasileiro = digits.startsWith("55") && (digits.length === 12 || digits.length === 13);
+      // Acima de 13 dígitos sem ser um JID de contato é, na prática, LID.
+      const compridoDemais = digits.length > 13;
+
+      if (ehBrasileiro) return temSufixoDeContato ? 100 : 90;
+      if (compridoDemais) return temSufixoDeContato ? 20 : -1;
+      if (digits.length >= 10 && digits.length <= 13) return temSufixoDeContato ? 70 : 60;
+      return -1;
     };
 
-    const cleanCandidate = candidates.find(isCleanPhoneJid);
-    if (cleanCandidate) return cleanCandidate;
+    const ranqueados = candidates
+      .map((c: string) => ({ c, nota: pontuar(c) }))
+      .filter((x) => x.nota > 0)
+      .sort((a, b) => b.nota - a.nota);
+
+    if (ranqueados.length > 0) return ranqueados[0].c;
 
     const whatsappNetCandidate = candidates.find(
       (c: string) => typeof c === "string" && c.includes("@s.whatsapp.net") && !c.includes("@lid")
@@ -712,6 +736,19 @@ async function handleIncomingMessage(body: any, instance: string) {
       replyText = replyText.replace(/\[\[CHAMAR_ATENDENTE.*\]\]/g, "").trim();
     }
 
+    // O cliente recusou o site e quer ver o cardápio aqui mesmo: a IA marca a
+    // resposta e nós mandamos o arquivo que o lojista subiu. A marca sai do
+    // texto antes de qualquer coisa — cliente nenhum pode ver "[[...]]".
+    let enviarCardapio = false;
+    // Tolera variação do modelo ("[[ENVIAR_CARDAPIO: agora]]"): qualquer coisa
+    // que comece com a marca conta — e sai INTEIRA do texto, senão o cliente
+    // recebe o colchete cru.
+    if (/\[\[ENVIAR_CARDAPIO/i.test(replyText)) {
+      enviarCardapio = true;
+      replyText = replyText.replace(/\[\[ENVIAR_CARDAPIO[^\]]*\]\]/gi, "").trim();
+      if (!replyText) replyText = "Claro! Segue nosso cardápio 😊";
+    }
+
     // O que o cliente falou no áudio, para o histórico.
     //
     // O áudio vai para o modelo uma vez só, na mensagem em que chega. O que
@@ -735,6 +772,36 @@ async function handleIncomingMessage(body: any, instance: string) {
       estagio: enviou ? "enviado" : "envio-falhou",
       detalhe: enviou ? undefined : "gateway recusou o envio (sendText não retornou ok)",
     });
+
+    // O arquivo vai DEPOIS do texto, nunca como legenda: no WhatsApp a legenda
+    // de mídia fica escondida atrás do "ver mais" e o cliente não lê. Se o envio
+    // falhar, não deixamos a conversa no vácuo — a IA já prometeu o cardápio,
+    // então cai para o link, que sempre funciona.
+    if (enviarCardapio) {
+      const cfgArquivo = (user.chatbotConfig as any) || {};
+      const arquivo = String(cfgArquivo.menuFileUrl || "").trim();
+      if (arquivo) {
+        const ehPdf = /\.pdf(\?|$)/i.test(arquivo) || String(cfgArquivo.menuFileType || "").includes("pdf");
+        const { sendEvolutionMediaUrl } = await import("@/lib/whatsapp-evolution");
+        const urlAbsoluta = arquivo.startsWith("http")
+          ? arquivo
+          : `https://firehubfood.com.br${arquivo.startsWith("/") ? "" : "/"}${arquivo}`;
+        const foi = await sendEvolutionMediaUrl(
+          user.id, recipientTarget, urlAbsoluta, "",
+          ehPdf ? "document" : "image",
+          ehPdf ? "cardapio.pdf" : undefined,
+        );
+        if (!foi) {
+          console.warn("[WhatsApp Webhook] 📄 Falha ao enviar cardápio em arquivo; caindo para o link.");
+          const linkLoja = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "";
+          if (linkLoja) {
+            await replyToCustomer(user.id, remoteJid, `Nosso cardápio completo tá aqui: ${linkLoja}`, recipientTarget);
+          }
+        } else {
+          trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
+        }
+      }
+    }
 
     // Track WhatsApp usage (fire-and-forget)
     trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });

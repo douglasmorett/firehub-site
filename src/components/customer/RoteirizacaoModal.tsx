@@ -221,13 +221,19 @@ export default function RoteirizacaoModal({
       setLeafletLoaded(true);
       return;
     }
+    // O Leaflet é servido do NOSSO domínio (public/leaflet, copiado de
+    // node_modules/leaflet/dist). Vinha do unpkg.com — e o CSP de 26/08 só
+    // libera script de 'self' + os SDKs de pagamento/pixel, então o navegador
+    // bloqueava o load em silêncio e o mapa da roteirização abria em branco,
+    // com a lista de pedidos funcionando ao lado. Servir local conserta o mapa
+    // SEM abrir o script-src para um CDN de terceiros inteiro.
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    link.href = "/leaflet/leaflet.css";
     document.head.appendChild(link);
 
     const script = document.createElement("script");
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.src = "/leaflet/leaflet.js";
     script.onload = () => setLeafletLoaded(true);
     document.head.appendChild(script);
   }, []);

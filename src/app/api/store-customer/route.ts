@@ -25,20 +25,46 @@ export async function POST(req: Request) {
     if (!name) return NextResponse.json({ error: "Nome é obrigatório." }, { status: 400 });
 
     const existing = await prisma.storeCustomer.findUnique({ where: { phone: cleanPhone } });
-    if (existing) return NextResponse.json({ error: "Este telefone já possui uma conta. Faça login." }, { status: 409 });
+    // ── CONTA FANTASMA CRIADA PELO ROBÔ ─────────────────────────────────
+    //
+    // O chatbot grava um StoreCustomer com `password: ""` para guardar o nome
+    // de quem pediu pelo WhatsApp. Quando essa mesma pessoa ia criar conta no
+    // site, batia neste 409 — e no login `bcrypt.compare(senha, "")` sempre
+    // falha. Ou seja: cadastro barrado E login impossível, para sempre. O
+    // cliente ficava trancado fora justo do canal que a loja quer priorizar.
+    //
+    // Hash bcrypt tem 60 caracteres; qualquer coisa menor não veio de um
+    // cadastro real. Nesse caso a conta é ASSUMIDA: define-se a senha agora.
+    // Não há senha sendo contornada — nunca existiu uma.
+    const contaNaoReivindicada = !!existing && (existing.password || "").length < 20;
+
+    if (existing && !contaNaoReivindicada) {
+      return NextResponse.json({ error: "Este telefone já possui uma conta. Faça login." }, { status: 409 });
+    }
 
     if (password.length < 6) return NextResponse.json({ error: "A senha deve ter no mínimo 6 caracteres." }, { status: 400 });
 
     const hashedPw = await bcrypt.hash(password, 12);
-    const customer = await prisma.storeCustomer.create({
-      data: {
-        name,
-        phone: cleanPhone,
-        password: hashedPw,
-        address: address || null,
-        birthDate: birthDate ? String(birthDate).trim() : null,
-      }
-    });
+    const customer = existing
+      ? await prisma.storeCustomer.update({
+          where: { id: existing.id },
+          data: {
+            name,
+            password: hashedPw,
+            // O que o robô já sabia só é sobrescrito se o cliente digitou algo.
+            ...(address ? { address } : {}),
+            ...(birthDate ? { birthDate: String(birthDate).trim() } : {}),
+          },
+        })
+      : await prisma.storeCustomer.create({
+          data: {
+            name,
+            phone: cleanPhone,
+            password: hashedPw,
+            address: address || null,
+            birthDate: birthDate ? String(birthDate).trim() : null,
+          },
+        });
 
     return NextResponse.json({
       id: customer.id,
@@ -53,6 +79,15 @@ export async function POST(req: Request) {
   // LOGIN
   const customer = await prisma.storeCustomer.findUnique({ where: { phone: cleanPhone } });
   if (!customer) return NextResponse.json({ error: "Conta não encontrada. Crie uma conta." }, { status: 404 });
+
+  // Conta que o robô criou e ninguém assumiu ainda: dizer "senha incorreta"
+  // manda o cliente tentar a senha para sempre. O caminho é criar a conta.
+  if ((customer.password || "").length < 20) {
+    return NextResponse.json(
+      { error: "Você ainda não tem senha cadastrada. Toque em \"Criar conta\" com este mesmo telefone para definir a sua." },
+      { status: 409 }
+    );
+  }
 
   const valid = await bcrypt.compare(password, customer.password);
   if (!valid) return NextResponse.json({ error: "Senha incorreta." }, { status: 401 });

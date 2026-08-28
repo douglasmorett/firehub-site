@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
+import { aplicarPrecoDoCanal } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
@@ -110,13 +111,18 @@ export async function POST(req: Request) {
       // A conta agora é a mesma em todo lugar (src/lib/preco-combo.ts), e
       // continua sendo feita AQUI, no servidor: o carrinho manda só o que foi
       // escolhido, nunca o preço.
-      let precoUnitario = precoUnitarioDoItem(product as any, item.comboSelections);
+      //
+      // Canal DELIVERY: o preço cobrado tem que ser o MESMO que a vitrine
+      // mostrou (loja/[slug] aplica o preço do canal antes de renderizar).
+      // Cobrar pela base aqui seria mostrar um preço e cobrar outro.
+      const produtoNoCanal = aplicarPrecoDoCanal(product as any, "delivery");
+      let precoUnitario = precoUnitarioDoItem(produtoNoCanal as any, item.comboSelections);
 
       // Piso: se a escolha não vier, vier vazia, ou o nome não casar com nenhuma
       // opção do grupo, o cálculo devolve só a base — e no "Nugget" (base
       // R$ 0,00) isso é um pedido de graça. Cobrar o mínimo possível é o pior
       // caso aceitável; entregar sem cobrar não é.
-      const minimoDoProduto = precoMinimoDoProduto(product as any);
+      const minimoDoProduto = precoMinimoDoProduto(produtoNoCanal as any);
       if (precoUnitario < minimoDoProduto) {
         console.warn(
           `[customer-order] "${product.name}" sairia por R$ ${precoUnitario} sem escolha válida ` +

@@ -384,6 +384,24 @@ model MenuProduct {
   name            String
   description     String
   price           Float
+  /// PREÇO POR CANAL. Nulo = usa `price`. Zero também não conta como preço
+  /// cadastrado: campo apagado pela metade viraria produto de graça.
+  ///
+  /// A loja cobra diferente conforme onde o pedido nasce — no delivery entra a
+  /// comissão da plataforma, no balcão não. Antes a saída era cadastrar o mesmo
+  /// produto duas vezes, que é como se perde a conta do estoque e do que vende.
+  ///
+  /// A COLUNA TEM QUE EXISTIR NO BANCO ANTES de o campo valer aqui: declarar o
+  /// campo com a coluna ausente faz o Prisma montar SELECT com todas as colunas
+  /// escalares em qualquer consulta que use `include:` sem `select:` — e o
+  /// cardápio inteiro serve 500. Foi assim que /loja caiu em 24/08/2026 com
+  /// MenuProduct.sortOrder. Quem garante a ordem é o BOOT: o container novo
+  /// roda src/lib/garantir-colunas.ts (via src/instrumentation.ts) antes de
+  /// aceitar o primeiro request. /api/admin/colunas-preco segue como conferência
+  /// manual.
+  priceSalao      Float?
+  priceDelivery   Float?
+  priceTotem      Float?
   cost            Float?
   tags            String?             // JSON array: ["Novo","Mais Vendido","Promoção","Esgotado","Vegano","Picante"]
   availableDays   String?             // JSON array: ["SEG","TER","QUA","QUI","SEX","SAB","DOM"] (null/empty = todos os dias)

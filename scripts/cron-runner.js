@@ -51,6 +51,18 @@ const jobs = [
     path: '/api/cron/meta-ads-sync',
     intervalMs: 6 * 60 * 60_000, // 6 horas
   },
+  {
+    // Traz de volta quem sumiu (7, 15 e 30 dias sem pedir).
+    //
+    // A tela do lojista prometia esse disparo "automaticamente" desde sempre,
+    // com os interruptores ligados — e não existia job nenhum para executá-lo:
+    // ninguém nunca recebeu. De hora em hora aqui só para pegar o começo do
+    // horário comercial; a própria rota garante UM disparo por loja por dia e
+    // não envia nada fora das 10h–20h.
+    name: 'recuperacao-clientes',
+    path: '/api/cron/recuperacao-clientes',
+    intervalMs: 60 * 60_000, // 1 hora
+  },
 ];
 
 // ── Função para chamar um endpoint ───────────────────────────────────

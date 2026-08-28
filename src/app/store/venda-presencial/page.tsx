@@ -46,7 +46,9 @@ export default function VendaPresencialPage() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState("");
 
   useEffect(() => {
-    fetch("/api/admin/menu-products").then(r => r.json()).then(d => Array.isArray(d) && setProducts(d));
+    // Balcão é canal SALÃO: o `price` já chega resolvido (preço do canal, se a
+    // loja cadastrou; o normal, se não) e a tela não precisa saber a diferença.
+    fetch("/api/admin/menu-products?canal=salao").then(r => r.json()).then(d => Array.isArray(d) && setProducts(d));
     fetch("/api/store-settings/payment").then(r => r.ok ? r.json() : null).then(d => d && setPaymentConfig(d.paymentFees));
     fetch("/api/store-settings/employee-account").then(r => r.ok ? r.json() : null).then(d => d && setEmployeeAccountEnabled(Boolean(d.employeeAccountEnabled)));
     fetch("/api/store/employees").then(r => r.ok ? r.json() : null).then(d => d?.employees && setEmployees(d.employees));

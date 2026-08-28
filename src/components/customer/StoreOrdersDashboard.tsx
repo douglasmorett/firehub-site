@@ -1377,7 +1377,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     initialOrders.forEach((o: any) => {
       const orderTime = o.createdAt ? new Date(o.createdAt).getTime() : 0;
       if (orderTime > 0 && orderTime < tenMinutesAgo) {
-        if (o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
+                  // CRIANDO_IA fica FORA da impressão automática.
+                  //
+                  // É o rascunho que o robô monta enquanto conversa: ele muda a
+                  // cada mensagem ("tira a cebola", "põe mais uma coca") e pode
+                  // nem virar pedido, se o cliente desistir. Imprimir aqui punha
+                  // a cozinha a produzir comida não confirmada e a jogar fora
+                  // comanda a cada alteração. A impressão sai quando o pedido
+                  // chega de verdade, com status NOVO.
+                  if (o.status !== "CANCELADO" && o.status !== "ENCERRADO" && o.status !== "CRIANDO_IA") {
           markAutoPrinted(o);
         }
       }
@@ -1976,12 +1984,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberDesc);
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberDesc);
 
+  // ── QUEM PODE APITAR ────────────────────────────────────────────────────
+  //
+  // A coluna "Novos" mostra tambem o pedido que a IA do WhatsApp ainda esta
+  // MONTANDO (status CRIANDO_IA) — e isso e util de ver. Mas o som usava a
+  // mesma lista: enquanto o cliente conversava com o robo, o painel apitava a
+  // cada 4 segundos, as vezes por varios minutos, por um pedido que ainda nem
+  // existia para aceitar. A equipe corria ate a tela para nao encontrar nada.
+  //
+  // O alerta agora escuta so quem esta PRONTO para ser aceito. Quando a IA
+  // fecha o pedido, o status vira NOVO e o som toca — uma unica vez por
+  // pedido, como deve ser.
+  const aguardandoAceite = novos.filter(o => o.status !== "CRIANDO_IA");
+
   // Continuous alert sound — loops every 4s while there are NOVO orders visible in Kanban
   const alertIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasNotifiedRef = useRef(false);
 
   useEffect(() => {
-    const novoCount = novos.length;
+    const novoCount = aguardandoAceite.length;
 
     if (novoCount > 0) {
       // Start looping sound if not already playing
@@ -2020,7 +2041,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         alertIntervalRef.current = null;
       }
     };
-  }, [novos.length, playOrderChime]);
+  }, [aguardandoAceite.length, playOrderChime]);
 
   // Transmite em tempo real a quantidade de pedidos em produção para a extensão Chrome do FireHub
   useEffect(() => {

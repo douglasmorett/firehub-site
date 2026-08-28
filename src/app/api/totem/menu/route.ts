@@ -3,6 +3,7 @@ import { orderByCardapio } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
+import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
       },
       orderBy: await orderByCardapio(),
       select: {
-        id: true, name: true, description: true, price: true, imageUrl: true,
+        id: true, name: true, description: true, price: true, priceTotem: true, imageUrl: true,
         category: true, isCombo: true, isBeverage: true, tags: true, availableDays: true,
         comboConfig: true,
         comboGroups: {
@@ -67,7 +68,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const doDia = products.filter((p) => disponivelHoje(p.availableDays));
+    // Canal TOTEM: o preço que o quiosque anuncia é o do canal, resolvido aqui
+    // na origem — a coluna sai do payload e a tela segue vendo um `price` só.
+    const doDia = aplicarPrecoNoCardapio(
+      products.filter((p) => disponivelHoje(p.availableDays)) as any[],
+      "totem"
+    );
 
     // O preço do combo é calculado aqui, não na tela. `price` de um combo é a
     // base: um combo de base R$ 0,00 cujo grupo obrigatório mais barato custa

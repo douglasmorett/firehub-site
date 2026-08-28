@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
+import { aplicarPrecoDoCanal } from "@/lib/preco-por-canal";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
 
@@ -58,12 +59,14 @@ export async function POST(req: NextRequest) {
       }
 
       // Mesma conta do cardápio, do modal e do robô — src/lib/preco-combo.ts.
-      let itemPrice = precoUnitarioDoItem(product as any, item.comboSelections);
+      // Canal TOTEM: cobra o mesmo preço que /api/totem/menu anunciou na tela.
+      const produtoNoCanal = aplicarPrecoDoCanal(product as any, "totem");
+      let itemPrice = precoUnitarioDoItem(produtoNoCanal as any, item.comboSelections);
 
       // Piso de segurança: produto cujo valor mora nas opções (o "Nugget" da
       // Hakim, base R$ 0,00) sairia por R$ 0,00 se a escolha não viesse ou não
       // casasse. Melhor cobrar o mínimo possível do que entregar de graça.
-      const minimo = precoMinimoDoProduto(product as any);
+      const minimo = precoMinimoDoProduto(produtoNoCanal as any);
       if (itemPrice < minimo) {
         console.warn(
           `[Totem] "${product.name}" sairia por R$ ${itemPrice} sem escolha válida; aplicando o mínimo R$ ${minimo}.`

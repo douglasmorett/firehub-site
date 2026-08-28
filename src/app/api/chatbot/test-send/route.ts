@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true },
+      select: { id: true, ownerId: true },
     });
 
     if (!user) {
@@ -31,7 +31,10 @@ export async function POST(req: NextRequest) {
     const cleanPhone = phone.replace(/\D/g, "");
     const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
 
-    const success = await sendEvolutionMessage(user.id, fullPhone, message);
+    // A instância é a do DONO da loja: funcionário logado testava contra uma
+    // instância inexistente (firehub_<id do funcionário>) e via "falha ao
+    // enviar" com o WhatsApp da loja perfeitamente conectado.
+    const success = await sendEvolutionMessage(user.ownerId || user.id, fullPhone, message);
 
     if (success) {
       return NextResponse.json({ success: true, message: "Mensagem enviada com sucesso!" });

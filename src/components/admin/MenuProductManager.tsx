@@ -581,6 +581,15 @@ export default function MenuProductManager({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+
+  // ─── PREÇO POR CANAL ───────────────────────────────────────────────────
+  // Vazio = usa o preço de venda normal. Uma loja que nunca preencher nada
+  // continua com um preço só para tudo, que é como sempre foi — ninguém
+  // precisa fazer nada para continuar como está.
+  const [precoSalao, setPrecoSalao] = useState("");
+  const [precoDelivery, setPrecoDelivery] = useState("");
+  const [precoTotem, setPrecoTotem] = useState("");
+  const [abaPrecos, setAbaPrecos] = useState(false);
   const [category, setCategory] = useState("Esfihas Salgadas");
   const [imageUrl, setImageUrl] = useState("");
   const [active, setActive] = useState(true);
@@ -713,6 +722,7 @@ export default function MenuProductManager({
 
   const resetForm = () => {
     setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]);
+    setPrecoSalao(""); setPrecoDelivery(""); setPrecoTotem(""); setAbaPrecos(false);
     setCategory(dynCategories[0]?.name || "");
     setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(true);
@@ -723,6 +733,17 @@ export default function MenuProductManager({
 
   const openEdit = (p: any) => {
     setName(p.name); setDescription(p.description); setPrice(String(p.price));
+    // Só vira texto o que REALMENTE tem preço próprio: `String(null)` daria
+    // "null" no campo, e `String(0)` acenderia a aba num produto que nunca
+    // teve preço por canal.
+    const soSeTiver = (v: any) => (Number(v) > 0 ? String(v) : "");
+    const pSalao = soSeTiver(p.priceSalao);
+    const pDelivery = soSeTiver(p.priceDelivery);
+    const pTotem = soSeTiver(p.priceTotem);
+    setPrecoSalao(pSalao); setPrecoDelivery(pDelivery); setPrecoTotem(pTotem);
+    // Abre a aba já aberta quando há algo lá dentro — senão o preço diferente
+    // fica escondido atrás de um clique e alguém edita o produto sem ver.
+    setAbaPrecos(!!(pSalao || pDelivery || pTotem));
     setCost(p.cost != null && p.cost > 0 ? String(p.cost) : "");
     try { setTags(p.tags ? JSON.parse(p.tags) : []); } catch { setTags([]); }
     
@@ -779,6 +800,11 @@ export default function MenuProductManager({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: editingId, name, description, price: parseFloat(price),
+          // Campo vazio vira NULO, não zero: nulo é 'usa o preço normal', e
+          // zero seria vender de graça naquele canal.
+          priceSalao: precoSalao.trim() ? parseFloat(precoSalao.replace(",", ".")) : null,
+          priceDelivery: precoDelivery.trim() ? parseFloat(precoDelivery.replace(",", ".")) : null,
+          priceTotem: precoTotem.trim() ? parseFloat(precoTotem.replace(",", ".")) : null,
           cost: cost ? parseFloat(cost) : 0,
           tags: tags.length > 0 ? tags : null,
           availableDays: availableDaysPayload,
@@ -1536,6 +1562,75 @@ export default function MenuProductManager({
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Preço de Venda (R$)</label>
                 </div>
                 <input className="input-field" style={{ height: "44px", boxSizing: "border-box" }} type="number" step="0.01" placeholder="Ex: 9.90" value={price} onChange={e => setPrice(e.target.value)} />
+              </div>
+
+              {/* ─── PREÇOS POR CANAL ──────────────────────────────────────
+                  A loja cobra diferente conforme onde o pedido nasce: no delivery
+                  entra a comissão da plataforma, no balcão não. Antes a saída era
+                  cadastrar o produto duas vezes — que é como se perde a conta do
+                  estoque e do que vende.
+
+                  Fica fechado por padrão: quem tem um preço só não precisa nem
+                  saber que isto existe. */}
+              <div className="input-group" style={{ gridColumn: "1 / -1" }}>
+                <button
+                  type="button"
+                  onClick={() => setAbaPrecos(v => !v)}
+                  style={{
+                    width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                    padding: "10px 14px", borderRadius: 12,
+                    border: abaPrecos ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
+                    background: abaPrecos ? "#F5F3FF" : "#FFF",
+                    color: abaPrecos ? "#6D28D9" : "#64748B",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  }}
+                >
+                  <span style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                    💰 Preços por canal
+                    <span style={{ fontWeight: 600, opacity: 0.8 }}> (opcional)</span>
+                  </span>
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700 }}>
+                    {(precoSalao || precoDelivery || precoTotem)
+                      ? `${[precoSalao, precoDelivery, precoTotem].filter(Boolean).length} preço(s) diferente(s)`
+                      : (abaPrecos ? "fechar" : "abrir")}
+                  </span>
+                </button>
+
+                {abaPrecos && (
+                  <div style={{ marginTop: 10, padding: "14px", background: "#FBFAFF", border: "1.5px solid #E9E5F8", borderRadius: 12 }}>
+                    <p style={{ margin: "0 0 12px", fontSize: "0.78rem", color: "#64748B", lineHeight: 1.5 }}>
+                      Deixe em branco o que não quiser mudar — o canal em branco usa o
+                      <strong> Preço de Venda</strong> ali de cima{price ? ` (R$ ${price})` : ""}.
+                    </p>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+                      {[
+                        { chave: "salao", rotulo: "🍽️ Balcão e mesa", ajuda: "Atendimento no balcão e comanda de mesa.", valor: precoSalao, set: setPrecoSalao },
+                        { chave: "delivery", rotulo: "🛵 Delivery", ajuda: "Cardápio online, iFood, JotaJá, 99Food e WhatsApp.", valor: precoDelivery, set: setPrecoDelivery },
+                        { chave: "totem", rotulo: "📲 Totem", ajuda: "Quiosque de autoatendimento da loja.", valor: precoTotem, set: setPrecoTotem },
+                      ].map(campo => (
+                        <div key={campo.chave}>
+                          <label style={{ fontWeight: 800, color: "#334155", fontSize: "0.8rem", display: "block", marginBottom: 4 }}>
+                            {campo.rotulo}
+                          </label>
+                          <input
+                            className="input-field"
+                            style={{ height: "42px", boxSizing: "border-box" }}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder={price ? `usa R$ ${price}` : "usa o preço normal"}
+                            value={campo.valor}
+                            onChange={e => campo.set(e.target.value)}
+                          />
+                          <p style={{ fontSize: "0.7rem", color: "#94A3B8", margin: "4px 0 0", lineHeight: 1.35 }}>
+                            {campo.ajuda}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* LINHA 2: CATEGORIA & CUSTO (ALINHAMENTO 100% PERFEITO EM LINHA RETA) */}

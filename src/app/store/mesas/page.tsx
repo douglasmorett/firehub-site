@@ -310,7 +310,8 @@ export default function MesasPage() {
 
   const fetchMenu = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/menu-products");
+      // Mesa é canal SALÃO: `price` já vem resolvido pelo preço do canal.
+      const res = await fetch("/api/admin/menu-products?canal=salao");
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {

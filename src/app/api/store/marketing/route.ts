@@ -507,6 +507,38 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Salvar configurações automáticas de marketing
+    // Cardápio em arquivo (foto ou PDF) que o robô manda quando o cliente
+    // recusa o link do site. Fica separado do save_config porque a tela de
+    // marketing salva só os campos dela: se entrasse junto, abrir marketing e
+    // salvar apagaria o cardápio (os campos chegariam undefined).
+    if (body.action === "save_menu_file") {
+      const atual = (user.chatbotConfig as any) || {};
+      const url = String(body.menuFileUrl || "").trim();
+
+      // Só aceitamos caminho do nosso próprio storage. URL de fora seria o
+      // lojista (ou quem invadisse a conta) fazendo o número de WhatsApp da
+      // loja buscar arquivo em host arbitrário e repassar para o cliente.
+      if (url && !/^\/uploads\/[A-Za-z0-9._\/-]+$/.test(url)) {
+        return NextResponse.json({ error: "Arquivo inválido. Envie pelo botão de upload." }, { status: 400 });
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          chatbotConfig: {
+            ...atual,
+            menuFileUrl: url,
+            menuFileType: url.toLowerCase().endsWith(".pdf") ? "pdf" : url ? "image" : "",
+          },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: url ? "Cardápio salvo! O robô já pode enviar." : "Cardápio removido.",
+      });
+    }
+
     if (body.action === "save_config") {
       const currentConfig = (user.chatbotConfig as any) || {};
       const updatedConfig = {

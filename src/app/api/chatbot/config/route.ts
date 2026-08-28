@@ -109,6 +109,20 @@ export async function POST(req: NextRequest) {
       "aiOrderingEnabled", "stopOnHumanRequest",
       "instantCoupon", "instantCouponCode", "instantCouponValue",
       "phone", "connected", "connectedAt",
+      // Campanhas de recuperação (7/15/30 dias) e cupons.
+      //
+      // Faltavam aqui, e o efeito era mudo: a aba de Marketing DENTRO do
+      // chatbot salva por esta rota, então o lojista clicava "ATIVADO" no
+      // disparo de 7 dias, a tela ficava verde (o estado local muda na hora)
+      // e o campo era recusado — nunca chegava ao banco. A mesma configuração
+      // feita pela página /store/marketing gravava normalmente, porque aquela
+      // usa outra rota. Dependia de por onde o lojista tinha entrado.
+      "autoRecuperation7d", "autoRecuperation15d", "autoRecuperation30d",
+      "msg7d", "msg15d", "msg30d",
+      "img7d", "img15d", "img30d",
+      "coupon7d", "coupon15d", "coupon30d",
+      "instantCouponEnabled", "instantCouponDiscount",
+      "pickupAddress", "sendOrderConfirmation",
     ] as const;
 
     const permitido: Record<string, any> = {};
@@ -134,7 +148,9 @@ export async function POST(req: NextRequest) {
       data: { chatbotConfig: updatedConfig },
     });
 
-    return NextResponse.json({ success: true, config: updatedConfig });
+    // `recusados` volta para a tela: sem isso o lojista via "salvo!" em verde
+    // enquanto o campo era descartado aqui, e ninguém descobria por meses.
+    return NextResponse.json({ success: true, config: updatedConfig, recusados });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Erro ao salvar configurações" }, { status: 500 });
   }
