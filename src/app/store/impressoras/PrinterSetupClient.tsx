@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { Printer, CheckCircle, Download, AlertCircle, Plus, Trash2, RefreshCw } from "lucide-react";
-import { VERSAO_ASSISTENTE_ATUAL } from "@/lib/print";
+import { VERSAO_ASSISTENTE_ATUAL, fetchAssistente } from "@/lib/print";
 import {
   MODULOS,
   impressoraAtendeModulo,
@@ -78,42 +78,15 @@ export default function PrinterSetupClient({
   const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
 
-    // 1. Tenta conectar via WebSocket (Bypassa bloqueios CORS/PNA do Chrome em HTTPS!)
-    const wsPorts = [7899, 7900, 7901, 7891];
-    for (const port of wsPorts) {
-      try {
-        const wsData = await new Promise<any>((resolve) => {
-          let timer: any;
-          try {
-            const ws = new WebSocket(`ws://localhost:${port}`);
-            timer = setTimeout(() => { try { ws.close(); } catch {} resolve(null); }, 1200);
-            ws.onmessage = (evt) => {
-              clearTimeout(timer);
-              try {
-                const parsed = JSON.parse(evt.data);
-                if (parsed.ok) resolve(parsed); else resolve(null);
-              } catch { resolve(null); }
-            };
-            ws.onerror = () => { clearTimeout(timer); resolve(null); };
-          } catch {
-            clearTimeout(timer);
-            resolve(null);
-          }
-        });
-
-        if (wsData) {
-          setStatus("connected");
-          setAvailablePrinters(wsData.printers || []);
-          setVersaoInstalada(wsData.version || null);
-          if (userClicked) {
-            alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(wsData.printers || []).length} impressora(s) detectada(s) no Windows.`);
-          }
-          return;
-        }
-      } catch {}
-    }
-
-    // 2. Fallback HTTP fetch
+    // 1. HTTP PRIMEIRO — e tem que ser primeiro.
+    //
+    // O Chrome (2026) exige permissão do usuário para o site falar com
+    // localhost, e só a requisição HTTP com targetAddressSpace declarado
+    // (fetchAssistente) dispara o prompt "permitir acesso à rede local".
+    // O WebSocket não tem como declarar nada: ele SÓ funciona depois que a
+    // permissão já foi concedida por um fetch. A ordem antiga (WS primeiro)
+    // fazia a tela dizer "Desconectado" com o Assistente rodando e saudável
+    // na mesma máquina — visto no Brasa Burguer em 27/08/2026.
     const urls = [
       "http://localhost:7899", "http://127.0.0.1:7899",
       "http://localhost:7900", "http://127.0.0.1:7900",
@@ -129,13 +102,49 @@ export default function PrinterSetupClient({
 
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}${rota}`, { signal: AbortSignal.timeout(1500) });
+        // Timeout LARGO de propósito: enquanto o prompt de permissão do
+        // Chrome está aberto, o fetch fica pendurado esperando a escolha da
+        // loja — um timeout curto cancelaria a pergunta no meio.
+        const res = await fetchAssistente(`${url}${rota}`, { signal: AbortSignal.timeout(userClicked ? 30000 : 8000) });
         const data = await res.json();
         if (data.ok && (data.app === "FireHub-Thermal-Printer-v2" || (data.printers && data.printers.length > 0))) {
           connectedData = data;
           break;
         }
       } catch {}
+    }
+
+    // 2. Fallback WebSocket (herda a permissão de rede local concedida acima;
+    // cobre Assistente antigo cujo /status responda estranho ao fetch).
+    if (!connectedData) {
+      const wsPorts = [7899, 7900, 7901, 7891];
+      for (const port of wsPorts) {
+        try {
+          const wsData = await new Promise<any>((resolve) => {
+            let timer: any;
+            try {
+              const ws = new WebSocket(`ws://localhost:${port}`);
+              timer = setTimeout(() => { try { ws.close(); } catch {} resolve(null); }, 1200);
+              ws.onmessage = (evt) => {
+                clearTimeout(timer);
+                try {
+                  const parsed = JSON.parse(evt.data);
+                  if (parsed.ok) resolve(parsed); else resolve(null);
+                } catch { resolve(null); }
+              };
+              ws.onerror = () => { clearTimeout(timer); resolve(null); };
+            } catch {
+              clearTimeout(timer);
+              resolve(null);
+            }
+          });
+
+          if (wsData) {
+            connectedData = wsData;
+            break;
+          }
+        } catch {}
+      }
     }
 
     if (connectedData) {
@@ -176,7 +185,7 @@ export default function PrinterSetupClient({
       const firstPrinter = config.printers[0];
       const ports = [7899, 7900, 7901, 7891];
       for (const p of ports) {
-        fetch(`http://localhost:${p}/config`, {
+        fetchAssistente(`http://localhost:${p}/config`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

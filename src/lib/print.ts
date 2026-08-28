@@ -16,6 +16,49 @@ const ASSISTANT_URLS = [
   "http://localhost:7891", "http://127.0.0.1:7891",
 ];
 
+/**
+ * TODO fetch para o Assistente local passa por aqui — nunca por fetch() puro.
+ *
+ * ── POR QUE (Chrome 2026, "Local Network Access") ───────────────────────────
+ *
+ * O Chrome passou a exigir permissão do usuário para um site público falar com
+ * localhost — e a requisição só entra na fila do prompt se DECLARAR o espaço
+ * de endereço de destino. Sem a declaração o bloqueio é imediato e mudo:
+ *
+ *   "Permission was denied for this request to access the `loopback` address
+ *    space."
+ *
+ * Foi assim que, em 27/08/2026, a tela de impressoras passou a dizer
+ * "Desconectado" com o Assistente rodando e saudável na mesma máquina (visto
+ * no Brasa Burguer e reproduzido aqui) — e a impressão disparada do navegador
+ * morria do mesmo jeito, sem erro visível.
+ *
+ * O nome do valor mudou entre versões do spec ("local" → "loopback"), e valor
+ * desconhecido faz o fetch LANÇAR TypeError na hora. Por isso a escada:
+ * loopback → local → sem a opção (navegador antigo ignora chave desconhecida,
+ * então o último degrau é o comportamento de sempre).
+ *
+ * Na primeira chamada o Chrome mostra "firehubfood.com.br quer acessar
+ * dispositivos na sua rede" — a loja clica PERMITIR uma vez e a escolha fica
+ * salva para o site inteiro (o WebSocket da tela de impressoras herda a
+ * permissão; ele não tem como declarar o espaço sozinho).
+ */
+export async function fetchAssistente(url: string, init?: RequestInit): Promise<Response> {
+  for (const espaco of ["loopback", "local"]) {
+    try {
+      return await fetch(url, { ...(init || {}), targetAddressSpace: espaco } as RequestInit);
+    } catch (err) {
+      // TypeError com a MENSAGEM do enum = valor que este Chrome não conhece:
+      // tenta o próximo nome. Qualquer outra falha (rede, timeout, abort) é
+      // real e sobe para o chamador tratar como sempre tratou.
+      const msg = String((err as any)?.message || "");
+      if (err instanceof TypeError && /targetAddressSpace|address space|enum/i.test(msg)) continue;
+      throw err;
+    }
+  }
+  return fetch(url, init);
+}
+
 type OrderItem = { name: string; qty: number; price: number; notes?: string };
 
 type PrintOrder = {
@@ -42,6 +85,10 @@ type PrintOrder = {
  *
  * MANTENHA IGUAL a firehub-print-assistant/package.json ao gerar um instalador.
  */
+// ⚠️ SÓ suba para "1.2.3" NO MESMO COMMIT que trocar o instalador em
+// public/downloads pelo build 1.2.3. Anunciar versão nova com instalador
+// velho no site faz o auto-update de TODAS as lojas baixar e reinstalar o
+// 1.2.2 em loop, a cada 6 horas, para sempre.
 export const VERSAO_ASSISTENTE_ATUAL = "1.2.2";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
@@ -90,7 +137,7 @@ export function resolveColumns(p?: { paperWidth?: string; columns?: number } | n
 async function getAssistantUrl(): Promise<string | null> {
   for (const url of ASSISTANT_URLS) {
     try {
-      const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetchAssistente(`${url}/status`, { signal: AbortSignal.timeout(2000) });
       const data = await res.json();
       if (data.ok) return url;
     } catch {}
@@ -124,14 +171,14 @@ async function printToDevice(
 
     let targetPrinter = printerName;
     if (!targetPrinter) {
-      const printers = await fetch(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
+      const printers = await fetchAssistente(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
       if (Array.isArray(printers) && printers.length > 0) {
         targetPrinter = printers[0].name;
       }
     }
     if (!targetPrinter) return false;
 
-    const res = await fetch(`${baseUrl}/print`, {
+    const res = await fetchAssistente(`${baseUrl}/print`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -211,7 +258,7 @@ export async function printOrder(
 
   let printersToUse = printerConfig?.printers || [];
   if (!printersToUse.length || printersToUse.every(p => !p.name)) {
-    const detected = await fetch(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
+    const detected = await fetchAssistente(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
     if (Array.isArray(detected) && detected.length > 0) {
       printersToUse = [{
         id: "detected",
@@ -406,7 +453,7 @@ export async function printWidthRuler(printerName: string): Promise<boolean> {
     b.push(0x1b, 0x61, 0x00);             // volta para LEFT: nao deixa estado sujo
     b.push(0x1b, 0x64, 0x04, 0x1d, 0x56, 0x00);
 
-    const res = await fetch(`${baseUrl}/print-raw`, {
+    const res = await fetchAssistente(`${baseUrl}/print-raw`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ printer: printerName, data: bytesToBase64(b) }),

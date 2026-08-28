@@ -27,6 +27,48 @@ app.use((req, res, next) => {
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "5mb" }));
 
+/* ─── Permissão de loopback no navegador (Chrome/Edge 142+) ──────────────────
+ *
+ * O Chrome novo NEGA por padrão, sem nem perguntar, que um site público
+ * (firehubfood.com.br) fale com localhost — a permissão "loopback-network"
+ * nasce "denied". Foi assim que, em 27/08/2026, a tela de Impressoras passou
+ * a dizer "Desconectado" com o Assistente rodando e saudável na mesma máquina
+ * (Brasa Burguer), e a impressão disparada do navegador morreu junto, muda.
+ *
+ * A saída oficial é política de navegador: LoopbackNetworkAllowedForUrls
+ * (e a irmã mais ampla LocalNetworkAccessAllowedForUrls) isenta o site das
+ * checagens. O Chrome lê essas políticas também de HKCU — não precisa de
+ * administrador — então o próprio Assistente garante a chave a cada início:
+ * instalou/atualizou o Assistente, o painel volta a enxergá-lo. HKLM também é
+ * tentado (pega quando rodando elevado) e cobre todos os usuários do PC.
+ *
+ * O navegador relê políticas do registro sozinho (em até ~90 min) ou na hora
+ * em que é reaberto — reiniciar o Chrome aplica na hora.
+ */
+function liberarLoopbackNoNavegador() {
+  if (process.platform !== "win32") return;
+  const { exec } = require("child_process");
+  const origens = ["https://firehubfood.com.br", "https://www.firehubfood.com.br"];
+  const navegadores = ["Google\\Chrome", "Microsoft\\Edge"];
+  const politicas = ["LoopbackNetworkAllowedForUrls", "LocalNetworkAccessAllowedForUrls"];
+  for (const colmeia of ["HKCU", "HKLM"]) {
+    for (const nav of navegadores) {
+      for (const politica of politicas) {
+        origens.forEach((origem, i) => {
+          // Idempotente (/f sobrescreve). HKLM falha sem elevação — e tudo bem:
+          // o HKCU do usuário da loja já resolve.
+          exec(
+            `reg add "${colmeia}\\Software\\Policies\\${nav}\\${politica}" /v ${i + 1} /t REG_SZ /d "${origem}" /f`,
+            () => {}
+          );
+        });
+      }
+    }
+  }
+  console.log("[PrintServer] 🔓 Política de loopback do navegador garantida (Chrome/Edge).");
+}
+liberarLoopbackNoNavegador();
+
 /* ─── Helpers ──────────────────────────────────────────────── */
 const tmpDir = path.join(os.tmpdir(), "firehub-print");
 if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
