@@ -122,6 +122,12 @@ model User {
   waiters         Waiter[]
   menuProducts    MenuProduct[]
   stockItems      StockItem[]
+  stockLots       StockLot[]
+
+  /// O que sai na etiqueta — UMA regra para a loja toda, tudo ligado por
+  /// padrao. Json em User e o padrao da casa para config de loja
+  /// (printerConfig, totemConfig, kdsScreens). Ausente = tudo ligado.
+  labelFieldsConfig Json?
   stockInvoices   StockInvoice[]
   menuCategories  MenuCategory[]
   routeSchedules  RouteSchedule[]
@@ -372,6 +378,17 @@ model KitchenItem {
   active        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  /// A ponte escolhida UMA vez na tela: "este item de cozinha vira este
+  /// insumo". Sem ela o QR da etiqueta nao sabe o que movimentar no estoque.
+  /// Sem relacao Prisma de proposito: KitchenItem.franchiseeId ja e solto
+  /// (String? sem relation), e amarrar so um lado geraria migracao maior do
+  /// que o necessario — a rota resolve e confere a loja na leitura.
+  stockItemId   String?
+
+  /// "60x60" (rolo, padrao) ou "10x15" (com tabela nutricional, para revenda).
+  /// Vazio = 60x60. Escolhido POR PRODUTO, como o dono pediu.
+  labelSize     String?
 
   @@index([franchiseeId])
 }
@@ -1031,7 +1048,46 @@ model CashSession {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  /// Sangria e reforço lançados DURANTE o turno. Sem isto, o esperado do
+  /// fechamento era só "pedidos em dinheiro + troco inicial", e toda saída de
+  /// caixa virava uma falta inexplicada no fechamento.
+  movimentacoes   CashMovement[]
+
   @@index([franchiseeId])
+}
+
+/// Dinheiro que entrou ou saiu do caixa DURANTE o turno — sangria e reforço.
+///
+/// O caixa só conhecia dois momentos: o troco de abertura e a contagem do
+/// fechamento. Tudo que acontecia entre os dois (pagar motoboy, comprar gelo,
+/// mandar dinheiro para o cofre, repor troco) não existia para o sistema — e
+/// aparecia no fechamento como uma diferença sem explicação. Diferença que
+/// aparece todo dia sem motivo é diferença que o lojista aprende a ignorar, e
+/// a partir daí o caixa deixa de conferir qualquer coisa.
+///
+/// A TABELA É CRIADA NO BOOT por src/lib/garantir-colunas.ts, no mesmo commit
+/// deste model.
+model CashMovement {
+  id            String      @id @default(cuid())
+  cashSessionId String
+  franchiseeId  String
+
+  /// ENTRADA (reforço de troco, devolução) | SAIDA (sangria, pagamento)
+  tipo          String
+  /// SEMPRE positivo. O sinal é do `tipo` — guardar valor negativo faria a
+  /// mesma sangria contar duas vezes dependendo de quem somasse.
+  valor         Float
+  /// Opcional de propósito: exigir motivo faz o operador digitar "x" no meio
+  /// do movimento, e aí o campo passa a existir sem informar nada.
+  descricao     String?
+  criadoPor     String?
+
+  createdAt     DateTime    @default(now())
+
+  cashSession   CashSession @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+
+  @@index([cashSessionId])
+  @@index([franchiseeId, createdAt])
 }
 
 
@@ -1139,6 +1195,13 @@ model StockItem {
   supplier      String?            // Nome do último fornecedor
   transactions  StockTransaction[]
   recipeItems   ProductRecipe[]
+  lotes         StockLot[]
+
+  /// Soft-delete. A lixeira fazia DELETE fisico, e a cascata levava junto TODO
+  /// o historico de movimentacao (StockTransaction) e as fichas tecnicas que
+  /// referenciam o insumo (ProductRecipe) — perda silenciosa e irreversivel,
+  /// num clique. Agora some da lista sem levar o passado.
+  active        Boolean            @default(true)
 
   @@unique([franchiseeId, name])
 }
@@ -1152,7 +1215,92 @@ model StockTransaction {
   createdAt     DateTime    @default(now())
   stockItem     StockItem   @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
 
+  /// De qual LOTE saiu. FK de verdade, no lugar do rastreio por substring em
+  /// `notes` que src/lib/stock.ts usava.
+  stockLotId    String?
+  stockLot      StockLot?   @relation(fields: [stockLotId], references: [id], onDelete: SetNull)
+
+  /// A loja dona da movimentação. NÃO existia: as buscas de idempotência
+  /// varriam as movimentações de todas as lojas do sistema.
+  franchiseeId  String?
+
+  /// Quem lançou. Era impossível saber — e com o scan indo para o celular de
+  /// qualquer funcionário, deixa de ser detalhe.
+  userId        String?
+
+  /// Chave de idempotência dedicada. O QR dispara fácil em duplicidade (o
+  /// scanner repete, e o dedo do funcionário também): a segunda gravação com
+  /// a mesma chave viola o unique e a rota devolve a movimentação original em
+  /// vez de dobrar a baixa.
+  sourceRef     String?     @unique
+
   @@index([stockItemId])
+  @@index([stockLotId])
+  @@index([franchiseeId])
+}
+
+/// Um LOTE é o que a etiqueta identifica e o que o QR resolve.
+///
+/// É a ÚNICA ponte entre KitchenItem (de onde a etiqueta nasce) e StockItem
+/// (onde a baixa acontece) — os dois cadastros não tinham nenhuma relação, e
+/// casar por nome falharia em silêncio.
+///
+/// O lote NÃO é uma segunda fonte de saldo: `StockItem.quantity` continua
+/// sendo o total e o único escritor. O lote ALOCA parte desse total. Insumo
+/// sem lote se comporta exatamente como antes, então nenhuma loja em operação
+/// sente diferença no dia do deploy.
+///
+/// A TABELA É CRIADA NO BOOT por src/lib/garantir-colunas.ts, no mesmo commit
+/// deste model — regra da casa desde o incidente do MenuProduct.sortOrder.
+model StockLot {
+  id            String   @id @default(cuid())
+
+  /// O que o QR carrega, dentro de https://firehubfood.com.br/e/<code>.
+  /// 8 caracteres num alfabeto sem ambiguidade visual (sem I, L, O, U, 0, 1).
+  /// Único no SISTEMA INTEIRO, não por loja: dois códigos iguais em lojas
+  /// diferentes é exatamente como a baixa cai no estoque errado.
+  code          String   @unique
+
+  franchiseeId  String
+  stockItemId   String?
+  kitchenItemId String?
+
+  /// Nome CONGELADO no ato da impressão. O QR resolve dados vivos, mas o papel
+  /// é imutável: se o produto for renomeado, a etiqueta na geladeira continua
+  /// dizendo o nome antigo e a auditoria precisa bater com ela.
+  productName   String
+  loteRef       String?
+  fabricadoEm   DateTime?
+  validoAte     DateTime?
+  weightStr     String?
+  unit          String   @default("un")
+
+  quantidadeInicial  Float @default(1)
+  quantidadeRestante Float @default(1)
+
+  /// ATIVO | CONSUMIDO | VENCIDO | DESCARTADO
+  status        String   @default("ATIVO")
+  /// ETIQUETA | NFE | MANUAL
+  origem        String   @default("ETIQUETA")
+
+  criadoPor     String?
+  /// Reimprimir soma AQUI e reusa o mesmo código — nunca cria lote fantasma.
+  /// O que gera lote novo é transformação real do alimento (descongelou,
+  /// porcionou, mudou a validade).
+  impressoes    Int      @default(1)
+
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  franchisee    User               @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  /// SetNull, não Cascade: apagar um insumo não pode apagar a rastreabilidade
+  /// de lotes que já estão colados em comida dentro da geladeira.
+  stockItem     StockItem?         @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+  movimentos    StockTransaction[]
+
+  @@index([franchiseeId, validoAte])
+  @@index([franchiseeId, stockItemId])
 }
 
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -26,6 +27,8 @@ export async function GET() {
 
   // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
   let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 };
+  let movimentacaoEntradas = 0;
+  let movimentacaoSaidas = 0;
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
@@ -86,9 +89,46 @@ export async function GET() {
     }
     // Adicionar o troco inicial ao dinheiro esperado
     expected.cash += openSession.openingAmount;
+
+    // ── Sangria e reforço lançados durante o turno ─────────────────────────
+    //
+    // Sem isto, o esperado era "pedidos em dinheiro + troco inicial" e mais
+    // nada: uma sangria de R$ 200 aparecia no fechamento como R$ 200 de FALTA,
+    // sem nenhuma explicação no sistema. Diferença que aparece todo dia sem
+    // motivo é diferença que o lojista aprende a ignorar — e aí o caixa deixa
+    // de conferir qualquer coisa.
+    //
+    // Envelopado em try/catch porque a tabela pode não existir ainda (boot que
+    // não conseguiu criar): o caixa continua funcionando como sempre funcionou,
+    // só sem a parcela nova.
+    try {
+      if (await temEstruturaDeCaixa()) {
+        const movs = await prisma.cashMovement.findMany({
+          where: { cashSessionId: openSession.id, franchiseeId: user.targetId },
+          select: { tipo: true, valor: true },
+        });
+        for (const m of movs) {
+          if (m.tipo === "ENTRADA") { movimentacaoEntradas += m.valor; expected.cash += m.valor; }
+          else { movimentacaoSaidas += m.valor; expected.cash -= m.valor; }
+        }
+        expected.total += movimentacaoEntradas - movimentacaoSaidas;
+      }
+    } catch (e: any) {
+      console.error("[Caixa] Não consegui somar as movimentações do turno:", e?.message);
+    }
   }
 
-  return NextResponse.json({ session: openSession, expected, cashOpen: user.cashOpen });
+  return NextResponse.json({
+    session: openSession,
+    expected,
+    cashOpen: user.cashOpen,
+    // A tela mostra os dois números separados: o operador precisa ver QUANTO
+    // saiu, não só um "esperado" já líquido que ele não consegue conferir.
+    movimentacao: {
+      entradas: Number(movimentacaoEntradas.toFixed(2)),
+      saidas: Number(movimentacaoSaidas.toFixed(2)),
+    },
+  });
 }
 
 // POST - abrir caixa com valor inicial

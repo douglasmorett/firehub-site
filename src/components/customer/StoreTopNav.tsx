@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2 } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
 import StoreSelector from "./StoreSelector";
 
@@ -161,9 +161,66 @@ export default function StoreTopNav({
   const [pendingDeliveryCount, setPendingDeliveryCount] = useState(0);
   const [diff, setDiff]         = useState(0);
 
+  // ── SANGRIA E REFORÇO ───────────────────────────────────────────
+  //
+  // O caixa só conhecia o troco da abertura e a contagem do fechamento. Todo
+  // dinheiro que saía no meio do turno (pagar motoboy, comprar gelo, mandar
+  // para o cofre) aparecia depois como falta sem explicação — e diferença que
+  // aparece todo dia sem motivo é diferença que o operador aprende a ignorar.
+  const [showCaixaMenu, setShowCaixaMenu] = useState(false);
+  const [movTipo, setMovTipo] = useState<"ENTRADA" | "SAIDA" | null>(null);
+  const [movValor, setMovValor] = useState("");
+  const [movDescricao, setMovDescricao] = useState("");
+  const [movSalvando, setMovSalvando] = useState(false);
+  const [movErro, setMovErro] = useState("");
+  const [movs, setMovs] = useState<any[]>([]);
+  const [movTotais, setMovTotais] = useState({ entradas: 0, saidas: 0, saldo: 0 });
+
+  const carregarMovs = () =>
+    fetch("/api/cash-session/movimentacao")
+      .then(r => r.json())
+      .then(d => {
+        setMovs(d.movimentacoes || []);
+        setMovTotais({ entradas: d.entradas || 0, saidas: d.saidas || 0, saldo: d.saldo || 0 });
+      })
+      .catch(() => {});
+
+  useEffect(() => { if (showCaixaMenu) carregarMovs(); }, [showCaixaMenu]);
+
+  const salvarMov = async () => {
+    setMovErro("");
+    const valorNum = Number(String(movValor).replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(valorNum) || valorNum <= 0) {
+      setMovErro("Digite um valor maior que zero.");
+      return;
+    }
+    setMovSalvando(true);
+    try {
+      const res = await fetch("/api/cash-session/movimentacao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: movTipo, valor: movValor, descricao: movDescricao }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setMovErro(d.error || "Não consegui registrar. Tente de novo."); return; }
+      setMovTipo(null); setMovValor(""); setMovDescricao("");
+      await carregarMovs();
+    } catch {
+      setMovErro("Sem conexão. O lançamento não foi registrado.");
+    } finally {
+      setMovSalvando(false);
+    }
+  };
+
+  const apagarMov = async (id: string) => {
+    await fetch(`/api/cash-session/movimentacao?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+    await carregarMovs();
+  };
+
   // Fetch expected values and pending orders when opening close modal
   useEffect(() => {
     if (!showCloseModal) return;
+    carregarMovs();
     fetch("/api/cash-session").then(r => r.json()).then(d => {
       if (d.expected) setExpected(d.expected);
     });
@@ -479,6 +536,143 @@ export default function StoreTopNav({
       )}
 
       {/* ── MODAL: FECHAR CAIXA ────────────────────────────── */}
+      {/* ── MENU DO CAIXA ABERTO ────────────────────────────────────────── */}
+      {showCaixaMenu && (
+        <div onClick={() => { setShowCaixaMenu(false); setMovTipo(null); setMovErro(""); }}
+             style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.5)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+               style={{ background:"#fff", borderRadius:20, width:"100%", maxWidth:460, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 20px 48px -12px rgba(15,23,42,0.28)", position:"relative" }}>
+
+            <div style={{ padding:"22px 24px 16px", borderBottom:"1px solid #F1F5F9" }}>
+              <button onClick={() => setShowCaixaMenu(false)}
+                      style={{ position:"absolute", top:14, right:14, background:"none", border:"none", cursor:"pointer", color:"#64748B" }}><X size={20} /></button>
+              <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.09em", color:"#94A3B8", textTransform:"uppercase", marginBottom:4 }}>Caixa aberto</div>
+              <h2 style={{ margin:0, fontSize:"1.2rem", fontWeight:900, color:"#0F172A" }}>Movimentar caixa</h2>
+              <p style={{ margin:"6px 0 0", fontSize:"0.82rem", color:"#64748B", lineHeight:1.5 }}>
+                Registre aqui todo dinheiro que <strong>entra ou sai</strong> fora das vendas. É o que faz o
+                caixa fechar certo no fim do turno.
+              </p>
+            </div>
+
+            {/* Lançar */}
+            {!movTipo ? (
+              <div style={{ padding:"18px 24px", display:"flex", flexDirection:"column", gap:10 }}>
+                <button onClick={() => { setMovTipo("ENTRADA"); setMovErro(""); }}
+                        style={{ display:"flex", alignItems:"center", gap:12, padding:"16px 18px", borderRadius:14, border:"1px solid #ABEFC6", background:"#ECFDF3", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+                  <div style={{ width:40, height:40, borderRadius:12, background:"#15803D", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:"#fff", fontSize:"1.3rem", fontWeight:900, lineHeight:1 }}>+</div>
+                  <div>
+                    <div style={{ fontWeight:800, fontSize:"0.95rem", color:"#15803D" }}>Informar entrada</div>
+                    <div style={{ fontSize:"0.78rem", color:"#475569", marginTop:2 }}>Reforço de troco, devolução, dinheiro que voltou</div>
+                  </div>
+                </button>
+
+                <button onClick={() => { setMovTipo("SAIDA"); setMovErro(""); }}
+                        style={{ display:"flex", alignItems:"center", gap:12, padding:"16px 18px", borderRadius:14, border:"1px solid #FFD3C2", background:"#FFF1E8", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+                  <div style={{ width:40, height:40, borderRadius:12, background:"#D14300", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:"#fff", fontSize:"1.5rem", fontWeight:900, lineHeight:1 }}>−</div>
+                  <div>
+                    <div style={{ fontWeight:800, fontSize:"0.95rem", color:"#D14300" }}>Informar saída (sangria)</div>
+                    <div style={{ fontSize:"0.78rem", color:"#475569", marginTop:2 }}>Pagar motoboy, compra rápida, dinheiro para o cofre</div>
+                  </div>
+                </button>
+
+                <button onClick={() => { setShowCaixaMenu(false); setShowCloseModal(true); }}
+                        style={{ display:"flex", alignItems:"center", gap:12, padding:"16px 18px", borderRadius:14, border:"1px solid #E2E8F0", background:"#fff", cursor:"pointer", fontFamily:"inherit", textAlign:"left", marginTop:4 }}>
+                  <div style={{ width:40, height:40, borderRadius:12, background:"#F1F5F9", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:"1.1rem" }}>🔒</div>
+                  <div>
+                    <div style={{ fontWeight:800, fontSize:"0.95rem", color:"#0F172A" }}>Encerrar caixa</div>
+                    <div style={{ fontSize:"0.78rem", color:"#64748B", marginTop:2 }}>Contar o dinheiro e fechar o turno</div>
+                  </div>
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding:"18px 24px", display:"flex", flexDirection:"column", gap:14 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+                  <button onClick={() => { setMovTipo(null); setMovErro(""); }}
+                          style={{ background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:"0.82rem", fontWeight:700, padding:0, fontFamily:"inherit" }}>← voltar</button>
+                  <div style={{ fontWeight:900, fontSize:"1rem", color: movTipo === "ENTRADA" ? "#15803D" : "#D14300" }}>
+                    {movTipo === "ENTRADA" ? "Entrada de dinheiro" : "Saída de dinheiro"}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display:"block", fontSize:"0.72rem", fontWeight:800, letterSpacing:"0.06em", color:"#64748B", textTransform:"uppercase", marginBottom:7 }}>Quanto</label>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, border:"1.5px solid #CBD5E1", borderRadius:14, padding:"0 16px", height:64 }}>
+                    <span style={{ fontSize:"1.15rem", fontWeight:800, color:"#94A3B8" }}>R$</span>
+                    <input autoFocus inputMode="decimal" value={movValor}
+                           onChange={e => setMovValor(e.target.value)} placeholder="0,00"
+                           style={{ flex:1, border:"none", outline:"none", fontSize:"1.6rem", fontWeight:900, color:"#0F172A", fontFamily:"inherit", width:"100%" }} />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display:"block", fontSize:"0.72rem", fontWeight:800, letterSpacing:"0.06em", color:"#64748B", textTransform:"uppercase", marginBottom:7 }}>
+                    Motivo <span style={{ fontWeight:600, textTransform:"none", letterSpacing:0, color:"#94A3B8" }}>— opcional</span>
+                  </label>
+                  <input value={movDescricao} onChange={e => setMovDescricao(e.target.value)}
+                         placeholder={movTipo === "ENTRADA" ? "Ex: troco que o Maicon devolveu" : "Ex: paguei o motoboy da Rappi"}
+                         style={{ width:"100%", height:52, border:"1.5px solid #CBD5E1", borderRadius:14, padding:"0 16px", fontSize:"0.95rem", color:"#0F172A", fontFamily:"inherit", outline:"none" }} />
+                  <div style={{ fontSize:"0.75rem", color:"#94A3B8", marginTop:6, lineHeight:1.45 }}>
+                    Não é obrigatório, mas ajuda muito quando o caixa não bate no fim do dia.
+                  </div>
+                </div>
+
+                {movErro && (
+                  <div style={{ background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:12, padding:"12px 14px", fontSize:"0.85rem", color:"#B71C1C", fontWeight:700 }}>{movErro}</div>
+                )}
+
+                <button onClick={salvarMov} disabled={movSalvando}
+                        style={{ height:58, borderRadius:14, border:"none", background: movTipo === "ENTRADA" ? "#15803D" : "#D14300", color:"#fff", fontWeight:900, fontSize:"1rem", cursor: movSalvando ? "default" : "pointer", opacity: movSalvando ? 0.7 : 1, fontFamily:"inherit" }}>
+                  {movSalvando ? "Registrando..." : movTipo === "ENTRADA" ? "Registrar entrada" : "Registrar saída"}
+                </button>
+              </div>
+            )}
+
+            {/* O que já foi lançado no turno */}
+            <div style={{ padding:"0 24px 22px" }}>
+              <div style={{ borderTop:"1px solid #F1F5F9", paddingTop:16 }}>
+                <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+                  <div style={{ flex:1, background:"#ECFDF3", border:"1px solid #ABEFC6", borderRadius:12, padding:"10px 12px" }}>
+                    <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.06em", color:"#15803D", textTransform:"uppercase" }}>Entrou</div>
+                    <div style={{ fontSize:"1.05rem", fontWeight:900, color:"#15803D", marginTop:2 }}>{fmt(movTotais.entradas)}</div>
+                  </div>
+                  <div style={{ flex:1, background:"#FFF1E8", border:"1px solid #FFD3C2", borderRadius:12, padding:"10px 12px" }}>
+                    <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.06em", color:"#D14300", textTransform:"uppercase" }}>Saiu</div>
+                    <div style={{ fontSize:"1.05rem", fontWeight:900, color:"#D14300", marginTop:2 }}>{fmt(movTotais.saidas)}</div>
+                  </div>
+                </div>
+
+                {movs.length === 0 ? (
+                  <div style={{ fontSize:"0.82rem", color:"#94A3B8", textAlign:"center", padding:"14px 0", lineHeight:1.5 }}>
+                    Nenhuma entrada ou saída lançada neste turno ainda.
+                  </div>
+                ) : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {movs.map((m: any) => (
+                      <div key={m.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 11px", borderRadius:10, background:"#F8FAFC" }}>
+                        <div style={{ width:24, height:24, borderRadius:7, background: m.tipo === "ENTRADA" ? "#15803D" : "#D14300", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:"0.9rem", flexShrink:0, lineHeight:1 }}>
+                          {m.tipo === "ENTRADA" ? "+" : "−"}
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontWeight:800, fontSize:"0.88rem", color:"#0F172A" }}>{fmt(m.valor)}</div>
+                          {m.descricao && <div style={{ fontSize:"0.76rem", color:"#64748B", marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.descricao}</div>}
+                        </div>
+                        <div style={{ fontSize:"0.72rem", color:"#94A3B8", flexShrink:0 }}>
+                          {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour:"2-digit", minute:"2-digit", timeZone:"America/Sao_Paulo" })}
+                        </div>
+                        <button onClick={() => apagarMov(m.id)} title="Apagar lançamento"
+                                style={{ background:"none", border:"none", cursor:"pointer", color:"#CBD5E1", padding:2, display:"flex", flexShrink:0 }}>
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showCloseModal && (
         <div style={overlay} onClick={() => !closeWarn && !showPendingWarn && setShowCloseModal(false)}>
           <div style={{ ...card, maxWidth: 560 }} onClick={e => e.stopPropagation()}>
@@ -514,6 +708,28 @@ export default function StoreTopNav({
                 <p style={{ margin:"0 0 1rem", fontSize:"0.82rem", color:"#64748B" }}>
                   Informe o valor <strong>real contado</strong> em cada forma de pagamento. O que importa é o <strong>total</strong>.
                 </p>
+
+                {/* O esperado em dinheiro já considera sangria e reforço. Sem
+                    mostrar isso aqui, o operador conta a gaveta, vê um número
+                    diferente do que imaginava e não tem como saber por quê. */}
+                {(movTotais.entradas > 0 || movTotais.saidas > 0) && (
+                  <div style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left" }}>
+                    <div style={{ fontSize:"0.72rem", fontWeight:800, letterSpacing:"0.06em", color:"#64748B", textTransform:"uppercase", marginBottom:8 }}>Movimentações deste turno</div>
+                    <div style={{ display:"flex", gap:16 }}>
+                      <div style={{ fontSize:"0.85rem" }}>
+                        <span style={{ color:"#64748B" }}>Entrou </span>
+                        <strong style={{ color:"#15803D" }}>{fmt(movTotais.entradas)}</strong>
+                      </div>
+                      <div style={{ fontSize:"0.85rem" }}>
+                        <span style={{ color:"#64748B" }}>Saiu </span>
+                        <strong style={{ color:"#D14300" }}>{fmt(movTotais.saidas)}</strong>
+                      </div>
+                    </div>
+                    <div style={{ fontSize:"0.76rem", color:"#94A3B8", marginTop:7, lineHeight:1.45 }}>
+                      Já está somado no dinheiro que o sistema espera abaixo.
+                    </div>
+                  </div>
+                )}
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.85rem", marginBottom:"1rem" }}>
                   <thead>
                     <tr style={{ background:"#F8FAFC" }}>
@@ -652,7 +868,10 @@ export default function StoreTopNav({
           <StoreSelector />          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             <TogglePill
               label="Caixa" isOn={cashOpen}
-              onClick={() => cashOpen ? setShowCloseModal(true) : setShowOpenModal(true)}
+              // Caixa aberto abre o MENU, não o encerramento direto: era o
+              // único caminho, e por isso não existia lugar nenhum para lançar
+              // uma sangria sem fechar o turno.
+              onClick={() => cashOpen ? setShowCaixaMenu(true) : setShowOpenModal(true)}
             />
             <SiteToggle />
 

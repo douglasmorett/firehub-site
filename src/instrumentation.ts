@@ -9,9 +9,18 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
-  const { garantirColunasDePreco, garantirColunasBrendi } = await import("./lib/garantir-colunas");
+  const { garantirColunasDePreco, garantirColunasBrendi, garantirEstruturaDeLotes, garantirEstruturaDeCaixa } =
+    await import("./lib/garantir-colunas");
   await garantirColunasDePreco();
   // Colunas brendi* no banco ANTES de qualquer rota da integração rodar —
   // elas ainda não estão no schema.prisma, então o boot é quem garante a ordem.
   await garantirColunasBrendi();
+  // Tabela StockLot e as colunas de rastreio ANTES de o schema.prisma que as
+  // declara ser consultado — é a ordem que impede o 500 de "campo no schema,
+  // coluna ausente". Se falhar, `temEstruturaDeLotes()` desliga só o recurso
+  // de validade e o resto do estoque segue inteiro.
+  await garantirEstruturaDeLotes();
+  // Sangria e reforço de caixa. Sem a tabela, o esperado do fechamento ignora
+  // todo dinheiro que entrou ou saiu no meio do turno.
+  await garantirEstruturaDeCaixa();
 }

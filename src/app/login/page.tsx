@@ -57,6 +57,34 @@ export default function FireHubLoginPage() {
           localStorage.removeItem(CHAVE_EMAIL);
         }
       } catch {}
+      // ── VOLTAR PARA ONDE A PESSOA QUERIA IR ──────────────────────────────
+      //
+      // O middleware já grava `callbackUrl` ao mandar para cá (middleware.ts),
+      // mas isto aqui NUNCA lia o parâmetro: o login sempre despejava em
+      // /store. Quem escaneava o QR de uma etiqueta com a sessão expirada —
+      // o caso mais comum no celular de cozinha — entrava e aterrissava na
+      // home, sem nenhuma pista de qual etiqueta tinha lido.
+      //
+      // Só caminho interno é aceito: um `callbackUrl` absoluto vindo da barra
+      // de endereço mandaria o lojista recém-logado para fora do sistema.
+      const bruto = new URLSearchParams(window.location.search).get("callbackUrl") || "";
+      let destino = "";
+      try {
+        // Aceita "/store/estoque" e também a URL absoluta deste mesmo site
+        // (é o formato que o middleware grava, com `request.url`).
+        const u = new URL(bruto, window.location.origin);
+        if (u.origin === window.location.origin && u.pathname.startsWith("/") && !u.pathname.startsWith("//")) {
+          destino = u.pathname + u.search;
+        }
+      } catch {}
+      // Nunca voltar para o próprio login: viraria laço.
+      if (destino.startsWith("/login")) destino = "";
+
+      if (destino) {
+        window.location.href = destino;
+        return;
+      }
+
       // Busca role para redirecionar corretamente
       const meRes = await fetch("/api/me");
       const meData = meRes.ok ? await meRes.json() : null;
