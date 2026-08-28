@@ -71,7 +71,12 @@ export async function POST(req: NextRequest) {
         slug: loja.slug,
         logo: loja.storeLogo,
         banner: loja.storeBanner,
-        isOpen: loja.storeOpen,
+        // O totem abre com a licença, não com o site. `storeOpen` é o
+        // interruptor do delivery e não pode fechar o autoatendimento de
+        // dentro da loja — ver o comentário longo em /api/totem/heartbeat.
+        // Mantido no payload apenas como informação para a tela.
+        isOpen: true,
+        siteAberto: loja.storeOpen,
         config: loja.totemConfig,
         hours: loja.storeHours,
         paymentFees: loja.paymentFees,

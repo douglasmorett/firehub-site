@@ -678,6 +678,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const [loja, setLoja] = useState<Loja | null>(null);
   const [maquininha, setMaquininha] = useState<Maquininha>({ estado: "DESCONHECIDA", rotulo: null });
   const [lojaAberta, setLojaAberta] = useState(true);
+  /* Caixa aberto decide se dá para CONCLUIR o pedido — nunca se a tela abre. */
+  const [caixaAberto, setCaixaAberto] = useState(true);
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -879,8 +881,18 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       });
       setMaquininha(extrairMaquininha(auth.dados));
 
-      // A resposta trazia `isOpen` e a tela jogava fora: o totem seguia
-      // vendendo com a loja fechada e a cozinha recebia pedido de madrugada.
+      // O totem abre com a LICENÇA dele, não com o horário do delivery.
+      //
+      // Este ponto já foi dos dois extremos: primeiro ignorava o estado da loja
+      // e vendia de madrugada; depois passou a seguir `storeOpen` — que é o
+      // interruptor do SITE — e começou a exibir "Estamos fechados" com a loja
+      // cheia, porque o lojista fecha o delivery à noite (ou nunca abre, quando
+      // só trabalha no salão) sem querer desligar o autoatendimento.
+      //
+      // O certo é o meio: quem desliga o totem é a licença/o módulo (tratados
+      // no heartbeat), e quem impede a VENDA é o caixa fechado — sem derrubar a
+      // tela, apenas avisando na hora de concluir. `isOpen` hoje vem sempre
+      // true do servidor; a checagem fica só como rede para versão antiga.
       const aberta = auth.dados?.store?.isOpen !== false;
       lojaAbertaRef.current = aberta;
       setLojaAberta(aberta);
@@ -974,7 +986,13 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         desligar("O módulo Totem foi desligado para esta loja.");
         return;
       }
-      setLojaAberta(r.dados?.storeOpen !== false);
+      // O totem NÃO fecha com o site/delivery: `storeOpen` é o interruptor do
+      // delivery e vinha derrubando o autoatendimento com a loja cheia. Quem
+      // liga e desliga o totem é a licença e o módulo, tratados logo acima.
+      setLojaAberta(true);
+      // O caixa não fecha a tela — só decide se dá para CONCLUIR o pedido.
+      // Saber disso cedo permite avisar antes de o cliente montar tudo.
+      setCaixaAberto(r.dados?.caixaAberto !== false);
     };
 
     const id = setInterval(bater, INTERVALO_HEARTBEAT_MS);
@@ -985,8 +1003,13 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   }, [token, desligar]);
 
   /**
-   * Loja fechada durante a sessão: a venda para na hora. Não interrompemos quem
-   * já está na maquininha ou já viu a senha — esse dinheiro já entrou.
+   * Totem DESLIGADO durante a sessão (licença ou módulo): aí sim a venda para.
+   *
+   * Antes isto também disparava com o site/delivery fechado, e era o defeito
+   * mais visível do módulo: a loja fechava o site à noite — ou nem abria,
+   * quando só trabalha no salão — e o totem, dentro da loja cheia, exibia
+   * "Estamos fechados". Caixa fechado NÃO entra aqui: a tela continua de pé e
+   * o aviso aparece na hora de concluir.
    */
   useEffect(() => {
     const emVenda = tela === "CARDAPIO" || tela === "CARRINHO" || tela === "NOME" || tela === "PAGAMENTO";
@@ -1289,6 +1312,21 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         };
         setPedido(criado);
         return criado;
+      }
+
+      // Caixa fechado: o pedido não pode ser concluído, mas NADA se perde. O
+      // carrinho fica de pé e o cliente é mandado ao balcão — o atendente
+      // fecha por ele, ou abre o caixa e o cliente conclui aqui mesmo. Tem que
+      // vir ANTES do 409 genérico: aquele limpa o carrinho, que é justamente o
+      // que não se pode fazer com quem já escolheu tudo.
+      if (r.status === 409 && r.dados?.error === "caixa_fechado") {
+        setErroDoEnvio(
+          r.dados?.mensagem ||
+            "O caixa da loja está fechado agora. Chame um atendente no balcão — seu pedido continua aqui."
+        );
+        setCaixaAberto(false);
+        setTela("PAGAMENTO");
+        return null;
       }
 
       if (r.status === 409) {
@@ -2234,6 +2272,32 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, flex: 1 }}>Seu pedido</h1>
           {temAlgoAPerder && botaoCancelarPedido}
         </div>
+
+        {/* Caixa fechado: avisa AQUI, antes de o cliente escolher a forma de
+            pagamento e descobrir só no fim. A tela segue funcionando — ele pode
+            montar o pedido e chamar alguém, ou esperar a loja abrir o caixa. */}
+        {!caixaAberto && carrinho.length > 0 && (
+          <div
+            style={{
+              margin: "0 28px",
+              padding: "18px 22px",
+              borderRadius: 16,
+              background: "rgba(245,158,11,0.15)",
+              border: "2px solid rgba(245,158,11,0.5)",
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+            }}
+          >
+            <span style={{ fontSize: 34 }} aria-hidden="true">🙋</span>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "#FDE68A" }}>Chame um atendente para finalizar</div>
+              <div style={{ fontSize: 18, color: "#FDE68A", opacity: 0.9, marginTop: 4 }}>
+                O caixa da loja está fechado agora. Seu pedido continua montado aqui — o atendente finaliza para você.
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ flex: 1, overflowY: "auto", padding: 28 }}>
           {carrinho.length === 0 ? (

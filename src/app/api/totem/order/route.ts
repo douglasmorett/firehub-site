@@ -23,6 +23,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
     }
 
+    // ── CAIXA FECHADO É A ÚNICA TRAVA DE VENDA DO TOTEM ─────────────────────
+    //
+    // O totem não fecha com o horário do delivery (ver /api/totem/heartbeat):
+    // enquanto ele estiver ligado, o cliente monta o pedido normalmente. Mas
+    // pedido pago no balcão sem caixa aberto é dinheiro que entra sem lugar
+    // para ser registrado — o fechamento do dia não fecha e a diferença
+    // aparece como falta no relatório.
+    //
+    // Então recusa-se AQUI, no fim, com uma mensagem que o cliente entende e
+    // que resolve a situação dele: chamar um atendente. A tela não some, o
+    // carrinho não se perde — assim que a loja abre o caixa, ele conclui.
+    const caixaAberto = await prisma.cashSession.findFirst({
+      where: { franchiseeId: licenca.franchiseeId, status: "OPEN" },
+      select: { id: true },
+    });
+
+    if (!caixaAberto) {
+      return NextResponse.json(
+        {
+          error: "caixa_fechado",
+          mensagem:
+            "O caixa da loja está fechado agora, então não dá para concluir o pedido por aqui. " +
+            "Chame um atendente no balcão — ele finaliza para você sem perder o que você escolheu.",
+        },
+        { status: 409 }
+      );
+    }
+
     // O produto precisa ser da loja, estar ativo E estar liberado para o totem.
     // Antes bastava ser da loja: quem montasse a requisição na mão comprava um
     // item que o totem nem oferece — inclusive o espelho do catálogo do iFood.
