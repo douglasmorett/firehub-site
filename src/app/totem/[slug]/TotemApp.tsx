@@ -2076,7 +2076,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
             }}
           >
             {loja?.logoUrl ? (
-              <img src={loja.logoUrl} alt={loja.nome} style={{ width: 110, height: 110, objectFit: "contain", borderRadius: 16 }} />
+              // `flexShrink: 0` pelo mesmo motivo da foto do produto: a barra
+              // lateral é flex column, e sem isso a logo da loja achata quando
+              // a lista de categorias é longa ou a tela é mais baixa.
+              <img src={loja.logoUrl} alt={loja.nome} style={{ width: 110, height: 110, flexShrink: 0, objectFit: "contain", borderRadius: 16 }} />
             ) : (
               <div
                 style={{
@@ -2129,6 +2132,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                     style={{
                       width: 68,
                       height: 68,
+                      // Idem: o botão da categoria é flex column, e com muitas
+                      // categorias o ícone virava uma tira antes do nome sumir.
+                      flexShrink: 0,
                       borderRadius: 16,
                       background: ativa ? "rgba(255,255,255,0.2)" : "#F1F5F9",
                       display: "flex",
@@ -2281,10 +2287,32 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                     color: "inherit",
                   }}
                 >
+                  {/* ── A FOTO VIRAVA UMA TIRA DE 10px ──────────────────────
+                      O cartão é `display:flex; flex-direction:column`, e item
+                      de flex ENCOLHE por padrão (`flex-shrink: 1`). Como a
+                      descrição logo abaixo tem `flex: 1` e cresce, ela comia
+                      todo o espaço e espremia a foto até quase sumir — a altura
+                      de 180px era um pedido, não uma garantia. Em telas mais
+                      baixas ou com nome de produto em duas linhas, sobrava uma
+                      faixa colorida de poucos pixels no topo do cartão.
+
+                      `flexShrink: 0` é o que impede o esmagamento. E o
+                      `aspectRatio` no lugar da altura fixa faz a foto
+                      acompanhar a largura do cartão: como a grade é
+                      `auto-fill minmax(280px, 1fr)`, o cartão muda de largura
+                      conforme a tela, e altura fixa deixava a proporção errada
+                      em monitor grande e em tablet. Agora fica proporcional em
+                      qualquer tela. */}
                   <div
                     style={{
                       width: "100%",
-                      height: 180,
+                      aspectRatio: "4 / 3",
+                      flexShrink: 0,
+                      // Piso e teto para o caso extremo: cartão muito estreito
+                      // não pode deixar a foto ilegível, e cartão muito largo
+                      // não pode empurrar o preço para fora da primeira dobra.
+                      minHeight: 140,
+                      maxHeight: 260,
                       background: "#F8FAFC",
                       borderRadius: 16,
                       marginBottom: 16,
@@ -2295,7 +2323,12 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                     }}
                   >
                     {p.imageUrl ? (
-                      <img src={p.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <img
+                        src={p.imageUrl}
+                        alt=""
+                        loading="lazy"
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                      />
                     ) : (
                       <ChefHat size={60} color="#CBD5E1" />
                     )}
