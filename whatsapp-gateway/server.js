@@ -438,8 +438,34 @@ async function getOrCreateSocket(instanceName) {
   return session;
 }
 
+/**
+ * Health.
+ *
+ * `sessions` contava o tamanho do Map — ou seja, quantos sockets EXISTEM, não
+ * quantos estão conectados. Uma loja presa em "connecting" há 26 tentativas
+ * (sem credencial, gerando QR que ninguém lê) entrava na conta igual a uma loja
+ * saudável. Foi assim que o painel disse "5 sessões" com 3 lojas mudas — e o
+ * robô "parou de responder" sem nenhum alarme tocar em lugar nenhum.
+ *
+ * Agora o número que importa é `conectadas`, e `precisamDeQR` lista nome por
+ * nome quem está fora. `status` só é "ok" quando não há ninguém caído.
+ */
 app.get("/", (req, res) => {
-  return res.json({ status: "ok", sessions: sessions.size, uptime: process.uptime() });
+  const porEstado = { open: [], connecting: [], outros: [] };
+  for (const [nome, s] of sessions.entries()) {
+    if (s.state === "open") porEstado.open.push(nome);
+    else if (s.state === "connecting") porEstado.connecting.push(nome);
+    else porEstado.outros.push(`${nome}:${s.state}`);
+  }
+  const foraDoAr = [...porEstado.connecting, ...porEstado.outros];
+  return res.json({
+    status: foraDoAr.length === 0 ? "ok" : "degradado",
+    conectadas: porEstado.open.length,
+    totalDeInstancias: sessions.size,
+    precisamDeQR: foraDoAr,
+    lojasConectadas: porEstado.open,
+    uptime: process.uptime(),
+  });
 });
 
 app.use((req, res, next) => {
