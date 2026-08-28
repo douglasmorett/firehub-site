@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function IceboxCartPage() {
-  const { items, removeFromCart, total, clearCart, isLoaded } = useCart();
+  const { items, removeFromCart, total, clearCart, isLoaded, precosMudaram, limparAvisoDePreco } = useCart();
   const [loading, setLoading] = useState(false);
   const [boletoUrl, setBoletoUrl] = useState<string | null>(null);
   const [boletoCode, setBoletoCode] = useState<string | null>(null);
@@ -389,6 +389,34 @@ export default function IceboxCartPage() {
             <ArrowLeft size={18} />
           </Link>
           <h1 style={{ fontSize: "1.6rem", fontWeight: 800, color: "#0F172A" }}>Meu Carrinho</h1>
+
+        {/* Preço que mudou desde que o item entrou no carrinho.
+            Antes o carrinho guardava o valor antigo para sempre e o checkout
+            recusava com "recarregue a página" — que não resolvia, porque
+            recarregar relê o mesmo localStorage. O cliente ficava preso. */}
+        {precosMudaram.length > 0 && (
+          <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "14px 16px", marginBottom: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, color: "#B45309", fontSize: "0.92rem", marginBottom: 6 }}>
+                  {precosMudaram.length === 1 ? "Um preço mudou" : `${precosMudaram.length} preços mudaram`} desde que você montou o carrinho
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {precosMudaram.map((m, i) => (
+                    <div key={i} style={{ fontSize: "0.84rem", color: "#92400E" }}>
+                      <strong>{m.nome}</strong>: R$ {m.de.toFixed(2)} → <strong>R$ {m.para.toFixed(2)}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: "0.8rem", color: "#92400E", marginTop: 8, lineHeight: 1.45 }}>
+                  Já atualizamos no seu carrinho. O total abaixo é o valor que vai no boleto.
+                </div>
+              </div>
+              <button onClick={limparAvisoDePreco} aria-label="Fechar aviso"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#B45309", fontSize: "1.2rem", lineHeight: 1, padding: 2 }}>×</button>
+            </div>
+          </div>
+        )}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "1.25rem" }}>
