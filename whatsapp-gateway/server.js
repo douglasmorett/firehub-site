@@ -761,6 +761,62 @@ app.put("/instance/restart/:instanceName", reiniciarInstancia);
 app.post("/instance/restart/:instanceName", reiniciarInstancia);
 
 /**
+ * POST /instance/renovar-chaves/:instanceName
+ *
+ * Publica um lote novo de pre-keys e descarta as sessões dos contatos.
+ *
+ * É a cura de "PreKeyError: Invalid PreKey ID", que aparece quando o aparelho
+ * do contato inicia sessão citando uma pre-key nossa que não existe mais do
+ * nosso lado. Aí NADA decifra, nos dois sentidos: as mensagens dele chegam
+ * ilegíveis para nós (e o gateway fica pedindo retransmissão em laço) e as
+ * nossas chegam como "Aguardando mensagem" para ele.
+ *
+ * Descartar só a sessão não resolve esse caso — o aparelho dele volta a citar
+ * a mesma pre-key inexistente. Publicando um lote novo, o próximo handshake
+ * encontra chave válida.
+ *
+ * Não desconecta e não pede QR: `creds.json` fica intacto.
+ */
+app.post("/instance/renovar-chaves/:instanceName", async (req, res) => {
+  const { instanceName } = req.params;
+  const session = sessions.get(instanceName);
+  if (!session || session.state !== "open" || !session.sock) {
+    return res.status(400).json({ error: "Instância não conectada" });
+  }
+
+  let publicou = false;
+  try {
+    // O nome mudou entre versões do Baileys; tentar as duas formas conhecidas.
+    if (typeof session.sock.uploadPreKeys === "function") {
+      await session.sock.uploadPreKeys();
+      publicou = true;
+    } else if (typeof session.sock.uploadPreKeysToServerIfRequired === "function") {
+      await session.sock.uploadPreKeysToServerIfRequired();
+      publicou = true;
+    }
+  } catch (err) {
+    console.error(`[WhatsApp Gateway] ❌ Falha ao publicar pre-keys de ${instanceName}:`, err?.message || err);
+    return res.status(500).json({ error: err?.message || "Falha ao publicar pre-keys" });
+  }
+
+  // Com chaves novas publicadas, as sessões antigas só atrapalham.
+  let sessoesDescartadas = 0;
+  try {
+    for (const arquivo of fs.readdirSync(pastaDaSessao(instanceName))) {
+      if (!arquivo.startsWith("session-")) continue;
+      fs.rmSync(path.join(pastaDaSessao(instanceName), arquivo), { force: true });
+      sessoesDescartadas++;
+    }
+  } catch (err) {
+    console.warn(`[WhatsApp Gateway] Aviso ao descartar sessões de ${instanceName}:`, err.message);
+  }
+  pedidosDeRetransmissao.clear();
+
+  console.log(`[WhatsApp Gateway] 🔑 ${instanceName}: pre-keys publicadas=${publicou}, ${sessoesDescartadas} sessão(ões) descartada(s)`);
+  return res.json({ success: true, preKeysPublicadas: publicou, sessoesDescartadas });
+});
+
+/**
  * POST /instance/aprender-contatos/:instanceName   { "numeros": ["5522...", ...] }
  *
  * Enche o mapa LID→telefone de uma vez, em vez de esperar o robô falar com cada
