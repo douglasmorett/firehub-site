@@ -5,6 +5,28 @@ import { saveLabelData, updateStoreLabelInfo } from "@/app/actions/labels";
 import { createKitchenItem, updateKitchenItem, deleteKitchenItem, fillNutritionWithAI } from "@/app/actions/kitchenItems";
 import { Printer, Settings, AlertTriangle, Save, Plus, Trash2, Store, Sparkles } from "lucide-react";
 
+/**
+ * Formata a data da etiqueta SEM passar por `Date`.
+ *
+ * `fabDate` e `valDate` vem de <input type="date">, entao sao sempre a string
+ * "YYYY-MM-DD" — uma data de calendario, nao um instante. Mandar isso para
+ * `new Date()` a interpreta como meia-noite UTC, e o `toLocaleDateString`
+ * seguinte reimprime esse instante no fuso de Sao Paulo (UTC-3), voltando um
+ * dia: "2026-08-28" saia impresso como 27/08/2026.
+ *
+ * Isso saiu em TODA etiqueta impressa ate hoje, no Fab e no Val — validade
+ * errada no papel que a vigilancia le. O calculo da validade nunca esteve
+ * errado (na conta, os dois deslocamentos de fuso se cancelam); errado estava
+ * so o que ia para a folha.
+ *
+ * Fatiar a string resolve de vez porque nao existe fuso nenhum no caminho —
+ * e continua certo em qualquer servidor, em qualquer horario de verao.
+ */
+function dataDaEtiqueta(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "--";
+}
+
 export default function LabelsClient({ products, kitchenItems, storeAddress, storeCnpj, storeName, storeLogo }: { products: any[], kitchenItems: any[], storeAddress: string, storeCnpj: string, storeName: string, storeLogo: string }) {
   const [selectedProductId, setSelectedProductId] = useState("");
   const [mode, setMode] = useState<"print" | "config">("print");
@@ -626,8 +648,8 @@ ${printArea.innerHTML}
               <div className="label-footer" style={{ borderTop: "0.5mm solid black", paddingTop: "2mm", marginTop: "auto", flexShrink: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1mm" }}>
                   <div style={{ fontSize: "3.5mm", fontWeight: "bold", lineHeight: "1.5" }}>
-                    <div>Fab: {fabDate ? new Date(fabDate).toLocaleDateString('pt-BR') : '--'}</div>
-                    <div>Val: {valDate ? new Date(valDate).toLocaleDateString('pt-BR') : '--'}</div>
+                    <div>Fab: {dataDaEtiqueta(fabDate)}</div>
+                    <div>Val: {dataDaEtiqueta(valDate)}</div>
                     <div>Lote: {lote || '--'}</div>
                   </div>
                   {showLogo && (

@@ -31,7 +31,24 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "X-XSS-Protection": "1; mode=block",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  // Lista VAZIA em `camera=()` nao restringe terceiros: desliga o recurso ate
+  // para a propria origem. Estavam desligados os dois que o app usa:
+  //   - camera  -> o leitor de codigo de barras do financeiro (BarcodeScanner)
+  //                nunca abriu em celular nenhum, e ninguem reportou porque
+  //                quase nao se usa. Tambem impediria o scanner de QR das
+  //                etiquetas antes mesmo de ele existir.
+  //   - geolocation -> o app do motoboy e a pagina do cliente pedem posicao.
+  // O next.config ja pedia `geolocation=(self)` e este arquivo dizia `()`. Qual
+  // dos dois vale DEPENDE DA ROTA — medido em producao em 28/08/2026:
+  //     /store/*                    -> geolocation=(self)   (vence o next.config)
+  //     /, /api/*, /loja/*, /downloads/* -> geolocation=()  (vence este arquivo)
+  // E o azar estava exatamente aí: os dois unicos consumidores de GPS do sistema
+  // — o app do motoboy e a pagina do cliente — moram em /loja/*, a faixa em que
+  // o `()` valia. `camera=()` estava nas duas metades, sem escapatoria.
+  // Por isso os dois arquivos agora dizem a MESMA coisa: assim nao importa qual
+  // vence em qual rota. Divergir foi o que escondeu o problema.
+  // `microphone` segue vazio de proposito — nada no app grava audio.
+  "Permissions-Policy": "camera=(self), microphone=(), geolocation=(self)",
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 };
 

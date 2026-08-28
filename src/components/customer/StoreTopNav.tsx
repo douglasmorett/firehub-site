@@ -12,6 +12,12 @@ const NAV_ITEMS = [
   { href: "/store/kds", label: "KDS", icon: Monitor },
   { href: "/store/totem", label: "Totem", icon: TabletSmartphone, badge: "EM TESTES" },
   { href: "/store/estoque", label: "Estoque", icon: Package },
+  // Sumiu da barra em 15/08/2026, no commit e7fc4e7 ("Mesas combo logic and
+  // remove topnav buttons"), junto com o "Chatbot IA". O chatbot alguem notou e
+  // recolocou depois (25f7a85); este ficou orfao — a pagina continuou de pe em
+  // /store/etiquetas esse tempo todo, so sem porta de entrada. Fica ao lado do
+  // Estoque de proposito: e de la que sai o QR de lote que da baixa no estoque.
+  { href: "/store/etiquetas", label: "Validade & Etiquetas", icon: Tag },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
