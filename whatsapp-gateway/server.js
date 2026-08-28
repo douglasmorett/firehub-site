@@ -110,9 +110,43 @@ function apagarSessaoDoContato(instanceName, jid) {
 // A cura é endereçar pelo TELEFONE. O Baileys mantém o mapa LID↔telefone das
 // conversas que já viu; a chamada é opcional porque a API mudou de lugar entre
 // versões — se não existir, devolvemos o JID original e nada piora.
+// Mapa LID→telefone que NÓS montamos, porque o Baileys desta versão não expõe
+// nenhum. Ele se enche sozinho: todo envio para um telefone pergunta ao
+// WhatsApp qual é o LID daquele número e guarda o caminho de volta. Como o
+// robô manda confirmação de pedido, rota de motoboy e aviso para o dono, os
+// contatos que importam entram no mapa pelo uso normal.
+const lidParaTelefone = new Map();
+const TETO_DO_MAPA_DE_LID = 5000;
+
+function lembrarLid(lid, telefoneJid) {
+  if (!lid || !telefoneJid) return;
+  lidParaTelefone.set(String(lid), String(telefoneJid));
+  if (lidParaTelefone.size > TETO_DO_MAPA_DE_LID) {
+    lidParaTelefone.delete(lidParaTelefone.keys().next().value);
+  }
+}
+
+/** Pergunta ao WhatsApp o LID de um telefone e guarda o caminho de volta. */
+async function aprenderLidDoTelefone(sock, telefoneJid) {
+  const numero = String(telefoneJid || "").split("@")[0].replace(/\D/g, "");
+  if (!numero) return;
+  try {
+    const [info] = (await sock.onWhatsApp(numero)) || [];
+    if (info?.lid) lembrarLid(info.lid, `${numero}@s.whatsapp.net`);
+  } catch (err) {
+    console.warn(`[WhatsApp Gateway] Aviso ao consultar LID de ${numero}:`, err.message);
+  }
+}
+
 async function resolverParaTelefone(sock, jid) {
   const texto = String(jid || "");
   if (!texto.endsWith("@lid")) return texto;
+
+  const aprendido = lidParaTelefone.get(texto);
+  if (aprendido) {
+    console.log(`[WhatsApp Gateway] 🔗 LID ${texto} → ${aprendido} (mapa próprio)`);
+    return aprendido;
+  }
 
   try {
     const mapa = sock?.signalRepository?.lidMapping;
@@ -660,6 +694,33 @@ app.put("/instance/restart/:instanceName", reiniciarInstancia);
 app.post("/instance/restart/:instanceName", reiniciarInstancia);
 
 /**
+ * GET /instance/quem-e/:instanceName?number=5522999999999
+ *
+ * Pergunta ao WhatsApp o que ele sabe sobre um número — inclusive o LID dele —
+ * e já grava o caminho de volta no mapa. Serve para diagnosticar conversa presa
+ * em "Aguardando mensagem" e para ensinar um contato ao gateway sem esperar que
+ * o robô mande alguma coisa para ele.
+ */
+app.get("/instance/quem-e/:instanceName", async (req, res) => {
+  const numero = String(req.query.number || "").replace(/\D/g, "");
+  if (!numero) return res.status(400).json({ error: "Informe ?number=55DDNUMERO" });
+
+  const session = sessions.get(req.params.instanceName);
+  if (!session || session.state !== "open" || !session.sock) {
+    return res.status(400).json({ error: "Instância não conectada" });
+  }
+
+  try {
+    const resultado = (await session.sock.onWhatsApp(numero)) || [];
+    const info = resultado[0] || null;
+    if (info?.lid) lembrarLid(info.lid, `${numero}@s.whatsapp.net`);
+    return res.json({ numero, info, mapaTem: lidParaTelefone.size });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || "Falha na consulta" });
+  }
+});
+
+/**
  * POST /instance/limpar-sessao-do-contato/:instanceName  { "number": "5522..." }
  *
  * Cura manual do "Aguardando mensagem" numa conversa específica. Descarta só a
@@ -805,6 +866,9 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
   // Endereço @lid não decifra no aparelho do destinatário — sempre tentar o
   // telefone antes de enviar. Ver resolverParaTelefone no topo do arquivo.
   const jid = await resolverParaTelefone(session.sock, jidBruto);
+  // Enviar para um telefone é a oportunidade de aprender o LID dele. Não trava
+  // o envio: se a consulta falhar, a mensagem sai do mesmo jeito.
+  if (jid.endsWith("@s.whatsapp.net")) aprenderLidDoTelefone(session.sock, jid).catch(() => {});
 
   try {
     const enviada = await session.sock.sendMessage(jid, { text });
