@@ -14,6 +14,20 @@ const BILLING_TRIGGER_STATUSES = ["ENTREGUE"];
 const ALL_TARGET_STATUSES = ["NOVO", "CONFIRMADO", "ACEITO", "PREPARANDO", "EM_PREPARO", "EM_ANDAMENTO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"];
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  // AGUARDANDO_PAGAMENTO faltava neste mapa, e a falta era fatal: sem entrada,
+  // `allowedNext` virava [] e NENHUMA transição saía dele para quem não é
+  // ADMIN. É o status em que todo pedido de totem NASCE.
+  //
+  // Na prática isso quebrava o fluxo principal do autoatendimento: o cliente
+  // escolhe "pagar no balcão", leva a senha, paga — e o atendente não
+  // conseguia aceitar o pedido ("Transição inválida: AGUARDANDO_PAGAMENTO →
+  // ACEITO"). A cozinha nunca via o pedido. E o pedido abandonado por quem
+  // desistiu também não podia ser cancelado: ficava presa na lista da loja
+  // para sempre.
+  //
+  // Aceitar daqui é o que dispara `confirmOrderPayment` mais abaixo — que
+  // carimba o pagamento, gera a senha e manda para o KDS.
+  AGUARDANDO_PAGAMENTO: ALL_TARGET_STATUSES,
   CRIANDO_IA:    ALL_TARGET_STATUSES,
   NOVO:          ALL_TARGET_STATUSES,
   CONFIRMADO:    ALL_TARGET_STATUSES,
