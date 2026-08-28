@@ -106,6 +106,9 @@ export async function GET() {
 
   return NextResponse.json({
     conectado: true,
+    // Qual conta está valendo hoje. A tela usa para mostrar o seletor já na
+    // conta certa e para não oferecer "trocar" para a que já está em uso.
+    adAccountId: loja.metaAdAccountId,
     pronto: !precisaRecarregar,
     proximoPasso: precisaRecarregar ? "sem_saldo" : undefined,
     mensagem: precisaRecarregar
