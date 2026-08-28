@@ -694,6 +694,48 @@ app.put("/instance/restart/:instanceName", reiniciarInstancia);
 app.post("/instance/restart/:instanceName", reiniciarInstancia);
 
 /**
+ * POST /instance/aprender-contatos/:instanceName   { "numeros": ["5522...", ...] }
+ *
+ * Enche o mapa LID→telefone de uma vez, em vez de esperar o robô falar com cada
+ * contato. Sem isto, a PRIMEIRA resposta a um cliente que chega por LID sai para
+ * o endereço errado e não decifra — e primeira mensagem é justamente quando o
+ * cliente está decidindo se pede ou não.
+ *
+ * O `onWhatsApp` do Baileys aceita vários números por chamada, então a lista
+ * inteira custa poucas consultas. Lotes de 50 para não montar stanza gigante.
+ */
+app.post("/instance/aprender-contatos/:instanceName", async (req, res) => {
+  const session = sessions.get(req.params.instanceName);
+  if (!session || session.state !== "open" || !session.sock) {
+    return res.status(400).json({ error: "Instância não conectada" });
+  }
+
+  const numeros = Array.isArray(req.body?.numeros) ? req.body.numeros : [];
+  const limpos = [...new Set(
+    numeros.map((n) => String(n || "").replace(/\D/g, "")).filter((n) => n.length >= 12 && n.length <= 13),
+  )];
+  if (limpos.length === 0) return res.json({ aprendidos: 0, consultados: 0, mapaTem: lidParaTelefone.size });
+
+  let aprendidos = 0;
+  for (let i = 0; i < limpos.length; i += 50) {
+    const lote = limpos.slice(i, i + 50);
+    try {
+      const resultado = (await session.sock.onWhatsApp(...lote)) || [];
+      for (const info of resultado) {
+        if (!info?.lid || !info?.jid) continue;
+        lembrarLid(info.lid, info.jid);
+        aprendidos++;
+      }
+    } catch (err) {
+      console.warn(`[WhatsApp Gateway] Aviso ao aprender lote de contatos:`, err.message);
+    }
+  }
+
+  console.log(`[WhatsApp Gateway] 🔗 ${req.params.instanceName}: ${aprendidos} LID(s) aprendidos de ${limpos.length} número(s)`);
+  return res.json({ aprendidos, consultados: limpos.length, mapaTem: lidParaTelefone.size });
+});
+
+/**
  * GET /instance/quem-e/:instanceName?number=5522999999999
  *
  * Pergunta ao WhatsApp o que ele sabe sobre um número — inclusive o LID dele —

@@ -43,6 +43,15 @@ const jobs = [
     intervalMs: 5 * 60_000, // 5 minutos — monitora saúde + alerta WhatsApp
   },
   {
+    // Ensina ao gateway o LID de cada cliente. Sem isso, a PRIMEIRA resposta a
+    // quem chega pelo endereço novo do WhatsApp (@lid) não decifra no aparelho.
+    // De hora em hora porque o mapa do gateway vive em memória e zera no
+    // reinício dele.
+    name: 'whatsapp-aprender-contatos',
+    path: '/api/cron/whatsapp-aprender-contatos',
+    intervalMs: 60 * 60_000, // 1 hora
+  },
+  {
     // De hora em hora só para pegar cedo o insumo que acabou de cair no mínimo.
     // Quem segura a repetição é a própria rota: um aviso por insumo a cada 24h
     // e nada fora do horário comercial da loja.

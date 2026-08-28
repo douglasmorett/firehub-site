@@ -200,6 +200,40 @@ export default function ChatbotHubClient() {
   const [qrTimer, setQrTimer] = useState<number>(60);
   const [isQrExpired, setIsQrExpired] = useState<boolean>(false);
 
+  // ── Conectar SEM câmera ───────────────────────────────────────────────────
+  // O QR pressupõe uma cena que muitas vezes não acontece: alguém na frente do
+  // computador COM o telefone da loja na mão, dentro dos 60s de validade. Com o
+  // código, dá para ditar por ligação para quem está na loja.
+  const [codigoPareamento, setCodigoPareamento] = useState<string>("");
+  const [numeroParaCodigo, setNumeroParaCodigo] = useState<string>("");
+  const [gerandoCodigo, setGerandoCodigo] = useState(false);
+
+  const handleGerarCodigo = async () => {
+    setGerandoCodigo(true);
+    setCodigoPareamento("");
+    try {
+      const r = await fetch("/api/chatbot/codigo-pareamento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ numero: numeroParaCodigo }),
+      });
+      const d = await r.json();
+      if (d?.jaConectada) {
+        showToast("✅ Este WhatsApp já está conectado!", "#16A34A");
+        return;
+      }
+      if (!r.ok || !d?.pairingCode) {
+        showToast(d?.error || "Não consegui gerar o código agora.", "#EF4444");
+        return;
+      }
+      setCodigoPareamento(String(d.pairingCode));
+    } catch {
+      showToast("Falha de conexão ao gerar o código.", "#EF4444");
+    } finally {
+      setGerandoCodigo(false);
+    }
+  };
+
   // Timer de expiração do QR Code (60s)
   useEffect(() => {
     if (!qrCodeUrl || isQrExpired || config.connected) return;
@@ -794,6 +828,80 @@ export default function ChatbotHubClient() {
                     2. Abra o <strong>WhatsApp</strong> no seu celular. <br />
                     3. Vá em <strong>Menu / Configurações ➔ Aparelhos conectados</strong>. <br />
                     4. Toque em <strong>Conectar um aparelho</strong> e aponte para a imagem antes do tempo zerar.
+                  </div>
+
+                  {/* ── CAMINHO SEM CÂMERA ───────────────────────────────── */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "18px 0 14px" }}>
+                    <div style={{ flex: 1, height: 1, background: "#E2E8F0" }} />
+                    <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#94A3B8", letterSpacing: "0.06em" }}>OU</span>
+                    <div style={{ flex: 1, height: 1, background: "#E2E8F0" }} />
+                  </div>
+
+                  <div style={{ background: "#fff", padding: "14px", borderRadius: "10px", border: "1px solid #E2E8F0", textAlign: "left" }}>
+                    <div style={{ fontWeight: 800, color: "#0F172A", fontSize: "0.88rem", marginBottom: "2px" }}>
+                      📱 Conectar digitando um código
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748B", lineHeight: 1.5, marginBottom: "12px" }}>
+                      Não precisa de câmera nem de estar na frente desta tela. Serve para quem está
+                      longe da loja — dá para ditar o código por telefone para quem está lá.
+                    </div>
+
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <input
+                        value={numeroParaCodigo}
+                        onChange={(e) => setNumeroParaCodigo(e.target.value)}
+                        placeholder="WhatsApp da loja com DDD (ex: 22 99999-9999)"
+                        inputMode="tel"
+                        style={{
+                          flex: 1, minWidth: 200, padding: "10px 12px", borderRadius: "8px",
+                          border: "1px solid #CBD5E1", fontSize: "0.85rem", color: "#0F172A",
+                        }}
+                      />
+                      <button
+                        onClick={handleGerarCodigo}
+                        disabled={gerandoCodigo}
+                        style={{
+                          padding: "10px 18px", borderRadius: "8px", border: "none",
+                          background: gerandoCodigo ? "#94A3B8" : "#0F172A", color: "#fff",
+                          fontWeight: 800, fontSize: "0.85rem",
+                          cursor: gerandoCodigo ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+                        }}
+                      >
+                        {gerandoCodigo ? "Gerando..." : "Gerar código"}
+                      </button>
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: "6px" }}>
+                      Precisa ser o mesmo número que será conectado. Em branco, usamos o telefone
+                      cadastrado da loja.
+                    </div>
+
+                    {codigoPareamento && (
+                      <div style={{ marginTop: "14px", background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: "10px", padding: "14px" }}>
+                        <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#166534", marginBottom: "6px" }}>
+                          SEU CÓDIGO
+                        </div>
+                        <div
+                          style={{
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                            fontSize: "1.7rem", fontWeight: 900, letterSpacing: "0.18em",
+                            color: "#14532D", marginBottom: "10px",
+                          }}
+                        >
+                          {codigoPareamento}
+                        </div>
+                        <div style={{ fontSize: "0.8rem", color: "#166534", lineHeight: 1.7 }}>
+                          No <strong>celular da loja</strong>:<br />
+                          1. Abra o <strong>WhatsApp</strong>.<br />
+                          2. Vá em <strong>Configurações ➔ Aparelhos conectados</strong>.<br />
+                          3. Toque em <strong>Conectar um aparelho</strong> e depois em{" "}
+                          <strong>Conectar com número de telefone</strong>.<br />
+                          4. Digite o código acima.
+                        </div>
+                        <div style={{ fontSize: "0.72rem", color: "#15803D", marginTop: "8px" }}>
+                          O código vale por poucos minutos. Se expirar, gere outro.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
