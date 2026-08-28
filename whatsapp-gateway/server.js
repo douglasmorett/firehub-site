@@ -21,6 +21,34 @@ const replyCooldowns = new Map();
 const sessionLocks = new Map();
 const reconnectCounters = new Map();
 
+// ── A CURA DO "AGUARDANDO MENSAGEM" ─────────────────────────────────────────
+//
+// Quando o aparelho do destinatário não consegue decifrar uma mensagem (sessão
+// de criptografia dessincronizada), o WhatsApp mostra "Aguardando mensagem.
+// Essa ação pode levar alguns instantes." e pede a RETRANSMISSÃO ao remetente.
+// O Baileys atende esse pedido chamando `getMessage(key)` para reenviar o
+// conteúdo com uma sessão nova. O socket daqui respondia `undefined` — ou
+// seja: a retransmissão NUNCA acontecia e a mensagem ficava presa PARA SEMPRE.
+// Era exatamente o que o dono e os motoboys viam nas conversas em que o robô
+// só envia (aviso de pedido, rota): sessão apodrecia e nada mais chegava.
+//
+// Este cache guarda as últimas mensagens ENVIADAS para o retry funcionar.
+// Pequeno de propósito (o processo vive brigando com o teto de memória): o
+// pedido de retransmissão chega segundos após o envio, não horas.
+const mensagensEnviadas = new Map();
+const TETO_DO_CACHE_DE_ENVIO = 500;
+
+function lembrarEnviada(resultado) {
+  const id = resultado?.key?.id;
+  if (!id || !resultado?.message) return;
+  mensagensEnviadas.set(id, resultado.message);
+  if (mensagensEnviadas.size > TETO_DO_CACHE_DE_ENVIO) {
+    // Map preserva ordem de inserção: o primeiro é o mais antigo.
+    const maisAntigo = mensagensEnviadas.keys().next().value;
+    mensagensEnviadas.delete(maisAntigo);
+  }
+}
+
 // Limpar sessões corrompidas ao iniciar
 const CLEAN_ON_BOOT = process.env.CLEAN_SESSIONS === "true";
 if (CLEAN_ON_BOOT) {
@@ -141,7 +169,10 @@ async function getOrCreateSocket(instanceName) {
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
     markOnlineOnConnect: false,
-    getMessage: async () => undefined,
+    // NUNCA voltar para `async () => undefined`: sem isto, o pedido de
+    // retransmissão do WhatsApp fica sem resposta e o destinatário vê
+    // "Aguardando mensagem" para sempre. Ver o cache no topo do arquivo.
+    getMessage: async (key) => mensagensEnviadas.get(key?.id) || undefined,
     cachedGroupMetadata: async () => undefined,
     fireInitQueries: false,
   });
@@ -390,6 +421,40 @@ app.post("/instance/create", async (req, res) => {
   return res.json({ instance: { instanceName, status: "created" } });
 });
 
+// 3.4 Restart: derruba e recria a conexão SEM apagar a autenticação.
+//
+// É o que o botão "Reparar conexão do WhatsApp" do FireHub chama quando as
+// mensagens ficam em "Aguardando mensagem": força o Baileys a renegociar as
+// sessões de criptografia, mantendo o pareamento — NÃO pede QR de novo.
+// Aceita PUT e POST porque a Evolution API oficial mudou o verbo entre
+// versões e o FireHub tenta os dois.
+async function reiniciarInstancia(req, res) {
+  const { instanceName } = req.params;
+  const session = sessions.get(instanceName);
+  const authFolder = path.join(__dirname, "data", "sessions", instanceName);
+
+  if (!session && !fs.existsSync(authFolder)) {
+    return res.status(404).json({ error: "Instance not found" });
+  }
+
+  if (session && session.sock) {
+    try { session.sock.end(); } catch (e) {}
+  }
+  sessions.delete(instanceName);
+  sessionLocks.delete(instanceName);
+  reconnectCounters.delete(instanceName);
+
+  console.log(`[WhatsApp Gateway] 🔄 Restart solicitado para ${instanceName} (autenticação preservada)`);
+  try {
+    await getOrCreateSocket(instanceName);
+    return res.json({ success: true, message: `Instância ${instanceName} reconectando` });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Falha ao reconectar" });
+  }
+}
+app.put("/instance/restart/:instanceName", reiniciarInstancia);
+app.post("/instance/restart/:instanceName", reiniciarInstancia);
+
 // 3.5 Reset Instância (limpa sessão corrompida e força novo QR Code)
 app.delete("/instance/reset/:instanceName", async (req, res) => {
   const { instanceName } = req.params;
@@ -437,8 +502,14 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
 
   let session = sessions.get(instanceName);
   if (!session || session.state !== "open") {
-    for (const s of sessions.values()) {
+    for (const [outroNome, s] of sessions.entries()) {
       if (s.state === "open" && s.sock) {
+        // ⚠️ VISIBILIDADE: este fallback envia pelo número de OUTRA loja.
+        // O cliente recebe a mensagem de um restaurante que não é o dele.
+        // Mantido por ora para não derrubar envio de loja com nome de
+        // instância dessincronizado — mas cada uso fica GRITADO no log
+        // para ser investigado.
+        console.error(`[WhatsApp Gateway] ⚠️ FALLBACK DE INSTÂNCIA: "${instanceName}" não está conectada; enviando pela sessão "${outroNome}". O destinatário recebe de OUTRO número!`);
         session = s;
         break;
       }
@@ -456,7 +527,8 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
     : `${cleanNum.replace(/\D/g, "")}@s.whatsapp.net`;
 
   try {
-    await session.sock.sendMessage(jid, { text });
+    const enviada = await session.sock.sendMessage(jid, { text });
+    lembrarEnviada(enviada);
     console.log(`[WhatsApp Gateway] 🚀 Mensagem enviada com sucesso para ${jid}: "${text.slice(0, 50)}..."`);
     return res.json({ status: "SENT", to: jid });
   } catch (err) {
@@ -472,8 +544,9 @@ app.post("/message/sendMedia/:instanceName", async (req, res) => {
 
   let session = sessions.get(instanceName);
   if (!session || session.state !== "open") {
-    for (const s of sessions.values()) {
+    for (const [outroNome, s] of sessions.entries()) {
       if (s.state === "open" && s.sock) {
+        console.error(`[WhatsApp Gateway] ⚠️ FALLBACK DE INSTÂNCIA (mídia): "${instanceName}" não está conectada; enviando pela sessão "${outroNome}". O destinatário recebe de OUTRO número!`);
         session = s;
         break;
       }
@@ -496,12 +569,24 @@ app.post("/message/sendMedia/:instanceName", async (req, res) => {
     return res.status(400).json({ error: "URL da mídia é obrigatória" });
   }
 
+  // PDF enviado como "image" chega quebrado no aparelho: documento vai como
+  // documento, com nome de arquivo — é o que o FireHub manda em mediatype.
+  const ehDocumento = (mediaMessage?.mediatype || "").toLowerCase() === "document";
+
   try {
-    await session.sock.sendMessage(jid, {
-      image: { url: mediaUrl },
-      caption: caption || undefined,
-    });
-    console.log(`[WhatsApp Gateway] 📸 Mídia enviada com sucesso para ${jid}: "${mediaUrl}"`);
+    const enviada = await session.sock.sendMessage(jid, ehDocumento
+      ? {
+          document: { url: mediaUrl },
+          mimetype: /\.pdf(\?|$)/i.test(mediaUrl) ? "application/pdf" : undefined,
+          fileName: mediaMessage?.fileName || "arquivo.pdf",
+          caption: caption || undefined,
+        }
+      : {
+          image: { url: mediaUrl },
+          caption: caption || undefined,
+        });
+    lembrarEnviada(enviada);
+    console.log(`[WhatsApp Gateway] 📸 Mídia (${ehDocumento ? "documento" : "imagem"}) enviada com sucesso para ${jid}: "${mediaUrl}"`);
     return res.json({ status: "SENT", to: jid });
   } catch (err) {
     console.error(`[WhatsApp Gateway] ❌ Erro ao enviar mídia para ${jid}:`, err);
