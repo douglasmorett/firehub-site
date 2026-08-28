@@ -947,10 +947,39 @@ export async function lerCarteiraDaConta(
   ].join(",");
 
   try {
-    const r = await metaFetch(
+    let r = await metaFetch(
       `${META_BASE}/${adAccountId}?fields=${campos}&access_token=${encodeURIComponent(accessToken)}`
     );
-    if (!r.ok) return null;
+
+    // ── UM CAMPO RECUSADO DERRUBA A LEITURA INTEIRA ──────────────────────────
+    //
+    // A Graph API não devolve "os campos que deu": um único nome que a versão
+    // não conheça (ou que a conta não exponha) faz a requisição toda voltar
+    // 400. Como o retorno era `null` mudo, o efeito prático era o pior
+    // possível: a tela dizia "Tudo certo" com a conta zerada, porque o aviso de
+    // saldo só existe quando a carteira é lida. Medido em produção em
+    // 28/08/2026 — carteira nula numa conta ativa e saudável.
+    //
+    // Então: se a consulta cheia falhar, tenta de novo com o conjunto mínimo
+    // que toda conta de anúncios expõe. Meia carteira é muito melhor do que
+    // carteira nenhuma, e o motivo da primeira falha vai para o log em vez de
+    // sumir.
+    if (!r.ok) {
+      console.warn(
+        `[Meta Ads] carteira de ${adAccountId}: consulta completa recusada ` +
+          `(${JSON.stringify(r.json?.error ?? r.json ?? {}).slice(0, 200)}). Tentando campos básicos.`
+      );
+      r = await metaFetch(
+        `${META_BASE}/${adAccountId}?fields=currency,balance,amount_spent,funding_source,funding_source_details&access_token=${encodeURIComponent(accessToken)}`
+      );
+      if (!r.ok) {
+        console.error(
+          `[Meta Ads] carteira de ${adAccountId} indisponível: ` +
+            `${JSON.stringify(r.json?.error ?? r.json ?? {}).slice(0, 200)}`
+        );
+        return null;
+      }
+    }
     const c = r.json;
 
     const emReais = (v: any) => {
@@ -981,7 +1010,10 @@ export async function lerCarteiraDaConta(
       cobrancaAutomatica: !ehPrePago && Boolean(c.funding_source || detalhes.id),
       formaDePagamento: detalhes.display_string ?? null,
     };
-  } catch {
+  } catch (e: any) {
+    // Silêncio aqui é o que fazia a tela prometer "Tudo certo" para uma conta
+    // que não consegue gastar: o aviso de saldo depende desta leitura.
+    console.error(`[Meta Ads] falha ao ler a carteira de ${adAccountId}: ${e?.message}`);
     return null;
   }
 }
