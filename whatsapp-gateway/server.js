@@ -118,12 +118,63 @@ function apagarSessaoDoContato(instanceName, jid) {
 const lidParaTelefone = new Map();
 const TETO_DO_MAPA_DE_LID = 5000;
 
+// O mapa MORA EM DISCO, no mesmo volume das sessões.
+//
+// Ele já existiu só em memória e a consequência apareceu na hora: um deploy do
+// gateway zerava tudo, e as conversas voltavam a receber "Aguardando mensagem"
+// como se nada tivesse sido consertado. Reinício de processo não pode desfazer
+// aprendizado.
+const ARQUIVO_DO_MAPA = path.join(__dirname, "data", "lid-map.json");
+let mapaSujo = false;
+
+function carregarMapaDeLid() {
+  try {
+    const cru = JSON.parse(fs.readFileSync(ARQUIVO_DO_MAPA, "utf8"));
+    for (const [lid, tel] of Object.entries(cru || {})) lidParaTelefone.set(lid, tel);
+    console.log(`[WhatsApp Gateway] 🔗 Mapa de LID carregado do disco: ${lidParaTelefone.size} contato(s)`);
+  } catch {
+    // Primeira execução, ou arquivo ainda não existe. Segue com mapa vazio.
+  }
+}
+
+function salvarMapaDeLid() {
+  if (!mapaSujo) return;
+  mapaSujo = false;
+  try {
+    fs.mkdirSync(path.dirname(ARQUIVO_DO_MAPA), { recursive: true });
+    fs.writeFileSync(ARQUIVO_DO_MAPA, JSON.stringify(Object.fromEntries(lidParaTelefone)));
+  } catch (err) {
+    console.warn("[WhatsApp Gateway] Aviso ao gravar mapa de LID:", err.message);
+  }
+}
+
 function lembrarLid(lid, telefoneJid) {
   if (!lid || !telefoneJid) return;
-  lidParaTelefone.set(String(lid), String(telefoneJid));
+  const chave = String(lid);
+  const valor = String(telefoneJid);
+  if (lidParaTelefone.get(chave) === valor) return;
+  lidParaTelefone.set(chave, valor);
   if (lidParaTelefone.size > TETO_DO_MAPA_DE_LID) {
     lidParaTelefone.delete(lidParaTelefone.keys().next().value);
   }
+  mapaSujo = true;
+}
+
+carregarMapaDeLid();
+// Gravação agrupada: o mapa muda a cada mensagem e escrever a cada uma seria
+// desperdício. Nada se perde por 10s de atraso, e o encerramento também salva.
+setInterval(salvarMapaDeLid, 10_000).unref?.();
+for (const sinal of ["SIGTERM", "SIGINT"]) {
+  process.on(sinal, () => { salvarMapaDeLid(); process.exit(0); });
+}
+
+/** Aceita "5522...@s.whatsapp.net" ou só dígitos; devolve o JID de telefone ou "". */
+function normalizarParaJidDeTelefone(bruto) {
+  const texto = String(bruto || "");
+  if (!texto || texto.includes("@lid")) return "";
+  const digitos = texto.split("@")[0].split(":")[0].replace(/\D/g, "");
+  if (digitos.length < 10 || digitos.length > 15) return "";
+  return `${digitos}@s.whatsapp.net`;
 }
 
 /** Pergunta ao WhatsApp o LID de um telefone e guarda o caminho de volta. */
@@ -492,11 +543,27 @@ async function getOrCreateSocket(instanceName) {
       // sair para o telefone em vez do @lid, que é o que não decifra.
       let senderAlt = "";
       if (String(remoteJid).endsWith("@lid")) {
-        const telefoneReal = await resolverParaTelefone(sock, remoteJid);
-        if (telefoneReal !== remoteJid) senderAlt = telefoneReal;
-        // O que o Baileys entregou nesta mensagem, para não ficar no escuro
-        // caso o mapa não tenha o contato.
-        console.log(`[WhatsApp Gateway] 🪪 LID recebido. key=${JSON.stringify(msg.key)} senderAlt="${senderAlt}"`);
+        // O TELEFONE VEM JUNTO DA MENSAGEM. O Baileys põe o número real em
+        // `senderPn` na própria `key` de toda mensagem recebida por LID — é a
+        // fonte mais confiável que existe, melhor que qualquer mapa nosso,
+        // porque chega junto do dado e não depende de consulta nem de memória.
+        const doProprioWhatsApp = normalizarParaJidDeTelefone(
+          msg.key?.senderPn || msg.key?.participantPn || msg.key?.remoteJidAlt || msg.participantPn,
+        );
+
+        if (doProprioWhatsApp) {
+          // Aprender aqui é o que faz a RESPOSTA sair para o telefone.
+          lembrarLid(remoteJid, doProprioWhatsApp);
+          senderAlt = doProprioWhatsApp;
+        } else {
+          const telefoneReal = await resolverParaTelefone(sock, remoteJid);
+          if (telefoneReal !== remoteJid) senderAlt = telefoneReal;
+          // Sem telefone em lugar nenhum: registrar a key crua para não ficarmos
+          // no escuro sobre o que a biblioteca entrega nesse caso.
+          if (!senderAlt) {
+            console.warn(`[WhatsApp Gateway] 🪪 LID sem telefone em nenhuma fonte. key=${JSON.stringify(msg.key)}`);
+          }
+        }
       }
 
       try {
