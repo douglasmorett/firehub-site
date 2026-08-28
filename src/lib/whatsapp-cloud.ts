@@ -5,7 +5,12 @@
  * Usa a Graph API da Meta para enviar/receber mensagens.
  */
 
-const GRAPH_API_VERSION = "v20.0";
+// v20.0 não consta mais entre as versões ativas da Graph API (hoje v21 a v26).
+// Nenhuma loja usa este provider — conferido no banco em 28/08/2026: das 6 com
+// chatbot configurado, 2 estão no gateway próprio e nenhuma na Cloud API — então
+// ninguém sentiu. Fica na mesma versão do resto do que fala com a Meta para a
+// porta não estar podre no dia em que alguém ligar.
+const GRAPH_API_VERSION = "v25.0";
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 // ── Enviar mensagem de texto ───────────────────────────────────────

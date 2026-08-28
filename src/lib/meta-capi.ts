@@ -33,7 +33,13 @@ import { createHash } from "crypto";
  * "5522999998888" geram hashes diferentes e nenhum dos dois casa.
  */
 
-const VERSAO_API = "v21.0";
+// Mesma versão do resto do módulo de tráfego (lib/meta-ads.ts). Estava em
+// v21.0: viva, mas com prazo até 21/01/2027 — um ano e meio ANTES da v25.0
+// (29/07/2028), que é o que o restante usa. Divergir de novo era repetir o que
+// já custou o módulo inteiro apontando para uma versão morta: ninguém percebe
+// até a chamada parar de responder, e aqui o que para de responder é o sinal
+// de venda que alimenta o algoritmo — silenciosamente, sem erro na tela.
+const VERSAO_API = "v25.0";
 
 /** SHA-256 em minúsculas, como o Meta especifica. Vazio vira undefined. */
 function hash(valor: string | null | undefined): string | undefined {

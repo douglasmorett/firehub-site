@@ -7,7 +7,11 @@
  * VARIÁVEIS DE AMBIENTE necessárias:
  *   META_APP_ID        = ID do App no Meta for Developers
  *   META_APP_SECRET    = Secret do App
- *   META_SYSTEM_TOKEN  = Token do sistema (Business Manager)
+ *
+ * Só essas duas. O cabeçalho pedia também META_SYSTEM_TOKEN, que NENHUMA linha
+ * do projeto lê — o token de cada loja vem do OAuth e mora em
+ * `User.metaFbAccessToken`. Variável fantasma em lista de requisito custa caro
+ * no dia do problema: manda procurar a causa onde ela não está.
  */
 
 // ── VERSÃO DA API: são DOIS relógios, não um ────────────────────────────────
