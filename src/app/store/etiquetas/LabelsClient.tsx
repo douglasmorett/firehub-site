@@ -49,6 +49,26 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
 
   // Print State
   const [lote, setLote] = useState("");
+
+  // ── QR CODE DE RASTREIO ───────────────────────────────────────────────────
+  //
+  // O QR carrega https://<host>/e/<CODIGO>, e o código é gravado no banco ANTES
+  // de o papel sair (action criarLotesDaImpressao). Etiqueta impressa com código
+  // que o servidor nunca viu abriria "não encontrada" no celular — o pior
+  // resultado possível, porque o funcionário confia no papel.
+  //
+  // O QR precisa ser <img src="data:..."> e não <canvas>: o handlePrint copia
+  // `printArea.innerHTML` para um iframe, e o bitmap de um canvas não sobrevive
+  // a essa cópia — sairia um quadrado branco na etiqueta.
+  const [usarQr, setUsarQr] = useState(true);
+  const [quantidade, setQuantidade] = useState(1);
+  const [codigoUnico, setCodigoUnico] = useState(true);
+  const [etiquetas, setEtiquetas] = useState<{ code: string; qr: string }[]>([]);
+  const [preparando, setPreparando] = useState(false);
+  const [erroLote, setErroLote] = useState("");
+  // Só imprime DEPOIS que o React pintou as etiquetas com o QR na tela —
+  // imprimir no mesmo tick copiaria o innerHTML sem as imagens.
+  const [imprimirQuandoPronto, setImprimirQuandoPronto] = useState(false);
   const [fabDate, setFabDate] = useState("");
   const [valDate, setValDate] = useState("");
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
@@ -155,6 +175,86 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
       setSaving(false);
     }
   };
+
+  /**
+   * Grava o(s) lote(s), gera o(s) QR e só então manda imprimir.
+   *
+   * Se qualquer coisa aqui falhar, a etiqueta AINDA IMPRIME — sem QR. Melhor
+   * etiqueta sem rastreio do que loja sem conseguir etiquetar a comida.
+   */
+  const prepararEImprimir = async () => {
+    setErroLote("");
+
+    if (!usarQr) {
+      setEtiquetas(Array.from({ length: quantidade }, () => ({ code: "", qr: "" })));
+      setImprimirQuandoPronto(true);
+      return;
+    }
+
+    setPreparando(true);
+    try {
+      const { criarLotesDaImpressao } = await import("@/app/actions/lotes");
+      const QRCode = (await import("qrcode")).default;
+
+      const r = await criarLotesDaImpressao({
+        kitchenItemId: selectedProduct?.isKitchenItem ? selectedProductId : null,
+        productName: selectedProduct?.name || "",
+        loteRef: lote || null,
+        fabricadoEm: fabDate || null,
+        validoAte: valDate || null,
+        weightStr: config.weightStr || null,
+        etiquetas: quantidade,
+        codigoUnicoParaTodas: codigoUnico,
+      });
+
+      if (!r.ok || r.lotes.length === 0) {
+        // Não trava a impressão: segue sem QR e avisa por quê.
+        setErroLote("Não consegui gerar o QR agora — a etiqueta vai sair sem ele.");
+        setEtiquetas(Array.from({ length: quantidade }, () => ({ code: "", qr: "" })));
+        setImprimirQuandoPronto(true);
+        return;
+      }
+
+      const host = window.location.hostname;
+      const geradas: { code: string; qr: string }[] = [];
+      for (let i = 0; i < quantidade; i++) {
+        // Um código para a fornada inteira, ou um por etiqueta — a escolha da
+        // tela. O modelo aguenta os dois sem mudança nenhuma.
+        const code = codigoUnico ? r.lotes[0].code : r.lotes[i].code;
+        const url = `HTTPS://${host.toUpperCase()}/E/${code}`;
+        const qr = await QRCode.toDataURL(url, {
+          // Correção 25%: cozinha tem gordura, condensação e atrito. O mínimo
+          // teórico falha de forma intermitente, que é o pior defeito para
+          // diagnosticar por telefone.
+          errorCorrectionLevel: "Q",
+          // O default 4 é a zona de silêncio da norma ISO/IEC 18004. Zerar aqui
+          // faz o leitor perder o símbolo mesmo com a impressão perfeita.
+          margin: 4,
+          scale: 8,
+          color: { dark: "#000000", light: "#FFFFFF" },
+        });
+        geradas.push({ code, qr });
+      }
+      setEtiquetas(geradas);
+      setImprimirQuandoPronto(true);
+    } catch (e: any) {
+      console.error("[Etiquetas] Falha ao preparar o QR:", e?.message);
+      setErroLote("Não consegui gerar o QR agora — a etiqueta vai sair sem ele.");
+      setEtiquetas(Array.from({ length: quantidade }, () => ({ code: "", qr: "" })));
+      setImprimirQuandoPronto(true);
+    } finally {
+      setPreparando(false);
+    }
+  };
+
+  // Espera o React pintar as etiquetas antes de copiar o innerHTML para o
+  // iframe. Sem esse intervalo, o QR sai em branco.
+  useEffect(() => {
+    if (!imprimirQuandoPronto) return;
+    setImprimirQuandoPronto(false);
+    const t = setTimeout(() => handlePrint(), 120);
+    return () => clearTimeout(t);
+  }, [imprimirQuandoPronto]);
 
   const handlePrint = () => {
     const printArea = document.querySelector<HTMLElement>(".print-area");
@@ -416,7 +516,12 @@ ${printArea.innerHTML}
               onClick={() => setMode("print")}
               style={{ flex: 1, backgroundColor: mode === "print" ? "#FF4D00" : "#F1F5F9", color: mode === "print" ? "#FFF" : "#0F172A", padding: "1rem", borderRadius: "12px", border: "none", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
             >
-              <Printer size={20} style={{ marginRight: "8px" }} /> Imprimir Etiqueta
+              <Printer size={20} style={{ marginRight: "8px" }} />
+              {preparando
+                ? "Gerando o QR..."
+                : quantidade > 1
+                  ? `Imprimir ${quantidade} etiquetas`
+                  : "Imprimir Etiqueta"}
             </button>
             <button 
               onClick={() => setMode("config")}
@@ -542,7 +647,11 @@ ${printArea.innerHTML}
               </div>
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Data de Fabricação</label>
-                <input type="date" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={fabDate} onChange={e => setFabDate(e.target.value)} min={todayStr} />
+                {/* SEM `min`: com ele era literalmente impossível etiquetar o
+                    que foi preparado ONTEM — o caso mais comum de cozinha, e
+                    justamente o que mais precisa de etiqueta. O `min` continua
+                    fazendo sentido na validade, que não pode nascer vencida. */}
+                <input type="date" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={fabDate} onChange={e => setFabDate(e.target.value)} />
               </div>
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Data de Validade</label>
@@ -550,7 +659,76 @@ ${printArea.innerHTML}
               </div>
             </div>
 
-            <button style={{ width: "100%", padding: "1rem", borderRadius: "12px", border: "none", background: "#FF4D00", color: "#FFF", fontWeight: 800, fontSize: "1.1rem", cursor: "pointer", marginTop: "16px", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={handlePrint} disabled={!fabDate || !valDate}>
+            {/* ── QR DE RASTREIO ────────────────────────────────────────────
+                Explicado NA PRÓPRIA TELA onde se liga, porque é aqui que a
+                dúvida aparece. */}
+            <div style={{ marginTop: "18px", border: "1px solid #E2E8F0", borderRadius: "14px", overflow: "hidden" }}>
+              <label style={{ display: "flex", gap: "12px", alignItems: "flex-start", padding: "16px", cursor: "pointer", background: usarQr ? "#FFF4EF" : "#FFF" }}>
+                <input
+                  type="checkbox"
+                  checked={usarQr}
+                  onChange={e => setUsarQr(e.target.checked)}
+                  style={{ width: 22, height: 22, marginTop: 2, accentColor: "#E8360C", flexShrink: 0, cursor: "pointer" }}
+                />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.98rem", color: "#0F172A" }}>Imprimir QR code na etiqueta</div>
+                  <div style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginTop: 4 }}>
+                    Na hora de usar o produto, o funcionário <strong>aponta a câmera do celular</strong> para o QR
+                    e dá baixa no estoque em dois toques — sem abrir o sistema, sem procurar o item na lista.
+                    A tela que abre já mostra o produto, a validade e quanto resta do lote.
+                  </div>
+                </div>
+              </label>
+
+              {usarQr && (
+                <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: "160px" }}>
+                      <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>Quantas etiquetas</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <button onClick={() => setQuantidade(q => Math.max(1, q - 1))}
+                                style={{ width: 44, height: 44, borderRadius: 10, border: "1px solid #CBD5E1", background: "#FFF", fontSize: "1.3rem", fontWeight: 900, cursor: "pointer", lineHeight: 1 }}>−</button>
+                        <input type="number" min={1} max={500} value={quantidade}
+                               onChange={e => setQuantidade(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+                               style={{ flex: 1, height: 44, textAlign: "center", borderRadius: 10, border: "1px solid #CBD5E1", fontWeight: 900, fontSize: "1.1rem" }} />
+                        <button onClick={() => setQuantidade(q => Math.min(500, q + 1))}
+                                style={{ width: 44, height: 44, borderRadius: 10, border: "1px solid #CBD5E1", background: "#FFF", fontSize: "1.3rem", fontWeight: 900, cursor: "pointer", lineHeight: 1 }}>+</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {quantidade > 1 && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>Numeração</label>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button onClick={() => setCodigoUnico(true)}
+                                style={{ flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+                                         border: codigoUnico ? "2px solid #E8360C" : "1px solid #E2E8F0",
+                                         background: codigoUnico ? "#FFF4EF" : "#FFF" }}>
+                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: codigoUnico ? "#C92E09" : "#334155" }}>Um código para a fornada</div>
+                          <div style={{ fontSize: "0.76rem", color: "#64748B", lineHeight: 1.4, marginTop: 2 }}>As {quantidade} etiquetas levam o mesmo código</div>
+                        </button>
+                        <button onClick={() => setCodigoUnico(false)}
+                                style={{ flex: 1, textAlign: "left", padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+                                         border: !codigoUnico ? "2px solid #E8360C" : "1px solid #E2E8F0",
+                                         background: !codigoUnico ? "#FFF4EF" : "#FFF" }}>
+                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: !codigoUnico ? "#C92E09" : "#334155" }}>Um por etiqueta</div>
+                          <div style={{ fontSize: "0.76rem", color: "#64748B", lineHeight: 1.4, marginTop: 2 }}>Rastreio individual, {quantidade} códigos</div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {erroLote && (
+              <div style={{ marginTop: "12px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 12, padding: "12px 14px", fontSize: "0.86rem", color: "#B45309", fontWeight: 700, lineHeight: 1.45 }}>
+                {erroLote}
+              </div>
+            )}
+
+            <button style={{ width: "100%", padding: "1rem", borderRadius: "12px", border: "none", background: "#FF4D00", color: "#FFF", fontWeight: 800, fontSize: "1.1rem", cursor: preparando ? "default" : "pointer", opacity: preparando ? 0.7 : 1, marginTop: "16px", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={prepararEImprimir} disabled={!fabDate || !valDate || preparando}>
               <Printer size={24} style={{ marginRight: "10px" }} /> ENVIAR PARA IMPRESSORA (RIBBON)
             </button>
             <p style={{ fontSize: "0.85rem", color: "#64748B", marginTop: "8px", textAlign: "center" }}>
@@ -562,7 +740,11 @@ ${printArea.innerHTML}
 
       {selectedProduct && mode === "print" && (
         <div className="print-area">
-          <div className="label-page" style={{ display: "flex", flexDirection: "column", height: "6in", padding: "0.12in", boxSizing: "border-box" }}>
+          {/* Uma página por etiqueta. O @page de 4x6in pagina sozinho, então
+              imprimir 20 etiquetas é renderizar 20 blocos — antes um clique
+              produzia exatamente uma, e a cozinha imprimia 20 vezes na mão. */}
+          {(etiquetas.length > 0 ? etiquetas : [{ code: "", qr: "" }]).map((etq, idx) => (
+          <div key={idx} className="label-page" style={{ display: "flex", flexDirection: "column", height: "6in", padding: "0.12in", boxSizing: "border-box" }}>
             <div className="label-content" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "0.5mm solid black", paddingBottom: "2mm", marginBottom: "3mm" }}>
@@ -652,7 +834,33 @@ ${printArea.innerHTML}
                     <div>Val: {dataDaEtiqueta(valDate)}</div>
                     <div>Lote: {lote || '--'}</div>
                   </div>
-                  {showLogo && (
+
+                  {/* O QR: 20mm de símbolo, com o código em texto embaixo.
+                      O texto não é redundância — é o que salva quando o QR está
+                      sujo de gordura ou molhado, e é o que o funcionário lê em
+                      voz alta no telefone com o suporte. */}
+                  {etq.qr && (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5mm" }}>
+                      <img
+                        src={etq.qr}
+                        alt=""
+                        style={{
+                          width: "20mm",
+                          height: "20mm",
+                          display: "block",
+                          // Sem isto o Chrome "economiza tinta" no preto e o
+                          // leitor perde contraste na térmica.
+                          printColorAdjust: "exact",
+                          WebkitPrintColorAdjust: "exact",
+                        } as any}
+                      />
+                      <div style={{ fontSize: "2.6mm", fontFamily: "monospace", fontWeight: "bold", letterSpacing: "0.3mm" }}>
+                        {etq.code}
+                      </div>
+                    </div>
+                  )}
+
+                  {showLogo && !etq.qr && (
                     <img src={storeLogo || "/logo.png"} style={{ height: "8mm", filter: "grayscale(100%) brightness(0)", objectFit: "contain" }} />
                   )}
                 </div>
@@ -674,6 +882,7 @@ ${printArea.innerHTML}
               </div>
 
           </div>
+          ))}
         </div>
       )}
 
