@@ -23,7 +23,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { exchangeCodeForToken, getMetaAccounts, descobrirPixelDaConta } from "@/lib/meta-ads";
+import {
+  exchangeCodeForToken,
+  getMetaAccounts,
+  descobrirPixelDaConta,
+  escolherMelhorContaDeAnuncios,
+} from "@/lib/meta-ads";
 import { lerState } from "@/lib/meta-oauth-state";
 
 export const dynamic = "force-dynamic";
@@ -75,8 +80,25 @@ export async function GET(req: NextRequest) {
     }
 
     const { accounts, pages } = await getMetaAccounts(accessToken);
-    const adAccountId = accounts?.[0]?.id ?? null;
+
+    // NÃO pegar `accounts[0]`: quem já anunciou costuma ter a conta velha
+    // (encerrada) junto da que usa hoje, e a ordem da Meta não tem relação com
+    // qual delas presta. Ver escolherMelhorContaDeAnuncios — o dono ficou com o
+    // módulo travado em "conta desativada" tendo uma conta ativa na mesma lista.
+    const contaEscolhida = escolherMelhorContaDeAnuncios(accounts);
+    const adAccountId = contaEscolhida?.id ?? null;
     const pageId = pages?.[0]?.id ?? null;
+
+    if (Array.isArray(accounts) && accounts.length > 1) {
+      console.log(
+        `[Meta Ads] Loja ${lojaDaSessao}: ${accounts.length} contas de anúncio; escolhida ${adAccountId} ` +
+          `(status ${contaEscolhida?.account_status}). Demais: ` +
+          accounts
+            .filter((c: any) => c?.id !== adAccountId)
+            .map((c: any) => `${c.id}=${c.account_status}`)
+            .join(", ")
+      );
+    }
 
     // Descobre o Pixel na hora da conexão. Sem ele não há medição de pedido, e
     // pedir para o lojista achar o ID sozinho é atrito que a maioria não vence.

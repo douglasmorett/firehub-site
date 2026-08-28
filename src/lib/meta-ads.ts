@@ -371,6 +371,52 @@ export async function getMetaAccounts(accessToken: string) {
   return { accounts, pages };
 }
 
+/**
+ * Escolhe a MELHOR conta de anúncios entre as que o lojista tem.
+ *
+ * ── Por que isto existe ─────────────────────────────────────────────────────
+ * A conexão gravava `accounts[0]` — a primeira que a Meta devolvesse, sem
+ * olhar o `account_status` que a própria `getMetaAccounts` faz questão de
+ * pedir. Quem já anunciou antes quase sempre tem mais de uma conta: a velha,
+ * fechada, e a que usa hoje.
+ *
+ * Medido na conta do dono em 28/08/2026: o módulo fisgou uma conta com status
+ * 101 (encerrada) e parou tudo com "sua conta de anúncios está desativada" —
+ * enquanto a conta boa, com R$ 865 de histórico de veiculação, estava ali do
+ * lado na mesma lista. O lojista não tem como adivinhar isso; para ele o
+ * módulo simplesmente não funciona.
+ *
+ * Ordem de preferência: quem veicula agora > quem está em análise/carência
+ * (volta sozinha) > o resto. Empate desempata por ter forma de pagamento.
+ * Conta encerrada (100/101) só é escolhida se não houver absolutamente mais
+ * nada — aí a mensagem de conta desativada é verdadeira.
+ */
+const RANK_STATUS_CONTA: Record<number, number> = {
+  1: 0,    // ACTIVE — veicula agora
+  8: 1,    // PENDING_SETTLEMENT
+  9: 1,    // IN_GRACE_PERIOD
+  7: 2,    // PENDING_RISK_REVIEW
+  3: 3,    // UNSETTLED
+  2: 4,    // DISABLED
+  100: 5,  // PENDING_CLOSURE
+  101: 6,  // CLOSED
+};
+
+export function escolherMelhorContaDeAnuncios(contas: any[]): any | null {
+  const lista = Array.isArray(contas) ? contas.filter((c) => c?.id) : [];
+  if (lista.length === 0) return null;
+
+  const nota = (c: any) => {
+    const status = Number(c?.account_status);
+    const posicao = RANK_STATUS_CONTA[status] ?? 4;
+    const temPagamento = Boolean(c?.funding_source) || Boolean(c?.funding_source_details?.id);
+    // O status manda; a forma de pagamento só desempata dentro do mesmo status.
+    return posicao * 2 + (temPagamento ? 0 : 1);
+  };
+
+  return [...lista].sort((a, b) => nota(a) - nota(b))[0];
+}
+
 export type ProntidaoDaConta = {
   pronta: boolean;
   motivo?: "sem_forma_de_pagamento" | "conta_desativada" | "conta_nao_encontrada" | "erro";

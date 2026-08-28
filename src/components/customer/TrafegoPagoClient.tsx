@@ -55,6 +55,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const [agreed, setAgreed] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsScrolled, setTermsScrolled] = useState(false);
+  /* Caixa de texto dos termos — ver `useEffect` da trava de leitura, abaixo. */
+  const termsBoxRef = useRef<HTMLDivElement | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
@@ -129,6 +131,61 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
     if (step !== "hero") return;
     const interval = setInterval(() => setTick(t => t + 1), 1200);
     return () => clearInterval(interval);
+  }, [step]);
+
+  /* ── A TRAVA DE LEITURA DOS TERMOS ────────────────────────────────────────
+   *
+   * Era `onScroll={handleTermsScroll}` no próprio div. Em produção isso
+   * simplesmente NÃO dispara: medido no navegador, na página real, o elemento
+   * recebeu 6 eventos `scroll` NATIVOS e confiáveis, a condição de fim de
+   * rolagem passou a valer — e o `setTermsScrolled(true)` nunca rodou. Como o
+   * botão "Aceito os termos" só liga com esse estado, o lojista lia tudo até o
+   * fim e ficava preso na porta: o módulo inteiro era inalcançável, e de fora
+   * parecia que o Tráfego Pago "não funciona".
+   *
+   * `scroll` é um evento que não borbulha, e é exatamente aí que a delegação
+   * do React se perde. Ouvir direto no elemento é o caminho que comprovadamente
+   * funciona — foi assim que o teste capturou os eventos.
+   *
+   * Três garantias, porque prender o cliente na tela de contratação é o pior
+   * defeito possível desta página:
+   *   1. listener nativo no elemento (o caminho normal, de roda e de toque);
+   *   2. um sentinela no fim do texto — libera mesmo quando a rolagem vem de
+   *      teclado, de lupa de acessibilidade ou do "ir para o fim" de um leitor
+   *      de tela, que nem sempre passam pelo caso 1;
+   *   3. se o texto couber inteiro sem rolagem (tela grande, zoom menor), não
+   *      há o que rolar: libera na hora, senão a trava nunca abriria.
+   */
+  useEffect(() => {
+    if (step !== "terms") return;
+    const el = termsBoxRef.current;
+    if (!el) return;
+
+    const liberar = () => setTermsScrolled(true);
+    const chegouAoFim = () => el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+
+    if (el.scrollHeight <= el.clientHeight + 30 || chegouAoFim()) {
+      liberar();
+      return;
+    }
+
+    const aoRolar = () => { if (chegouAoFim()) liberar(); };
+    el.addEventListener("scroll", aoRolar, { passive: true });
+
+    let observador: IntersectionObserver | null = null;
+    const fim = el.querySelector("[data-fim-dos-termos]");
+    if (fim && typeof IntersectionObserver !== "undefined") {
+      observador = new IntersectionObserver(
+        (entradas) => { if (entradas.some((e) => e.isIntersecting)) liberar(); },
+        { root: el, threshold: 0.1 }
+      );
+      observador.observe(fim);
+    }
+
+    return () => {
+      el.removeEventListener("scroll", aoRolar);
+      if (observador) observador.disconnect();
+    };
   }, [step]);
 
   // Dashboard auto-refresh a cada 60s
@@ -469,10 +526,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
   /* ═══════ TERMS ═══════ */
   if (step === "terms") {
-    const handleTermsScroll = (e: React.UIEvent<HTMLDivElement>) => {
-      const el = e.currentTarget;
-      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 30) setTermsScrolled(true);
-    };
+    // A liberação da leitura mora no useEffect lá em cima (listener nativo +
+    // sentinela): o onScroll do React que ficava aqui nunca disparava.
     return (
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "0 1rem 4rem" }}>
         <Banner />
@@ -483,7 +538,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           <p style={{ color: "#6B7280", fontSize: "0.88rem" }}>Leia com atenção antes de prosseguir. Role até o final para aceitar.</p>
         </div>
 
-        <div onScroll={handleTermsScroll} style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem", maxHeight: 400, overflowY: "auto", marginBottom: "1.5rem", fontSize: "0.88rem", lineHeight: 1.8, color: "#374151" }}>
+        <div ref={termsBoxRef} style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem", maxHeight: 400, overflowY: "auto", marginBottom: "1.5rem", fontSize: "0.88rem", lineHeight: 1.8, color: "#374151" }}>
           <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.75rem" }}>1. Taxa de Gestão</h3>
           <p>O módulo de Tráfego Pago cobra <strong>R$ 50,00/semana</strong> pelo <strong>serviço de gestão de campanhas</strong> (criação, otimização e monitoramento dos seus anúncios).</p>
 
@@ -542,6 +597,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
               <li>Nenhuma campanha ativa no mês → <strong>R$0</strong></li>
             </ul>
           </div>
+          {/* Sentinela do fim do texto: quando ela aparece, a leitura está
+              cumprida. É o que libera a trava por qualquer forma de rolagem. */}
+          <div data-fim-dos-termos style={{ height: 1 }} />
         </div>
 
         {!termsScrolled && (

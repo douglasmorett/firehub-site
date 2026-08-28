@@ -22,7 +22,11 @@ const NAV_ITEMS = [
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "IA" },
-  { href: "/store/trafego", label: "Tráfego Pago", icon: PieChart, badge: "EM TESTES" },
+  // A pagina SEMPRE morou em /store/meta-ads — e o callback do OAuth do Meta
+  // (api/meta-ads/callback) e o checklist de onboarding mandam para la. Este
+  // link apontava para /store/trafego, endereco que nunca existiu: quem clicava
+  // no menu batia num 404 e o modulo inteiro parecia morto.
+  { href: "/store/meta-ads", label: "Tráfego Pago", icon: PieChart, badge: "EM TESTES" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
   { href: "/store/garcons", label: "Garçons", icon: Users },
   { href: "/store/funcionarios", label: "Fiado", icon: Users },
