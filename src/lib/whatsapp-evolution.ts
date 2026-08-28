@@ -121,7 +121,15 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
       }
 
       const base64Qr = connectData?.code || connectData?.base64 || connectData?.qrcode?.base64;
-      const pairingCode = connectData?.pairingCode || connectData?.code || `${userId.slice(-4)}-${Math.floor(1000 + Math.random() * 9000)}`;
+      // Código de pareamento NUNCA pode ser inventado. Este trecho tinha dois
+      // jeitos de mentir: caía em `connectData.code` (que é o base64 do QR
+      // inteiro) e, na falta dele, em um número aleatório. O painel mostrava
+      // isso como "conectar com número de telefone", o lojista digitava, não
+      // funcionava nunca — e concluía que o FireHub estava quebrado.
+      // Sem código real, campo vazio: a tela então oferece só o QR, que funciona.
+      const pairingCode = typeof connectData?.pairingCode === "string" && connectData.pairingCode.length <= 12
+        ? connectData.pairingCode
+        : "";
 
       if (base64Qr) {
         const qrCodeUrl = base64Qr.startsWith("data:image") ? base64Qr : `data:image/png;base64,${base64Qr}`;

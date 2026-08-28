@@ -509,15 +509,55 @@ app.get("/instance/connect/:instanceName", async (req, res) => {
   }
 
   if (session.qrBase64) {
+    // NÃO devolver `pairingCode` aqui. Havia um "8888-9999" fixo, que o painel
+    // exibia como se fosse um código real de "conectar com número de telefone":
+    // o lojista digitava, não funcionava nunca, e desistia achando que o
+    // sistema estava quebrado. Código de pareamento de verdade só existe sob
+    // demanda, no endpoint abaixo, porque a Meta o emite amarrado ao número.
     return res.json({
       code: session.qrBase64,
       base64: session.qrBase64,
-      pairingCode: "8888-9999",
       status: 200,
     });
   }
 
   return res.status(500).json({ error: "Gerando QR Code..." });
+});
+
+/**
+ * GET /instance/pairing-code/:instanceName?number=5522999999999
+ *
+ * O caminho SEM câmera: em vez de apontar o celular para o QR na tela, o
+ * lojista digita um código de 8 caracteres em
+ * WhatsApp → Aparelhos conectados → Conectar com número de telefone.
+ *
+ * É o que resolve loja remota, onde ninguém está na frente do computador com o
+ * telefone na mão — dá para passar o código por ligação ou mensagem.
+ *
+ * O número tem que ser o MESMO que vai ser conectado, com DDI (55) e DDD.
+ */
+app.get("/instance/pairing-code/:instanceName", async (req, res) => {
+  const numero = String(req.query.number || "").replace(/\D/g, "");
+  if (numero.length < 12) {
+    return res.status(400).json({ error: "Informe ?number=55DDNUMERO (com 55 e DDD)" });
+  }
+
+  const session = await getOrCreateSocket(req.params.instanceName);
+  if (session.state === "open") {
+    return res.json({ jaConectada: true, phone: session.phone });
+  }
+
+  try {
+    if (session.sock?.authState?.creds?.registered) {
+      return res.status(409).json({ error: "Instância já registrada; reinicie antes de parear de novo" });
+    }
+    const pairingCode = await session.sock.requestPairingCode(numero);
+    console.log(`[WhatsApp Gateway] 🔑 Código de pareamento gerado para ${req.params.instanceName} (${numero})`);
+    return res.json({ pairingCode, number: numero });
+  } catch (err) {
+    console.error(`[WhatsApp Gateway] ❌ Falha ao gerar código de pareamento:`, err?.message || err);
+    return res.status(500).json({ error: err?.message || "Falha ao gerar código" });
+  }
 });
 
 // 3. Criar Instância

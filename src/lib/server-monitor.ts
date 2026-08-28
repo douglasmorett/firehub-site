@@ -29,42 +29,56 @@ function canAlert(alertType: string): boolean {
   return true;
 }
 
-async function sendWhatsAppAlert(message: string) {
-  const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
-
-  // Buscar primeira instância ativa do banco para enviar o alerta
-  let instanceName = "firehub_admin";
+/** A instância do FireHub — a que fala quando a da loja é justamente a que caiu. */
+async function instanciaDoFireHub(): Promise<string> {
   try {
     const { prisma } = await import("@/lib/prisma");
     const admin = await prisma.user.findFirst({
       where: { email: "contatohakim@gmail.com" },
       select: { id: true },
     });
-    if (admin) {
-      instanceName = `firehub_${admin.id.slice(-10)}`;
-    }
+    if (admin) return `firehub_${admin.id.slice(-10)}`;
   } catch {
     // Se não conseguir acessar o banco, usa instância padrão
   }
+  return "firehub_admin";
+}
 
+/**
+ * Manda uma mensagem para UM número pelo WhatsApp do FireHub.
+ *
+ * Existe separado do alerta interno porque o aviso de "seu robô desconectou"
+ * precisa chegar ao LOJISTA, e não dá para mandar pelo número dele: é
+ * exatamente esse que está fora do ar. Sai pelo número do FireHub.
+ *
+ * Devolve se o gateway aceitou — quem chama precisa saber para não marcar
+ * como avisado um aviso que não saiu.
+ */
+export async function avisarNumeroPeloFireHub(phone: string, message: string): Promise<boolean> {
+  const numero = String(phone || "").replace(/\D/g, "");
+  if (numero.length < 10) return false;
+
+  const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
+  const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
+  const instanceName = await instanciaDoFireHub();
+
+  try {
+    const res = await fetch(`${gatewayUrl}/message/sendText/${instanceName}`, {
+      method: "POST",
+      headers: { apikey: apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ number: numero, text: message }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return res.ok;
+  } catch (err: any) {
+    console.error(`[Monitor] Falha ao avisar ${numero}:`, err.message);
+    return false;
+  }
+}
+
+async function sendWhatsAppAlert(message: string) {
   for (const phone of ALERT_PHONES) {
-    try {
-      await fetch(`${gatewayUrl}/message/sendText/${instanceName}`, {
-        method: "POST",
-        headers: {
-          "apikey": apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          number: phone,
-          text: message,
-        }),
-        signal: AbortSignal.timeout(10000),
-      });
-    } catch (err: any) {
-      console.error(`[Monitor] Falha ao enviar alerta para ${phone}:`, err.message);
-    }
+    await avisarNumeroPeloFireHub(phone, message);
   }
 }
 

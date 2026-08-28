@@ -37,6 +37,11 @@ export async function GET() {
         connected: true,
         phone: waData.phone || chatbotConfig.phone || user.storePhone || "+55 (21) 99999-9999",
         connectedAt: new Date().toISOString(),
+        // Histórico, não estado: é o que autoriza o alerta de queda mais tarde.
+        // Quem nunca conectou não tem robô para cair e não deve ser avisado.
+        jaConectouAlgumaVez: true,
+        desconectadoDesde: null,
+        avisoDesconexaoEm: null,
         // Vínculo instância -> loja. O webhook procura por este campo para saber
         // de quem é a mensagem; sem ele, o robô da loja ficava mudo mesmo com o
         // QR conectado. O nome é o mesmo gerado em getEvolutionQRCode.
@@ -51,6 +56,12 @@ export async function GET() {
         ...chatbotConfig,
         connected: false,
         connectedAt: null,
+        // `connectedAt` some, mas o histórico precisa ficar: é ele que mantém
+        // a loja sob vigilância do keep-alive e autoriza o aviso de queda.
+        // Sem esta linha, abrir a tela de QR durante a queda desligava o
+        // próprio alarme.
+        jaConectouAlgumaVez: true,
+        desconectadoDesde: chatbotConfig.desconectadoDesde || new Date().toISOString(),
       };
       await prisma.user.update({
         where: { id: user.id },

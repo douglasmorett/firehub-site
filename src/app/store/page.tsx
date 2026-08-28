@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import StoreDashboard from "@/components/customer/StoreDashboard";
+import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
 
 export const dynamic = "force-dynamic";
 
@@ -196,11 +197,14 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
     }));
 
     return (
-      <StoreDashboard
-        orders={serialized}
-        paymentFees={(user.paymentFees as any) || {}}
-        completedOnboardingSteps={completedSteps}
-      />
+      <>
+        <AvisoRoboDesconectado />
+        <StoreDashboard
+          orders={serialized}
+          paymentFees={(user.paymentFees as any) || {}}
+          completedOnboardingSteps={completedSteps}
+        />
+      </>
     );
   } catch (err: any) {
     console.error("[StorePage] Erro ao carregar dados:", err);
