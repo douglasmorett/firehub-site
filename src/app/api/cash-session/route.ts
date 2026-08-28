@@ -27,16 +27,25 @@ export async function GET() {
 
   // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
   let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 };
+  // Pedidos do turno que ainda não têm pagamento nenhum. Ficam FORA do
+  // esperado (ver o porquê no laço abaixo) e voltam aqui só para o lojista
+  // saber que existem — informação, nunca conferência.
+  let pendentesValor = 0;
+  let pendentesQuantidade = 0;
   let movimentacaoEntradas = 0;
   let movimentacaoSaidas = 0;
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: user.targetId,
-        status: { notIn: ["CANCELADO"] },
+        // CRIANDO_IA é rascunho que o assistente ainda está montando: não é
+        // pedido, não tem valor fechado e não pode entrar em conta nenhuma.
+        // AGUARDANDO_PAGAMENTO continua vindo de propósito, para ser separado
+        // no laço em vez de sumir sem explicação.
+        status: { notIn: ["CANCELADO", "CRIANDO_IA"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true },
+      select: { status: true, paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true },
     });
 
     for (const o of orders) {
@@ -52,6 +61,60 @@ export async function GET() {
                 : 0));
       const val = (o.totalAmount || 0) + channelDisc;
 
+      // ── PEDIDO SEM PAGAMENTO NÃO É DINHEIRO NA GAVETA ───────────────────
+      //
+      // O esperado somava todo pedido que não estivesse CANCELADO, e
+      // AGUARDANDO_PAGAMENTO estava nesse bolo. O pedido do totem NASCE nesse
+      // status, antes de o cartão passar (/api/totem/order), e nada o cancela
+      // depois: quem desiste na tela da maquininha, tem o cartão recusado ou
+      // vai embora com a senha do "pagar no caixa" deixa o pedido parado aí
+      // para sempre. Como "Cartão (Maquininha)" e "Pagar no caixa" não casam
+      // com nenhuma forma conhecida, ele caía no `else` lá embaixo e virava
+      // DINHEIRO esperado — o fechamento cobrava da gaveta um valor que
+      // ninguém entregou e o operador via "Faltam R$ X" sem pista nenhuma do
+      // motivo. Num dia de totem isso não é um pedido: são vários.
+      //
+      // É a mesma classe de defeito já corrigida no DRE (ver o comentário do
+      // saldo fantasma da Hakim Centro em src/app/store/financeiro/
+      // DREClient.tsx): nome de forma de pagamento é intenção, não prova. Aqui
+      // a prova é o status — quem paga sai de AGUARDANDO_PAGAMENTO dentro de
+      // confirmOrderPayment, seja pelo webhook, pela maquininha ou pela mão do
+      // atendente. Todo o resto do sistema (KDS, fila de impressão, poll,
+      // numeração) já ignorava esse status; o caixa era o único que somava.
+      //
+      // Some do esperado, mas não some da tela: volta em `pendentesDePagamento`
+      // para o lojista enxergar o que ficou pendurado sem que isso vire
+      // diferença de caixa.
+      if (o.status === "AGUARDANDO_PAGAMENTO") {
+        pendentesValor += val;
+        pendentesQuantidade += 1;
+        continue;
+      }
+
+      // ── VENDA DE SALÃO NÃO É PAGAMENTO ONLINE ───────────────────────────
+      //
+      // `paymentPaidAt` diz que o pedido FOI PAGO — não diz por onde o dinheiro
+      // entrou. Ele sozinho ligava `isOnlinePayment` e, como o único source
+      // isento era "PDV", toda venda do totem caía em `expected.ifoodOnline`,
+      // a linha travada de "iFood (Pago Online)" que a tela de fechamento soma
+      // sozinha no total. O estrago era duplo e acontecia todo dia:
+      //
+      //   • cartão passado na Point DA PRÓPRIA LOJA sumia de crédito/débito.
+      //     Ficava impossível conferir contra o extrato da adquirente e, quando
+      //     o operador digitava esse extrato, o valor era contado duas vezes —
+      //     sobra fantasma do tamanho exato das vendas do totem no cartão;
+      //   • dinheiro vivo do "pagar no caixa" (que o atendente confirma e vira
+      //     "Dinheiro (recebido por ...)") saía do esperado em dinheiro, porque
+      //     este teste vem ANTES do `pm.includes("dinheiro")`. A gaveta fechava
+      //     "certinha" faltando exatamente esse valor — e é justamente essa
+      //     conferência que existe para pegar furo.
+      //
+      // O totem é venda de salão igual ao PDV: o cliente está aqui dentro e o
+      // cartão passa na maquininha da loja. A exceção de "PDV" já provava que
+      // o autor sabia disso; só faltou o totem entrar na mesma lista. Para
+      // venda de salão quem manda é a forma de pagamento, não o carimbo de pago.
+      const ehVendaDeSalao = src === "PDV" || src === "TOTEM";
+
       // Identificar pagamentos ON-LINE (iFood Pago Online, PIX Online, Crédito Online via App)
       // Pagamentos Online NÃO passam pelas maquininhas da loja nem dinheiro de motoboy!
       const isOnlinePayment =
@@ -59,12 +122,12 @@ export async function GET() {
         pm.includes("prepaid") ||
         pm.includes("ifood") ||
         pm.includes("pago_online") ||
-        !!(o.paymentPaidAt || o.gatewayProvider) ||
+        (!ehVendaDeSalao && !!(o.paymentPaidAt || o.gatewayProvider)) ||
         (src === "IFOOD" && !pm.includes("dinheiro") && !pm.includes("debito") && !pm.includes("débito") && !pm.includes("credito") && !pm.includes("crédito") && !pm.includes("maquininha") && !pm.includes("cobrar"));
 
       if (src === "IFOOD" && isOnlinePayment) {
         expected.ifoodOnline += val;
-      } else if (isOnlinePayment && src !== "PDV") {
+      } else if (isOnlinePayment && !ehVendaDeSalao) {
         expected.ifoodOnline += val;
       } else if (pm.includes("dinheiro") || pm.includes("cash")) {
         expected.cash += val;
@@ -76,6 +139,17 @@ export async function GET() {
         expected.pix += val;
       } else if (pm.includes("voucher") || pm.includes("vale") || pm.includes("meal") || pm.includes("food")) {
         expected.voucher += val;
+      } else if (pm.includes("maquininha") || pm.includes("cartão") || pm.includes("cartao")) {
+        // Cartão sem o tipo: o Mercado Pago Point não devolve se foi crédito ou
+        // débito, então o pedido do totem fica com o genérico "Cartão
+        // (Maquininha)" e nenhuma das faixas acima o reconhecia. Cair no `else`
+        // abaixo era o pior destino possível — venda de cartão exigida da
+        // gaveta em espécie. Vai para crédito, que é onde a maioria dessas
+        // passagens de fato cai e, principalmente, é uma linha que o operador
+        // consegue conferir contra o extrato da adquirente.
+        // (Quando o app da maquininha informa o tipo, o paymentMethod já vem
+        // "Cartão CRÉDITO/DÉBITO (maquininha)" e as faixas acima o pegam antes.)
+        expected.credit += val;
       } else {
         expected.cash += val;
       }
@@ -128,6 +202,14 @@ export async function GET() {
       entradas: Number(movimentacaoEntradas.toFixed(2)),
       saidas: Number(movimentacaoSaidas.toFixed(2)),
     },
+    // Fora do esperado de propósito: é pedido que ninguém pagou (totem
+    // abandonado, cartão recusado, senha do "pagar no caixa" que nunca voltou
+    // ao balcão). Sair da conferência era o objetivo; sair da tela não —
+    // pendência que o sistema esconde é pendência que ninguém cobra.
+    pendentesDePagamento: {
+      valor: Number(pendentesValor.toFixed(2)),
+      quantidade: pendentesQuantidade,
+    },
   });
 }
 
@@ -176,11 +258,22 @@ export async function PUT(req: Request) {
 
   const body = await req.json();
   const { closingCash, closingDebit, closingCredit, closingPix, closingVoucher,
+    closingIfoodOnline, closingIfoodCoupons,
     expectedCash, expectedDebit, expectedCredit, expectedPix, expectedVoucher, expectedTotal,
     justification } = body;
 
+  // ── O CONFERIDO PRECISA FALAR A MESMA LÍNGUA DO ESPERADO ────────────────
+  //
+  // `expectedTotal` inclui as vendas já pagas online (iFood e cupons), que o
+  // operador NÃO conta na gaveta — não há cédula para conferir. O conferido
+  // somava só o que ele digitou, e a subtração acusava uma falta exatamente do
+  // tamanho do online do dia: a tela mostrava "fecha certinho" (ela já somava
+  // os dois) e o `difference` gravado na CashSession — o mesmo que vai no aviso
+  // ao dono — dizia que faltou dinheiro. Loja com iFood fechava o caixa no
+  // vermelho todo santo dia, sem ter perdido um centavo.
   const totalInformed = (closingCash || 0) + (closingDebit || 0) + (closingCredit || 0) +
-    (closingPix || 0) + (closingVoucher || 0);
+    (closingPix || 0) + (closingVoucher || 0) +
+    (closingIfoodOnline || 0) + (closingIfoodCoupons || 0);
   const difference = totalInformed - (expectedTotal || 0);
 
   const openSession = await prisma.cashSession.findFirst({

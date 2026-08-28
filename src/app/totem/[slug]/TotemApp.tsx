@@ -49,6 +49,33 @@ const ALVO_TOQUE = 60;
 const INATIVIDADE_MS = 60_000;
 const AVISO_ANTES_MS = 15_000;
 
+/**
+ * Caixa fechado é o ÚNICO caso em que a própria tela manda o cliente sair de
+ * perto do totem ("chame um atendente no balcão") e promete, com todas as
+ * letras, que o pedido continua montado aqui. Com os 60s valendo também nessa
+ * espera, o carrinho era apagado exatamente enquanto ele ia buscar o atendente:
+ * a tela desfazia sozinha a promessa que acabara de fazer.
+ *
+ * O prazo não some, só estica: ida ao balcão, conversa e volta cabem aqui, e o
+ * quiosque continua se libertando de um carrinho que ninguém veio buscar — sem
+ * isso o pedido abandonado de uma pessoa ficaria na cara do próximo cliente
+ * pelo resto do expediente.
+ */
+const ESPERA_PELO_ATENDENTE_MS = 10 * 60_000;
+
+/** Aviso proporcional à espera: 15s não dá tempo de voltar do balcão. */
+const AVISO_ANTES_DO_ATENDENTE_MS = 60_000;
+
+/**
+ * O cardápio era buscado uma vez, na montagem, e o quiosque fica dias ligado
+ * com wakeLock: a tela anunciava o preço da semana passada enquanto o servidor
+ * gravava o de hoje, e o item que saiu do cardápio só era descoberto no 409 que
+ * esvazia o carrinho. A recarga acontece SÓ com a tela ociosa e o carrinho
+ * vazio — trocar produto e preço debaixo de quem está escolhendo é pior que a
+ * defasagem.
+ */
+const INTERVALO_RECARGA_DO_CARDAPIO_MS = 5 * 60_000;
+
 /** Prazos de rede. Sem eles, a queda do Wi-Fi da loja congela o quiosque. */
 const TIMEOUT_REDE_MS = 12_000;
 const TIMEOUT_PEDIDO_MS = 25_000;
@@ -385,6 +412,51 @@ function extrairMaquininha(auth: any): Maquininha {
   return { estado: "DESCONHECIDA", rotulo: null };
 }
 
+/**
+ * A MESMA coluna (`CustomerOrder.posStatus`) recebe DOIS vocabulários: minúsculo
+ * em inglês quando quem cobra é o Mercado Pago Point (created, processed,
+ * canceled, failed, expired, action_required) e MAIÚSCULO em português quando
+ * quem cobra é o app da maquininha (AGUARDANDO_TERMINAL, NO_TERMINAL, PAGO,
+ * RECUSADO, CANCELADO, EXPIRADO). A tela conhecia só o inglês.
+ *
+ * Por isso a lista de "ainda esperando o cartão" é explícita em vez de "qualquer
+ * coisa diferente de created": com o app da maquininha, NO_TERMINAL — que é o
+ * estado NORMAL, cobrança acesa no visor — cairia em "Processando o pagamento"
+ * durante toda a espera.
+ */
+const COBRANCA_ESPERANDO_CARTAO = new Set([
+  "",
+  "CREATED",
+  "ACTION_REQUIRED",
+  "AGUARDANDO_TERMINAL",
+  "NO_TERMINAL",
+]);
+const COBRANCA_RECUSADA = new Set(["FAILED", "REJECTED", "RECUSADO"]);
+const COBRANCA_EXPIRADA = new Set(["EXPIRED", "EXPIRADO"]);
+const COBRANCA_CANCELADA = new Set(["CANCELED", "CANCELLED", "REFUNDED", "CANCELADO"]);
+
+type EstadoDaCobranca = "ESPERANDO" | "PROCESSANDO" | "RECUSADO" | "EXPIRADO" | "CANCELADO";
+
+function estadoDaCobranca(bruto: unknown): EstadoDaCobranca {
+  const valor = String(bruto ?? "").trim().toUpperCase();
+  if (COBRANCA_RECUSADA.has(valor)) return "RECUSADO";
+  if (COBRANCA_EXPIRADA.has(valor)) return "EXPIRADO";
+  if (COBRANCA_CANCELADA.has(valor)) return "CANCELADO";
+  if (COBRANCA_ESPERANDO_CARTAO.has(valor)) return "ESPERANDO";
+  return "PROCESSANDO";
+}
+
+/**
+ * O teclado do quiosque só escreve em caixa alta, então o nome saía "JOÃO" na
+ * comanda e na chamada da senha. Só a forma de exibir muda — as letras
+ * continuam sendo as que o cliente digitou.
+ */
+function nomeProprio(texto: string): string {
+  return texto
+    .toLocaleLowerCase("pt-BR")
+    .replace(/(^|[\s'-])([\p{L}])/gu, (_todo, antes: string, letra: string) => antes + letra.toLocaleUpperCase("pt-BR"));
+}
+
 /* ─────────────────────────── ESTILOS COMPARTILHADOS ──────────────────────── */
 
 const vidro: React.CSSProperties = {
@@ -459,6 +531,14 @@ const LINHAS_LETRAS = [
 /** Sem esta linha ninguém escreve "João", "Açaí" ou "Ronaldão" no quiosque. */
 const LINHA_ACENTOS = ["Á", "À", "Â", "Ã", "É", "Ê", "Í", "Ó", "Ô", "Õ", "Ú"];
 
+/**
+ * A própria tela sugere "sem cebola, ponto da carne" como exemplo de observação
+ * e o teclado não tinha vírgula, ponto nem hífen: a comanda chegava à cozinha
+ * com tudo grudado numa frase só. Vão na mesma fileira dos acentos para não
+ * somar mais uma linha de altura ao teclado.
+ */
+const LINHA_PONTUACAO = [",", ".", "-", "/"];
+
 function TecladoVirtual({
   texto,
   onTexto,
@@ -483,10 +563,16 @@ function TecladoVirtual({
     cursor: "pointer",
   };
 
+  // Ao bater no limite as teclas simplesmente paravam de responder, sem nenhum
+  // sinal: o cliente do quiosque conclui que a tela travou e chama alguém.
+  const noLimite = texto.length >= maxLen;
+
   const digitar = (caractere: string) => {
     if (texto.length >= maxLen) return;
     onTexto(texto + caractere);
   };
+
+  const teclaDeEscrita: React.CSSProperties = noLimite ? { ...tecla, opacity: 0.4 } : tecla;
 
   const linhas = comNumeros ? [LINHA_NUMEROS, ...LINHAS_LETRAS] : LINHAS_LETRAS;
 
@@ -495,7 +581,7 @@ function TecladoVirtual({
       {linhas.map((linha, i) => (
         <div key={i} style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
           {linha.map((k) => (
-            <button key={k} type="button" onClick={() => digitar(k)} style={tecla}>
+            <button key={k} type="button" onClick={() => digitar(k)} style={teclaDeEscrita}>
               {k}
             </button>
           ))}
@@ -503,8 +589,8 @@ function TecladoVirtual({
       ))}
 
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-        {LINHA_ACENTOS.map((k) => (
-          <button key={k} type="button" onClick={() => digitar(k)} style={{ ...tecla, background: "rgba(255,255,255,0.06)" }}>
+        {[...LINHA_ACENTOS, ...LINHA_PONTUACAO].map((k) => (
+          <button key={k} type="button" onClick={() => digitar(k)} style={{ ...teclaDeEscrita, background: "rgba(255,255,255,0.06)" }}>
             {k}
           </button>
         ))}
@@ -514,12 +600,16 @@ function TecladoVirtual({
         <button type="button" onClick={() => onTexto("")} style={{ ...tecla, minWidth: 150, fontSize: 22 }}>
           Limpar
         </button>
-        <button type="button" onClick={() => digitar(" ")} style={{ ...tecla, minWidth: 300, fontSize: 22 }}>
+        <button type="button" onClick={() => digitar(" ")} style={{ ...teclaDeEscrita, minWidth: 300, fontSize: 22 }}>
           Espaço
         </button>
         <button type="button" onClick={() => onTexto(texto.slice(0, -1))} style={{ ...tecla, minWidth: 150, fontSize: 22 }}>
           Apagar
         </button>
+      </div>
+
+      <div style={{ fontSize: 16, fontWeight: 700, color: noLimite ? "#FBBF24" : "#94A3B8" }}>
+        {noLimite ? `Limite de ${maxLen} letras — apague para escrever mais` : `${texto.length}/${maxLen}`}
       </div>
     </div>
   );
@@ -706,6 +796,18 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const [erroDoCancelamento, setErroDoCancelamento] = useState<string | null>(null);
   const [avisoNoCaixa, setAvisoNoCaixa] = useState<string | null>(null);
   const [cancelandoCobranca, setCancelandoCobranca] = useState(false);
+  /* POST do pedido em voo: os dois cartões de pagar ficavam clicáveis o tempo
+     todo, e o segundo toque grava um pedido novo — a rota não deduplica pela
+     chave de idempotência que esta tela manda. */
+  const [enviandoPedido, setEnviandoPedido] = useState(false);
+  /* Resposta que nunca chegou: pode ter gravado. Tocar de novo é o caminho para
+     duas senhas da mesma comida, faturadas e baixadas do estoque em dobro. */
+  const [envioIncerto, setEnvioIncerto] = useState(false);
+  /* Preço que o servidor gravou quando ele não bate com o da tela. */
+  const [precoAtualizado, setPrecoAtualizado] = useState<number | null>(null);
+  /* Caixa reaberto no meio da sessão: precisa aparecer, senão o cliente vai
+     embora lendo o aviso vermelho de um problema que já acabou. */
+  const [caixaFoiLiberado, setCaixaFoiLiberado] = useState(false);
   const [segundosNaEspera, setSegundosNaEspera] = useState(0);
   const [contagemRegressiva, setContagemRegressiva] = useState(0);
 
@@ -715,6 +817,14 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const inicioDaCobrancaRef = useRef(0);
   const telaRef = useRef<Tela>("CARREGANDO");
   const desligamentoPendenteRef = useRef<string | null>(null);
+  /* Trava de duplo toque. Precisa ser ref, não estado: entre os dois toques do
+     dedo grosso do quiosque o React pode não ter repintado ainda. */
+  const envioEmCursoRef = useRef(false);
+  /* Só o aviso de caixa fechado some sozinho quando o caixa abre. A mensagem de
+     "não sabemos se o pedido foi registrado" tem que continuar na tela. */
+  const erroEhDeCaixaFechadoRef = useRef(false);
+  const caixaEstavaAbertoRef = useRef(true);
+  const cardapioCarregadoEmRef = useRef(0);
 
   useEffect(() => {
     lojaAbertaRef.current = lojaAberta;
@@ -810,6 +920,12 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     setAvisoNoCaixa(null);
     setSemRespostaDoServidor(false);
     setCategoriaAtiva("");
+    setEnviandoPedido(false);
+    setEnvioIncerto(false);
+    setPrecoAtualizado(null);
+    setCaixaFoiLiberado(false);
+    envioEmCursoRef.current = false;
+    erroEhDeCaixaFechadoRef.current = false;
     sessaoRef.current = novaSessao();
     setTela(lojaAbertaRef.current ? "CARDAPIO" : "FECHADA");
   }, []);
@@ -899,6 +1015,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
       setCategorias(Array.isArray(cardapio.dados?.categories) ? cardapio.dados.categories : []);
       setProdutos(Array.isArray(cardapio.dados?.products) ? cardapio.dados.products : []);
+      cardapioCarregadoEmRef.current = Date.now();
       setTela(aberta ? "CARDAPIO" : "FECHADA");
     }
 
@@ -920,6 +1037,41 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       travaDeTela?.release().catch(() => {});
     };
   }, [slug, token]);
+
+  /**
+   * Recarga do cardápio já em operação. O preço, o `active` e a disponibilidade
+   * do dia mudam no painel a qualquer hora, e o quiosque fica dias na mesma
+   * página: sem isto a tela anunciava um valor e o servidor gravava outro, e o
+   * item desativado só aparecia no 409 que esvazia o carrinho inteiro.
+   *
+   * Falha de rede não mexe em nada: cardápio velho vende, cardápio vazio não.
+   */
+  const recarregarCardapio = useCallback(async () => {
+    const cardapio = await chamar(`/api/totem/menu?token=${encodeURIComponent(token)}`);
+    if (!cardapio.ok) return;
+    if (Array.isArray(cardapio.dados?.categories)) setCategorias(cardapio.dados.categories);
+    if (Array.isArray(cardapio.dados?.products)) setProdutos(cardapio.dados.products);
+    cardapioCarregadoEmRef.current = Date.now();
+  }, [token]);
+
+  /**
+   * A recarga acontece entre um cliente e outro: tela do cardápio, carrinho
+   * vazio e nenhum modal aberto. Trocar preço ou apagar produto debaixo de quem
+   * está montando o pedido seria pior que a defasagem — o item sumiria no meio
+   * do toque. O relógio é a idade do cardápio, não o tempo desta tela: assim a
+   * loja movimentada, que nunca fica ociosa cinco minutos seguidos, também
+   * atualiza — e o quiosque recém-carregado não busca duas vezes.
+   */
+  useEffect(() => {
+    if (tela !== "CARDAPIO" || carrinho.length > 0 || comboAberto !== null) return;
+    const seEstiverVelho = () => {
+      if (Date.now() - cardapioCarregadoEmRef.current < INTERVALO_RECARGA_DO_CARDAPIO_MS) return;
+      void recarregarCardapio();
+    };
+    seEstiverVelho();
+    const id = setInterval(seEstiverVelho, 30_000);
+    return () => clearInterval(id);
+  }, [tela, carrinho.length, comboAberto, recarregarCardapio]);
 
   /**
    * Saída da tela de carregamento. Sem isto, uma resposta que nunca chega
@@ -995,12 +1147,37 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       setCaixaAberto(r.dados?.caixaAberto !== false);
     };
 
+    // Bate NA HORA, não só um minuto depois. `caixaAberto` nasce otimista em
+    // `true` e o heartbeat é o único canal que diz a verdade: sem esta primeira
+    // batida, o cliente que chega logo depois de a tela carregar — o caso
+    // normal, porque o totem é ligado de manhã antes de o operador abrir o
+    // caixa — montava o pedido inteiro sem ver aviso nenhum e só descobria no
+    // 409. Adianta pelo mesmo motivo a descoberta de licença desativada.
+    void bater();
     const id = setInterval(bater, INTERVALO_HEARTBEAT_MS);
     return () => {
       vivo = false;
       clearInterval(id);
     };
   }, [token, desligar]);
+
+  /**
+   * Caixa reaberto no meio da sessão. O aviso vermelho de "o caixa está
+   * fechado" só era limpo no próximo toque em pagar ou no fim da sessão: o
+   * cliente ficava lendo na tela um impedimento que já tinha acabado e ia
+   * embora. Só o aviso DE CAIXA sai daqui — a mensagem de "não sabemos se o
+   * pedido foi registrado" precisa continuar onde está.
+   */
+  useEffect(() => {
+    if (caixaAberto && !caixaEstavaAbertoRef.current) {
+      if (erroEhDeCaixaFechadoRef.current) {
+        erroEhDeCaixaFechadoRef.current = false;
+        setErroDoEnvio(null);
+      }
+      setCaixaFoiLiberado(true);
+    }
+    caixaEstavaAbertoRef.current = caixaAberto;
+  }, [caixaAberto]);
 
   /**
    * Totem DESLIGADO durante a sessão (licença ou módulo): aí sim a venda para.
@@ -1045,6 +1222,19 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const temAlgoAPerder =
     carrinho.length > 0 || nomeDoCliente.length > 0 || busca.length > 0 || comboAberto !== null || observacao.length > 0;
 
+  /**
+   * O cliente que foi chamar o atendente NÃO está inativo — ele está fazendo
+   * exatamente o que a tela mandou. Com o prazo de 60s valendo aqui, o carrinho
+   * era apagado no meio do caminho até o balcão e ele voltava com o atendente
+   * para uma tela em branco: a promessa "seu pedido continua aqui" desfeita pelo
+   * cronômetro. É o mesmo raciocínio que já isenta a maquininha com cobrança
+   * viva — só que o prazo estica em vez de sumir, senão um carrinho abandonado
+   * ficaria na cara do próximo cliente até alguém tocar na tela.
+   */
+  const esperandoOAtendente = !caixaAberto && carrinho.length > 0;
+  const prazoDeInatividade = esperandoOAtendente ? ESPERA_PELO_ATENDENTE_MS : INATIVIDADE_MS;
+  const janelaDoAviso = esperandoOAtendente ? AVISO_ANTES_DO_ATENDENTE_MS : AVISO_ANTES_MS;
+
   useEffect(() => {
     if (!telaDeSessao) {
       setAvisoDeInatividade(false);
@@ -1059,9 +1249,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       if (idFim) clearTimeout(idFim);
       setAvisoDeInatividade(false);
       if (temAlgoAPerder) {
-        idAviso = setTimeout(() => setAvisoDeInatividade(true), INATIVIDADE_MS - AVISO_ANTES_MS);
+        idAviso = setTimeout(() => setAvisoDeInatividade(true), prazoDeInatividade - janelaDoAviso);
       }
-      idFim = setTimeout(() => reiniciarSessao(), INATIVIDADE_MS);
+      idFim = setTimeout(() => reiniciarSessao(), prazoDeInatividade);
     };
 
     armar();
@@ -1073,15 +1263,15 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       window.removeEventListener("pointerdown", armar);
       window.removeEventListener("keydown", armar);
     };
-  }, [telaDeSessao, temAlgoAPerder, reiniciarSessao]);
+  }, [telaDeSessao, temAlgoAPerder, reiniciarSessao, prazoDeInatividade, janelaDoAviso]);
 
   useEffect(() => {
     if (!avisoDeInatividade) return;
-    const fim = Date.now() + AVISO_ANTES_MS;
-    setSegundosDoAviso(Math.round(AVISO_ANTES_MS / 1000));
+    const fim = Date.now() + janelaDoAviso;
+    setSegundosDoAviso(Math.round(janelaDoAviso / 1000));
     const id = setInterval(() => setSegundosDoAviso(Math.max(0, Math.ceil((fim - Date.now()) / 1000))), 250);
     return () => clearInterval(id);
-  }, [avisoDeInatividade]);
+  }, [avisoDeInatividade, janelaDoAviso]);
 
   /* ─────────────────────── CATEGORIAS E PRODUTOS ─────────────────────────── */
 
@@ -1269,83 +1459,147 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       // o caso de o cliente voltar da maquininha e tentar de novo.
       if (pedido && pedido.assinatura === assinaturaDoCarrinho) return pedido;
 
-      setErroDoEnvio(null);
-      setTela("ENVIANDO");
+      // Duplo toque no mesmo carrinho grava DOIS pedidos: a rota descarta a
+      // chave de idempotência que vai no corpo, então cada POST vira uma senha
+      // nova, com faturamento e baixa de estoque próprios. A troca de tela para
+      // ENVIANDO não protege sozinha — ela depende de o React ter repintado
+      // entre um toque e o outro.
+      if (envioEmCursoRef.current) return null;
+      envioEmCursoRef.current = true;
+      setEnviandoPedido(true);
 
-      const r = await chamar("/api/totem/order", {
-        metodo: "POST",
-        prazoMs: TIMEOUT_PEDIDO_MS,
-        corpo: {
-          token,
-          idempotencyKey: chaveDeIdempotencia,
-          customerName: nomeDoCliente.trim() || "Cliente Totem",
-          notes: observacao.trim() || undefined,
-          paymentMethod: formaDePagamento,
-          items: carrinho.map((i) => ({
-            menuProductId: i.produto.id,
-            quantity: i.quantidade,
-            comboSelections: i.escolhas,
-          })),
-        },
-      });
+      try {
+        setErroDoEnvio(null);
+        erroEhDeCaixaFechadoRef.current = false;
+        setPrecoAtualizado(null);
+        setTela("ENVIANDO");
 
-      const dadosDoPedido = r.dados?.order;
+        const r = await chamar("/api/totem/order", {
+          metodo: "POST",
+          prazoMs: TIMEOUT_PEDIDO_MS,
+          corpo: {
+            token,
+            idempotencyKey: chaveDeIdempotencia,
+            // O teclado do quiosque só tem caixa alta: sem isto a comanda e a
+            // chamada da senha saem "JOÃO".
+            customerName: nomeProprio(nomeDoCliente.trim()) || "Cliente Totem",
+            notes: observacao.trim() || undefined,
+            paymentMethod: formaDePagamento,
+            items: carrinho.map((i) => ({
+              menuProductId: i.produto.id,
+              quantity: i.quantidade,
+              comboSelections: i.escolhas,
+            })),
+          },
+        });
 
-      // 409 tem dois significados nesta rota: item que saiu do cardápio (sem
-      // pedido no corpo) e reenvio da mesma chave (com o pedido já gravado).
-      if (r.ok || (r.status === 409 && dadosDoPedido?.id)) {
-        if (!dadosDoPedido?.id) {
-          setErroDoEnvio("O servidor aceitou o pedido mas não devolveu o número. Chame um atendente.");
+        const dadosDoPedido = r.dados?.order;
+
+        // 409 tem dois significados nesta rota: item que saiu do cardápio (sem
+        // pedido no corpo) e reenvio da mesma chave (com o pedido já gravado).
+        if (r.ok || (r.status === 409 && dadosDoPedido?.id)) {
+          if (!dadosDoPedido?.id) {
+            // O servidor pode ter gravado e a tela não tem o número: um segundo
+            // toque geraria o pedido gêmeo.
+            setEnvioIncerto(true);
+            setErroDoEnvio("O servidor aceitou o pedido mas não devolveu o número. Chame um atendente.");
+            setTela("PAGAMENTO");
+            return null;
+          }
+          const valorGravado = Number(dadosDoPedido.totalAmount);
+          const criado: PedidoCriado = {
+            id: String(dadosDoPedido.id),
+            numero: String(dadosDoPedido.numero ?? dadosDoPedido.dailyOrderNumber ?? ""),
+            // O valor exibido daqui para frente é o do servidor: ele aplica o
+            // piso de preço dos itens montados, e é ele que vai para o visor da
+            // maquininha. Mostrar o total da tela seria prometer outro preço.
+            valor: Number.isFinite(valorGravado) && valorGravado > 0 ? valorGravado : total,
+            aguardandoPagamento: dadosDoPedido.status === "AGUARDANDO_PAGAMENTO",
+            assinatura: assinaturaDoCarrinho,
+          };
+          setPedido(criado);
+
+          // O preço da tela é o do cardápio que este quiosque carregou; o preço
+          // cobrado é o que o servidor acabou de gravar. Eles divergem quando o
+          // lojista mexe no preço com a página aberta — e a troca acontecia em
+          // silêncio, no instante em que o visor da maquininha já estava
+          // acendendo com outro valor. Aqui o cliente vê o número novo e decide:
+          // o segundo toque cai no reaproveitamento lá em cima e segue direto.
+          if (Math.abs(criado.valor - total) >= 0.01) {
+            setPrecoAtualizado(criado.valor);
+            setTela("PAGAMENTO");
+            return null;
+          }
+          return criado;
+        }
+
+        // Caixa fechado: o pedido não pode ser concluído, mas NADA se perde. O
+        // carrinho fica de pé e o cliente é mandado ao balcão — o atendente
+        // fecha por ele, ou abre o caixa e o cliente conclui aqui mesmo. Tem que
+        // vir ANTES do 409 genérico: aquele limpa o carrinho, que é justamente o
+        // que não se pode fazer com quem já escolheu tudo.
+        if (r.status === 409 && r.dados?.error === "caixa_fechado") {
+          setErroDoEnvio(
+            r.dados?.mensagem ||
+              "O caixa da loja está fechado agora. Chame um atendente no balcão — seu pedido continua aqui."
+          );
+          erroEhDeCaixaFechadoRef.current = true;
+          setCaixaAberto(false);
+          setCaixaFoiLiberado(false);
           setTela("PAGAMENTO");
           return null;
         }
-        const valorGravado = Number(dadosDoPedido.totalAmount);
-        const criado: PedidoCriado = {
-          id: String(dadosDoPedido.id),
-          numero: String(dadosDoPedido.numero ?? dadosDoPedido.dailyOrderNumber ?? ""),
-          // O valor exibido daqui para frente é o do servidor: ele aplica o
-          // piso de preço dos itens montados, e é ele que vai para o visor da
-          // maquininha. Mostrar o total da tela seria prometer outro preço.
-          valor: Number.isFinite(valorGravado) && valorGravado > 0 ? valorGravado : total,
-          aguardandoPagamento: dadosDoPedido.status === "AGUARDANDO_PAGAMENTO",
-          assinatura: assinaturaDoCarrinho,
-        };
-        setPedido(criado);
-        return criado;
-      }
 
-      // Caixa fechado: o pedido não pode ser concluído, mas NADA se perde. O
-      // carrinho fica de pé e o cliente é mandado ao balcão — o atendente
-      // fecha por ele, ou abre o caixa e o cliente conclui aqui mesmo. Tem que
-      // vir ANTES do 409 genérico: aquele limpa o carrinho, que é justamente o
-      // que não se pode fazer com quem já escolheu tudo.
-      if (r.status === 409 && r.dados?.error === "caixa_fechado") {
+        if (r.status === 409) {
+          // A rota diz QUAIS itens saíram (por nome, ou pelo id quando o produto
+          // nem existe mais). Apagar o carrinho inteiro por causa de um item
+          // fazia o cliente remontar tudo em pé; aqui sai só o que foi recusado.
+          // Se nada casar, vale o comportamento antigo — carrinho vazio é ruim,
+          // mas um carrinho que bate no mesmo 409 para sempre é pior.
+          const recusados: string[] = Array.isArray(r.dados?.itensRecusados)
+            ? r.dados.itensRecusados.map((x: unknown) => String(x))
+            : [];
+          const sobrou = recusados.length
+            ? carrinho.filter((i) => !recusados.includes(i.produto.id) && !recusados.includes(i.produto.name))
+            : [];
+          setCarrinho(sobrou.length < carrinho.length ? sobrou : []);
+          setErroDoEnvio(r.dados?.mensagem || "Alguns itens saíram do cardápio. Refaça o pedido.");
+          setPedido(null);
+          setTela("CARDAPIO");
+          // O cardápio desta tela é o que ficou para trás: recarrega para o
+          // próximo cliente não bater na mesma parede.
+          void recarregarCardapio();
+          return null;
+        }
+
+        // Resposta que nunca chegou não é "não gravou": pode ter gravado. Os
+        // botões ficam inertes até alguém do balcão resolver — tocar de novo é
+        // o caminho para duas senhas da mesma comida. A saída é o "Cancelar
+        // pedido" do cabeçalho, que é deliberado.
+        if (r.falhaDeRede) setEnvioIncerto(true);
         setErroDoEnvio(
-          r.dados?.mensagem ||
-            "O caixa da loja está fechado agora. Chame um atendente no balcão — seu pedido continua aqui."
+          r.falhaDeRede
+            ? "Não sabemos se o pedido chegou a ser registrado. Chame um atendente antes de tentar de novo — tocar outra vez pode gerar dois pedidos."
+            : r.dados?.error || r.dados?.mensagem || "Não foi possível registrar o pedido."
         );
-        setCaixaAberto(false);
         setTela("PAGAMENTO");
         return null;
+      } finally {
+        envioEmCursoRef.current = false;
+        setEnviandoPedido(false);
       }
-
-      if (r.status === 409) {
-        setErroDoEnvio(r.dados?.mensagem || "Alguns itens saíram do cardápio. Refaça o pedido.");
-        setCarrinho([]);
-        setPedido(null);
-        setTela("CARDAPIO");
-        return null;
-      }
-
-      setErroDoEnvio(
-        r.falhaDeRede
-          ? "Não sabemos se o pedido chegou a ser registrado. Chame um atendente antes de tentar de novo — tocar outra vez pode gerar dois pedidos."
-          : r.dados?.error || r.dados?.mensagem || "Não foi possível registrar o pedido."
-      );
-      setTela("PAGAMENTO");
-      return null;
     },
-    [assinaturaDoCarrinho, carrinho, chaveDeIdempotencia, nomeDoCliente, observacao, pedido, token, total]
+    [
+      assinaturaDoCarrinho,
+      carrinho,
+      chaveDeIdempotencia,
+      nomeDoCliente,
+      observacao,
+      pedido,
+      recarregarCardapio,
+      token,
+      total,
+    ]
   );
 
   /* ─────────────────────── COBRANÇA NA MAQUININHA ────────────────────────── */
@@ -1446,21 +1700,29 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       }
 
       const dentroDaCarencia = Date.now() - inicioDaCobrancaRef.current < CARENCIA_APOS_INICIAR_MS;
-      const statusDaMaquininha = String(d.posStatus || d.pos?.status || "").toLowerCase();
 
-      if (statusDaMaquininha === "failed" || statusDaMaquininha === "rejected") {
+      // O campo é `cobranca`. A tela lia `posStatus`, que /api/totem/payment-status
+      // nunca devolveu: o status era sempre "" e NENHUMA recusa chegava até
+      // aqui. O cliente com o cartão negado ficava lendo "aproxime o cartão"
+      // com o contador subindo, sem o botão "Tentar de novo", até o
+      // cancelamento automático de 5 minutos — e o totem preso para quem
+      // estivesse na fila. `podeTentarDeNovo` é a mesma leitura já pronta na
+      // rota; vale como atalho para os dois lados não divergirem de novo.
+      const cobranca = d.podeTentarDeNovo === true ? "RECUSADO" : estadoDaCobranca(d.cobranca ?? d.posStatus);
+
+      if (cobranca === "RECUSADO") {
         if (!dentroDaCarencia) setEstadoDoPagamento("RECUSADO");
         return;
       }
-      if (statusDaMaquininha === "expired") {
+      if (cobranca === "EXPIRADO") {
         if (!dentroDaCarencia) setEstadoDoPagamento("EXPIRADO");
         return;
       }
-      if (d.canceled === true || statusDaMaquininha === "canceled") {
+      if (d.canceled === true || cobranca === "CANCELADO") {
         if (!dentroDaCarencia) setEstadoDoPagamento("CANCELADO");
         return;
       }
-      if (statusDaMaquininha && statusDaMaquininha !== "created") {
+      if (cobranca === "PROCESSANDO") {
         setEstadoDoPagamento("PROCESSANDO");
         return;
       }
@@ -1531,7 +1793,16 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
    * fingir que está tudo limpo.
    */
   const irParaOCaixa = async () => {
+    // O pedido foi gravado como "Cartão (Maquininha)" e vai ser pago de outro
+    // jeito no balcão. `criarPedido` reaproveita o pedido em cache e não
+    // reescreve o método, então o rótulo errado chega ao caixa: quem recebe
+    // precisa registrar a forma que entrou, senão a conferência por forma de
+    // pagamento não fecha no fim do dia.
+    const avisoDaFormaDePagamento =
+      "Avise o atendente que o pagamento não passou na maquininha: ele precisa registrar no caixa a forma que você usar.";
+
     if (estadoDoPagamento !== "FALHOU_INICIAR" || !pedido?.id || cancelandoCobranca) {
+      setAvisoNoCaixa(avisoDaFormaDePagamento);
       setTela("CAIXA");
       return;
     }
@@ -1558,6 +1829,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       setAvisoNoCaixa(
         "Pode ter ficado uma cobrança presa no visor da maquininha. Avise o atendente antes de pagar."
       );
+    } else {
+      setAvisoNoCaixa(avisoDaFormaDePagamento);
     }
     setTela("CAIXA");
   };
@@ -1605,6 +1878,57 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   /* ═════════════════════════════ RENDERIZAÇÃO ═══════════════════════════════ */
 
   const botaoCancelarPedido = <BotaoCancelarPedido onCancelar={() => setConfirmarCancelamento(true)} />;
+
+  /**
+   * O aviso do caixa existia só na tela do carrinho — faltava exatamente onde o
+   * cliente toca em pagar, então ele descobria o impedimento batendo nele. E
+   * quando o operador abre o caixa no meio da sessão o aviso tem que virar a
+   * notícia boa: sem isso o cliente ia embora lendo um problema que já acabou.
+   * `alignSelf: stretch` porque a tela de pagamento centraliza os filhos.
+   */
+  const tarjaDoCaixa = (() => {
+    const base: React.CSSProperties = {
+      margin: "0 28px",
+      padding: "18px 22px",
+      borderRadius: 16,
+      display: "flex",
+      alignItems: "center",
+      gap: 16,
+      alignSelf: "stretch",
+    };
+
+    if (!caixaAberto && carrinho.length > 0) {
+      return (
+        <div
+          style={{ ...base, background: "rgba(245,158,11,0.15)", border: "2px solid rgba(245,158,11,0.5)" }}
+        >
+          <span style={{ fontSize: 34 }} aria-hidden="true">🙋</span>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#FDE68A" }}>Chame um atendente para finalizar</div>
+            <div style={{ fontSize: 18, color: "#FDE68A", opacity: 0.9, marginTop: 4 }}>
+              O caixa da loja está fechado agora. Seu pedido continua montado aqui — o atendente finaliza para você.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (caixaFoiLiberado && carrinho.length > 0) {
+      return (
+        <div style={{ ...base, background: "rgba(22,163,74,0.15)", border: "2px solid rgba(74,222,128,0.5)" }}>
+          <span style={{ fontSize: 34 }} aria-hidden="true">✅</span>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#86EFAC" }}>O caixa foi aberto</div>
+            <div style={{ fontSize: 18, color: "#86EFAC", opacity: 0.9, marginTop: 4 }}>
+              Pode finalizar seu pedido por aqui mesmo.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  })();
 
   const sobreposicoes = (
     <>
@@ -1659,7 +1983,11 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       {avisoDeInatividade && telaDeSessao && !confirmarCancelamento && (
         <ModalDeConfirmacao
           titulo="Ainda está aí?"
-          descricao={`Sem toque na tela, o pedido será apagado em ${segundosDoAviso}s para o próximo cliente.`}
+          descricao={
+            esperandoOAtendente
+              ? `Seu pedido está guardado enquanto você chama o atendente. Toque na tela para continuar — sem nenhum toque ele será apagado em ${segundosDoAviso}s.`
+              : `Sem toque na tela, o pedido será apagado em ${segundosDoAviso}s para o próximo cliente.`
+          }
           textoSim="Cancelar pedido"
           textoNao="Continuar pedindo"
           onSim={() => {
@@ -1695,7 +2023,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         <button type="button" onClick={() => window.location.reload()} style={{ ...botaoPrimario, marginTop: 40, minWidth: 320 }}>
           Tentar de novo
         </button>
-        <p style={{ marginTop: 20, fontSize: 16, color: "#64748B" }}>
+        {/* #64748B sobre o fundo escuro dá ~3,7:1, abaixo do mínimo legível: no
+            quiosque, em pé e com reflexo de luz de teto, esses avisos somem.
+            #94A3B8 é a mesma paleta e passa com folga. */}
+        <p style={{ marginTop: 20, fontSize: 16, color: "#94A3B8" }}>
           Tentando sozinho em {contagemRegressiva}s
         </p>
       </div>
@@ -2276,28 +2607,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         {/* Caixa fechado: avisa AQUI, antes de o cliente escolher a forma de
             pagamento e descobrir só no fim. A tela segue funcionando — ele pode
             montar o pedido e chamar alguém, ou esperar a loja abrir o caixa. */}
-        {!caixaAberto && carrinho.length > 0 && (
-          <div
-            style={{
-              margin: "0 28px",
-              padding: "18px 22px",
-              borderRadius: 16,
-              background: "rgba(245,158,11,0.15)",
-              border: "2px solid rgba(245,158,11,0.5)",
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-            }}
-          >
-            <span style={{ fontSize: 34 }} aria-hidden="true">🙋</span>
-            <div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#FDE68A" }}>Chame um atendente para finalizar</div>
-              <div style={{ fontSize: 18, color: "#FDE68A", opacity: 0.9, marginTop: 4 }}>
-                O caixa da loja está fechado agora. Seu pedido continua montado aqui — o atendente finaliza para você.
-              </div>
-            </div>
-          </div>
-        )}
+        {tarjaDoCaixa}
 
         <div style={{ flex: 1, overflowY: "auto", padding: 28 }}>
           {carrinho.length === 0 ? (
@@ -2484,32 +2794,47 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           {botaoCancelarPedido}
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, gap: 28 }}>
-          <h2 style={{ fontSize: 40, fontWeight: 800, margin: 0, textAlign: "center" }}>Como podemos te chamar?</h2>
-          <p style={{ fontSize: 20, color: "#94A3B8", margin: 0, textAlign: "center" }}>
-            Seu nome será chamado quando o pedido estiver pronto.
-          </p>
+        {/* `flex:1` num item de coluna nasce com `min-height:auto` e NÃO encolhe
+            abaixo do conteúdo: como o teclado inteiro mora aqui, esta tela
+            precisa de 934px de altura e o layout raiz corta com overflow hidden.
+            Em qualquer monitor mais baixo que isso — o do próprio dono tem 842 —
+            o botão "Ir para o pagamento" ficava FORA da tela e o cliente que
+            digitou o nome não tinha como avançar. `minHeight:0` libera o
+            encolhimento e o `overflowY` devolve a rolagem, como já acontece no
+            modal do teclado e na lista do carrinho. */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", padding: 28 }}>
+          {/* Centralizar com `margin: auto` e não com `justifyContent: center`:
+              quando o conteúdo é mais alto que a caixa, o centro empurra metade
+              do transbordo para CIMA e o navegador não deixa rolar até lá — o
+              título e a caixa do nome ficariam inalcançáveis na tela baixa que
+              esta correção existe para atender. */}
+          <div style={{ margin: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 28, width: "100%" }}>
+            <h2 style={{ fontSize: 40, fontWeight: 800, margin: 0, textAlign: "center" }}>Como podemos te chamar?</h2>
+            <p style={{ fontSize: 20, color: "#94A3B8", margin: 0, textAlign: "center" }}>
+              Seu nome será chamado quando o pedido estiver pronto.
+            </p>
 
-          <div
-            style={{
-              width: "100%",
-              maxWidth: 700,
-              background: "rgba(255,255,255,0.06)",
-              borderRadius: 20,
-              padding: "22px 28px",
-              fontSize: 40,
-              fontWeight: 800,
-              textAlign: "center",
-              minHeight: 100,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {nomeDoCliente || <span style={{ color: "rgba(255,255,255,0.2)" }}>Digite seu nome</span>}
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 700,
+                background: "rgba(255,255,255,0.06)",
+                borderRadius: 20,
+                padding: "22px 28px",
+                fontSize: 40,
+                fontWeight: 800,
+                textAlign: "center",
+                minHeight: 100,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {nomeDoCliente || <span style={{ color: "rgba(255,255,255,0.2)" }}>Digite seu nome</span>}
+            </div>
+
+            <TecladoVirtual texto={nomeDoCliente} onTexto={(t) => setNomeDoCliente(t.slice(0, 20))} maxLen={20} />
           </div>
-
-          <TecladoVirtual texto={nomeDoCliente} onTexto={(t) => setNomeDoCliente(t.slice(0, 20))} maxLen={20} />
         </div>
 
         <div style={{ padding: 24, background: "#1E293B" }}>
@@ -2532,6 +2857,15 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
   if (tela === "PAGAMENTO") {
     const mostrarMaquininha = maquininha.estado !== "NAO";
+    // Os dois cartões ficavam clicáveis com um POST em voo e depois de uma
+    // resposta perdida na rede — cada toque extra é uma senha a mais para a
+    // mesma comida, faturada e baixada do estoque de novo. Eles não somem: a
+    // tela continua de pé, só deixa de aceitar o toque enquanto não se sabe o
+    // que aconteceu. A saída é o "Cancelar pedido" do cabeçalho.
+    const podePagar = !enviandoPedido && !envioIncerto;
+    const estiloDoCartao: React.CSSProperties = podePagar
+      ? { cursor: "pointer" }
+      : { cursor: "not-allowed", opacity: 0.4 };
 
     return (
       <div style={telaEscura}>
@@ -2543,8 +2877,39 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           {botaoCancelarPedido}
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, gap: 28 }}>
-          <div style={{ fontSize: 46, fontWeight: 900 }}>{formatarPreco(total)}</div>
+        {/* Fora da área que rola, como no carrinho: é o aviso que decide se o
+            cliente deve chamar alguém, não pode depender de rolagem. Ele faltava
+            justamente aqui — o cliente só descobria o caixa fechado batendo no
+            botão de pagar. */}
+        {tarjaDoCaixa}
+
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, gap: 28 }}>
+          {/* O número grande passa a ser o que o servidor gravou assim que ele
+              existe: é ele que vai para o visor da maquininha. */}
+          <div style={{ fontSize: 46, fontWeight: 900 }}>{formatarPreco(precoAtualizado ?? total)}</div>
+
+          {/* Preço mexido no painel com esta página aberta: a tela anunciava um
+              valor e a cobrança subia outro, sem uma palavra. O toque seguinte
+              já reaproveita o pedido gravado e segue — o cliente confirma
+              vendo o número novo. */}
+          {precoAtualizado !== null && (
+            <div
+              style={{
+                background: "rgba(245,158,11,0.15)",
+                border: "2px solid rgba(245,158,11,0.5)",
+                color: "#FDE68A",
+                borderRadius: 16,
+                padding: "18px 24px",
+                fontSize: 19,
+                fontWeight: 700,
+                maxWidth: 900,
+                textAlign: "center",
+              }}
+            >
+              O preço deste pedido foi atualizado: agora são {formatarPreco(precoAtualizado)}. Toque de novo na forma
+              de pagamento para confirmar.
+            </div>
+          )}
 
           {erroDoEnvio && (
             <div
@@ -2579,6 +2944,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
             {mostrarMaquininha && (
               <button
                 type="button"
+                disabled={!podePagar}
                 onClick={() => void pagarNaMaquininha()}
                 style={{
                   ...vidro,
@@ -2590,9 +2956,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                   gap: 16,
                   border: "2px solid #3B82F6",
                   color: "white",
-                  cursor: "pointer",
                   minHeight: 300,
                   font: "inherit",
+                  ...estiloDoCartao,
                 }}
               >
                 <CreditCard size={72} color="#3B82F6" />
@@ -2607,6 +2973,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
             <button
               type="button"
+              disabled={!podePagar}
               onClick={() => void pagarNoCaixa()}
               style={{
                 ...vidro,
@@ -2618,9 +2985,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                 gap: 16,
                 border: "2px solid #F59E0B",
                 color: "white",
-                cursor: "pointer",
                 minHeight: 300,
                 font: "inherit",
+                ...estiloDoCartao,
               }}
             >
               <Store size={72} color="#F59E0B" />
@@ -2630,6 +2997,20 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
               </p>
             </button>
           </div>
+
+          {/* Trancar os botões sem saída deixaria o cliente com uma tela morta e
+              o carrinho refém — e "Cancelar pedido" apagaria tudo o que ele
+              escolheu. Esta é a saída deliberada: quem já conferiu no painel que
+              o pedido não entrou libera a tentativa sem remontar o carrinho. */}
+          {envioIncerto && (
+            <button
+              type="button"
+              onClick={() => setEnvioIncerto(false)}
+              style={{ ...botaoSecundario, minWidth: 360 }}
+            >
+              O atendente conferiu — tentar de novo
+            </button>
+          )}
         </div>
 
         {sobreposicoes}
@@ -2716,10 +3097,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         <p style={{ fontSize: 22, color: "#94A3B8", margin: "14px 0 0", maxWidth: 820, lineHeight: 1.45 }}>{subtitulo}</p>
 
         <div style={{ fontSize: 40, fontWeight: 900, margin: "24px 0 0" }}>{formatarPreco(pedido?.valor ?? total)}</div>
-        {pedido?.numero && <div style={{ fontSize: 18, color: "#64748B" }}>Senha #{pedido.numero}</div>}
+        {pedido?.numero && <div style={{ fontSize: 18, color: "#94A3B8" }}>Senha #{pedido.numero}</div>}
 
         {!acabou && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#64748B", fontSize: 17, marginTop: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#94A3B8", fontSize: 17, marginTop: 18 }}>
             <Clock size={20} /> aguardando há {segundosNaEspera}s
           </div>
         )}
@@ -2830,7 +3211,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         <button type="button" onClick={reiniciarSessao} style={{ ...botaoPrimario, marginTop: 36, minWidth: 360 }}>
           Novo pedido
         </button>
-        <p style={{ marginTop: 16, fontSize: 16, color: "#64748B" }}>A tela volta ao cardápio em {contagemRegressiva}s</p>
+        <p style={{ marginTop: 16, fontSize: 16, color: "#94A3B8" }}>A tela volta ao cardápio em {contagemRegressiva}s</p>
       </div>
     );
   }
@@ -2858,7 +3239,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
         <h1 style={{ fontSize: 46, fontWeight: 900, margin: 0 }}>Pagamento aprovado!</h1>
         <p style={{ fontSize: 22, color: "#94A3B8", margin: "16px 0 32px" }}>
-          Aguarde, logo chamaremos seu nome: <strong style={{ color: "white" }}>{nomeDoCliente}</strong>
+          Aguarde, logo chamaremos seu nome:{" "}
+          <strong style={{ color: "white" }}>{nomeProprio(nomeDoCliente)}</strong>
         </p>
 
         <div style={{ background: "rgba(255,255,255,0.05)", padding: "32px 72px", borderRadius: 28, border: "2px dashed rgba(255,255,255,0.2)" }}>
@@ -2869,7 +3251,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         <button type="button" onClick={reiniciarSessao} style={{ ...botaoSecundario, marginTop: 36, minWidth: 320 }}>
           Fazer outro pedido
         </button>
-        <p style={{ marginTop: 14, fontSize: 16, color: "#64748B" }}>A tela volta ao cardápio em {contagemRegressiva}s</p>
+        <p style={{ marginTop: 14, fontSize: 16, color: "#94A3B8" }}>A tela volta ao cardápio em {contagemRegressiva}s</p>
 
         <style
           dangerouslySetInnerHTML={{

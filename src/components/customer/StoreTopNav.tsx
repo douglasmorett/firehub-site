@@ -154,6 +154,8 @@ export default function StoreTopNav({
 
   // Close modal state
   const [expected, setExpected] = useState<Record<string,number>>({ cash:0, debit:0, credit:0, pix:0, voucher:0, total:0 });
+  /* Pedidos sem pagamento provado: ficam fora do esperado, mas visíveis. */
+  const [pendentes, setPendentes] = useState<{ valor: number; quantidade: number }>({ valor: 0, quantidade: 0 });
   const [actual, setActual]     = useState<Record<string,string>>({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
   const [closing, setClosing]   = useState(false);
   const [closeWarn, setCloseWarn] = useState(false);
@@ -223,6 +225,7 @@ export default function StoreTopNav({
     carregarMovs();
     fetch("/api/cash-session").then(r => r.json()).then(d => {
       if (d.expected) setExpected(d.expected);
+      if (d.pendentesDePagamento) setPendentes(d.pendentesDePagamento);
     });
     // Buscar pedidos pendentes em SAIU_ENTREGA
     fetch("/api/customer-order/pending-count").then(r => r.json()).then(d => {
@@ -276,6 +279,14 @@ export default function StoreTopNav({
         expectedCash: expected.cash, expectedDebit: expected.debit,
         expectedCredit: expected.credit, expectedPix: expected.pix,
         expectedVoucher: expected.voucher, expectedTotal: expected.total,
+        // As vendas já pagas online entram no conferido porque ninguém as
+        // CONTA na gaveta — elas são o mesmo valor dos dois lados. Sem mandar
+        // isto, o servidor somava só o que o operador digitou e comparava com
+        // um esperado que inclui o online: a tela dizia "fecha certinho" e o
+        // fechamento gravado (e o aviso no WhatsApp do dono) acusava uma falta
+        // exatamente do tamanho das vendas online do dia.
+        closingIfoodOnline: expected.ifoodOnline || 0,
+        closingIfoodCoupons: expected.ifoodCoupons || 0,
         difference: diff,
       }),
     });
@@ -774,6 +785,24 @@ export default function StoreTopNav({
                             🔒 {fmt(expected.ifoodCoupons)}
                           </span>
                         </td>
+                      </tr>
+                    )}
+                    {/* Pedidos que ninguém pagou (totem abandonado, cartão
+                        recusado, senha do "pagar no caixa" que nunca voltou ao
+                        balcão). Ficam FORA da conferência de propósito — antes
+                        entravam como dinheiro esperado e viravam falta no
+                        fechamento. Mas some da tela seria pior: pendência que o
+                        sistema esconde é pendência que ninguém cobra. */}
+                    {(pendentes.quantidade || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#A16207" }}>
+                          ⏳ Aguardando pagamento
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#A16207", opacity:0.85 }}>
+                            {pendentes.quantidade} pedido{pendentes.quantidade > 1 ? "s" : ""} — fora da conferência
+                          </div>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#A16207", fontWeight:700 }}>{fmt(pendentes.valor)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#A16207" }}>—</td>
                       </tr>
                     )}
                   </tbody>

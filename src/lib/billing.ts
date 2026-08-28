@@ -7,8 +7,9 @@
  *   Taxa = 1% do faturamento mensal do franqueado
  *   Mínimo: R$100 · Máximo: R$400
  *
- * Base de cálculo: soma de CustomerOrder.totalAmount do mês, com status
- * diferente de CANCELADO. Isso inclui TODA origem gravada como CustomerOrder —
+ * Base de cálculo: soma de CustomerOrder.totalAmount do mês dos pedidos que são
+ * venda de verdade (ver VENDAS_QUE_CONTAM abaixo). Isso inclui TODA origem
+ * gravada como CustomerOrder —
  * cardápio digital, chatbot de WhatsApp, mesa, balcão, totem e os pedidos
  * importados das integrações de iFood, 99Food e Jotajá. Não existe filtro por
  * `source` aqui, e é intencional: o trato é 1% de tudo que passa pelo sistema.
@@ -27,6 +28,37 @@
 import { prisma } from "@/lib/prisma";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
+
+/**
+ * ── O QUE CONTA COMO VENDA PARA A MENSALIDADE ───────────────────────────────
+ *
+ * A base era só `status != CANCELADO`, e isso engolia dois estados que não são
+ * venda nenhuma:
+ *
+ *   AGUARDANDO_PAGAMENTO — o pedido do totem nasce assim, ANTES do cartão.
+ *     Quem desiste na tela de pagamento, tem a cobrança recusada ou vai embora
+ *     deixa o registro para trás: nada no sistema cancela esses pedidos (o
+ *     /api/totem/payment/cancel cancela só a cobrança e não existe cron que os
+ *     expire). Como a agregação recalcula o mês inteiro a cada pedido
+ *     confirmado, cada abandono ficava somando 1% de uma venda que não houve —
+ *     dinheiro saindo do bolso do lojista. Pior no período de teste: a isenção
+ *     depende de `totalSales === 0`, então uma loja que ainda não vendeu nada e
+ *     só tem carrinho abandonado de totem perdia a isenção inteira e tomava
+ *     boleto cheio.
+ *
+ *   CRIANDO_IA — rascunho que o robô do WhatsApp ainda está montando; não é
+ *     pedido, é intenção. Mesmo critério do KDS, da fila de impressão e da
+ *     numeração do dia (src/lib/order-number.ts).
+ *
+ * O filtro do pendente é por status E ausência de pagamento, não só por status:
+ * filtrar só pelo status apagaria da conta o pedido que JÁ foi pago e ainda não
+ * trocou de estado. É a mesma exigência de prova que o DRE passou a fazer
+ * depois do saldo fantasma de R$ 342,35 da Hakim Centro.
+ */
+const VENDAS_QUE_CONTAM = {
+  status: { notIn: ["CANCELADO", "CRIANDO_IA"] as string[] },
+  NOT: { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: null },
+};
 
 /**
  * O lojista usou alguma funcionalidade nossa no mês?
@@ -230,7 +262,7 @@ export async function trackSaleForBilling(franchiseeId: string) {
   const agg = await prisma.customerOrder.aggregate({
     where: {
       franchiseeId,
-      status: { not: "CANCELADO" },
+      ...VENDAS_QUE_CONTAM,
       createdAt: { gte: monthStart, lt: monthEnd },
     },
     _sum: { totalAmount: true },
@@ -289,14 +321,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const agg = await prisma.customerOrder.aggregate({
     where: {
       franchiseeId,
-      status: { not: "CANCELADO" },
+      ...VENDAS_QUE_CONTAM,
       createdAt: { gte: monthStart, lt: monthEnd },
     },
     _sum: { totalAmount: true },
   });
 
   const totalSales = agg._sum.totalAmount ?? 0;
-  
+
   let hasUsage = totalSales > 0;
   let motivosUso: string[] = hasUsage ? ["vendas no mês"] : [];
   if (!hasUsage && !isSpecialStore) {
@@ -554,7 +586,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const aggVendas = await prisma.customerOrder.aggregate({
     where: {
       franchiseeId,
-      status: { not: "CANCELADO" },
+      ...VENDAS_QUE_CONTAM,
       createdAt: { gte: monthStart, lt: monthEnd },
     },
     _sum: { totalAmount: true },

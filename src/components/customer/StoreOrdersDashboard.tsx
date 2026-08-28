@@ -357,6 +357,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   onToggleSelectOrder,
   onToggleExpand,
   onUpdateStatus,
+  onConfirmarPagamento,
   onAssignMotoboy,
   onOpenCancelModal,
   onOpenPrintModal,
@@ -504,11 +505,18 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
             {/* Brendi ganha roxo (violeta #EDE9FE/#6D28D9) — tom diferente do
                 lilás da IA (#F3E8FF/#7C3AED) de propósito: os dois convivem na
-                mesma tela e o atendente distingue o canal pela cor. */}
+                mesma tela e o atendente distingue o canal pela cor.
+
+                O totem caía no default verde "Online", igual ao pedido do site.
+                Só que "Online" aqui quer dizer "cliente em casa esperando
+                entrega" — e o do totem é o cliente de pé no balcão, com senha na
+                mão, esperando ser chamado. O selo errado fazia a equipe tratar
+                como delivery quem estava a dois metros do caixa. Ciano por ser a
+                única faixa ainda livre entre os canais. */}
             <span style={{
               padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
-              background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "BRENDI" ? "#EDE9FE" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : "#DCFCE7",
-              color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "BRENDI" ? "#6D28D9" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : "#15803D"
+              background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "BRENDI" ? "#EDE9FE" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : order.source === "TOTEM" ? "#CFFAFE" : "#DCFCE7",
+              color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "BRENDI" ? "#6D28D9" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : order.source === "TOTEM" ? "#0E7490" : "#15803D"
             }}>
               {order.status === "CRIANDO_IA"
                 ? "🤖 IA criando..."
@@ -522,6 +530,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 ? `Jotajá #${order.openDeliveryReference || ""}`
                 : order.source === "PDV"
                 ? "PDV"
+                : order.source === "TOTEM"
+                ? "🖥️ Totem"
                 : "Online"}
             </span>
           </div>
@@ -559,7 +569,11 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 ✅ Pronto Cozinha
               </span>
             </div>
-          ) : order.status !== "CANCELADO" && order.status !== "ENCERRADO" ? (
+          ) : order.status !== "CANCELADO" && order.status !== "ENCERRADO" && order.status !== "AGUARDANDO_PAGAMENTO" ? (
+            // Sem AGUARDANDO_PAGAMENTO: esse pedido ainda não tem kdsStage nem
+            // comanda na cozinha, então "Pronto Cozinha" prometeria um preparo
+            // que não começou. A única ação possível aqui é confirmar o
+            // pagamento, e ela está na barra de ações abaixo.
             <div style={{ marginBottom: "4px" }}>
               <button
                 onClick={async (e) => {
@@ -629,6 +643,19 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               padding: "5px 10px", borderRadius: "8px", margin: "5px 0"
             }}>
               🍽️ {order.customerAddress || "Mesa"}
+            </div>
+          )}
+          {/* O cliente do totem está no balcão AGORA, com a senha na mão, e a
+              tela dele prometeu que a cozinha só começa depois do caixa
+              confirmar. Sem esta faixa o card fica igual a qualquer outro e o
+              atendente não sabe que é ele quem precisa agir. */}
+          {order.status === "AGUARDANDO_PAGAMENTO" && (
+            <div style={{
+              color: "#155E75", fontWeight: 800, fontSize: "0.8rem",
+              background: "#ECFEFF", border: "1.5px solid #67E8F9",
+              padding: "5px 10px", borderRadius: "8px", margin: "5px 0", lineHeight: 1.35
+            }}>
+              💰 Aguardando pagamento no balcão — a cozinha só recebe depois de confirmar
             </div>
           )}
 
@@ -711,6 +738,22 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
         }}>
           {/* Left: Status action button + motoboy select */}
           <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: "1 1 140px", minWidth: 0, flexWrap: "wrap" }}>
+            {/* O pedido de "Pagar no caixa" morria aqui: ele existia no banco,
+                o cliente entregava o dinheiro no balcão e não havia botão
+                nenhum em tela nenhuma que carimbasse o pagamento. Este é o
+                chamador que faltava para /api/store/orders/confirmar-pagamento
+                — a mesma `confirmOrderPayment` do webhook do gateway, para os
+                dois caminhos não divergirem no caixa. */}
+            {order.status === "AGUARDANDO_PAGAMENTO" && (
+              <button
+                disabled={isLoading}
+                onClick={e => { e.stopPropagation(); onConfirmarPagamento && onConfirmarPagamento(order); }}
+                style={{ padding: "5px 12px", borderRadius: "6px", border: "none", background: "#0891B2", color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}
+                title="O cliente pagou no balcão — liberar o pedido para a cozinha"
+              >
+                💵 Recebi o pagamento
+              </button>
+            )}
             {order.status === "NOVO" && (
               <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
             )}
@@ -739,7 +782,19 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             )}
 
             {/* Motoboy select / Partner Motoboy Badge */}
-            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || order.deliveryType === "TAKEOUT" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (() => {
+            {/* TAKEOUT saiu da lista de quem recebe motoboy e entrou na de
+                exclusões, ao lado de RETIRADA/BALCAO/MESA — que é o que ele
+                sempre foi. Todo canal normaliza TAKEOUT para "RETIRADA" ao
+                gravar; o único que grava "TAKEOUT" cru é o totem, então esta
+                cláusula na prática só disparava para pedido de balcão: dava para
+                despachar com entregador um cliente que estava de pé na loja
+                esperando a senha. E atribuir motoboy dispara WhatsApp com
+                "Endereço não informado" e, pelo paymentMethod "Cartão
+                (Maquininha)", ainda manda o entregador levar maquininha para um
+                pedido já pago no totem — cobrança em dobro. O resto do arquivo
+                já tratava TAKEOUT como retirada (faixa "🏪 Retirada no local",
+                botão de rota, filtro de canal); só esta linha divergia. */}
+            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "TAKEOUT" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (() => {
               const pInfo = getPartnerDeliveryInfo(order);
               return pInfo.isPartner ? (
                 <select
@@ -1125,6 +1180,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
   const [viewReceiptOrderId, setViewReceiptOrderId] = useState<string | null>(null);
+  const [confirmarPagamentoOrder, setConfirmarPagamentoOrder] = useState<any | null>(null);
   const [deliveryInfoModalOrder, setDeliveryInfoModalOrder] = useState<any | null>(null);
   const showToast = (text: string, color = "#10B981") => {
     setToastMsg({ text, color });
@@ -1424,7 +1480,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
               if (freshOrders.length > 0) {
                 freshOrders.forEach((o: any) => {
-                  if (o.status !== "CANCELADO" && o.status !== "ENCERRADO") {
+                  // AGUARDANDO_PAGAMENTO fica FORA da impressão automática pelo
+                  // mesmo motivo do CRIANDO_IA: ainda não é pedido, é intenção.
+                  // O feed passou a devolver o pendente do totem para o
+                  // atendente poder liberá-lo, e sem esta guarda o painel
+                  // imprimiria a comanda no instante em que o cliente toca em
+                  // "Pagar no caixa" — cozinha produzindo comida que ninguém
+                  // pagou ainda. Quem imprime é `confirmOrderPayment`, depois do
+                  // dinheiro na mão. Não marcamos como impresso aqui de
+                  // propósito: marcar aqui mataria a impressão da confirmação.
+                  if (o.status !== "CANCELADO" && o.status !== "ENCERRADO" && o.status !== "AGUARDANDO_PAGAMENTO") {
                     if (printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
                       markAutoPrinted(o);
                       console.log("[AutoPrint] 🖨️ Disparando impressão automática para pedido novo:", o.id);
@@ -1656,6 +1721,48 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       console.warn("[updateStatus] network error:", err?.message);
       showToast("Erro de conexão. Tente novamente.", "#EF4444");
     } finally { setLoadingId(null); }
+  };
+
+  /**
+   * O atendente recebeu o dinheiro (ou o Pix, ou passou o cartão) no balcão.
+   *
+   * A rota /api/store/orders/confirmar-pagamento já existia e já fazia tudo
+   * certo — carimba paymentPaidAt, gera a senha, manda para o KDS, imprime,
+   * baixa estoque e conta faturamento pela mesma `confirmOrderPayment` do
+   * webhook do gateway — mas não tinha um único chamador no projeto. Era o
+   * fim de linha do "Pagar no caixa": pedido gravado, dinheiro na gaveta,
+   * comanda nenhuma na cozinha.
+   *
+   * A forma de pagamento vai junto porque é ela que decide em que faixa a
+   * venda entra no fechamento do caixa; a rota ainda anexa QUEM recebeu, que é
+   * o que permite rastrear uma divergência no fim do dia.
+   */
+  const confirmarPagamento = async (orderId: string, formaDePagamento: string) => {
+    setLoadingId(orderId);
+    try {
+      const res = await fetch("/api/store/orders/confirmar-pagamento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, formaDePagamento }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        // O status novo depende do auto-aceite da loja (NOVO ou ACEITO), então
+        // quem manda é o que a rota devolveu — não um palpite da tela.
+        setOrders(prev => prev.map(o => o.id === orderId
+          ? { ...o, status: data.status || "NOVO", paymentPaidAt: new Date().toISOString() }
+          : o));
+        setConfirmarPagamentoOrder(null);
+        showToast(data.mensagem || "Pagamento confirmado! O pedido foi para a cozinha.", "#10B981");
+        router.refresh();
+      } else {
+        showToast(data.error || `Erro ${res.status} ao confirmar o pagamento.`, "#EF4444");
+      }
+    } catch {
+      showToast("Erro de conexão ao confirmar o pagamento.", "#EF4444");
+    } finally {
+      setLoadingId(null);
+    }
   };
 
   // === MOTOBOY IFOOD FUNCTIONS ===
@@ -1979,6 +2086,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return numA - numB;
   };
 
+  // ── AGUARDANDO PAGAMENTO GANHOU COLUNA ────────────────────────────────────
+  // Este status não casava com filtro de coluna NENHUM: o pedido do totem que
+  // escolhe "Pagar no caixa" chegava ao navegador e não era desenhado em lugar
+  // algum. O cliente ia ao balcão com a senha, pagava, e o atendente não tinha
+  // onde clicar — a cozinha nunca ficava sabendo. FIFO como as outras colunas
+  // ativas: quem está esperando no balcão há mais tempo é o próximo.
+  const aguardandoPagamento = filteredOrders.filter(o => o.status === "AGUARDANDO_PAGAMENTO").sort(sortByOrderNumberAsc);
   const novos = filteredOrders.filter(o => (o.status === "NOVO" || o.status === "CRIANDO_IA") && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
   const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
@@ -2075,7 +2189,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     transporte: allInRange.filter(o => o.status === "SAIU_ENTREGA"),
     entregues: allInRange.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO"),
     cancelados: allInRange.filter(o => o.status === "CANCELADO"),
-    total: allInRange.filter(o => o.status !== "CANCELADO"),
+    // Pendente de pagamento fica FORA do total. Enquanto o feed escondia esse
+    // status a linha "PAGAMENTOS PENDENTES" marcava zero para sempre e o total
+    // não sentia nada; agora que o pendente chega de verdade, somá-lo aqui
+    // inflaria o resumo de vendas com dinheiro que ninguém entregou — o mesmo
+    // erro que o DRE já tinha corrigido. Ele tem a linha dele logo acima.
+    total: allInRange.filter(o => o.status !== "CANCELADO" && o.status !== "AGUARDANDO_PAGAMENTO"),
   };
 
   const getChannelDiscount = (o: any): number => {
@@ -2180,6 +2299,50 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
               <button onClick={() => setPrintSelectOrderId(null)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem" }}>
                 Cancelar
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL CONFIRMAR PAGAMENTO NO BALCÃO */}
+      {/* A forma de pagamento é perguntada em vez de assumida: é ela que decide
+          em qual faixa do fechamento de caixa a venda entra (dinheiro, pix,
+          débito, crédito). Mandar um genérico jogaria toda venda de balcão na
+          faixa errada e a conferência com a gaveta e com o extrato da
+          maquininha deixaria de fechar. De quebra, a escolha vira uma
+          confirmação de dois toques — um clique torto não libera pedido não
+          pago para a cozinha. */}
+      {confirmarPagamentoOrder && (() => {
+        const ord = confirmarPagamentoOrder;
+        const formas = ["Dinheiro", "Pix", "Cartão de débito", "Cartão de crédito"];
+        return (
+          <div onClick={() => setConfirmarPagamentoOrder(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)", textAlign: "center" }}>
+              <div style={{ fontSize: "2rem", marginBottom: "6px" }}>💵</div>
+              <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#0F172A" }}>
+                Confirmar pagamento do #{getDisplayOrderNumber(ord)}
+              </div>
+              <div style={{ fontSize: "0.85rem", color: "#475569", marginTop: "4px" }}>
+                {ord.customerName} — <strong>R$ {Number(ord.totalAmount || 0).toFixed(2).replace(".", ",")}</strong>
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#64748B", margin: "12px 0 14px", lineHeight: 1.4 }}>
+                Só confirme com o dinheiro na mão: ao confirmar, o pedido vai para a cozinha, imprime e dá baixa no estoque.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
+                {formas.map(forma => (
+                  <button
+                    key={forma}
+                    disabled={loadingId === ord.id}
+                    onClick={() => confirmarPagamento(ord.id, forma)}
+                    style={{ padding: "11px", borderRadius: "10px", border: "1.5px solid #CBD5E1", background: "#F8FAFC", color: "#0F172A", fontWeight: 700, cursor: loadingId === ord.id ? "wait" : "pointer", fontSize: "0.9rem", fontFamily: "inherit" }}
+                  >
+                    {loadingId === ord.id ? "Confirmando..." : `Recebi em ${forma}`}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setConfirmarPagamentoOrder(null)} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
+                Ainda não recebi
               </button>
             </div>
           </div>
@@ -3831,6 +3994,48 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
 
         <div className="dashboard-kanban-container" style={{ display: "flex", gap: "0.65rem", overflowX: "auto", paddingBottom: "0.5rem", maxWidth: "100%", WebkitOverflowScrolling: "touch" }}>
+          {/* Só aparece quando existe alguém esperando no balcão. Loja sem totem
+              nunca produz este status, e uma sexta coluna vazia permanente só
+              espremeria as outras cinco. Vem PRIMEIRO porque é o cliente que
+              está de pé na frente do atendente, esperando. Sem entrada em
+              COLUMN_STATUS_MAP de propósito: arrastar um card para cá não pode
+              "despagar" um pedido. */}
+          {aguardandoPagamento.length > 0 && (
+            <DashboardColumn
+              columnId="col-aguardando-pagamento"
+              title="Aguardando Pagamento" emoji="💰" color="#0891B2" count={aguardandoPagamento.length} columnOrders={aguardandoPagamento}
+              isTabActive={activeColumnTab === "all" || activeColumnTab === "col-aguardando-pagamento"}
+              dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            >
+              {aguardandoPagamento.map(o => (
+                <DashboardOrderCard
+                  key={o.id}
+                  order={o}
+                  expanded={expandedId === o.id}
+                  isLoading={loadingId === o.id}
+                  isDragging={draggedOrderId === o.id}
+                  now={now}
+                  seqNum={getDisplayOrderNumber(o)}
+                  timeAlertConfig={timeAlertConfig}
+                  selectedOrderIds={selectedOrderIds}
+                  motoboys={motoboys}
+                  assigningId={assigningId}
+                  onToggleSelectOrder={toggleSelectOrder}
+                  onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                  onUpdateStatus={updateStatus}
+                  onConfirmarPagamento={(ord: any) => setConfirmarPagamentoOrder(ord)}
+                  onAssignMotoboy={assignMotoboy}
+                  onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                  onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                  onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                  onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  setOrders={setOrders}
+                />
+              ))}
+            </DashboardColumn>
+          )}
           <DashboardColumn
             columnId="col-novos"
             title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length} columnOrders={novos}

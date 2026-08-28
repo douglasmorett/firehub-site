@@ -26,6 +26,60 @@ export const dynamic = "force-dynamic";
 const FINALIZADOS = new Set(["processed", "canceled", "refunded", "failed", "expired"]);
 
 /**
+ * A forma de pagamento deixa de ser o texto que a tela escolheu lá atrás.
+ *
+ * O pedido nasce rotulado pelo botão que o cliente tocou, e o rótulo nunca era
+ * revisto. Quem toca em "Pagar no caixa" e depois passa o cartão na maquininha
+ * ficava gravado como dinheiro no balcão. Aqui o servidor SABE qual caminho a
+ * cobrança tomou — quando o visor acende, a venda é de maquininha, e é isso que
+ * fica no banco para o fechamento e para o extrato da adquirente conferirem.
+ */
+const FORMA_MAQUININHA = "Cartão (Maquininha)";
+
+/**
+ * ── CAIXA FECHADO NÃO ACENDE COBRANÇA NOVA ──────────────────────────────────
+ *
+ * A trava de caixa existia só na criação do pedido (/api/totem/order). Mas
+ * criar e cobrar são dois passos separados por minutos: pedido criado 22h50 com
+ * o caixa aberto, gerente fecha o caixa 22h55, cliente toca em "Pagar na
+ * maquininha" 22h56 — a cobrança acendia, o cartão passava e
+ * `confirmOrderPayment` carimbava o pagamento, mandava para o KDS e imprimia a
+ * comanda com o turno já fechado. É exatamente o que a regra do totem proíbe:
+ * enquanto ligado ele vende, mas sem caixa aberto o pedido não se CONCLUI.
+ *
+ * A checagem fica nos dois pontos que acendem cobrança NOVA — e só neles. Os
+ * caminhos que reconhecem cobrança que já existe (o `posOrderId` que voltou
+ * `processed`, a cobrança viva no visor) seguem sem perguntar do caixa: ali o
+ * cartão já passou, e recusar por caixa fechado deixaria o cliente com o valor
+ * debitado e o pedido sem registro nenhum — o oposto do que esta trava protege.
+ */
+async function caixaEstaAberto(franchiseeId: string): Promise<boolean> {
+  const aberto = await prisma.cashSession.findFirst({
+    where: { franchiseeId, status: "OPEN" },
+    select: { id: true },
+  });
+  return !!aberto;
+}
+
+/**
+ * A tela mostra `error` no detalhe da falha, então a mensagem humana vai nele —
+ * e o carrinho/pedido continuam de pé: o cliente cai no estado que já oferece
+ * "Tentar de novo" e "Pagar no caixa", que é para onde a regra manda mandá-lo.
+ */
+function respostaDeCaixaFechado(numero: number | null) {
+  const identificacao = numero ? ` (pedido ${numero})` : "";
+  return NextResponse.json(
+    {
+      error:
+        `O caixa da loja está fechado agora, então não dá para cobrar por aqui. ` +
+        `Chame um atendente no balcão${identificacao} — ele finaliza para você sem perder o que você escolheu.`,
+      code: "CAIXA_FECHADO",
+    },
+    { status: 409 },
+  );
+}
+
+/**
  * Descobre em qual maquininha está acesa a cobrança que já existia.
  *
  * Não serve a maquininha que ESTA chamada escolheu: o start pode ter sido
@@ -152,12 +206,17 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      if (!(await caixaEstaAberto(pedido.franchiseeId))) {
+        return respostaDeCaixaFechado(pedido.dailyOrderNumber);
+      }
+
       const { posTentativas } = await prisma.customerOrder.update({
         where: { id: pedido.id },
         data: {
           posStatus: ESTADOS_DA_COBRANCA.aguardando,
           posTerminalId: terminalComApp.id,
           posTentativas: { increment: 1 },
+          paymentMethod: FORMA_MAQUININHA,
         },
         select: { posTentativas: true },
       });
@@ -223,6 +282,9 @@ export async function POST(req: NextRequest) {
           data: {
             posStatus: status,
             gatewayProvider: "MERCADOPAGO_POINT",
+            // Cartão comprovadamente passado na Point da loja: o rótulo do
+            // botão da tela não manda mais nesta venda.
+            paymentMethod: FORMA_MAQUININHA,
             ...(atual.dados.paymentId ? { gatewayPaymentId: atual.dados.paymentId } : {}),
           },
         });
@@ -327,6 +389,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Segundo ponto que acende cobrança nova: depois de escolhida a maquininha
+    // e antes de queimar tentativa. Cobrança anterior morta que chegou até aqui
+    // também passa por esta porta — reacender é cobrança nova.
+    if (!(await caixaEstaAberto(pedido.franchiseeId))) {
+      return respostaDeCaixaFechado(pedido.dailyOrderNumber);
+    }
+
     // O contador sobe ANTES da chamada e vem do banco: a X-Idempotency-Key vale
     // 24h no MP, então repetir o número devolveria a ordem antiga em vez de
     // acender cobrança nova — e ele tem que vir do banco, não da memória, senão
@@ -394,6 +463,7 @@ export async function POST(req: NextRequest) {
         // a tela do operador chega ao nome ("Point do balcão") do visor certo.
         posTerminalId: terminal.id,
         posStatus: r.dados.status || "created",
+        paymentMethod: FORMA_MAQUININHA,
       },
     });
 

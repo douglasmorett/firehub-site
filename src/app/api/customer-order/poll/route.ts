@@ -813,7 +813,32 @@ export async function GET(req: NextRequest) {
     const orders = await withRetry(() => prisma.customerOrder.findMany({
       where: {
         franchiseeId: { in: validFranchiseeIds },
-        status: { notIn: ["AGUARDANDO_PAGAMENTO"] }
+        // ── PENDENTE DE PAGAMENTO: O DO BALCÃO APARECE, O DO CHECKOUT NÃO ─────
+        //
+        // Este feed escondia TODO AGUARDANDO_PAGAMENTO. Como é ele que alimenta
+        // o painel de pedidos, o pedido do totem — que nasce nesse status — dava
+        // as caras por um segundo (o SSR o traz) e sumia assim que o primeiro
+        // poll substituía a lista inteira. O cliente que escolhe "Pagar no
+        // caixa" entrega o dinheiro no balcão e o atendente não tinha o pedido
+        // em tela NENHUMA para liberar: comanda nunca ia para a cozinha,
+        // paymentPaidAt nunca era carimbado, estoque não baixava. Dinheiro na
+        // gaveta sem venda registrada.
+        //
+        // Devolver todo AGUARDANDO_PAGAMENTO trocaria um problema por outro: o
+        // checkout do site usa o MESMO status enquanto o cliente está na tela do
+        // gateway (api/customer-order/route.ts:257), e ali quem confirma é o
+        // webhook — sem nada para uma pessoa fazer. Cada carrinho abandonado no
+        // Pix online viraria card permanente no painel.
+        //
+        // O critério é "precisa de gente": no totem o cliente está de pé no
+        // balcão e só o atendente move o pedido adiante. Por isso só a origem
+        // TOTEM atravessa o filtro. A impressão continua protegida à parte
+        // (print-queue e GlobalPrintListener excluem este status), então
+        // aparecer no painel não imprime comanda antes da hora.
+        OR: [
+          { status: { notIn: ["AGUARDANDO_PAGAMENTO"] } },
+          { status: "AGUARDANDO_PAGAMENTO", source: "TOTEM" },
+        ],
       },
       include: {
         items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
