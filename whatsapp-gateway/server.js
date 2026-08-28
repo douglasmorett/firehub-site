@@ -49,6 +49,82 @@ function lembrarEnviada(resultado) {
   }
 }
 
+// ── AUTOCURA DA SESSÃO PODRE ────────────────────────────────────────────────
+//
+// O cache acima faz a retransmissão ACONTECER. Ele não resolve o caso em que a
+// sessão de criptografia com aquele contato está corrompida: aí o reenvio sai
+// cifrado com as MESMAS chaves quebradas e o destinatário continua sem decifrar.
+// O WhatsApp pede de novo, o Baileys reenvia de novo, e cada tentativa vira um
+// novo balão "Aguardando mensagem" na conversa — foi o que o dono viu (09:53,
+// 10:05, 10:12: os intervalos crescentes são o backoff do próprio WhatsApp,
+// não o robô disparando sozinho).
+//
+// A cura de verdade é jogar a sessão fora. Apagando o arquivo `session-<num>`,
+// o Baileys busca prekeys novas e negocia uma sessão do zero no próximo envio —
+// sem QR, sem reiniciar a instância, sem afetar as outras conversas.
+//
+// O gatilho é preciso: o Baileys só chama `getMessage` quando chega um pedido
+// de retransmissão, e só chega pedido de retransmissão quando o aparelho do
+// destinatário FALHOU em decifrar. Então cada chamada é prova de falha.
+// A primeira é tratada como soluço normal (o reenvio simples costuma bastar);
+// a partir da segunda, a sessão é considerada podre e recriada.
+const pedidosDeRetransmissao = new Map();
+const RETRANSMISSOES_ATE_RECRIAR = 2;
+const JANELA_DE_RETRANSMISSAO_MS = 10 * 60 * 1000;
+
+function pastaDaSessao(instanceName) {
+  return path.join(__dirname, "data", "sessions", instanceName);
+}
+
+/**
+ * Apaga os arquivos de sessão Signal de UM contato (todos os aparelhos dele).
+ * O Baileys grava como "session-<numero>.<device>.json".
+ * Não mexe em creds.json nem nas chaves da própria instância.
+ */
+function apagarSessaoDoContato(instanceName, jid) {
+  const numero = String(jid).split("@")[0].split(":")[0].replace(/\D/g, "");
+  if (!numero) return 0;
+  let apagados = 0;
+  try {
+    for (const arquivo of fs.readdirSync(pastaDaSessao(instanceName))) {
+      if (arquivo.startsWith("session-") && arquivo.includes(numero)) {
+        fs.rmSync(path.join(pastaDaSessao(instanceName), arquivo), { force: true });
+        apagados++;
+      }
+    }
+  } catch (err) {
+    console.warn(`[WhatsApp Gateway] Aviso ao apagar sessão de ${jid}:`, err.message);
+  }
+  return apagados;
+}
+
+function registrarPedidoDeRetransmissao(instanceName, key) {
+  const jid = key?.remoteJid;
+  if (!jid || String(jid).endsWith("@g.us")) return;
+
+  const agora = Date.now();
+  const anterior = pedidosDeRetransmissao.get(jid);
+  const dentroDaJanela = anterior && agora - anterior.ultimoEm < JANELA_DE_RETRANSMISSAO_MS;
+  const vezes = dentroDaJanela ? anterior.vezes + 1 : 1;
+  pedidosDeRetransmissao.set(jid, { vezes, ultimoEm: agora });
+
+  console.warn(`[WhatsApp Gateway] 🔁 ${jid} não conseguiu decifrar; retransmissão nº ${vezes}`);
+
+  if (vezes < RETRANSMISSOES_ATE_RECRIAR) return;
+
+  // Espera o reenvio em curso terminar antes de puxar o tapete da sessão.
+  setTimeout(() => {
+    const apagados = apagarSessaoDoContato(instanceName, jid);
+    pedidosDeRetransmissao.delete(jid);
+    console.warn(`[WhatsApp Gateway] 🧹 Sessão de ${jid} descartada (${apagados} arquivo(s)); o próximo envio negocia do zero`);
+  }, 5000);
+
+  // Trava de memória: o Map só cresce com contato problemático, mas não fica solto.
+  if (pedidosDeRetransmissao.size > 200) {
+    pedidosDeRetransmissao.delete(pedidosDeRetransmissao.keys().next().value);
+  }
+}
+
 // Limpar sessões corrompidas ao iniciar
 const CLEAN_ON_BOOT = process.env.CLEAN_SESSIONS === "true";
 if (CLEAN_ON_BOOT) {
@@ -172,7 +248,11 @@ async function getOrCreateSocket(instanceName) {
     // NUNCA voltar para `async () => undefined`: sem isto, o pedido de
     // retransmissão do WhatsApp fica sem resposta e o destinatário vê
     // "Aguardando mensagem" para sempre. Ver o cache no topo do arquivo.
-    getMessage: async (key) => mensagensEnviadas.get(key?.id) || undefined,
+    getMessage: async (key) => {
+      // Ser chamado aqui É a prova de que o destinatário não decifrou.
+      registrarPedidoDeRetransmissao(instanceName, key);
+      return mensagensEnviadas.get(key?.id) || undefined;
+    },
     cachedGroupMetadata: async () => undefined,
     fireInitQueries: false,
   });
@@ -454,6 +534,37 @@ async function reiniciarInstancia(req, res) {
 }
 app.put("/instance/restart/:instanceName", reiniciarInstancia);
 app.post("/instance/restart/:instanceName", reiniciarInstancia);
+
+/**
+ * POST /instance/limpar-sessao-do-contato/:instanceName  { "number": "5522..." }
+ *
+ * Cura manual do "Aguardando mensagem" numa conversa específica. Descarta só a
+ * sessão de criptografia DAQUELE contato — o próximo envio negocia chaves novas.
+ * Não desconecta a loja, não pede QR, não toca nas outras conversas.
+ *
+ * A autocura (ver o topo do arquivo) faz isso sozinha quando o WhatsApp pede
+ * retransmissão duas vezes; este endpoint é para quando se quer forçar na hora.
+ */
+app.post("/instance/limpar-sessao-do-contato/:instanceName", (req, res) => {
+  const numero = String(req.body?.number || "").replace(/\D/g, "");
+  if (!numero) return res.status(400).json({ error: "Informe 'number'" });
+
+  // "todas" cura o mesmo contato em todas as lojas de uma vez — é o caso comum
+  // de quem fala com várias (o dono, um motoboy) e não sabe nome de instância.
+  const alvos = req.params.instanceName === "todas"
+    ? fs.readdirSync(path.join(__dirname, "data", "sessions"), { withFileTypes: true })
+        .filter(d => d.isDirectory()).map(d => d.name)
+    : [req.params.instanceName];
+
+  const jid = `${numero}@s.whatsapp.net`;
+  const porInstancia = {};
+  for (const instancia of alvos) porInstancia[instancia] = apagarSessaoDoContato(instancia, jid);
+  pedidosDeRetransmissao.delete(jid);
+
+  const total = Object.values(porInstancia).reduce((a, b) => a + b, 0);
+  console.log(`[WhatsApp Gateway] 🧹 Sessão de ${jid} limpa manualmente (${total} arquivo(s) em ${alvos.length} instância(s))`);
+  return res.json({ success: true, jid, arquivosApagados: total, porInstancia });
+});
 
 // 3.5 Reset Instância (limpa sessão corrompida e força novo QR Code)
 app.delete("/instance/reset/:instanceName", async (req, res) => {
