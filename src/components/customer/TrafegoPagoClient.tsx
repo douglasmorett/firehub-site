@@ -990,8 +990,25 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             ficava trancado fora do módulo, num portão obrigatório. O handler sobe
             para a linha inteira e o div vira um checkbox de verdade para o
             teclado e para a acessibilidade. */}
+        {/* ── DEIXAR VISÍVEL O QUE FALTA FAZER ────────────────────────────
+            A caixa de aceite era branca com fio cinza igual ao de qualquer
+            painel da tela, e o botão abaixo ficava cinza-sobre-cinza dizendo
+            "Aceito os termos — Continuar", como se já bastasse clicar nele.
+            Quem chegava aqui não via que havia um passo antes: o portão do
+            módulo parecia quebrado, não pendente. Agora, depois que a leitura
+            libera, a caixa fica vermelha com um pulso discreto (desligado em
+            prefers-reduced-motion), e o botão ASSUME que está desligado — fio
+            tracejado e a frase dizendo exatamente o que falta. */}
+        <style>{`
+          @keyframes fh-aceite-pulso{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.30)}50%{box-shadow:0 0 0 9px rgba(239,68,68,0)}}
+          .fh-aceite-pendente{animation:fh-aceite-pulso 2.2s ease-out infinite}
+          .fh-aceite:focus-visible{outline:3px solid #FCA5A5;outline-offset:2px}
+          @media(prefers-reduced-motion:reduce){.fh-aceite-pendente{animation:none}}
+        `}</style>
+
         <div
           role="checkbox"
+          className={`fh-aceite${termsScrolled && !termsAccepted ? " fh-aceite-pendente" : ""}`}
           aria-checked={termsAccepted}
           aria-disabled={!termsScrolled}
           tabIndex={termsScrolled ? 0 : -1}
@@ -1000,17 +1017,39 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             if (!termsScrolled) return;
             if (e.key === " " || e.key === "Enter") { e.preventDefault(); setTermsAccepted(v => !v); }
           }}
-          style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start", cursor: termsScrolled ? "pointer" : "not-allowed", opacity: termsScrolled ? 1 : 0.5, background: "#fff", border: `1.5px solid ${termsAccepted ? "#EF4444" : "#E5E7EB"}`, borderRadius: 12, padding: "1rem", marginBottom: "1rem", userSelect: "none" }}
+          style={{
+            display: "flex", gap: "0.85rem", alignItems: "flex-start",
+            cursor: termsScrolled ? "pointer" : "not-allowed",
+            opacity: termsScrolled ? 1 : 0.5,
+            background: termsAccepted ? "#FEF2F2" : "#fff",
+            border: `2px solid ${termsAccepted || termsScrolled ? "#EF4444" : "#E5E7EB"}`,
+            borderRadius: 14, padding: "1.1rem", marginBottom: "1rem", userSelect: "none",
+            transition: "background 0.2s, border-color 0.2s",
+          }}
         >
-          <div aria-hidden style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${termsAccepted ? "#EF4444" : "#D1D5DB"}`, background: termsAccepted ? "#EF4444" : "#fff", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", marginTop: 2 }}>
-            {termsAccepted && <Check size={13} color="#fff" />}
+          <div aria-hidden style={{ width: 26, height: 26, borderRadius: 8, border: `2px solid ${termsScrolled || termsAccepted ? "#EF4444" : "#D1D5DB"}`, background: termsAccepted ? "#EF4444" : "#fff", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", marginTop: 1 }}>
+            {termsAccepted && <Check size={16} color="#fff" />}
           </div>
-          <span style={{ fontSize: "0.88rem", lineHeight: 1.6 }}>Li e aceito os termos acima. Entendo que a <strong>taxa de R$50/semana é pelo serviço de gestão</strong>, não por resultados. O ROAS depende da qualidade do meu produto, atendimento e mercado local.</span>
+          <div>
+            <span style={{ fontSize: "0.88rem", lineHeight: 1.6 }}>Li e aceito os termos acima. Entendo que a <strong>taxa de R$50/semana é pelo serviço de gestão</strong>, não por resultados. O ROAS depende da qualidade do meu produto, atendimento e mercado local.</span>
+            {termsScrolled && !termsAccepted && (
+              <div style={{ marginTop: 8, fontSize: "0.78rem", fontWeight: 800, color: "#EF4444" }}>👆 Toque aqui para marcar</div>
+            )}
+          </div>
         </div>
 
         <button onClick={() => setStep("method")} disabled={!termsAccepted}
-          style={{ width: "100%", background: termsAccepted ? "#EF4444" : "#E5E7EB", color: termsAccepted ? "#fff" : "#9CA3AF", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: termsAccepted ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
-          Aceito os termos — Continuar →
+          style={{
+            width: "100%",
+            background: termsAccepted ? "#EF4444" : "#F3F4F6",
+            color: termsAccepted ? "#fff" : "#6B7280",
+            border: termsAccepted ? "2px solid #EF4444" : "2px dashed #D1D5DB",
+            padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800,
+            cursor: termsAccepted ? "pointer" : "not-allowed",
+            boxShadow: termsAccepted ? "0 6px 18px rgba(239,68,68,0.28)" : "none",
+            transition: "all 0.2s",
+          }}>
+          {termsAccepted ? "Aceito os termos — Continuar →" : "Marque a caixa acima para continuar"}
         </button>
       </div>
     );
@@ -1024,23 +1063,38 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <div style={{ textAlign: "center", marginBottom: "0.5rem" }}><span style={{ background: "#EF4444", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "4px 12px", borderRadius: 99 }}>TRÁFEGO PAGO + FIREHUB</span></div>
       <h2 style={{ textAlign: "center", fontSize: "1.8rem", fontWeight: 900, marginBottom: "0.5rem" }}>Como deseja configurar?</h2>
       <p style={{ textAlign: "center", color: "#6B7280", marginBottom: "2rem" }}>Escolha a modalidade que funciona melhor pra você.</p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
+      {/* O fio cinza de 1,5px em volta de cada caixa era a única separação da
+          página — e o fundo da página também é claro, então as bordas ficavam
+          duras e as caixas, chapadas: nada dizia que as duas de cima são
+          clicáveis e as seis de baixo não. Agora o contorno é mais fino e mais
+          claro, quem carrega o peso é a sombra, e o clicável reage: levanta,
+          acende a borda e ganha anel de foco no teclado. */}
+      <style>{`
+        .fh-opcao:hover{border-color:#EF4444!important;box-shadow:0 4px 8px rgba(239,68,68,.08),0 14px 28px rgba(239,68,68,.10)!important;transform:translateY(-2px)}
+        .fh-opcao:focus-visible{outline:3px solid #FCA5A5;outline-offset:2px;border-color:#EF4444!important}
+        @media(prefers-reduced-motion:reduce){.fh-opcao:hover{transform:none}}
+        @media(max-width:640px){.fh-metodos{grid-template-columns:1fr!important}.fh-beneficios{grid-template-columns:repeat(2,1fr)!important}}
+      `}</style>
+      <div className="fh-metodos" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
         {[
           { title: "Configuração Acompanhada", desc: "Um especialista FireHub configura com você via WhatsApp", href: "https://wa.me/5522998851680?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja" },
           { title: "Configurar Sozinho", desc: "Configure no seu ritmo, passo a passo em menos de 5 minutos", action: () => setStep("invest") },
         ].map((opt, i) => (
-          <div key={i} onClick={() => opt.action ? opt.action() : window.open(opt.href, "_blank")}
-            style={{ border: "1.5px solid #E5E7EB", borderRadius: 14, padding: "1.25rem", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", transition: "border-color 0.2s" }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = "#EF4444")} onMouseLeave={e => (e.currentTarget.style.borderColor = "#E5E7EB")}>
+          <div key={i} role="button" tabIndex={0} className="fh-opcao"
+            onClick={() => opt.action ? opt.action() : window.open(opt.href, "_blank")}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opt.action ? opt.action() : window.open(opt.href, "_blank"); } }}
+            style={{ border: "1px solid #E8EAEE", borderRadius: 16, padding: "1.25rem", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", boxShadow: "0 1px 2px rgba(16,24,40,0.04), 0 4px 12px rgba(16,24,40,0.04)", transition: "border-color 0.18s, box-shadow 0.18s, transform 0.18s" }}>
             <div><div style={{ fontWeight: 800, fontSize: "1rem", marginBottom: 4 }}>{opt.title}</div><div style={{ fontSize: "0.82rem", color: "#6B7280" }}>{opt.desc}</div></div>
             <ChevronRight size={18} color="#9CA3AF" style={{ flexShrink: 0, marginLeft: 8 }} />
           </div>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "0.5rem" }}>
+      <div className="fh-beneficios" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "0.6rem" }}>
         {FEATURES.map(f => (
-          <div key={f.label} style={{ background: "#F9FAFB", borderRadius: 10, padding: "0.6rem 0.75rem", display: "flex", alignItems: "center", gap: 8 }}>
-            <f.icon size={15} color="#EF4444" style={{ flexShrink: 0 }} />
+          <div key={f.label} style={{ background: "#fff", border: "1px solid #EEF0F4", borderRadius: 12, padding: "0.7rem 0.85rem", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 1px 2px rgba(16,24,40,0.03)" }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: "#FEF2F2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <f.icon size={15} color="#EF4444" />
+            </div>
             <div><div style={{ fontSize: "0.78rem", fontWeight: 700 }}>{f.label}</div><div style={{ fontSize: "0.7rem", color: "#6B7280" }}>{f.desc}</div></div>
           </div>
         ))}
