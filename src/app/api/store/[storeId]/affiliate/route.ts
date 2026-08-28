@@ -1,44 +1,21 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ storeId: string }> }
-) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { storeId } = await context.params;
-    const body = await request.json();
-    const { asaasWalletId } = body;
-
-    if (!asaasWalletId) {
-      return NextResponse.json({ error: "Wallet ID is required" }, { status: 400 });
-    }
-
-    // Verify ownership
-    const user = await prisma.user.findUnique({
-      where: { id: storeId }
-    });
-
-    if (!user || user.email !== session.user.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Update wallet ID
-    await prisma.user.update({
-      where: { id: storeId },
-      data: { asaasWalletId }
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error saving wallet ID:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-  }
+/**
+ * DESATIVADA — resquício do "Indique e Ganhe" entre lojistas.
+ *
+ * Ela gravava o `asaasWalletId` do próprio lojista, e o motor de faturamento
+ * usava esse campo para repassar 20% da mensalidade de quem tivesse o
+ * `referredById` dele. O programa foi encerrado para o cliente comum e a tela
+ * saiu do painel, mas a rota continuou no ar sem nenhuma UI chamando: qualquer
+ * lojista logado que a descobrisse passava a receber comissão de verdade.
+ *
+ * O split hoje sai só do programa de embaixadores (lib/billing.ts), que é
+ * fechado e entra por promoção manual do admin. Se um dia o programa entre
+ * lojistas voltar, ele volta por ali — não por aqui.
+ */
+export async function POST() {
+  return NextResponse.json(
+    { error: "Programa de afiliados entre lojistas encerrado." },
+    { status: 410 }
+  );
 }

@@ -21,6 +21,16 @@ export interface ReferredStoreItem {
   isPaidByAsaas?: boolean;
 }
 
+export interface NetworkAmbassadorItem {
+  id: string;
+  name: string;
+  code: string;
+  storesCount: number;
+  activeStores: number;
+  monthSales: number;
+  monthIncome: number;
+}
+
 interface AmbassadorDashboardProps {
   ambassador: {
     id: string;
@@ -33,6 +43,13 @@ interface AmbassadorDashboardProps {
     active: boolean;
   };
   stores: ReferredStoreItem[];
+  /** Rede de nível 2: embaixadores que ele trouxe. Ausente = ninguém na rede. */
+  network?: {
+    level2Percent: number;
+    ambassadors: NetworkAmbassadorItem[];
+    monthIncome: number;
+    storesCount: number;
+  };
   currentMonthIncome: number;
   totalPortfolioSales: number;
   totalPlatformFees: number;
@@ -41,6 +58,7 @@ interface AmbassadorDashboardProps {
 export default function AmbassadorDashboard({
   ambassador,
   stores,
+  network,
   currentMonthIncome,
   totalPortfolioSales,
   totalPlatformFees,
@@ -61,6 +79,7 @@ export default function AmbassadorDashboard({
   const trialCount = stores.filter((s) => s.status === "TRIAL").length;
   const inactiveCount = stores.filter((s) => s.status === "INACTIVE").length;
   const totalOrdersCount = stores.reduce((acc, s) => acc + s.monthOrdersCount, 0);
+  const temRede = (network?.ambassadors.length ?? 0) > 0;
 
   const filteredStores = useMemo(() => {
     return stores.filter((store) => {
@@ -231,6 +250,26 @@ export default function AmbassadorDashboard({
             </div>
           </div>
 
+          {/* Card da Rede (nível 2) — só aparece para quem trouxe embaixadores */}
+          {temRede && (
+            <div style={{ background: "#FFFFFF", border: "1.5px solid #DDD6FE", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(109,40,217,0.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ color: "#64748B", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  🌐 Sua Rede
+                </span>
+                <span style={{ background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE", padding: "3px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
+                  {network!.level2Percent}%
+                </span>
+              </div>
+              <div style={{ fontSize: "2.1rem", fontWeight: 900, color: network!.monthIncome > 0 ? "#6D28D9" : "#0F172A", letterSpacing: "-0.5px" }}>
+                {formatBRL(network!.monthIncome)}
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6 }}>
+                {network!.level2Percent}% das lojas dos {network!.ambassadors.length} embaixador{network!.ambassadors.length !== 1 ? "es" : ""} que você trouxe ({network!.storesCount} loja{network!.storesCount !== 1 ? "s" : ""})
+              </div>
+            </div>
+          )}
+
           {/* Card 4: Link de Convite Oficial */}
           <div style={{ background: "#FFFFFF", border: "2px solid #DC2626", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(220,38,38,0.08)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <div>
@@ -271,6 +310,36 @@ export default function AmbassadorDashboard({
           </div>
 
         </div>
+
+        {/* REDE — NÍVEL 2 */}
+        {temRede && (
+          <div style={{ background: "#FFFFFF", border: "1.5px solid #DDD6FE", borderRadius: "14px", padding: "20px 24px", marginBottom: "28px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: "0.98rem", color: "#5B21B6" }}>🌐 Embaixadores que você trouxe</strong>
+              <span style={{ fontSize: "0.82rem", color: "#64748B" }}>
+                você recebe {network!.level2Percent}% da mensalidade das lojas deles — e para por aqui
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {network!.ambassadors.map((sub) => (
+                <div key={sub.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#FAFAFF", border: "1px solid #EDE9FE", borderRadius: "10px", padding: "12px 16px" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, color: "#0F172A" }}>{sub.name}</div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748B" }}>
+                      Código <strong style={{ color: "#6D28D9" }}>{sub.code}</strong> · {sub.storesCount} loja{sub.storesCount !== 1 ? "s" : ""} ({sub.activeStores} ativa{sub.activeStores !== 1 ? "s" : ""}) · {formatBRL(sub.monthSales)} em vendas no mês
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 900, color: sub.monthIncome > 0 ? "#6D28D9" : "#94A3B8" }}>
+                      {formatBRL(sub.monthIncome)}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>seu no mês</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* DEMONSTRATION & PROSPECTING HELPER */}
         <div

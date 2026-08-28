@@ -15,14 +15,32 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
       include: {
         _count: {
-          select: { referredStores: true }
+          select: { referredStores: true, subAmbassadors: true }
+        },
+        // Quem trouxe este embaixador (nível 2) e quem ele trouxe.
+        parentAmbassador: {
+          select: { id: true, name: true, code: true, level2Percent: true }
+        },
+        subAmbassadors: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            active: true,
+            commissionPercent: true,
+            _count: { select: { referredStores: true } }
+          }
         },
         referredStores: {
           select: {
             id: true,
             storeName: true,
             storePhone: true,
-            createdAt: true
+            email: true,
+            createdAt: true,
+            // Se a loja indicada já virou embaixadora, o painel mostra o código
+            // dela no lugar do botão de promover.
+            ambassadorAccount: { select: { id: true, code: true, active: true } }
           }
         }
       }
@@ -43,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const data = await req.json();
-    let { name, email, phone, code, commissionPercent, asaasWalletId, pixKey } = data;
+    let { name, email, phone, code, commissionPercent, asaasWalletId, pixKey, parentAmbassadorId, level2Percent } = data;
 
     if (!name || !email) {
       return NextResponse.json({ error: "Nome e e-mail são obrigatórios" }, { status: 400 });
@@ -77,9 +95,13 @@ export async function POST(req: NextRequest) {
         phone,
         code: code.toLowerCase().trim(),
         commissionPercent: commissionPercent ? parseFloat(commissionPercent) : 20.0,
+        level2Percent: level2Percent !== undefined && level2Percent !== null && level2Percent !== ""
+          ? parseFloat(level2Percent)
+          : 3.0,
         asaasWalletId,
         pixKey,
-        active: true
+        active: true,
+        parentAmbassadorId: parentAmbassadorId || null
       }
     });
 

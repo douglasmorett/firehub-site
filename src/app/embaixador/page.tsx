@@ -8,6 +8,21 @@ import { calcMensalidade } from "@/lib/firehub-billing";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portal do Embaixador - FireHub" };
 
+/** Campos da loja que o portal precisa para calcular comissão. */
+const SELECT_DA_LOJA = {
+  id: true,
+  name: true,
+  storeName: true,
+  storePhone: true,
+  email: true,
+  createdAt: true,
+  trialEndsAt: true,
+  slug: true,
+  city: true,
+  storeOpen: true,
+  planPercent: true,
+} as const;
+
 export default async function EmbaixadorPage() {
   const session = await getServerSession(authOptions);
 
@@ -28,20 +43,23 @@ export default async function EmbaixadorPage() {
     },
     include: {
       referredStores: {
+        select: SELECT_DA_LOJA,
+        orderBy: { createdAt: "desc" }
+      },
+      // Rede de nível 2: os embaixadores que ELE trouxe. As lojas deles pagam
+      // `level2Percent` para este embaixador aqui. Para por aqui — não existe
+      // terceiro nível, então não há include aninhado.
+      subAmbassadors: {
+        where: { active: true },
         select: {
           id: true,
           name: true,
-          storeName: true,
-          storePhone: true,
-          email: true,
-          createdAt: true,
-          trialEndsAt: true,
-          slug: true,
-          city: true,
-          storeOpen: true,
-          planPercent: true,
-        },
-        orderBy: { createdAt: "desc" }
+          code: true,
+          referredStores: {
+            select: SELECT_DA_LOJA,
+            orderBy: { createdAt: "desc" }
+          }
+        }
       }
     }
   });
@@ -54,9 +72,11 @@ export default async function EmbaixadorPage() {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  // Coleta dados de vendas de todas as lojas indicadas
-  const storesData = await Promise.all(
-    ambassador.referredStores.map(async (store) => {
+  // Coleta dados de vendas de um conjunto de lojas, aplicando o percentual que
+  // vale para elas: `commissionPercent` nas lojas próprias (nível 1) e
+  // `level2Percent` nas lojas dos embaixadores que ele trouxe (nível 2).
+  const calcularLojas = async (lojas: typeof ambassador.referredStores, percentual: number) => await Promise.all(
+    lojas.map(async (store) => {
       // Vendas no mês atual
       const monthAgg = await prisma.customerOrder.aggregate({
         where: {
@@ -110,7 +130,7 @@ export default async function EmbaixadorPage() {
       }
 
       // Comissão real do embaixador: só conta sobre mensalidade real gerada/paga
-      const ambassadorProfit = platformFee * (ambassador.commissionPercent / 100);
+      const ambassadorProfit = platformFee * (percentual / 100);
 
       return {
         id: store.id,
@@ -133,7 +153,27 @@ export default async function EmbaixadorPage() {
     })
   );
 
+  const storesData = await calcularLojas(ambassador.referredStores, ambassador.commissionPercent);
+
+  // Nível 2: as lojas de cada embaixador da rede, valendo `level2Percent`.
+  const nivel2Percent = ambassador.level2Percent ?? 3;
+  const rede = await Promise.all(
+    ambassador.subAmbassadors.map(async (sub) => {
+      const lojas = await calcularLojas(sub.referredStores, nivel2Percent);
+      return {
+        id: sub.id,
+        name: sub.name,
+        code: sub.code,
+        storesCount: lojas.length,
+        activeStores: lojas.filter((l) => l.status === "ACTIVE").length,
+        monthSales: lojas.reduce((acc, l) => acc + l.monthSales, 0),
+        monthIncome: lojas.reduce((acc, l) => acc + l.ambassadorProfit, 0),
+      };
+    })
+  );
+
   // Totais consolidados da carteira
+  const networkIncome = rede.reduce((acc, r) => acc + r.monthIncome, 0);
   const currentMonthIncome = storesData.reduce((acc, s) => acc + s.ambassadorProfit, 0);
   const totalPortfolioSales = storesData.reduce((acc, s) => acc + s.monthSales, 0);
   const totalPlatformFees = storesData.reduce((acc, s) => acc + s.platformFee, 0);
@@ -151,6 +191,12 @@ export default async function EmbaixadorPage() {
         active: ambassador.active
       }}
       stores={storesData}
+      network={{
+        level2Percent: nivel2Percent,
+        ambassadors: rede,
+        monthIncome: networkIncome,
+        storesCount: rede.reduce((acc, r) => acc + r.storesCount, 0),
+      }}
       currentMonthIncome={currentMonthIncome}
       totalPortfolioSales={totalPortfolioSales}
       totalPlatformFees={totalPlatformFees}

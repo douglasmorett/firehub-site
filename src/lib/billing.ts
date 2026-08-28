@@ -30,6 +30,15 @@ import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 
 /**
+ * Teto de comissão que pode sair de uma mensalidade, somando os dois níveis do
+ * programa de embaixadores. O padrão do programa é 20% + 3% = 23%; a folga até
+ * 40% existe para os casos negociados à mão (o Victor está em 30% + 3%). Acima
+ * disso o boleto sai sem split e o erro vai para o log — é quase certo que
+ * alguém errou o número no admin.
+ */
+const TETO_DE_SPLIT = 40;
+
+/**
  * ── O QUE CONTA COMO VENDA PARA A MENSALIDADE ───────────────────────────────
  *
  * A base era só `status != CANCELADO`, e isso engolia dois estados que não são
@@ -301,16 +310,9 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     include: {
       franchisee: {
         include: {
-          ambassador: true,
-          referredBy: {
-            include: {
-              referredBy: {
-                include: {
-                  referredBy: true,
-                },
-              },
-            },
-          },
+          // Dois niveis: quem indicou a loja e quem indicou esse embaixador.
+          // Nao sobe mais que isso — o programa para no segundo nivel.
+          ambassador: { include: { parentAmbassador: true } },
         },
       },
     },
@@ -518,35 +520,43 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         externalReference: `billing:${cycle.id}`,
       };
 
-      if (cycle.franchisee?.ambassador?.active && cycle.franchisee?.ambassador?.asaasWalletId) {
-        payload.split = [
-          {
-            walletId: cycle.franchisee.ambassador.asaasWalletId,
-            percentualValue: cycle.franchisee.ambassador.commissionPercent,
-          }
-        ];
-      } else {
-        // Multi-level split for Indique e Ganhe
-        const splits = [];
-        
-        const level1 = cycle.franchisee?.referredBy;
-        if (level1?.asaasWalletId) {
-          splits.push({ walletId: level1.asaasWalletId, percentualValue: 20 });
+      // ── Comissão de embaixador: dois níveis, nunca mais ──────────────────
+      //
+      // Nível 1 é quem indicou ESTA loja (`commissionPercent`, 20% de padrão e
+      // editável caso a caso no admin). Nível 2 é quem trouxe esse embaixador
+      // para o programa (`level2Percent`, 3%). O terceiro nível não existe: a
+      // corrente para no `parentAmbassador` de propósito, sem recursão.
+      //
+      // Os dois percentuais saem do bolo da FireHub, não um do outro: uma loja
+      // com rede completa devolve 23% da mensalidade.
+      //
+      // O ramo antigo do "Indique e Ganhe" entre lojistas (User.referredById,
+      // 20/3/1) saiu daqui. O programa foi encerrado para o cliente comum, mas
+      // o código continuava pagando: bastava um lojista gravar o próprio
+      // asaasWalletId para começar a receber 20% de quem tivesse o ref dele.
+      const splits: { walletId: string; percentualValue: number }[] = [];
+      const nivel1 = cycle.franchisee?.ambassador;
+
+      if (nivel1?.active && nivel1.asaasWalletId) {
+        splits.push({ walletId: nivel1.asaasWalletId, percentualValue: nivel1.commissionPercent });
+
+        const nivel2 = nivel1.parentAmbassador;
+        if (nivel2?.active && nivel2.asaasWalletId && nivel2.id !== nivel1.id) {
+          splits.push({ walletId: nivel2.asaasWalletId, percentualValue: nivel2.level2Percent ?? 3 });
         }
-        
-        const level2 = level1?.referredBy;
-        if (level2?.asaasWalletId) {
-          splits.push({ walletId: level2.asaasWalletId, percentualValue: 3 });
-        }
-        
-        const level3 = level2?.referredBy;
-        if (level3?.asaasWalletId) {
-          splits.push({ walletId: level3.asaasWalletId, percentualValue: 1 });
-        }
-        
-        if (splits.length > 0) {
-          payload.split = splits;
-        }
+      }
+
+      // Freio de mão. `commissionPercent` entra por um input livre no admin —
+      // um 300 digitado no lugar de 30 viraria um boleto com split de 300%, que
+      // o Asaas recusa e deixa a loja sem cobrança nenhuma no mês. Melhor
+      // cobrar sem split e gritar no log do que não cobrar.
+      const totalSplit = splits.reduce((acc, s) => acc + s.percentualValue, 0);
+      if (totalSplit > TETO_DE_SPLIT) {
+        console.error(
+          `[Billing] Split de ${totalSplit}% no ciclo ${cycle.id} (loja ${franchiseeId}) acima do teto de ${TETO_DE_SPLIT}% — cobrança emitida SEM split. Revisar comissão do embaixador.`
+        );
+      } else if (splits.length > 0) {
+        payload.split = splits;
       }
 
       const pr = await fetch(`${BASE}/payments`, {

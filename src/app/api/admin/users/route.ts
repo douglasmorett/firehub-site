@@ -23,7 +23,11 @@ export async function GET(req: Request) {
         cpfCnpj: true,
         createdAt: true,
         city: true,
-        planPercent: true
+        planPercent: true,
+        // Quem indicou a loja e se ela já virou embaixadora — a aba de
+        // embaixadores usa isso para montar a rede de 2 níveis.
+        ambassadorId: true,
+        ambassadorAccount: { select: { id: true, code: true } }
       }
     });
     

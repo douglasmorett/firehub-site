@@ -117,6 +117,7 @@ model User {
   showAddressOnMenu Boolean        @default(true)  // Exibir endereço da loja no cardápio digital
   ambassadorId    String?        // ID do embaixador que indicou esta loja
   ambassador      Ambassador?    @relation("AmbassadorStores", fields: [ambassadorId], references: [id], onDelete: SetNull)
+  ambassadorAccount Ambassador?  @relation("AmbassadorAccount") // conta de embaixador deste lojista, se promovido
   onboardingData  Json?          // { comoConheceu, faturamento, etc }
   // === INDIQUE E GANHE (Parceiros/Revendedores) ===
   referredById    String?
@@ -1323,6 +1324,12 @@ model StockLot {
 
   @@index([franchiseeId, validoAte])
   @@index([franchiseeId, stockItemId])
+  /// Já EXISTE no banco — garantir-colunas.ts:245 o cria no boot. Faltava aqui,
+  /// e drift assim é perigoso justamente porque a migração em produção é `db
+  /// push` manual: o push seguinte veria um índice que o schema não declara,
+  /// o derrubaria, e a listagem de lotes por loja receptora passaria a varrer
+  /// a tabela inteira sem erro nenhum aparecendo em lugar algum.
+  @@index([recebidoPorId])
 }
 
 
@@ -1381,6 +1388,23 @@ model Ambassador {
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
   referredStores    User[]     @relation("AmbassadorStores")
+
+  /// Rede de 2 níveis. Quem trouxe ESTE embaixador para o programa: ele leva
+  /// `level2Percent` das lojas que este aqui indicar. Para no segundo nível —
+  /// o billing não sobe para o avô de propósito.
+  parentAmbassadorId String?
+  parentAmbassador   Ambassador?  @relation("AmbassadorTree", fields: [parentAmbassadorId], references: [id], onDelete: SetNull)
+  subAmbassadors     Ambassador[] @relation("AmbassadorTree")
+  level2Percent      Float        @default(3) // % que ele recebe dos indicados dos seus indicados
+
+  /// A loja do próprio embaixador, quando ele também é lojista (promovido pelo
+  /// admin). O vínculo é só leitura para o painel: `User.ambassadorId` continua
+  /// apontando para quem indicou a loja dele, que é o que preserva a comissão
+  /// de nível 1 já contratada.
+  linkedUserId      String?    @unique
+  linkedUser        User?      @relation("AmbassadorAccount", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  @@index([parentAmbassadorId])
 }
 
 // === API ABERTA & WEBHOOKS DE SAÍDA (OPEN API V1) ===
