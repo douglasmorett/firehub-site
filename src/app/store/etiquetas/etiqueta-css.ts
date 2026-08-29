@@ -16,8 +16,15 @@ export const CSS_DA_ETIQUETA = `
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0;
-    width: 4in; height: 6in;
-    overflow: hidden;
+    /* min-height e overflow visible, não altura FIXA com overflow hidden.
+       Com altura fixa, a partir da segunda etiqueta o conteúdo ficava
+       fora da caixa do body e só chegava ao papel porque o Chrome fragmenta
+       sozinho — o melhor caso era funcionar, e o pior era a segunda etiqueta em
+       diante sair cortada, ou nascer uma folha em branco entre cada uma.
+       Imprimir 40 etiquetas com uma folha em branco no meio é meio rolo de
+       ribbon no lixo. */
+    width: 4in; min-height: 6in;
+    overflow: visible;
     background: #fff;
     color: #000;
     font-family: Arial, Helvetica, sans-serif;
@@ -25,7 +32,7 @@ export const CSS_DA_ETIQUETA = `
   .print-area {
     display: block !important;
     width: 4in;
-    height: 6in;
+    /* Sem altura fixa: a área é a PILHA de etiquetas, não uma folha. */
   }
   .label-page {
     display: flex;
@@ -37,6 +44,18 @@ export const CSS_DA_ETIQUETA = `
     color: #000;
     font-family: Arial, Helvetica, sans-serif;
     box-sizing: border-box;
+    /* A quebra EXPLÍCITA, que não existia em lugar nenhum do projeto. As duas
+       propriedades juntas de propósito: page-break-after é o que as versões
+       mais velhas do motor de impressão entendem, e é impressora térmica que
+       está do outro lado. */
+    break-after: page;
+    page-break-after: always;
+  }
+  /* A última não força quebra: senão sai uma etiqueta em branco no fim de toda
+     impressão — o defeito mais caro deste arquivo, porque só aparece no papel. */
+  .label-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
   .label-content {
     flex: 1;
