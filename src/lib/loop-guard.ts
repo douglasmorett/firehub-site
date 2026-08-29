@@ -274,16 +274,47 @@ export async function evaluateLoopGuard(input: LoopGuardInput): Promise<LoopDeci
 async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   const { userId, remoteJid, text, verifiedBizName, isAudio, now } = input;
 
-  // ── Sinal A: conta empresarial verificada ───────────────────────────────
-  // Cliente de verdade não é conta empresarial verificada; robô institucional
-  // é. Decide sozinho, sem precisar de segundo sinal.
+  // ── "Conta empresarial verificada" NÃO É MAIS MOTIVO PARA CALAR ─────────
+  //
+  // A premissa aqui era "cliente de verdade não é conta empresarial
+  // verificada". No Brasil isso é falso: MEI, vendedor, autônomo e uma
+  // multidão de gente comum usa WhatsApp Business — é o aplicativo padrão de
+  // quem tem qualquer negócio, não a marca de um robô institucional.
+  //
+  // E o efeito era permanente, não passageiro: além de ignorar a mensagem, o
+  // código chamava `markDegraded`, que GRAVA a conversa como degradada no
+  // banco. Na primeira mensagem de um cliente com WhatsApp Business a conversa
+  // morria, e a checagem de `degradedAt` logo abaixo a mantinha morta PARA
+  // SEMPRE — o `clearLoopGuard` só roda quando um atendimento humano expira,
+  // que é um caminho por onde essas conversas nunca passavam.
+  //
+  // Ou seja: cada um desses clientes mandava mensagem, não recebia nada, e
+  // nunca mais seria atendido. Em silêncio, sem erro em log nenhum. Foi assim
+  // que o próprio dono descobriu, em 29/08/2026, ao testar o robô do celular
+  // dele — que é um WhatsApp Business.
+  //
+  // Robô institucional de verdade (banco, marketplace, maquininha) continua
+  // barrado, só que pelos sinais que realmente descrevem robô: repetição
+  // idêntica e cadência de máquina, avaliados logo abaixo. Custa algumas
+  // chamadas de IA a mais num caso raro; a troca anterior custava clientes.
   if (verifiedBizName && verifiedBizName.trim()) {
-    const reason = `conta empresarial verificada (${verifiedBizName.trim()})`;
-    await markDegraded(userId, remoteJid, reason, now);
-    return { action: "ignore", reason };
+    console.log(`[LoopGuard] Conta empresarial "${verifiedBizName.trim()}" em ${remoteJid} — seguindo o atendimento normal (antes isto calava a conversa para sempre).`);
   }
 
-  const state = await readState(userId, remoteJid);
+  let state = await readState(userId, remoteJid);
+
+  // ── CURA DAS CONVERSAS QUE A REGRA ANTIGA MATOU ─────────────────────────
+  //
+  // Não dá para consertar isso só daqui para frente: já existem conversas
+  // gravadas como degradadas por "conta empresarial verificada", e elas
+  // continuariam mudas mesmo com a regra removida. Como a marca fica no banco
+  // com o motivo escrito, dá para reconhecê-la e desfazer na próxima mensagem
+  // do cliente — sem migração, sem mexer no banco na mão.
+  if (state?.degradedAt && /conta empresarial verificada/i.test(state.degradedReason || "")) {
+    console.log(`[LoopGuard] Ressuscitando ${remoteJid}: estava degradada por conta empresarial, motivo que não vale mais.`);
+    await clearLoopGuard(userId, remoteJid);
+    state = await readState(userId, remoteJid);
+  }
 
   // ── Atendente da loja assumiu ───────────────────────────────────────────
   const takeoverAt = state?.humanTakeoverAt ? state.humanTakeoverAt.getTime() : 0;
