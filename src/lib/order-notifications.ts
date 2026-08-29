@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { inicioDoExpedienteDaLoja } from "./fuso";
 
 export type OrderNotificationType = "CREATED" | "SAIU_ENTREGA" | "PRONTO_RETIRADA" | "CANCELADO" | "ENTREGUE";
 
@@ -45,9 +46,12 @@ export async function sendOrderNotification(
     }
 
     // Determinar o número sequencial/referência idêntico ao exibido no painel da loja
-    const orderDate = new Date(order.createdAt);
-    const dayStart = new Date(orderDate);
-    dayStart.setHours(0, 0, 0, 0);
+    //
+    // O corte é o EXPEDIENTE da loja. Com `setHours(0,0,0,0)` o corte caía no
+    // fuso do container (UTC = 21:00 de Brasília): depois das nove a contagem
+    // recomeçava do 1, e o número que ia para o cliente no WhatsApp deixava de
+    // bater com o do painel — que é justamente o que esta função promete.
+    const dayStart = inicioDoExpedienteDaLoja(null, new Date(order.createdAt));
 
     const refNum = order.openDeliveryReference || order.ifoodReference;
 

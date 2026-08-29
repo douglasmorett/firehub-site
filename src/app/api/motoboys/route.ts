@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
+import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 
 // GET - listar motoboys do franqueado
 export async function GET() {
@@ -19,8 +20,11 @@ export async function GET() {
   // continua entrando com a padrão — a diferença é que ela é conferida no login
   // e gravada como hash naquele momento, em vez de ser semeada no banco.
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Expediente da loja. Com `setHours(0,0,0,0)` (fuso do container = UTC) as
+  // entregas e os ganhos do motoboy zeravam as 21:00 de Brasilia, no meio do
+  // turno dele — o painel dizia "0 entregas" para quem tinha acabado de rodar a
+  // noite inteira.
+  const today = inicioDoExpedienteDaLoja();
 
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId },
