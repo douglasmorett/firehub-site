@@ -5,7 +5,8 @@ import {
   FileText, ShieldCheck, Check, AlertTriangle, Search, Plus, Trash2,
   DollarSign, RefreshCw, Layers, Edit3, Settings, CheckCircle2, ChevronRight,
   Info, Sparkles, Receipt, Filter, ArrowUpRight, Calendar, Download, Printer, Copy,
-  ExternalLink, Eye, ChevronDown, ChevronUp, Lock, HelpCircle, X, CheckSquare, Square
+  ExternalLink, Eye, ChevronDown, ChevronUp, Lock, HelpCircle, X, CheckSquare, Square,
+  Send, Mail, FileArchive
 } from "lucide-react";
 
 type FiscalConfig = {
@@ -117,7 +118,7 @@ const PAYMENT_OPTIONS = [
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
 export default function StoreFiscalPage() {
-  const [activeNav, setActiveNav] = useState<"config" | "products" | "invoices" | "inutilizacao">("invoices");
+  const [activeNav, setActiveNav] = useState<"config" | "products" | "invoices" | "inutilizacao" | "contador">("invoices");
   const [loading, setLoading] = useState(true);
   const [storeName, setStoreName] = useState("");
   const [cpfCnpj, setCpfCnpj] = useState("");
@@ -170,6 +171,35 @@ export default function StoreFiscalPage() {
   const [editingCombo, setEditingCombo] = useState<FiscalProduct | null>(null);
   const [fiscalItemsDraft, setFiscalItemsDraft] = useState<any[]>([]);
   const [comboDetails, setComboDetails] = useState<any>(null);
+  /**
+   * Valor que o lojista digitou para cada opção do combo, por id da opção.
+   *
+   * A coluna de preço nos "Grupos do Combo" era texto fixo: mostrava o rateio
+   * automático (preço do combo ÷ escolhas exigidas) e não deixava mexer. Só que
+   * o rateio igual raramente é o que interessa — o refrigerante e o lanche têm
+   * tributação bem diferente, e é justamente para isso que a Engenharia Fiscal
+   * existe. Quem não digitar nada continua com o rateio automático.
+   */
+  const [precoFiscalPorItem, setPrecoFiscalPorItem] = useState<Record<string, number>>({});
+
+  // ── Aba Contador ─────────────────────────────────────────────────────────
+  const [contador, setContador] = useState<any>({
+    email: "", copiaParaLoja: true, automatico: false, quando: "DIA_1", dia: 5, data: null,
+    ultimoEnvioEm: null, ultimoEnvioResultado: null,
+  });
+  const [salvandoContador, setSalvandoContador] = useState(false);
+  const [enviandoContador, setEnviandoContador] = useState(false);
+  /* O período nasce no MÊS PASSADO fechado, que é o que o contador pede em 9
+     de cada 10 vezes. Deixar em branco obrigaria o lojista a montar a data
+     toda vez para fazer o que ele quase sempre quer. */
+  const [periodoContador, setPeriodoContador] = useState(() => {
+    const agora = new Date();
+    const ano = agora.getMonth() === 0 ? agora.getFullYear() - 1 : agora.getFullYear();
+    const mes = agora.getMonth() === 0 ? 12 : agora.getMonth();
+    const ultimo = new Date(ano, mes, 0).getDate();
+    const dd = (n: number) => String(n).padStart(2, "0");
+    return { de: `${ano}-${dd(mes)}-01`, ate: `${ano}-${dd(mes)}-${dd(ultimo)}` };
+  });
   const [savingCombo, setSavingCombo] = useState(false);
 
   // Invoices state & Filters
@@ -199,6 +229,10 @@ export default function StoreFiscalPage() {
   useEffect(() => {
     fetchFiscalData();
     fetchProducts();
+    fetch("/api/store/fiscal/contador")
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.contador) setContador({ ...d.contador, email: d.contador.email || "" }); })
+      .catch(() => null);
   }, []);
 
   useEffect(() => {
@@ -701,6 +735,7 @@ ${dados.aviso}` : "")
             { key: "products", label: "Produtos", icon: Layers },
             { key: "invoices", label: "Notas fiscais", icon: Receipt },
             { key: "inutilizacao", label: "Inutilizações", icon: ShieldCheck },
+            { key: "contador", label: "Contador", icon: Send },
           ].map(item => {
             const active = activeNav === item.key;
             const Icon = item.icon;
@@ -1208,7 +1243,7 @@ ${dados.aviso}` : "")
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "6px 0 12px" }}>
                       {combo.fiscalBreakdown ? "🟢 Engenharia Discriminada Ativa" : "⚪ Valor Único Padrão"}
                     </p>
-                    <button onClick={() => { setEditingCombo(combo); setFiscalItemsDraft(combo.fiscalBreakdown || []); fetchComboDetails(combo.id); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #7E22CE", background: "#F3E8FF", color: "#7E22CE", fontWeight: 700, cursor: "pointer" }}>
+                    <button onClick={() => { setEditingCombo(combo); setFiscalItemsDraft(combo.fiscalBreakdown || []); setPrecoFiscalPorItem({}); fetchComboDetails(combo.id); }} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #7E22CE", background: "#F3E8FF", color: "#7E22CE", fontWeight: 700, cursor: "pointer" }}>
                       Configurar Engenharia Fiscal
                     </button>
                   </div>
@@ -1542,6 +1577,202 @@ ${dados.aviso}` : "")
             </div>
           </div>
         )}
+
+        {/* ── NAV 5: CONTADOR ── */}
+        {activeNav === "contador" && (
+          <div>
+            <h1 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#1E293B", margin: "0 0 4px" }}>Contador</h1>
+            <p style={{ color: "#64748B", fontSize: "0.88rem", margin: "0 0 1.25rem" }}>
+              Baixe o pacote fiscal do período ou deixe ele ir sozinho para o seu contador todo mês.
+            </p>
+            <AvisoDeHomologacao />
+
+            {/* O QUE VAI NO PACOTE — explicado antes de o lojista clicar */}
+            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1rem 1.25rem", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <FileArchive size={17} color="#7E22CE" />
+                <strong style={{ fontSize: "0.92rem", color: "#334155" }}>O que vai dentro do pacote</strong>
+              </div>
+              <div style={{ display: "grid", gap: 8, fontSize: "0.84rem", color: "#475569", lineHeight: 1.5 }}>
+                <div><strong>xml/</strong> — um arquivo XML por nota autorizada, nomeado pela chave de acesso. É o que o contador lança na escrituração; o resto é conferência.</div>
+                <div><strong>relacao-de-notas.csv</strong> — uma linha por nota (número, série, chave, protocolo, valor, forma de pagamento). Abre no Excel com duplo clique.</div>
+                <div><strong>vendas-sem-nota.csv</strong> — os pedidos do período que <strong>não</strong> tiveram nota, com o motivo. É a diferença entre o que a loja vendeu e o que ela declarou — o arquivo que ninguém pede e todo mundo precisa.</div>
+              </div>
+              <div style={{ marginTop: 10, fontSize: "0.78rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 10px" }}>
+                Notas emitidas em <strong>homologação</strong> (teste) ficam de fora do pacote. Elas não valem
+                fiscalmente, e mandá-las junto é o jeito mais rápido de alguém lançar um documento de teste
+                na contabilidade da empresa.
+              </div>
+            </div>
+
+            {/* BAIXAR AGORA */}
+            <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1.25rem", marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 12px", fontSize: "1rem", fontWeight: 800, color: "#334155" }}>Baixar ou enviar um período</h3>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>De</label>
+                  <input type="date" value={periodoContador.de} onChange={e => setPeriodoContador(p => ({ ...p, de: e.target.value }))}
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Até</label>
+                  <input type="date" value={periodoContador.ate} onChange={e => setPeriodoContador(p => ({ ...p, ate: e.target.value }))}
+                    style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit" }} />
+                </div>
+                <a
+                  href={`/api/store/fiscal/contador/exportar?de=${periodoContador.de}&ate=${periodoContador.ate}`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 8, border: "1px solid #7E22CE", background: "#F3E8FF", color: "#7E22CE", fontWeight: 700, fontSize: "0.85rem", textDecoration: "none" }}
+                >
+                  <Download size={15} /> Baixar pacote (.zip)
+                </a>
+                <button
+                  onClick={async () => {
+                    if (!contador.email) { alert("Cadastre o e-mail do contador abaixo antes de enviar."); return; }
+                    if (!confirm(`Enviar o pacote de ${periodoContador.de.split("-").reverse().join("/")} a ${periodoContador.ate.split("-").reverse().join("/")} para ${contador.email}?`)) return;
+                    setEnviandoContador(true);
+                    try {
+                      const r = await fetch("/api/store/fiscal/contador/enviar", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(periodoContador),
+                      });
+                      const d = await r.json();
+                      alert(d.ok ? `✅ ${d.mensagem}` : `❌ ${d.mensagem || d.error}`);
+                      if (d.ok) setContador((c: any) => ({ ...c, ultimoEnvioEm: new Date().toISOString(), ultimoEnvioResultado: d.mensagem }));
+                    } catch { alert("Falha ao enviar."); }
+                    finally { setEnviandoContador(false); }
+                  }}
+                  disabled={enviandoContador}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 8, border: "none", background: "#7E22CE", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", opacity: enviandoContador ? 0.6 : 1 }}
+                >
+                  <Send size={15} /> {enviandoContador ? "Enviando..." : "Enviar agora por e-mail"}
+                </button>
+              </div>
+              <p style={{ margin: "10px 0 0", fontSize: "0.76rem", color: "#94A3B8" }}>
+                O download pode demorar num mês cheio: cada XML é buscado no provedor, um por um.
+              </p>
+            </div>
+
+            {/* ENVIO AUTOMÁTICO */}
+            <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <Mail size={17} color="#7E22CE" />
+                <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#334155" }}>Envio automático todo mês</h3>
+              </div>
+              <p style={{ margin: "0 0 14px", fontSize: "0.83rem", color: "#64748B" }}>
+                Cadastre o e-mail do contador e escolha o dia. O pacote sai sozinho, sem você lembrar.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12, maxWidth: 560 }}>
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>E-mail do contador</label>
+                  <input
+                    type="email"
+                    value={contador.email || ""}
+                    onChange={e => setContador((c: any) => ({ ...c, email: e.target.value }))}
+                    placeholder="contabilidade@escritorio.com.br"
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.88rem", fontFamily: "inherit", boxSizing: "border-box" }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 6 }}>Quando enviar</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {[
+                      { k: "DIA_1", rotulo: "Todo dia 1º", ajuda: "Manda o mês anterior inteiro, já fechado." },
+                      { k: "ULTIMO_DIA", rotulo: "No último dia do mês", ajuda: "Manda o mês corrente até o último dia — serve para 28, 30 ou 31." },
+                      { k: "DIA_FIXO", rotulo: "Num dia fixo", ajuda: "Manda o mês anterior fechado, no dia que você escolher." },
+                      { k: "DATA_CERTA", rotulo: "Numa data marcada", ajuda: "Uma vez, na data escolhida." },
+                    ].map(op => (
+                      <button
+                        key={op.k}
+                        onClick={() => setContador((c: any) => ({ ...c, quando: op.k }))}
+                        title={op.ajuda}
+                        style={{
+                          padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+                          border: `1.5px solid ${contador.quando === op.k ? "#7E22CE" : "#E2E8F0"}`,
+                          background: contador.quando === op.k ? "#7E22CE" : "#fff",
+                          color: contador.quando === op.k ? "#fff" : "#475569",
+                          fontWeight: 700, fontSize: "0.8rem",
+                        }}
+                      >
+                        {op.rotulo}
+                      </button>
+                    ))}
+                  </div>
+                  {/* A explicação da opção escolhida fica embaixo, sempre visível.
+                      Tooltip só aparece para quem passa o mouse e sabe que existe. */}
+                  <p style={{ margin: "8px 0 0", fontSize: "0.78rem", color: "#7E22CE", background: "#FAF5FF", borderRadius: 8, padding: "7px 10px" }}>
+                    {contador.quando === "DIA_1" && "Todo dia 1º sai o mês anterior inteiro, já fechado. É o que a maioria dos contadores pede."}
+                    {contador.quando === "ULTIMO_DIA" && "Sai no último dia do mês, com o mês corrente até ali. O sistema entende sozinho se o mês tem 28, 29, 30 ou 31 dias."}
+                    {contador.quando === "DIA_FIXO" && "Sai no dia que você escolher, com o mês anterior fechado. Vai até 28, porque dia 29, 30 e 31 não existem em todo mês — e o envio sumiria justo em fevereiro."}
+                    {contador.quando === "DATA_CERTA" && "Sai uma vez, na data marcada."}
+                  </p>
+                </div>
+
+                {contador.quando === "DIA_FIXO" && (
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Dia do mês (1 a 28)</label>
+                    <input type="number" min={1} max={28} value={contador.dia}
+                      onChange={e => setContador((c: any) => ({ ...c, dia: Math.min(28, Math.max(1, Number(e.target.value) || 1)) }))}
+                      style={{ width: 110, padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.88rem", fontFamily: "inherit" }} />
+                  </div>
+                )}
+
+                {contador.quando === "DATA_CERTA" && (
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Data do envio</label>
+                    <input type="date" value={contador.data || ""}
+                      onChange={e => setContador((c: any) => ({ ...c, data: e.target.value }))}
+                      style={{ padding: "9px 12px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.88rem", fontFamily: "inherit" }} />
+                  </div>
+                )}
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "#334155", cursor: "pointer" }}>
+                  <input type="checkbox" checked={contador.copiaParaLoja}
+                    onChange={e => setContador((c: any) => ({ ...c, copiaParaLoja: e.target.checked }))}
+                    style={{ width: 16, height: 16, cursor: "pointer" }} />
+                  Mandar uma cópia para o e-mail da loja (para você conferir que chegou)
+                </label>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", fontWeight: 700, color: contador.automatico ? "#15803D" : "#64748B", cursor: "pointer", background: contador.automatico ? "#F0FDF4" : "#F8FAFC", border: `1px solid ${contador.automatico ? "#A7F3D0" : "#E2E8F0"}`, borderRadius: 10, padding: "10px 12px" }}>
+                  <input type="checkbox" checked={contador.automatico}
+                    onChange={e => setContador((c: any) => ({ ...c, automatico: e.target.checked }))}
+                    style={{ width: 17, height: 17, cursor: "pointer" }} />
+                  {contador.automatico ? "Envio automático LIGADO" : "Envio automático desligado"}
+                </label>
+
+                <div>
+                  <button
+                    onClick={async () => {
+                      setSalvandoContador(true);
+                      try {
+                        const r = await fetch("/api/store/fiscal/contador", {
+                          method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(contador),
+                        });
+                        const d = await r.json();
+                        if (r.ok) { setContador(d.contador); alert("✅ Salvo."); }
+                        else alert(`❌ ${d.mensagem || d.error}`);
+                      } catch { alert("Falha ao salvar."); }
+                      finally { setSalvandoContador(false); }
+                    }}
+                    disabled={salvandoContador}
+                    style={{ padding: "10px 22px", borderRadius: 8, border: "none", background: "#7E22CE", color: "#fff", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer", opacity: salvandoContador ? 0.6 : 1 }}
+                  >
+                    {salvandoContador ? "Salvando..." : "Salvar"}
+                  </button>
+                </div>
+
+                {contador.ultimoEnvioEm && (
+                  <div style={{ fontSize: "0.8rem", color: "#64748B", background: "#F8FAFC", borderRadius: 8, padding: "9px 12px" }}>
+                    <strong>Último envio:</strong>{" "}
+                    {new Date(contador.ultimoEnvioEm).toLocaleString("pt-BR")} — {contador.ultimoEnvioResultado}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── MODAL 1: EMISSÃO FISCAL INDIVIDUAL (CARDÁPIO WEB SCREENSHOT 4) ── */}
@@ -1801,9 +2032,14 @@ ${dados.aviso}` : "")
                       for (const group of comboDetails.comboGroups) {
                         for (const gi of group.items) {
                           const addPrice = gi.additionalPrice || 0;
+                          // O valor digitado pelo lojista manda; sem ele, o
+                          // rateio automático.
+                          const digitado = precoFiscalPorItem[gi.id];
                           items.push({
                             name: gi.menuProduct?.name || gi.name || "Item",
-                            price: parseFloat((porEscolha + addPrice).toFixed(2)),
+                            price: parseFloat(
+                              (Number.isFinite(digitado) ? digitado : porEscolha + addPrice).toFixed(2)
+                            ),
                             basePrice: parseFloat(porEscolha.toFixed(2)),
                             additionalPrice: addPrice,
                             category: gi.menuProduct?.category || editingCombo.category || "Lanches",
@@ -1847,17 +2083,77 @@ ${dados.aviso}` : "")
                       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                         {group.items.map((gi: any) => {
                           const addPrice = gi.additionalPrice || 0;
-                          const fiscalPrice = basePrice + addPrice;
+                          const sugerido = Number((basePrice + addPrice).toFixed(2));
+                          const digitado = precoFiscalPorItem[gi.id];
+                          const foiAlterado = Number.isFinite(digitado);
+                          const fiscalPrice = foiAlterado ? digitado : sugerido;
                           return (
-                            <div key={gi.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", background: "#fff", borderRadius: 6, fontSize: "0.82rem" }}>
-                              <span style={{ color: "#334155" }}>{gi.menuProduct?.name || "Item"}</span>
-                              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                            <div key={gi.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "4px 8px", background: "#fff", borderRadius: 6, fontSize: "0.82rem" }}>
+                              <span style={{ color: "#334155", flex: 1, minWidth: 0 }}>{gi.menuProduct?.name || "Item"}</span>
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                 {addPrice > 0 && <span style={{ color: "#EA580C", fontWeight: 600, fontSize: "0.72rem" }}>+{fmt(addPrice)}</span>}
-                                <span style={{ fontWeight: 800, color: "#16A34A" }}>{fmt(fiscalPrice)}</span>
+                                {/* Editável: era texto fixo com o rateio igual,
+                                    e rateio igual quase nunca é o que interessa
+                                    — o refrigerante e o lanche têm tributação
+                                    diferente, que é o motivo desta tela existir. */}
+                                <span style={{ color: "#64748B", fontSize: "0.75rem" }}>R$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={fiscalPrice}
+                                  onChange={(e) => {
+                                    const v = Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : 0;
+                                    setPrecoFiscalPorItem((prev) => ({ ...prev, [gi.id]: v }));
+                                    // Reflete na lista "Itens na Nota Fiscal" na
+                                    // hora. Sem isto o lojista digitaria aqui,
+                                    // salvaria, e o valor antigo iria para a
+                                    // nota — só mudaria depois de ele descobrir
+                                    // que precisava clicar em "Auto-preencher".
+                                    const nome = gi.menuProduct?.name || gi.name || "Item";
+                                    setFiscalItemsDraft((atual) => {
+                                      const i = atual.findIndex((it: any) => it.name === nome);
+                                      if (i < 0) return atual;
+                                      const copia = [...atual];
+                                      copia[i] = { ...copia[i], price: v };
+                                      return copia;
+                                    });
+                                  }}
+                                  title="Quanto deste combo é este item, para efeito de nota fiscal"
+                                  style={{
+                                    width: 78, padding: "3px 6px", borderRadius: 6, textAlign: "right",
+                                    border: `1.5px solid ${foiAlterado ? "#7E22CE" : "#CBD5E1"}`,
+                                    background: foiAlterado ? "#FAF5FF" : "#fff",
+                                    fontWeight: 800, color: foiAlterado ? "#6B21A8" : "#16A34A",
+                                    fontSize: "0.8rem", fontFamily: "inherit",
+                                  }}
+                                />
+                                {foiAlterado && (
+                                  <button
+                                    onClick={() => setPrecoFiscalPorItem((prev) => {
+                                      const copia = { ...prev };
+                                      delete copia[gi.id];
+                                      return copia;
+                                    })}
+                                    title={`Voltar ao rateio automático (${fmt(sugerido)})`}
+                                    style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8", fontSize: "0.9rem", lineHeight: 1, padding: 0 }}
+                                  >
+                                    ↺
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
                         })}
+                        {/* Explicação no lugar onde a dúvida nasce: o lojista
+                            olha a soma, vê que não bate com o preço do combo e
+                            acha que fez algo errado. Não fez — o que a nota usa
+                            é a PROPORÇÃO entre os itens. */}
+                        <div style={{ marginTop: 4, fontSize: "0.7rem", color: "#64748B", lineHeight: 1.4 }}>
+                          Estes valores dizem <strong>quanto de cada item</strong> a nota vai considerar.
+                          Se a soma não fechar com {fmt(editingCombo.price)}, tudo bem: o que vale é a
+                          proporção entre eles — a nota sempre sai com o total que o cliente pagou.
+                        </div>
                       </div>
                     </div>
                   );

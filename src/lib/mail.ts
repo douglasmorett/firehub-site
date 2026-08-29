@@ -1,12 +1,25 @@
 import nodemailer from "nodemailer";
 import { Resend } from "resend";
 
+export interface SendMailAttachment {
+  filename: string;
+  /** Conteúdo do arquivo. Buffer para binário (ZIP), string para texto (CSV, XML). */
+  content: Buffer | string;
+  contentType?: string;
+}
+
 export interface SendMailOptions {
   to: string;
   subject: string;
   html: string;
   text?: string;
   from?: string;
+  /**
+   * Anexos. Existem por causa do envio mensal para o contador: relatório sem
+   * os arquivos é só um aviso, e o contador teria que entrar no sistema para
+   * buscar o que deveria ter chegado junto.
+   */
+  attachments?: SendMailAttachment[];
 }
 
 export interface SendMailResult {
@@ -16,7 +29,7 @@ export interface SendMailResult {
   error?: string;
 }
 
-export async function sendEmail({ to, subject, html, text, from }: SendMailOptions): Promise<SendMailResult> {
+export async function sendEmail({ to, subject, html, text, from, attachments }: SendMailOptions): Promise<SendMailResult> {
   const resendApiKey = process.env.RESEND_API_KEY;
   const smtpHost = process.env.SMTP_HOST || (process.env.GMAIL_USER ? "smtp.gmail.com" : "");
   const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
@@ -43,6 +56,15 @@ export async function sendEmail({ to, subject, html, text, from }: SendMailOptio
         subject,
         html,
         text: text || html.replace(/<[^>]+>/g, ""),
+        ...(attachments?.length
+          ? {
+              attachments: attachments.map((a) => ({
+                filename: a.filename,
+                content: a.content,
+                contentType: a.contentType,
+              })),
+            }
+          : {}),
       });
 
       console.log("[sendEmail:SMTP] Enviado com sucesso:", info.messageId);
@@ -65,6 +87,17 @@ export async function sendEmail({ to, subject, html, text, from }: SendMailOptio
         to,
         subject,
         html,
+        // O Resend quer o anexo em base64; o nodemailer aceita Buffer direto.
+        ...(attachments?.length
+          ? {
+              attachments: attachments.map((a) => ({
+                filename: a.filename,
+                content: Buffer.isBuffer(a.content)
+                  ? a.content.toString("base64")
+                  : Buffer.from(a.content, "utf8").toString("base64"),
+              })),
+            }
+          : {}),
       });
 
       if (error) {
