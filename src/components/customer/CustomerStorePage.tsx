@@ -1625,7 +1625,14 @@ export default function CustomerStorePage({
                 maxLength={16}
                 autoComplete="tel"
                 value={customerPhone}
-                onChange={e => setCustomerPhone(e.target.value.replace(/[^ds()+-]/g, ""))}
+                // A classe estava `[^ds()+-]`, sem as barras: em vez de "tudo que
+                // não for dígito ou espaço", ela lia "tudo que não for a letra d,
+                // a letra s ou um destes símbolos" — e apagava TODOS OS DÍGITOS.
+                // Digitar "(22) 99999-8888" resultava em "()-". O campo é
+                // obrigatório, então o cardápio inteiro parou de fechar pedido em
+                // todas as lojas desde 27/08, e a loja só descobriu porque o
+                // cliente foi reclamar pelo WhatsApp.
+                onChange={e => setCustomerPhone(e.target.value.replace(/[^\d\s()+-]/g, ""))}
                 placeholder="Ex: (11) 99999-9999"
               />
             </div>
