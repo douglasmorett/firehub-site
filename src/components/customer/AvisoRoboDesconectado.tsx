@@ -12,6 +12,11 @@ import Link from "next/link";
  * cliente reclamando que ninguém respondeu — às vezes dias depois. Foi assim
  * que três lojas ficaram mudas ao mesmo tempo sem um único alarme.
  *
+ * Verde de propósito, e não vermelho: o painel já tem faixa âmbar de cobrança
+ * pendente e tela vermelha de conta bloqueada. Mais um alerta na mesma família
+ * de cor vira ruído — o lojista bate o olho e supõe que é dinheiro de novo. O
+ * verde do WhatsApp diz de cara de que assunto se trata.
+ *
  * Ela só aparece para quem JÁ CONECTOU alguma vez e está fora agora (a regra
  * vem pronta de /api/chatbot/status-conexao). Enquanto estiver tudo certo, o
  * componente não desenha nada — faixa que aparece à toa vira paisagem, e aí
@@ -72,9 +77,9 @@ export default function AvisoRoboDesconectado() {
           alignItems: "center",
           gap: "0.9rem",
           flexWrap: "wrap",
-          background: "#FEF2F2",
-          border: "1px solid #FCA5A5",
-          borderLeft: "6px solid #DC2626",
+          background: "#F0FDF4",
+          border: "1px solid #A7F3D0",
+          borderLeft: "6px solid #16A34A",
           borderRadius: 12,
           padding: "0.9rem 1.1rem",
         }}
@@ -84,10 +89,10 @@ export default function AvisoRoboDesconectado() {
         </span>
 
         <div style={{ flex: 1, minWidth: 240 }}>
-          <div style={{ fontWeight: 800, color: "#991B1B", fontSize: "1rem" }}>
+          <div style={{ fontWeight: 800, color: "#166534", fontSize: "1rem" }}>
             Seu robô de WhatsApp desconectou {haQuantoTempo}
           </div>
-          <div style={{ color: "#7F1D1D", fontSize: "0.88rem", marginTop: 2 }}>
+          <div style={{ color: "#15803D", fontSize: "0.88rem", marginTop: 2 }}>
             Enquanto ele estiver fora, as mensagens dos seus clientes não são respondidas.
             Clique aqui e leia o QR Code de novo.
           </div>
@@ -95,7 +100,7 @@ export default function AvisoRoboDesconectado() {
 
         <span
           style={{
-            background: "#DC2626",
+            background: "#16A34A",
             color: "#fff",
             fontWeight: 800,
             fontSize: "0.9rem",

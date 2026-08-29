@@ -212,6 +212,16 @@ export default function StoreTopNav({
 
   useEffect(() => { if (showCaixaMenu) carregarMovs(); }, [showCaixaMenu]);
 
+  // A faixa de "caixa aberto ha mais de 24h" (AvisoCaixaAberto24h) vive fora
+  // desta barra, entao ela pede o menu por evento em vez de duplicar a tela.
+  // Caixa fechado nao tem menu para abrir: cai no modal de abertura, que e o
+  // passo seguinte de quem acabou de fechar.
+  useEffect(() => {
+    const abrir = () => (cashOpen ? setShowCaixaMenu(true) : setShowOpenModal(true));
+    window.addEventListener("firehub:abrir-menu-caixa", abrir);
+    return () => window.removeEventListener("firehub:abrir-menu-caixa", abrir);
+  }, [cashOpen]);
+
   const salvarMov = async () => {
     setMovErro("");
     // Apagar TODOS os pontos supunha que ponto e sempre separador de milhar.

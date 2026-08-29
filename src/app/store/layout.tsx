@@ -7,6 +7,8 @@ import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import HideOnCompras from "@/components/HideOnCompras";
+import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
+import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 
@@ -129,6 +131,23 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           initialCashOpen={storeOwner?.cashOpen ?? false}
           showAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
         />
+
+        {/* ── AVISOS DA OPERAÇÃO ────────────────────────────────────────
+            Ficavam só no painel inicial (/store). Quem passa o expediente na
+            tela de pedidos ou no KDS — que é onde a loja realmente fica —
+            nunca via. Os dois casos que motivaram isto estavam acontecendo ao
+            mesmo tempo em 29/08/2026: a Pastel da Paulista com o robô caído
+            desde a véspera e com o caixa aberto havia 8 dias.
+
+            Cada faixa decide sozinha se aparece, e as duas somem quando não há
+            o que avisar: faixa que fica na tela à toa vira paisagem, e aí não
+            serve no dia em que importa. */}
+        <HideOnCompras>
+          <div style={{ padding: "1rem 1.5rem 0" }}>
+            <AvisoCaixaAberto24h />
+            <AvisoRoboDesconectado />
+          </div>
+        </HideOnCompras>
 
         {/* Banner: Trial ativo (esconde no módulo de compras via client-side) */}
         {isInTrial && isFranqueado && (
