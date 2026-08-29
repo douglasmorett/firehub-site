@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SairDaConta from "@/components/SairDaConta";
 import { LayoutDashboard, Package, Users, ShoppingCart, LogOut, Truck, DollarSign, UserCog, Receipt, Sparkles, Tag, UtensilsCrossed, BarChart3, Warehouse, Calculator, ClipboardCheck, Bike, Store } from "lucide-react";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -179,9 +180,9 @@ export default async function AdminSidebar() {
         </nav>
 
         <div style={{ padding: "16px", borderTop: "1px solid var(--border-color)" }}>
-          <a href="/api/auth/signout" className="btn" style={{ width: "100%", justifyContent: "flex-start", color: "var(--danger)" }}>
+          <SairDaConta className="btn" style={{ width: "100%", justifyContent: "flex-start", color: "var(--danger)" }}>
             <LogOut size={18} style={{ marginRight: "10px" }} /> Sair
-          </a>
+          </SairDaConta>
         </div>
       </aside>
     </>

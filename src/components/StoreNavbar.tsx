@@ -1,4 +1,5 @@
 "use client";
+import SairDaConta from "@/components/SairDaConta";
 
 import Link from "next/link";
 import { LogOut, ShoppingCart, User } from "lucide-react";
@@ -68,9 +69,9 @@ export default function StoreNavbar({ userName, userCity }: { userName: string, 
           <Link href="/store/minha-loja" className="btn btn-outline" style={{ border: "none" }} title="Minha Loja">
             <User size={18} />
           </Link>
-          <a href="/api/auth/signout" className="btn" style={{ color: "var(--danger)" }}>
+          <SairDaConta className="btn" style={{ color: "var(--danger)" }}>
             <LogOut size={18} />
-          </a>
+          </SairDaConta>
         </div>
       </div>
     </header>

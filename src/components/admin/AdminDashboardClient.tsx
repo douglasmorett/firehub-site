@@ -1,4 +1,5 @@
 "use client";
+import SairDaConta from "@/components/SairDaConta";
 import React, { useState } from "react";
 import { signIn } from "next-auth/react";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
@@ -217,9 +218,9 @@ export default function AdminDashboardClient({
               <div style={{ color: "#64748B", fontSize: "0.65rem" }}>Administrador</div>
             </div>
           </div>
-          <a href="/api/auth/signout" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginTop: 4, borderRadius: 10, color: "#64748B", fontSize: "0.8rem", textDecoration: "none" }}>
+          <SairDaConta style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginTop: 4, borderRadius: 10, color: "#64748B", fontSize: "0.8rem", background: "none", border: "none", width: "100%" }}>
             🚪 Sair
-          </a>
+          </SairDaConta>
         </div>
       </aside>
 

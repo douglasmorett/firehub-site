@@ -1,4 +1,5 @@
 "use client";
+import SairDaConta from "@/components/SairDaConta";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -1025,9 +1026,13 @@ export default function StoreTopNav({
             </a>
           )}
           <span className="nav-user-label" style={{ color:"rgba(255,255,255,0.85)", fontSize:"0.72rem", padding:"0 0.2rem" }}>{userName} • {userCity}</span>
-          <a href="/api/auth/signout" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.6rem", borderRadius:8, background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.85)", fontSize:"0.72rem", textDecoration:"none", border:"1px solid rgba(255,255,255,0.2)" }}>
+          <SairDaConta
+            caixaAberto={cashOpen}
+            nomeDaLoja={userName}
+            style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.6rem", borderRadius:8, background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.85)", fontSize:"0.72rem", border:"1px solid rgba(255,255,255,0.2)" }}
+          >
             <LogOut size={12} /> Sair
-          </a>
+          </SairDaConta>
         </div>
       </div>
 
