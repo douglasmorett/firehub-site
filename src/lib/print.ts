@@ -1,3 +1,4 @@
+import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -213,8 +214,13 @@ async function printToDevice(
           discountDetails: (order as any).discountDetails,
           changeAmount: (order as any).changeAmount,
           ifoodReference: (order as any).ifoodReference,
-          ifoodPickupCode: (order as any).ifoodPickupCode,
           openDeliveryReference: (order as any).openDeliveryReference,
+          // Quem entrega, decidido AQUI. O payload não mandava `deliveryBy`:
+          // no Assistente o campo chegava vazio e sobrava o código de coleta
+          // para decidir, então todo pedido do iFood com código saía com
+          // "MOTOBOY IFOOD (ENTREGA PARCEIRA) - NAO USAR MOTOBOY DA LOJA!",
+          // mesmo sendo entrega da própria loja. Ver lib/entrega-parceira.ts.
+          ...camposDeEntregaParaImpressao(order),
           source: (order as any).source,
           // Comanda da cozinha. Assistente antigo ignora campo que não conhece,
           // então mandar isto para uma loja que ainda não atualizou o Assistente

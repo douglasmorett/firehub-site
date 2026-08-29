@@ -601,37 +601,46 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const srcStr = (order.source || "").toString().toUpperCase();
   const odChannelStr = (order.openDeliveryChannel || "").toString().toUpperCase();
 
-  const is99FoodDriver = (
-    srcStr === "99FOOD" ||
-    odChannelStr === "99FOOD" ||
-    dByStr === "99FOOD" ||
-    dByStr.includes("99")
+  // ── QUEM VAI ENTREGAR ────────────────────────────────────────────────
+  //
+  // A regra aqui aceitava o CODIGO DE COLETA como prova de entrega parceira.
+  // O iFood emite codigo tambem em entrega propria (e o numero que o cliente
+  // informa ao receber): medido na Hakim em 23/08/2026, 73 dos 80 pedidos do
+  // dia tinham codigo e 70 eram entrega da loja. Resultado: a comanda saia
+  // com "NAO USAR MOTOBOY DA LOJA!" em pedido que era da loja, enquanto o
+  // painel mostrava a coisa certa.
+  //
+  // Agora quem decide e o servidor, que manda `entregaParceira` pronto
+  // (src/lib/entrega-parceira.ts). O resto abaixo e so para o caso de vir um
+  // pedido de versao antiga do servidor, sem esse campo -- e mesmo ai o
+  // codigo de coleta nao entra na conta: prova de entrega parceira e quem
+  // entrega, nunca a existencia de um numero.
+  const decididoNoServidor = typeof order.entregaParceira === "boolean";
+  const dModeStr = (order.deliveryMode || "").toString().toUpperCase();
+  const ehLogistica = dByStr === "LOGISTICS" || dByStr === "PARTNER"
+    || dModeStr === "LOGISTIC" || dModeStr === "PARTNER";
+  const ehEntregaPropria = dByStr === "MERCHANT" || dByStr === "LOJA"
+    || dByStr === "PROPRIO" || dByStr === "MERCHANT_DELIVERY";
+
+  const is99FoodDriver = !ehEntregaPropria && (
+    srcStr === "99FOOD" || odChannelStr === "99FOOD" || dByStr.includes("99")
+  ) && (dByStr.includes("99") || ehLogistica);
+
+  const isIfoodDriver = !ehEntregaPropria && (
+    srcStr === "IFOOD" || dByStr.includes("IFOOD")
   ) && (
-    dByStr === "99FOOD" ||
-    dByStr.includes("99") ||
-    dByStr === "LOGISTICS" ||
-    dByStr === "PARTNER" ||
-    Boolean(order.ifoodPickupCode) ||
-    Boolean(order.openDeliveryPickupCode)
+    dByStr.includes("IFOOD") || ehLogistica ||
+    Boolean(order.ifoodDriverName) ||
+    Boolean(order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")
   );
 
-  const isIfoodDriver = (
-    srcStr === "IFOOD" ||
-    dByStr === "IFOOD" ||
-    dByStr.includes("IFOOD")
-  ) && (
-    dByStr === "IFOOD" ||
-    dByStr.includes("IFOOD") ||
-    dByStr === "LOGISTICS" ||
-    dByStr === "PARTNER" ||
-    Boolean(order.ifoodPickupCode)
-  );
+  const isPartnerDriver = decididoNoServidor
+    ? order.entregaParceira === true
+    : (is99FoodDriver || isIfoodDriver || (!ehEntregaPropria && ehLogistica));
 
-  const isPartnerDriver = is99FoodDriver || isIfoodDriver || (
-    (dByStr === "LOGISTICS" || dByStr === "PARTNER") && dByStr !== "MERCHANT"
-  );
-
-  const partnerLabel = is99FoodDriver ? "99FOOD" : (isIfoodDriver ? "IFOOD" : (srcStr || "PARCEIRO"));
+  const partnerLabel = (decididoNoServidor && order.parceiroDaEntrega)
+    ? String(order.parceiroDaEntrega).toUpperCase()
+    : (is99FoodDriver ? "99FOOD" : (isIfoodDriver ? "IFOOD" : (srcStr || "PARCEIRO")));
   const pCode = order.ifoodPickupCode || order.openDeliveryPickupCode || "";
 
   res += DOUBLE_HEIGHT + BOLD_ON + centerLine(headerLine) + BOLD_OFF + DOUBLE_OFF;

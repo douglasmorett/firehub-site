@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila agora é lida diretamente do banco de dados no endpoint GET.
@@ -89,7 +90,19 @@ export async function GET(req: NextRequest) {
 
     const jobs = recentOrders.map(order => ({
       id: "job_" + order.id,
-      order,
+      // ── QUEM ENTREGA ESTE PEDIDO ────────────────────────────────────
+      //
+      // O pedido do banco ia inteiro para o Assistente, e ele decide sozinho
+      // se é entrega parceira — pela regra antiga, em que a existência de um
+      // código de coleta bastava para concluir que sim. Como o iFood emite
+      // código também em entrega própria, a comanda saía mandando NÃO usar o
+      // motoboy da loja num pedido que era da loja. O painel já acertava; só
+      // o papel errava.
+      //
+      // Aqui o servidor decide (lib/entrega-parceira.ts) e o código de coleta
+      // só viaja quando a entrega é mesmo do parceiro. Assim a regra antiga,
+      // instalada nas lojas hoje, não tem mais como concluir errado.
+      order: { ...order, ...camposDeEntregaParaImpressao(order) },
       storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
       // Escalar compativel com o assistente ja instalado. Vale para instalacao
       // de UMA impressora; com varias, quem resolve e o printerConfig abaixo.
