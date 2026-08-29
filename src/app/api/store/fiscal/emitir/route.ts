@@ -10,6 +10,7 @@ import {
   type ItemDaNota,
   type ResultadoDaEmissao,
 } from "@/lib/fiscal-emissao";
+import { montarItensDaNota } from "@/lib/fiscal-itens";
 
 export const dynamic = "force-dynamic";
 // A emissão pode esperar a SEFAZ processar (até ~12s de consultas) além dos
@@ -66,7 +67,23 @@ export async function POST(req: Request) {
       where: { id: lojaId },
       select: { fiscalConfig: true, storeName: true, name: true },
     });
-    const config = (loja?.fiscalConfig as ConfiguracaoFiscal | null) ?? {};
+    const config = (loja?.fiscalConfig as (ConfiguracaoFiscal & { enabled?: boolean }) | null) ?? {};
+
+    // Módulo desligado na tela significa desligado. A emissão automática já
+    // respeitava `enabled`; o botão Emitir não conferia e emitia nota REAL na
+    // SEFAZ com o módulo aparentemente desativado — nota que depois só sai por
+    // cancelamento, dentro do prazo legal.
+    if (!config.enabled) {
+      return NextResponse.json(
+        {
+          error: "emissao_desligada",
+          mensagem:
+            "A emissão de nota fiscal está DESLIGADA para esta loja. " +
+            "Ligue em Fiscal → Configuração antes de emitir.",
+        },
+        { status: 409 }
+      );
+    }
 
     // Conferir antes de carregar o pedido: se a loja nem pode emitir, não faz
     // sentido montar a nota. E a mensagem que o lojista precisa ler é esta.
@@ -120,30 +137,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const itens: ItemDaNota[] = order.items.map((item) => {
-      const p = item.menuProduct;
-      // O cadastro fiscal do produto manda: origem, CSOSN/CST, PIS e COFINS
-      // vinham hardcoded (origem 0, cst null) e o que o lojista preencheu era
-      // ignorado. No Regime Normal (CRT 3) o campo "situação tributária" do
-      // produto guarda o CST de 2 dígitos.
-      const situacao = String(p?.csosn ?? "").trim();
-      return {
-        codigo: p?.id ?? item.id,
-        descricao: item.productName || p?.name || "Item",
-        ncm: p?.ncm ?? "",
-        cest: p?.cest ?? null,
-        cfop: p?.cfop ?? "5102",
-        unidadeComercial: "UN",
-        quantidade: item.quantity,
-        valorUnitario: item.price,
-        valorTotal: item.price * item.quantity,
-        origem: Number(p?.origem ?? 0) || 0,
-        csosn: situacao || null,
-        cst: situacao.length === 2 ? situacao : null,
-        pis: p?.pis ?? null,
-        cofins: p?.cofins ?? null,
-      };
-    });
+    // As linhas da nota saem de lib/fiscal-itens, que abre os combos usando o
+    // `fiscalBreakdown` configurado na Engenharia de Cardápio Fiscal. Antes o
+    // breakdown era só gravado e exibido: a tela dizia "🟢 Engenharia
+    // Discriminada Ativa" e a nota saía com o combo em linha única.
+    const itens: ItemDaNota[] = montarItensDaNota(order.items);
 
     const resultado = await emitirNfce(config, {
       id: order.id,
@@ -155,6 +153,10 @@ export async function POST(req: Request) {
       formaDePagamento: order.paymentMethod || "Dinheiro",
       documentoDoCliente: documentoInformado || order.customerCpfCnpj,
       nomeDoCliente: order.customerName,
+      // Delivery é "entrega a domicílio" (presença 4), não venda de balcão.
+      // Ia chumbado como presencial para todo pedido, inclusive o delivery,
+      // que é o grosso do movimento das lojas.
+      entregaEmDomicilio: order.deliveryType === "DELIVERY",
     });
 
     // Documento digitado no modal fica gravado no pedido: reemissão, consulta

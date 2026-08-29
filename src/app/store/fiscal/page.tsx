@@ -88,15 +88,22 @@ type FiscalOrder = {
 };
 
 const FAQ_ITEMS = [
-  { q: "Que tipos de notas podem ser emitidas?", a: "O sistema emite NFC-e (Nota Fiscal de Consumidor Eletrônica) e NF-e para entregas e vendas no balcão." },
-  { q: "Como as recompensas de fidelidade aparecem na nota?", a: "Descontos de fidelidade são deduzidos proporcionalmente na base de cálculo dos itens da nota." },
-  { q: "Como as taxas de serviços e acréscimos aparecem na nota?", a: "Taxas de entrega são discriminadas no campo próprio de despesas acessórias (vFrete)." },
+  // A resposta anterior prometia "NFC-e e NF-e". NF-e (modelo 55) não existe
+  // neste módulo — só NFC-e (modelo 65). Prometer na FAQ o que o botão não faz
+  // é o mesmo tipo de mentira que o módulo fiscal falso antigo contava.
+  { q: "Que tipos de notas podem ser emitidas?", a: "O sistema emite NFC-e (Nota Fiscal de Consumidor Eletrônica, modelo 65) — a nota do consumidor final, para delivery, balcão, mesa e totem. NF-e modelo 55 (para venda a outra empresa) ainda não é emitida por aqui." },
+  // As três respostas abaixo descreviam um rateio por item que o código não
+  // faz: desconto e taxa vão no TOTAL da nota. Descrever o que existe evita
+  // que o lojista (ou o contador dele) conte com uma discriminação que não
+  // aparece no XML.
+  { q: "Como as recompensas de fidelidade aparecem na nota?", a: "Entram junto com os demais descontos, abatendo o total do documento (vDesc). Não são rateadas item a item." },
+  { q: "Como as taxas de serviços e acréscimos aparecem na nota?", a: "A taxa de entrega vai como Outras Despesas Acessórias (vOutro), somando ao total. NFC-e não tem campo de frete, por isso a modalidade vai como 'sem frete'." },
   { q: "Como os descontos aparecem na nota?", a: "Cupons e descontos da loja reduzem o valor total do documento no campo vDesc." },
   { q: "Descontos pagos pelo iFood na nota", a: "Subídios de cupons pagos pelo iFood não reduzem o valor fiscal repassado à SEFAZ." },
   { q: "Como produtos cadastrados como combos aparecem na nota?", a: "Na Engenharia de Cardápio Fiscal, os itens do combo são enviados discriminados com valores tributários individuais sem alterar o preço para o cliente." },
   { q: "Uma opção do meu produto deve ser tributada de forma diferente, como fazer?", a: "Configure o NCM e CST específicos do item ou adicional na aba de Produtos." },
   { q: "Formas de pagamento na nota", a: "Cada venda envia a credenciadora e meio de pagamento correspondente (Pix, Cartão, Dinheiro, Voucher)." },
-  { q: "Como fica o campo de Indicador de presença?", a: "Delivery com CPF usa Operação Não Presencial. Sem CPF ou balcão usa Operação Presencial." },
+  { q: "Como fica o campo de Indicador de presença?", a: "Pedido de delivery sai como Entrega a Domicílio (código 4). Retirada, balcão, mesa e totem saem como Operação Presencial (código 1). O CPF do cliente não muda esse campo." },
 ];
 
 const PAYMENT_OPTIONS = [
@@ -620,6 +627,38 @@ ${dados.aviso}` : "")
      inventava chave e protocolo. Dava para usar o módulo por meses achando que
      estava emitindo. Agora, enquanto faltar qualquer peça, a tela diz que
      nenhuma nota sai — e diz exatamente o que buscar. */
+  /* A faixa de HOMOLOGAÇÃO.
+
+     O ambiente já era gravado na nota, já vinha da API e já estava no tipo
+     desta tela — e não era mostrado em lugar nenhum. Uma loja em homologação
+     com o cadastro completo recebia `podeEmitir: true`, a faixa vermelha
+     sumia, e a partir daí tudo tinha cara de produção: badge verde
+     "Autorizada", série/número, chave de 44 dígitos, protocolo, e o card
+     "Notas autorizadas" somando o valor.
+
+     A nota de homologação existe de verdade (no ambiente de TESTE da SEFAZ),
+     então nada aqui é inventado — mas para o lojista o efeito prático é o
+     mesmo do módulo falso antigo: meses achando que emitiu, e a descoberta na
+     fiscalização. Por isso a faixa é fixa, em todas as abas, e não some. */
+  const emHomologacao = Number(fiscalConfig.ambiente) === 2;
+  const AvisoDeHomologacao = () =>
+    !emHomologacao ? null : (
+      <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <AlertTriangle size={18} color="#D97706" />
+          <strong style={{ fontSize: "0.92rem", color: "#92400E" }}>
+            Modo TESTE (homologação) — as notas emitidas aqui NÃO têm valor fiscal
+          </strong>
+        </div>
+        <p style={{ fontSize: "0.83rem", color: "#78350F", margin: "8px 0 0", lineHeight: 1.5 }}>
+          Tudo funciona igual e a nota é aceita — mas pelo ambiente de <strong>teste</strong> da SEFAZ.
+          Ela não serve para o cliente, não serve para o contador e não conta para o Fisco.
+          Quando terminar de testar, vá em <strong>Configuração → Ambiente</strong> e mude para
+          <strong> Produção</strong> (com o token de produção do Focus NFe).
+        </p>
+      </div>
+    );
+
   const AvisoDoEstadoFiscal = () =>
     podeEmitir ? null : (
       <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12 }}>
@@ -702,6 +741,7 @@ ${dados.aviso}` : "")
         {activeNav === "config" && (
           <div>
             <AvisoDoEstadoFiscal />
+            <AvisoDeHomologacao />
             <h1 style={{ margin: "0 0 1.25rem", fontSize: "1.35rem", fontWeight: 800, color: "#1E293B" }}>
               Configurações fiscais
             </h1>
@@ -1085,6 +1125,7 @@ ${dados.aviso}` : "")
         {activeNav === "products" && (
           <div>
             <AvisoDoEstadoFiscal />
+            <AvisoDeHomologacao />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
               <h1 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#1E293B" }}>
                 Configurações fiscais dos produtos
@@ -1181,6 +1222,7 @@ ${dados.aviso}` : "")
         {activeNav === "invoices" && (
           <div>
             <AvisoDoEstadoFiscal />
+            <AvisoDeHomologacao />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 10 }}>
               <h1 style={{ margin: 0, fontSize: "1.35rem", fontWeight: 800, color: "#1E293B" }}>
                 Notas fiscais
@@ -1224,14 +1266,18 @@ ${dados.aviso}` : "")
 
                 <button
                   onClick={() => {
-                    // Abre o XML de cada nota REALMENTE autorizada. Antes era um
-                    // alert dizendo "download iniciado" sem baixar arquivo nenhum.
+                    // Pelo PROXY do servidor, não pela URL do Focus.
+                    //
+                    // O link salvo no pedido aponta direto para o Focus, que
+                    // exige autenticação Basic com o token da loja: aberto no
+                    // navegador ele responde 401 e nenhum arquivo baixava. O
+                    // botão do DANFE já fazia certo; este ficou para trás.
                     const comXml = (orders as any[]).filter(o => o.fiscalInfo?.xmlUrl);
                     if (comXml.length === 0) {
                       alert("Nenhuma nota autorizada no período — não há XML para baixar.");
                       return;
                     }
-                    comXml.forEach(o => window.open(o.fiscalInfo.xmlUrl, "_blank"));
+                    comXml.forEach(o => window.open(`/api/store/fiscal/danfe?orderId=${encodeURIComponent(o.id)}&tipo=xml`, "_blank"));
                   }}
                   style={{
                     display: "inline-flex",
@@ -1346,6 +1392,17 @@ ${dados.aviso}` : "")
                     const createdDate = new Date(order.createdAt);
                     const dateStr = createdDate.toLocaleDateString("pt-BR") + " " + createdDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
                     const isEmitted = order.fiscalStatus === "EMITTED";
+                    /**
+                     * Nota emitida em HOMOLOGAÇÃO não vale nada fiscalmente —
+                     * é o ambiente de teste da SEFAZ. O campo `ambiente` já era
+                     * gravado e já vinha da API, mas não era exibido em lugar
+                     * nenhum: a linha mostrava badge verde "Autorizada", chave
+                     * de 44 dígitos e protocolo, idêntica à de produção. O
+                     * lojista testava, esquecia de virar a chave, e passava a
+                     * ver uma tela cheia de notas "autorizadas" sem uma única
+                     * nota válida — descobrindo na fiscalização.
+                     */
+                    const isHomologacao = isEmitted && Number(order.fiscalInfo?.ambiente) === 2;
                     // "Processando": a SEFAZ recebeu e ainda não respondeu —
                     // reemitir duplicaria; o caminho certo é consultar.
                     const isProcessing = !isEmitted && Boolean(order.fiscalInfo?.processando);
@@ -1384,14 +1441,20 @@ ${dados.aviso}` : "")
                         </td>
                         <td style={{ padding: "10px", textAlign: "center" }}>
                           <span
-                            title={isFailed ? (order.fiscalInfo?.ultimoErro || "") : undefined}
+                            title={
+                              isFailed
+                                ? (order.fiscalInfo?.ultimoErro || "")
+                                : isHomologacao
+                                ? "Emitida no ambiente de HOMOLOGAÇÃO da SEFAZ (teste). Não tem valor fiscal e não serve para o cliente nem para o contador."
+                                : undefined
+                            }
                             style={{
                               fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6,
-                              background: isEmitted ? "#DCFCE7" : isProcessing ? "#FEF3C7" : isFailed ? "#FEE2E2" : "#F1F5F9",
-                              color: isEmitted ? "#15803D" : isProcessing ? "#B45309" : isFailed ? "#B91C1C" : "#64748B",
+                              background: isHomologacao ? "#FEF3C7" : isEmitted ? "#DCFCE7" : isProcessing ? "#FEF3C7" : isFailed ? "#FEE2E2" : "#F1F5F9",
+                              color: isHomologacao ? "#92400E" : isEmitted ? "#15803D" : isProcessing ? "#B45309" : isFailed ? "#B91C1C" : "#64748B",
                             }}
                           >
-                            {isEmitted ? "Autorizada" : isNotaCancelada ? "Nota cancelada" : isProcessing ? "Processando" : isFailed ? "Falhou" : "Não emitida"}
+                            {isHomologacao ? "TESTE — sem valor fiscal" : isEmitted ? "Autorizada" : isNotaCancelada ? "Nota cancelada" : isProcessing ? "Processando" : isFailed ? "Falhou" : "Não emitida"}
                           </span>
                         </td>
                         <td style={{ padding: "10px", textAlign: "center" }}>
@@ -1491,6 +1554,17 @@ ${dados.aviso}` : "")
             </div>
 
             <div style={{ padding: "1.25rem" }}>
+              {/* O aviso de teste vem ANTES do botão, não depois da emissão.
+                  O único lugar onde o ambiente aparecia era um alert exibido
+                  uma vez, já com a nota emitida. */}
+              {emHomologacao && (
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 10, padding: "12px", marginBottom: 12, fontSize: "0.82rem", color: "#92400E", lineHeight: 1.45 }}>
+                  <strong>Modo TESTE (homologação).</strong> Esta nota vai para o ambiente de teste
+                  da SEFAZ: ela <strong>não tem valor fiscal</strong> e não serve para o cliente nem
+                  para o contador. Para emitir de verdade, mude o ambiente em Configuração.
+                </div>
+              )}
+
               {/* Alert 1: Azul */}
               <div style={{ background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: 10, padding: "12px", marginBottom: 12, fontSize: "0.82rem", color: "#0369A1", lineHeight: 1.4 }}>
                 Pedidos com nota fiscal emitida não podem ser alterados ou cancelados. Para cancelá-los, é necessário cancelar a nota primeiro, respeitando o prazo de até 30 minutos após a emissão.
@@ -1498,7 +1572,7 @@ ${dados.aviso}` : "")
 
               {/* Alert 2: Laranja */}
               <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 10, padding: "12px", marginBottom: 16, fontSize: "0.82rem", color: "#C2410C", lineHeight: 1.4 }}>
-                Para notas com entrega a domicílio é necessário o CPF do cliente. Sem essa informação, o indicador de presença na nota será <strong>Operação Presencial</strong>.
+                Pedido de <strong>delivery</strong> sai na nota como <strong>entrega a domicílio</strong>; retirada, balcão, mesa e totem saem como <strong>operação presencial</strong>. Informar o CPF do cliente é opcional, mas é o que permite a ele usar a nota depois.
               </div>
 
               <p style={{ fontSize: "0.9rem", color: "#1E293B", margin: "0 0 16px", lineHeight: 1.5 }}>
@@ -1583,6 +1657,20 @@ ${dados.aviso}` : "")
               </div>
               <button onClick={() => setSelectedOrderForDanfe(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem" }}>✕</button>
             </div>
+
+            {/* O espelho mostra chave de acesso e protocolo — as duas coisas
+                que fazem uma nota "parecer real". Se ela saiu do ambiente de
+                teste, isso precisa estar escrito antes deles, não depois. */}
+            {Number(selectedOrderForDanfe.fiscalInfo?.ambiente) === 2 && (
+              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+                <strong style={{ fontSize: "0.85rem", color: "#92400E" }}>⚠️ NOTA DE TESTE — SEM VALOR FISCAL</strong>
+                <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#78350F", lineHeight: 1.45 }}>
+                  Emitida no ambiente de <strong>homologação</strong> da SEFAZ. A chave e o protocolo
+                  abaixo são reais nesse ambiente de teste, mas o documento não vale para o cliente,
+                  para o contador nem para o Fisco.
+                </p>
+              </div>
+            )}
 
             <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px", marginBottom: 12, fontSize: "0.8rem" }}>
               <p style={{ margin: "0 0 4px" }}><strong>Emitente:</strong> {storeName} (CNPJ: {fiscalConfig.cnpj || cpfCnpj})</p>

@@ -58,6 +58,16 @@ export type PedidoParaNota = {
   formaDePagamento: string;
   documentoDoCliente?: string | null;
   nomeDoCliente?: string | null;
+  /**
+   * O pedido é entrega a domicílio?
+   *
+   * Muda o `presenca_comprador` da nota: 1 é operação presencial (balcão, PDV,
+   * mesa, totem) e 4 é "NFC-e em operação com entrega a domicílio". Isto vinha
+   * chumbado em 1 para TODO pedido — inclusive delivery, que é a maioria do
+   * movimento das lojas. Declarar entrega como venda de balcão é informação
+   * errada no documento fiscal, e alguns estados usam esse campo na validação.
+   */
+  entregaEmDomicilio?: boolean;
 };
 
 export type ConfiguracaoFiscal = {
@@ -258,7 +268,9 @@ async function emitirPeloFocusNfe(
     natureza_operacao: "Venda ao consumidor",
     data_emissao: agora,
     tipo_documento: 1, // saída
-    presenca_comprador: 1, // operação presencial
+    // 1 = presencial (balcão, PDV, mesa, totem); 4 = entrega a domicílio.
+    // Estava chumbado em 1 até para delivery, que é o grosso do movimento.
+    presenca_comprador: pedido.entregaEmDomicilio ? 4 : 1,
     consumidor_final: 1,
     modalidade_frete: 9, // sem frete
     cnpj_emitente: String(config.cnpj).replace(/\D/g, ""),
@@ -351,12 +363,7 @@ async function emitirPeloFocusNfe(
       if (/refer[eê]ncia|j[aá]\s+(foi\s+)?(emitid|autorizad|utilizad|enviad)/i.test(String(motivo))) {
         return consultarNfce(config, pedido.id);
       }
-      return {
-        ok: false,
-        motivo: res.status >= 500 ? "erro_de_comunicacao" : "rejeitada",
-        mensagem: `A SEFAZ recusou esta nota: ${motivo}`,
-        detalheDaRejeicao: JSON.stringify(dados).slice(0, 600),
-      };
+      return traduzirFalhaHttp(res.status, String(motivo), dados);
     }
 
     return traduzirNotaAutorizada(config, base, dados);
@@ -372,6 +379,59 @@ async function emitirPeloFocusNfe(
   }
 }
 
+/**
+ * Traduz uma falha HTTP do provedor para uma frase que diz a VERDADE ao lojista.
+ *
+ * Antes, todo erro abaixo de 500 virava "A SEFAZ recusou esta nota: HTTP 401".
+ * A SEFAZ não recusou nada — 401/403 é o token do Focus errado, vencido, ou o
+ * token de um ambiente sendo usado no outro. Mandar o lojista procurar defeito
+ * no cadastro fiscal quando o problema é a credencial custa horas dele, e o
+ * caso mais comum é justamente o mais mal explicado: gerou o token de
+ * homologação e salvou como produção.
+ */
+function traduzirFalhaHttp(
+  status: number,
+  motivo: string,
+  dados: any
+): Extract<ResultadoDaEmissao, { ok: false }> {
+  if (status === 401 || status === 403) {
+    return {
+      ok: false,
+      motivo: "nao_configurado",
+      mensagem:
+        "O provedor de emissão recusou o acesso (token inválido ou sem permissão). " +
+        "A nota NÃO foi emitida e a SEFAZ nem chegou a ser consultada. " +
+        "Confira o token do Focus NFe e se ele é do MESMO ambiente selecionado aqui " +
+        "(o token de homologação não funciona em produção, e vice-versa).",
+      detalheDaRejeicao: JSON.stringify(dados).slice(0, 600),
+    };
+  }
+  if (status === 404) {
+    return {
+      ok: false,
+      motivo: "erro_de_comunicacao",
+      mensagem: "O provedor não encontrou esta nota. Ela NÃO foi emitida.",
+      detalheDaRejeicao: JSON.stringify(dados).slice(0, 600),
+    };
+  }
+  if (status >= 500) {
+    return {
+      ok: false,
+      motivo: "erro_de_comunicacao",
+      mensagem:
+        `O provedor de emissão está fora do ar (HTTP ${status}). A nota NÃO foi emitida. ` +
+        "Tente de novo em alguns minutos.",
+      detalheDaRejeicao: JSON.stringify(dados).slice(0, 600),
+    };
+  }
+  return {
+    ok: false,
+    motivo: "rejeitada",
+    mensagem: `A SEFAZ recusou esta nota: ${motivo}`,
+    detalheDaRejeicao: JSON.stringify(dados).slice(0, 600),
+  };
+}
+
 function urlBaseDoFocus(config: ConfiguracaoFiscal): string {
   return Number(config.ambiente) === 1
     ? "https://api.focusnfe.com.br"
@@ -384,6 +444,23 @@ function traduzirNotaAutorizada(
   base: string,
   dados: any
 ): ResultadoDaEmissao {
+  // Sem chave de acesso não existe nota. Uma resposta "autorizado" sem esse
+  // campo gravaria o pedido como EMITIDO com chave `undefined` — o lojista
+  // veria badge verde e não teria documento nenhum para apresentar. É
+  // exatamente o tipo de mentira que este arquivo existe para não contar.
+  const chave = String(dados?.chave_nfe ?? "").replace(/\D/g, "");
+  if (chave.length !== 44) {
+    return {
+      ok: false,
+      motivo: "erro_de_comunicacao",
+      mensagem:
+        "O provedor respondeu 'autorizado' mas não devolveu a chave de acesso da nota. " +
+        "Como não dá para comprovar a emissão, ela NÃO foi registrada aqui. " +
+        "Consulte o pedido de novo em alguns minutos.",
+      detalheDaRejeicao: JSON.stringify(dados).slice(0, 600),
+    };
+  }
+
   return {
     ok: true,
     chaveDeAcesso: dados.chave_nfe,
@@ -456,12 +533,7 @@ export async function consultarNfce(
     // erro_autorizacao / rejeição: o Focus libera a ref para reenvio corrigido.
     const motivo =
       dados?.mensagem_sefaz || dados?.mensagem || dados?.status || `HTTP ${res.status}`;
-    return {
-      ok: false,
-      motivo: "rejeitada",
-      mensagem: `A SEFAZ recusou esta nota: ${motivo}`,
-      detalheDaRejeicao: JSON.stringify(dados).slice(0, 600),
-    };
+    return traduzirFalhaHttp(res.status, String(motivo), dados);
   } catch (e: any) {
     return {
       ok: false,

@@ -23,6 +23,7 @@ import {
   type ConfiguracaoFiscal,
   type ItemDaNota,
 } from "./fiscal-emissao";
+import { montarItensDaNota } from "./fiscal-itens";
 
 /**
  * Traduz o `paymentMethod` gravado no pedido (que varia por canal: "PIX",
@@ -84,28 +85,11 @@ export async function emitirNfceAutomatica(orderId: string): Promise<void> {
       return;
     }
 
-    const itens: ItemDaNota[] = order.items.map((item) => {
-      const p = item.menuProduct;
-      // Mesmo mapeamento do botão Emitir: o cadastro fiscal do produto manda.
-      // No Regime Normal (CRT 3) o campo "situação tributária" guarda o CST.
-      const situacao = String(p?.csosn ?? "").trim();
-      return {
-        codigo: p?.id ?? item.id,
-        descricao: item.productName || p?.name || "Item",
-        ncm: p?.ncm ?? "",
-        cest: p?.cest ?? null,
-        cfop: p?.cfop ?? "5102",
-        unidadeComercial: "UN",
-        quantidade: item.quantity,
-        valorUnitario: item.price,
-        valorTotal: item.price * item.quantity,
-        origem: Number(p?.origem ?? 0) || 0,
-        csosn: situacao || null,
-        cst: situacao.length === 2 ? situacao : null,
-        pis: p?.pis ?? null,
-        cofins: p?.cofins ?? null,
-      };
-    });
+    // A mesma montagem do botão Emitir, agora numa peça só (lib/fiscal-itens).
+    // Estava duplicada nos dois lugares — o tipo de defeito em que se conserta
+    // um lado e o outro continua errado sem ninguém notar, que é exatamente o
+    // que aconteceu com a abertura de combos.
+    const itens: ItemDaNota[] = montarItensDaNota(order.items);
 
     const resultado = await emitirNfce(config, {
       id: order.id,
@@ -117,6 +101,7 @@ export async function emitirNfceAutomatica(orderId: string): Promise<void> {
       formaDePagamento: order.paymentMethod || "Dinheiro",
       documentoDoCliente: order.customerCpfCnpj,
       nomeDoCliente: order.customerName,
+      entregaEmDomicilio: order.deliveryType === "DELIVERY",
     });
 
     if (resultado.ok) {
