@@ -60,9 +60,41 @@ export default async function LabelsPage() {
     orderBy: { name: "asc" }
   });
 
+  // ── A regra de layout da etiqueta, e os insumos para vincular ────────────
+  //
+  // CONSULTA SEPARADA, e dentro de try/catch, de propósito: somar
+  // `labelFieldsConfig` ao select do findUnique lá em cima derrubaria a query
+  // inteira — e com ela a TELA inteira — em qualquer banco onde a coluna ainda
+  // não tenha nascido. A coluna vem do boot da estrutura de lotes
+  // (garantir-colunas.ts:256), e a migração em produção é `db push` manual.
+  //
+  // O custo de falhar aqui é a etiqueta sair COMPLETA, com tudo ligado — que é
+  // exatamente o comportamento de hoje. Mesmo raciocínio do "a etiqueta ainda
+  // IMPRIME, só sai sem QR" que está escrito em actions/lotes.ts.
+  let labelFieldsConfig: any = null;
+  let stockItems: { id: string; name: string; unit: string }[] = [];
+  try {
+    const c = await prisma.user.findUnique({
+      where: { id: currentUserId },
+      select: { labelFieldsConfig: true },
+    });
+    labelFieldsConfig = (c as any)?.labelFieldsConfig ?? null;
+  } catch {
+    labelFieldsConfig = null;
+  }
+  try {
+    stockItems = await prisma.stockItem.findMany({
+      where: { franchiseeId: currentUserId, NOT: { active: false } },
+      select: { id: true, name: true, unit: true },
+      orderBy: { name: "asc" },
+    });
+  } catch {
+    stockItems = [];
+  }
+
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-      <LabelsClient products={products} kitchenItems={kitchenItems} storeAddress={storeAddress} storeCnpj={storeCnpj} storeName={storeName} storeLogo={storeLogo} />
+      <LabelsClient products={products} kitchenItems={kitchenItems} storeAddress={storeAddress} storeCnpj={storeCnpj} storeName={storeName} storeLogo={storeLogo} labelFieldsConfig={labelFieldsConfig as any} stockItems={stockItems} />
     </div>
   );
 }

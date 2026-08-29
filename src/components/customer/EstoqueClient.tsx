@@ -6,12 +6,18 @@ import {
   Trash2, ArrowUpRight, ArrowDownRight, AlertTriangle, 
   Settings, Check, X, Search, Info, RefreshCw,
   Camera, Upload, Sparkles, TrendingDown, FileText,
-  ChevronDown, ChevronUp, Eye, EyeOff, BarChart3
+  ChevronDown, ChevronUp, Eye, EyeOff, BarChart3, ScanLine, Clock
 } from "lucide-react";
+import TrilhaDoQr from "@/components/estoque/TrilhaDoQr";
+import EscanearQrModal from "@/components/estoque/EscanearQrModal";
 
 interface EstoqueClientProps {
   userName: string;
   storeName: string;
+  /** Os três números que a trilha do QR relata. Vêm do servidor no primeiro
+      render: buscar por fetch faria a trilha piscar "nenhuma etiqueta criada"
+      na cara de quem já criou trezentas. */
+  fluxo: { criadas: number; recebidos: number; baixas: number; disponivel: boolean };
 }
 
 interface StockItem {
@@ -64,8 +70,13 @@ interface NfeItem {
   newItemUnit: string;
 }
 
-export default function EstoqueClient({ userName, storeName }: EstoqueClientProps) {
-  const [activeTab, setActiveTab] = useState<"items" | "nfe" | "history" | "recipes">("items");
+export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 0, recebidos: 0, baixas: 0, disponivel: false } }: EstoqueClientProps) {
+  const [activeTab, setActiveTab] = useState<"items" | "lotes" | "nfe" | "history" | "recipes">("items");
+  const [mostrarScanner, setMostrarScanner] = useState(false);
+  const [lotes, setLotes] = useState<any[]>([]);
+  const [contadoresDeLote, setContadoresDeLote] = useState<any>({ aguardando: 0, geladeira: 0, vencendo: 0, vencidos: 0 });
+  const [filtroDeLote, setFiltroDeLote] = useState<"todos" | "aguardando" | "geladeira" | "vencendo" | "vencidos">("todos");
+  const [carregandoLotes, setCarregandoLotes] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
   
   // Onboarding
@@ -118,6 +129,64 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
   const [nfeConfirming, setNfeConfirming] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Busca os lotes só quando a aba abre, e de novo a cada troca de filtro.
+   *
+   * Fora do `loadData` de propósito: ele roda na montagem da tela e a lista de
+   * lotes é a única coisa aqui que não interessa a quem veio ver o saldo dos
+   * insumos. Uma consulta a mais no caminho de abertura atrasa a tela inteira
+   * por causa de uma aba que talvez ninguém abra.
+   */
+  const carregarLotes = async (filtro: string) => {
+    setCarregandoLotes(true);
+    try {
+      const r = await fetch(`/api/store/estoque/lotes?filtro=${filtro}`);
+      const d = await r.json();
+      setLotes(d.lotes || []);
+      setContadoresDeLote(d.contadores || { aguardando: 0, geladeira: 0, vencendo: 0, vencidos: 0 });
+    } catch {
+      setLotes([]);
+    } finally {
+      setCarregandoLotes(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "lotes") carregarLotes(filtroDeLote);
+  }, [activeTab, filtroDeLote]);
+
+  // ── DE ONDE A PESSOA VEIO ────────────────────────────────────────────────
+  //
+  // A tela do QR, no celular, manda para cá com o que ela já sabe: `?scan=1`
+  // quando o funcionário quer ler a próxima etiqueta, `?tab=lotes&code=XXX`
+  // quando o lote precisa ser vinculado a um insumo. Sem ler isso aqui, os dois
+  // botões de lá desembocam na tela genérica e a pessoa tem que adivinhar o
+  // resto — que é exatamente o beco que eles tinham antes.
+  const [codigoDestacado, setCodigoDestacado] = useState("");
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("scan") === "1") setMostrarScanner(true);
+    const aba = q.get("tab");
+    if (aba === "lotes") setActiveTab("lotes");
+    const filtro = q.get("filtro");
+    if (filtro && ["todos", "aguardando", "geladeira", "vencendo", "vencidos"].includes(filtro)) {
+      setFiltroDeLote(filtro as any);
+    }
+    const code = q.get("code");
+    if (code) {
+      setCodigoDestacado(code.trim().toUpperCase());
+      setActiveTab("lotes");
+    }
+  }, []);
+
+  // Os contadores alimentam o aviso na própria aba ("3 vencendo"), então eles
+  // precisam existir ANTES de alguém abrir a aba — senão o número que faria a
+  // pessoa clicar só aparece depois que ela clica.
+  useEffect(() => {
+    carregarLotes("todos");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -498,62 +567,56 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
   });
 
   return (
-    <div className="estoque-container">
+    <div className="estoque-container fh-tela">
       {/* ONBOARDING BANNER */}
-      {showOnboarding && (
-        <div className="onboarding-banner">
-          <div className="onboarding-content">
-            <div className="onboarding-header">
-              <Sparkles className="onboarding-icon" size={24} />
-              <h2>Controle de Estoque com Tecnologia de Ponta</h2>
-            </div>
-            <p className="onboarding-text">
-              Gerencie seus insumos com inteligência artificial. Tire uma foto da nota fiscal do seu fornecedor e a IA lê e dá entrada automática no estoque.
-            </p>
-            <div className="onboarding-steps">
-              <div className="step">
-                <span className="step-num">1</span>
-                <span>📸 <strong>Recebeu mercadoria?</strong> Tire uma foto da nota fiscal → a IA lê e dá entrada.</span>
-              </div>
-              <div className="step">
-                <span className="step-num">2</span>
-                <span>📋 <strong>Ficha Técnica:</strong> Configure os insumos de cada produto no Cardápio.</span>
-              </div>
-              <div className="step">
-                <span className="step-num">3</span>
-                <span>📊 <strong>Automático:</strong> Cada venda debita os insumos automaticamente.</span>
-              </div>
-              <div className="step">
-                <span className="step-num">4</span>
-                <span>🔔 <strong>Alertas:</strong> Seja avisado quando o estoque estiver baixo ou negativo.</span>
-              </div>
-            </div>
-          </div>
-          <button className="btn-onboarding-dismiss" onClick={dismissOnboarding}>
-            Entendi <X size={16} />
+      {/* ── CABEÇALHO DO MÓDULO ──────────────────────────────────────────
+          O mesmo componente da tela de Etiquetas, de propósito: é a repetição
+          que faz as duas telas parecerem o mesmo produto.
+
+          Saíram daqui, no mesmo commit em que isto entrou (nunca em dois, ou
+          existiria uma versão da tela em que 340px de conteúdo simplesmente
+          sumiram): o banner roxo escuro de quatro passos fixos, o header em
+          gradiente e o badge "MÓDULO INTEGRADO". O banner prometia progresso e
+          não sabia nada sobre a loja; o badge se autoelogiava sem informar
+          nada; e as duas superfícies escuras viram espelho e mapa de digitais
+          num tablet engordurado sob a luz da cozinha. */}
+      <header className="fh-cabecalho">
+        <span className="fh-cabecalho__icone"><Package size={24} /></span>
+        <div style={{ minWidth: 0 }}>
+          <div className="fh-micro">MÓDULO · ESTOQUE</div>
+          <h1 className="fh-h1">Controle de estoque</h1>
+          <p className="fh-corpo">
+            Saldo dos insumos, fichas técnicas e a baixa automática de cada venda de <strong>{storeName}</strong>.
+          </p>
+        </div>
+        <div className="fh-cabecalho__acoes">
+          <button className="fh-btn fh-btn--secundario" onClick={() => setMostrarScanner(true)}>
+            <ScanLine size={18} /> Escanear etiqueta
+          </button>
+          <button className="fh-btn fh-btn--secundario fh-btn--icone" onClick={loadData} aria-label="Atualizar">
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+          </button>
+          <button className="fh-btn fh-btn--primario" onClick={() => setShowItemModal(true)}>
+            <Plus size={18} /> Novo insumo
           </button>
         </div>
-      )}
+      </header>
 
-      {/* HEADER CARD */}
-      <div className="header-card">
-        <div className="header-glow"></div>
-        <div className="header-content">
-          <div className="header-info">
-            <span className="badge-exclusive">📦 MÓDULO INTEGRADO</span>
-            <h1>Controle de Estoque</h1>
-            <p>Ajuste saldo de insumos, gerencie receitas e acompanhe baixas automáticas de vendas de <strong>{storeName}</strong>.</p>
-          </div>
-          <div className="header-actions">
-            <button className="btn-refresh" onClick={loadData}>
-              <RefreshCw size={16} className={loading ? "spin" : ""} />
-            </button>
-            <button className="btn-primary" onClick={() => setShowItemModal(true)}>
-              <Plus size={16} /> Novo Insumo
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* ── A TRILHA DO QR ───────────────────────────────────────────────── */}
+      <TrilhaDoQr fluxo={fluxo} aoEscanear={() => setMostrarScanner(true)} />
+
+      <EscanearQrModal aberto={mostrarScanner} aoFechar={() => setMostrarScanner(false)} />
+
+      {/* No celular, o botão de escanear do cabeçalho fica longe depois de
+          rolar a lista — e escanear é justamente o que se faz de pé, com a
+          caixa na mão. O alvo tem 60px porque é uso de cozinha. */}
+      <button
+        className="fab-escanear"
+        onClick={() => setMostrarScanner(true)}
+        aria-label="Escanear etiqueta"
+      >
+        <ScanLine size={24} />
+      </button>
 
       {/* KPI DASHBOARD */}
       {!loading && (
@@ -594,6 +657,46 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
               <span className="kpi-value">{recipeCoveragePct}% <span className="kpi-subtext">({productsWithRecipe.length}/{validProducts.length})</span></span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── OS DOIS NÚMEROS DO LOTE ──────────────────────────────────────────
+          Só aparecem quando existe lote: numa loja que nunca imprimiu etiqueta,
+          dois mostradores zerados a mais só empurram a lista de insumos para
+          baixo. E são clicáveis — número que não leva a lugar nenhum obriga o
+          lojista a procurar sozinho de onde ele saiu. */}
+      {!loading && (contadoresDeLote.aguardando > 0 || contadoresDeLote.vencendo > 0 || contadoresDeLote.vencidos > 0) && (
+        <div className="kpi-grid" style={{ marginTop: "-0.5rem" }}>
+          {contadoresDeLote.aguardando > 0 && (
+            <div className="kpi-card clickable" onClick={() => { setActiveTab("lotes"); setFiltroDeLote("aguardando"); }}>
+              <div className="kpi-icon-wrapper" style={{ background: "var(--fh-marca-claro)", color: "var(--fh-marca)" }}><Clock size={20} /></div>
+              <div className="kpi-info">
+                <span className="kpi-label">Aguardando entrada</span>
+                <span className="kpi-value">{contadoresDeLote.aguardando}</span>
+              </div>
+              <ChevronDown size={16} className="kpi-chevron" style={{ transform: "translateY(-50%) rotate(-90deg)" }} />
+            </div>
+          )}
+          {contadoresDeLote.vencendo > 0 && (
+            <div className="kpi-card clickable warning" onClick={() => { setActiveTab("lotes"); setFiltroDeLote("vencendo"); }}>
+              <div className="kpi-icon-wrapper yellow"><AlertTriangle size={20} /></div>
+              <div className="kpi-info">
+                <span className="kpi-label">Vencendo em 3 dias</span>
+                <span className="kpi-value">{contadoresDeLote.vencendo}</span>
+              </div>
+              <ChevronDown size={16} className="kpi-chevron" style={{ transform: "translateY(-50%) rotate(-90deg)" }} />
+            </div>
+          )}
+          {contadoresDeLote.vencidos > 0 && (
+            <div className="kpi-card clickable danger" onClick={() => { setActiveTab("lotes"); setFiltroDeLote("vencidos"); }}>
+              <div className="kpi-icon-wrapper red"><TrendingDown size={20} /></div>
+              <div className="kpi-info">
+                <span className="kpi-label">Lotes vencidos</span>
+                <span className="kpi-value">{contadoresDeLote.vencidos}</span>
+              </div>
+              <ChevronDown size={16} className="kpi-chevron" style={{ transform: "translateY(-50%) rotate(-90deg)" }} />
+            </div>
+          )}
         </div>
       )}
 
@@ -649,6 +752,18 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           Histórico
         </button>
         <button 
+          className={`tab-link ${activeTab === "lotes" ? "active" : ""}`}
+          onClick={() => setActiveTab("lotes")}
+        >
+          <ScanLine size={16} />
+          Lotes &amp; Validade
+          {contadoresDeLote.vencendo + contadoresDeLote.vencidos > 0 && (
+            <span className="fh-chip" style={{ marginLeft: 6, height: 20, padding: "0 7px" }}>
+              {contadoresDeLote.vencendo + contadoresDeLote.vencidos}
+            </span>
+          )}
+        </button>
+        <button 
           className={`tab-link ${activeTab === "recipes" ? "active" : ""}`}
           onClick={() => setActiveTab("recipes")}
         >
@@ -666,6 +781,106 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
       ) : (
         <div className="tab-body">
           
+          {/* TAB LOTES: o que foi etiquetado, e o que está vencendo ─────────
+              Até aqui o lote existia no banco, o QR funcionava e o scan dava
+              entrada e saída — e mesmo assim NENHUMA tela do produto mostrava
+              um lote sequer. Quem imprimia etiqueta não tinha como saber se
+              alguém tinha escaneado. */}
+          {activeTab === "lotes" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {([
+                  ["todos", "Todos"],
+                  ["aguardando", `Aguardando entrada (${contadoresDeLote.aguardando})`],
+                  ["geladeira", `No meu estoque (${contadoresDeLote.geladeira})`],
+                  ["vencendo", `Vencendo (${contadoresDeLote.vencendo})`],
+                  ["vencidos", `Vencidos (${contadoresDeLote.vencidos})`],
+                ] as const).map(([v, rotulo]) => (
+                  <button
+                    key={v}
+                    onClick={() => setFiltroDeLote(v as any)}
+                    className={`fh-btn ${filtroDeLote === v ? "fh-btn--primario" : "fh-btn--secundario"}`}
+                    style={{ height: 44, boxShadow: filtroDeLote === v ? "var(--fh-e-marca)" : undefined }}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+
+              {carregandoLotes ? (
+                <div className="loading-state"><div className="spinner"></div><p>Carregando os lotes...</p></div>
+              ) : lotes.length === 0 ? (
+                <div className="fh-vazio">
+                  <ScanLine size={44} style={{ color: "var(--fh-t-inerte)" }} />
+                  <div className="fh-vazio__titulo">
+                    {filtroDeLote === "todos" ? "Nenhum lote ainda" : "Nada neste filtro"}
+                  </div>
+                  <div className="fh-vazio__texto">
+                    {filtroDeLote === "todos"
+                      ? "Cada etiqueta que você imprime no módulo de etiquetas vira um lote aqui, com validade e saldo próprios. Imprima a primeira e escaneie o QR para dar entrada."
+                      : "Troque o filtro acima para ver os outros lotes."}
+                  </div>
+                  {filtroDeLote === "todos" && (
+                    <a href="/store/etiquetas" className="fh-btn fh-btn--primario" style={{ marginTop: 8 }}>
+                      Criar minha primeira etiqueta
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <div className="items-table-wrapper">
+                  <table className="items-table">
+                    <thead>
+                      <tr>
+                        <th>Produto</th>
+                        <th>Código</th>
+                        <th>Validade</th>
+                        <th>Saldo do lote</th>
+                        <th>Situação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lotes.map((l: any) => {
+                        const destacado = !!codigoDestacado && l.code === codigoDestacado;
+                        const cor = l.estadoDePrazo === "vencido" ? "var(--fh-grave)"
+                          : l.estadoDePrazo === "hoje" ? "var(--fh-hoje)"
+                          : l.estadoDePrazo === "atencao" ? "var(--fh-atencao)"
+                          : "var(--fh-ok)";
+                        return (
+                          <tr key={l.id} style={destacado ? { background: "var(--fh-marca-claro)", outline: "2px solid var(--fh-marca-topo)" } : undefined}>
+                            <td style={{ fontWeight: 700 }}>
+                              {l.productName}
+                              {destacado && (
+                                <span className="fh-chip" style={{ marginLeft: 8, background: "var(--fh-marca-claro)", borderColor: "var(--fh-marca-borda)", color: "var(--fh-marca-tinta)" }}>
+                                  a etiqueta que você escaneou
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ fontFamily: "monospace", letterSpacing: "0.06em" }}>{l.code}</td>
+                            {/* Cor + PALAVRA, nunca só a cor: a gordura na tela
+                                destrói o matiz antes de destruir a luminância. */}
+                            <td style={{ color: cor, fontWeight: 800 }}>{l.textoDePrazo}</td>
+                            <td>{l.quantidadeRestante} {l.unit}</td>
+                            <td>
+                              {l.aguardandoRecebimento ? (
+                                <span className="fh-chip" style={{ color: "var(--fh-atencao-tinta)", background: "var(--fh-atencao-claro)", borderColor: "var(--fh-atencao-borda)" }}>
+                                  <Clock size={13} /> Aguardando entrada
+                                </span>
+                              ) : (
+                                <span className="fh-chip" style={{ color: "var(--fh-ok-tinta)", background: "var(--fh-ok-claro)", borderColor: "var(--fh-ok-borda)" }}>
+                                  <Check size={13} /> No estoque
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 1: ITEMS */}
           {activeTab === "items" && (
             <>
@@ -1524,35 +1739,41 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
         }
 
         .kpi-card {
-          background: rgba(255, 255, 255, 0.7);
-          backdrop-filter: blur(10px);
-          border: 1px solid white;
-          border-radius: 1rem;
+          /* Era rgba(255,255,255,.7) com backdrop-filter blur sobre borda
+             branca: vidro fosco, que só tem efeito quando existe algo colorido
+             atrás — e atrás daqui é o cinza da página. O custo era real (blur é
+             composição por frame, no tablet da cozinha) e o ganho, zero.
+             Fundo sólido, hairline e a mesma sombra do resto do painel. */
+          background: var(--fh-n1);
+          border: 1px solid var(--fh-linha);
+          border-radius: var(--fh-r4);
           padding: 1.25rem;
           display: flex;
           align-items: center;
           gap: 1rem;
-          box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+          box-shadow: var(--fh-e1);
           position: relative;
-          transition: transform 0.2s, box-shadow 0.2s;
+          transition: box-shadow var(--fh-d-base) var(--fh-move);
         }
 
         .kpi-card.clickable {
           cursor: pointer;
         }
+        /* Sem translateY no hover: num painel que também roda em tablet, o
+           card "pula" ao encostar o dedo e nada acontece — o movimento sugere
+           uma ação que o toque não completa. */
         .kpi-card.clickable:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 25px rgba(0,0,0,0.05);
+          box-shadow: var(--fh-e2);
         }
 
         .kpi-card.warning {
-          background: linear-gradient(to right, #fffbeb, white);
-          border-color: #fde68a;
+          background: var(--fh-atencao-claro);
+          border-color: var(--fh-atencao-borda);
         }
-        
+
         .kpi-card.danger {
-          background: linear-gradient(to right, #fef2f2, white);
-          border-color: #fecaca;
+          background: var(--fh-grave-claro);
+          border-color: var(--fh-grave-borda);
         }
 
         .kpi-chevron {
@@ -1560,7 +1781,9 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           right: 1rem;
           top: 50%;
           transform: translateY(-50%);
-          color: #94a3b8;
+          /* #94a3b8 dá 2,56:1 e reprova até como elemento não-textual — e este
+             chevron é o único sinal de que o card abre. */
+          color: var(--fh-t4);
         }
 
         .kpi-icon-wrapper {
@@ -1572,10 +1795,16 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
           justify-content: center;
         }
 
-        .kpi-icon-wrapper.blue { background: #eff6ff; color: #2563eb; }
-        .kpi-icon-wrapper.yellow { background: #fef3c7; color: #d97706; }
-        .kpi-icon-wrapper.red { background: #fee2e2; color: #dc2626; }
-        .kpi-icon-wrapper.purple { background: #f3e8ff; color: #9333ea; }
+        /* As quatro famílias semânticas do produto, as MESMAS da tela que o
+           QR abre no celular: neutro, atenção, grave e info. O roxo e o azul
+           que estavam aqui não existiam em nenhuma outra tela do painel — eram
+           um dialeto de um arquivo só, e é isso que fazia o módulo parecer
+           colado de outro sistema. Os tons novos também passam no contraste
+           mínimo, o que #d97706 e #9333ea não faziam. */
+        .kpi-icon-wrapper.blue { background: var(--fh-neutro-claro); color: var(--fh-neutro-tinta); }
+        .kpi-icon-wrapper.yellow { background: var(--fh-atencao-claro); color: var(--fh-atencao-tinta); }
+        .kpi-icon-wrapper.red { background: var(--fh-grave-claro); color: var(--fh-grave-tinta); }
+        .kpi-icon-wrapper.purple { background: var(--fh-info-claro); color: var(--fh-info-tinta); }
 
         @keyframes pulse-red {
           0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
@@ -1741,11 +1970,40 @@ export default function EstoqueClient({ userName, storeName }: EstoqueClientProp
         }
 
         /* TABLES */
+        .fab-escanear {
+          display: none;
+        }
+        @media (max-width: 767px) {
+          .fab-escanear {
+            display: grid;
+            place-items: center;
+            position: fixed;
+            /* Acima da barra do navegador no celular, e à esquerda do widget de
+               contato que já mora no canto direito. */
+            left: 16px;
+            bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+            width: 60px;
+            height: 60px;
+            border-radius: 9999px;
+            border: none;
+            background: var(--fh-marca);
+            color: #fff;
+            box-shadow: var(--fh-e-marca);
+            cursor: pointer;
+            z-index: 900;
+          }
+        }
+
         .items-table-wrapper {
           background: white;
           border: 1px solid #e2e8f0;
           border-radius: 1rem;
-          overflow: hidden;
+          /* Rolagem em vez de overflow hidden: no celular a tabela é mais
+             larga que a tela, e o hidden não escondia elegantemente — cortava a
+             última coluna, que na aba de lotes é justamente a situação do lote.
+             A tabela rola dentro da própria caixa; a página, nunca. */
+          overflow-x: auto;
+          overflow-y: hidden;
           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
         }
 

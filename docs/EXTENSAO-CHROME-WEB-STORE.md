@@ -5,6 +5,31 @@ Visibilidade escolhida: **Não listada** — só instala quem recebe o link do p
 
 ---
 
+## 0. Pendências da conta (bloqueiam tudo)
+
+Verificado no painel em 24/08/2026, na conta `contatohakim@gmail.com`
+(publisher `529cf443-6bd1-4aad-8d41-e6e9c252a297`): **a conta ainda não pode publicar**. O painel
+redireciona para Configurações e não abre nem a lista de itens enquanto estas três coisas não forem
+resolvidas — todas exigem decisão ou dado pessoal seu:
+
+1. **Declaração do negociante** — modal "Ação necessária". É declarar se a conta atua para fins
+   comerciais em relação às leis do consumidor do Espaço Econômico Europeu. Declarar-se comerciante
+   exige verificar a conta por um perfil de pagamentos do Google, e esses dados aparecem
+   publicamente na página do item.
+2. **E-mail de contato** — "Um endereço de e-mail válido é necessário para publicar ou editar itens".
+   Falta adicionar e verificar em Configurações → Perfil.
+3. **Verificação de conta** — "Você precisa tomar outras medidas para verificar sua conta. Isso é
+   necessário para manter seu status de editor." Botão **Verificar agora** na mesma tela.
+
+Enquanto isso não estiver resolvido, o resto deste guia fica em espera: o zip já está pronto e a
+página do painel já está preparada para receber o ID.
+
+> Detalhe útil que apareceu na mesma tela: **Contas de trusted testers** aceita e-mails específicos e
+> deixa o item visível só para eles. Serve para você testar a instalação antes de liberar o link aos
+> lojistas, mesmo com o item ainda em rascunho.
+
+---
+
 ## 1. Gerar o pacote
 
 ```bash

@@ -44,6 +44,17 @@ const CAMPOS_DO_ITEM = [
   "weightStr", "energy", "carbs", "sugars", "addedSugars", "proteins",
   "fatTotal", "fatSat", "sodium", "highSugar", "highSodium", "highFat",
   "transgenic", "customCnpj", "customAddress", "active",
+  // As duas colunas existem no banco desde o boot da estrutura de lotes
+  // (garantir-colunas.ts:249-250) e nenhuma tela jamais conseguiu gravá-las:
+  // `apenasCamposConhecidos` descarta chave de fora desta lista em SILÊNCIO —
+  // sem exception, sem log, sem erro do Prisma — e a tela ainda dizia
+  // "Configurações salvas com sucesso!". O campo voltava vazio no F5 seguinte
+  // e não havia nada para investigar.
+  //   stockItemId: liga o item de cozinha ao insumo do estoque. É o que faz a
+  //     primeira leitura do QR dar entrada NO INSUMO CERTO, em vez de criar um
+  //     insumo novo pelo nome da etiqueta.
+  //   labelSize: o preset da etiqueta escolhido por produto.
+  "stockItemId", "labelSize",
 ] as const;
 
 function apenasCamposConhecidos(data: any) {

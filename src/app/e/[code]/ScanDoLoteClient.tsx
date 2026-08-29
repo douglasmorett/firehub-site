@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 /**
@@ -49,14 +49,39 @@ export default function ScanDoLoteClient({
   const passo = (lote?.unit === "un" ? 1 : 0.1);
   const arred = (n: number) => Number(n.toFixed(3));
 
+  /**
+   * A chave de idempotência, por INTENÇÃO.
+   *
+   * O `sourceRef` é `@unique` no banco justamente para impedir baixa dobrada —
+   * mas a chave era montada com `Date.now()` e `Math.random()` DENTRO da função,
+   * ou seja, nova a cada clique. O comentário dizia que ela era reusada num
+   * reenvio e ela nunca foi: dois toques no botão, ou recarregar e repetir,
+   * passavam pelo unique como duas movimentações diferentes e tiravam do
+   * estoque duas vezes.
+   *
+   * Agora a chave nasce da intenção — este lote, esta ação, esta quantidade —
+   * e só é descartada quando o servidor confirma. Trocar a quantidade ou a ação
+   * é outra intenção, e ganha chave nova: idempotência não pode impedir a
+   * segunda baixa legítima do mesmo lote.
+   */
+  const intencaoRef = useRef<{ chave: string; acao: string; quantidade: number } | null>(null);
+
   const movimentar = async (acao: "SAIDA" | "DESCARTE" | "ENTRADA") => {
+    // Trava de duplo toque: no tablet engordurado o primeiro toque nem sempre
+    // dá retorno visual, e o dedo repete.
+    if (enviando) return;
     setErro("");
     setEnviando(true);
     try {
-      // Chave gerada AQUI e reusada num reenvio da mesma intenção: rede de
-      // cozinha cai, o dedo aperta duas vezes, e nenhuma das duas coisas pode
-      // virar baixa dobrada.
-      const sourceRef = `qr:${codigo}:${acao}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const atual = intencaoRef.current;
+      if (!atual || atual.acao !== acao || atual.quantidade !== quantidade) {
+        intencaoRef.current = {
+          chave: `qr:${codigo}:${acao}:${quantidade}:${Date.now().toString(36)}`,
+          acao,
+          quantidade,
+        };
+      }
+      const sourceRef = intencaoRef.current!.chave;
       const res = await fetch(`/api/lote/${encodeURIComponent(codigo)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -64,6 +89,8 @@ export default function ScanDoLoteClient({
       });
       const d = await res.json();
       if (!res.ok) { setErro(d.error || "Não consegui registrar. Tente de novo."); return; }
+      // Confirmado: a próxima movimentação é outra intenção.
+      intencaoRef.current = null;
       setFeito({
         quantidade,
         saldo: d.insumo?.quantity ?? 0,
@@ -95,7 +122,11 @@ export default function ScanDoLoteClient({
         <div style={{ flexGrow: 1 }} />
         <Codigo codigo={codigo} />
         <Rodape>
-          <button onClick={() => router.refresh()} style={btnPrimario("#0F172A")}>Escanear outra etiqueta</button>
+          {/* `router.refresh()` recarregava a MESMA etiqueta, que a essa altura já
+              está movimentada: o botão dizia "escanear outra" e devolvia a tela
+              de "já foi baixado". Beco disfarçado de continuação. Agora leva ao
+              painel com o leitor já aberto. */}
+          <a href="/store/estoque?scan=1" style={{ ...btnPrimario("#0F172A"), textDecoration: "none" }}>Escanear outra etiqueta</a>
         </Rodape>
       </Moldura>
     );
@@ -226,7 +257,10 @@ export default function ScanDoLoteClient({
         <div style={{ flexGrow: 1 }} />
         <Codigo codigo={codigo} />
         <Rodape>
-          <a href="/store/estoque" style={{ ...btnPrimario("#E8360C"), textDecoration: "none" }}>Vincular a um insumo</a>
+          {/* Apontava para /store/estoque, onde não existia UI de vínculo
+              nenhuma: a pessoa chegava e não achava o que fazer. Agora abre a
+              aba de lotes já filtrada neste código. */}
+          <a href={`/store/estoque?tab=lotes&code=${encodeURIComponent(codigo)}`} style={{ ...btnPrimario("#E8360C"), textDecoration: "none" }}>Vincular a um insumo</a>
         </Rodape>
       </Moldura>
     );
