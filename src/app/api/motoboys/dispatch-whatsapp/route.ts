@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { paraEnvioWhatsApp } from "@/lib/telefone";
 
 export const dynamic = "force-dynamic";
 
@@ -30,17 +31,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Telefone do motoboy e texto da rota são obrigatórios." }, { status: 400 });
     }
 
-    const cleanPhone = motoboyPhone.replace(/\D/g, "");
-    if (cleanPhone.length < 8) {
+    // `paraEnvioWhatsApp` em vez de prefixar "55" na unha: o jeito antigo
+    // aceitava 8 dígitos e montava destino inválido, e lia "022998851680" como
+    // 55 + 022998851680. É a mesma função que o resto do sistema usa.
+    const fullPhone = paraEnvioWhatsApp(motoboyPhone);
+    if (!fullPhone) {
       return NextResponse.json({ error: "Número de telefone do motoboy inválido." }, { status: 400 });
     }
 
-    const fullPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
-
-    let success = await sendEvolutionMessage(targetFranchiseeId, fullPhone, routeText);
-    if (!success && user.id !== targetFranchiseeId) {
-      success = await sendEvolutionMessage(user.id, fullPhone, routeText);
-    }
+    // UM envio, uma vez.
+    //
+    // Aqui havia um reenvio pela instância do próprio usuário quando o primeiro
+    // falhava. Só que "falhou" era `res.ok === false`, e o gateway responde erro
+    // em casos nos quais a mensagem JÁ SAIU — inclusive no timeout de 15s do
+    // fetch, que estoura enquanto o gateway ainda está consultando o WhatsApp.
+    // O motoboy recebia a mesma rota duas vezes, de dois números diferentes, um
+    // deles nunca visto por ele. Era parte do "muitas mensagens" do relato.
+    const success = await sendEvolutionMessage(targetFranchiseeId, fullPhone, routeText);
 
     // Se vieram orderIds da rota, atualiza o status de todos para SAIU_ENTREGA e notifica cada cliente via WhatsApp
     if (Array.isArray(orderIds) && orderIds.length > 0) {

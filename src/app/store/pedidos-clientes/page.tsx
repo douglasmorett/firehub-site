@@ -74,7 +74,18 @@ export default async function FranchiseeCustomerOrdersPage() {
       prisma.customerOrder.findMany({
         where: {
           franchiseeId: { in: franchiseeIds },
-          status: { not: "CRIANDO_IA" },
+          // CRIANDO_IA entra aqui de propósito.
+          //
+          // O painel TEM o cartão "🤖 IA criando pedido..." pronto
+          // (StoreOrdersDashboard: rótulo, cor e o bucket de "novos"), e o feed
+          // de polling (/api/customer-order/poll) devolve esses rascunhos. Só a
+          // carga inicial da página os excluía — então, ao abrir o painel, o
+          // pedido que a IA estava montando ficava invisível até o primeiro
+          // poll. Era o relato do dono: "quando alguns começam a fazer o pedido
+          // ele não demonstra na caixinha no nosso painel".
+          //
+          // Rascunho continua fora da impressão e da cozinha; quem cuida disso é
+          // o GlobalPrintListener e o /api/kds, cada um com seu próprio filtro.
         },
         include: {
           items: {

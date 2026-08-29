@@ -9,6 +9,7 @@ import { precoMinimoDoProduto, precoVariaPorEscolha, minimoExigidoDoGrupo } from
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
+import { inicioDoDiaDaLoja } from "./fuso";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -118,9 +119,22 @@ export async function processChatbotAI(
   const textToScan = `${message || ""} ${history ? history.slice(-3).map((h: any) => h.text).join(" ") : ""}`;
   const extractedNumbers = textToScan.match(/\d{3,12}/g) || [];
 
-  // Data de início do dia de hoje (UTC/Brasília) para buscar todos os pedidos ativos
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  // Começo do dia NO FUSO DA LOJA, não no do processo.
+  //
+  // Aqui havia `new Date()` + `setHours(0,0,0,0)`, e o comentário dizia
+  // "(UTC/Brasília)" como se fossem a mesma coisa. Não são: `setHours` usa o
+  // fuso do PROCESSO, e o container de produção é `node:20-alpine` sem `tzdata`
+  // e sem `TZ` — ou seja, UTC. Em Brasília o "dia" começava às 21:00 da véspera.
+  //
+  // O estrago, medido em 28/08/2026: cliente pediu às 20:36, recebeu o aviso de
+  // "saiu para entrega", perguntou do pedido às 21:06 e o robô respondeu que não
+  // havia pedido nenhum — e começou a montar outro. Entre 21:00 e a meia-noite,
+  // TODO o jantar sumia da busca. Todo dia, no pico.
+  //
+  // Não dá para usar `user.storeTimezone` aqui: o `user` só chega no
+  // `Promise.all` abaixo. Brasília é o padrão do schema e o fuso de todas as
+  // lojas hoje; se um dia houver loja em outro fuso, este é o ponto a ajustar.
+  const startOfToday = inicioDoDiaDaLoja();
 
   const orderOrConditions: any[] = [];
   if (clientPhoneDigits && clientPhoneDigits.length >= 8) {

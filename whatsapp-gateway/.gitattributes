@@ -1,0 +1,13 @@
+# O start.sh roda dentro de um Alpine. Com CRLF o `sh` morre em
+# "unset: NODE_OPTIONS: bad variable name" e o container entra em crash-loop —
+# ja aconteceu em 28/08/2026 e derrubou o gateway num deploy.
+#
+# A maquina de desenvolvimento tem core.autocrlf=true, que entrega CRLF no
+# checkout. Este arquivo garante LF para o que roda dentro do container.
+#
+# Escopo de proposito limitado a esta pasta: um .gitattributes na raiz
+# renormalizaria o repositorio inteiro de uma vez.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.js text eol=lf
+*.json text eol=lf
