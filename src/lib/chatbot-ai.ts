@@ -9,7 +9,7 @@ import { precoMinimoDoProduto, precoVariaPorEscolha, minimoExigidoDoGrupo } from
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
-import { inicioDoDiaDaLoja } from "./fuso";
+import { inicioDoExpedienteDaLoja } from "./fuso";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -134,7 +134,7 @@ export async function processChatbotAI(
   // Não dá para usar `user.storeTimezone` aqui: o `user` só chega no
   // `Promise.all` abaixo. Brasília é o padrão do schema e o fuso de todas as
   // lojas hoje; se um dia houver loja em outro fuso, este é o ponto a ajustar.
-  const startOfToday = inicioDoDiaDaLoja();
+  const startOfToday = inicioDoExpedienteDaLoja();
 
   const orderOrConditions: any[] = [];
   if (clientPhoneDigits && clientPhoneDigits.length >= 8) {
