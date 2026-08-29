@@ -93,13 +93,9 @@ const FAQ_ITEMS = [
   // neste módulo — só NFC-e (modelo 65). Prometer na FAQ o que o botão não faz
   // é o mesmo tipo de mentira que o módulo fiscal falso antigo contava.
   { q: "Que tipos de notas podem ser emitidas?", a: "O sistema emite NFC-e (Nota Fiscal de Consumidor Eletrônica, modelo 65) — a nota do consumidor final, para delivery, balcão, mesa e totem. NF-e modelo 55 (para venda a outra empresa) ainda não é emitida por aqui." },
-  // As três respostas abaixo descreviam um rateio por item que o código não
-  // faz: desconto e taxa vão no TOTAL da nota. Descrever o que existe evita
-  // que o lojista (ou o contador dele) conte com uma discriminação que não
-  // aparece no XML.
-  { q: "Como as recompensas de fidelidade aparecem na nota?", a: "Entram junto com os demais descontos, abatendo o total do documento (vDesc). Não são rateadas item a item." },
-  { q: "Como as taxas de serviços e acréscimos aparecem na nota?", a: "A taxa de entrega vai como Outras Despesas Acessórias (vOutro), somando ao total. NFC-e não tem campo de frete, por isso a modalidade vai como 'sem frete'." },
-  { q: "Como os descontos aparecem na nota?", a: "Cupons e descontos da loja reduzem o valor total do documento no campo vDesc." },
+  { q: "Como as recompensas de fidelidade aparecem na nota?", a: "Entram junto com os demais descontos: são rateadas entre os itens na proporção do valor de cada um (vDesc do item) e somam no vDesc do total." },
+  { q: "Como as taxas de serviços e acréscimos aparecem na nota?", a: "A taxa de entrega vai como Outras Despesas Acessórias (vOutro), rateada entre os itens na proporção do valor de cada um. NFC-e não tem campo de frete, por isso a modalidade vai como 'sem frete'." },
+  { q: "Como os descontos aparecem na nota?", a: "Cupons e descontos são rateados item a item, em centavos inteiros, e o total (vDesc) é a soma exata dessas partes — como a SEFAZ exige. Se o cupom for maior que o valor dos produtos, o que sobra é tratado como desconto da entrega." },
   { q: "Descontos pagos pelo iFood na nota", a: "Subídios de cupons pagos pelo iFood não reduzem o valor fiscal repassado à SEFAZ." },
   { q: "Como produtos cadastrados como combos aparecem na nota?", a: "Na Engenharia de Cardápio Fiscal, os itens do combo são enviados discriminados com valores tributários individuais sem alterar o preço para o cliente." },
   { q: "Uma opção do meu produto deve ser tributada de forma diferente, como fazer?", a: "Configure o NCM e CST específicos do item ou adicional na aba de Produtos." },

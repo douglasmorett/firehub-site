@@ -1,4 +1,8 @@
 import type { ItemDaNota } from "./fiscal-emissao";
+import { ratearEmCentavos } from "./rateio";
+
+// Reexportado para quem já importava daqui.
+export { ratearEmCentavos };
 
 /**
  * /src/lib/fiscal-itens.ts
@@ -90,34 +94,6 @@ function lerBreakdown(bruto: unknown): ParteDoCombo[] {
     });
   }
   return partes;
-}
-
-/**
- * Divide `total` entre as partes na proporção dos preços informados.
- *
- * Trabalha em CENTAVOS inteiros de propósito: rateio em ponto flutuante gera
- * somatório com um centavo de diferença, que é exatamente o que a SEFAZ
- * rejeita. A sobra (ou falta) da divisão vai para a maior parte.
- */
-export function ratearEmCentavos(total: number, pesos: number[]): number[] {
-  const totalCentavos = Math.round(total * 100);
-  const somaDosPesos = pesos.reduce((s, p) => s + p, 0);
-
-  // Sem proporção utilizável (tudo zero), divide em partes iguais.
-  const base =
-    somaDosPesos > 0
-      ? pesos.map((p) => Math.floor((totalCentavos * p) / somaDosPesos))
-      : pesos.map(() => Math.floor(totalCentavos / pesos.length));
-
-  const sobra = totalCentavos - base.reduce((s, c) => s + c, 0);
-  if (sobra !== 0) {
-    // A maior linha absorve o resto: um centavo a mais nela distorce menos que
-    // num item de R$ 2,00.
-    let maior = 0;
-    for (let i = 1; i < base.length; i++) if (base[i] > base[maior]) maior = i;
-    base[maior] += sobra;
-  }
-  return base.map((c) => c / 100);
 }
 
 /**

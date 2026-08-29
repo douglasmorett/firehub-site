@@ -27,6 +27,7 @@
  */
 import type { Problema } from "./fiscal-validacao";
 import { pendenciasDoEmitente, pendenciasDoProduto } from "./fiscal-validacao";
+import { ratearEmCentavos } from "./rateio";
 
 export type ItemDaNota = {
   codigo: string;
@@ -249,8 +250,20 @@ async function emitirPeloFocusNfe(
   const somaDosItens = Number(
     pedido.itens.reduce((soma, i) => soma + Number(i.valorTotal.toFixed(2)), 0).toFixed(2)
   );
-  const desconto = Math.max(0, Number((pedido.desconto || 0).toFixed(2)));
-  const outrasDespesas = Math.max(0, Number((pedido.taxaEntrega || 0).toFixed(2)));
+  let desconto = Math.max(0, Number((pedido.desconto || 0).toFixed(2)));
+  let outrasDespesas = Math.max(0, Number((pedido.taxaEntrega || 0).toFixed(2)));
+
+  // DESCONTO MAIOR QUE OS PRODUTOS. Acontece de verdade: cupom de frete grátis
+  // gravado como desconto do pedido. Rateado entre os itens, isso daria a algum
+  // item um desconto maior que o próprio valor dele — vDesc > vProd, que a
+  // SEFAZ rejeita. O excedente não é desconto de produto: é desconto da ENTREGA.
+  // Abater da taxa preserva o total exato que o cliente pagou.
+  if (desconto > somaDosItens) {
+    const excedente = Number((desconto - somaDosItens).toFixed(2));
+    desconto = somaDosItens;
+    outrasDespesas = Math.max(0, Number((outrasDespesas - excedente).toFixed(2)));
+  }
+
   const valorTotalDaNota = Number((somaDosItens - desconto + outrasDespesas).toFixed(2));
 
   if (valorTotalDaNota <= 0) {
@@ -263,6 +276,28 @@ async function emitirPeloFocusNfe(
         `A SEFAZ não autoriza nota com total zero ou negativo.`,
     };
   }
+
+  /**
+   * ── RATEIO DE DESCONTO E TAXA DE ENTREGA ENTRE OS ITENS ───────────────────
+   *
+   * A nota não fecha só no total: o layout da NF-e exige que o vDesc e o vOutro
+   * do CABEÇALHO sejam a SOMA dos mesmos campos dos ITENS (regras W16/W17).
+   * Até aqui os dois iam só no cabeçalho, e cada item ia sem nada — o que
+   * deixava o documento inconsistente consigo mesmo justamente no caso mais
+   * comum das lojas: pedido de delivery, que tem taxa, e pedido com cupom.
+   *
+   * O rateio é proporcional ao valor de cada item, em CENTAVOS INTEIROS. Em
+   * ponto flutuante a soma erra um centavo com frequência, e um centavo aqui é
+   * rejeição — não é arredondamento tolerado. A sobra da divisão vai para a
+   * maior linha, que absorve o centavo sem distorcer percentual.
+   *
+   * Como o rateio é proporcional ao item, cada vDesc de item fica na mesma
+   * razão do total: nenhum item recebe desconto maior que o próprio valor
+   * (o caso em que isso poderia acontecer foi tratado logo acima).
+   */
+  const pesos = pedido.itens.map((i) => Math.round(Number(i.valorTotal.toFixed(2)) * 100));
+  const descontoPorItem = desconto > 0 ? ratearEmCentavos(desconto, pesos) : null;
+  const despesaPorItem = outrasDespesas > 0 ? ratearEmCentavos(outrasDespesas, pesos) : null;
 
   const corpo = {
     natureza_operacao: "Venda ao consumidor",
@@ -317,6 +352,10 @@ async function emitirPeloFocusNfe(
       // a nota ia sem, contando com sorte na validação.
       pis_situacao_tributaria: String(item.pis ?? "49").padStart(2, "0"),
       cofins_situacao_tributaria: String(item.cofins ?? "49").padStart(2, "0"),
+      // A parte do desconto e da taxa que cabe a este item. Sem isto o
+      // cabeçalho declarava um vDesc/vOutro que nenhum item confirmava.
+      ...(descontoPorItem && descontoPorItem[i] > 0 ? { valor_desconto: descontoPorItem[i] } : {}),
+      ...(despesaPorItem && despesaPorItem[i] > 0 ? { valor_outras_despesas: despesaPorItem[i] } : {}),
       inclui_no_total: 1,
     })),
     formas_pagamento: [
