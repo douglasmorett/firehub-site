@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { limiteDeDia } from "@/lib/timezone";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -11,7 +12,7 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true, accountGroupId: true },
+    select: { id: true, ownerId: true, accountGroupId: true, storeTimezone: true },
   });
 
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -30,9 +31,16 @@ export async function GET(req: NextRequest) {
   const fromDateStr = req.nextUrl.searchParams.get("fromDate");
   const toDateStr = req.nextUrl.searchParams.get("toDate");
 
+  // Dia puro ("2026-08-29") ancorado no fuso da loja. Antes ia por `new Date()`,
+  // que lê o dia como meia-noite em UTC — 21:00 da véspera em Brasília. O `lte`
+  // então cortava o dia escolhido ANTES de ele começar, e filtrar "de hoje até
+  // hoje" no fiado devolvia sempre lista vazia.
+  const fuso = user.storeTimezone || "America/Sao_Paulo";
   const dateFilter: any = {};
-  if (fromDateStr) dateFilter.gte = new Date(fromDateStr);
-  if (toDateStr) dateFilter.lte = new Date(toDateStr);
+  const inicioDoPeriodo = limiteDeDia(fromDateStr, fuso, "inicio");
+  const fimDoPeriodo = limiteDeDia(toDateStr, fuso, "fim");
+  if (inicioDoPeriodo) dateFilter.gte = inicioDoPeriodo;
+  if (fimDoPeriodo) dateFilter.lte = fimDoPeriodo;
 
   const hasDateFilter = Object.keys(dateFilter).length > 0;
 

@@ -37,7 +37,7 @@ export default function FuncionariosPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all" | "custom">("month");
+  const [dateRange, setDateRange] = useState<"today" | "yesterday" | "week" | "month" | "all" | "custom">("month");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -78,19 +78,25 @@ export default function FuncionariosPage() {
   const fetchEmployees = async () => {
     setLoading(true);
     try {
+      // Manda DIA PURO (YYYY-MM-DD) e deixa o servidor ancorar no fuso da loja.
+      // Antes ia `new Date(fromDate).toISOString()`: o navegador lia "2026-08-29"
+      // como meia-noite em UTC, o fim do período virava 21:00 da véspera e o
+      // filtro personalizado não trazia nada — que é o que estava acontecendo.
+      const dia = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       let query = "";
       const now = new Date();
       if (dateRange === "today") {
-        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-        query = `?fromDate=${start}`;
+        query = `?fromDate=${dia(now)}&toDate=${dia(now)}`;
+      } else if (dateRange === "yesterday") {
+        const ontem = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        query = `?fromDate=${dia(ontem)}&toDate=${dia(ontem)}`;
       } else if (dateRange === "week") {
-        const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        query = `?fromDate=${start}`;
+        query = `?fromDate=${dia(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))}&toDate=${dia(now)}`;
       } else if (dateRange === "month") {
-        const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        query = `?fromDate=${start}`;
+        query = `?fromDate=${dia(new Date(now.getFullYear(), now.getMonth(), 1))}&toDate=${dia(now)}`;
       } else if (dateRange === "custom" && fromDate && toDate) {
-        query = `?fromDate=${new Date(fromDate).toISOString()}&toDate=${new Date(toDate).toISOString()}`;
+        query = `?fromDate=${fromDate}&toDate=${toDate}`;
       }
 
       const res = await fetch(`/api/store/employees${query}`);
@@ -416,7 +422,7 @@ export default function FuncionariosPage() {
         {/* Filtro de datas */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Filter size={15} color="#64748B" />
-          {(["today", "week", "month", "all", "custom"] as const).map((mode) => (
+          {(["today", "yesterday", "week", "month", "all"] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setDateRange(mode)}
@@ -431,28 +437,29 @@ export default function FuncionariosPage() {
                 color: dateRange === mode ? "#fff" : "#64748B",
               }}
             >
-              {mode === "today" ? "Hoje" : mode === "week" ? "7 Dias" : mode === "month" ? "Este Mês" : mode === "all" ? "Tudo" : "📅 Personalizado"}
+              {mode === "today" ? "Hoje" : mode === "yesterday" ? "Ontem" : mode === "week" ? "7 Dias" : mode === "month" ? "Este Mês" : "Tudo"}
             </button>
           ))}
 
-          {dateRange === "custom" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FEF2F2", padding: "4px 8px", borderRadius: 8, border: "1px solid #FECACA" }}>
-              <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#991B1B" }}>De:</span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
-              />
-              <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#991B1B" }}>Até:</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
-              />
-            </div>
-          )}
+          {/* As caixas ficam sempre na tela — antes só apareciam depois de achar
+              um botão "Personalizado", e quem não achava concluía que não dava
+              para escolher a data. Mexer numa delas já vira período personalizado. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: dateRange === "custom" ? "#FEF2F2" : "#F8FAFC", padding: "4px 8px", borderRadius: 8, border: `1px solid ${dateRange === "custom" ? "#FECACA" : "#E2E8F0"}` }}>
+            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: dateRange === "custom" ? "#991B1B" : "#64748B" }}>De:</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => { setFromDate(e.target.value); setDateRange("custom"); }}
+              style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
+            />
+            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: dateRange === "custom" ? "#991B1B" : "#64748B" }}>Até:</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => { setToDate(e.target.value); setDateRange("custom"); }}
+              style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
+            />
+          </div>
         </div>
 
         <button

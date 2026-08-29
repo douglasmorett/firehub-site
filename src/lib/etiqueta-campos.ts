@@ -58,7 +58,12 @@ export const PADRAO: Record<ChaveDeCampo, boolean> = {
   alergicos: true,
   loteInterno: true,
   qr: true,
-  logo: false,
+  // Tudo nasce LIGADO, e o lojista desliga o que não quiser — foi o pedido
+  // explícito do dono. A logo era a única exceção, porque disputa o canto com o
+  // QR; mas quem resolve essa disputa é a montagem do papel (`camposDoPapel`),
+  // não o padrão. Deixar o interruptor desligado de fábrica escondia a opção de
+  // quem não usa QR e queria a logo.
+  logo: true,
   nomeDaLoja: true,
   cnpj: true,
   endereco: true,
@@ -333,6 +338,16 @@ export function quantidadeDaEtiqueta(weightStr?: string | null): {
   unidade: string;
   reconhecido: boolean;
 } {
+  // ── NÃO SUPOR NUNCA ───────────────────────────────────────────────────────
+  //
+  // Quando o peso não está preenchido, `reconhecido` é FALSE e quem chama tem
+  // que barrar a impressão — não usar o 1/un que vai aqui só para o tipo de
+  // retorno fechar.
+  //
+  // Isto já causou o estrago: o saco de 5 kg entrava no estoque como "1", e a
+  // tela informava isso num aviso azul que ninguém lê no meio do serviço.
+  // Palpite silencioso em número de estoque é pior que erro na cara — o saldo
+  // fica errado por semanas e ninguém sabe desde quando.
   const bruto = String(weightStr || "").trim().toLowerCase();
   if (!bruto || bruto === "n/a" || bruto === "na" || bruto === "-") {
     return { quantidade: 1, unidade: "un", reconhecido: false };
@@ -348,13 +363,26 @@ export function quantidadeDaEtiqueta(weightStr?: string | null): {
   }
 
   const sufixo = m[2] || "";
+
+  // Número SEM unidade não é reconhecido. Antes, "5" virava "5 un" — e se o
+  // insumo era vendido em quilo, o saldo subia 5 unidades de nada. Quem digita
+  // só o número quase sempre quer quilo ou litro; supor "un" é escolher o
+  // palpite mais provável de estar errado.
+  if (!sufixo) return { quantidade: numero, unidade: "un", reconhecido: false };
+
   const unidade =
     sufixo === "kg" || sufixo === "quilo" || sufixo === "quilos" ? "kg"
     : sufixo === "g" || sufixo === "gr" || sufixo === "grama" || sufixo === "gramas" ? "g"
     : sufixo === "l" || sufixo === "lt" || sufixo === "litro" || sufixo === "litros" ? "L"
     : sufixo === "ml" ? "ml"
-    : sufixo === "un" || sufixo === "und" || sufixo === "unid" || sufixo === "unidade" || sufixo === "unidades" || sufixo === "" ? "un"
+    : sufixo === "un" || sufixo === "und" || sufixo === "unid" || sufixo === "unidade" || sufixo === "unidades" ? "un"
     : sufixo;
+
+  // Unidade que o estoque não entende ("cx", "fd", "pct") também não passa:
+  // só o lojista sabe quantas unidades vêm na caixa.
+  if (!["kg", "g", "L", "ml", "un"].includes(unidade)) {
+    return { quantidade: numero, unidade, reconhecido: false };
+  }
 
   return { quantidade: numero, unidade, reconhecido: true };
 }

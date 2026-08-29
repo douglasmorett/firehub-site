@@ -173,6 +173,25 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
   // uma unidade por etiqueta, e o saco de 5 kg entrava no estoque como "1".
   const porEtiqueta = quantidadeDaEtiqueta(config.weightStr);
 
+  // ── O PESO EM DOIS CAMPOS ────────────────────────────────────────────────
+  //
+  // `weightStr` continua sendo uma string ("0,90 kg") porque é ela que vai
+  // impressa no papel e é o que o schema guarda. Mas a TELA deixa de aceitar
+  // texto livre: o número e a unidade são separados, e a unidade sai de uma
+  // lista com as cinco que o estoque entende. Assim não há como digitar "cx"
+  // nem esquecer a unidade.
+  const pesoOk = porEtiqueta.reconhecido;
+  const pesoQuantidade = (() => {
+    const m = /^\s*([\d]+(?:[.,]\d+)?)/.exec(String(config.weightStr || ""));
+    return m ? m[1] : "";
+  })();
+  const pesoUnidade = pesoOk ? porEtiqueta.unidade : "";
+
+  const aplicarPeso = (quantidade: string, unidade: string) => {
+    const q = String(quantidade).replace(/[^\d.,]/g, "");
+    setConfig({ ...config, weightStr: q && unidade ? `${q} ${unidade}` : q });
+  };
+
   // A rota de entrada soma a quantidade CRUA no saldo do insumo, sem converter
   // unidade. Então uma etiqueta em gramas caindo num insumo cadastrado em quilos
   // multiplica o saldo por mil — em silêncio, e sem nada para investigar depois.
@@ -783,9 +802,46 @@ ${printArea.innerHTML}
                 <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Validade em Dias (Shelf Life)</label>
                 <input type="number" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={config.shelfLifeDays} onChange={e => setConfig({...config, shelfLifeDays: Number(e.target.value)})} />
               </div>
+              {/* ── QUANTO VEM NA EMBALAGEM — obrigatório, e sem campo livre ──
+                  Era um texto livre ("Ex: 0,90kg"). Vazio, o sistema supunha
+                  1 unidade; só o número, supunha unidade também. O saco de 5 kg
+                  entrava no estoque como "1", em silêncio — e saldo errado por
+                  palpite ninguém descobre, porque não há erro para investigar.
+                  Agora são dois campos: o número e a unidade, escolhida numa
+                  lista. Sem os dois, a etiqueta não imprime. */}
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Peso Líquido da Embalagem (Ex: 0,90kg)</label>
-                <input type="text" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={config.weightStr} onChange={e => setConfig({...config, weightStr: e.target.value})} />
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>
+                  Quanto vem na embalagem <span style={{ color: "#B71C1C" }}>*</span>
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Ex: 0,90"
+                    aria-label="Quantidade"
+                    value={pesoQuantidade}
+                    onChange={e => aplicarPeso(e.target.value, pesoUnidade)}
+                    style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: `1px solid ${pesoOk ? "#CBD5E1" : "#FCA5A5"}` }}
+                  />
+                  <select
+                    aria-label="Unidade"
+                    value={pesoUnidade}
+                    onChange={e => aplicarPeso(pesoQuantidade, e.target.value)}
+                    style={{ width: 130, padding: "8px 12px", borderRadius: "8px", border: `1px solid ${pesoOk ? "#CBD5E1" : "#FCA5A5"}`, background: "#fff" }}
+                  >
+                    <option value="">Unidade…</option>
+                    <option value="un">unidade(s)</option>
+                    <option value="kg">quilo (kg)</option>
+                    <option value="g">grama (g)</option>
+                    <option value="L">litro (L)</option>
+                    <option value="ml">mililitro (ml)</option>
+                  </select>
+                </div>
+                <div style={{ fontSize: "0.78rem", color: pesoOk ? "#64748B" : "#B71C1C", marginTop: 6, lineHeight: 1.45 }}>
+                  {pesoOk
+                    ? <>Cada etiqueta vai dar entrada de <strong>{textoDeQuantidade(porEtiqueta.quantidade, porEtiqueta.unidade)}</strong> no estoque.</>
+                    : "Obrigatório. É o que o sistema usa para dar entrada no estoque — sem isso ele teria que adivinhar."}
+                </div>
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Ingredientes</label>
@@ -1047,8 +1103,11 @@ ${printArea.innerHTML}
                 Escrito antes de imprimir, e não depois: quem descobre que a
                 conta entrou errada só ao abrir o estoque já colou a etiqueta
                 no pote e já guardou a mercadoria. */}
-            <div className={`fh-aviso ${unidadeDiverge ? "fh-aviso--atencao" : "fh-aviso--info"}`} style={{ marginTop: 18 }}>
-              {unidadeDiverge ? <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /> : <Info size={18} style={{ flexShrink: 0, marginTop: 1 }} />}
+            {/* Âmbar também quando falta o peso: azul é a cor de "informação",
+                e informação é justamente o que ninguém lê no meio do serviço.
+                Falta de dado que impede imprimir precisa parecer o que é. */}
+            <div className={`fh-aviso ${unidadeDiverge || !porEtiqueta.reconhecido ? "fh-aviso--atencao" : "fh-aviso--info"}`} style={{ marginTop: 18 }}>
+              {unidadeDiverge || !porEtiqueta.reconhecido ? <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /> : <Info size={18} style={{ flexShrink: 0, marginTop: 1 }} />}
               <div>
                 {porEtiqueta.reconhecido ? (
                   <>
@@ -1070,9 +1129,9 @@ ${printArea.innerHTML}
                   </>
                 ) : (
                   <>
-                    O peso da embalagem não está preenchido, então cada etiqueta vai dar entrada de{" "}
-                    <strong>1 unidade</strong> no estoque. Se este insumo é vendido por quilo ou litro, preencha o
-                    peso na aba <strong>Ficha do produto</strong> (ex.: 1,00 kg) antes de imprimir.
+                    <strong>Falta dizer quanto vem na embalagem.</strong> Sem isso o sistema teria que adivinhar —
+                    e adivinhar quantidade vira saldo errado que ninguém descobre, porque não sobra erro nenhum
+                    para investigar. Preencha o número e a unidade na aba <strong>Ficha do produto</strong>.
                   </>
                 )}
               </div>
@@ -1088,7 +1147,7 @@ ${printArea.innerHTML}
               className="fh-btn fh-btn--primario fh-btn--cozinha"
               style={{ width: "100%", marginTop: 16 }}
               onClick={prepararEImprimir}
-              disabled={!fabDate || !valDate || preparando}
+              disabled={!fabDate || !valDate || preparando || !porEtiqueta.reconhecido}
             >
               <Printer size={22} />
               {preparando
@@ -1097,9 +1156,11 @@ ${printArea.innerHTML}
                   ? `Imprimir ${quantidade} etiquetas`
                   : "Imprimir etiqueta"}
             </button>
-            {(!fabDate || !valDate) && (
+            {(!fabDate || !valDate || !porEtiqueta.reconhecido) && (
               <p className="fh-campo__dica" style={{ marginTop: 8, textAlign: "center" }}>
-                Preencha a data de fabricação para liberar a impressão.
+                {!porEtiqueta.reconhecido
+                  ? "Informe quanto vem na embalagem, na aba Ficha do produto, para liberar a impressão."
+                  : "Preencha a data de fabricação para liberar a impressão."}
               </p>
             )}
             <p className="fh-campo__dica" style={{ marginTop: 8, textAlign: "center" }}>

@@ -1050,16 +1050,27 @@ export default function StoreTopNav({
       {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
       {!isCompras && (
       <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.35rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
-        <div style={{ maxWidth:"100%", margin:"0 auto", display:"flex", alignItems:"stretch", gap:"1px", overflowX:"auto", scrollbarWidth:"none", WebkitOverflowScrolling:"touch" }}>
+        {/* ── TUDO NA TELA, SEMPRE ──────────────────────────────────────────
+            Era `overflowX: auto` com a barra de rolagem ESCONDIDA
+            (`scrollbarWidth: none`), e cada item com `flexShrink: 0`. Os itens
+            nunca encolhiam, saíam da tela pela direita e não sobrava nenhum
+            sinal de que existiam: no notebook o "Minha Loja" aparecia cortado
+            como "M" e Motoboys, Garçons e Fiado simplesmente não existiam para
+            quem olhava.
+
+            Agora a linha QUEBRA em vez de cortar (`flexWrap`), e os itens
+            podem encolher. Numa tela larga tudo cabe numa linha só, centralizada;
+            numa estreita desce para a segunda linha — em nenhum caso some. */}
+        <div style={{ maxWidth:"100%", margin:"0 auto", display:"flex", alignItems:"stretch", justifyContent:"center", flexWrap:"wrap", gap:"1px" }}>
           {menuItems.map(item => {
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
             return (
-              <a key={item.href} href={item.href} className="store-nav-link" style={{ display:"flex", alignItems:"center", gap:3, padding:"0.5rem 0.38rem", fontSize:"0.73rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap", flexShrink:0 }}>
+              <a key={item.href} href={item.href} className="store-nav-link" style={{ display:"flex", alignItems:"center", gap:3, padding:"0.5rem 0.38rem", fontSize:"0.73rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap" }}>
                 <Icon size={13} /> {item.label}
                 {item.highlight && <span style={{ width:6, height:6, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
                 {item.badge && (
-                  <span style={{ fontSize:"0.55rem", fontWeight:900, background: item.badge === "EM TESTES" ? "#FEF08A" : "#FEE2E2", color: item.badge === "EM TESTES" ? "#854D0E" : "#991B1B", padding:"2px 4px", borderRadius:4, marginLeft:2 }}>
+                  <span className="store-nav-badge" style={{ fontSize:"0.55rem", fontWeight:900, background: item.badge === "EM TESTES" ? "#FEF08A" : "#FEE2E2", color: item.badge === "EM TESTES" ? "#854D0E" : "#991B1B", padding:"2px 4px", borderRadius:4, marginLeft:2 }}>
                     {item.badge}
                   </span>
                 )}
@@ -1072,15 +1083,28 @@ export default function StoreTopNav({
 
       <style>{`
         @media (max-width: 520px) { .nav-user-label { display: none !important; } .nav-view-store { display: none !important; } }
-        @media (max-width: 1400px) {
-          .store-nav-link { padding: 0.48rem 0.32rem !important; font-size: 0.71rem !important; gap: 2px !important; }
+        /* Degraus mais finos e começando mais cedo: com 15 itens, o notebook de
+           1920px já estourava a linha. Diminuir a letra é o que o dono pediu
+           antes de deixar quebrar — e o selo "EM TESTES" encolhe junto, senão
+           ele sozinho come a largura de um item inteiro. */
+        @media (max-width: 1700px) {
+          .store-nav-link { padding: 0.48rem 0.3rem !important; font-size: 0.7rem !important; gap: 2px !important; }
         }
-        @media (max-width: 1100px) {
-          .store-nav-link { padding: 0.4rem 0.25rem !important; font-size: 0.67rem !important; gap: 1px !important; }
+        @media (max-width: 1500px) {
+          .store-nav-link { padding: 0.45rem 0.26rem !important; font-size: 0.67rem !important; }
+          .store-nav-link svg { width: 12px !important; height: 12px !important; }
+          .store-nav-badge { font-size: 0.5rem !important; padding: 1px 3px !important; }
+        }
+        @media (max-width: 1300px) {
+          .store-nav-link { padding: 0.42rem 0.22rem !important; font-size: 0.64rem !important; gap: 1px !important; }
           .store-nav-link svg { width: 11px !important; height: 11px !important; }
         }
+        @media (max-width: 1100px) {
+          .store-nav-link { padding: 0.4rem 0.2rem !important; font-size: 0.61rem !important; }
+          .store-nav-link svg { width: 10px !important; height: 10px !important; }
+        }
         @media (max-width: 900px) {
-          .store-nav-link { padding: 0.35rem 0.2rem !important; font-size: 0.63rem !important; }
+          .store-nav-link { padding: 0.35rem 0.18rem !important; font-size: 0.58rem !important; }
         }
       `}</style>
     </>

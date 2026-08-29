@@ -2,8 +2,20 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { estadoAoVivoDoRobo, registrarEstadoDoRobo } from "@/lib/whatsapp-estado";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * De quanto em quanto tempo esta rota confere o estado no gateway, em vez de
+ * confiar na bandeira do banco.
+ *
+ * 10 minutos é o meio-termo: a faixa não depende mais de nenhum agendador
+ * externo estar de pé (o `gateway-keepalive` é chamado de fora do sistema, e
+ * se ele parar ninguém percebe), e mesmo assim uma loja com o painel aberto o
+ * dia inteiro gera 6 consultas por hora, não uma por carregamento de tela.
+ */
+const REVERIFICAR_APOS_MS = 10 * 60_000;
 
 /**
  * GET /api/chatbot/status-conexao
@@ -38,10 +50,42 @@ export async function GET() {
     const lojaId = quemPediu.ownerId || quemPediu.id;
     const loja = await prisma.user.findUnique({
       where: { id: lojaId },
-      select: { chatbotConfig: true },
+      select: { chatbotConfig: true, storePhone: true },
     });
 
-    const cfg = (loja?.chatbotConfig as any) || {};
+    let cfg = (loja?.chatbotConfig as any) || {};
+
+    // ── RECONFERÊNCIA AO VIVO ─────────────────────────────────────────────
+    //
+    // O comentário original desta rota dizia para NÃO falar com o gateway,
+    // confiando na bandeira que o cron `gateway-keepalive` mantém. O problema
+    // é que esse cron é disparado de fora do sistema: se o agendador cair, a
+    // bandeira congela no último valor conhecido — e o valor congelado mais
+    // comum é `connected: true`. Foi assim que uma loja passou dias com o
+    // painel verde e o robô mudo, sem nenhum alerta.
+    //
+    // A conferência agora acontece aqui mesmo, no máximo a cada 10 minutos por
+    // loja. Só entra nela quem JÁ CONECTOU alguma vez e não desligou o robô de
+    // propósito — as outras não têm o que verificar.
+    const jaConectouAntes =
+      cfg.jaConectouAlgumaVez === true || Boolean(cfg.connectedAt) || cfg.connected === true;
+    const verificadoEm = cfg.verificadoEm ? new Date(cfg.verificadoEm).getTime() : 0;
+    const venceu = Date.now() - verificadoEm >= REVERIFICAR_APOS_MS;
+
+    if (jaConectouAntes && cfg.active !== false && venceu) {
+      const { conectada, telefone } = await estadoAoVivoDoRobo(lojaId, cfg);
+      // `null` é "não sei" — gateway mudo. Fica com o que já se sabia; inventar
+      // uma queda aqui mandaria o lojista ler QR à toa a cada piscada de rede.
+      if (conectada !== null) {
+        await registrarEstadoDoRobo(lojaId, cfg, conectada, telefone, loja?.storePhone);
+        const atualizada = await prisma.user.findUnique({
+          where: { id: lojaId },
+          select: { chatbotConfig: true },
+        });
+        cfg = (atualizada?.chatbotConfig as any) || cfg;
+      }
+    }
+
     const jaConectou =
       cfg.jaConectouAlgumaVez === true || Boolean(cfg.connectedAt) || cfg.connected === true;
 

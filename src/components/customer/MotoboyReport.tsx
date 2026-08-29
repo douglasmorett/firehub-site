@@ -5,42 +5,73 @@ import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loade
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
 const fmt = (v: number) => `R$ ${(v || 0).toFixed(2).replace(".", ",")}`;
+// Sem "Personalizado": as caixas de data ficam SEMPRE na tela. O botão só
+// preenchia as mesmas duas caixas, e escondê-las até alguém achar o botão fazia
+// o lojista pensar que não dava para escolher a data.
 const PERIODS = [
   { label: "Hoje", value: "today" },
+  { label: "Ontem", value: "yesterday" },
   { label: "Esta semana", value: "week" },
   { label: "Este mês", value: "month" },
-  { label: "Personalizado", value: "custom" },
 ];
 
-function getBrasilDateString(d: Date = new Date(), tz = "America/Sao_Paulo"): string {
-  const spDate = new Date(d.toLocaleString("en-US", { timeZone: tz }));
-  const yyyy = spDate.getFullYear();
-  const mm = String(spDate.getMonth() + 1).padStart(2, "0");
-  const dd = String(spDate.getDate()).padStart(2, "0");
+/**
+ * Formata uma data que JÁ está no fuso da loja.
+ *
+ * O código antigo passava essas datas por getBrasilDateString() de novo — ou
+ * seja, convertia duas vezes. No computador da loja (que também está em
+ * Brasília) isso dava no mesmo e ninguém percebeu; num navegador em outro fuso
+ * o início da semana saía um dia deslocado. Converter uma vez e formatar é o
+ * que evita o erro.
+ */
+function formatarYMD(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
 function getRange(period: string, tz = "America/Sao_Paulo") {
   const now = new Date();
-  if (period === "today") return { from: getBrasilDateString(now, tz), to: getBrasilDateString(now, tz) };
+  const spNow = new Date(now.toLocaleString("en-US", { timeZone: tz }));
+  const hoje = formatarYMD(spNow);
+
+  if (period === "today") return { from: hoje, to: hoje };
+  if (period === "yesterday") {
+    const ontem = new Date(spNow);
+    ontem.setDate(spNow.getDate() - 1);
+    const d = formatarYMD(ontem);
+    // Ontem é um dia FECHADO: começa e termina nele mesmo, não vai até hoje.
+    return { from: d, to: d };
+  }
   if (period === "week") {
-    const spNow = new Date(now.toLocaleString("en-US", { timeZone: tz }));
     const start = new Date(spNow);
     start.setDate(spNow.getDate() - spNow.getDay());
-    return { from: getBrasilDateString(start, tz), to: getBrasilDateString(now, tz) };
+    return { from: formatarYMD(start), to: hoje };
   }
   if (period === "month") {
-    const spNow = new Date(now.toLocaleString("en-US", { timeZone: tz }));
     const start = new Date(spNow.getFullYear(), spNow.getMonth(), 1);
-    return { from: getBrasilDateString(start, tz), to: getBrasilDateString(now, tz) };
+    return { from: formatarYMD(start), to: hoje };
   }
   return null;
 }
 
 export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: Motoboy[], storeTimezone?: string }) {
+  const tzLoja = storeTimezone || "America/Sao_Paulo";
+  // As caixas de data nascem preenchidas com o período selecionado. O lojista
+  // vê exatamente qual intervalo vai ser consultado antes de gerar — e pode
+  // mexer direto na data sem procurar botão nenhum.
+  const inicial = getRange("month", tzLoja)!;
   const [period, setPeriod] = useState("month");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [customFrom, setCustomFrom] = useState(inicial.from);
+  const [customTo, setCustomTo] = useState(inicial.to);
+
+  /** Clicou num atalho: marca o período E preenche as caixas com ele. */
+  const escolherPeriodo = (valor: string) => {
+    setPeriod(valor);
+    const r = getRange(valor, tzLoja);
+    if (r) { setCustomFrom(r.from); setCustomTo(r.to); }
+  };
   const [selectedMotoboy, setSelectedMotoboy] = useState("all");
   const [calcMode, setCalcMode] = useState<"all" | "fee_only">("all");
   const [report, setReport] = useState<any[]>([]);
@@ -51,9 +82,11 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
 
   const load = useCallback(async () => {
     setLoading(true);
-    const tz = storeTimezone || "America/Sao_Paulo";
-    const range = period === "custom" ? { from: customFrom, to: customTo } : getRange(period, tz);
-    if (!range?.from || !range?.to) { setLoading(false); return; }
+    // As caixas de data são a fonte da verdade: os atalhos preenchem elas, então
+    // consultar sempre as caixas garante que o que foi buscado é o que está
+    // escrito na tela — sem chance de o botão dizer uma coisa e a busca outra.
+    const range = { from: customFrom, to: customTo };
+    if (!range.from || !range.to) { setLoading(false); return; }
 
     const params = new URLSearchParams({ from: range.from, to: range.to, calcMode });
     if (selectedMotoboy !== "all") params.set("motoboyId", selectedMotoboy);
@@ -96,19 +129,22 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
             <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6, textTransform: "uppercase" }}>Período</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {PERIODS.map(p => (
-                <button key={p.value} onClick={() => setPeriod(p.value)}
+                <button key={p.value} onClick={() => escolherPeriodo(p.value)}
                   style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${period === p.value ? "#C62828" : "#E2E8F0"}`, background: period === p.value ? "#C62828" : "#fff", color: period === p.value ? "#fff" : "#475569", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
                   {p.label}
                 </button>
               ))}
             </div>
-            {period === "custom" && (
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                  style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem" }} />
-                <span style={{ alignSelf: "center", color: "#94A3B8" }}>até</span>
-                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                  style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem" }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+              <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setPeriod("custom"); }}
+                style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+              <span style={{ color: "#94A3B8", fontSize: "0.82rem" }}>até</span>
+              <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setPeriod("custom"); }}
+                style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+            </div>
+            {customFrom && customTo && customFrom > customTo && (
+              <div style={{ marginTop: 6, fontSize: "0.75rem", color: "#B91C1C", fontWeight: 600 }}>
+                A data inicial está depois da final — inverta para o relatório vir com dados.
               </div>
             )}
           </div>

@@ -428,6 +428,49 @@ export default function ChatbotHubClient() {
     return () => clearInterval(interval);
   }, [campaignHistory]);
 
+  /**
+   * Reconferência AO VIVO do robô — inclusive quando a tela acha que está tudo certo.
+   *
+   * O defeito que isto conserta: o painel dizia "WhatsApp Vinculado com
+   * Sucesso!" lendo uma bandeira gravada no banco no dia da leitura do QR, e o
+   * polling abaixo começa com `if (config.connected) return` — ou seja, uma vez
+   * conectado, nunca mais se perguntava nada. Sessão morta há dias continuava
+   * verde na tela enquanto nenhuma mensagem era respondida.
+   *
+   * Aqui a pergunta vai ao gateway. Se ele não responder, NADA muda: trocar o
+   * falso positivo por um falso alarme (mandar ler QR porque a rede piscou)
+   * seria só mudar de problema.
+   */
+  const [gatewayMudo, setGatewayMudo] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+
+    const conferir = async () => {
+      try {
+        const r = await fetch("/api/chatbot/conexao-ao-vivo", { cache: "no-store" });
+        if (!r.ok || !vivo) return;
+        const d = await r.json();
+        if (!vivo) return;
+
+        if (!d.gatewayRespondeu) { setGatewayMudo(true); return; }
+        setGatewayMudo(false);
+
+        setConfig((prev: any) => {
+          if (Boolean(prev.connected) === Boolean(d.connected)) return prev;
+          return { ...prev, connected: Boolean(d.connected), phone: d.phone || prev.phone };
+        });
+      } catch {
+        setGatewayMudo(true);
+      }
+    };
+
+    conferir();
+    // Meio minuto: rápido o bastante para o lojista não ficar meia hora achando
+    // que o robô responde, leve o bastante para não pesar no gateway.
+    const t = setInterval(conferir, 30_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
+
   // Polling automático de status de conexão a cada 3s enquanto aguarda leitura do QR Code
   useEffect(() => {
     if (config.connected) return;
@@ -632,6 +675,44 @@ export default function ChatbotHubClient() {
       {toast && (
         <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 9999, background: toast.color, color: "#fff", padding: "12px 20px", borderRadius: "10px", fontWeight: 700, boxShadow: "0 10px 25px rgba(0,0,0,0.2)", fontSize: "0.88rem", display: "flex", alignItems: "center", gap: "8px" }}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* ── FAIXA DE ROBÔ FORA DO AR ──────────────────────────────────────────
+          Mesma faixa verde do painel, agora também aqui: a tela do Chatbot era
+          justamente a que dizia "Vinculado com Sucesso" para uma sessão morta.
+          Verde de propósito — o painel já tem âmbar de cobrança e vermelho de
+          bloqueio; mais um alerta nessas cores o lojista lê como dinheiro. */}
+      {!config.connected && (
+        <div
+          onClick={() => { setActiveTab("qr"); handleFetchFreshQr(); }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setActiveTab("qr"); handleFetchFreshQr(); } }}
+          style={{ display: "flex", alignItems: "center", gap: "0.9rem", flexWrap: "wrap", background: "#F0FDF4", border: "1px solid #A7F3D0", borderLeft: "6px solid #16A34A", borderRadius: 12, padding: "0.9rem 1.1rem", marginBottom: "1rem", cursor: "pointer" }}
+        >
+          <span style={{ fontSize: "1.6rem", lineHeight: 1 }} aria-hidden>🤖</span>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontWeight: 800, color: "#166534", fontSize: "1rem" }}>
+              Seu robô de WhatsApp está desconectado
+            </div>
+            <div style={{ color: "#15803D", fontSize: "0.88rem", marginTop: 2 }}>
+              Enquanto ele estiver fora, as mensagens dos seus clientes não são respondidas.
+              Clique aqui para reconectar e leia o QR Code de novo.
+            </div>
+          </div>
+          <span style={{ background: "#16A34A", color: "#fff", fontWeight: 800, fontSize: "0.9rem", padding: "0.6rem 1.1rem", borderRadius: 10, whiteSpace: "nowrap" }}>
+            Clique aqui para reconectar
+          </span>
+        </div>
+      )}
+
+      {/* Gateway mudo não é loja desconectada: aqui o sistema diz que NÃO SABE,
+          em vez de afirmar qualquer um dos dois lados e errar. */}
+      {gatewayMudo && config.connected && (
+        <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 12, padding: "0.8rem 1.1rem", marginBottom: "1rem", color: "#92400E", fontSize: "0.86rem", fontWeight: 600 }}>
+          ⚠️ Não consegui confirmar agora se o robô está no ar — o servidor de WhatsApp não respondeu.
+          O status abaixo é o da última verificação que deu certo.
         </div>
       )}
 

@@ -64,3 +64,29 @@ export function toLocalISODate(date: Date, timeZone: string): string {
   const [m, d, y] = tzStr.split('/');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * Lê um limite de período vindo da tela e devolve o instante certo.
+ *
+ * A tela manda dia puro ("2026-08-29"), que `new Date()` interpreta como
+ * MEIA-NOITE EM UTC — 21:00 da véspera em Brasília. Era isso que quebrava os
+ * filtros de data: o começo pegava a noite do dia anterior e o fim cortava o
+ * dia escolhido antes de ele acontecer, então "de hoje até hoje" vinha vazio.
+ *
+ * Aqui o dia puro é ancorado no fuso da loja (`inicio` = 00:00, `fim` =
+ * 23:59:59.999). Se vier um instante ISO completo — de telas antigas que ainda
+ * mandam `.toISOString()` — ele é respeitado como está.
+ */
+export function limiteDeDia(
+  valor: string | null | undefined,
+  timeZone: string,
+  borda: "inicio" | "fim",
+): Date | undefined {
+  const v = String(valor ?? "").trim();
+  if (!v) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return borda === "inicio" ? getStartOfDayUTC(v, timeZone) : getEndOfDayUTC(v, timeZone);
+  }
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? undefined : d;
+}
