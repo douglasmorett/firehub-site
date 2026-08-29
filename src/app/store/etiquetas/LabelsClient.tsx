@@ -3,7 +3,26 @@
 import { useState, useEffect } from "react";
 import { saveLabelData, updateStoreLabelInfo } from "@/app/actions/labels";
 import { createKitchenItem, updateKitchenItem, deleteKitchenItem, fillNutritionWithAI } from "@/app/actions/kitchenItems";
-import { Printer, Settings, AlertTriangle, Save, Plus, Trash2, Store, Sparkles } from "lucide-react";
+import { Printer, Settings, AlertTriangle, Save, Plus, Trash2, Store, Sparkles, Tag, Sliders, Check, XCircle, Info } from "lucide-react";
+import EtiquetaPapel from "./EtiquetaPapel";
+import AbaLayoutDaEtiqueta from "./AbaLayoutDaEtiqueta";
+import { BandejaDaEtiqueta, EtiquetaFantasma } from "./PreviaDaEtiqueta";
+import { CSS_DA_ETIQUETA } from "./etiqueta-css";
+import { salvarConfigDaEtiqueta } from "@/app/actions/labels";
+import {
+  resolverCamposDaEtiqueta,
+  CHAVES_DE_CAMPO,
+  PADRAO,
+  type ChaveDeCampo,
+  type PresetDaEtiqueta,
+  textoDeConservacao,
+  quantidadeDaEtiqueta,
+  textoDeQuantidade,
+  presetDoItem,
+  seloAltoEmSuprimido,
+  TEXTOS_PADRAO,
+  type ChaveDeTexto,
+} from "@/lib/etiqueta-campos";
 
 /**
  * Formata a data da etiqueta SEM passar por `Date`.
@@ -27,9 +46,9 @@ function dataDaEtiqueta(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : "--";
 }
 
-export default function LabelsClient({ products, kitchenItems, storeAddress, storeCnpj, storeName, storeLogo }: { products: any[], kitchenItems: any[], storeAddress: string, storeCnpj: string, storeName: string, storeLogo: string }) {
+export default function LabelsClient({ products, kitchenItems, storeAddress, storeCnpj, storeName, storeLogo, labelFieldsConfig, stockItems = [] }: { products: any[], kitchenItems: any[], storeAddress: string, storeCnpj: string, storeName: string, storeLogo: string, labelFieldsConfig?: any, stockItems?: { id: string, name: string, unit: string }[] }) {
   const [selectedProductId, setSelectedProductId] = useState("");
-  const [mode, setMode] = useState<"print" | "config">("print");
+  const [mode, setMode] = useState<"print" | "layout" | "config">("print");
   const [items, setItems] = useState<any[]>(kitchenItems.map(ki => ({ ...ki, isKitchenItem: true })));
   
   // Modal Novo Item
@@ -92,10 +111,200 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
     proteins: "0",
     fatTotal: "0",
     fatSat: "0",
-    sodium: "0"
+    sodium: "0",
+    // Os três campos que a ficha SEMPRE teve e que nenhuma tela mostrava: o
+    // lojista podia gravá-los pela action e nunca via o resultado. O CNPJ e o
+    // endereço próprios existem para o item produzido por outra cozinha (ou
+    // pela fábrica da rede), que não pode sair rotulado com o CNPJ desta loja.
+    customCnpj: "",
+    customAddress: "",
+    stockItemId: ""
   });
 
   const selectedProduct = items.find(p => p.id === selectedProductId);
+
+  // ── O LAYOUT DA ETIQUETA ─────────────────────────────────────────────────
+  //
+  // Estado SEPARADO do `config`, e isso não é organização: o useEffect logo
+  // abaixo tem `fabDate` e `items` nas dependências e reescreve o `config`
+  // inteiro. Se os interruptores morassem lá dentro, mudar a data de fabricação
+  // religaria sozinho tudo o que o lojista tinha acabado de desligar, na cara
+  // dele, sem nada explicando.
+  const [layout, setLayout] = useState<any>(labelFieldsConfig || null);
+  const [chaveDeConservacao, setChaveDeConservacao] = useState<ChaveDeTexto>("conservacaoCongelado");
+
+  const preset = presetDoItem(selectedProduct?.labelSize);
+
+  // O que REALMENTE vai sair no papel, já considerando o preset, o que a loja
+  // desligou e o que simplesmente não tem dado para mostrar. A prévia lê daqui,
+  // e a impressão também — é o que impede a tela de prometer o que o papel não
+  // cumpre.
+  const camposDoPapel = resolverCamposDaEtiqueta(layout, selectedProduct?.labelSize, {
+    pesoPreenchido: !!String(config.weightStr || "").trim() && !/^(n\/a|0)$/i.test(String(config.weightStr || "").trim()),
+    temIngredientes: !!String(config.ingredients || "").trim(),
+    temAlergicos: !!String(config.allergens || "").trim(),
+    temModoPreparo: !!String(config.preparation || "").trim(),
+    // Tabela inteira em zero não é campo em branco: é a declaração de que o
+    // alimento não tem caloria, não tem sódio e não tem gordura nenhuma.
+    tabelaTodaZerada: [config.energy, config.carbs, config.sugars, config.addedSugars, config.proteins, config.fatTotal, config.fatSat, config.sodium]
+      .every(v => !String(v ?? "").trim() || Number(String(v).replace(",", ".")) === 0),
+    temLogo: !!storeLogo,
+    temLote: !!String(lote || "").trim(),
+    temNomeDaLoja: !!String(storeName || "").trim(),
+    temCnpj: !!String(config.customCnpj || storeCnpj || "").trim(),
+    temEndereco: !!String(config.customAddress || storeAddress || "").trim(),
+    qrPedido: usarQr,
+  });
+
+  // O que os interruptores mostram: o que a loja gravou, ou o padrão. Separado
+  // de `camposDoPapel` porque aquele já sofreu as travas do preset e as
+  // ausências de dado — e um interruptor que anda sozinho quando o campo do
+  // produto está vazio é interruptor quebrado aos olhos de quem o usa.
+  const ligados = CHAVES_DE_CAMPO.reduce((acc, k) => {
+    const g = layout?.campos?.[k];
+    acc[k] = typeof g === "boolean" ? g : PADRAO[k];
+    return acc;
+  }, {} as Record<ChaveDeCampo, boolean>);
+
+  // ── QUANTO CADA ETIQUETA VALE NO ESTOQUE ─────────────────────────────────
+  //
+  // Sai do peso JÁ CADASTRADO na ficha — o mesmo que é impresso no papel. Antes
+  // disto a tela não mandava quantidade nenhuma, o servidor caía no fallback de
+  // uma unidade por etiqueta, e o saco de 5 kg entrava no estoque como "1".
+  const porEtiqueta = quantidadeDaEtiqueta(config.weightStr);
+
+  // A rota de entrada soma a quantidade CRUA no saldo do insumo, sem converter
+  // unidade. Então uma etiqueta em gramas caindo num insumo cadastrado em quilos
+  // multiplica o saldo por mil — em silêncio, e sem nada para investigar depois.
+  // Achar isso antes de o papel sair custa uma comparação de nome.
+  // O insumo vinculado na ficha vence o palpite por nome. Casar por nome é o
+  // que o servidor faz quando NÃO há vínculo, e é justamente o caminho que
+  // duplica insumo ("Frango Desfiado 5kg" e "Frango desfiado"); aqui ele é só
+  // o segundo melhor, para avisar também quem ainda não vinculou.
+  const insumoDoMesmoNome =
+    stockItems.find(i => i.id === config.stockItemId) ||
+    stockItems.find(
+      i => i.name.trim().toLowerCase() === String(selectedProduct?.name || "").trim().toLowerCase()
+    );
+  const unidadeDiverge = !!insumoDoMesmoNome
+    && porEtiqueta.reconhecido
+    && insumoDoMesmoNome.unit.trim().toLowerCase() !== porEtiqueta.unidade.trim().toLowerCase();
+
+  // A unidade gravada no lote é a do INSUMO quando existe vínculo, e não a que
+  // o texto do peso sugere. O servidor sobrescreve o lote com `insumo.unit` no
+  // momento da entrada de qualquer forma — gravar diferente aqui só produziria
+  // uma etiqueta cujo lote muda de unidade sozinho depois do primeiro scan.
+  // A quantidade continua sendo a do peso: é ela que o aviso da tela mostra, e
+  // é ela que o funcionário confere contra o papel.
+  const unidadeDoLote = insumoDoMesmoNome?.unit?.trim() || porEtiqueta.unidade;
+
+  // O que acabou de ser impresso — a frase que mata o "imprimi 40 etiquetas e
+  // o estoque não mudou nada". Imprimir NÃO põe nada em estoque: é a leitura do
+  // QR que põe, e isso precisa estar escrito no momento em que a pessoa acabou
+  // de imprimir, não numa tela de ajuda.
+  const [ultimaImpressao, setUltimaImpressao] = useState<{ etiquetas: number; unico: boolean } | null>(null);
+
+  const [salvandoLayout, setSalvandoLayout] = useState(false);
+
+  /**
+   * O QR que aparece na PRÉVIA, e só nela.
+   *
+   * O código é impossível de propósito: "LOLOLOLO" usa L e O, que não existem
+   * no alfabeto de `lote.ts` (ele evita I, L, O, U, 0 e 1 justamente para não
+   * haver ambiguidade visual no papel). Assim, quem apontar a câmera para o
+   * MONITOR cai em CÓDIGO INVÁLIDO por construção — e não por sorte.
+   *
+   * Sem isso a alternativa seria gerar um QR de verdade para ver na tela, e aí
+   * qualquer pessoa poderia fotografar o monitor e movimentar um lote que nunca
+   * foi impresso: o StockLot é gravado ANTES de o papel sair.
+   *
+   * Gerado uma única vez na montagem: gerar a cada tecla digitada queimaria CPU
+   * do tablet no meio da digitação dos ingredientes.
+   */
+  const [qrDeExemplo, setQrDeExemplo] = useState("");
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const QRCode = (await import("qrcode")).default;
+        const url = await QRCode.toDataURL("HTTPS://EXEMPLO/E/LOLOLOLO", {
+          errorCorrectionLevel: "Q", margin: 4, scale: 8,
+          color: { dark: "#000000", light: "#FFFFFF" },
+        });
+        if (vivo) setQrDeExemplo(url);
+      } catch {
+        // Sem QR de exemplo a prévia continua fiel em todo o resto — só o
+        // quadradinho fica em branco. Não vale derrubar a tela por isso.
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
+
+  /**
+   * Grava a mudança na hora, sem botão de salvar.
+   *
+   * O estado local muda PRIMEIRO e a prévia acompanha no mesmo frame: esse
+   * feedback imediato é literalmente o momento em que o dono sente que a tela
+   * evoluiu. Se o servidor recusar, o valor volta e a tela diz o motivo — bem
+   * melhor que travar o interruptor esperando a resposta.
+   */
+  const gravarLayout = async (proximo: any) => {
+    const anterior = layout;
+    setLayout(proximo);
+    setSalvandoLayout(true);
+    try {
+      const r = await salvarConfigDaEtiqueta(proximo);
+      if (!r.success) {
+        setLayout(anterior);
+        // "Não autorizado" é o que a action devolve quando a sessão morreu, e
+        // sozinho ele não diz o que fazer: quem lê acha que não tem permissão
+        // para configurar a própria etiqueta.
+        avisar("erro", r.error === "Não autorizado"
+          ? "Sua sessão expirou. Entre de novo e a mudança poderá ser salva."
+          : r.error || "Não consegui salvar essa mudança.");
+      }
+    } catch (e: any) {
+      setLayout(anterior);
+      avisar("erro", "Sem conexão. A mudança não foi salva — tente de novo.");
+    } finally {
+      setSalvandoLayout(false);
+    }
+  };
+
+  const alternarCampo = (chave: ChaveDeCampo, valor: boolean) => {
+    gravarLayout({ ...(layout || {}), campos: { ...ligados, [chave]: valor } });
+  };
+
+  const trocarPreset = async (p: PresetDaEtiqueta) => {
+    if (!selectedProductId) return;
+    setSalvandoLayout(true);
+    try {
+      // O preset é do PRODUTO e mora em `labelSize` — coluna que existia desde
+      // o boot da estrutura de lotes e que nenhuma tela jamais gravou.
+      const atualizado = await updateKitchenItem(selectedProductId, { labelSize: p });
+      setItems(items.map(i => (i.id === selectedProductId ? { ...atualizado, isKitchenItem: true } : i)));
+      avisar("ok", "Pronto. A etiqueta ao lado já está no formato de " + (p === "cozinha" ? "uso interno" : p === "venda" ? "venda" : "fornecimento") + ".");
+    } catch (e: any) {
+      avisar("erro", "Não consegui trocar o formato: " + (e?.message || "erro desconhecido"));
+    } finally {
+      setSalvandoLayout(false);
+    }
+  };
+
+  // ── AVISOS ────────────────────────────────────────────────────────────────
+  // O alerta nativo do Chrome é o sinal mais forte de "software interno" que
+  // uma tela pode emitir: ele tapa a tela, não diz de onde veio e some sem
+  // deixar rastro. Eram cinco nesta tela.
+  const [aviso, setAviso] = useState<{ tom: "ok" | "erro" | "atencao" | "info"; texto: string } | null>(null);
+  const avisar = (tom: "ok" | "erro" | "atencao" | "info", texto: string) => setAviso({ tom, texto });
+
+  useEffect(() => {
+    // Sucesso some sozinho; erro NUNCA some, porque erro que some sozinho é
+    // erro que ninguém leu.
+    if (!aviso || aviso.tom === "erro") return;
+    const t = setTimeout(() => setAviso(null), 5000);
+    return () => clearTimeout(t);
+  }, [aviso]);
 
   useEffect(() => {
     if (selectedProduct) {
@@ -117,7 +326,10 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
           proteins: selectedProduct.proteins || "0",
           fatTotal: selectedProduct.fatTotal || "0",
           fatSat: selectedProduct.fatSat || "0",
-          sodium: selectedProduct.sodium || "0"
+          sodium: selectedProduct.sodium || "0",
+          customCnpj: selectedProduct.customCnpj || "",
+          customAddress: selectedProduct.customAddress || "",
+          stockItemId: selectedProduct.stockItemId || ""
         });
       } else if (selectedProduct.labelData) {
         setConfig({ ...config, ...selectedProduct.labelData });
@@ -132,7 +344,8 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
           highFat: false,
           transgenic: false,
           weightStr: "1,00 kg",
-          energy: "0", carbs: "0", sugars: "0", addedSugars: "0", proteins: "0", fatTotal: "0", fatSat: "0", sodium: "0"
+          energy: "0", carbs: "0", sugars: "0", addedSugars: "0", proteins: "0", fatTotal: "0", fatSat: "0", sodium: "0",
+          customCnpj: "", customAddress: "", stockItemId: ""
         });
       }
       
@@ -156,7 +369,7 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
       setShowNewItemModal(false);
       setNewItemName("");
     } catch (e: any) {
-      alert("Erro ao criar item: " + e.message);
+      avisar("erro", "Não consegui criar o item: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -170,7 +383,7 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
       setItems(items.filter(i => i.id !== id));
       if (selectedProductId === id) setSelectedProductId("");
     } catch (e: any) {
-      alert("Erro ao excluir: " + e.message);
+      avisar("erro", "Não consegui excluir: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -203,6 +416,14 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
         fabricadoEm: fabDate || null,
         validoAte: valDate || null,
         weightStr: config.weightStr || null,
+        // O peso da etiqueta, multiplicado pelas etiquetas da fornada. O
+        // servidor divide de volta por lote conforme a escolha da numeração.
+        unit: unidadeDoLote,
+        quantidadeTotal: porEtiqueta.quantidade * quantidade,
+        // Sem o vínculo, a primeira ENTRADA procura o insumo pelo NOME e cria
+        // se não achar — é assim que "Frango Desfiado 5kg" e "Frango desfiado"
+        // viram dois insumos separados no estoque.
+        stockItemId: config.stockItemId || selectedProduct?.stockItemId || null,
         etiquetas: quantidade,
         codigoUnicoParaTodas: codigoUnico,
       });
@@ -276,42 +497,7 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
 <html>
 <head>
 <meta charset="utf-8"/>
-<style>
-  @page { size: 4in 6in; margin: 0; }
-  html, body {
-    margin: 0; padding: 0;
-    width: 4in; height: 6in;
-    overflow: hidden;
-    background: #fff;
-    font-family: Arial, Helvetica, sans-serif;
-  }
-  * { box-sizing: border-box; }
-  .print-area {
-    display: block !important;
-    width: 4in;
-    height: 6in;
-  }
-  .label-page {
-    display: flex;
-    flex-direction: column;
-    width: 4in;
-    height: 6in;
-    padding: 0.12in;
-    background: white;
-    color: black;
-    box-sizing: border-box;
-  }
-  .label-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .label-footer {
-    margin-top: auto;
-    flex-shrink: 0;
-  }
-</style>
+<style>${CSS_DA_ETIQUETA}</style>
 </head>
 <body>
 ${printArea.innerHTML}
@@ -323,7 +509,18 @@ ${printArea.innerHTML}
       setTimeout(() => {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
-        setTimeout(() => iframe.remove(), 2000);
+        setTimeout(() => {
+          iframe.remove();
+          // A prévia volta para o QR de exemplo.
+          //
+          // Sem isto, os códigos REAIS recém-gravados ficam desenhados na tela
+          // depois da impressão — e qualquer pessoa que aponte a câmera para o
+          // monitor movimenta um lote que ainda está saindo da impressora. O
+          // StockLot é gravado ANTES de o papel sair, então o código na tela
+          // vale tanto quanto o do papel.
+          setEtiquetas([]);
+          setUltimaImpressao({ etiquetas: quantidade, unico: codigoUnico });
+        }, 2000);
       }, 500);
     };
   };
@@ -339,9 +536,9 @@ ${printArea.innerHTML}
         await saveLabelData(selectedProductId, config);
         setItems(items.map(i => i.id === selectedProductId ? { ...i, labelData: config } : i));
       }
-      alert("Configurações salvas com sucesso!");
+      avisar("ok", "Ficha salva. A etiqueta ao lado já está com os dados novos.");
     } catch (e: any) {
-      alert("Erro ao salvar: " + e.message);
+      avisar("erro", "Não consegui salvar a ficha: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -353,13 +550,13 @@ ${printArea.innerHTML}
       localStorage.setItem("labelShowLogo", showLogo.toString());
       const res = await updateStoreLabelInfo(globalCnpj, globalAddress, globalStoreName, storeLogo);
       if (res && res.error) {
-        alert("Erro: " + res.error);
+        avisar("erro", res.error);
       } else {
-        alert("Dados da loja atualizados com sucesso!");
+        avisar("ok", "Dados da loja salvos. Eles já aparecem no rodapé da etiqueta.");
         setShowStoreDataModal(false);
       }
     } catch (e: any) {
-      alert("Erro ao salvar dados: " + e.message);
+      avisar("erro", "Não consegui salvar os dados da loja: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -371,32 +568,40 @@ ${printArea.innerHTML}
     try {
       const data = await fillNutritionWithAI(selectedProduct.name);
       if (data.error) {
-        alert("Erro da IA: " + data.error);
+        avisar("erro", "A IA não conseguiu preencher: " + data.error);
         return;
       }
       setConfig({ ...config, ...data });
-      alert("Campos preenchidos com sucesso pela IA. Revise e clique em 'Salvar Configuração'.");
+      avisar("atencao", "A IA preencheu os campos com uma estimativa. Confira valor por valor e clique em Salvar — o que sai no papel é responsabilidade da sua loja.");
     } catch (e: any) {
-      alert("Erro ao chamar IA: " + e.message);
+      avisar("erro", "Não consegui falar com a IA: " + e.message);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="labels-container" style={{ padding: "20px" }}>
-      <div className="no-print mb-6">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-          <h1 className="font-bold text-2xl" style={{ fontSize: "1.75rem", margin: 0 }}>Módulo de Validação e Etiquetas</h1>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button className="btn btn-outline" onClick={() => setShowStoreDataModal(true)} style={{ padding: "10px 16px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#FFF", cursor: "pointer", display: "inline-flex", alignItems: "center", fontWeight: 700 }}>
-              <Store size={18} style={{ marginRight: "8px" }} /> Dados da Loja
+    <div className="fh-tela labels-container">
+      <div className="no-print">
+        <header className="fh-cabecalho">
+          <span className="fh-cabecalho__icone"><Tag size={24} /></span>
+          <div style={{ minWidth: 0 }}>
+            <div className="fh-micro">MÓDULO · VALIDADE</div>
+            <h1 className="fh-h1">Etiquetas de validade</h1>
+            <p className="fh-corpo">
+              Monte a etiqueta, veja como ela vai sair e imprima. Cada etiqueta leva um QR que a cozinha escaneia
+              para dar entrada e baixa no estoque{storeName ? " da " + storeName : ""}.
+            </p>
+          </div>
+          <div className="fh-cabecalho__acoes">
+            <button className="fh-btn fh-btn--secundario" onClick={() => setShowStoreDataModal(true)}>
+              <Store size={18} /> Dados da loja
             </button>
-            <button className="btn btn-primary" onClick={() => setShowNewItemModal(true)} style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: "#FF4D00", color: "#FFF", cursor: "pointer", display: "inline-flex", alignItems: "center", fontWeight: 800 }}>
-              <Plus size={18} style={{ marginRight: "8px" }} /> Novo Item de Cozinha
+            <button className="fh-btn fh-btn--primario" onClick={() => setShowNewItemModal(true)}>
+              <Plus size={18} /> Novo item
             </button>
           </div>
-        </div>
+        </header>
 
         {showStoreDataModal && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}>
@@ -445,7 +650,7 @@ ${printArea.innerHTML}
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
                 <button onClick={() => setShowStoreDataModal(false)} disabled={saving} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "none", cursor: "pointer" }}>Cancelar</button>
-                <button onClick={handleSaveStoreData} disabled={saving} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#FF4D00", color: "#FFF", cursor: "pointer", fontWeight: 700 }}>
+                <button className="fh-btn fh-btn--primario" onClick={handleSaveStoreData} disabled={saving} style={{ height: 44 }}>
                   {saving ? "Salvando..." : "Salvar"}
                 </button>
               </div>
@@ -470,7 +675,7 @@ ${printArea.innerHTML}
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
                 <button onClick={() => setShowNewItemModal(false)} disabled={saving} style={{ padding: "8px 16px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "none", cursor: "pointer" }}>Cancelar</button>
-                <button onClick={handleCreateNewItem} disabled={saving || !newItemName} style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#FF4D00", color: "#FFF", cursor: "pointer", fontWeight: 700 }}>
+                <button className="fh-btn fh-btn--primario" onClick={handleCreateNewItem} disabled={saving || !newItemName} style={{ height: 44 }}>
                   {saving ? "Salvando..." : "Salvar"}
                 </button>
               </div>
@@ -478,67 +683,99 @@ ${printArea.innerHTML}
           </div>
         )}
 
-        <div style={{ background: "#FFF", padding: "20px", borderRadius: "16px", border: "1px solid #E2E8F0", marginBottom: "1.5rem" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "0.9rem", fontWeight: "bold", marginBottom: "6px" }}>Selecione o Insumo / Item de Cozinha</label>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <select 
-                value={selectedProductId} 
-                onChange={e => setSelectedProductId(e.target.value)}
-                style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#F8FAFC", fontSize: "0.95rem", flex: 1 }}
-              >
-                <option value="">-- Escolha um insumo para validar --</option>
-                {items.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              {selectedProduct && (
-                <button 
-                  onClick={() => handleDeleteItem(selectedProductId)}
-                  title="Excluir item de cozinha"
-                  style={{ padding: "10px 14px", borderRadius: "10px", border: "1px solid #EF4444", background: "#FEF2F2", color: "#EF4444", cursor: "pointer" }}
-                >
-                  <Trash2 size={18} />
-                </button>
-              )}
+        {/* ── ESCOLHER O INSUMO ──────────────────────────────────────── */}
+        <div className="fh-card" style={{ marginTop: "var(--fh-s6)" }}>
+          <div className="fh-card__body">
+            <div className="fh-campo">
+              <label htmlFor="insumo">Qual insumo você vai etiquetar?</label>
+              <div style={{ display: "flex", gap: 10 }}>
+                <select id="insumo" value={selectedProductId} onChange={e => setSelectedProductId(e.target.value)} style={{ flex: 1 }}>
+                  <option value="">Escolha um insumo…</option>
+                  {items.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {selectedProduct && (
+                  <button className="fh-btn fh-btn--perigo fh-btn--icone" onClick={() => handleDeleteItem(selectedProductId)} title="Excluir item de cozinha" aria-label="Excluir item de cozinha">
+                    <Trash2 size={18} />
+                  </button>
+                )}
+              </div>
             </div>
+
             {items.length === 0 && (
-              <div style={{ marginTop: "12px", padding: "12px 16px", borderRadius: "10px", background: "#EFF6FF", border: "1px solid #BFDBFE", color: "#1E40AF", fontSize: "0.88rem" }}>
-                ℹ️ Nenhum insumo cadastrado ainda. Clique no botão <strong>"+ Novo Item de Cozinha"</strong> acima para cadastrar os insumos da sua cozinha (ex: Massas, Molhos, Queijo Fatiado, Carnes, etc.).
+              <div className="fh-vazio" style={{ paddingBottom: 8 }}>
+                <div className="fh-vazio__titulo">Nenhum insumo cadastrado ainda</div>
+                <div className="fh-vazio__texto">
+                  Insumo é o que a sua cozinha prepara e guarda: massas, molhos, queijo fatiado, carnes.
+                  Cadastre o primeiro e a etiqueta dele já aparece aqui do lado.
+                </div>
+                <button className="fh-btn fh-btn--primario" onClick={() => setShowNewItemModal(true)} style={{ marginTop: 8 }}>
+                  <Plus size={18} /> Cadastrar meu primeiro insumo
+                </button>
               </div>
             )}
           </div>
         </div>
 
+        {/* ── AS TRÊS ABAS ───────────────────────────────────────────────
+            Antes eram dois botões sólidos 50/50, que é aparência de
+            interruptor e não de aba: nada dizia que havia um terceiro lugar
+            para ir, e a configuração do papel não existia em lugar nenhum. */}
         {selectedProduct && (
-          <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
-            <button 
-              onClick={() => setMode("print")}
-              style={{ flex: 1, backgroundColor: mode === "print" ? "#FF4D00" : "#F1F5F9", color: mode === "print" ? "#FFF" : "#0F172A", padding: "1rem", borderRadius: "12px", border: "none", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
-            >
-              <Printer size={20} style={{ marginRight: "8px" }} />
-              {preparando
-                ? "Gerando o QR..."
-                : quantidade > 1
-                  ? `Imprimir ${quantidade} etiquetas`
-                  : "Imprimir Etiqueta"}
+          <div role="tablist" className="fh-abas" style={{ ["--n" as any]: 3, ["--i" as any]: mode === "print" ? 0 : mode === "layout" ? 1 : 2, marginTop: "var(--fh-s6)" }}>
+            <button role="tab" aria-selected={mode === "print"} className="fh-aba" onClick={() => setMode("print")}>
+              <Printer size={18} /> Imprimir
             </button>
-            <button 
-              onClick={() => setMode("config")}
-              style={{ flex: 1, backgroundColor: mode === "config" ? "#FF4D00" : "#F1F5F9", color: mode === "config" ? "#FFF" : "#0F172A", padding: "1rem", borderRadius: "12px", border: "none", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
-            >
-              <Settings size={20} style={{ marginRight: "8px" }} /> Configurar Produto
+            <button role="tab" aria-selected={mode === "layout"} className="fh-aba" onClick={() => setMode("layout")}>
+              <Sliders size={18} /> O que sai no papel
+            </button>
+            <button role="tab" aria-selected={mode === "config"} className="fh-aba" onClick={() => setMode("config")}>
+              <Settings size={18} /> Ficha do produto
             </button>
           </div>
         )}
+
+        <div className="fh-duas-colunas" style={{ marginTop: "var(--fh-s6)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--fh-s6)", minWidth: 0 }}>
+
+            {/* O aviso vive AQUI, ao lado do que a pessoa acabou de fazer —
+                não no topo da página, onde ela não está olhando. */}
+            {aviso && (
+              <div className={`fh-aviso fh-aviso--${aviso.tom}`} role={aviso.tom === "erro" ? "alert" : "status"}>
+                {aviso.tom === "ok" ? <Check size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                  : aviso.tom === "erro" ? <XCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                  : aviso.tom === "atencao" ? <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                  : <Info size={18} style={{ flexShrink: 0, marginTop: 1 }} />}
+                <span style={{ flex: 1 }}>{aviso.texto}</span>
+                <button onClick={() => setAviso(null)} aria-label="Fechar aviso"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", width: 32, height: 32, borderRadius: 8, flexShrink: 0 }}>
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {selectedProduct && mode === "layout" && (
+              <AbaLayoutDaEtiqueta
+                preset={preset}
+                resolvido={camposDoPapel}
+                ligados={ligados}
+                onAlternar={alternarCampo}
+                onTrocarPreset={trocarPreset}
+                onIrParaFicha={() => setMode("config")}
+                temSeloAltoEm={!!(config.highSugar || config.highSodium || config.highFat)}
+                temTransgenico={!!config.transgenic}
+                salvando={salvandoLayout}
+              />
+            )}
 
         {selectedProduct && mode === "config" && (
           <div style={{ background: "#FFF", padding: "24px", borderRadius: "16px", border: "1px solid #E2E8F0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px" }}>
                 <h3 style={{ fontSize: "1.1rem", fontWeight: "bold", margin: 0 }}>Informações Gerais</h3>
-                <button style={{ border: "1px solid #FF4D00", color: "#FF4D00", background: "#FFF", borderRadius: "8px", padding: "6px 12px", fontSize: "0.85rem", cursor: "pointer", fontWeight: 700 }} onClick={handleFillWithAI} disabled={saving}>
-                  <Sparkles size={14} style={{ marginRight: "5px", verticalAlign: "middle" }} /> {saving ? "Gerando..." : "Preencher com IA"}
+                <button className="fh-btn fh-btn--secundario" onClick={handleFillWithAI} disabled={saving} style={{ height: 40, fontSize: 14 }}>
+                  <Sparkles size={15} /> {saving ? "Gerando…" : "Preencher com IA"}
                 </button>
               </div>
               
@@ -582,6 +819,67 @@ ${printArea.innerHTML}
                   Símbolo Transgênico (T)
                 </label>
               </div>
+
+              {/* ── ESTOQUE E RASTREIO ───────────────────────────────────────
+                  A ficha sempre teve estes três campos e NENHUMA tela os
+                  mostrava: dava para gravá-los pela action e nunca ver o
+                  resultado em lugar nenhum. Sem o vínculo, a primeira leitura
+                  do QR procura o insumo pelo NOME e cria um novo se não achar —
+                  é assim que a mesma carne vira dois insumos no estoque. */}
+              <h3 style={{ fontSize: "1.1rem", fontWeight: "bold", marginBottom: "6px", marginTop: "24px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px" }}>
+                Estoque e rastreio
+              </h3>
+              <p className="fh-corpo" style={{ marginBottom: 14 }}>
+                Diz ao sistema qual insumo do estoque este item alimenta quando alguém escaneia o QR.
+              </p>
+
+              <div className="fh-campo" style={{ marginBottom: 14 }}>
+                <label htmlFor="insumo-vinculado">Insumo do estoque</label>
+                <select
+                  id="insumo-vinculado"
+                  value={config.stockItemId || ""}
+                  onChange={e => setConfig({ ...config, stockItemId: e.target.value })}
+                >
+                  <option value="">Criar um insumo com o nome deste item</option>
+                  {stockItems.map(i => (
+                    <option key={i.id} value={i.id}>{i.name} — saldo em {i.unit}</option>
+                  ))}
+                </select>
+                <span className="fh-campo__dica">
+                  {config.stockItemId
+                    ? "Ao escanear, a entrada e a baixa caem neste insumo."
+                    : "Sem escolher, o sistema procura um insumo com o mesmo nome e cria um novo se não achar — e o mesmo produto pode acabar duplicado no estoque."}
+                </span>
+              </div>
+
+              <div className="fh-campo" style={{ marginBottom: 14 }}>
+                <label htmlFor="cnpj-proprio">CNPJ próprio deste item (opcional)</label>
+                <input
+                  id="cnpj-proprio"
+                  type="text"
+                  value={config.customCnpj}
+                  onChange={e => setConfig({ ...config, customCnpj: e.target.value })}
+                  placeholder={storeCnpj || "Use o CNPJ da loja"}
+                />
+                <span className="fh-campo__dica">
+                  Só preencha se este item for produzido por outra cozinha ou pela fábrica da rede. Vazio, a
+                  etiqueta sai com o CNPJ da loja.
+                </span>
+              </div>
+
+              <div className="fh-campo" style={{ marginBottom: 14 }}>
+                <label htmlFor="endereco-proprio">Endereço próprio deste item (opcional)</label>
+                <input
+                  id="endereco-proprio"
+                  type="text"
+                  value={config.customAddress}
+                  onChange={e => setConfig({ ...config, customAddress: e.target.value })}
+                  placeholder={storeAddress || "Use o endereço da loja"}
+                />
+                <span className="fh-campo__dica">
+                  Vazio, a etiqueta sai com o endereço da loja.
+                </span>
+              </div>
             </div>
 
             <div>
@@ -621,16 +919,19 @@ ${printArea.innerHTML}
                 <input type="text" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={config.sodium} onChange={e => setConfig({...config, sodium: e.target.value})} />
               </div>
 
-              <button style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "none", background: "#FF4D00", color: "#FFF", fontWeight: 800, fontSize: "1rem", cursor: "pointer", marginTop: "16px" }} onClick={handleSaveConfig} disabled={saving}>
-                <Save size={18} style={{ marginRight: "8px", verticalAlign: "middle" }} /> {saving ? "Salvando..." : "Salvar Configuração"}
+              <button className="fh-btn fh-btn--primario" onClick={handleSaveConfig} disabled={saving} style={{ width: "100%", marginTop: 16 }}>
+                <Save size={18} /> {saving ? "Salvando…" : "Salvar ficha do produto"}
               </button>
             </div>
           </div>
         )}
 
         {selectedProduct && mode === "print" && (
-          <div style={{ background: "#FFF", padding: "24px", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
-            <h3 style={{ fontSize: "1.1rem", fontWeight: "bold", marginBottom: "16px", borderBottom: "1px solid #F1F5F9", paddingBottom: "8px" }}>Dados da Impressão</h3>
+          <div className="fh-card" style={{ padding: 24 }}>
+            <h2 className="fh-h2" style={{ marginBottom: 4 }}>Dados da impressão</h2>
+            <p className="fh-corpo" style={{ marginBottom: 20 }}>
+              A data de validade se preenche sozinha a partir do prazo cadastrado na ficha do produto.
+            </p>
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Lote (Opcional)</label>
@@ -722,173 +1023,148 @@ ${printArea.innerHTML}
               )}
             </div>
 
+            {ultimaImpressao && (
+              <div className="fh-aviso fh-aviso--ok" role="status" style={{ marginTop: 18 }}>
+                <Check size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ flex: 1 }}>
+                  <strong>
+                    {ultimaImpressao.etiquetas > 1
+                      ? `${ultimaImpressao.etiquetas} etiquetas foram para a impressora.`
+                      : "A etiqueta foi para a impressora."}
+                  </strong>{" "}
+                  {ultimaImpressao.etiquetas > 1 && (ultimaImpressao.unico ? "Todas com o mesmo código. " : "Cada uma com o código próprio. ")}
+                  O estoque só se mexe quando alguém <strong>escanear o QR</strong> — cole na embalagem e escaneie
+                  para dar entrada.
+                </div>
+                <button onClick={() => setUltimaImpressao(null)} aria-label="Fechar aviso"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", width: 32, height: 32, borderRadius: 8, flexShrink: 0 }}>
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* ── O QUE ISTO VAI FAZER NO ESTOQUE ─────────────────────────
+                Escrito antes de imprimir, e não depois: quem descobre que a
+                conta entrou errada só ao abrir o estoque já colou a etiqueta
+                no pote e já guardou a mercadoria. */}
+            <div className={`fh-aviso ${unidadeDiverge ? "fh-aviso--atencao" : "fh-aviso--info"}`} style={{ marginTop: 18 }}>
+              {unidadeDiverge ? <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /> : <Info size={18} style={{ flexShrink: 0, marginTop: 1 }} />}
+              <div>
+                {porEtiqueta.reconhecido ? (
+                  <>
+                    Ao escanear o QR, cada etiqueta dá entrada de{" "}
+                    <strong>{textoDeQuantidade(porEtiqueta.quantidade, porEtiqueta.unidade)}</strong> no estoque
+                    {quantidade > 1 && (
+                      <> — as {quantidade} etiquetas somam{" "}
+                        <strong>{textoDeQuantidade(porEtiqueta.quantidade * quantidade, porEtiqueta.unidade)}</strong></>
+                    )}.
+                    {" "}Isso vem do peso da embalagem, na aba Ficha do produto.
+                    {unidadeDiverge && (
+                      <>
+                        {" "}<strong>Atenção:</strong> o insumo &quot;{insumoDoMesmoNome?.name}&quot; já está no seu
+                        estoque em <strong>{insumoDoMesmoNome?.unit}</strong>, e esta etiqueta está em{" "}
+                        <strong>{porEtiqueta.unidade}</strong>. O sistema soma o número do jeito que ele está — deixe
+                        as duas na mesma unidade antes de imprimir, senão o saldo sai errado.
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    O peso da embalagem não está preenchido, então cada etiqueta vai dar entrada de{" "}
+                    <strong>1 unidade</strong> no estoque. Se este insumo é vendido por quilo ou litro, preencha o
+                    peso na aba <strong>Ficha do produto</strong> (ex.: 1,00 kg) antes de imprimir.
+                  </>
+                )}
+              </div>
+            </div>
+
             {erroLote && (
               <div style={{ marginTop: "12px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 12, padding: "12px 14px", fontSize: "0.86rem", color: "#B45309", fontWeight: 700, lineHeight: 1.45 }}>
                 {erroLote}
               </div>
             )}
 
-            <button style={{ width: "100%", padding: "1rem", borderRadius: "12px", border: "none", background: "#FF4D00", color: "#FFF", fontWeight: 800, fontSize: "1.1rem", cursor: preparando ? "default" : "pointer", opacity: preparando ? 0.7 : 1, marginTop: "16px", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={prepararEImprimir} disabled={!fabDate || !valDate || preparando}>
-              <Printer size={24} style={{ marginRight: "10px" }} /> ENVIAR PARA IMPRESSORA (RIBBON)
+            <button
+              className="fh-btn fh-btn--primario fh-btn--cozinha"
+              style={{ width: "100%", marginTop: 16 }}
+              onClick={prepararEImprimir}
+              disabled={!fabDate || !valDate || preparando}
+            >
+              <Printer size={22} />
+              {preparando
+                ? "Preparando…"
+                : quantidade > 1
+                  ? `Imprimir ${quantidade} etiquetas`
+                  : "Imprimir etiqueta"}
             </button>
-            <p style={{ fontSize: "0.85rem", color: "#64748B", marginTop: "8px", textAlign: "center" }}>
-              Dica: Ajuste a margem para "Nenhuma" nas configurações de impressão do navegador.
+            {(!fabDate || !valDate) && (
+              <p className="fh-campo__dica" style={{ marginTop: 8, textAlign: "center" }}>
+                Preencha a data de fabricação para liberar a impressão.
+              </p>
+            )}
+            <p className="fh-campo__dica" style={{ marginTop: 8, textAlign: "center" }}>
+              Na janela de impressão do navegador, deixe a margem em &quot;Nenhuma&quot; para a etiqueta sair no tamanho certo.
             </p>
           </div>
         )}
-      </div>
-
-      {selectedProduct && mode === "print" && (
-        <div className="print-area">
-          {/* Uma página por etiqueta. O @page de 4x6in pagina sozinho, então
-              imprimir 20 etiquetas é renderizar 20 blocos — antes um clique
-              produzia exatamente uma, e a cozinha imprimia 20 vezes na mão. */}
-          {(etiquetas.length > 0 ? etiquetas : [{ code: "", qr: "" }]).map((etq, idx) => (
-          <div key={idx} className="label-page" style={{ display: "flex", flexDirection: "column", height: "6in", padding: "0.12in", boxSizing: "border-box" }}>
-            <div className="label-content" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "0.5mm solid black", paddingBottom: "2mm", marginBottom: "3mm" }}>
-                <div style={{ flex: 1, paddingRight: "2mm" }}>
-                  <div style={{ fontSize: "5mm", fontWeight: "900", textTransform: "uppercase", lineHeight: "1.15" }}>
-                    {selectedProduct.name}
-                  </div>
-                  <div style={{ fontSize: "3.5mm", fontWeight: "700", marginTop: "1mm" }}>{config.weightStr}</div>
-                </div>
-                {(config.highSugar || config.highSodium || config.highFat) && (
-                  <div style={{ border: "0.5mm solid black", borderRadius: "1mm", padding: "1.5mm 3mm", display: "flex", alignItems: "center", flexShrink: 0 }}>
-                    <AlertTriangle size={16} color="black" style={{ marginRight: "1.5mm" }} />
-                    <div style={{ fontWeight: "900", fontSize: "3mm", lineHeight: "1.3" }}>
-                      ALTO EM<br/>
-                      {config.highSugar  && <span style={{ background:"black", color:"white", padding:"0.3mm 1mm", display:"inline-block", marginTop:"0.5mm" }}>AÇÚCAR</span>}
-                      {config.highSodium && <span style={{ background:"black", color:"white", padding:"0.3mm 1mm", display:"inline-block", marginTop:"0.5mm" }}>SÓDIO</span>}
-                      {config.highFat    && <span style={{ background:"black", color:"white", padding:"0.3mm 1mm", display:"inline-block", marginTop:"0.5mm" }}>GORDURA</span>}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: "flex", gap: "3mm", overflow: "hidden", flexShrink: 0 }}>
-                <div style={{ flex: 1, fontSize: "3mm", lineHeight: "1.4", display: "flex", flexDirection: "column" }}>
-                  {config.preparation && (
-                    <div style={{ marginBottom: "3mm" }}>
-                      <strong style={{ fontSize: "3.2mm" }}>MODO DE PREPARO:</strong><br/>
-                      {config.preparation.split('\n').map((line: string, i: number) => <span key={i}>{line} </span>)}
-                    </div>
-                  )}
-                  <div style={{ borderTop: "0.3mm solid black", borderBottom: "0.3mm solid black", padding: "2mm 0", fontSize: "2.8mm", marginTop: "auto" }}>
-                    <strong style={{ display: "block", textAlign: "center", fontSize: "3mm", marginBottom: "1mm" }}>Conservação</strong>
-                    <div>Congelador: Até -12ºC = 30 dias</div>
-                    <div>Freezer: -18ºC = Vide validade</div>
-                  </div>
-                </div>
-
-                <div style={{ width: "42mm", flexShrink: 0 }}>
-                  <div style={{ border: "0.5mm solid black" }}>
-                    <div style={{ borderBottom: "0.3mm solid black", padding: "1mm", textAlign: "center", fontWeight: "900", fontSize: "3mm" }}>INFORMAÇÃO NUTRICIONAL</div>
-                    <div style={{ display: "flex", borderBottom: "0.3mm solid black" }}>
-                      <div style={{ flex: 1, borderRight: "0.3mm solid black", padding: "0.5mm 1mm", fontSize: "2.5mm", fontWeight: "bold" }}></div>
-                      <div style={{ width: "14mm", padding: "0.5mm 1mm", textAlign: "center", fontSize: "2.5mm", fontWeight: "bold" }}>100 g</div>
-                    </div>
-                    {[
-                      ["Energia (kcal)",  config.energy],
-                      ["Carboidratos",    config.carbs],
-                      ["Açúcares tot.",    config.sugars],
-                      ["Açúcares adic.",   config.addedSugars],
-                      ["Proteínas",        config.proteins],
-                      ["Gorduras tot.",    config.fatTotal],
-                      ["Gorduras sat.",    config.fatSat],
-                      ["Sódio (mg)",       config.sodium],
-                    ].map(([label, val], i, arr) => (
-                      <div key={i} style={{ display: "flex", borderBottom: i < arr.length - 1 ? "0.3mm solid black" : "none" }}>
-                        <div style={{ flex: 1, borderRight: "0.3mm solid black", padding: "0.8mm 1mm", fontSize: "2.5mm", whiteSpace: "nowrap", overflow: "hidden" }}>{label}</div>
-                        <div style={{ width: "14mm", padding: "0.8mm 1mm", textAlign: "center", fontSize: "3mm", fontWeight: "bold" }}>{val}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ borderTop: "0.3mm solid black", paddingTop: "2mm", marginTop: "3mm", fontSize: "2.4mm", lineHeight: "1.2", flex: 1, overflow: "hidden" }}>
-                {config.transgenic && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "2mm", marginBottom: "2mm" }}>
-                    <div style={{ display: "inline-block", border: "0.4mm solid black", width: "5mm", height: "5mm", transform: "rotate(45deg)", position: "relative", flexShrink: 0 }}>
-                      <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%) rotate(-45deg)", fontWeight: "900", fontSize: "3.5mm" }}>T</span>
-                    </div>
-                    <span style={{ fontSize: "2.8mm" }}>Contém derivados de milho e soja transgênicos.</span>
-                  </div>
-                )}
-                <div style={{ marginBottom: "1.5mm" }}>
-                  <strong>Ingredientes:</strong> {config.ingredients || "Não cadastrado."}
-                </div>
-                <div style={{ fontWeight: "bold", textTransform: "uppercase", fontSize: "2.4mm" }}>
-                  ALÉRGICOS: {config.allergens || "NÃO CADASTRADO"}
-                </div>
-              </div>
-
-            </div>
-
-              <div className="label-footer" style={{ borderTop: "0.5mm solid black", paddingTop: "2mm", marginTop: "auto", flexShrink: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1mm" }}>
-                  <div style={{ fontSize: "3.5mm", fontWeight: "bold", lineHeight: "1.5" }}>
-                    <div>Fab: {dataDaEtiqueta(fabDate)}</div>
-                    <div>Val: {dataDaEtiqueta(valDate)}</div>
-                    <div>Lote: {lote || '--'}</div>
-                  </div>
-
-                  {/* O QR: 20mm de símbolo, com o código em texto embaixo.
-                      O texto não é redundância — é o que salva quando o QR está
-                      sujo de gordura ou molhado, e é o que o funcionário lê em
-                      voz alta no telefone com o suporte. */}
-                  {etq.qr && (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5mm" }}>
-                      <img
-                        src={etq.qr}
-                        alt=""
-                        style={{
-                          width: "20mm",
-                          height: "20mm",
-                          display: "block",
-                          // Sem isto o Chrome "economiza tinta" no preto e o
-                          // leitor perde contraste na térmica.
-                          printColorAdjust: "exact",
-                          WebkitPrintColorAdjust: "exact",
-                        } as any}
-                      />
-                      <div style={{ fontSize: "2.6mm", fontFamily: "monospace", fontWeight: "bold", letterSpacing: "0.3mm" }}>
-                        {etq.code}
-                      </div>
-                    </div>
-                  )}
-
-                  {showLogo && !etq.qr && (
-                    <img src={storeLogo || "/logo.png"} style={{ height: "8mm", filter: "grayscale(100%) brightness(0)", objectFit: "contain" }} />
-                  )}
-                </div>
-                {globalStoreName && (
-                  <div style={{ fontSize: "3mm", textAlign: "center", marginTop: "1mm", fontWeight: "bold" }}>
-                    {globalStoreName}
-                  </div>
-                )}
-                {globalCnpj && (
-                  <div style={{ fontSize: "2.5mm", textAlign: "center", borderTop: globalStoreName ? "none" : "0.2mm dashed black", paddingTop: globalStoreName ? "0" : "1mm" }}>
-                    <strong>CNPJ:</strong> {globalCnpj}
-                  </div>
-                )}
-                {globalAddress && (
-                  <div style={{ fontSize: "2.5mm", textAlign: "center", lineHeight: "1.2" }}>
-                    <strong>Endereço:</strong> {globalAddress}
-                  </div>
-                )}
-              </div>
 
           </div>
-          ))}
-        </div>
-      )}
 
-      <style jsx global>{`
-        .print-area { display: none; }
-      `}</style>
+          {/* ── A COLUNA DA PRÉVIA ─────────────────────────────────────────
+              A `.print-area` mora DENTRO da bandeja: é o mesmo nó que o
+              handlePrint copia para o iframe, só que encolhido por
+              `transform: scale()`. Prévia com markup próprio divergiria do
+              papel na primeira mudança, e o selo "PRÉVIA FIEL" viraria uma
+              mentira que o lojista só descobre depois de gastar a etiqueta. */}
+          <div style={{ position: "sticky", top: 16 }}>
+            {selectedProduct ? (
+              <BandejaDaEtiqueta quantidade={quantidade} preparando={preparando} avisos={camposDoPapel.avisos}>
+            <div className="print-area">
+              {/* Uma página por etiqueta. O @page de 4x6in pagina sozinho, então
+                  imprimir 20 etiquetas é renderizar 20 blocos — antes um clique
+                  produzia exatamente uma, e a cozinha imprimia 20 vezes na mão.
+
+                  O markup do papel saiu daqui e virou <EtiquetaPapel>, o MESMO
+                  componente que a prévia desenha: enquanto eram dois blocos de JSX,
+                  nada impedia a tela e o papel de divergirem em silêncio. */}
+              {(etiquetas.length > 0 ? etiquetas : [{ code: "LOLOLOLO", qr: qrDeExemplo }]).map((etq, idx) => (
+                <EtiquetaPapel
+                  key={idx}
+                  etq={etq}
+                  nomeDoProduto={selectedProduct.name}
+                  config={config}
+                  campos={camposDoPapel.campos}
+                  textoConservacao={textoDeConservacao(layout, chaveDeConservacao)}
+                  textoTransgenico={(layout?.textos?.transgenico || TEXTOS_PADRAO.transgenico)}
+                  textoPorcao={(layout?.textos?.porcao || TEXTOS_PADRAO.porcao)}
+                  mostrarSeloAltoEm={!seloAltoEmSuprimido(preset)}
+                  storeLogo={storeLogo}
+                  nomeDaLoja={storeName}
+                  // A ficha do produto vence a da loja quando está preenchida:
+                  // item produzido por outra cozinha não pode sair rotulado com
+                  // o CNPJ desta loja. Os dois campos existiam na ficha desde
+                  // sempre e a etiqueta simplesmente os ignorava.
+                  cnpj={config.customCnpj?.trim() || storeCnpj}
+                  endereco={config.customAddress?.trim() || storeAddress}
+                  fabDate={fabDate}
+                  valDate={valDate}
+                  lote={lote}
+                />
+              ))}
+            </div>
+              </BandejaDaEtiqueta>
+            ) : (
+              <EtiquetaFantasma />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* A `.print-area` deixou de ser `display:none`. Ela agora é a prévia:
+          fica visível dentro da bandeja, encolhida por `transform: scale()`
+          (a regra vive em fh-componentes.css, em `.fh-folha .print-area`).
+          O `display:none` daqui existia para esconder o papel do painel — o
+          que também escondia do lojista o que ele estava prestes a imprimir. */}
     </div>
   );
 }

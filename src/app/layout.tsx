@@ -1,4 +1,9 @@
 import type { Metadata, Viewport } from "next";
+// ANTES do globals.css de propósito: os tokens são a camada de base, e o
+// globals continua vencendo onde já decide alguma coisa. Nenhuma tela muda de
+// aparência só por este import — todo hex daqui já é um hex que o painel usa.
+import "../styles/fh-tokens.css";
+import "../styles/fh-componentes.css";
 import "./globals.css";
 
 export const viewport: Viewport = {

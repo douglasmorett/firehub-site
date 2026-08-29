@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { sanitizarConfigDeEtiqueta } from "@/lib/etiqueta-campos";
 
 /** Mesma resolucao de loja de kitchenItems.ts — `ownerId || id`. */
 async function lojaDaSessao(): Promise<string> {
@@ -58,5 +59,39 @@ export async function updateStoreLabelInfo(cpfCnpj: string, storeAddress: string
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Erro desconhecido" };
+  }
+}
+
+/**
+ * Grava a regra de layout da etiqueta — o que sai no papel e o que não sai.
+ *
+ * É UMA regra por LOJA, gravada em `User.labelFieldsConfig`, pelo mesmo motivo
+ * que já está escrito logo acima sobre CNPJ e endereço: gravar em `user.id`
+ * fazia o funcionário salvar a configuração no próprio cadastro, a tela dizia
+ * "salvo" e a etiqueta continuava saindo do mesmo jeito, sem nada para
+ * investigar. `lojaDaSessao()` resolve `ownerId || id`.
+ *
+ * A entrada passa pelo sanitizador antes de encostar no banco: Json aberto vira
+ * saco sem fundo se a action gravar o que o cliente mandar.
+ */
+export async function salvarConfigDaEtiqueta(entrada: any) {
+  try {
+    const franchiseeId = await lojaDaSessao();
+
+    const limpo = sanitizarConfigDeEtiqueta(entrada);
+    if (!limpo.ok) return { success: false, error: limpo.erro };
+
+    await prisma.user.update({
+      where: { id: franchiseeId },
+      data: { labelFieldsConfig: limpo.config },
+    });
+
+    revalidatePath("/store/etiquetas");
+    return { success: true };
+  } catch (error: any) {
+    // A coluna `labelFieldsConfig` nasce no boot (garantir-colunas.ts:256), mas
+    // um banco que ainda não subiu com a estrutura de lotes vai estourar aqui —
+    // e o certo é a tela avisar que não salvou, nunca fingir que salvou.
+    return { success: false, error: error?.message || "Não consegui salvar a configuração da etiqueta." };
   }
 }

@@ -1,0 +1,223 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   src/styles/fh-tokens.css
+   Importar em src/app/layout.tsx ANTES de globals.css.
+
+   REGRA DE MERGE: este arquivo só entra acompanhado do espelho
+   src/lib/ui/tokens.ts, porque o painel é ~80% estilo inline. Hex literal
+   solto no JSX foi exatamente o que produziu o dialeto azul/roxo de um
+   arquivo só; repetir o padrão garante que o azul volte na semana seguinte.
+
+   Nenhum hex aqui é inventado, com uma exceção medida (--fh-contorno).
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+
+  /* ── SUPERFÍCIE — 3 níveis, sempre nesta ordem ─────────────────────────── */
+  --fh-n0:#F1F5F9;   /* fundo da página. Troca o #F5F5F5 do store/layout.tsx:112
+                        (4 ocorrências no repo) e alinha ao ramp slate que o
+                        painel já usa 222 vezes. COMMIT PRÓPRIO — ver nao_fazer. */
+  --fh-n1:#FFFFFF;   /* card */
+  --fh-n2:#CBD5E1;   /* BANDEJA: o poço que segura um objeto (o papel, a
+                        ilustração do scan). Não é decoração: papel branco
+                        sobre #E2E8F0 dá 1,23:1 e não tem silhueta. */
+  --fh-n3:#F8FAFC;   /* calha: thead, hover de linha, rodapé de modal, dropzone */
+
+  /* ── LINHAS ────────────────────────────────────────────────────────────── */
+  --fh-linha:#E2E8F0;         /* hairline 1px de card e divisória (588 ocorrências) */
+  --fh-linha-fraca:#F1F5F9;   /* separador entre linhas de tabela */
+  --fh-linha-forte:#CBD5E1;   /* tracejado de estado vazio, trilho de stepper */
+  --fh-contorno:#7C8DA5;      /* 3,38:1 — ÚNICO hex novo do guia. Borda de input,
+                                 onde a borda é o único sinal do campo (WCAG
+                                 1.4.11 exige 3:1; #CBD5E1 dá 1,48). NUNCA texto. */
+  --fh-contorno-hv:#5D6E86;
+
+  /* ── TINTA — nada acima de --fh-t4 carrega texto ────────────────────────── */
+  --fh-t1:#0F172A;   /* 17,85:1  título, nome do item, número que decide */
+  --fh-t2:#334155;   /* 10,35:1  corpo, célula de tabela */
+  --fh-t3:#475569;   /*  7,58:1  microrrótulo maiúsculo, cabeçalho de coluna */
+  --fh-t4:#64748B;   /*  4,76:1  legenda, unidade, apoio — PISO */
+  --fh-t-inerte:#94A3B8; /* 2,56:1 — PROIBIDO como texto. Só glifo de controle
+                            desabilitado, onde não há informação. */
+
+  /* ── MARCA — ação primária, JAMAIS estado ──────────────────────────────── */
+  --fh-marca:#C92E09;        /* 5,41:1 com branco em cima. É O PREENCHIMENTO. */
+  --fh-marca-hv:#B22908;
+  --fh-marca-ps:#9E2407;
+  --fh-marca-topo:#E8360C;   /* 4,23:1 — borda 2px, faixa, seleção. Nunca fundo com texto */
+  --fh-marca-brasa:#FF4D00;  /* 3,33:1 — SÓ barra de 4px, brilho, outline. Nunca com texto */
+  --fh-marca-claro:#FFF4EF;
+  --fh-marca-borda:#FFD3C2;
+  --fh-marca-tinta:#C92E09;  /* sobre --fh-marca-claro: 5,00:1 */
+  --fh-marca-bar:linear-gradient(180deg,#FF4D00 0%,#C92E09 100%); /* a brasa de 4px */
+
+  /* ── SEMÂNTICA — 6 famílias × 4 papéis, verbatim de ScanDoLoteClient:18-25.
+        Um hex novo aqui quebra a unidade com a tela do celular, que é o
+        maior ganho percebido por linha alterada do pacote inteiro. ───────── */
+  --fh-ok:#15803D;      --fh-ok-claro:#ECFDF3;      --fh-ok-borda:#ABEFC6;      --fh-ok-tinta:#15803D;
+  --fh-atencao:#B45309; --fh-atencao-claro:#FFF7E6; --fh-atencao-borda:#FDE68A; --fh-atencao-tinta:#B45309;
+  --fh-hoje:#D14300;    --fh-hoje-claro:#FFF1E8;    --fh-hoje-borda:#FFD3C2;    --fh-hoje-tinta:#C92E09;
+  /* ↑ CORREÇÃO MEDIDA: #D14300 sobre #FFF1E8 dá 4,21:1 e REPROVA.
+       Em fundo claro dessa família o texto é #C92E09 (4,90:1). */
+  --fh-grave:#B71C1C;   --fh-grave-claro:#FEF2F2;   --fh-grave-borda:#FECACA;   --fh-grave-tinta:#B71C1C;
+  --fh-neutro:#64748B;  --fh-neutro-claro:#F1F5F9;  --fh-neutro-borda:#E2E8F0;  --fh-neutro-tinta:#475569;
+  --fh-info:#1D4ED8;    --fh-info-claro:#EFF6FF;    --fh-info-borda:#B2DDFF;    --fh-info-tinta:#1D4ED8;
+
+  /* ── RAIO — regra concêntrica: interno = externo − padding da casca ────── */
+  --fh-r1:6px;    /* chip, badge, barra de esqueleto */
+  --fh-r2:10px;   /* input, botão pequeno, caixa de ícone 44px */
+  --fh-r3:14px;   /* botão primário, aviso tonal, nó, linha de toggle */
+  --fh-r4:18px;   /* card interno, wrapper de tabela, caixa de ícone 56px */
+  --fh-r5:24px;   /* casca externa: cabeçalho de módulo, card de prévia, trilha */
+  --fh-r-pill:9999px;
+  --fh-r-papel:2px;
+  /* O PAPEL É A ÚNICA EXCEÇÃO DO PRODUTO: 2px. Etiqueta térmica de 4×6 vem
+     cortada com canto vivo. Arredondar a folha em 16px é o erro nº1 que faz
+     a prévia virar "mais um card do painel" — literalmente o "não mudou nada". */
+
+  /* ── SOMBRA — tingida de slate rgba(15,23,42), nunca preto puro ────────── */
+  --fh-e0:0 1px 0 rgba(15,23,42,.04);
+  --fh-e1:0 1px 2px rgba(15,23,42,.06), 0 2px 6px -2px rgba(15,23,42,.06);
+  --fh-e2:0 2px 4px -1px rgba(15,23,42,.07), 0 8px 20px -6px rgba(15,23,42,.10);
+  --fh-e3:0 4px 8px -2px rgba(15,23,42,.08), 0 16px 32px -12px rgba(15,23,42,.16);
+  --fh-e-modal:0 24px 64px -16px rgba(15,23,42,.32);
+  --fh-e-papel:0 1px 2px rgba(15,23,42,.10),
+               0 10px 24px -6px rgba(15,23,42,.16),
+               0 28px 56px -24px rgba(15,23,42,.20);
+  --fh-e-poco:inset 0 2px 6px rgba(15,23,42,.14);   /* a bandeja rebaixada */
+  --fh-e-calha:inset 0 1px 2px rgba(15,23,42,.06);  /* input */
+  --fh-e-marca:0 6px 16px -4px rgba(201,46,9,.38), 0 2px 4px -1px rgba(201,46,9,.24);
+  /* A sombra colorida sob o primário FICA. Ela já está em produção no
+     .btn-primary do Estoque e na landing; o problema nunca foi a sombra,
+     foi ela ser azul. Trocamos rgba(37,99,235,.35) por rgba(201,46,9,.38). */
+
+  /* ── ESPAÇO — escala de 4, sem exceção ─────────────────────────────────── */
+  --fh-s1:4px;  --fh-s2:8px;  --fh-s3:12px; --fh-s4:16px; --fh-s5:20px;
+  --fh-s6:24px; --fh-s7:32px; --fh-s8:40px; --fh-s9:56px; --fh-s10:72px;
+
+  /* ── ALVOS — base ponteiro fino ────────────────────────────────────────── */
+  --fh-alvo:40px;        /* controle de cromo, densidade compacta */
+  --fh-alvo-toque:44px;  /* input, select, botão secundário, linha de toggle */
+  --fh-alvo-acao:52px;   /* botão primário */
+  --fh-alvo-cozinha:56px;/* imprimir, dar baixa, stepper de quantidade */
+
+  /* ── MOVIMENTO ─────────────────────────────────────────────────────────── */
+  --fh-d-toque:70ms; --fh-d-cor:110ms; --fh-d-base:150ms;
+  --fh-d-bloco:240ms; --fh-d-folha:320ms;   /* 320 é TETO, existe uma vez só */
+  --fh-in:cubic-bezier(0,0,.38,.9);
+  --fh-out:cubic-bezier(.2,0,1,.9);
+  --fh-move:cubic-bezier(.2,0,.38,.9);
+}
+
+/* ── ENXERTO DA DIREÇÃO 2, e é o mais importante do pacote ────────────────
+   O dedo, não a largura, decide o alvo. Tablet paisagem tem 1280px e
+   continua sendo dedo — largura nenhuma detecta isso. Pondo a promoção NO
+   TOKEN, a regra sobrevive ao próximo implementador; deixada no julgamento
+   de cada componente, ela é aplicada em 15 dos 20 e ninguém percebe.
+   Erra para o lado seguro num laptop com tela sensível ao toque. */
+@media (pointer: coarse){
+  :root{
+    --fh-alvo:44px; --fh-alvo-toque:48px;
+    --fh-alvo-acao:56px; --fh-alvo-cozinha:60px;
+  }
+}
+
+/* ── CONTAINER ÚNICO — mata o "pulo" ao trocar de módulo ──────────────────
+   Hoje: .estoque-container é max-width:1400px/padding:1.5rem e
+   .labels-container é padding:20px SEM max-width nenhum. No mesmo monitor
+   as duas telas têm bordas de conteúdo em lugares diferentes. */
+.fh-tela{
+  max-width:1440px; margin:0 auto;
+  padding:clamp(16px,2.4vw,32px);
+  display:flex; flex-direction:column; gap:var(--fh-s6);
+  background:var(--fh-n0);
+  font-family:Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  color:var(--fh-t2);
+}
+
+/* ── TIPOGRAFIA — Inter, já carregada em layout.tsx:41 com 300-900.
+      EXATAMENTE 3 pesos: 500 / 800 / 900. Nunca 400, nunca 600, nunca 700
+      num título. Fonte de display (Archivo etc.) está vetada: entra pelo
+      layout.tsx, custa FOUT em 40 telas, para melhorar dois <h1>. ───────── */
+.fh-micro  {font:800 11px/1.2 Inter;letter-spacing:.09em;text-transform:uppercase;color:var(--fh-t3)}
+.fh-nano   {font:800 11px/1 Inter;letter-spacing:.06em;text-transform:uppercase}
+.fh-legenda{font:500 13px/1.45 Inter;color:var(--fh-t4)}
+.fh-corpo  {font:500 15px/1.55 Inter;color:var(--fh-t2)}
+.fh-item   {font:800 16px/1.3 Inter;letter-spacing:-.005em;color:var(--fh-t1)}
+.fh-dado   {font:800 19px/1.15 Inter;font-variant-numeric:tabular-nums;color:var(--fh-t1)}
+.fh-secao  {font:800 18px/1.25 Inter;letter-spacing:-.01em;color:var(--fh-t1)}
+.fh-kpi    {font:900 32px/1.02 Inter;letter-spacing:-.025em;font-variant-numeric:tabular-nums;color:var(--fh-t1)}
+.fh-h1     {font:900 28px/1.15 Inter;letter-spacing:-.02em;color:var(--fh-t1)}
+.fh-mono   {font:800 15px/1.2 ui-monospace,'SF Mono','Roboto Mono','Courier New',monospace;letter-spacing:.08em;color:var(--fh-t2)}
+@media (max-width:900px){ .fh-h1{font-size:24px} .fh-kpi{font-size:28px} }
+
+/* REGRAS DURAS DE TIPOGRAFIA
+   · font-variant-numeric:tabular-nums OBRIGATÓRIO em KPI, saldo, mínimo,
+     custo, valor em estoque, quantidade do stepper, contador ×N, medida do
+     papel e horário do histórico. Sem isso os dígitos dançam e a comparação
+     vertical — único motivo de existir uma tabela — quebra.
+   · letter-spacing negativo só a partir de 18px.
+   · Todo <input> em font-size:16px. Abaixo disso o iOS dá zoom ao focar e o
+     lojista perde o enquadramento no tablet.
+   · Nenhum texto de BOTÃO em caixa alta. Caixa alta pertence ao microrrótulo
+     e à palavra de estado. "ENVIAR PARA IMPRESSORA (RIBBON)" morre.
+   · .notes-col perde o font-style:italic — itálico a 14px sob reflexo é a
+     pior combinação da tela.
+   · Datas e quantidades por Intl pt-BR, nunca concatenação manual. */
+
+/* ── FOCO VISÍVEL — hoje NÃO EXISTE :focus-visible em lugar nenhum do repo,
+      e vários inputs zeram o outline nativo sem substituto ─────────────── */
+.fh-tela :is(button,a,input,select,textarea,[tabindex],label.fh-linha-bloco):focus-visible{
+  outline:3px solid var(--fh-info);
+  outline-offset:2px;
+  border-radius:inherit;
+}
+/* Sobre superfície colorida (botão primário, bandeja) o anel precisa de
+   separação do fundo: */
+.fh-btn-primario:focus-visible,
+.fh-bandeja :is(button,a):focus-visible{
+  outline:3px solid var(--fh-info);
+  box-shadow:0 0 0 2px var(--fh-n1);
+}
+
+/* ── prefers-reduced-motion — não existe no repo hoje. O contrato é
+      SUBSTITUIR por variante contida, nunca desligar tudo ──────────────── */
+@media (prefers-reduced-motion:reduce){
+  .fh-tela *{animation-duration:.01ms!important;animation-iteration-count:1!important}
+  .fh-folha,.fh-sheet,.fh-aviso,.fh-no,.fh-aba,.fh-btn,.fh-sw i,.fh-abas::before{
+    transition-property:opacity,background-color,border-color,color!important;
+    transition-duration:100ms!important;
+    transform:none!important;
+  }
+}
+/* Nunca `* { transition:none }` global: isso mataria também o anel de foco,
+   que é justamente o que não pode sumir. O que COMUNICA estado permanece —
+   a linha continua mudando de cor, só que sem movimento. */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TABELA DE SUBSTITUIÇÃO — checklist auditável do PR, não prosa.
+   Rodar ABA POR ABA com a tela aberta. NUNCA find/replace cego: no
+   EstoqueClient o #2563EB também pinta spinner, dropzone, .btn-add-ingredient
+   e a confirm bar da NF-e, e regressão silenciosa no fluxo de nota fiscal é
+   o desfecho provável de uma varredura automática.
+
+   SAI                                   ENTRA                RAZÃO
+   #FF4D00 como fundo com texto          #C92E09              3,33:1 reprova AA
+   #E8360C como fundo com texto          #C92E09              4,23:1 reprova AA
+   #94A3B8 em texto (419 no produto)     #475569 ou #64748B   2,56:1 reprova até 1.4.11
+   #16A34A / #22C55E                     #15803D              3,30 e 2,28 reprovam
+   #D97706 / #FBBF24 em texto            #B45309              3,19 e 1,67 reprovam
+   #DC2626 / #EF4444                     #B71C1C              unidade com a tela do QR
+   #2563EB / #1D4ED8-gradiente / #3B82F6 #C92E09 (ação) ou    o azul é dialeto de
+                                         #1D4ED8 (informação)  um arquivo só
+   #9333EA #A855F7 #4F46E5 #A78BFA
+   #F3E8FF #FAF5FF #D8B4FE #E0E7FF       —                    roxo ELIMINADO
+   linear-gradient(#60a5fa,#a78bfa)
+     + -webkit-background-clip:text      —                    texto em gradiente morto
+   #E5E7EB #F3F4F6 #9CA3AF (ramp gray)   equivalente slate    duas temperaturas de cinza
+   #F5F5F5 (store/layout.tsx:112)        #F1F5F9              commit próprio
+
+   CLASSES MORTAS a apagar no caminho (nenhuma existe em CSS nenhum, e não há
+   Tailwind no node_modules): labels-container, no-print, mb-6, font-bold,
+   text-2xl (LabelsClient:387-390) e .tab-body (EstoqueClient:667).
+   Os 5 alert() do LabelsClient (346,357,364,373,378) viram .fh-aviso.
+   ══════════════════════════════════════════════════════════════════════════ */

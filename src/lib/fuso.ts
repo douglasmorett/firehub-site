@@ -77,3 +77,33 @@ export function inicioDoDiaDaLojaAtras(dias: number, timeZone?: string | null, a
   const hoje = inicioDoDiaDaLoja(timeZone, agora);
   return new Date(hoje.getTime() - dias * 24 * 60 * 60 * 1000);
 }
+
+/** Antes desta hora local, ainda é o expediente da noite anterior. */
+export const HORA_DE_VIRADA_DO_EXPEDIENTE = 5;
+
+/**
+ * O começo do DIA OPERACIONAL da loja — que não é o dia do calendário.
+ *
+ * Restaurante que atende até de madrugada trabalha um turno só, atravessando a
+ * meia-noite. Para o cliente que pediu 23:30 e pergunta 00:10, o pedido é
+ * "de hoje"; para o calendário, é de ontem.
+ *
+ * Isto importou de verdade: corrigir só o fuso (meia-noite de Brasília em vez de
+ * meia-noite UTC) consertava a janela das 21:00 às 24:00 — a maior — mas
+ * QUEBRAVA a madrugada, que o bug antigo cobria por acidente (o "dia" em UTC
+ * começava às 21:00 de Brasília). Trocar um buraco por outro não é conserto.
+ *
+ * Regra: antes das 5 da manhã no fuso da loja, o expediente é o do dia anterior.
+ * A janela nunca passa de ~29h, e a consulta que a usa já limita a 5 pedidos.
+ */
+export function inicioDoExpedienteDaLoja(timeZone: string | null | undefined = FUSO_PADRAO, agora: Date = new Date()): Date {
+  const tz = timeZone || FUSO_PADRAO;
+  const horaLocal = Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", hour12: false }).format(agora),
+  ) % 24;
+  const hoje = inicioDoDiaDaLoja(tz, agora);
+  if (horaLocal < HORA_DE_VIRADA_DO_EXPEDIENTE) {
+    return new Date(hoje.getTime() - 24 * 60 * 60 * 1000);
+  }
+  return hoje;
+}

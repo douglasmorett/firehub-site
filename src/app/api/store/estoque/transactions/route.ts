@@ -29,6 +29,14 @@ export async function GET(req: Request) {
       include: {
         stockItem: {
           select: { id: true, name: true, unit: true }
+        },
+        // `stockLotId` é FK de verdade e vem preenchida em TODA baixa por QR,
+        // mas o GET nunca a incluiu: o único vestígio de que alguém escaneou
+        // era o texto cru dentro de `notes`, e no histórico uma baixa por
+        // etiqueta ficava indistinguível de uma digitada na mão. Sem isso o
+        // lojista não tem como ver que escanear mexeu no sistema.
+        stockLot: {
+          select: { code: true, productName: true, validoAte: true }
         }
       },
       orderBy: { createdAt: "desc" },

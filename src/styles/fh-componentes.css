@@ -1,0 +1,323 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   fh-componentes.css — as peças que os dois módulos compartilham.
+
+   Só entra classe usada nas telas de Etiquetas e Estoque. O cromo do painel
+   (StoreTopNav) NÃO é tocado aqui: ele é compartilhado por ~40 telas e por
+   sessões de caixa em produção, e se a única forma de uma decisão de cor não
+   destoar fosse mexer no cromo, a decisão estaria errada.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── CABEÇALHO DE MÓDULO — o mastro, igual nas duas telas ───────────────── */
+.fh-cabecalho {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 20px;
+  background: var(--fh-n1);
+  border: 1px solid var(--fh-linha);
+  border-radius: var(--fh-r5);
+  padding: 24px 28px;
+  box-shadow: var(--fh-e1);
+  min-height: 104px;
+}
+/* A brasa. Uma linha de CSS, e é o que o olho pega antes do texto. */
+.fh-cabecalho::before {
+  content: ''; position: absolute; left: 0; top: 26px;
+  width: 4px; height: 52px; border-radius: 0 2px 2px 0;
+  background: var(--fh-marca-bar);
+}
+.fh-cabecalho__icone {
+  width: 52px; height: 52px; flex: none;
+  display: grid; place-items: center;
+  border-radius: var(--fh-r3);
+  background: var(--fh-marca-claro);
+  border: 1px solid var(--fh-marca-borda);
+  color: var(--fh-marca);
+}
+.fh-cabecalho__acoes { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+@media (max-width: 1023px) {
+  .fh-cabecalho { flex-wrap: wrap; }
+  .fh-cabecalho__acoes { margin-left: 0; width: 100%; }
+  .fh-cabecalho .fh-corpo { display: none; }
+}
+@media (max-width: 767px) {
+  .fh-cabecalho { padding: 20px; }
+  .fh-cabecalho__icone { width: 44px; height: 44px; }
+  .fh-cabecalho__acoes { flex-direction: column-reverse; align-items: stretch; }
+  .fh-cabecalho__acoes > * { width: 100%; justify-content: center; }
+}
+
+/* ── TIPOGRAFIA DE TELA ─────────────────────────────────────────────────── */
+.fh-h1 { font: 900 30px/1.15 Inter, system-ui, sans-serif; letter-spacing: -0.02em; color: var(--fh-t1); margin: 2px 0 4px; }
+.fh-h2 { font: 800 19px/1.25 Inter, system-ui, sans-serif; letter-spacing: -0.01em; color: var(--fh-t1); margin: 0; }
+.fh-corpo { font: 500 14px/1.5 Inter, system-ui, sans-serif; color: var(--fh-t4); max-width: 62ch; margin: 0; }
+@media (max-width: 767px) { .fh-h1 { font-size: 24px; } }
+
+/* ── BOTÕES ─────────────────────────────────────────────────────────────── */
+.fh-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--fh-alvo-toque); padding: 0 18px;
+  border-radius: var(--fh-r2); border: 1px solid transparent;
+  font: 800 15px/1 Inter, system-ui, sans-serif; cursor: pointer;
+  transition: background-color var(--fh-d-cor) var(--fh-move),
+              border-color var(--fh-d-cor) var(--fh-move),
+              box-shadow var(--fh-d-base) var(--fh-move),
+              transform var(--fh-d-toque) var(--fh-move);
+}
+/* `text-decoration: none` porque o mesmo componente é usado como <a> (o passo
+   "Criar etiqueta" da trilha leva para outra tela): sem isso o botão nasce com
+   o sublinhado de link do globals.css e parece um erro de estilo. */
+.fh-btn { text-decoration: none; }
+.fh-btn:disabled { opacity: .55; cursor: default; }
+.fh-btn:not(:disabled):active { transform: translateY(1px); }
+
+/* Fogo que PREENCHE é #C92E09 (5,41:1 com branco). O #FF4D00 dos botões de
+   hoje dá 3,33:1 e reprova AA — ele fica só como brasa, borda e brilho. */
+.fh-btn--primario {
+  background: var(--fh-marca); color: #FFF;
+  border-radius: var(--fh-r3); height: var(--fh-alvo-acao);
+  box-shadow: var(--fh-e-marca);
+}
+.fh-btn--primario:not(:disabled):hover { background: var(--fh-marca-hv); }
+.fh-btn--primario:not(:disabled):active { background: var(--fh-marca-ps); }
+
+.fh-btn--secundario { background: var(--fh-n1); color: var(--fh-t1); border-color: var(--fh-linha-forte); box-shadow: var(--fh-e0); }
+.fh-btn--secundario:not(:disabled):hover { background: var(--fh-n3); border-color: var(--fh-contorno); }
+
+.fh-btn--fantasma { background: transparent; color: var(--fh-t3); }
+.fh-btn--fantasma:hover { background: var(--fh-n3); color: var(--fh-t1); }
+
+.fh-btn--perigo { background: var(--fh-grave-claro); color: var(--fh-grave); border-color: var(--fh-grave-borda); }
+.fh-btn--perigo:hover { background: #FDE4E4; }
+
+.fh-btn--icone { width: var(--fh-alvo-toque); padding: 0; }
+
+.fh-btn--cozinha { height: var(--fh-alvo-cozinha); font-size: 17px; }
+
+/* O anel de foco NUNCA some — nem em prefers-reduced-motion. */
+.fh-btn:focus-visible, .fh-aba:focus-visible, .fh-sw-caixa:focus-within,
+.fh-campo input:focus-visible, .fh-campo select:focus-visible, .fh-campo textarea:focus-visible {
+  outline: 3px solid var(--fh-marca-brasa); outline-offset: 2px;
+}
+
+/* ── CAMPO ──────────────────────────────────────────────────────────────── */
+.fh-campo { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fh-campo > label { font: 800 12px/1.2 Inter, system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; color: var(--fh-t3); }
+.fh-campo input, .fh-campo select, .fh-campo textarea {
+  width: 100%; min-height: var(--fh-alvo-toque);
+  padding: 10px 14px;
+  /* 16px de fonte não é estética: abaixo disso o iOS dá zoom no foco e a tela
+     salta no meio da digitação. */
+  font: 500 16px/1.4 Inter, system-ui, sans-serif; color: var(--fh-t1);
+  background: var(--fh-n1);
+  /* #CBD5E1 dá 1,48:1 e reprova o mínimo de 3:1 de elemento não-textual —
+     e aqui a borda é o único sinal de que existe um campo ali. */
+  border: 1px solid var(--fh-contorno);
+  border-radius: var(--fh-r2);
+  box-shadow: var(--fh-e-calha);
+  transition: border-color var(--fh-d-cor) var(--fh-move);
+}
+.fh-campo textarea { min-height: 84px; resize: vertical; }
+.fh-campo input:hover, .fh-campo select:hover, .fh-campo textarea:hover { border-color: var(--fh-contorno-hv); }
+.fh-campo__dica { font: 500 13px/1.45 Inter, system-ui, sans-serif; color: var(--fh-t4); }
+
+/* ── ABAS (segmented) ───────────────────────────────────────────────────── */
+.fh-abas {
+  position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  background: var(--fh-linha); padding: 5px; border-radius: 16px;
+  overflow-x: auto; scroll-snap-type: x proximity;
+}
+/* Pílula única que TRANSLADA. Nunca animar width: transform não causa layout,
+   e a aba deixa de engasgar no tablet. */
+.fh-abas::before {
+  content: ''; position: absolute; top: 5px; left: 5px;
+  height: calc(100% - 10px); width: calc((100% - 10px) / var(--n));
+  background: var(--fh-n1); border-radius: 12px; box-shadow: var(--fh-e2);
+  transform: translateX(calc(var(--i) * 100%));
+  transition: transform var(--fh-d-base) var(--fh-move);
+}
+.fh-aba {
+  position: relative; z-index: 1; height: 52px; padding: 0 16px;
+  border: none; background: none; color: var(--fh-t3);
+  font: 800 15px/1 Inter, system-ui, sans-serif; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  white-space: nowrap; scroll-snap-align: start;
+  transition: color var(--fh-d-cor) var(--fh-move);
+}
+.fh-aba[aria-selected='true'] { color: var(--fh-marca); }
+.fh-aba:hover:not([aria-selected='true']) { color: var(--fh-t1); }
+
+/* ── CHIPS ──────────────────────────────────────────────────────────────── */
+.fh-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+  border-radius: var(--fh-r-pill); background: var(--fh-neutro-claro);
+  border: 1px solid var(--fh-neutro-borda);
+  font: 800 12px/1 Inter, system-ui, sans-serif; color: var(--fh-t3);
+  font-variant-numeric: tabular-nums;
+}
+.fh-chip-escuro {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px;
+  border-radius: var(--fh-r-pill); background: var(--fh-t1); color: #FFF;
+  font: 800 13px/1 Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums;
+  box-shadow: var(--fh-e2);
+}
+.fh-selo-fiel {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px;
+  border-radius: var(--fh-r-pill);
+  background: var(--fh-info-claro); border: 1px solid var(--fh-info-borda); color: var(--fh-info);
+  font: 800 12px/1 Inter, system-ui, sans-serif; letter-spacing: .04em;
+}
+
+/* ── AVISO TONAL — o que substitui os alert() do navegador ──────────────── */
+.fh-aviso {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 16px; border-radius: var(--fh-r3);
+  background: var(--fam-claro); border: 1px solid var(--fam-borda);
+  border-left: 4px solid var(--fam);
+  font: 700 14px/1.5 Inter, system-ui, sans-serif; color: var(--fam-tinta);
+  animation: fh-aviso-entra var(--fh-d-bloco) var(--fh-in);
+}
+.fh-aviso--ok      { --fam: var(--fh-ok);      --fam-claro: var(--fh-ok-claro);      --fam-borda: var(--fh-ok-borda);      --fam-tinta: var(--fh-ok-tinta); }
+.fh-aviso--atencao { --fam: var(--fh-atencao); --fam-claro: var(--fh-atencao-claro); --fam-borda: var(--fh-atencao-borda); --fam-tinta: var(--fh-atencao-tinta); }
+.fh-aviso--erro    { --fam: var(--fh-grave);   --fam-claro: var(--fh-grave-claro);   --fam-borda: var(--fh-grave-borda);   --fam-tinta: var(--fh-grave-tinta); }
+.fh-aviso--info    { --fam: var(--fh-info);    --fam-claro: var(--fh-info-claro);    --fam-borda: var(--fh-info-borda);    --fam-tinta: var(--fh-info-tinta); }
+@keyframes fh-aviso-entra { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* ── LINHA DE BLOCO + SWITCH (a aba "O que sai no papel") ───────────────── */
+.fh-grupo-titulo { font: 800 11px/1.2 Inter, system-ui, sans-serif; letter-spacing: .09em; text-transform: uppercase; color: var(--fh-t3); padding: 20px 16px 8px; }
+.fh-linha-bloco {
+  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px;
+  min-height: 56px; padding: 12px 16px; border-radius: var(--fh-r3); cursor: pointer;
+  border-bottom: 1px solid var(--fh-linha-fraca);
+  transition: background-color var(--fh-d-base) var(--fh-move);
+}
+.fh-linha-bloco:last-child { border-bottom: none; }
+.fh-linha-bloco:hover, .fh-linha-bloco:focus-within { background: var(--fh-n3); }
+.fh-linha-bloco--travada { background: var(--fh-n3); cursor: default; }
+.fh-linha-bloco__titulo { font: 800 15px/1.3 Inter, system-ui, sans-serif; color: var(--fh-t1); }
+.fh-linha-bloco__ajuda { font: 500 13px/1.4 Inter, system-ui, sans-serif; color: var(--fh-t3); margin-top: 2px; }
+/* A palavra existe para o estado ser legível SEM cor: a gordura na tela
+   destrói o matiz antes de destruir a luminância. */
+.fh-palavra-estado { font: 800 11px/1 Inter, system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.fh-palavra-estado--sai { color: var(--fh-ok); }
+.fh-palavra-estado--nao { color: var(--fh-t4); }
+
+.fh-sw-caixa { position: relative; display: inline-flex; flex: none; }
+/* z-index e pointer-events: o input real fica POR CIMA do switch desenhado.
+   Sem isso, o <i> do switch intercepta o clique e o controle só respondia por
+   causa do <label> em volta — bastaria alguém tirar o label para a aba inteira
+   parar de funcionar sem ninguém entender por quê. */
+.fh-sw-caixa input { position: absolute; inset: 0; z-index: 1; opacity: 0; margin: 0; cursor: pointer; }
+.fh-sw, .fh-sw i { pointer-events: none; }
+.fh-sw {
+  position: relative; width: 52px; height: 32px; border-radius: var(--fh-r-pill);
+  background: var(--fh-linha-forte); box-shadow: inset 0 1px 2px rgba(15, 23, 42, .16);
+  flex: none; transition: background-color var(--fh-d-cor) var(--fh-move);
+}
+/* Ligado é TINTA, não o laranja: configuração não é ação, e o fogo só vale
+   alguma coisa por ser raro. */
+.fh-sw[data-on='true'] { background: var(--fh-t1); }
+.fh-sw i {
+  position: absolute; top: 3px; left: 3px; width: 26px; height: 26px;
+  border-radius: var(--fh-r-pill); background: #FFF; box-shadow: 0 1px 3px rgba(15, 23, 42, .35);
+  transition: transform var(--fh-d-base) var(--fh-move);
+}
+.fh-sw[data-on='true'] i { transform: translateX(20px); }
+
+@media (max-width: 767px) {
+  .fh-linha-bloco { grid-template-columns: 1fr auto; min-height: 60px; }
+  .fh-linha-bloco__estado { grid-column: 1; }
+}
+
+/* ── A BANDEJA E O PAPEL ────────────────────────────────────────────────── */
+.fh-previa {
+  background: var(--fh-n1); border: 1px solid var(--fh-linha);
+  border-radius: var(--fh-r5); box-shadow: var(--fh-e1); overflow: hidden;
+}
+.fh-previa__head {
+  min-height: 56px; padding: 10px 20px; display: flex; align-items: center;
+  gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--fh-linha);
+}
+/* REBAIXADA, não flutuante: é isso que a faz parecer hardware usinado em vez
+   de mais um div. E clara de propósito — superfície escura vira espelho e
+   mapa de digitais num tablet engordurado sob luz forte. */
+.fh-bandeja {
+  position: relative; background: var(--fh-n2); box-shadow: var(--fh-e-poco);
+  padding: 32px; display: flex; justify-content: center;
+}
+.fh-folha { position: relative; width: calc(384px * var(--k)); height: calc(576px * var(--k)); }
+/* A hairline é INSET no wrapper, nunca `border` no .print-area: um border de
+   1px comeria 2px das 4 polegadas e deslocaria todo o conteúdo em relação ao
+   papel real que sai da térmica. */
+.fh-folha::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  border-radius: var(--fh-r-papel);
+  box-shadow: var(--fh-e-papel), inset 0 0 0 1px rgba(15, 23, 42, .16);
+}
+.fh-folha .print-area {
+  display: block; width: 384px; height: 576px; background: #FFF;
+  transform: scale(var(--k)); transform-origin: top left;
+}
+/* Ctrl+P na tela do painel não pode despejar a etiqueta no meio da página. */
+@media print { .fh-previa { display: none; } }
+
+.fh-bandeja__veu {
+  position: absolute; inset: 0; background: rgba(203, 213, 225, .92);
+  display: grid; place-items: center; gap: 10px;
+  font: 800 14px/1.4 Inter, system-ui, sans-serif; color: var(--fh-t2);
+}
+
+/* ── FANTASMA — a silhueta do que ainda não existe ──────────────────────── */
+.fh-fantasma { position: relative; width: calc(384px * var(--k)); height: calc(576px * var(--k)); }
+.fh-fantasma__papel {
+  position: absolute; inset: 0; background: var(--fh-n1);
+  border: 1px dashed var(--fh-linha-forte); border-radius: var(--fh-r-papel);
+  padding: 18px; display: flex; flex-direction: column; gap: 10px;
+}
+.fh-barra { background: var(--fh-linha); border-radius: var(--fh-r1); }
+
+/* ── ESTADO VAZIO ───────────────────────────────────────────────────────── */
+.fh-vazio { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 24px; text-align: center; }
+.fh-vazio__titulo { font: 800 17px/1.3 Inter, system-ui, sans-serif; color: var(--fh-t1); }
+.fh-vazio__texto { font: 500 14px/1.5 Inter, system-ui, sans-serif; color: var(--fh-t4); max-width: 46ch; }
+
+/* ── CARTÃO ─────────────────────────────────────────────────────────────── */
+.fh-card { background: var(--fh-n1); border: 1px solid var(--fh-linha); border-radius: var(--fh-r5); box-shadow: var(--fh-e1); }
+.fh-card__head { padding: 18px 20px; border-bottom: 1px solid var(--fh-linha); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fh-card__body { padding: 20px; }
+
+/* ── A TRILHA (o fluxo do QR, no Estoque) ───────────────────────────────── */
+.fh-trilha { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+.fh-no { position: relative; display: flex; gap: 14px; padding: 20px; align-items: flex-start; }
+.fh-no + .fh-no { border-left: 1px solid var(--fh-linha); }
+.fh-no__bola {
+  width: 44px; height: 44px; flex: none; border-radius: var(--fh-r-pill);
+  display: grid; place-items: center;
+  background: var(--fh-n3); border: 1px solid var(--fh-linha-forte); color: var(--fh-t3);
+  font: 900 16px/1 Inter, system-ui, sans-serif;
+}
+.fh-no--feito .fh-no__bola { background: var(--fh-ok-claro); border-color: var(--fh-ok-borda); color: var(--fh-ok); }
+/* UM acento no nó atual: a bola em brasa. Pintar a célula inteira seria o
+   banner roxo de volta, com tinta nova. */
+.fh-no--atual .fh-no__bola { background: var(--fh-marca); border-color: var(--fh-marca); color: #FFF; box-shadow: var(--fh-e-marca); }
+.fh-no__titulo { font: 800 15px/1.3 Inter, system-ui, sans-serif; color: var(--fh-t1); }
+.fh-no__texto { font: 500 13px/1.45 Inter, system-ui, sans-serif; color: var(--fh-t3); margin-top: 3px; }
+.fh-no__relato { font: 800 13px/1.4 Inter, system-ui, sans-serif; color: var(--fh-t2); margin-top: 8px; font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) {
+  .fh-trilha { grid-template-columns: 1fr; }
+  .fh-no + .fh-no { border-left: none; border-top: 1px solid var(--fh-linha); }
+}
+
+/* ── COLUNAS DA TELA DE ETIQUETAS ───────────────────────────────────────── */
+.fh-duas-colunas { display: grid; grid-template-columns: minmax(0, 1fr) 456px; gap: var(--fh-s6); align-items: start; }
+@media (max-width: 1279px) { .fh-duas-colunas { grid-template-columns: minmax(0, 1fr) 352px; } }
+@media (max-width: 1023px) { .fh-duas-colunas { grid-template-columns: 1fr; } }
+
+/* ── MOVIMENTO REDUZIDO ─────────────────────────────────────────────────── */
+/* Não é `* { transition: none }`: isso mataria também o anel de foco, que é
+   justamente o que não pode sumir. O contrato é encurtar, não desligar. */
+@media (prefers-reduced-motion: reduce) {
+  .fh-abas::before, .fh-sw, .fh-sw i, .fh-btn, .fh-linha-bloco {
+    transition-duration: 100ms !important;
+  }
+  .fh-aviso { animation-duration: 100ms; }
+}
