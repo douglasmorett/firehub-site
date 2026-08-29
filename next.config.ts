@@ -12,6 +12,23 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
+        // ─── O QR da etiqueta: /E/CODIGO → /e/CODIGO ───
+        //
+        // O símbolo é montado em CAIXA ALTA de propósito (src/lib/lote.ts:15-22):
+        // em minúsculas a URL cai no modo byte do QR e o símbolo não cabe nos
+        // 20 mm impressos no rolo. Só que o casamento de rota do Next é sensível
+        // a caixa e a pasta é `/e/[code]` — então TODA etiqueta já colada em
+        // comida abria 404 ao ser escaneada. Medido em produção antes desta
+        // linha: /e/AAAAAAAA respondia 307 para o login, /E/AAAAAAAA respondia
+        // 404.
+        //
+        // Em dev no Windows isso NUNCA aparece: o filesystem é insensível a
+        // caixa e a rota resolve dos dois jeitos. O defeito só existe no Linux
+        // do servidor.
+        {
+          source: "/E/:code",
+          destination: "/e/:code",
+        },
         // ─── Icebox: raiz → catálogo Icebox independente ───
         {
           source: "/",
@@ -84,7 +101,28 @@ const nextConfig: NextConfig = {
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://fonts.gstatic.com",
       `connect-src 'self' https: ${origensDoAssistente}`,
-      "frame-src 'self' https://*.mercadopago.com https://*.mercadolibre.com",
+      // ── O mapa da entrega precisa do Google no frame-src ─────────────────
+      //
+      // O modal "Informacoes da Entrega" (a motinha no card do pedido) desenha
+      // a rota num <iframe> de maps.google.com/maps?...&output=embed. Sem o
+      // Google nesta linha o CSP mata o frame antes da requisicao sair: o modal
+      // abre inteiro — entregador, enderecos, botoes de GPS — e no lugar do
+      // mapa fica um retangulo cinza com o icone de pagina quebrada. Nao ha
+      // erro no servidor nem log nenhum; o bloqueio acontece no navegador, em
+      // silencio, igual ao que o CSP ja fez com o Assistente de Impressao.
+      //
+      // Sao DOIS hosts porque a URL legada redireciona: maps.google.com
+      // responde 301 -> https://www.google.com/maps/embed?pb=... e o navegador
+      // confere a allowlist em CADA salto do redirecionamento. Liberar so um
+      // dos dois deixa o mapa quebrado do mesmo jeito. O destino final NAO
+      // manda X-Frame-Options (medido em 28/08/2026), entao o Google continua
+      // permitindo o iframe — quem bloqueava era a nossa propria politica.
+      //
+      // O firecheckapp.com.br entrou na mesma leva: a aba FireCheck do painel
+      // e um <iframe> do login dele (FireCheckClient.tsx) e estava presa no
+      // "Carregando plataforma FireCheck..." pelo mesmo motivo. O dominio
+      // tambem responde 200 sem X-Frame-Options, entao so faltava a allowlist.
+      "frame-src 'self' https://*.mercadopago.com https://*.mercadolibre.com https://maps.google.com https://www.google.com https://www.firecheckapp.com.br",
       "media-src 'self' data: blob:",
       "object-src 'none'",
       "base-uri 'self'",
