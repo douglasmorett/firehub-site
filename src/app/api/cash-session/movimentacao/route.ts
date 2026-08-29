@@ -29,6 +29,18 @@ async function lojaDaSessao() {
 const TIPOS = ["ENTRADA", "SAIDA"] as const;
 
 /** GET — as movimentações do turno aberto, mais os totais que a tela mostra. */
+function lerValorEmReais(bruto: unknown): number {
+  if (typeof bruto === "number") return bruto;
+  const limpo = String(bruto ?? "").trim().replace(/[^\d.,]/g, "");
+  if (!limpo) return NaN;
+  if (limpo.includes(",")) return Number(limpo.replace(/\./g, "").replace(",", "."));
+  const partes = limpo.split(".");
+  if (partes.length === 1) return Number(limpo);
+  const ultimo = partes[partes.length - 1];
+  if (partes.length > 2 || ultimo.length === 3) return Number(partes.join(""));
+  return Number(partes.slice(0, -1).join("") + "." + ultimo);
+}
+
 export async function GET() {
   const loja = await lojaDaSessao();
   if (!loja) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
@@ -93,8 +105,11 @@ export async function POST(req: Request) {
 
   // Aceita "50,00" e "50.00" — o teclado do celular manda vírgula, e recusar
   // isso faria o operador achar que o sistema não funciona.
-  const bruto = typeof corpo?.valor === "string" ? corpo.valor.replace(/\./g, "").replace(",", ".") : corpo?.valor;
-  const valor = Number(bruto);
+  // Mesma leitura da tela (StoreTopNav.valorParaNumero): apagar TODOS os
+  // pontos tratava "150.50" como 15050 -- uma sangria de R$ 150,50 virava
+  // R$ 15.050,00 no esperado do fechamento. Com virgula, ela e o decimal;
+  // sem virgula, o ponto so e milhar quando o grupo final tem tres digitos.
+  const valor = lerValorEmReais(corpo?.valor);
   if (!Number.isFinite(valor) || valor <= 0) {
     return NextResponse.json({ error: "Informe um valor maior que zero." }, { status: 400 });
   }

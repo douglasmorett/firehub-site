@@ -27,6 +27,22 @@ export async function GET() {
 
   // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
   let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 };
+  // -- VENDA QUE NUNCA VIRA CEDULA ---------------------------------------
+  //
+  // O `else` do fim da cascata mandava para DINHEIRO tudo que nao casasse com
+  // uma forma conhecida. E onde caia a refeicao fiada da equipe ("Conta
+  // Funcionario"), o pedido de mesa (que nasce "N/A" e nunca recebe a forma
+  // real) e qualquer rotulo novo que uma integracao invente. Medido no banco
+  // em 28/08/2026: R$ 4.175,24 em 45 dias exigidos da gaveta sem que uma
+  // cedula tivesse entrado -- R$ 3.533,96 so de refeicao de funcionario.
+  //
+  // O operador via "Faltam R$ X" todo dia, sem pista do motivo. Falta que
+  // aparece sempre e nunca se explica e falta que o lojista aprende a ignorar,
+  // e ai o caixa deixa de conferir qualquer coisa.
+  //
+  // Sai da conferencia e volta em linha propria -- mesmo tratamento que ja foi
+  // dado a `pendentesDePagamento`. Some da conta, nao da tela.
+  let foraDaConferencia = { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0 };
   // Pedidos do turno que ainda não têm pagamento nenhum. Ficam FORA do
   // esperado (ver o porquê no laço abaixo) e voltam aqui só para o lojista
   // saber que existem — informação, nunca conferência.
@@ -59,7 +75,22 @@ export async function GET() {
             : (o.notes?.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i)?.[1]
                 ? parseFloat(o.notes.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i)![1].replace(",", "."))
                 : 0));
-      const val = (o.totalAmount || 0) + channelDisc;
+      // -- O CUPOM DA PLATAFORMA NAO ENTRA NA GAVETA -----------------------
+      //
+      // Era `val = totalAmount + channelDisc` para TODAS as linhas: o desconto
+      // bancado pelo iFood voltava para dentro do valor do pedido e passava a
+      // ser cobrado de quem confere. Em 45 dias, R$ 43.245,98 somados ao
+      // esperado, dos quais R$ 7.522,67 foram parar em linha que alguem tem
+      // que conferir de verdade -- gaveta, debito, credito e pix. O cliente
+      // que pagou R$ 30 com R$ 10 de cupom entrega R$ 20; a gaveta nao sabe o
+      // que e cupom.
+      //
+      // `valReal` e o que a pessoa entrega -- e ele que vai para as linhas
+      // conferiveis. `valRepasse` so existe na linha do iFood pago online, que
+      // e informativa e travada na tela: ali o cupom faz parte do que a
+      // plataforma repassa.
+      const valReal = o.totalAmount || 0;
+      const valRepasse = valReal + channelDisc;
 
       // ── PEDIDO SEM PAGAMENTO NÃO É DINHEIRO NA GAVETA ───────────────────
       //
@@ -86,7 +117,7 @@ export async function GET() {
       // para o lojista enxergar o que ficou pendurado sem que isso vire
       // diferença de caixa.
       if (o.status === "AGUARDANDO_PAGAMENTO") {
-        pendentesValor += val;
+        pendentesValor += valReal;
         pendentesQuantidade += 1;
         continue;
       }
@@ -125,20 +156,34 @@ export async function GET() {
         (!ehVendaDeSalao && !!(o.paymentPaidAt || o.gatewayProvider)) ||
         (src === "IFOOD" && !pm.includes("dinheiro") && !pm.includes("debito") && !pm.includes("débito") && !pm.includes("credito") && !pm.includes("crédito") && !pm.includes("maquininha") && !pm.includes("cobrar"));
 
+      // Fiado: consumo da equipe e venda anotada. Tem ficha propria e e
+      // acertado depois -- nunca passa pela gaveta no fechamento do dia.
+      const ehFiado = pm.includes("funcion") || pm.includes("fiado");
+
       if (src === "IFOOD" && isOnlinePayment) {
-        expected.ifoodOnline += val;
+        expected.ifoodOnline += valRepasse;
+        expected.total += valRepasse;
       } else if (isOnlinePayment && !ehVendaDeSalao) {
-        expected.ifoodOnline += val;
+        expected.ifoodOnline += valRepasse;
+        expected.total += valRepasse;
+      } else if (ehFiado) {
+        foraDaConferencia.fiado += valReal;
+        foraDaConferencia.fiadoQtd += 1;
       } else if (pm.includes("dinheiro") || pm.includes("cash")) {
-        expected.cash += val;
+        expected.cash += valReal;
+        expected.total += valReal;
       } else if (pm.includes("débito") || pm.includes("debito") || pm.includes("debit")) {
-        expected.debit += val;
+        expected.debit += valReal;
+        expected.total += valReal;
       } else if (pm.includes("crédito") || pm.includes("credito") || pm.includes("credit")) {
-        expected.credit += val;
+        expected.credit += valReal;
+        expected.total += valReal;
       } else if (pm.includes("pix")) {
-        expected.pix += val;
+        expected.pix += valReal;
+        expected.total += valReal;
       } else if (pm.includes("voucher") || pm.includes("vale") || pm.includes("meal") || pm.includes("food")) {
-        expected.voucher += val;
+        expected.voucher += valReal;
+        expected.total += valReal;
       } else if (pm.includes("maquininha") || pm.includes("cartão") || pm.includes("cartao")) {
         // Cartão sem o tipo: o Mercado Pago Point não devolve se foi crédito ou
         // débito, então o pedido do totem fica com o genérico "Cartão
@@ -149,20 +194,31 @@ export async function GET() {
         // consegue conferir contra o extrato da adquirente.
         // (Quando o app da maquininha informa o tipo, o paymentMethod já vem
         // "Cartão CRÉDITO/DÉBITO (maquininha)" e as faixas acima o pegam antes.)
-        expected.credit += val;
+        expected.credit += valReal;
+        expected.total += valReal;
       } else {
-        expected.cash += val;
+        // Antes: `expected.cash += val`. Jogar o desconhecido na gaveta e
+        // exatamente o que produz falta sem causa -- o pedido de mesa com
+        // "N/A", o "Pendente" do robo, o rotulo que a proxima integracao
+        // inventar. Fica visivel numa linha propria, fora da conferencia, ate
+        // alguem identificar o que e.
+        foraDaConferencia.naoIdentificado += valReal;
+        foraDaConferencia.naoIdentificadoQtd += 1;
       }
-
-      expected.total += val;
 
       // Somar desconto custeado pelo iFood (cupons iFood) — apenas informativo
       if (o.discountIfood && o.discountIfood > 0) {
         expected.ifoodCoupons += o.discountIfood;
       }
     }
-    // Adicionar o troco inicial ao dinheiro esperado
+    // -- O TROCO DE ABERTURA CONTA NOS DOIS LUGARES ------------------------
+    // Ele entrava so em `expected.cash`, e nunca em `expected.total` -- que e
+    // somado dentro do laco dos pedidos. O rodape do fechamento saia menor que
+    // a soma das proprias linhas impressas acima dele (R$ 472,10 de diferenca
+    // no turno de 27/08 da Hakim Centro). Quem confere linha por linha e
+    // depois olha o TOTAL nao tinha como fazer os dois baterem.
     expected.cash += openSession.openingAmount;
+    expected.total += openSession.openingAmount;
 
     // ── Sangria e reforço lançados durante o turno ─────────────────────────
     //
@@ -209,6 +265,14 @@ export async function GET() {
     pendentesDePagamento: {
       valor: Number(pendentesValor.toFixed(2)),
       quantidade: pendentesQuantidade,
+    },
+    // Vendas que existem, mas nao em cedula: fiado da equipe e forma de
+    // pagamento que o sistema nao soube ler. Informacao, nunca conferencia.
+    foraDaConferencia: {
+      fiado: Number(foraDaConferencia.fiado.toFixed(2)),
+      fiadoQtd: foraDaConferencia.fiadoQtd,
+      naoIdentificado: Number(foraDaConferencia.naoIdentificado.toFixed(2)),
+      naoIdentificadoQtd: foraDaConferencia.naoIdentificadoQtd,
     },
   });
 }
@@ -271,9 +335,15 @@ export async function PUT(req: Request) {
   // os dois) e o `difference` gravado na CashSession — o mesmo que vai no aviso
   // ao dono — dizia que faltou dinheiro. Loja com iFood fechava o caixa no
   // vermelho todo santo dia, sem ter perdido um centavo.
+  //
+  // `closingIfoodCoupons` saiu da soma: o cupom ja esta DENTRO do valor de cada
+  // pedido que a plataforma pagou (entra em `ifoodOnline` pelo `valRepasse` do
+  // GET). Soma-lo de novo aqui criava sobra falsa do tamanho dos cupons do dia
+  // -- R$ 528,11 no turno de 27/08. A linha continua na tela como informacao;
+  // ela so nao pode entrar na conta duas vezes.
   const totalInformed = (closingCash || 0) + (closingDebit || 0) + (closingCredit || 0) +
     (closingPix || 0) + (closingVoucher || 0) +
-    (closingIfoodOnline || 0) + (closingIfoodCoupons || 0);
+    (closingIfoodOnline || 0);
   const difference = totalInformed - (expectedTotal || 0);
 
   const openSession = await prisma.cashSession.findFirst({

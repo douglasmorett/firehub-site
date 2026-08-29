@@ -43,6 +43,25 @@ const METHODS = [
   { key: "voucher", label: "🎟️ Voucher" },
 ];
 
+/**
+ * Le valor em dinheiro digitado por gente, aceitando virgula E ponto.
+ *
+ * Com virgula, ela e o decimal e o ponto e milhar: "1.234,50" -> 1234.5.
+ * Sem virgula, o ponto so e milhar quando o grupo final tem tres digitos ou
+ * quando ha mais de um ponto: "1.234" -> 1234, mas "150.50" -> 150.5.
+ */
+export function valorParaNumero(bruto: string | number): number {
+  if (typeof bruto === "number") return bruto;
+  const limpo = String(bruto ?? "").trim().replace(/[^\d.,]/g, "");
+  if (!limpo) return NaN;
+  if (limpo.includes(",")) return Number(limpo.replace(/\./g, "").replace(",", "."));
+  const partes = limpo.split(".");
+  if (partes.length === 1) return Number(limpo);
+  const ultimo = partes[partes.length - 1];
+  if (partes.length > 2 || ultimo.length === 3) return Number(partes.join(""));
+  return Number(partes.slice(0, -1).join("") + "." + ultimo);
+}
+
 export default function StoreTopNav({
   userName, userCity, userSlug, showCompras, isAdmin = false,
   initialStoreOpen = true, initialCashOpen = false,
@@ -156,6 +175,9 @@ export default function StoreTopNav({
   const [expected, setExpected] = useState<Record<string,number>>({ cash:0, debit:0, credit:0, pix:0, voucher:0, total:0 });
   /* Pedidos sem pagamento provado: ficam fora do esperado, mas visíveis. */
   const [pendentes, setPendentes] = useState<{ valor: number; quantidade: number }>({ valor: 0, quantidade: 0 });
+  // Fiado da equipe e forma que o sistema nao soube ler: existem como venda,
+  // nao como cedula. Ficam fora da conferencia e visiveis na tela.
+  const [foraConf, setForaConf] = useState<{ fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number }>({ fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0 });
   const [actual, setActual]     = useState<Record<string,string>>({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
   const [closing, setClosing]   = useState(false);
   const [closeWarn, setCloseWarn] = useState(false);
@@ -191,7 +213,11 @@ export default function StoreTopNav({
 
   const salvarMov = async () => {
     setMovErro("");
-    const valorNum = Number(String(movValor).replace(/\./g, "").replace(",", "."));
+    // Apagar TODOS os pontos supunha que ponto e sempre separador de milhar.
+    // O campo aceita `inputMode="decimal"`, e no teclado do celular o separador
+    // que aparece e o ponto: uma sangria de 150.50 virava R$ 15.050,00 -- cem
+    // vezes maior, direto no esperado do fechamento.
+    const valorNum = valorParaNumero(movValor);
     if (!Number.isFinite(valorNum) || valorNum <= 0) {
       setMovErro("Digite um valor maior que zero.");
       return;
@@ -201,7 +227,7 @@ export default function StoreTopNav({
       const res = await fetch("/api/cash-session/movimentacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo: movTipo, valor: movValor, descricao: movDescricao }),
+        body: JSON.stringify({ tipo: movTipo, valor: valorNum, descricao: movDescricao }),
       });
       const d = await res.json();
       if (!res.ok) { setMovErro(d.error || "Não consegui registrar. Tente de novo."); return; }
@@ -226,6 +252,7 @@ export default function StoreTopNav({
     fetch("/api/cash-session").then(r => r.json()).then(d => {
       if (d.expected) setExpected(d.expected);
       if (d.pendentesDePagamento) setPendentes(d.pendentesDePagamento);
+      if (d.foraDaConferencia) setForaConf(d.foraDaConferencia);
     });
     // Buscar pedidos pendentes em SAIU_ENTREGA
     fetch("/api/customer-order/pending-count").then(r => r.json()).then(d => {
@@ -251,7 +278,11 @@ export default function StoreTopNav({
   };
 
   // ── CLOSE CASH ──────────────────────────────────────────────────
-  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0) + (expected.ifoodCoupons || 0);
+  // O cupom do iFood NAO entra aqui: ele ja esta dentro do valor de cada
+  // pedido pago online, que e somado logo acima. Somar a linha de cupons de
+  // novo criava sobra falsa do tamanho dos cupons do dia (R$ 528,11 no turno
+  // de 27/08 da Hakim Centro). A linha continua na tabela como informacao.
+  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0);
 
   const tryClose = () => {
     // Verificar se há pedidos em SAIU_ENTREGA antes de fechar
@@ -780,11 +811,7 @@ export default function StoreTopNav({
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF7ED" }}>
                         <td style={{ padding:"8px 10px", fontWeight:600, color:"#EA580C" }}>🔴 iFood (Cupons)</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#EA580C", fontWeight:700 }}>{fmt(expected.ifoodCoupons)}</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right" }}>
-                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#FED7AA", border:"1.5px solid #FDBA74", fontSize:"0.78rem", textAlign:"center", color:"#9A3412", fontWeight:700 }}>
-                            🔒 {fmt(expected.ifoodCoupons)}
-                          </span>
-                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#9A3412" }}>—</td>
                       </tr>
                     )}
                     {/* Pedidos que ninguém pagou (totem abandonado, cartão
@@ -803,6 +830,33 @@ export default function StoreTopNav({
                         </td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#A16207", fontWeight:700 }}>{fmt(pendentes.valor)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#A16207" }}>—</td>
+                      </tr>
+                    )}
+                    {/* Fiado da equipe: virava DINHEIRO esperado e o operador
+                        procurava na gaveta uma cedula que nunca existiu. Sai da
+                        conferencia, fica na tela. */}
+                    {(foraConf.fiadoQtd || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF5FF" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#7E22CE" }}>
+                          📝 Fiado / conta da equipe
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#7E22CE", opacity:0.85 }}>
+                            {foraConf.fiadoQtd} pedido{foraConf.fiadoQtd > 1 ? "s" : ""} — fora da conferência
+                          </div>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#7E22CE", fontWeight:700 }}>{fmt(foraConf.fiado)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#7E22CE" }}>—</td>
+                      </tr>
+                    )}
+                    {(foraConf.naoIdentificadoQtd || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#F8FAFC" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#475569" }}>
+                          ❔ Forma não identificada
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#475569", opacity:0.85 }}>
+                            {foraConf.naoIdentificadoQtd} pedido{foraConf.naoIdentificadoQtd > 1 ? "s" : ""} — fora da conferência
+                          </div>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#475569", fontWeight:700 }}>{fmt(foraConf.naoIdentificado)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#475569" }}>—</td>
                       </tr>
                     )}
                   </tbody>
