@@ -35,13 +35,19 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true, storeName: true },
+    select: { id: true, ownerId: true, storeName: true, role: true },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  const lojaId = user.ownerId || user.id;
-
   const body = await req.json().catch(() => ({}));
+
+  // O suporte precisa resgatar pedido DA LOJA DO CLIENTE, e ele não tem a senha
+  // dela. Sem isto, a única saída era impersonar — trocar a sessão de quem está
+  // atendendo — para uma consulta que nem escreve nada. Mesmo padrão de
+  // /api/admin/menu-products: só ADMIN escolhe a loja, todo mundo mais fica na
+  // sua.
+  const lojaEscolhida = user.role === "ADMIN" && typeof body?.storeId === "string" ? body.storeId.trim() : null;
+  const lojaId = lojaEscolhida || user.ownerId || user.id;
   const orderId = String(body.orderId ?? "").trim();
   if (!orderId || !/^\d+$/.test(orderId)) {
     return NextResponse.json(
