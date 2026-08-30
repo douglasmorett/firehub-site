@@ -7,6 +7,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -72,8 +73,12 @@ export async function PATCH(req: NextRequest) {
         // PRIORIDADE ABSOLUTA: Número do Pedido no FireHub (ex: #171)
         let firehubSeq = firehubOrderNumber ? String(firehubOrderNumber) : oAny.dailyOrderNumber;
         if (!firehubSeq) {
-          const startOfDay = new Date(order.createdAt);
-          startOfDay.setHours(0, 0, 0, 0);
+          // Expediente da loja, não meia-noite do processo.
+          //
+          // `setHours(0,0,0,0)` usa o fuso do container, que é UTC — o contador
+          // zerava às 21:00 de Brasília e o pedido das 21:10 recebia o mesmo
+          // número do primeiro da tarde. Numeração duplicada no meio do pico.
+          const startOfDay = inicioDoExpedienteDaLoja(null, new Date(order.createdAt));
           const count = await prisma.customerOrder.count({
             where: {
               franchiseeId: order.franchiseeId,

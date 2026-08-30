@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 
 const fmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -125,14 +126,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (mode === "today") {
-    const tz = currentUser?.storeTimezone || "America/Sao_Paulo";
-    // Usar timezone da loja para calcular início do dia corretamente
-    const nowBR = new Date(new Date().toLocaleString("en-US", { timeZone: tz }));
-    const start = new Date(nowBR);
-    start.setHours(0, 0, 0, 0);
-    // Converter de volta para UTC para query no banco
-    const offsetMs = new Date().getTime() - nowBR.getTime();
-    const startUTC = new Date(start.getTime() + offsetMs);
+    // Aqui já se tentava tratar o fuso, com o truque de `toLocaleString("en-US")`
+    // ida e volta. Ele funciona por acidente e perde precisão pelo caminho —
+    // e, mais importante, ancorava na meia-noite do CALENDÁRIO: o caixa aberto
+    // às 19h sumia de "hoje" quando o relógio virava, no meio do expediente.
+    const startUTC = inicioDoExpedienteDaLoja(currentUser?.storeTimezone);
     const registers = await prisma.cashRegister.findMany({
       where: { openedAt: { gte: startUTC } },
       include: { entries: true },

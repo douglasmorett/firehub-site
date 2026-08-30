@@ -980,6 +980,13 @@ app.use((req, res, next) => {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   });
   if (!confere) {
+    // Gritar no log, sem NUNCA imprimir a chave recebida.
+    //
+    // Existe para a virada de chave não falhar em silêncio: se sobrou alguém
+    // chamando com a chave velha — uma loja com `chatbotConfig.evolutionApiKey`
+    // próprio, um script esquecido — a recusa aparece aqui com o caminho e a
+    // origem, em vez de virar "o robô parou de mandar mensagem" sem explicação.
+    console.warn(`[WhatsApp Gateway] 🔒 Chamada RECUSADA (401) em ${req.method} ${req.path} — origem ${req.headers["user-agent"] || "desconhecida"}, apikey de ${String(req.headers["apikey"] || "").length} caractere(s)`);
     return res.status(401).json({ error: "Unauthorized" });
   }
   next();
