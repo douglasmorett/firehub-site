@@ -23,6 +23,7 @@ export default async function StoreRelatoriosPage() {
       storeName: true,
       role: true,
       ownerId: true,
+      timeAlertConfig: true,
     }
   }).catch((err) => {
     console.error("[Relatorios] Erro ao buscar usuário:", err);
@@ -83,6 +84,8 @@ export default async function StoreRelatoriosPage() {
   }
 
   // Serializa os pedidos para passar para o Client Component
+  const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+
   const serializedOrders = orders.map(o => ({
     id: o.id,
     totalAmount: o.totalAmount,
@@ -92,6 +95,17 @@ export default async function StoreRelatoriosPage() {
     paymentMethod: o.paymentMethod || "Não informado",
     source: o.source || "ONLINE",
     createdAt: o.createdAt.toISOString(),
+    // Marcos da operação (ver src/lib/order-stages.ts). Nulos nos pedidos
+    // anteriores à medição — o relatório conta só o que foi medido.
+    acceptedAt: iso(o.acceptedAt),
+    readyAt: iso(o.readyAt),
+    dispatchedAt: iso(o.dispatchedAt),
+    deliveredAt: iso(o.deliveredAt),
+    kdsProductionAt: iso(o.kdsProductionAt),
+    kdsFinishingAt: iso(o.kdsFinishingAt),
+    // O prazo do pedido agendado não é createdAt + 45min; sem isto o relatório
+    // acusaria atraso em pedido que o cliente marcou para dali a duas horas.
+    scheduledDatetime: iso(o.scheduledDatetime),
     items: o.items.map((i: any) => ({
       id: i.id,
       quantity: i.quantity,
@@ -117,6 +131,7 @@ export default async function StoreRelatoriosPage() {
       orders={serializedOrders}
       products={serializedProducts}
       storeName={user.storeName || "Minha Loja"}
+      timeAlertConfig={(user as any).timeAlertConfig || null}
     />
   );
 }

@@ -639,6 +639,18 @@ model CustomerOrder {
   kdsStationId      Int?                // Estação que pegou o pedido (1, 2, etc.)
   kdsProductionAt   DateTime?           // Quando entrou em produção
   kdsFinishingAt    DateTime?           // Quando entrou em finalização
+  // === MARCOS DA OPERACAO (base dos relatorios de tempo) ===
+  // O pedido so guardava createdAt e updatedAt, e updatedAt e sobrescrito por
+  // qualquer edicao — nao dava para saber quanto tempo ele ficou em cada tela
+  // nem se saiu para entrega dentro do prazo. Estes quatro carimbos sao
+  // gravados pela extensao do Prisma em src/lib/prisma.ts, em QUALQUER caminho
+  // que mude o status (painel, KDS, app do motoboy, webhooks das plataformas).
+  // Ficam nulos nos pedidos anteriores a 29/08/2026: o relatorio conta apenas
+  // os pedidos medidos, nunca chuta.
+  acceptedAt        DateTime?           // Entrou em producao (NOVO -> ACEITO/PREPARANDO)
+  readyAt           DateTime?           // Ficou pronto na cozinha (-> PRONTO)
+  dispatchedAt      DateTime?           // Saiu para entrega (-> SAIU_ENTREGA)
+  deliveredAt       DateTime?           // Chegou no cliente (-> ENTREGUE)
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   // === CONTA FUNCIONÁRIO (FIADO) ===

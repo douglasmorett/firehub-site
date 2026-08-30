@@ -3,7 +3,7 @@ import SairDaConta from "@/components/SairDaConta";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2 } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
 import StoreSelector from "./StoreSelector";
 
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   // Estoque de proposito: e de la que sai o QR de lote que da baixa no estoque.
   { href: "/store/etiquetas", label: "Validade & Etiquetas", icon: Tag },
   { href: "/store/financeiro", label: "Financeiro", icon: BarChart2 },
+  { href: "/store/relatorios", label: "Relatórios", icon: LineChart },
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "IA" },

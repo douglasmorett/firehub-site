@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useMemo } from "react";
+import { minutosEntre } from "@/lib/order-stages";
 import {
   TrendingUp,
   TrendingDown,
@@ -16,7 +17,14 @@ import {
   Package,
   Search,
   PieChart,
-  Grid
+  Grid,
+  Clock,
+  Timer,
+  Bike,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Store as StoreIcon
 } from "lucide-react";
 
 // Presets de período
@@ -66,14 +74,86 @@ const fmtR = (v: number) =>
   `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 
+// ── OPERAÇÃO ────────────────────────────────────────────────────────────────
+// Tudo daqui para baixo lê os marcos de tempo do pedido (acceptedAt,
+// dispatchedAt, deliveredAt...) gravados pela extensão do Prisma. Ver
+// src/lib/order-stages.ts.
+
+const PLATAFORMAS: Record<string, { label: string; cor: string }> = {
+  IFOOD:       { label: "iFood",           cor: "#EA1D2C" },
+  "99FOOD":    { label: "99Food",          cor: "#EAB308" },
+  JOTAJA:      { label: "Jotajá",          cor: "#7C3AED" },
+  BRENDI:      { label: "Brendi",          cor: "#0EA5E9" },
+  TOTEM:       { label: "Totem",           cor: "#F97316" },
+  PDV:         { label: "PDV",             cor: "#FF8A00" },
+  PRESENCIAL:  { label: "Balcão",          cor: "#64748B" },
+  MESA:        { label: "Mesa",            cor: "#B45309" },
+  WHATSAPP_IA: { label: "WhatsApp (robô)", cor: "#25D366" },
+  ONLINE:      { label: "Site da loja",    cor: "#2563EB" },
+  SITE:        { label: "Site da loja",    cor: "#2563EB" },
+};
+
+// "SITE" e "ONLINE" sao o mesmo canal escrito de dois jeitos por rotas
+// diferentes (o pedido do cardápio próprio nasce ora com um, ora com outro).
+// Sem juntar, a rosca mostra duas fatias com o mesmo nome.
+const APELIDOS_DE_PLATAFORMA: Record<string, string> = { SITE: "ONLINE" };
+
+const normalizaPlataforma = (v: unknown) => {
+  const k = String(v || "ONLINE").toUpperCase();
+  return APELIDOS_DE_PLATAFORMA[k] || k;
+};
+
+const plataformaDe = (chave: string) =>
+  PLATAFORMAS[String(chave || "").toUpperCase()] || { label: chave || "Outros", cor: "#94A3B8" };
+
+// Prazo do pedido — MESMA regra que pinta o card no painel de pedidos
+// (StoreOrdersDashboard): agendamento de verdade manda; senão, 40 min para
+// retirada e 45 min para entrega. Se a regra mudar lá, muda aqui também, ou o
+// relatório passa a contar atraso que a tela não mostrou.
+const MIN_PADRAO_RETIRADA = 40;
+const MIN_PADRAO_ENTREGA = 45;
+
+function ehRetirada(o: any) {
+  const t = String(o.deliveryType || "").toUpperCase();
+  return t === "RETIRADA" || t === "TAKEOUT" || t.includes("RETIRADA");
+}
+
+function prazoDoPedido(o: any): number {
+  const criado = new Date(o.createdAt).getTime();
+  const agendado = o.scheduledDatetime ? new Date(o.scheduledDatetime).getTime() : 0;
+  const agendamentoReal = agendado > criado + 2 * 60000;
+  if (agendamentoReal) return agendado;
+  return criado + (ehRetirada(o) ? MIN_PADRAO_RETIRADA : MIN_PADRAO_ENTREGA) * 60000;
+}
+
+// Momento em que o pedido saiu das mãos da loja: para entrega é a saída do
+// motoboy; para retirada, a hora em que o cliente levou.
+function momentoDaSaida(o: any): string | null {
+  return o.dispatchedAt || (ehRetirada(o) ? o.deliveredAt : null);
+}
+
+const media = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+
+const fmtMin = (v: number | null) => {
+  if (v === null) return "—";
+  if (v < 60) return `${Math.round(v)} min`;
+  const h = Math.floor(v / 60);
+  const m = Math.round(v % 60);
+  return `${h}h${String(m).padStart(2, "0")}`;
+};
+
+const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
 export default function RelatoriosClient({
   orders,
   products,
   storeName,
+  timeAlertConfig,
 }: {
   orders: any[];
   products: any[];
   storeName: string;
+  timeAlertConfig?: { yellowEnabled?: boolean; yellowMinutes?: number; redEnabled?: boolean; redMinutes?: number } | null;
 }) {
   const [preset, setPreset] = useState(2); // 7 dias padrão
   const [customFrom, setCustomFrom] = useState("");
@@ -225,27 +305,36 @@ export default function RelatoriosClient({
     return top.qty > 0 ? top : null;
   }, [productRanking]);
 
-  // 4. Origem dos Pedidos (Source Breakdown)
+  // 4. De onde vem os pedidos (plataforma): quantidade, % e faturamento
   const sourceStats = useMemo(() => {
     const stats: Record<string, { count: number; total: number }> = {};
     let totalRevenue = 0;
 
     dateFilteredOrders.forEach((o) => {
-      const source = o.source || "ONLINE";
+      const source = normalizaPlataforma(o.source);
       if (!stats[source]) stats[source] = { count: 0, total: 0 };
       stats[source].count++;
       stats[source].total += o.totalAmount;
       totalRevenue += o.totalAmount;
     });
 
-    return Object.entries(stats).map(([key, value]) => ({
-      key,
-      label: key === "IFOOD" ? "🛵 iFood" : key === "JOTAJA" ? "📱 Jotajá" : key === "PDV" ? "🛒 PDV" : "💻 Site",
-      count: value.count,
-      total: value.total,
-      pct: totalRevenue > 0 ? (value.total / totalRevenue) * 100 : 0,
-      color: key === "IFOOD" ? "#EA1D2C" : key === "JOTAJA" ? "#7C3AED" : key === "PDV" ? "#FF8A00" : "#2563EB",
-    })).sort((a, b) => b.total - a.total);
+    const totalPedidos = dateFilteredOrders.length;
+
+    return Object.entries(stats).map(([key, value]) => {
+      const plat = plataformaDe(key);
+      return {
+        key,
+        label: plat.label,
+        color: plat.cor,
+        count: value.count,
+        total: value.total,
+        ticket: value.count > 0 ? value.total / value.count : 0,
+        // pctQtd e a fatia do grafico: o lojista pergunta "quantos por cento
+        // dos meus pedidos vem do iFood", nao quanto por cento do dinheiro.
+        pctQtd: totalPedidos > 0 ? (value.count / totalPedidos) * 100 : 0,
+        pct: totalRevenue > 0 ? (value.total / totalRevenue) * 100 : 0,
+      };
+    }).sort((a, b) => b.count - a.count);
   }, [dateFilteredOrders]);
 
   // 5. Formas de Pagamento
@@ -278,6 +367,129 @@ export default function RelatoriosClient({
     })).sort((a, b) => b.total - a.total);
   }, [dateFilteredOrders]);
 
+  // 6. TEMPOS MEDIOS DE CADA TELA
+  // So entra na conta o pedido que TEM os dois carimbos da etapa. Pedido
+  // anterior a medicao fica de fora em vez de virar zero -- media com zero
+  // fantasma e pior que media sobre menos pedidos.
+  const tempos = useMemo(() => {
+    const fila: number[] = [];
+    const cozinha: number[] = [];
+    const esperandoSaida: number[] = [];
+    const naRua: number[] = [];
+    const total: number[] = [];
+    const kdsMontagem: number[] = [];
+
+    const junta = (destino: number[], v: number | null) => { if (v !== null) destino.push(v); };
+
+    dateFilteredOrders.forEach((o) => {
+      junta(fila, minutosEntre(o.createdAt, o.acceptedAt));
+      junta(cozinha, minutosEntre(o.acceptedAt, o.readyAt || o.dispatchedAt || (ehRetirada(o) ? o.deliveredAt : null)));
+      junta(esperandoSaida, minutosEntre(o.readyAt, o.dispatchedAt));
+      junta(naRua, minutosEntre(o.dispatchedAt, o.deliveredAt));
+      junta(total, minutosEntre(o.createdAt, o.deliveredAt));
+      junta(kdsMontagem, minutosEntre(o.kdsProductionAt, o.kdsFinishingAt));
+    });
+
+    const etapas = [
+      { chave: "fila", titulo: "Esperando aceite", legenda: "Da hora que o pedido caiu ate alguem aceitar", cor: "#3B82F6", dados: fila },
+      { chave: "cozinha", titulo: "Na cozinha", legenda: "Do aceite ate o pedido ficar pronto ou sair", cor: "#F59E0B", dados: cozinha },
+      { chave: "esperandoSaida", titulo: "Pronto esperando motoboy", legenda: "Do PRONTO ate sair para entrega", cor: "#8B5CF6", dados: esperandoSaida },
+      { chave: "naRua", titulo: "Na rua", legenda: "Da saida ate a entrega no cliente", cor: "#10B981", dados: naRua },
+      { chave: "kds", titulo: "Finalizacao no KDS", legenda: "Da producao ate a montagem terminar", cor: "#0EA5E9", dados: kdsMontagem },
+      { chave: "total", titulo: "Tempo total", legenda: "Do pedido ate o cliente receber", cor: "#0F172A", dados: total },
+    ].map((e) => ({ ...e, media: media(e.dados), medidos: e.dados.length }));
+
+    const comDados = etapas.filter((e) => e.medidos > 0);
+
+    return { etapas, comDados, temAlgumaMedicao: comDados.length > 0 };
+  }, [dateFilteredOrders]);
+
+  // 7. COMO OS PEDIDOS SAIRAM (faixa de alerta no momento da saida)
+  // Mesma regua do painel: sobra de tempo ate o prazo. Vermelho e amarelo sao
+  // os limites que o lojista configurou nos Alertas de Producao.
+  const saidas = useMemo(() => {
+    const cfg = {
+      yellowEnabled: timeAlertConfig?.yellowEnabled ?? true,
+      yellowMinutes: Number(timeAlertConfig?.yellowMinutes ?? 10),
+      redEnabled: timeAlertConfig?.redEnabled ?? true,
+      redMinutes: Number(timeAlertConfig?.redMinutes ?? 5),
+    };
+    const amareloAtivo = cfg.yellowEnabled && cfg.yellowMinutes > 0;
+    const vermelhoAtivo = cfg.redEnabled && cfg.redMinutes > 0;
+
+    let noPrazo = 0, amarelo = 0, vermelho = 0, estourado = 0, medidos = 0;
+    let somaFolga = 0;
+
+    dateFilteredOrders.forEach((o) => {
+      const saida = momentoDaSaida(o);
+      if (!saida) return;
+      const folga = (prazoDoPedido(o) - new Date(saida).getTime()) / 60000;
+      if (!Number.isFinite(folga)) return;
+      medidos++;
+      somaFolga += folga;
+      if (folga < 0) estourado++;
+      else if (vermelhoAtivo && folga <= cfg.redMinutes) vermelho++;
+      else if (amareloAtivo && folga <= cfg.yellowMinutes) amarelo++;
+      else noPrazo++;
+    });
+
+    const pct = (n: number) => (medidos > 0 ? (n / medidos) * 100 : 0);
+
+    return {
+      medidos,
+      folgaMedia: medidos > 0 ? somaFolga / medidos : null,
+      limites: cfg,
+      faixas: [
+        { chave: "noPrazo", titulo: "Saiu no prazo", n: noPrazo, pct: pct(noPrazo), cor: "#16A34A", fundo: "#DCFCE7", detalhe: "Mais de " + cfg.yellowMinutes + " min de folga" },
+        { chave: "amarelo", titulo: "Alerta amarelo", n: amarelo, pct: pct(amarelo), cor: "#B45309", fundo: "#FEF3C7", detalhe: "Saiu com " + cfg.redMinutes + " a " + cfg.yellowMinutes + " min de folga" },
+        { chave: "vermelho", titulo: "Alerta vermelho", n: vermelho, pct: pct(vermelho), cor: "#DC2626", fundo: "#FEE2E2", detalhe: "Saiu em cima da hora (ate " + cfg.redMinutes + " min)" },
+        { chave: "estourado", titulo: "Prazo estourado", n: estourado, pct: pct(estourado), cor: "#7F1D1D", fundo: "#FECACA", detalhe: "Ja tinha passado do prazo prometido" },
+      ],
+    };
+  }, [dateFilteredOrders, timeAlertConfig]);
+
+  // 8. MOVIMENTO: hora do dia, dia da semana, entrega x retirada, cancelamentos
+  const movimento = useMemo(() => {
+    const porHora = Array.from({ length: 24 }, (_, h) => ({ hora: h, count: 0, total: 0 }));
+    const porDia = Array.from({ length: 7 }, (_, d) => ({ dia: d, count: 0, total: 0 }));
+    let entrega = 0, retirada = 0, receitaTotal = 0;
+
+    dateFilteredOrders.forEach((o) => {
+      const d = new Date(o.createdAt);
+      porHora[d.getHours()].count++;
+      porHora[d.getHours()].total += o.totalAmount;
+      porDia[d.getDay()].count++;
+      porDia[d.getDay()].total += o.totalAmount;
+      if (ehRetirada(o)) retirada++; else entrega++;
+      receitaTotal += o.totalAmount;
+    });
+
+    // Cancelados ficam de fora de dateFilteredOrders -- para a taxa, contamos
+    // de novo direto do periodo.
+    let cancelados = 0, brutoNoPeriodo = 0;
+    orders.forEach((o) => {
+      const d = new Date(o.createdAt);
+      if (d < from || d > to) return;
+      brutoNoPeriodo++;
+      if (o.status === "CANCELADO") cancelados++;
+    });
+
+    const picoHora = porHora.reduce((a, b) => (b.count > a.count ? b : a), porHora[0]);
+    const picoDia = porDia.reduce((a, b) => (b.count > a.count ? b : a), porDia[0]);
+    const maxHora = Math.max(1, ...porHora.map((h) => h.count));
+    const maxDia = Math.max(1, ...porDia.map((h) => h.count));
+    const totalValidos = dateFilteredOrders.length;
+
+    return {
+      porHora, porDia, maxHora, maxDia, picoHora, picoDia,
+      entrega, retirada, totalValidos, receitaTotal,
+      ticketMedio: totalValidos > 0 ? receitaTotal / totalValidos : 0,
+      cancelados,
+      brutoNoPeriodo,
+      taxaCancelamento: brutoNoPeriodo > 0 ? (cancelados / brutoNoPeriodo) * 100 : 0,
+    };
+  }, [dateFilteredOrders, orders, from, to]);
+
   // Exportar dados como CSV
   const handleExportCSV = () => {
     const headers = ["Rank", "Produto", "Categoria", "Preço Base", "Quantidade Vendida", "Faturamento", "Custo Total", "Lucro Líquido"];
@@ -308,6 +520,9 @@ export default function RelatoriosClient({
     document.body.removeChild(link);
   };
 
+  const CARD_SECAO = { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, marginBottom: "1.5rem", padding: "1.25rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" };
+  const CARD_SECAO_INTERNO = { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: "1.25rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" };
+
   return (
     <div style={{ padding: "1.5rem 1rem", maxWidth: 1280, margin: "0 auto", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       
@@ -315,10 +530,10 @@ export default function RelatoriosClient({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
         <div>
           <h1 style={{ fontWeight: 900, fontSize: "1.8rem", color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
-            📈 Relatório de Vendas
+            📈 Relatórios da Loja
           </h1>
           <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#64748B", fontWeight: 500 }}>
-            Painel consolidado de métricas e ranking de produtos · <strong>{storeName}</strong>
+            Operação, plataformas e vendas · <strong>{storeName}</strong>
           </p>
         </div>
 
@@ -550,6 +765,250 @@ export default function RelatoriosClient({
 
       </div>
 
+      {/* ── OPERAÇÃO: TEMPOS MÉDIOS DE CADA TELA ── */}
+      <div style={CARD_SECAO}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: "1rem" }}>
+          <div>
+            <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
+              <Timer size={18} color="#3B82F6" /> Quanto tempo o pedido passa em cada tela
+            </h2>
+            <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
+              Média do período. Conta só o pedido que passou pela etapa com hora registrada.
+            </p>
+          </div>
+        </div>
+
+        {!tempos.temAlgumaMedicao ? (
+          <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 14, padding: "1.25rem", textAlign: "center", color: "#64748B", fontSize: "0.85rem" }}>
+            <Clock size={22} style={{ opacity: 0.4 }} />
+            <p style={{ margin: "8px 0 0", fontWeight: 700, color: "#475569" }}>Ainda não há pedido medido neste período</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.78rem" }}>
+              A marcação de horário em cada tela começou agora. Pedidos antigos não têm esse registro —
+              os tempos aparecem conforme a operação for rodando.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.85rem" }}>
+            {tempos.comDados.map((e) => (
+              <div key={e.chave} style={{ border: "1px solid #E2E8F0", borderRadius: 14, padding: "0.9rem 1rem", background: "#fff", borderTop: `4px solid ${e.cor}` }}>
+                <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 800, color: "#334155" }}>{e.titulo}</p>
+                <p style={{ margin: "6px 0 0", fontSize: "1.5rem", fontWeight: 900, color: e.cor, lineHeight: 1 }}>{fmtMin(e.media)}</p>
+                <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#94A3B8", lineHeight: 1.35 }}>{e.legenda}</p>
+                <p style={{ margin: "6px 0 0", fontSize: "0.7rem", color: "#CBD5E1", fontWeight: 700 }}>{e.medidos} pedido{e.medidos !== 1 ? "s" : ""} medido{e.medidos !== 1 ? "s" : ""}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── OPERAÇÃO: COMO OS PEDIDOS SAÍRAM ── */}
+      <div style={CARD_SECAO}>
+        <div style={{ marginBottom: "1rem" }}>
+          <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
+            <Bike size={18} color="#16A34A" /> Como os pedidos saíram para entrega
+          </h2>
+          <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
+            Quanto tempo ainda faltava para o prazo prometido na hora em que o pedido saiu.
+            Usa os mesmos limites dos Alertas de Produção: amarelo em {saidas.limites.yellowMinutes} min, vermelho em {saidas.limites.redMinutes} min.
+          </p>
+        </div>
+
+        {saidas.medidos === 0 ? (
+          <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 14, padding: "1.25rem", textAlign: "center", color: "#64748B", fontSize: "0.82rem" }}>
+            Nenhuma saída medida neste período.
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.85rem", marginBottom: "1rem" }}>
+              {saidas.faixas.map((f) => (
+                <div key={f.chave} style={{ background: f.fundo, borderRadius: 14, padding: "0.9rem 1rem", border: `1px solid ${f.cor}22` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    {f.chave === "noPrazo" ? <CheckCircle2 size={15} color={f.cor} /> : f.chave === "estourado" ? <XCircle size={15} color={f.cor} /> : <AlertTriangle size={15} color={f.cor} />}
+                    <span style={{ fontSize: "0.78rem", fontWeight: 800, color: f.cor }}>{f.titulo}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: "1.7rem", fontWeight: 900, color: f.cor, lineHeight: 1 }}>
+                    {f.n}
+                    <span style={{ fontSize: "0.85rem", fontWeight: 800, marginLeft: 6 }}>({fmtPct(f.pct)})</span>
+                  </p>
+                  <p style={{ margin: "6px 0 0", fontSize: "0.71rem", color: "#475569", lineHeight: 1.35 }}>{f.detalhe}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Barra única: dá para ver a proporção de um relance */}
+            <div style={{ display: "flex", height: 14, borderRadius: 8, overflow: "hidden", background: "#F1F5F9" }}>
+              {saidas.faixas.map((f) => (
+                f.pct > 0 ? <div key={f.chave} title={`${f.titulo}: ${f.n} (${fmtPct(f.pct)})`} style={{ width: `${f.pct}%`, background: f.cor }} /> : null
+              ))}
+            </div>
+            <p style={{ margin: "10px 0 0", fontSize: "0.75rem", color: "#94A3B8" }}>
+              {saidas.medidos} saída{saidas.medidos !== 1 ? "s" : ""} medida{saidas.medidos !== 1 ? "s" : ""} no período
+              {saidas.folgaMedia !== null && (
+                <> · folga média na saída: <strong style={{ color: saidas.folgaMedia < 0 ? "#DC2626" : "#16A34A" }}>
+                  {saidas.folgaMedia < 0 ? `${fmtMin(Math.abs(saidas.folgaMedia))} depois do prazo` : `${fmtMin(saidas.folgaMedia)} antes do prazo`}
+                </strong></>
+              )}
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* ── DE ONDE VÊM OS PEDIDOS ── */}
+      <div style={CARD_SECAO}>
+        <h2 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
+          <PieChart size={18} color="#7C3AED" /> De onde vêm os pedidos
+        </h2>
+        <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "#64748B" }}>
+          Quantidade e porcentagem por plataforma, e quanto cada uma faturou.
+        </p>
+
+        {sourceStats.length === 0 ? (
+          <p style={{ margin: 0, fontSize: "0.82rem", color: "#94A3B8" }}>Sem pedidos no período.</p>
+        ) : (
+          <div style={{ display: "flex", gap: "1.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            {/* Rosca: cada fatia é a porcentagem de PEDIDOS da plataforma */}
+            <svg width={160} height={160} viewBox="0 0 160 160" style={{ flexShrink: 0 }}>
+              <g transform="rotate(-90 80 80)">
+                <circle cx={80} cy={80} r={56} fill="none" stroke="#F1F5F9" strokeWidth={22} />
+                {(() => {
+                  const CIRC = 2 * Math.PI * 56;
+                  let acumulado = 0;
+                  return sourceStats.map((f) => {
+                    const traco = (f.pctQtd / 100) * CIRC;
+                    const fatia = (
+                      <circle
+                        key={f.key} cx={80} cy={80} r={56} fill="none"
+                        stroke={f.color} strokeWidth={22}
+                        strokeDasharray={`${traco} ${CIRC - traco}`}
+                        strokeDashoffset={-acumulado}
+                      />
+                    );
+                    acumulado += traco;
+                    return fatia;
+                  });
+                })()}
+              </g>
+              <text x={80} y={76} textAnchor="middle" style={{ fontSize: 24, fontWeight: 900, fill: "#0F172A" }}>{movimento.totalValidos}</text>
+              <text x={80} y={94} textAnchor="middle" style={{ fontSize: 10, fontWeight: 800, fill: "#94A3B8", letterSpacing: 1 }}>PEDIDOS</text>
+            </svg>
+
+            <div style={{ flex: 1, minWidth: 260, display: "flex", flexDirection: "column", gap: 10 }}>
+              {sourceStats.map((f) => (
+                <div key={f.key}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "0.8rem", marginBottom: 4, gap: 8 }}>
+                    <span style={{ fontWeight: 700, color: "#0F172A", display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: f.color, display: "inline-block", flexShrink: 0 }} />
+                      {f.label}
+                    </span>
+                    <span style={{ color: "#64748B", whiteSpace: "nowrap" }}>
+                      <strong style={{ color: "#0F172A" }}>{f.count} ped.</strong> · <strong style={{ color: f.color }}>{fmtPct(f.pctQtd)}</strong> · {fmtR(f.total)}
+                    </span>
+                  </div>
+                  <div style={{ background: "#F1F5F9", height: 7, borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ background: f.color, height: "100%", width: `${f.pctQtd}%`, borderRadius: 4 }} />
+                  </div>
+                  <p style={{ margin: "3px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Ticket médio: {fmtR(f.ticket)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── MOVIMENTO DA LOJA: PICO, DIAS, ENTREGA x RETIRADA, CANCELAMENTO ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.5rem", marginBottom: "1.5rem" }}>
+
+        {/* Horário de pico */}
+        <div style={CARD_SECAO_INTERNO}>
+          <h3 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "0.92rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 7 }}>
+            <Clock size={16} color="#F59E0B" /> Horários de pico
+          </h3>
+          <p style={{ margin: "0 0 1rem", fontSize: "0.76rem", color: "#64748B" }}>
+            Pedidos por hora do dia. Pico às <strong>{String(movimento.picoHora.hora).padStart(2, "0")}h</strong> com {movimento.picoHora.count} pedidos.
+          </p>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 120 }}>
+            {movimento.porHora.map((h) => (
+              <div key={h.hora} title={`${String(h.hora).padStart(2, "0")}h — ${h.count} pedidos`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}>
+                <div style={{
+                  height: `${(h.count / movimento.maxHora) * 100}%`,
+                  minHeight: h.count > 0 ? 3 : 0,
+                  background: h.hora === movimento.picoHora.hora ? "#F59E0B" : "#CBD5E1",
+                  borderRadius: "3px 3px 0 0",
+                }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: "0.65rem", color: "#94A3B8", fontWeight: 700 }}>
+            <span>00h</span><span>06h</span><span>12h</span><span>18h</span><span>23h</span>
+          </div>
+        </div>
+
+        {/* Dias da semana */}
+        <div style={CARD_SECAO_INTERNO}>
+          <h3 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "0.92rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 7 }}>
+            <Calendar size={16} color="#2563EB" /> Dias da semana
+          </h3>
+          <p style={{ margin: "0 0 1rem", fontSize: "0.76rem", color: "#64748B" }}>
+            Dia mais forte: <strong>{DIAS_SEMANA[movimento.picoDia.dia]}</strong> com {movimento.picoDia.count} pedidos.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {movimento.porDia.map((d) => (
+              <div key={d.dia} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 34, fontSize: "0.74rem", fontWeight: 800, color: "#475569", flexShrink: 0 }}>{DIAS_SEMANA[d.dia]}</span>
+                <div style={{ flex: 1, background: "#F1F5F9", height: 16, borderRadius: 5, overflow: "hidden" }}>
+                  <div style={{ width: `${(d.count / movimento.maxDia) * 100}%`, height: "100%", background: d.dia === movimento.picoDia.dia ? "#2563EB" : "#93C5FD", borderRadius: 5 }} />
+                </div>
+                <span style={{ width: 74, textAlign: "right", fontSize: "0.72rem", color: "#64748B", flexShrink: 0 }}>
+                  <strong style={{ color: "#0F172A" }}>{d.count}</strong> · {fmtR(d.total)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Entrega x Retirada + ticket + cancelamento */}
+        <div style={CARD_SECAO_INTERNO}>
+          <h3 style={{ margin: "0 0 1rem", fontWeight: 900, fontSize: "0.92rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 7 }}>
+            <StoreIcon size={16} color="#0F172A" /> Resumo da operação
+          </h3>
+
+          <div style={{ display: "flex", gap: 10, marginBottom: "1rem" }}>
+            <div style={{ flex: 1, background: "#EFF6FF", borderRadius: 12, padding: "0.8rem" }}>
+              <p style={{ margin: 0, fontSize: "0.72rem", fontWeight: 800, color: "#1D4ED8" }}>🛵 Entrega</p>
+              <p style={{ margin: "4px 0 0", fontSize: "1.35rem", fontWeight: 900, color: "#0F172A" }}>{movimento.entrega}</p>
+              <p style={{ margin: 0, fontSize: "0.7rem", color: "#64748B" }}>
+                {fmtPct(movimento.totalValidos ? (movimento.entrega / movimento.totalValidos) * 100 : 0)} dos pedidos
+              </p>
+            </div>
+            <div style={{ flex: 1, background: "#FFF7ED", borderRadius: 12, padding: "0.8rem" }}>
+              <p style={{ margin: 0, fontSize: "0.72rem", fontWeight: 800, color: "#C2410C" }}>🏃 Retirada</p>
+              <p style={{ margin: "4px 0 0", fontSize: "1.35rem", fontWeight: 900, color: "#0F172A" }}>{movimento.retirada}</p>
+              <p style={{ margin: 0, fontSize: "0.7rem", color: "#64748B" }}>
+                {fmtPct(movimento.totalValidos ? (movimento.retirada / movimento.totalValidos) * 100 : 0)} dos pedidos
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: "0.8rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+              <span style={{ color: "#64748B", fontWeight: 600 }}>Ticket médio do período</span>
+              <strong style={{ color: "#0F172A" }}>{fmtR(movimento.ticketMedio)}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+              <span style={{ color: "#64748B", fontWeight: 600 }}>Faturamento com taxas</span>
+              <strong style={{ color: "#0F172A" }}>{fmtR(movimento.receitaTotal)}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
+              <span style={{ color: "#64748B", fontWeight: 600 }}>Pedidos cancelados</span>
+              <strong style={{ color: movimento.taxaCancelamento > 5 ? "#DC2626" : "#0F172A" }}>
+                {movimento.cancelados} ({fmtPct(movimento.taxaCancelamento)})
+              </strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
       {/* ── GRID: CAMPEÃO + GRÁFICOS CANAL / PAGAMENTO ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "1.5rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
         
@@ -629,32 +1088,6 @@ export default function RelatoriosClient({
         {/* Canais e Formas de Pagamento */}
         <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: "1.25rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "1.25rem", minHeight: 300 }}>
           
-          {/* Canais */}
-          <div>
-            <h3 style={{ margin: "0 0 10px", fontWeight: 900, fontSize: "0.88rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
-              <Grid size={15} /> Origem dos Pedidos (Faturamento)
-            </h3>
-            {sourceStats.length === 0 ? (
-              <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>Sem dados no período.</p>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {sourceStats.map((item) => (
-                  <div key={item.key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: 3 }}>
-                      <span style={{ fontWeight: 600 }}>{item.label}</span>
-                      <strong style={{ color: item.color }}>{fmtR(item.total)} <span style={{ fontWeight: 400, color: "#94A3B8", marginLeft: 4 }}>({item.count} ped. · {fmtPct(item.pct)})</span></strong>
-                    </div>
-                    <div style={{ background: "#F1F5F9", height: 6, borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ background: item.color, height: "100%", width: `${item.pct}%`, borderRadius: 3 }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ height: "1px", background: "#F1F5F9" }} />
-
           {/* Formas de Pagamento */}
           <div>
             <h3 style={{ margin: "0 0 10px", fontWeight: 900, fontSize: "0.88rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
