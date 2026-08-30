@@ -727,6 +727,25 @@ async function handleIncomingMessage(body: any, instance: string) {
     aiResponse = { reply: fallbackReply };
   }
   
+  // ── ONDE O PEDIDO FOI PARAR ───────────────────────────────────────────────
+  // Registrado no rastro para que "a IA confirmou mas a cozinha não recebeu"
+  // seja visível em /api/chatbot/diagnostico, sem depender de log cru.
+  const destinoDoPedido = (aiResponse as any)?.pedido;
+  if (destinoDoPedido) {
+    if (destinoDoPedido.ok) {
+      registrarTrace({
+        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+        estagio: "pedido-gravado",
+        detalhe: `nº ${destinoDoPedido.numero ?? "—"} · ${destinoDoPedido.itens} item(ns)${destinoDoPedido.finalizado ? " · FINALIZADO" : " · rascunho"}`,
+      });
+    } else {
+      registrarTrace({
+        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+        estagio: "pedido-nao-gravado", detalhe: destinoDoPedido.motivo,
+      });
+    }
+  }
+
   if (aiResponse?.reply) {
     let replyText = aiResponse.reply;
     let callHuman = false;

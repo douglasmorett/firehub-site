@@ -138,7 +138,16 @@ export async function processChatbotAI(
 
   const orderOrConditions: any[] = [];
   if (clientPhoneDigits && clientPhoneDigits.length >= 8) {
-    orderOrConditions.push({ customerPhone: { contains: clientPhoneDigits.slice(-8) } });
+    // O funil por telefone usa os últimos QUATRO dígitos, não oito.
+    //
+    // `customerPhone` é gravado FORMATADO — "(22) 98112-8512" — e o hífen cai
+    // exatamente no meio dos últimos oito dígitos: `contains("1128512")` nunca
+    // casa com "112-8512". Era por isso que o robô jurava "não encontrei nenhum
+    // pedido registrado com este número hoje" para pedidos que EXISTIAM no
+    // painel — e recomeçava o pedido do zero. Os últimos quatro ficam depois do
+    // hífen, contíguos, e casam em qualquer formato. Quem decide de verdade é o
+    // filtro em memória logo abaixo, que compara dígito a dígito.
+    orderOrConditions.push({ customerPhone: { contains: clientPhoneDigits.slice(-4) } });
   }
 
   for (const numStr of extractedNumbers) {
@@ -844,6 +853,18 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       a) Você DEVE imediatamente incluir a tag JSON de finalização:
          [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome", "address": "Endereço", "paymentMethod": "Forma", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": true}]]
       b) Diga ao cliente: "Perfeito! Seu pedido foi confirmado e enviado para a cozinha! Te avisamos assim que sair para entrega! 🚀"
+      c) ⛔ REGRA INSEPARÁVEL — A TAG É O QUE GRAVA O PEDIDO, A FRASE É SÓ TEXTO:
+         A frase da letra (b) NÃO cria pedido nenhum. Quem coloca o pedido na cozinha é
+         EXCLUSIVAMENTE a tag [[PEDIDO_IA ... "finalized": true]] da letra (a).
+         É TERMINANTEMENTE PROIBIDO escrever qualquer frase de confirmação — "confirmado",
+         "registrado", "anotado", "foi para a cozinha", "já está na cozinha" — em uma
+         resposta que NÃO contenha a tag com "finalized": true.
+         Em 29/08/2026 uma cliente ouviu "seu pedido foi confirmado e enviado para a nossa
+         cozinha", a tag não veio junto, e ela ficou uma hora esperando comida que ninguém
+         estava preparando. Se você não tem TODOS os dados para emitir a tag, PERGUNTE o que
+         falta — nunca confirme "por educação".
+      d) A tag vai SEMPRE no FINAL da resposta, depois do texto, em uma única linha, sem
+         cercas de código (nada de crases) e sem quebrar o JSON em várias linhas.
     - CAMPO "customerPhone": se o sistema NÃO capturou o WhatsApp do cliente (regra 11) e você
       perguntou o número, coloque o que ele respondeu em "customerPhone" (só dígitos, com DDD).
       Sem esse campo, nesses casos, o pedido NÃO é gravado e o cliente fica esperando comida
@@ -1018,7 +1039,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
               systemInstruction: systemPrompt,
               temperature: 0.9,
               topP: 0.95,
-              maxOutputTokens: 2000,
+              maxOutputTokens: 3000,
               abortSignal: controller.signal,
             }
           });
@@ -1052,6 +1073,12 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
       }
 
       if (generatedText) {
+        // Cópia INTACTA da resposta do modelo, capturada antes de qualquer
+        // sanitização. É dela que o JSON do pedido é extraído — as limpezas
+        // abaixo existem para o texto que o cliente lê, e já mutilaram dado
+        // estruturado no passado.
+        const textoOriginalDoModelo = generatedText;
+
         // REGRA DE SEGURANÇA MÁXIMA: Sanitizar e remover vazamentos de 'TRAIN OF THOUGHT:', 'RESPONSE:', '1. Acknowledge...', etc.
         if (/(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|STEPS|PLAN):/i.test(generatedText)) {
           if (/RESPONSE:/i.test(generatedText)) {
@@ -1078,42 +1105,67 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           .trim();
 
         // ── SINCRONIZAR PEDIDO IA EM TEMPO REAL ──
+        //
+        // A EXTRAÇÃO ACONTECE NO TEXTO CRU DO MODELO, não no cleanText.
+        //
+        // O cleanText passa por substituições cosméticas ANTES daqui — remoção
+        // de `*`/`_`/`#`/crase e a troca de "R$ 9,50" por "9,50 reais". São
+        // feitas para o texto que o CLIENTE lê; aplicadas ao JSON do pedido,
+        // elas o mutilam (um `#` de endereço some, um valor com R$ numa string
+        // muda de forma). Extrair do texto original elimina essa classe
+        // inteira de corrupção. A remoção da tag do texto visível continua
+        // sendo feita no cleanText, logo abaixo.
         let rawJsonPayload = "";
-        // ── SÓ O PEDIDO_IA SAI DAQUI ────────────────────────────────────────
-        //
-        // Antes este trecho fazia `cleanText.substring(0, indexOf("[["))`:
-        // jogava fora TUDO a partir do primeiro colchete duplo. Três estragos,
-        // e o primeiro era mudo:
-        //
-        // 1) ÁUDIO VIRAVA SILÊNCIO. A regra 22 manda a IA começar a resposta
-        //    com [[TRANSCRICAO: ...]]. O corte começava no índice 0, a resposta
-        //    ficava string vazia, e o webhook só envia `if (aiResponse.reply)` —
-        //    string vazia é falsa. Cliente mandava áudio e não recebia NADA.
-        // 2) "CHAMAR ATENDENTE" NUNCA ACONTECIA. Quem processa esse marcador é
-        //    o webhook, lendo o texto que sai daqui. Como ele era removido
-        //    antes, a transferência para humano jamais era acionada.
-        // 3) TEXTO DEPOIS DA TAG SUMIA. Tag no meio da resposta apagava tudo o
-        //    que vinha depois dela.
-        //
-        // Agora tiramos cirurgicamente o bloco [[PEDIDO_IA: {...}]] — que é o
-        // único que o cliente não pode ver e o webhook não usa — e deixamos os
-        // outros marcadores passarem para quem sabe tratá-los.
-        const inicioPedido = cleanText.indexOf("[[PEDIDO_IA");
-
-        if (inicioPedido !== -1) {
-          const trecho = cleanText.substring(inicioPedido);
-          const jsonStart = trecho.indexOf("{");
-          if (jsonStart !== -1) {
-            const jsonEnd = trecho.lastIndexOf("}");
-            rawJsonPayload = jsonEnd > jsonStart
-              ? trecho.substring(jsonStart, jsonEnd + 1)
-              // JSON cortado no meio (resposta truncada): tenta fechar.
-              : trecho.substring(jsonStart) + "}]}]}";
+        {
+          const m = textoOriginalDoModelo.match(/\[\[\s*PEDIDO_IA\b/i);
+          if (m && m.index !== undefined) {
+            const aposMarcador = textoOriginalDoModelo.substring(m.index);
+            const jsonStart = aposMarcador.indexOf("{");
+            if (jsonStart !== -1) {
+              // Balancear chaves/colchetes de verdade, respeitando strings.
+              // O `lastIndexOf("}")` antigo pegava qualquer `}` posterior do
+              // texto quando o `]]` faltava, e o "reparo" fixo `+"}]}]}"` só
+              // fechava um formato específico de truncamento.
+              let fim = -1;
+              const pilha: string[] = [];
+              let emString = false;
+              let escapado = false;
+              for (let i = jsonStart; i < aposMarcador.length; i++) {
+                const ch = aposMarcador[i];
+                if (escapado) { escapado = false; continue; }
+                if (ch === "\\") { escapado = true; continue; }
+                if (ch === '"') { emString = !emString; continue; }
+                if (emString) continue;
+                if (ch === "{") pilha.push("}");
+                else if (ch === "[") pilha.push("]");
+                else if (ch === "}" || ch === "]") {
+                  pilha.pop();
+                  if (pilha.length === 0) { fim = i; break; }
+                }
+              }
+              if (fim !== -1) {
+                rawJsonPayload = aposMarcador.substring(jsonStart, fim + 1);
+              } else {
+                // Resposta truncada no meio do JSON: descarta o rabo
+                // incompleto (vírgula ou par sem valor) e fecha o que a pilha
+                // diz que ficou aberto — na ordem certa.
+                let parcial = aposMarcador
+                  .substring(jsonStart)
+                  .replace(/,\s*"[^"]*"?\s*:?\s*"?[^"{}\[\]]*$/, "")
+                  .replace(/,\s*$/, "");
+                if (emString) parcial += '"';
+                rawJsonPayload = parcial + pilha.reverse().join("");
+                console.warn(`[Chatbot AI] ⚠️ Tag PEDIDO_IA truncada pela resposta do modelo; JSON reparado por balanceamento (${pilha.length} fechamento(s)).`);
+              }
+            }
           }
+        }
 
-          // Remove do "[[PEDIDO_IA" até o "]]" que o fecha. Sem "]]" (resposta
-          // truncada), vai até o fim — não há texto legítimo depois de um JSON
-          // que nem terminou.
+        // Remoção da tag do texto visível: do "[[PEDIDO_IA" até o "]]" que o
+        // fecha; sem "]]" (truncada), até o fim — não há texto legítimo depois
+        // de um JSON que nem terminou.
+        const inicioPedido = cleanText.search(/\[\[\s*PEDIDO_IA\b/i);
+        if (inicioPedido !== -1) {
           const fechamento = cleanText.indexOf("]]", inicioPedido);
           cleanText = (
             cleanText.substring(0, inicioPedido) +
@@ -1128,29 +1180,48 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           .replace(/[ \t]{2,}/g, " ")
           .trim();
 
+        // ── O CONTRATO HONESTO DO PEDIDO ────────────────────────────────────
+        //
+        // A regra que este bloco impõe: "pedido confirmado" SÓ SAI DA BOCA DO
+        // ROBÔ DEPOIS que o pedido está gravado no banco — e sai com o número,
+        // que é a prova. Antes, o texto da IA e a gravação eram independentes:
+        // qualquer falha no meio (tag não emitida, JSON quebrado, telefone
+        // ausente, item que não casa com o cardápio, erro de banco) deixava o
+        // cliente com um "confirmado e enviado para a cozinha!" na tela e a
+        // cozinha sem NADA. Aconteceu em 29/08/2026: a cliente confirmou às
+        // 19:04, ouviu a promessa, e às 20:01 o próprio robô jurou que não
+        // havia pedido nenhum — zero pedidos WHATSAPP_IA no banco no dia todo.
+        //
+        // Agora o fluxo é: gravar → só então prometer. Falhou a gravação com a
+        // IA tendo prometido? A promessa É TROCADA por uma mensagem honesta e o
+        // atendimento humano é acionado ([[CHAMAR_ATENDENTE]] — o webhook já
+        // processa esse marcador). Falha visível se resolve em minutos; falha
+        // muda custa o cliente.
+        let resultadoDoSync: SyncResultado | null = null;
+        let payloadQueriaFinalizar = false;
+
         if (rawJsonPayload) {
           try {
-            // Tenta dar parse (com fallback de reparo para JSONs incompletos)
             let orderPayload: any = null;
             try {
               orderPayload = JSON.parse(rawJsonPayload);
             } catch {
-              // Tenta fechar colchetes e chaves caso tenha sido cortado
               const repaired = rawJsonPayload.replace(/,\s*$/, "") + '}]}';
-              try { orderPayload = JSON.parse(repaired); } catch {}
+              try { orderPayload = JSON.parse(repaired); } catch {
+                console.error(`[Chatbot AI] 🛑 Tag PEDIDO_IA presente mas o JSON não tem conserto (${rawJsonPayload.length} chars). Início: ${rawJsonPayload.slice(0, 120)}`);
+              }
             }
+
+            const rawStatusPayload = String(orderPayload?.status || "").toUpperCase().replace(/_/g, "");
+            payloadQueriaFinalizar =
+              orderPayload?.finalized === true ||
+              rawStatusPayload === "NOVO" || rawStatusPayload === "ACEITO" || rawStatusPayload === "FINALIZADO";
 
             // ── DE QUEM É ESTE PEDIDO ───────────────────────────────────────
             //
-            // A condição era `&& clientPhoneDigits`: sem telefone no JID, o
-            // pedido inteiro era descartado SEM UMA LINHA DE LOG — enquanto a IA
-            // já tinha dito ao cliente "pedido confirmado, foi para a cozinha".
-            // Cliente esperando comida que não existia em lugar nenhum.
-            //
-            // Acontece de verdade quando o WhatsApp entrega um LID em vez do
-            // número, e sempre nas integrações de Instagram/Facebook. Para esses
-            // casos a regra 11 do prompt já manda a IA PEDIR o telefone — só que
-            // o que o cliente respondia era ignorado. Agora é usado.
+            // Sem telefone no JID (LID não resolvido, Instagram/Facebook), a
+            // regra 11 do prompt manda a IA PEDIR o número — e o que o cliente
+            // responde entra aqui pelo payload.
             const telefoneDitoPeloCliente = String(
               orderPayload?.customerPhone || orderPayload?.phone || ""
             ).replace(/\D/g, "");
@@ -1161,30 +1232,73 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
                   ? telefoneDitoPeloCliente
                   : "";
 
-            if (orderPayload && Array.isArray(orderPayload.items) && !telefoneDoPedido) {
-              console.error(
-                "[Chatbot AI] 🛑 Pedido NÃO gravado: sem telefone utilizável. " +
-                  `Loja=${targetFranchiseeId} itens=${orderPayload.items.length}. ` +
-                  "A IA precisa perguntar o WhatsApp do cliente (regra 11)."
-              );
+            if (orderPayload && Array.isArray(orderPayload.items)) {
+              if (!telefoneDoPedido) {
+                resultadoDoSync = { gravado: false, motivo: "sem telefone utilizável (LID não resolvido e cliente não ditou o número)" };
+                console.error(
+                  "[Chatbot AI] 🛑 Pedido NÃO gravado: sem telefone utilizável. " +
+                    `Loja=${targetFranchiseeId} itens=${orderPayload.items.length}. ` +
+                    "A IA precisa perguntar o WhatsApp do cliente (regra 11)."
+                );
+              } else {
+                resultadoDoSync = await syncAiOrderToDatabase({
+                  franchiseeId: targetFranchiseeId,
+                  customerPhone: telefoneDoPedido,
+                  customerName: rawCustomerName || customerFirstName || "Cliente WhatsApp",
+                  payload: orderPayload,
+                  storeProducts: products,
+                  autoAccept: user.chatbotConfig ? (user.chatbotConfig as any).autoAcceptOrders === true : false,
+                });
+              }
+            } else if (rawJsonPayload) {
+              resultadoDoSync = { gravado: false, motivo: "JSON da tag inválido ou sem itens" };
             }
-
-            if (orderPayload && Array.isArray(orderPayload.items) && telefoneDoPedido) {
-              await syncAiOrderToDatabase({
-                franchiseeId: targetFranchiseeId,
-                customerPhone: telefoneDoPedido,
-                customerName: rawCustomerName || customerFirstName || "Cliente WhatsApp",
-                payload: orderPayload,
-                storeProducts: products,
-                autoAccept: user.chatbotConfig ? (user.chatbotConfig as any).autoAcceptOrders === true : false,
-              });
-            }
-          } catch (syncErr) {
+          } catch (syncErr: any) {
+            resultadoDoSync = { gravado: false, motivo: `erro de banco: ${syncErr?.message || syncErr}` };
             console.error("[Chatbot AI] Erro ao sincronizar pedido IA no banco:", syncErr);
           }
         }
-          
-        return { reply: cleanText };
+
+        // A IA prometeu cozinha? (padrões estritos — "posso confirmar?" não conta)
+        const prometeuCozinha =
+          /pedido\s+(?:foi\s+)?(?:confirmado|registrado|anotado|fechado)|(?:enviado|foi|está|esta|já\s+est[áa])\s+(?:para|na)\s+(?:a\s+)?(?:nossa\s+)?cozinha/i.test(cleanText);
+
+        const gravouFinalizado = resultadoDoSync?.gravado === true && resultadoDoSync.finalizado;
+
+        if (gravouFinalizado && resultadoDoSync?.gravado === true) {
+          // Prova de gravação: o número do pedido entra na mensagem. É o mesmo
+          // número do painel — cliente e loja falam do mesmo pedido.
+          const numero = resultadoDoSync.numero;
+          if (numero && !cleanText.includes(`#${numero}`)) {
+            cleanText = `${cleanText}\n\n🧾 Pedido nº ${numero} registrado na cozinha!`;
+          }
+          console.log(`[Chatbot AI] ✅ Confirmação com lastro: pedido ${resultadoDoSync.orderId} (nº ${numero ?? "—"}) gravado com ${resultadoDoSync.itens} item(ns), R$ ${resultadoDoSync.total.toFixed(2)}.`);
+        } else if ((payloadQueriaFinalizar || prometeuCozinha) && !gravouFinalizado) {
+          // A IA prometeu (ou tentou finalizar) e o pedido NÃO está no banco.
+          // A promessa não pode sair. Mensagem honesta + atendente humano.
+          const motivo = resultadoDoSync && !resultadoDoSync.gravado
+            ? resultadoDoSync.motivo
+            : (rawJsonPayload ? "sync não executado" : "a IA confirmou em texto sem emitir a tag PEDIDO_IA");
+          console.error(`[Chatbot AI] 🚨 CONFIRMAÇÃO SEM LASTRO bloqueada. Loja=${targetFranchiseeId} motivo="${motivo}". A resposta foi trocada e o atendente foi acionado.`);
+          cleanText =
+            `Poxa${customerFirstName ? `, ${customerFirstName}` : ""}, tive um probleminha técnico para registrar seu pedido no sistema agora! 😖 ` +
+            `Já chamei nossa equipe aqui — em instantes alguém confirma tudo com você por esta conversa mesmo, tá bom? Não precisa repetir nada!` +
+            `\n[[CHAMAR_ATENDENTE]]`;
+        }
+
+        // O destino do pedido sobe junto com a resposta: o webhook registra no
+        // rastro (/api/chatbot/diagnostico). Sem isto, "a IA confirmou mas o
+        // pedido não existe" só aparecia relendo log cru do Coolify — e o
+        // rastro guarda 60 entradas, então o incidente já tinha rolado para
+        // fora da janela quando alguém ia investigar.
+        return {
+          reply: cleanText,
+          pedido: resultadoDoSync
+            ? (resultadoDoSync.gravado
+                ? { ok: true as const, id: resultadoDoSync.orderId, numero: resultadoDoSync.numero, finalizado: resultadoDoSync.finalizado, itens: resultadoDoSync.itens }
+                : { ok: false as const, motivo: resultadoDoSync.motivo })
+            : undefined,
+        };
       }
 
       // Todos os modelos falharam — última tentativa com prompt mínimo
@@ -1255,6 +1369,27 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
   };
 }
 
+/**
+ * O que aconteceu de verdade com o pedido que a IA mandou gravar.
+ *
+ * Existe para o chamador poder cumprir o contrato honesto: sem este retorno,
+ * "gravou" e "falhou em silêncio" eram indistinguíveis — e a resposta
+ * "confirmado e enviado para a cozinha!" saía nos dois casos.
+ */
+type SyncResultado =
+  | {
+      gravado: true;
+      orderId: string;
+      /** Número diário exibido no painel — a prova que vai para o cliente. */
+      numero: string | number | null;
+      status: string;
+      /** true quando o pedido saiu de rascunho e virou pedido de verdade. */
+      finalizado: boolean;
+      itens: number;
+      total: number;
+    }
+  | { gravado: false; motivo: string };
+
 async function syncAiOrderToDatabase({
   franchiseeId,
   customerPhone,
@@ -1269,9 +1404,9 @@ async function syncAiOrderToDatabase({
   payload: any;
   storeProducts: any[];
   autoAccept?: boolean;
-}) {
+}): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
-  if (!phoneClean) return;
+  if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
 
   // Formatar número de telefone de forma numérico limpa (ex: +55 (22) 99823-2027 ou (22) 99823-2027)
   let formattedCustomerPhone = "";
@@ -1360,7 +1495,8 @@ async function syncAiOrderToDatabase({
       });
       console.log(`[Chatbot AI Order Sync] ❌ Pedido IA cancelado (${existingDraft.id})`);
     }
-    return;
+    // Cancelamento não é pedido gravado: quem chama não pode prometer cozinha.
+    return { gravado: false, motivo: "cliente cancelou — nada a confirmar" };
   }
 
   const isFinal = payload.finalized === true || rawStatus === "NOVO" || rawStatus === "ACEITO" || rawStatus === "FINALIZADO";
@@ -1379,7 +1515,7 @@ async function syncAiOrderToDatabase({
     /ifood\.com\.br/i.test(payloadStr)
   ) {
     console.log("[Chatbot AI Sync] 🛑 Abortando sincronização de rascunho IA pois o conteúdo é um comprovante do Jotajá/iFood.");
-    return;
+    return { gravado: false, motivo: "payload parece comprovante de Jotajá/iFood (regra 20)" };
   }
 
   /** Normaliza para comparar nome: sem acento, sem pontuação, espaço único. */
@@ -1508,9 +1644,45 @@ async function syncAiOrderToDatabase({
   // Recalcula o total de forma determinística — NUNCA confiar no valor total chutado pela IA!
   const totalOrderAmount = centavos(totalItemsSum + deliveryFee);
 
+  // ── PEDIDO FINALIZADO SEM UM ÚNICO ITEM NÃO É PEDIDO ──────────────────────
+  //
+  // A guilhotina anti-alucinação descarta item cujo nome não casa com o
+  // cardápio. Quando ela descarta TODOS — nome promocional que existe no prompt
+  // mas não no cadastro, por exemplo — o que sobrava era um pedido gravado com
+  // zero itens e total igual só ao frete, enquanto o cliente ouvia "confirmado
+  // e enviado para a cozinha". Comanda vazia chegando na chapa é pior que
+  // pedido nenhum: ninguém sabe o que fazer com ela.
+  //
+  // Falhar aqui é o certo — o chamador troca a promessa por atendimento humano,
+  // e o log abaixo diz exatamente quais nomes não casaram.
+  if (isFinal && orderItemsData.length === 0) {
+    const pedidos = (payload.items || []).map((i: any) => i?.name).filter(Boolean).join(" | ");
+    console.error(
+      `[Chatbot AI Order Sync] 🛑 Pedido FINALIZADO recusado: nenhum item casou com o cardápio. ` +
+      `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} pedidos="${pedidos}"`
+    );
+    return { gravado: false, motivo: `nenhum item do pedido existe no cardápio (${pedidos || "sem itens"})` };
+  }
+
+  // ── RETIRADA NÃO É ENTREGA ────────────────────────────────────────────────
+  //
+  // Aqui era `deliveryType: "DELIVERY"` fixo. Pedido de balcão entrava no painel
+  // como entrega, aparecia na fila do motoboy e pedia endereço que não existe.
+  // O sinal vem do que a IA anotou: sem endereço e sem frete é retirada.
+  const textoDeEntrega = `${payload.address || ""} ${payload.deliveryType || payload.orderType || ""}`.toLowerCase();
+  const ehRetirada =
+    /retirad|balc[ãa]o|buscar|takeout|pickup/.test(textoDeEntrega) ||
+    (!payload.address && deliveryFee === 0);
+  const deliveryType = ehRetirada ? "RETIRADA" : "DELIVERY";
+
   const notesText = payload.finalized
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`
     : `🤖 Pedido sendo montado pela IA no WhatsApp`;
+
+  // Preenchidos pelo ramo que efetivamente gravar — são a prova que sobe para
+  // o chamador e vira o "nº do pedido" que o cliente recebe.
+  let pedidoGravadoId = "";
+  let numeroDoPedido: string | number | null = null;
 
   if (existingDraft) {
     // Atualiza rascunho existente
@@ -1542,6 +1714,8 @@ async function syncAiOrderToDatabase({
         },
       },
     });
+    pedidoGravadoId = existingDraft.id;
+    numeroDoPedido = finalDailyNumber ?? null;
     console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
   } else {
     // Cria novo pedido rascunho
@@ -1559,7 +1733,7 @@ async function syncAiOrderToDatabase({
         paymentMethod: payload.paymentMethod || null,
         deliveryFee: deliveryFee,
         totalAmount: totalOrderAmount,
-        deliveryType: "DELIVERY",
+        deliveryType,
         source: "WHATSAPP_IA",
         status: finalStatus,
         notes: notesText,
@@ -1573,18 +1747,24 @@ async function syncAiOrderToDatabase({
         },
       },
     });
-    console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
+    pedidoGravadoId = newOrder.id;
+    numeroDoPedido = finalDailyNumber ?? null;
+    console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee}, ${deliveryType})`);
   }
 
   // 🖨️ APENAS SE O PEDIDO FOI TOTALMENTE FINALIZADO E CONFIRMADO PELO CLIENTE:
   if (isFinal) {
     try {
-      const targetOrderId = existingDraft ? existingDraft.id : null;
+      // O id EXATO do pedido que acabou de ser gravado.
+      //
+      // Antes, quando o pedido era novo, o `targetOrderId` era null e a busca
+      // caía em "o mais recente da loja com este status" — que em movimento é
+      // o pedido de OUTRO cliente. Duas pessoas pedindo ao mesmo tempo e a
+      // cozinha imprimia a comanda errada.
       const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
-      const fullOrderForPrint = await prisma.customerOrder.findFirst({
-        where: targetOrderId ? { id: targetOrderId } : { franchiseeId, status: finalStatus },
+      const fullOrderForPrint = await prisma.customerOrder.findUnique({
+        where: { id: pedidoGravadoId },
         include: { items: { include: { menuProduct: true } } },
-        orderBy: { createdAt: "desc" },
       });
       if (fullOrderForPrint) {
         pushJobToPrintQueue(franchiseeId, fullOrderForPrint);
@@ -1597,6 +1777,16 @@ async function syncAiOrderToDatabase({
 
   // Executa limpeza preventiva de rascunhos antigos da loja
   checkAndCleanupStaleAiDrafts(franchiseeId).catch(() => {});
+
+  return {
+    gravado: true,
+    orderId: pedidoGravadoId,
+    numero: numeroDoPedido,
+    status: finalStatus,
+    finalizado: isFinal,
+    itens: orderItemsData.length,
+    total: totalOrderAmount,
+  };
 }
 
 /**

@@ -27,6 +27,8 @@ export type TraceStage =
   | "ia-chamada"
   | "ia-vazia"
   | "ia-timeout"
+  | "pedido-gravado"
+  | "pedido-nao-gravado"
   | "enviado"
   | "envio-falhou"
   | "erro";
@@ -43,7 +45,11 @@ export interface TraceEntry {
   ms?: number;
 }
 
-const LIMITE = 60;
+// 60 cobria cerca de 80 minutos de movimento — e o incidente do "pedido
+// fantasma" de 29/08 já tinha rolado para fora da janela quando fomos
+// investigar, uma hora depois. 400 cobre um turno inteiro de jantar por poucas
+// dezenas de KB de memória.
+const LIMITE = 400;
 const rastro: TraceEntry[] = [];
 
 /** Mostra só os últimos dígitos: suficiente para identificar, sem expor. */
