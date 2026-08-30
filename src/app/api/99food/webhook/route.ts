@@ -539,7 +539,20 @@ export async function POST(req: NextRequest) {
                 notes: p.observacoes,
                 source: "99FOOD",
                 openDeliveryOrderId: orderId,
-                openDeliveryReference: displayId || "",
+                // ── O NUMERO QUE O CLIENTE E O MOTOBOY DIZEM ──────────────
+                //
+                // `displayId` foi calculado la em cima, a partir do EVENTO — e
+                // o evento do 99Food NAO traz `order_index`. Sobrava o
+                // fallback: o `order_id` de 19 digitos. A comanda saia com
+                // "N. do Pedido: 5764684242755849382" enquanto o cliente, o
+                // app e o motoboy falavam de #403016. Ninguem conseguia casar
+                // um com o outro no balcao.
+                //
+                // O numero curto ESTAVA aqui do lado o tempo todo: veio no
+                // `order/detail` que este mesmo bloco acabou de buscar, e o
+                // tradutor ja o entrega em `numeroNoParceiro` (order_index).
+                // So nao estava sendo usado na hora de gravar.
+                openDeliveryReference: p.numeroNoParceiro || displayId || "",
                 openDeliveryChannel: "99FOOD",
                 deliveryBy: p.entreguePor,
                 items: { create: items },
@@ -548,7 +561,7 @@ export async function POST(req: NextRequest) {
             created++;
             registrar99Food({ tipo: eventType || "orderNew", reconhecido: true, pedidoCriado: true, payload: event });
             console.log(
-              `[99Food Webhook] ✅ Pedido #${displayId} criado — ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}, ${p.entreguePor}`
+              `[99Food Webhook] ✅ Pedido #${p.numeroNoParceiro || displayId} criado — ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}, ${p.entreguePor}`
             );
           } catch (errCriacao: any) {
             // P2002 = violação de índice único (openDeliveryOrderId).
