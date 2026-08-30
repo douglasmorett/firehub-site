@@ -282,6 +282,7 @@ const DashboardColumn = memo(function DashboardColumn({
   onDragLeave,
   onDrop,
   headerExtra,
+  headerBelow,
   children,
   isTabActive = true,
 }: any) {
@@ -326,6 +327,7 @@ const DashboardColumn = memo(function DashboardColumn({
           <span id={columnId === "col-preparo" ? "firehub-em-producao-count-badge" : undefined} data-column-count={count} style={{ background: color, color: "#fff", borderRadius: "20px", padding: "2px 8px", fontSize: "0.78rem", fontWeight: 700, minWidth: "24px", textAlign: "center" }}>{count}</span>
         </div>
       </div>
+      {headerBelow}
       <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.6rem" }}>
         {count === 0 ? (
           <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
@@ -4042,20 +4044,32 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-novos"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-novos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-novos")}
-            headerExtra={
+            headerBelow={
+              /* Faixa larga logo abaixo do cabeçalho: um pill de 40px escrito
+                 "Auto" não dizia o que ligava. Aqui cabe o nome inteiro da
+                 ação mais o estado atual, e continua fora da área rolável. */
               <button
                 onClick={toggleAutoAccept}
-                title={autoAccept ? "Auto-aceitar ATIVO" : "Auto-aceitar DESLIGADO"}
+                aria-pressed={autoAccept}
+                title={autoAccept
+                  ? "Aceitar automático LIGADO: todo pedido novo entra já aceito. Clique para desligar."
+                  : "Aceitar automático DESLIGADO: você aceita cada pedido na mão. Clique para ligar."}
                 style={{
-                  display: "flex", alignItems: "center", gap: "4px", padding: "3px 8px",
-                  borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.68rem", fontWeight: 700,
-                  background: autoAccept ? "#DCFCE7" : "#F1F5F9",
-                  color: autoAccept ? "#16A34A" : "#94A3B8",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.4rem",
+                  width: "100%", padding: "6px 0.85rem", border: "none", textAlign: "left",
+                  borderBottom: "1px solid #E2E8F0", cursor: "pointer",
+                  background: autoAccept ? "#DCFCE7" : "#F8FAFC",
+                  color: autoAccept ? "#15803D" : "#64748B",
                   transition: "all 0.2s"
                 }}
               >
-                {autoAccept ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                Auto
+                <span style={{ display: "flex", alignItems: "center", gap: "5px", minWidth: 0, fontSize: "0.72rem", fontWeight: 700 }}>
+                  {autoAccept ? <ToggleRight size={16} style={{ flexShrink: 0 }} /> : <ToggleLeft size={16} style={{ flexShrink: 0 }} />}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Aceitar automático</span>
+                </span>
+                <span style={{ fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.03em", flexShrink: 0 }}>
+                  {autoAccept ? "LIGADO" : "DESLIGADO"}
+                </span>
               </button>
             }
           >
