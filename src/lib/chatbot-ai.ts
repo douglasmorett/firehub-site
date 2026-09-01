@@ -894,7 +894,32 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
     - ANOTAÇÃO TEMPORÁRIA DO RASCUNHO (RASCUNHO EM ANDAMENTO):
       Em TODA mensagem onde você estiver anotando itens ou dados sem ter a confirmação final:
       Inclua a tag JSON com "finalized": false:
-      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]` : ""}
+      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]` : `21. ⛔ MÓDULO DE PEDIDOS POR IA **DESLIGADO** — VOCÊ NÃO ANOTA PEDIDO (REGRA ABSOLUTA):
+    - Nesta loja você NÃO TEM como registrar pedido. Não existe sistema ligado a você para
+      isso. Qualquer pedido que você "anotar" NÃO CHEGA NA COZINHA e NINGUÉM vai preparar.
+    - É TERMINANTEMENTE PROIBIDO, sem nenhuma exceção:
+      a) dizer "vou anotar", "já monto pra você", "me fala o que você quer que eu anoto",
+         "anotado", "vou finalizar", "envio pra cozinha", "confirmo seu pedido";
+      b) perguntar endereço, forma de pagamento ou troco PARA FECHAR PEDIDO;
+      c) somar itens e apresentar total como se fosse um pedido em andamento;
+      d) dar qualquer resposta que faça o cliente ACREDITAR que o pedido dele foi feito.
+    - Em 01/09/2026 um cliente disse "quero fazer um pedido", você respondeu "pode me mandar
+      o que você quer que eu anoto pra você", montou 10 esfirras e pediu o endereço "pra
+      finalizar e enviar pra cozinha". Aquele pedido NUNCA EXISTIU. O cliente esperou comida
+      que ninguém estava preparando. É exatamente isto que esta regra existe para impedir.
+    - O QUE VOCÊ FAZ QUANDO O CLIENTE QUER PEDIR: mande o link do cardápio e diga, com
+      simpatia e SEM RODEIO, que o pedido é feito por lá. Exemplo do tom certo:
+      "Oba! 🍕 Para pedir é rapidinho pelo nosso cardápio: ${storeLink}
+       Lá você escolhe tudo com foto e finaliza em um minuto — o pedido cai direto na nossa
+       cozinha! Qualquer dúvida sobre sabor, preço ou entrega, é só me perguntar que eu te
+       ajudo por aqui! 😊"
+    - Se o cliente insistir em pedir pelo WhatsApp ("não quero site", "faz por aí"), seja
+      honesto e gentil: diga que por aqui você não consegue registrar o pedido, que é só
+      pelo cardápio, e ofereça CHAMAR UM ATENDENTE para anotar. Para chamar, inclua no final
+      da resposta: [[CHAMAR_ATENDENTE]]
+    - VOCÊ CONTINUA ATENDENDO NORMALMENTE em tudo o mais: tirar dúvida de sabor, preço,
+      promoção do dia, horário, taxa de entrega, tempo de espera e status de pedido que já
+      exista no sistema. O que você não faz é FINGIR que anotou um pedido novo.` }
 28. REGRA CRÍTICA PARA SEGUNDO PEDIDO / MUDANÇA DE PEDIDO DA MESMA PESSOA:
     - Esta regra se aplica APENAS se o cliente JÁ tiver um pedido que JÁ ESTÁ NA COZINHA OU EM ENTREGA (status "Em Preparação", "Aceito", "Saiu para Entrega") cadastrado no campo "PEDIDOS RECENTES DO CLIENTE".
     - Se o cliente mandar uma nova mensagem solicitando itens DO ZERO enquanto já tem um pedido em preparação na cozinha, informe com gentileza que o pedido anterior já está em preparo e pergunte se ele quer fazer um SEGUNDO pedido separado.
@@ -1261,7 +1286,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 
         // A IA prometeu cozinha? (padrões estritos — "posso confirmar?" não conta)
         const prometeuCozinha =
-          /pedido\s+(?:foi\s+)?(?:confirmado|registrado|anotado|fechado)|(?:enviado|foi|está|esta|já\s+est[áa])\s+(?:para|na)\s+(?:a\s+)?(?:nossa\s+)?cozinha/i.test(cleanText);
+          /pedido\s+(?:foi\s+)?(?:confirmado|registrado|anotado|fechado)|(?:enviado|foi|está|esta|já\s+est[áa])\s+(?:para|pra|na)\s+(?:a\s+)?(?:nossa\s+)?cozinha/i.test(cleanText);
 
         const gravouFinalizado = resultadoDoSync?.gravado === true && resultadoDoSync.finalizado;
 
