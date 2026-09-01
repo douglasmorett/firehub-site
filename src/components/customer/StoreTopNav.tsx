@@ -181,6 +181,17 @@ export default function StoreTopNav({
   // nao como cedula. Ficam fora da conferencia e visiveis na tela.
   const [foraConf, setForaConf] = useState<{ fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number }>({ fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0 });
   const [actual, setActual]     = useState<Record<string,string>>({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
+  /* Vendas de antes deste caixa abrir: o dinheiro delas está na gaveta e não
+     entra no esperado. É a explicação da sobra que ninguém entendia. */
+  const [foraDoTurno, setForaDoTurno] = useState<{ valor: number; quantidade: number; dinheiro: number; desde: string | null }>({ valor: 0, quantidade: 0, dinheiro: 0, desde: null });
+  /* Quanto foi contado na gaveta no fechamento anterior — vira sugestão de
+     troco na abertura. Abrir com zero é o que fabrica sobra depois. */
+  const [ultimoFechamento, setUltimoFechamento] = useState<{ cash: number; em: string | null } | null>(null);
+  /* Linha que o operador não preencheu. Campo vazio virava R$ 0,00 CONTADO e
+     a diferença acusava falta do tamanho do esperado da linha. */
+  const [showBlankWarn, setShowBlankWarn] = useState(false);
+  /* Turno que foi encerrado sozinho porque abriram outro caixa por cima. */
+  const [avisoAbertura, setAvisoAbertura] = useState<{ esperadoTotal: number; esperadoCash: number; abertoEm: string } | null>(null);
   const [closing, setClosing]   = useState(false);
   const [closeWarn, setCloseWarn] = useState(false);
   const [showPendingWarn, setShowPendingWarn] = useState(false);
@@ -265,12 +276,33 @@ export default function StoreTopNav({
       if (d.expected) setExpected(d.expected);
       if (d.pendentesDePagamento) setPendentes(d.pendentesDePagamento);
       if (d.foraDaConferencia) setForaConf(d.foraDaConferencia);
+      if (d.foraDoTurno) setForaDoTurno(d.foraDoTurno);
+      if (d.ultimoFechamento !== undefined) setUltimoFechamento(d.ultimoFechamento);
     });
     // Buscar pedidos pendentes em SAIU_ENTREGA
     fetch("/api/customer-order/pending-count").then(r => r.json()).then(d => {
       setPendingDeliveryCount(d.count || 0);
     }).catch(() => setPendingDeliveryCount(0));
   }, [showCloseModal]);
+
+  // ── ABRIR CAIXA COM O TROCO CERTO ───────────────────────────────
+  //
+  // Abrir com zero enquanto a gaveta ainda tem o dinheiro do turno anterior é
+  // o que fabrica "sobra" no fechamento: o operador conta a gaveta inteira e o
+  // sistema só conhece as vendas deste turno. A sugestão é o que foi CONTADO
+  // no último fechamento.
+  useEffect(() => {
+    if (!showOpenModal) return;
+    fetch("/api/cash-session")
+      .then(r => r.json())
+      .then(d => {
+        if (d.ultimoFechamento) {
+          setUltimoFechamento(d.ultimoFechamento);
+          setOpeningAmount(prev => (prev ? prev : String(d.ultimoFechamento.cash || "")));
+        }
+      })
+      .catch(() => {});
+  }, [showOpenModal]);
 
   // ── OPEN CASH ───────────────────────────────────────────────────
   const handleOpenCash = async () => {
@@ -282,6 +314,11 @@ export default function StoreTopNav({
     });
     setOpening(false);
     if (res.ok) {
+      // Se havia um caixa aberto, ele foi encerrado SEM ninguém conferir a
+      // gaveta. Isso precisa aparecer: o dinheiro daquele turno continua aí e
+      // vai virar sobra no fechamento deste.
+      const dados = await res.json().catch(() => ({} as any));
+      if (dados?.encerradaSemConferencia) setAvisoAbertura(dados.encerradaSemConferencia);
       setCashOpen(true);
       setShowOpenModal(false);
       setOpeningAmount("");
@@ -296,10 +333,26 @@ export default function StoreTopNav({
   // de 27/08 da Hakim Centro). A linha continua na tabela como informacao.
   const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0);
 
+  // ── CAMPO EM BRANCO NÃO É ZERO CONTADO ──────────────────────────
+  //
+  // `Number("") || 0` fazia toda linha não preenchida valer R$ 0,00 CONFERIDO,
+  // e a diferença acusava uma falta do tamanho exato do esperado daquela
+  // linha. Medido na Hakim Centro em 30/08/2026: débito, crédito e pix ficaram
+  // em branco e o fechamento gravou falta de R$ 1.339,25 — R$ 1.028,95 só
+  // dessas três linhas, dinheiro que passou na maquininha e ninguém tinha
+  // perdido.
+  const linhasEmBranco = METHODS.filter(
+    m => (expected[m.key] || 0) > 0.01 && String(actual[m.key] ?? "").trim() === ""
+  );
+
   const tryClose = () => {
     // Verificar se há pedidos em SAIU_ENTREGA antes de fechar
     if (pendingDeliveryCount > 0 && !showPendingWarn) {
       setShowPendingWarn(true);
+      return;
+    }
+    if (linhasEmBranco.length > 0 && !showBlankWarn) {
+      setShowBlankWarn(true);
       return;
     }
     const d = totalActual - expected.total;
@@ -338,6 +391,7 @@ export default function StoreTopNav({
     setShowCloseModal(false);
     setCloseWarn(false);
     setShowPendingWarn(false);
+    setShowBlankWarn(false);
     setActual({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
     startTransition(() => router.refresh());
   };
@@ -571,6 +625,12 @@ export default function StoreTopNav({
             <div style={{ fontSize:"1.8rem", marginBottom:8 }}>💰</div>
             <h2 style={{ margin:"0 0 4px", fontSize:"1.1rem", fontWeight:900 }}>Abrir Caixa</h2>
             <p style={{ margin:"0 0 1.2rem", fontSize:"0.85rem", color:"#64748B" }}>Informe o valor de troco disponível para abertura do caixa.</p>
+            {ultimoFechamento && (ultimoFechamento.cash || 0) > 0 && (
+              <div style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:10, padding:"10px 12px", marginBottom:"0.9rem", textAlign:"left", fontSize:"0.8rem", color:"#15803D", lineHeight:1.5 }}>
+                No último fechamento foram contados <strong>{fmt(ultimoFechamento.cash)}</strong> em dinheiro.
+                Se esse dinheiro continua na gaveta, abra o caixa com ele — senão o fechamento de hoje vai acusar sobra.
+              </div>
+            )}
             <label style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", display:"block", marginBottom:6 }}>Valor de abertura (troco em caixa)</label>
             <input
               type="number" min="0" step="0.01" placeholder="Ex: 50,00"
@@ -584,6 +644,28 @@ export default function StoreTopNav({
               border:"none", borderRadius:12, fontWeight:900, fontSize:"1rem", cursor:"pointer", fontFamily:"inherit",
             }}>
               {opening ? "Abrindo..." : "✅ Confirmar Abertura"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── AVISO: TURNO ENCERRADO SOZINHO AO ABRIR OUTRO CAIXA ── */}
+      {avisoAbertura && (
+        <div style={overlay} onClick={() => setAvisoAbertura(null)}>
+          <div style={card} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:"2rem", marginBottom:8 }}>🕐</div>
+            <h2 style={{ margin:"0 0 6px", fontSize:"1.05rem", fontWeight:900, color:"#B45309" }}>Havia um caixa aberto</h2>
+            <p style={{ margin:"0 0 10px", fontSize:"0.86rem", color:"#374151", lineHeight:1.55 }}>
+              O turno aberto em <strong>{new Date(avisoAbertura.abertoEm).toLocaleString("pt-BR")}</strong> foi encerrado
+              agora para este caixa poder abrir. <strong>Ninguém conferiu a gaveta dele</strong>.
+            </p>
+            <div style={{ background:"#FFFBEB", border:"1px solid #FDE68A", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left", fontSize:"0.84rem", color:"#92400E", lineHeight:1.5 }}>
+              Aquele turno esperava <strong>{fmt(avisoAbertura.esperadoTotal)}</strong> no total,
+              sendo <strong>{fmt(avisoAbertura.esperadoCash)}</strong> em dinheiro.
+              Esse dinheiro continua na gaveta — inclua no troco de abertura, ou o fechamento de hoje vai acusar sobra.
+            </div>
+            <button onClick={() => setAvisoAbertura(null)} style={{ width:"100%", padding:"11px", background:"#0F172A", color:"#fff", border:"none", borderRadius:12, fontWeight:800, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+              Entendi
             </button>
           </div>
         </div>
@@ -754,6 +836,38 @@ export default function StoreTopNav({
                   </button>
                 </div>
               </div>
+            ) : showBlankWarn ? (
+              /* ── AVISO: LINHA NÃO PREENCHIDA VIRA FALTA ── */
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:"3rem", marginBottom:8 }}>✋</div>
+                <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#B45309" }}>Faltou preencher</h2>
+                <p style={{ margin:"0 0 10px", fontSize:"0.9rem", color:"#374151", lineHeight:1.5 }}>
+                  {linhasEmBranco.length === 1 ? "Uma forma de pagamento ficou" : `${linhasEmBranco.length} formas de pagamento ficaram`} em branco,
+                  mas o sistema esperava dinheiro {linhasEmBranco.length === 1 ? "nela" : "nelas"}.
+                </p>
+                <div style={{ background:"#FFFBEB", border:"1px solid #FDE68A", borderRadius:12, padding:"12px 14px", margin:"0 0 12px", textAlign:"left" }}>
+                  {linhasEmBranco.map(m => (
+                    <div key={m.key} style={{ display:"flex", justifyContent:"space-between", fontSize:"0.86rem", padding:"4px 0", color:"#92400E" }}>
+                      <span style={{ fontWeight:700 }}>{m.label}</span>
+                      <span>esperado <strong>{fmt(expected[m.key] || 0)}</strong></span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop:"1px dashed #FDE68A", marginTop:8, paddingTop:8, fontSize:"0.84rem", color:"#92400E" }}>
+                    Fechando assim, isto vira <strong>falta de {fmt(linhasEmBranco.reduce((t, m) => t + (expected[m.key] || 0), 0))}</strong> no relatório do dia.
+                  </div>
+                </div>
+                <p style={{ margin:"0 0 1rem", fontSize:"0.78rem", color:"#94A3B8", lineHeight:1.5 }}>
+                  Campo vazio é lido como <strong>R$ 0,00 contado</strong>. Se de fato não passou nada nessa forma, digite 0.
+                </p>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => setShowBlankWarn(false)} style={{ flex:1, padding:"11px", background:"#16A34A", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    ← Voltar e preencher
+                  </button>
+                  <button onClick={() => { setShowBlankWarn(false); tryClose(); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    Fechar assim mesmo
+                  </button>
+                </div>
+              </div>
             ) : !closeWarn ? (
               <>
                 <button onClick={() => setShowCloseModal(false)} style={{ position:"absolute", top:12, right:12, background:"none", border:"none", cursor:"pointer" }}><X size={20} /></button>
@@ -762,6 +876,37 @@ export default function StoreTopNav({
                 <p style={{ margin:"0 0 1rem", fontSize:"0.82rem", color:"#64748B" }}>
                   Informe o valor <strong>real contado</strong> em cada forma de pagamento. O que importa é o <strong>total</strong>.
                 </p>
+
+                {/* Vendas feitas antes deste caixa abrir. O dinheiro delas
+                    está na gaveta e o sistema não tem como saber disso — é
+                    daqui que sai a "sobra" que ninguém explicava. */}
+                {foraDoTurno.valor > 0 && (
+                  <div style={{ background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left" }}>
+                    <div style={{ fontSize:"0.8rem", fontWeight:800, color:"#1D4ED8", marginBottom:6 }}>
+                      ℹ️ {foraDoTurno.quantidade} {foraDoTurno.quantidade === 1 ? "pedido feito" : "pedidos feitos"} antes deste caixa abrir
+                    </div>
+                    <div style={{ fontSize:"0.84rem", color:"#1E40AF", lineHeight:1.5 }}>
+                      Somam <strong>{fmt(foraDoTurno.valor)}</strong>
+                      {foraDoTurno.dinheiro > 0 && <> — sendo <strong>{fmt(foraDoTurno.dinheiro)}</strong> em dinheiro</>}.
+                      Não entram no que o sistema espera abaixo, mas o dinheiro pode estar na gaveta:
+                      se sobrar mais ou menos esse valor, é isto.
+                    </div>
+                  </div>
+                )}
+
+                {/* Sangria maior que o dinheiro que entrou no turno: saiu
+                    dinheiro que veio de antes. Sem dizer isso, o operador vê um
+                    "esperado" negativo e não entende nada. */}
+                {(expected.cash || 0) < 0 && (
+                  <div style={{ background:"#FFF7ED", border:"1px solid #FED7AA", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left" }}>
+                    <div style={{ fontSize:"0.8rem", fontWeight:800, color:"#C2410C", marginBottom:6 }}>⚠️ Saiu mais dinheiro do que entrou neste turno</div>
+                    <div style={{ fontSize:"0.84rem", color:"#9A3412", lineHeight:1.5 }}>
+                      As sangrias passaram do dinheiro vendido desde a abertura, então o sistema espera
+                      <strong> {fmt(expected.cash || 0)}</strong> na gaveta. Isso quase sempre quer dizer que
+                      a retirada levou dinheiro de um turno anterior.
+                    </div>
+                  </div>
+                )}
 
                 {/* O esperado em dinheiro já considera sangria e reforço. Sem
                     mostrar isso aqui, o operador conta a gaveta, vê um número

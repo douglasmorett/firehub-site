@@ -12,19 +12,18 @@ async function getUser(session: any) {
   return { ...u, targetId };
 }
 
-// GET - retorna sessão aberta atual e pedidos presenciais do período
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  const user = await getUser(session);
-  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
-
-  // Sessão aberta atual
-  const openSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.targetId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-  });
-
+/**
+ * Esperado do turno: o que a loja vendeu desde que este caixa foi aberto,
+ * separado por onde o dinheiro entra.
+ *
+ * Virou função porque a ABERTURA de um caixa novo também precisa disto: ela
+ * encerra o turno anterior e, sem calcular, gravava um turno inteiro com tudo
+ * zerado (ver o comentário no POST).
+ */
+async function calcularEsperadoDoTurno(
+  targetId: string,
+  openSession: { id: string; openedAt: Date; openingAmount: number }
+) {
   // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
   let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 };
   // -- VENDA QUE NUNCA VIRA CEDULA ---------------------------------------
@@ -53,7 +52,7 @@ export async function GET() {
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
-        franchiseeId: user.targetId,
+        franchiseeId: targetId,
         // CRIANDO_IA é rascunho que o assistente ainda está montando: não é
         // pedido, não tem valor fechado e não pode entrar em conta nenhuma.
         // AGUARDANDO_PAGAMENTO continua vindo de propósito, para ser separado
@@ -234,7 +233,7 @@ export async function GET() {
     try {
       if (await temEstruturaDeCaixa()) {
         const movs = await prisma.cashMovement.findMany({
-          where: { cashSessionId: openSession.id, franchiseeId: user.targetId },
+          where: { cashSessionId: openSession.id, franchiseeId: targetId },
           select: { tipo: true, valor: true },
         });
         for (const m of movs) {
@@ -247,6 +246,93 @@ export async function GET() {
       console.error("[Caixa] Não consegui somar as movimentações do turno:", e?.message);
     }
   }
+
+  return {
+    expected,
+    foraDaConferencia,
+    pendentesValor,
+    pendentesQuantidade,
+    movimentacaoEntradas,
+    movimentacaoSaidas,
+  };
+}
+
+// GET - retorna sessão aberta atual e pedidos presenciais do período
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  const user = await getUser(session);
+  if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+  // Sessão aberta atual
+  const openSession = await prisma.cashSession.findFirst({
+    where: { franchiseeId: user.targetId, status: "OPEN" },
+    orderBy: { openedAt: "desc" },
+  });
+
+  const dados = openSession
+    ? await calcularEsperadoDoTurno(user.targetId, openSession)
+    : {
+        expected: { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 },
+        foraDaConferencia: { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0 },
+        pendentesValor: 0, pendentesQuantidade: 0, movimentacaoEntradas: 0, movimentacaoSaidas: 0,
+      };
+  const { expected, foraDaConferencia, pendentesValor, pendentesQuantidade, movimentacaoEntradas, movimentacaoSaidas } = dados;
+
+  // ── O DINHEIRO DA GAVETA PODE SER DE ANTES DESTE TURNO ─────────────────
+  //
+  // O esperado só conhece pedido feito DEPOIS da abertura do caixa. Quando a
+  // loja vende com o caixa fechado — ou quando alguém abre um caixa novo sem
+  // fechar o anterior — as cédulas desses pedidos continuam na gaveta, mas
+  // não estão em conta nenhuma. O operador conta a gaveta inteira e o
+  // fechamento acusa SOBRA do tamanho exato do que ficou de fora.
+  //
+  // Medido na Hakim Centro em 31/08/2026: 27 pedidos (R$ 1.351,14) ficaram
+  // num turno encerrado sem conferência às 21:18; o turno seguinte abriu com
+  // troco zero e fechou acusando R$ 827,71 de sobra.
+  //
+  // Não entra no esperado — seria adivinhar quanto daquilo ainda está na
+  // gaveta. Vai para a tela como explicação da diferença.
+  let foraDoTurno = { valor: 0, quantidade: 0, dinheiro: 0, desde: null as string | null };
+  if (openSession) {
+    const anterior = await prisma.cashSession.findFirst({
+      where: {
+        franchiseeId: user.targetId,
+        status: "CLOSED",
+        closedAt: { not: null, lte: openSession.openedAt },
+      },
+      orderBy: { closedAt: "desc" },
+      select: { closedAt: true },
+    });
+    if (anterior?.closedAt && anterior.closedAt < openSession.openedAt) {
+      const orfaos = await prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: user.targetId,
+          status: { notIn: ["CANCELADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
+          createdAt: { gt: anterior.closedAt, lt: openSession.openedAt },
+        },
+        select: { totalAmount: true, paymentMethod: true, source: true, paymentPaidAt: true, gatewayProvider: true },
+      });
+      for (const o of orfaos) {
+        const pm = (o.paymentMethod || "").toLowerCase();
+        foraDoTurno.valor += o.totalAmount || 0;
+        foraDoTurno.quantidade += 1;
+        if ((pm.includes("dinheiro") || pm.includes("cash")) && !pm.includes("online")) {
+          foraDoTurno.dinheiro += o.totalAmount || 0;
+        }
+      }
+      foraDoTurno.desde = anterior.closedAt.toISOString();
+    }
+  }
+
+  // Quanto foi contado na gaveta no último fechamento: é a sugestão de troco
+  // de abertura do próximo turno. Abrir com zero enquanto a gaveta tem o
+  // dinheiro do turno anterior é o que fabrica "sobra" no fechamento.
+  const ultimoFechamento = await prisma.cashSession.findFirst({
+    where: { franchiseeId: user.targetId, status: "CLOSED", closingCash: { not: null } },
+    orderBy: { closedAt: "desc" },
+    select: { closingCash: true, closedAt: true },
+  });
 
   return NextResponse.json({
     session: openSession,
@@ -274,6 +360,16 @@ export async function GET() {
       naoIdentificado: Number(foraDaConferencia.naoIdentificado.toFixed(2)),
       naoIdentificadoQtd: foraDaConferencia.naoIdentificadoQtd,
     },
+    // Vendas de antes deste caixa abrir, cujo dinheiro pode estar na gaveta.
+    foraDoTurno: {
+      valor: Number(foraDoTurno.valor.toFixed(2)),
+      quantidade: foraDoTurno.quantidade,
+      dinheiro: Number(foraDoTurno.dinheiro.toFixed(2)),
+      desde: foraDoTurno.desde,
+    },
+    ultimoFechamento: ultimoFechamento
+      ? { cash: ultimoFechamento.closingCash || 0, em: ultimoFechamento.closedAt?.toISOString() || null }
+      : null,
   });
 }
 
@@ -286,7 +382,64 @@ export async function POST(req: Request) {
 
   const { openingAmount = 0 } = await req.json();
 
-  // Fechar qualquer sessão aberta anterior
+  // ── ABRIR CAIXA ENCERRAVA O TURNO ANTERIOR EM SILÊNCIO ────────────────
+  //
+  // Este trecho era um `updateMany` seco: marcava CLOSED e ia embora. O turno
+  // anterior ficava gravado com esperado 0, contado 0, `difference` 0 e
+  // `closedBy` vazio — no histórico ele aparece como um turno que fechou
+  // certinho. Na Hakim Centro, em 31/08/2026, foi assim que 27 pedidos
+  // (R$ 1.351,14) e um troco de R$ 569,15 saíram da conferência sem que
+  // ninguém tivesse contado nada.
+  //
+  // O efeito não para aí: o dinheiro daquele turno continua na gaveta e vira
+  // SOBRA no fechamento do turno seguinte (foi R$ 827,71 no mesmo dia).
+  //
+  // Agora o esperado do turno interrompido é calculado e gravado, o fechamento
+  // fica marcado como automático e `difference` fica NULO — não houve
+  // conferência, e zero seria mentira. Quem abriu o caixa recebe de volta o
+  // que ficou pendurado, para a tela poder avisar.
+  const abertaAntes = await prisma.cashSession.findFirst({
+    where: { franchiseeId: user.targetId, status: "OPEN" },
+    orderBy: { openedAt: "desc" },
+  });
+
+  let encerradaSemConferencia: { esperadoTotal: number; esperadoCash: number; abertoEm: string } | null = null;
+
+  if (abertaAntes) {
+    try {
+      const d = await calcularEsperadoDoTurno(user.targetId, abertaAntes);
+      const agora = new Date();
+      await prisma.cashSession.update({
+        where: { id: abertaAntes.id },
+        data: {
+          status: "CLOSED",
+          closedAt: agora,
+          expectedCash: Number(d.expected.cash.toFixed(2)),
+          expectedDebit: Number(d.expected.debit.toFixed(2)),
+          expectedCredit: Number(d.expected.credit.toFixed(2)),
+          expectedPix: Number(d.expected.pix.toFixed(2)),
+          expectedVoucher: Number(d.expected.voucher.toFixed(2)),
+          expectedTotal: Number(d.expected.total.toFixed(2)),
+          difference: null,
+          closedBy: "sistema — encerrado ao abrir outro caixa",
+          notes:
+            `Turno encerrado automaticamente em ${agora.toLocaleString("pt-BR")} porque um caixa novo foi aberto. ` +
+            `Ninguém conferiu a gaveta: o esperado ficou registrado e o contado não existe. ` +
+            `O dinheiro deste turno continua na gaveta e vai aparecer como sobra no fechamento seguinte.`,
+        },
+      });
+      encerradaSemConferencia = {
+        esperadoTotal: Number(d.expected.total.toFixed(2)),
+        esperadoCash: Number(d.expected.cash.toFixed(2)),
+        abertoEm: abertaAntes.openedAt.toISOString(),
+      };
+    } catch (e: any) {
+      console.error("[Caixa] Não consegui calcular o esperado do turno interrompido:", e?.message);
+    }
+  }
+
+  // Rede de segurança: qualquer outra sessão aberta (duplicada por corrida)
+  // continua sendo encerrada, como sempre foi.
   await prisma.cashSession.updateMany({
     where: { franchiseeId: user.targetId, status: "OPEN" },
     data: { status: "CLOSED", closedAt: new Date() },
@@ -310,7 +463,7 @@ export async function POST(req: Request) {
     sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
   }
 
-  return NextResponse.json({ success: true, session: cashSession });
+  return NextResponse.json({ success: true, session: cashSession, encerradaSemConferencia });
 }
 
 // PUT - fechar caixa com valores contados
