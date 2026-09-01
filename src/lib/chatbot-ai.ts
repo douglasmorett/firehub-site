@@ -880,6 +880,33 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
          cobra a menos e perde dinheiro. Se o cliente não escolheu nada, mande "options": [].
       d) Antes de fechar, DIGA ao cliente quando a escolha dele tem acréscimo: "o bacon vem +R$ 3,00,
          fica R$ 28,90". Nunca deixe o cliente descobrir o acréscimo só no total.
+21.9. ⛔ DUAS CONFERÊNCIAS OBRIGATÓRIAS ANTES DE FECHAR QUALQUER PEDIDO DE ENTREGA:
+    Você é PROIBIDO de emitir a tag com "finalized": true sem ter conferido AS DUAS.
+
+    A) PEDIDO MÍNIMO — R$ ${minimumOrderValue.toFixed(2).replace(".", ",")} de SUBTOTAL (itens, sem a taxa):
+       - Some os itens. Se o subtotal for MENOR que o mínimo, NÃO FECHE. Não adianta a taxa
+         de entrega somar e passar do mínimo: o que conta é o subtotal dos itens.
+       - Diga com simpatia quanto falta e ofereça complementar. Exemplo do tom:
+         "Ficou 19,00 reais em itens, e o mínimo pra entrega aqui é ${minimumOrderValue.toFixed(2).replace(".", ",")} reais 😊
+          Faltam ${"${(minimumOrderValue - 19).toFixed(2).replace('.', ',')}"} reais — quer que eu acrescente mais uma esfirra pra fechar?"
+         (troque os valores pelos reais do pedido).
+       - Se o cliente NÃO quiser completar, ofereça a RETIRADA NO BALCÃO caso a loja aceite
+         (veja "Aceita Retirada no Balcão" acima) — retirada não tem pedido mínimo.
+       - Em 01/09/2026 você montou um pedido de 19,00 reais e foi pedir confirmação para
+         mandar para a cozinha, com o mínimo da loja em 26,00. É isto que esta regra impede.
+
+    B) A LOJA ENTREGA NESSE ENDEREÇO? — confira na seção
+       "TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO" acima:
+       - Se a loja entrega POR BAIRRO: o bairro do cliente TEM que estar naquela lista.
+         Não está? Diga com carinho que ainda não entregam lá, e ofereça a retirada se a
+         loja aceitar. NUNCA invente taxa para bairro que não está cadastrado, e NUNCA use
+         a taxa de um bairro parecido.
+       - Se a loja entrega POR RAIO: respeite o raio máximo informado e a faixa de km.
+       - SEMPRE pergunte o BAIRRO quando o cliente mandar só rua e número — sem o bairro
+         você não tem como conferir nem cobrar a taxa certa.
+       - Só use a taxa que estiver cadastrada para aquele bairro/faixa. Taxa chutada vira
+         prejuízo da loja ou cobrança indevida do cliente.
+
 22. TRATAMENTO DE ÁUDIOS DE CLIENTES (MENSAGENS DE VOZ):
     - Se a mensagem do cliente for um áudio, ela será transcrita ou enviada como anexo para você processar.
     - ESCUTE ou LEIA a intenção do cliente com calma e forneça uma resposta EXATAMENTE no mesmo formato humano, acolhedor e direto.
@@ -958,6 +985,7 @@ DADOS DA LOJA:
 - Link do Cardápio: ${storeLink}
 - Tempo Médio de Entrega da Loja: 45 a 60 minutos
 - Aceita Retirada no Balcão: ${chatbotConfig.acceptsPickup ? "SIM" : "NÃO"}
+- ⚠️ PEDIDO MÍNIMO PARA ENTREGA: R$ ${minimumOrderValue.toFixed(2).replace(".", ",")} (subtotal dos itens, SEM a taxa de entrega)
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
 - Quadro Geral de Horários:
 ${hoursText}
@@ -1273,6 +1301,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
                   payload: orderPayload,
                   storeProducts: products,
                   autoAccept: user.chatbotConfig ? (user.chatbotConfig as any).autoAcceptOrders === true : false,
+                  minimumOrderValue,
                 });
               }
             } else if (rawJsonPayload) {
@@ -1301,14 +1330,27 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         } else if ((payloadQueriaFinalizar || prometeuCozinha) && !gravouFinalizado) {
           // A IA prometeu (ou tentou finalizar) e o pedido NÃO está no banco.
           // A promessa não pode sair. Mensagem honesta + atendente humano.
-          const motivo = resultadoDoSync && !resultadoDoSync.gravado
-            ? resultadoDoSync.motivo
+          const recusa = resultadoDoSync && !resultadoDoSync.gravado ? resultadoDoSync : null;
+          const motivo = recusa
+            ? recusa.motivo
             : (rawJsonPayload ? "sync não executado" : "a IA confirmou em texto sem emitir a tag PEDIDO_IA");
-          console.error(`[Chatbot AI] 🚨 CONFIRMAÇÃO SEM LASTRO bloqueada. Loja=${targetFranchiseeId} motivo="${motivo}". A resposta foi trocada e o atendente foi acionado.`);
-          cleanText =
-            `Poxa${customerFirstName ? `, ${customerFirstName}` : ""}, tive um probleminha técnico para registrar seu pedido no sistema agora! 😖 ` +
-            `Já chamei nossa equipe aqui — em instantes alguém confirma tudo com você por esta conversa mesmo, tá bom? Não precisa repetir nada!` +
-            `\n[[CHAMAR_ATENDENTE]]`;
+
+          if (recusa?.regraDeNegocio && recusa.mensagemParaOCliente) {
+            // Recusa por REGRA DA LOJA (pedido mínimo, área de entrega). Não é
+            // falha técnica e não pode ser tratada como uma: dizer "problema no
+            // sistema" aqui seria mentir de novo, só que com outra frase — e
+            // ainda chamaria um atendente para um caso que se resolve sozinho,
+            // com o cliente completando o pedido.
+            console.warn(`[Chatbot AI] 📏 Fechamento barrado por regra da loja. Loja=${targetFranchiseeId} motivo="${motivo}".`);
+            cleanText = recusa.mensagemParaOCliente;
+          } else {
+            console.error(`[Chatbot AI] 🚨 CONFIRMAÇÃO SEM LASTRO bloqueada. Loja=${targetFranchiseeId} motivo="${motivo}". A resposta foi trocada e o atendente foi acionado.`);
+            cleanText =
+              `Poxa${customerFirstName ? `, ${customerFirstName}` : ""}, tive um probleminha técnico para registrar seu pedido no sistema agora! 😖 ` +
+              `Já chamei nossa equipe aqui — em instantes alguém confirma tudo com você por esta conversa mesmo, tá bom? Não precisa repetir nada!` +
+              `
+[[CHAMAR_ATENDENTE]]`;
+          }
         }
 
         // O destino do pedido sobe junto com a resposta: o webhook registra no
@@ -1413,7 +1455,15 @@ type SyncResultado =
       itens: number;
       total: number;
     }
-  | { gravado: false; motivo: string };
+  | {
+      gravado: false;
+      motivo: string;
+      /** true quando a recusa é REGRA DA LOJA (mínimo, área), não falha técnica. */
+      regraDeNegocio?: boolean;
+      /** O que dizer ao cliente. Sem isto ele ouviria "problema técnico" por uma
+       *  recusa que não tem nada de técnico. */
+      mensagemParaOCliente?: string;
+    };
 
 async function syncAiOrderToDatabase({
   franchiseeId,
@@ -1422,6 +1472,7 @@ async function syncAiOrderToDatabase({
   payload,
   storeProducts,
   autoAccept,
+  minimumOrderValue,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -1429,6 +1480,8 @@ async function syncAiOrderToDatabase({
   payload: any;
   storeProducts: any[];
   autoAccept?: boolean;
+  /** Piso de subtotal para ENTREGA, cadastrado pela loja. */
+  minimumOrderValue?: number;
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
@@ -1699,6 +1752,33 @@ async function syncAiOrderToDatabase({
     /retirad|balc[ãa]o|buscar|takeout|pickup/.test(textoDeEntrega) ||
     (!payload.address && deliveryFee === 0);
   const deliveryType = ehRetirada ? "RETIRADA" : "DELIVERY";
+
+  // ── PEDIDO MÍNIMO: TRAVA DE VERDADE, NÃO PEDIDO DE FAVOR ──────────────────
+  //
+  // A regra está no prompt, mas prompt não é garantia — foi a lição da noite em
+  // que o robô prometeu cozinha sem gravar. Em 01/09/2026 ele montou 19,00 reais
+  // de itens com o mínimo da loja em 26,00 e foi pedir confirmação para mandar
+  // para a cozinha. Aqui o modelo não decide: se o SUBTOTAL (itens, sem a taxa)
+  // não alcança o mínimo, o pedido de ENTREGA não fecha.
+  //
+  // Retirada não entra: mínimo é regra de entrega. E rascunho também não — o
+  // cliente ainda está montando, travar no meio seria implicância.
+  const minimoDaLoja = Number(minimumOrderValue) || 0;
+  if (isFinal && deliveryType === "DELIVERY" && minimoDaLoja > 0 && totalItemsSum < minimoDaLoja) {
+    const falta = centavos(minimoDaLoja - totalItemsSum);
+    console.warn(
+      `[Chatbot AI Order Sync] 🛑 Pedido ABAIXO DO MÍNIMO recusado: subtotal R$ ${totalItemsSum.toFixed(2)} < mínimo R$ ${minimoDaLoja.toFixed(2)}. ` +
+      `Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
+    );
+    return {
+      gravado: false,
+      motivo: `abaixo do pedido mínimo: subtotal R$ ${totalItemsSum.toFixed(2).replace(".", ",")}, mínimo R$ ${minimoDaLoja.toFixed(2).replace(".", ",")} (faltam R$ ${falta.toFixed(2).replace(".", ",")})`,
+      regraDeNegocio: true,
+      mensagemParaOCliente:
+        `Opa! 😊 Deu R$ ${totalItemsSum.toFixed(2).replace(".", ",")} em itens, e o pedido mínimo para entrega aqui é R$ ${minimoDaLoja.toFixed(2).replace(".", ",")}. ` +
+        `Faltam R$ ${falta.toFixed(2).replace(".", ",")} — quer incluir mais alguma coisa pra eu fechar pra você?`,
+    };
+  }
 
   const notesText = payload.finalized
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`
