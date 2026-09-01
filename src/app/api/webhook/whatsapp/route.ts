@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { registrarEstadoDoRobo } from '@/lib/whatsapp-estado';
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
 import { processChatbotAI } from '@/lib/chatbot-ai';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
@@ -79,37 +80,54 @@ export async function POST(req: NextRequest) {
 
     console.log(`[${time}] [WhatsApp Webhook] Evento recebido: "${event}" para instância "${instance}"`);
 
-    // 1. Atualização de conexão (QR Code escaneado / conectado no celular)
+    // ── 1. MUDANÇA DE CONEXÃO — NOS DOIS SENTIDOS ────────────────────────────
+    //
+    // Este bloco gravava `connected: true` SEMPRE, qualquer que fosse o estado
+    // que viesse no corpo — e nunca gravava false. Somado ao gateway, que só
+    // avisava quando a sessão ABRIA, ninguém no sistema inteiro tinha como
+    // desmarcar uma loja caída: a bandeira ficava verde para sempre.
+    //
+    // Era a reclamação do dono, literal: "não ficar marcando como conectado sem
+    // estar". A faixa de "religue seu robô" (AvisoRoboDesconectado, montada no
+    // layout de /store) depende de `desconectadoDesde`, que só é carimbado
+    // quando alguém registra a queda. Ninguém registrava.
+    //
+    // Agora o estado do corpo é respeitado e a gravação passa por
+    // `registrarEstadoDoRobo` — a mesma peça que a tela do Chatbot e a faixa
+    // usam. Uma fonte de verdade só, para as três não divergirem de novo.
     if ((event.includes("CONNECTION") || event.includes("STATE")) && instance) {
       try {
         const shortId = instance.replace(/^firehub_/, "");
         const user = await prisma.user.findFirst({
           where: { id: { endsWith: shortId } },
-          select: { id: true, chatbotConfig: true },
+          select: { id: true, chatbotConfig: true, storePhone: true },
         });
 
         if (user) {
           const config = (user.chatbotConfig as any) || {};
-          const phone = body.data?.ownerJid?.split("@")[0] || body.data?.phone || "";
-          const formattedPhone = phone ? `+55 ${phone.replace(/^55/, "")}` : "";
+          const estadoBruto = String(
+            body.data?.state || body.data?.status || body.data?.connection || ""
+          ).toLowerCase();
+          // Sem estado no corpo, o evento só existe porque algo aconteceu com a
+          // conexão; o gateway antigo mandava isso apenas ao abrir.
+          const conectada = estadoBruto ? estadoBruto === "open" : true;
 
-          await prisma.user.update({
-            where: { id: user.id },
-            data: {
-              chatbotConfig: {
-                ...config,
-                connected: true,
-                phone: formattedPhone || config.phone || "+55 (21) 99999-9999",
-                connectedAt: new Date().toISOString(),
-              },
-            },
-          });
-          console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] ✅ Instância ${instance} conectada no celular!`);
+          // O `:15` no fim do JID é o id do APARELHO, não parte do telefone —
+          // vazava para o cadastro e quebrava qualquer comparação de número.
+          const phone = String(body.data?.ownerJid || body.data?.phone || "")
+            .split("@")[0].split(":")[0].replace(/\D/g, "");
+          const formattedPhone = phone ? `+55 ${phone.replace(/^55/, "")}` : null;
+
+          await registrarEstadoDoRobo(user.id, config, conectada, formattedPhone, user.storePhone);
+
+          console.log(
+            `[${new Date().toISOString()}] [WhatsApp Webhook] ${conectada ? "✅" : "⚠️"} Instância ${instance} ${conectada ? "CONECTADA" : `DESCONECTADA (estado "${estadoBruto || "?"}")`}.`
+          );
         }
       } catch (connErr: any) {
         console.error(`[WhatsApp Webhook] Erro ao processar conexão:`, connErr?.message);
       }
-      return NextResponse.json({ status: "connected" });
+      return NextResponse.json({ status: "ok" });
     }
 
     // 2. Recebimento de mensagens e chamadas (MESSAGES_UPSERT, CALL, etc.)

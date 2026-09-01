@@ -760,6 +760,39 @@ async function criarSocket(instanceName) {
 
       console.log(`[WhatsApp Gateway] 🔄 Conexão encerrada para ${instanceName} (Status ${statusCode}). Reconectar: ${shouldReconnect} (tentativa #${count})`);
 
+      // ── AVISAR O FIREHUB QUE CAIU ─────────────────────────────────────────
+      //
+      // O gateway só avisava o FireHub quando a sessão ABRIA. Como o painel
+      // marca "conectado" a partir desse aviso e nada nunca desmarcava, a loja
+      // caída continuava verde na tela — a reclamação do dono, literal: "não
+      // ficar marcando como conectado sem estar". E a faixa de "religue seu
+      // robô" depende justamente desse carimbo de queda para aparecer.
+      //
+      // Só avisa quando a queda é PARA VALER. Reconexão com backoff é normal e
+      // se resolve em segundos: avisar nela faria a faixa piscar a cada
+      // oscilação de rede, e faixa que pisca à toa o lojista aprende a ignorar.
+      // O critério é o mesmo que o gateway já usa para decidir desistir —
+      // deslogado ou substituído — mais a insistência: da 4ª tentativa em
+      // diante não é mais soluço, é queda.
+      const quedaDeVerdade = !shouldReconnect || count >= 4;
+      if (quedaDeVerdade) {
+        try {
+          const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
+          await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              event: "CONNECTION_UPDATE",
+              instance: instanceName,
+              data: { state: "close", statusCode: statusCode || null, tentativas: count },
+            }),
+          });
+          console.log(`[WhatsApp Gateway] 📉 FireHub avisado da queda de ${instanceName} (status ${statusCode}, tentativa ${count}).`);
+        } catch (err) {
+          console.warn("[WhatsApp Gateway] Aviso ao notificar queda:", err.message);
+        }
+      }
+
       if (shouldReconnect) {
         // Reconexão infinita com backoff de 3s até no máximo 30s
         const delay = Math.min(3000 * Math.min(count, 10), 30000);
