@@ -134,6 +134,20 @@ function momentoDaSaida(o: any): string | null {
 
 const media = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
 
+// A MEDIANA E O NUMERO HONESTO AQUI.
+//
+// Medido na Hakim Centro em 01/09/2026: metade das entregas chega em ate 29
+// min, mas a media da 65 -- a operacao finaliza pedido em lote (o operador
+// arrasta uma leva inteira para "Entregue" quando lembra), e essa cauda longa
+// puxa a media para cima sozinha. O lojista que le "1h05 na rua" conclui que a
+// entrega esta pessima quando o problema e a hora em que alguem clica.
+const mediana = (v: number[]) => {
+  if (!v.length) return null;
+  const o = [...v].sort((a, b) => a - b);
+  const m = Math.floor(o.length / 2);
+  return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+};
+
 const fmtMin = (v: number | null) => {
   if (v === null) return "—";
   if (v < 60) return `${Math.round(v)} min`;
@@ -397,7 +411,7 @@ export default function RelatoriosClient({
       { chave: "naRua", titulo: "Na rua", legenda: "Da saida ate a entrega no cliente", cor: "#10B981", dados: naRua },
       { chave: "kds", titulo: "Finalizacao no KDS", legenda: "Da producao ate a montagem terminar", cor: "#0EA5E9", dados: kdsMontagem },
       { chave: "total", titulo: "Tempo total", legenda: "Do pedido ate o cliente receber", cor: "#0F172A", dados: total },
-    ].map((e) => ({ ...e, media: media(e.dados), medidos: e.dados.length }));
+    ].map((e) => ({ ...e, media: media(e.dados), mediana: mediana(e.dados), medidos: e.dados.length }));
 
     const comDados = etapas.filter((e) => e.medidos > 0);
 
@@ -773,7 +787,7 @@ export default function RelatoriosClient({
               <Timer size={18} color="#3B82F6" /> Quanto tempo o pedido passa em cada tela
             </h2>
             <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
-              Média do período. Conta só o pedido que passou pela etapa com hora registrada.
+              Conta só o pedido que passou pela etapa com hora registrada. O número grande é a mediana — o pedido do meio, que não se deixa distorcer por um pedido esquecido aberto.
             </p>
           </div>
         </div>
@@ -792,9 +806,10 @@ export default function RelatoriosClient({
             {tempos.comDados.map((e) => (
               <div key={e.chave} style={{ border: "1px solid #E2E8F0", borderRadius: 14, padding: "0.9rem 1rem", background: "#fff", borderTop: `4px solid ${e.cor}` }}>
                 <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 800, color: "#334155" }}>{e.titulo}</p>
-                <p style={{ margin: "6px 0 0", fontSize: "1.5rem", fontWeight: 900, color: e.cor, lineHeight: 1 }}>{fmtMin(e.media)}</p>
+                <p style={{ margin: "6px 0 0", fontSize: "1.5rem", fontWeight: 900, color: e.cor, lineHeight: 1 }}>{fmtMin(e.mediana)}</p>
+                <p style={{ margin: "3px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>metade dos pedidos leva até isso</p>
                 <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#94A3B8", lineHeight: 1.35 }}>{e.legenda}</p>
-                <p style={{ margin: "6px 0 0", fontSize: "0.7rem", color: "#CBD5E1", fontWeight: 700 }}>{e.medidos} pedido{e.medidos !== 1 ? "s" : ""} medido{e.medidos !== 1 ? "s" : ""}</p>
+                <p style={{ margin: "6px 0 0", fontSize: "0.7rem", color: "#CBD5E1", fontWeight: 700 }}>{e.medidos} pedido{e.medidos !== 1 ? "s" : ""} medido{e.medidos !== 1 ? "s" : ""} · média {fmtMin(e.media)}</p>
               </div>
             ))}
           </div>
