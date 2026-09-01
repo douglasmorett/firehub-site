@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { parseComboSelections } from "@/lib/parse-combo";
+import { nomeDoItem } from "@/lib/nome-do-item";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
@@ -1617,7 +1618,7 @@ function OrderCard({
             item.comboSelections,
             item.quantity,
           );
-          const rawName = item.name || item.menuProduct?.name || (comboItems.length > 0 ? "Combo" : "Item");
+          const rawName = nomeDoItem(item, comboItems.length > 0 ? "Combo" : "Item");
           const displayName =
             comboItems.length > 0
               ? rawName.split(" | ")[0]

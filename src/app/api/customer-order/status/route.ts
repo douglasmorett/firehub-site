@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
         select: {
           quantity: true,
           price: true,
+          productName: true,
           menuProduct: { select: { name: true } }
         }
       }

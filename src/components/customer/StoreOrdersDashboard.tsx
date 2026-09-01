@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
+import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
@@ -932,7 +933,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
             {order.items?.map((item: any) => {
               const comboSels = parseComboSelections(item.comboSelections, item.quantity);
-              const nameParts = (item.menuProduct?.name || "Item").split(" | ");
+              const nameParts = nomeDoItem(item).split(" | ");
               const mainName = nameParts[0];
               const extras = nameParts.slice(1);
               return (
@@ -1315,8 +1316,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       paymentMethod: translatePayment(payStr),
       isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
       items: (order.items || []).map((i: any) => {
-        const rawName = i.menuProduct?.name || i.name || "Item";
-        const cleanName = rawName.split(" | ")[0].trim();
+        const cleanName = nomeDoItemParaComanda(i);
         return {
           name: cleanName,
           qty: i.quantity || i.qty || 1,
@@ -2665,7 +2665,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ marginBottom: "14px" }}>
                   {order.items?.map((item: any) => {
                     const comboSels = parseComboSelections(item.comboSelections, item.quantity);
-                    const nameParts = (item.menuProduct?.name || item.name || "Item").split(" | ");
+                    const nameParts = nomeDoItem(item).split(" | ");
                     const mainName = nameParts[0].trim();
                     const extras = nameParts.slice(1);
                     const itemPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
@@ -3491,7 +3491,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         {order.items && order.items.length > 0 && (
                           <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "10px", padding: "6px 10px", background: "rgba(255,255,255,0.6)", borderRadius: "8px" }}>
                             {order.items.slice(0, 3).map((item: any, i: number) => (
-                              <div key={i}>{item.quantity}x {item.menuProduct?.name}</div>
+                              <div key={i}>{item.quantity}x {nomeDoItem(item)}</div>
                             ))}
                             {order.items.length > 3 && <div style={{ color: "#A78BFA" }}>+{order.items.length - 3} itens...</div>}
                           </div>

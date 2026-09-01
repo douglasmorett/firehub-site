@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { nomeDoItem } from "@/lib/nome-do-item";
 import { notFound } from "next/navigation";
 import OrderTrackingClient from "./OrderTrackingClient";
 
@@ -35,7 +36,7 @@ export default async function OrderTrackingPage({
       deliveryFee={order.deliveryFee}
       paymentMethod={order.paymentMethod || ""}
       items={order.items.map((i) => ({
-        name: i.menuProduct?.name || "ÔÇö",
+        name: nomeDoItem(i, "ÔÇö"),
         qty: i.quantity,
         price: i.price,
         imageUrl: i.menuProduct?.imageUrl || null,

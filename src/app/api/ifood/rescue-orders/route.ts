@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { getIfoodToken, getIfoodItemUnitPrice } from "@/lib/ifood-api";
+import { getIfoodToken } from "@/lib/ifood-api";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
 
 /**
  * GET /api/ifood/rescue-orders
@@ -222,37 +223,9 @@ export async function POST(req: NextRequest) {
 
 // Shared helper to create order from iFood data
 async function createOrderFromIfoodData(orderId: string, orderData: any, franchiseeId: string, token: string) {
-  const items = (orderData.items ?? []).map((i: any) => {
-    const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-    const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-      ? JSON.stringify(subItemsList.map((s: any) => ({
-          name: s.name || s.label || s.productName || "",
-          quantity: s.quantity || 1,
-          price: s.price || s.unitPrice || s.addition || 0,
-        })))
-      : null;
-
-    const itemUnitPrice = getIfoodItemUnitPrice(i);
-
-    return {
-      price: itemUnitPrice,
-      quantity: i.quantity ?? 1,
-      comboSelections: comboSels,
-      menuProduct: {
-        connectOrCreate: {
-          where: { id: `ifood-${i.id}` } as any,
-          create: {
-            id: `ifood-${i.id}`,
-            franchiseeId,
-            name: i.name ?? "Item iFood",
-            description: "",
-            price: itemUnitPrice,
-            category: "iFood",
-            active: true,
-          } as any,
-        } as any,
-      },
-    };
+  const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
+    franchiseeId,
+    active: true,
   });
 
   const total = typeof orderData.total === "object"

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
+import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
 
 
 import { parseOrderPaymentInfo } from "@/lib/payment-parser";
@@ -242,37 +243,9 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
 
     // Extrai itens e sub-itens (comboSelections)
     const rawItems = orderData.items ?? [];
-    const items = rawItems.map((i: any) => {
-      const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-      const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-        ? JSON.stringify(subItemsList.map((s: any) => ({
-            name: s.name || s.label || s.productName || "",
-            quantity: s.quantity || 1,
-            price: s.price || s.unitPrice || s.addition || 0,
-          })))
-        : null;
-
-      const itemUnitPrice = getIfoodItemUnitPrice(i);
-
-      return {
-        price: itemUnitPrice,
-        quantity: i.quantity ?? 1,
-        comboSelections: comboSels,
-        menuProduct: {
-          connectOrCreate: {
-            where: { id: `ifood-${i.id}` } as any,
-            create: {
-              id:           `ifood-${i.id}`,
-              franchiseeId: franchisee.id,
-              name:         i.name ?? i.description ?? "Item iFood",
-              description:  "",
-              price:        itemUnitPrice,
-              category:     "iFood",
-              active:       true,
-            } as any,
-          } as any,
-        },
-      };
+    const items = await montarItensDoPedidoIfood(rawItems, {
+      franchiseeId: franchisee.id,
+      active: true,
     });
 
     const total = typeof orderData.total === "object"

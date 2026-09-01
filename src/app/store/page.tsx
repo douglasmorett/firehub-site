@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { nomeDoItem } from "@/lib/nome-do-item";
 import StoreDashboard from "@/components/customer/StoreDashboard";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         storeName: (o as any).franchisee?.name || "—",
         storeSlug: (o as any).franchisee?.slug || "",
         items: o.items.map(i => {
-          let itemName = i.menuProduct?.name || "";
+          let itemName = nomeDoItem(i, "");
           if (!itemName || itemName === "Item de Integração" || itemName === "Produto excluído") {
             if (i.comboSelections) {
               try {
@@ -176,7 +177,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
       notes: o.notes || undefined,
       createdAt: o.createdAt.toISOString(),
       items: o.items.map(i => {
-        let itemName = i.menuProduct?.name || "";
+        let itemName = nomeDoItem(i, "");
         if (!itemName || itemName === "Item de Integração" || itemName === "Produto excluído") {
           if (i.comboSelections) {
             try {

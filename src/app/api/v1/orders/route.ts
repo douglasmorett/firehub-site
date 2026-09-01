@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/api-key";
+import { nomeDoItem } from "@/lib/nome-do-item";
 import { prisma } from "@/lib/prisma";
 import { dispatchOutboundWebhook } from "@/lib/webhook-dispatcher";
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
         motoboy: o.motoboy ? { id: o.motoboy.id, name: o.motoboy.name, phone: o.motoboy.phone } : null,
         items: o.items.map((i) => ({
           id: i.id,
-          name: i.menuProduct?.name || "Item",
+          name: nomeDoItem(i),
           quantity: i.quantity,
           unitPrice: i.price,
           totalPrice: i.price * i.quantity,

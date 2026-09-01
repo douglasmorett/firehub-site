@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
+import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
 
 const LOCK_PREFIX = "firehub_autoprinted_v4_";
 
@@ -163,8 +164,7 @@ export default function GlobalPrintListener() {
                     paymentMethod: payStr,
                     isPrepaid: isOfflinePayment ? false : (order.isPrepaid ?? true),
                     items: (order.items || []).map((i: any) => {
-                      const rawName = i.menuProduct?.name || i.name || (i.comboSelections ? "Combo" : "Item");
-                      const cleanName = rawName.split(" | ")[0].trim();
+                      const cleanName = nomeDoItemParaComanda(i, i.comboSelections ? "Combo" : "Item");
                       return {
                         name: cleanName,
                         qty: i.quantity || i.qty || 1,

@@ -16,6 +16,7 @@
 import { prisma } from "./prisma";
 import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
+import { montarItensDoPedidoIfood } from "./ifood-itens";
 
 export type ResultadoEventos = {
   created: number;
@@ -180,36 +181,9 @@ export async function processarEventosIfood(opts: {
                   : null;
 
                 if (cancelFranchisee) {
-                  const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
-                  const cancelItems = (cancelOrderData.items ?? []).map((i: any) => {
-                    const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-                    const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-                      ? JSON.stringify(subItemsList.map((s: any) => ({
-                          name: s.name || s.label || s.productName || "",
-                          quantity: s.quantity || 1,
-                          price: s.price || s.unitPrice || s.addition || 0,
-                        })))
-                      : null;
-                    const itemUnitPrice = getIfoodItemUnitPrice(i);
-                    return {
-                      price: itemUnitPrice,
-                      quantity: i.quantity ?? 1,
-                      comboSelections: comboSels,
-                      menuProduct: {
-                        connectOrCreate: {
-                          where: { id: `ifood-${i.id}` } as any,
-                          create: {
-                            id: `ifood-${i.id}`,
-                            franchiseeId: cancelFranchisee.id,
-                            name: i.name ?? "Item iFood",
-                            description: "",
-                            price: itemUnitPrice,
-                            category: "iFood",
-                            active: true,
-                          } as any,
-                        } as any,
-                      },
-                    };
+                  const cancelItems = await montarItensDoPedidoIfood(cancelOrderData.items ?? [], {
+                    franchiseeId: cancelFranchisee.id,
+                    active: true,
                   });
 
                   const cancelTotal = typeof cancelOrderData.total === "object"
@@ -322,38 +296,9 @@ export async function processarEventosIfood(opts: {
           }
 
           // Extract items
-          const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
-          const items = (orderData.items ?? []).map((i: any) => {
-            const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-            const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-              ? JSON.stringify(subItemsList.map((s: any) => ({
-                  name: s.name || s.label || s.productName || "",
-                  quantity: s.quantity || 1,
-                  price: s.price || s.unitPrice || s.addition || 0,
-                })))
-              : null;
-
-            const itemUnitPrice = getIfoodItemUnitPrice(i);
-
-            return {
-              price: itemUnitPrice,
-              quantity: i.quantity ?? 1,
-              comboSelections: comboSels,
-              menuProduct: {
-                connectOrCreate: {
-                  where: { id: `ifood-${i.id}` } as any,
-                  create: {
-                    id: `ifood-${i.id}`,
-                    franchiseeId: eventFranchisee.id,
-                    name: i.name ?? "Item iFood",
-                    description: "",
-                    price: itemUnitPrice,
-                    category: "iFood",
-                    active: false,
-                  } as any,
-                } as any,
-              },
-            };
+          const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
+            franchiseeId: eventFranchisee.id,
+            active: false,
           });
 
           const total = typeof orderData.total === "object"

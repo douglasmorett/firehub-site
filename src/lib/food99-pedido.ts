@@ -239,6 +239,9 @@ export function itens99ParaPrisma(itens: ItemTraduzido[], lojaId: string) {
   return itens.map((i) => ({
     price: i.precoUnitario,
     quantity: i.quantidade,
+    // O nome como o 99Food mandou neste pedido. Sem ele, a comanda cai no nome
+    // do cadastro, que é de outro dia — ver src/lib/nome-do-item.ts.
+    productName: i.nome,
     // A observação do item entra junto dos complementos porque é ali que a
     // comanda da cozinha lê o que veio escrito para o prato.
     comboSelections:

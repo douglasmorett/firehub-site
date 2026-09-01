@@ -229,23 +229,17 @@ export async function GET(req: NextRequest) {
               if (!orderRes.ok) continue;
               const orderData = await orderRes.json();
 
-              const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
               const { generateDailyOrderNumber } = await import("@/lib/order-number");
               const { parseOrderPaymentInfo } = await import("@/lib/payment-parser");
+              const { montarItensDoPedidoIfood } = await import("@/lib/ifood-itens");
 
-              const items = (orderData.items || []).map((i: any) => ({
-                price: getIfoodItemUnitPrice(i),
-                quantity: i.quantity ?? 1,
-                comboSelections: (i.options || i.subItems || []).length > 0
-                  ? JSON.stringify((i.options || i.subItems || []).map((s: any) => ({ name: s.name || "", quantity: s.quantity || 1, price: s.price || s.unitPrice || 0 })))
-                  : null,
-                menuProduct: {
-                  connectOrCreate: {
-                    where: { id: `ifood-${i.id || i.externalCode || "item"}` } as any,
-                    create: { id: `ifood-${i.id || i.externalCode || "item"}`, franchiseeId: user.id, name: i.name || "Item iFood", description: "", price: getIfoodItemUnitPrice(i), category: "iFood", active: false } as any,
-                  } as any,
-                },
-              }));
+              const items = await montarItensDoPedidoIfood(orderData.items || [], {
+                franchiseeId: user.id,
+                active: false,
+                // Aqui o item pode chegar sem `id` (payload resumido do onboarding);
+                // o externalCode é o que resta para não jogar todos no mesmo produto.
+                idDoItem: (i: any, idx: number) => i?.id || i?.externalCode || `sem-id-${idx}`,
+              });
 
               const total = typeof orderData.total === "object" ? (orderData.total?.orderAmount ?? 0) : (orderData.totalPrice ?? 0);
               const deliveryFee = orderData.total?.deliveryFee ?? orderData.deliveryFee ?? 0;

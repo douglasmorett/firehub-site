@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
 
 /**
  * POST /api/ifood/import-order
@@ -89,36 +90,12 @@ export async function POST(req: NextRequest) {
     const orderData = await orderRes.json();
     log.push(`✅ Detalhes obtidos: ${orderData.displayId || actualOrderId}`);
 
-    const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
-    const items = (orderData.items ?? []).map((i: any) => {
-      const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-      const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-        ? JSON.stringify(subItemsList.map((s: any) => ({
-            name: s.name || s.label || s.productName || "",
-            quantity: s.quantity || 1,
-            price: s.price || s.unitPrice || s.addition || 0,
-          })))
-        : null;
-
-      const itemUnitPrice = getIfoodItemUnitPrice(i);
-
-      return {
-        price: itemUnitPrice,
-        quantity: i.quantity ?? 1,
-        comboSelections: comboSels,
-        menuProduct: {
-          connectOrCreate: {
-            where: { id: i.id || "dummy_id" },
-            create: {
-              name: i.name || "Item iFood",
-              price: itemUnitPrice,
-              description: "",
-              category: "iFood",
-              franchiseeId,
-            },
-          },
-        },
-      };
+    // O id do espelho aqui era `i.id || "dummy_id"`, sem o prefixo `ifood-` que
+    // todos os outros caminhos usam: dois itens sem id casavam no MESMO produto
+    // "dummy_id", e o id cru podia colidir com um produto do cardápio da loja.
+    const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
+      franchiseeId,
+      active: true,
     });
 
     const customer = orderData.customer || {};

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/api-key";
+import { nomeDoItem } from "@/lib/nome-do-item";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export async function GET(
     motoboy: order.motoboy ? { id: order.motoboy.id, name: order.motoboy.name, phone: order.motoboy.phone } : null,
     items: order.items.map((i) => ({
       id: i.id,
-      name: i.menuProduct?.name || "Item",
+      name: nomeDoItem(i),
       quantity: i.quantity,
       unitPrice: i.price,
       totalPrice: i.price * i.quantity,

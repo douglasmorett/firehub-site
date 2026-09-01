@@ -131,6 +131,9 @@ export async function GET(req: NextRequest) {
               quantity: true,
               price: true,
               notes: true, // observacao por item ("sem cebola") — precisa chegar na cozinha
+              // Nome do item como a plataforma mandou. Sem ele no select, a
+              // cozinha lê o nome do cadastro, que pode estar desatualizado.
+              productName: true,
               comboSelections: true,
               menuProduct: {
                 select: {

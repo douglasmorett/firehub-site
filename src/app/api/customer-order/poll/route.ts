@@ -265,7 +265,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
             }
 
             // Extract items
-            const { getIfoodItemUnitPrice } = await import("@/lib/ifood-api");
+            const { montarItensDoPedidoIfood } = await import("@/lib/ifood-itens");
             const rawIfoodItems = (
               (Array.isArray(orderData.items) && orderData.items.length > 0 ? orderData.items : null) ??
               (Array.isArray(orderData.orderItems) && orderData.orderItems.length > 0 ? orderData.orderItems : null) ??
@@ -273,40 +273,15 @@ async function pollIfoodEvents(sessionUserId?: string) {
               []
             );
 
-            const items = rawIfoodItems.map((i: any, idx: number) => {
-              const itemId = i.id || i.externalCode || i.code || `ifitem-${idx}-${Math.random().toString(36).slice(2)}`;
-              const itemName = (i.name || i.productName || i.displayName || i.title || i.label || "Item iFood").trim();
-
-              const subItemsList = i.options || i.subItems || i.garnishItems || i.items || [];
-              const comboSels = Array.isArray(subItemsList) && subItemsList.length > 0
-                ? JSON.stringify(subItemsList.map((s: any) => ({
-                    name: s.name || s.label || s.productName || "",
-                    quantity: s.quantity || 1,
-                    price: s.price || s.unitPrice || s.addition || 0
-                  })).filter((s: any) => s.name))
-                : null;
-
-              const itemUnitPrice = getIfoodItemUnitPrice(i);
-
-              return {
-                price: itemUnitPrice,
-                quantity: i.quantity ?? 1,
-                comboSelections: comboSels,
-                menuProduct: {
-                  connectOrCreate: {
-                    where: { id: `ifood-${itemId}` } as any,
-                    create: {
-                      id: `ifood-${itemId}`,
-                      franchiseeId: eventFranchisee.id,
-                      name: itemName,
-                      description: i.observations || i.notes || "",
-                      price: itemUnitPrice,
-                      category: i.category || "iFood",
-                      active: false,
-                    } as any,
-                  } as any,
-                },
-              };
+            // A categoria do espelho aqui era `i.category || "iFood"`. Categoria de
+            // verdade ("Bebidas", "Combos") faz o produto do iFood atravessar o
+            // filtro de src/lib/cardapio-interno.ts e aparecer no PDV, na mesa e
+            // no totem. O espelho é sempre categoria "iFood".
+            const items = await montarItensDoPedidoIfood(rawIfoodItems, {
+              franchiseeId: eventFranchisee.id,
+              active: false,
+              idDoItem: (i: any, idx: number) =>
+                i?.id || i?.externalCode || i?.code || `ifitem-${idx}-${Math.random().toString(36).slice(2)}`,
             });
 
             // Extract total

@@ -5,6 +5,7 @@ import { TrendingUp, DollarSign, ShoppingCart, Users, CreditCard, Banknote, Smar
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import StoreDashboardMap from "@/components/customer/StoreDashboardMap";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
+import { nomeDoItem } from "@/lib/nome-do-item";
 
 type Order = {
   id: string; totalAmount: number; status: string; deliveryType: string;
@@ -174,7 +175,7 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
     const map: Record<string, { name: string; qty: number; total: number; cost: number }> = {};
     activeOrders.forEach(o => {
       o.items?.forEach((item: any) => {
-        let name = item.name || item.menuProduct?.name || "";
+        let name = nomeDoItem(item, "");
         if (!name || name === "Item de Integração" || name === "Produto excluído" || name === "—") {
           if (item.comboSelections) {
               const cs = safeParseCombo(item.comboSelections);
