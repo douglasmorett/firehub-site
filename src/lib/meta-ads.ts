@@ -691,8 +691,10 @@ export function escolherMelhorPagina(paginas: any[]): any | null {
   return lista.find(podeAnunciar) ?? lista[0];
 }
 
+// `amount_spent` entra aqui por causa do desempate em `escolherMelhorContaDeAnuncios`:
+// sem ele, todas as contas ativas empatam e a escolha vira a ordem da Meta.
 const CAMPOS_DE_CONTA =
-  "id,name,account_status,currency,funding_source,funding_source_details,disable_reason";
+  "id,name,account_status,currency,funding_source,funding_source_details,disable_reason,amount_spent";
 
 /**
  * TODAS as contas de anúncio que este token alcança — não só as pessoais.
@@ -774,9 +776,18 @@ export async function listarTodasAsContasDeAnuncio(accessToken: string): Promise
  * módulo simplesmente não funciona.
  *
  * Ordem de preferência: quem veicula agora > quem está em análise/carência
- * (volta sozinha) > o resto. Empate desempata por ter forma de pagamento.
- * Conta encerrada (100/101) só é escolhida se não houver absolutamente mais
- * nada — aí a mensagem de conta desativada é verdadeira.
+ * (volta sozinha) > o resto. Empate desempata por ter forma de pagamento e,
+ * depois, por HISTÓRICO DE GASTO. Conta encerrada (100/101) só é escolhida se
+ * não houver absolutamente mais nada — aí a mensagem de conta desativada é
+ * verdadeira.
+ *
+ * ── Por que o gasto entra no desempate ──────────────────────────────────────
+ * Status e forma de pagamento não distinguem contas que estão todas ativas e
+ * pagas — e aí o vencedor virava a ordem em que a Meta devolveu a lista, que
+ * não quer dizer nada. Na conta do dono, em 01/09/2026, isso escolheu uma conta
+ * pré-paga zerada e sem campanha, enquanto a `Elis - 02`, com R$ 11 mil de
+ * histórico e um anúncio no ar, estava na mesma lista. Quem já gastou é quem o
+ * lojista usa de verdade — imperfeito, mas muito melhor do que a ordem da Meta.
  */
 const RANK_STATUS_CONTA: Record<number, number> = {
   1: 0,    // ACTIVE — veicula agora
@@ -801,7 +812,13 @@ export function escolherMelhorContaDeAnuncios(contas: any[]): any | null {
     return posicao * 2 + (temPagamento ? 0 : 1);
   };
 
-  return [...lista].sort((a, b) => nota(a) - nota(b))[0];
+  const gasto = (c: any) => {
+    const n = Number(c?.amount_spent);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // Menor nota primeiro; empatado, maior gasto primeiro.
+  return [...lista].sort((a, b) => nota(a) - nota(b) || gasto(b) - gasto(a))[0];
 }
 
 export type ProntidaoDaConta = {
@@ -888,9 +905,13 @@ export async function descobrirPixelDaConta(
 
 export type CarteiraDaConta = {
   moeda: string;
-  /** Pré-pago: crédito disponível. Pós-pago (cartão): null — não existe saldo. */
+  /**
+   * Pré-pago: crédito disponível. Pós-pago (cartão): null — não existe saldo.
+   * `null` também quando a Meta não deixa saber, e aí NÃO alarma: o aviso de
+   * "sem saldo" só sai com prova de que o crédito é zero.
+   */
   saldoDisponivel: number | null;
-  /** Fatura em aberto que a Meta ainda vai cobrar (pós-pago). */
+  /** Valor devido que a Meta ainda vai cobrar (`balance`). Existe nos dois modos. */
   aFaturar: number | null;
   /** Total já gasto pela conta, histórico. */
   totalGasto: number;
@@ -911,6 +932,58 @@ const TIPOS_PRE_PAGOS = new Set([2, 3, 15, 20]);
 // 4 FACEBOOK_EXTENDED_CREDIT, 6 INVOICE, 12/13 PayPal, 17 DIRECT_DEBIT,
 // 19 ALTPAY (onde entra boleto/Pix recorrente).
 const TIPOS_COBRANCA_AUTOMATICA = new Set([1, 4, 6, 12, 13, 17, 19]);
+
+// Rótulos reais da Meta para saldo pré-pago: "Saldo disponível (R$400,00 BRL)",
+// "Fundos disponíveis", "Available balance", "Available funds".
+// "crédito"/"credit" ficam DE FORA de propósito: casariam com "Cartão de crédito
+// Visa •••• 1234" e os quatro dígitos do cartão viravam R$ 1.234 de saldo.
+const ROTULO_DE_SALDO = /(saldo|dispon[íi]ve|fundos|balance|available|funds)/i;
+// E o rótulo ainda precisa trazer moeda: número solto não é dinheiro.
+const ROTULO_TEM_MOEDA = /(R\$|\$|€|£|\b[A-Z]{3}\b)/;
+
+/**
+ * Crédito pré-pago disponível, lido do rótulo que a própria Meta escreve.
+ *
+ * ── Por que não dá para usar `balance` ──────────────────────────────────────
+ * A doc da AdAccount é literal: `balance` é "Bill amount due for this Ad
+ * Account" — o valor DEVIDO, em pré-pago e em pós-pago. Numa conta pré-paga em
+ * dia ele é 0 justamente porque não há nada a cobrar. O módulo lia esse 0 como
+ * "crédito acabou" e o resultado era o contrário do defeito que a carteira foi
+ * feita para evitar: a conta do dono, com R$ 400 de crédito e uma campanha
+ * veiculando, era barrada com "o saldo acabou" — e `POST /api/meta-ads/campaign`
+ * recusava publicar com 409. Medido em produção em 01/09/2026 na `Elis - 02`:
+ * `balance` 0 e `funding_source_details.display_string` "Saldo disponível
+ * (R$400,00 BRL)".
+ *
+ * A Meta não expõe campo público com o crédito pré-pago. O único lugar onde ele
+ * aparece é esse rótulo — daí a leitura pelo texto, presa a duas condições:
+ *
+ * 1. só aceita rótulo que fale de saldo (senão "Visa •••• 1234" viraria
+ *    R$ 1.234 de crédito imaginário);
+ * 2. na dúvida devolve `null`, e `null` NÃO alarma nem bloqueia. Deixar de
+ *    mostrar um número é aceitável; barrar quem tem dinheiro na conta não é.
+ */
+export function creditoPrePagoDoRotulo(display: unknown): number | null {
+  if (typeof display !== "string") return null;
+  if (!ROTULO_DE_SALDO.test(display) || !ROTULO_TEM_MOEDA.test(display)) return null;
+
+  // Primeiro número do rótulo: "Saldo disponível (R$1.234,56 BRL)" → "1.234,56".
+  const achado = display.match(/\d[\d.,]*/);
+  if (!achado) return null;
+  const bruto = achado[0].replace(/[.,]+$/, "");
+
+  // Qual dos separadores é o decimal: o ÚLTIMO, e só se sobrarem 1–2 casas.
+  // "1.234" é mil duzentos e trinta e quatro; "400,00" é quatrocentos.
+  const corte = Math.max(bruto.lastIndexOf(","), bruto.lastIndexOf("."));
+  const casas = corte < 0 ? 0 : bruto.length - corte - 1;
+  const normalizado =
+    casas >= 1 && casas <= 2
+      ? `${bruto.slice(0, corte).replace(/[.,]/g, "")}.${bruto.slice(corte + 1)}`
+      : bruto.replace(/[.,]/g, "");
+
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : null;
+}
 
 /**
  * Lê a "carteira" da conta de anúncios para exibir dentro do FireHub.
@@ -935,9 +1008,13 @@ const TIPOS_COBRANCA_AUTOMATICA = new Set([1, 4, 6, 12, 13, 17, 19]);
  * exatamente a falha que esta função existe para impedir.
  *
  * Agora manda o `is_prepay_account` (booleano da própria Meta), com o código
- * numérico como reserva. E na dúvida ERRA PARA O LADO SEGURO: se não dá para
- * PROVAR que a cobrança é automática, mostra o saldo e o aviso — melhor um
- * aviso a mais do que campanha paga que não veicula.
+ * numérico como reserva. E na dúvida trata a conta como pré-paga, que é o modo
+ * em que o crédito precisa ser vigiado.
+ *
+ * Mas "tratar como pré-paga" NÃO é o mesmo que alarmar: o aviso de saldo zero
+ * exige `saldoDisponivel` medido, nunca deduzido — ver `creditoPrePagoDoRotulo`.
+ * Barrar quem tem crédito é pior do que deixar de mostrar um número, porque
+ * `POST /api/meta-ads/campaign` recusa publicar com 409 no mesmo teste.
  *
  * Todos os valores da Meta vêm em CENTAVOS da moeda da conta.
  */
@@ -1000,14 +1077,15 @@ export async function lerCarteiraDaConta(
       (c.is_prepay_account !== false &&
         (TIPOS_PRE_PAGOS.has(tipo) || !(tipoConhecido && TIPOS_COBRANCA_AUTOMATICA.has(tipo))));
 
-    // `balance` no pré-pago se comporta como crédito disponível e no pós-pago
-    // como fatura em aberto — por isso é lido conforme o tipo de cobrança.
-    const saldo = emReais(c.balance);
+    // `balance` é o valor DEVIDO — nos dois modos de cobrança. Nunca é crédito
+    // disponível: ver `creditoPrePagoDoRotulo`, logo acima.
+    const aFaturar = emReais(c.balance);
+    const credito = ehPrePago ? creditoPrePagoDoRotulo(detalhes.display_string) : null;
 
     return {
       moeda: c.currency ?? "BRL",
-      saldoDisponivel: ehPrePago ? saldo : null,
-      aFaturar: ehPrePago ? null : saldo,
+      saldoDisponivel: credito,
+      aFaturar,
       totalGasto: emReais(c.amount_spent) ?? 0,
       tetoDaConta: c.spend_cap ? emReais(c.spend_cap) : null,
       limiteDiarioDaMeta: c.adtrust_dsl ? emReais(c.adtrust_dsl) : null,
