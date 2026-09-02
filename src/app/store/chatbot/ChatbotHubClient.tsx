@@ -1672,6 +1672,11 @@ export default function ChatbotHubClient() {
                 detalhe: "Quando o cliente escreve que quer falar com uma pessoa.",
               },
               {
+                id: "pedido_atrasado",
+                titulo: "Pedido atrasado que ainda não saiu",
+                detalhe: "Passou do prazo de entrega e continua na loja. Vem com o número do pedido, a hora que entrou e o prazo. Um aviso por pedido a cada hora.",
+              },
+              {
                 id: "robo_desconectado",
                 titulo: "Robô desconectou do WhatsApp",
                 detalhe: "A sessão caiu e ninguém está respondendo os clientes.",

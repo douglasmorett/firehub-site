@@ -16,6 +16,7 @@ import {
 import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema-no-pedido';
 import { numeroEstaNaListaDeIgnorados } from '@/lib/numeros-ignorados';
 import { avisarDono, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
+import { mesmoTelefone } from '@/lib/telefone';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Evita timeout silencioso do Vercel (504) se a IA ou download demorar
@@ -324,6 +325,10 @@ async function handleIncomingMessage(body: any, instance: string) {
   const selecaoLoja = {
     id: true, ownerId: true, chatbotConfig: true, slug: true,
     email: true, isFranqueadoHakim: true,
+    // Precisa vir aqui por causa da escalação: o DONO pergunta "tem pedido
+    // atrasado?" e a palavra bate no detector de reclamação. Sem saber quem é
+    // ele, o robô calaria justamente para quem manda nele.
+    notificationPhone: true,
   } as const;
 
   // 1) Vinculo real do QR: instanceName exato.
@@ -682,7 +687,16 @@ async function handleIncomingMessage(body: any, instance: string) {
   // Nenhum ajuste de prompt conserta isso com segurança, porque o problema não
   // é o texto — é a atribuição: quem tem que responder atraso é quem pode
   // resolver atraso. Então o robô diz uma frase honesta e sai de cena.
-  const escalarPorProblema = chatbotConfig.escalateOnComplaint !== false;
+  // ── O DONO NUNCA É ESCALADO ──────────────────────────────────────────────
+  // "Tem pedido atrasado?" é a pergunta gerencial mais óbvia que existe, e a
+  // palavra "atrasado" bate no detector de reclamação. Sem esta exceção o robô
+  // calaria justamente para quem manda nele — e ainda abriria um chamado de
+  // atendimento humano contra o próprio dono da loja.
+  const ehODono = Boolean(
+    (user as any).notificationPhone && mesmoTelefone((user as any).notificationPhone, cleanPhone)
+  );
+
+  const escalarPorProblema = chatbotConfig.escalateOnComplaint !== false && !ehODono;
   if (escalarPorProblema) {
     const historicoAtual = conversationCache.get(user.id + "_" + remoteJid) || [];
     const problema = detectarProblemaNoPedido(textMessage, historicoAtual, now);

@@ -28,18 +28,22 @@ export type TipoDeAlerta =
   /** Cliente pediu atendente com todas as letras. */
   | "pedido_de_atendente"
   /** O robô caiu / desconectou do WhatsApp. */
-  | "robo_desconectado";
+  | "robo_desconectado"
+  /** Pedido passou do prazo e ainda não saiu para entrega. */
+  | "pedido_atrasado";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
   pedido_de_atendente: true,
   robo_desconectado: true,
+  pedido_atrasado: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   problema_no_pedido: "Cliente com problema no pedido (atraso, item faltando, reclamação)",
   pedido_de_atendente: "Cliente pediu para falar com atendente",
   robo_desconectado: "Robô desconectou do WhatsApp",
+  pedido_atrasado: "Pedido atrasado que ainda não saiu para entrega",
 };
 
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */

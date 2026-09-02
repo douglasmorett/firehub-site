@@ -1,3 +1,4 @@
+import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { prisma } from "@/lib/prisma";
 import fs from "fs";
 
@@ -714,21 +715,30 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   // recebia faturamento do dia, total de pedidos e status do caixa da loja.
   if (user.notificationPhone && mesmoTelefone(user.notificationPhone, clientPhoneDigits)) {
     try {
-      const todayOrders = await prisma.customerOrder.findMany({
-        where: { franchiseeId: targetFranchiseeId, createdAt: { gte: startOfToday }, status: { not: "CANCELADO" } },
-        select: { totalAmount: true }
+      // O modo dono sabia três coisas: caixa, faturamento e nº de pedidos.
+      // "Tenho conta vencendo?", "tem pedido atrasado?", "qual meu prazo de
+      // entrega?" caíam no vazio — e um modelo sem o dado responde genérico,
+      // que é a mesma falha que fez o robô inventar uma ligação para o motoboy.
+      // Agora o retrato inteiro da loja vai pronto no prompt: ele lê, não estima.
+      const resumo = await montarResumoGerencial(targetFranchiseeId, {
+        deliveryZones: user.deliveryZones,
+        caixaAberto: Boolean(user.cashOpen),
+        timezone: user.storeTimezone,
       });
-      const totalSales = todayOrders.reduce((acc: number, o: any) => acc + (o.totalAmount || 0), 0);
+
       ownerContext = `
-ATENÇÃO (MODO ASSISTENTE DO DONO/GERENTE): 
+ATENÇÃO (MODO ASSISTENTE DO DONO/GERENTE):
 O número de WhatsApp falando com você AGORA é o PROPRIETÁRIO OFICIAL da loja (telefone verificado: ${user.notificationPhone}).
 - SEU PAPEL AGORA: Você NÃO deve atuar como vendedor de comida com ele. Você é o ASSISTENTE GERENCIAL do sistema FireHub trabalhando para ele.
-- O chefe vai pedir relatórios de faturamento, quantidade de pedidos e status de fechamento de caixa.
-- DADOS REAIS DE HOJE DA LOJA (Base de Dados ao vivo):
-  - Status do Caixa Físico: ${user.cashOpen ? "ABERTO 🟢" : "FECHADO 🔴"}
-  - Faturamento Hoje: R$ ${totalSales.toFixed(2).replace(".", ",")}
-  - Total de Pedidos Hoje: ${todayOrders.length}
-- REGRAS COM O DONO: Chame-o de chefe, patrão ou pelo nome se souber. Seja direto, profissional e dê as informações exatas acima quando ele perguntar sobre o movimento de hoje. Você tem autorização total para revelar esses dados a ele e informá-lo sobre o negócio.
+- Ele pode perguntar QUALQUER COISA sobre a operação: faturamento, pedidos, atrasos, prazo de entrega, contas a pagar, estoque, caixa. Você tem autorização total para revelar tudo isto a ele.
+
+${resumoEmTexto(resumo, user.storeTimezone)}
+
+- REGRAS COM O DONO:
+  a) Chame-o de chefe, patrão ou pelo nome se souber. Seja direto e profissional — nada de emoji de venda nem de oferecer cardápio.
+  b) Copie os números ACIMA exatamente como estão. NUNCA arredonde, estime ou invente um número que não esteja nesta lista.
+  c) Se ele perguntar algo que NÃO está na lista acima (lucro, imposto, comparação com o mês passado, dados de outra loja), diga com franqueza que essa informação você ainda não tem por aqui e indique a tela do painel — nunca chute.
+  d) Quando ele perguntar de pedido atrasado, responda com o número do pedido, a hora que entrou e o prazo, como está na lista.
 `;
       blockFinancialsContext = ""; // O dono tem acesso livre.
     } catch(e) {
