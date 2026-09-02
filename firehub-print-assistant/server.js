@@ -433,6 +433,43 @@ function cleanAscii(str) {
     .replace(/[^\x20-\x7E\n]/g, "");
 }
 
+/**
+ * `comboSelections` em lista, venha no formato que vier.
+ *
+ * O combo do cardapio online do FireHub e gravado como
+ * `{ grupoId: { "Esfirra de Carne": 6, "Esfirra de Queijo": 4 } }`, e todo
+ * lugar aqui exigia array: o objeto era descartado em silencio e a comanda
+ * saia com "1x Combo 10 Esfirras Simples + 2 Bebidas" e mais NADA — sem os
+ * sabores, sem a bebida. Pelo PDV e pelo iFood aparecia, porque esses mandam
+ * array. O site passou a normalizar antes de enviar; isto aqui e a mesma regra
+ * do lado de ca, para o Assistente nao depender de quem chama.
+ */
+function normalizarCombo(raw) {
+  if (!raw) return [];
+
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try { parsed = JSON.parse(raw); } catch { return []; }
+  }
+
+  if (parsed && !Array.isArray(parsed) && typeof parsed === "object") {
+    const achatado = [];
+    for (const grupo of Object.values(parsed)) {
+      if (!grupo || typeof grupo !== "object" || Array.isArray(grupo)) continue;
+      for (const [nome, qtd] of Object.entries(grupo)) {
+        const n = Number(qtd);
+        if (nome && Number.isFinite(n) && n > 0) achatado.push({ name: nome, quantity: n });
+      }
+    }
+    parsed = achatado;
+  }
+
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((s) => (typeof s === "string" ? { name: s, quantity: 1 } : s))
+    .filter((s) => s && s.name);
+}
+
 function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // Largura saneada AQUI, e nao so no site: o assistente e alcancavel por
   // qualquer pagina em localhost e pela fila da nuvem, entao o site nunca e a
@@ -688,13 +725,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     if (unitPrice > 0) return unitPrice;
 
     if (item.comboSelections) {
-      try {
-        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const comboSum = parsed.reduce((acc, s) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
-          if (comboSum > 0) return comboSum;
-        }
-      } catch {}
+      const parsed = normalizarCombo(item.comboSelections);
+      if (parsed.length > 0) {
+        const comboSum = parsed.reduce((acc, s) => acc + ((s.price || s.unitPrice || s.addition || 0) * (s.quantity || 1)), 0);
+        if (comboSum > 0) return comboSum;
+      }
     }
 
     const otherItemsSum = (allItems || []).reduce((sum, it) => {
@@ -748,12 +783,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
   const hasBeverages = (order.items || []).some(item => {
     if (isBeverageItem(item)) return true;
-    if (item.comboSelections) {
-      try {
-        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-        if (Array.isArray(parsed) && parsed.some(s => isBeverageName(s.name))) return true;
-      } catch {}
-    }
+    if (normalizarCombo(item.comboSelections).some(s => isBeverageName(s.name))) return true;
     return false;
   });
 
@@ -777,11 +807,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     for (const item of todos) {
       if (isBeverageItem(item)) { saida.push(item); continue; }
 
-      let escolhas = [];
-      try {
-        const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-        if (Array.isArray(parsed)) escolhas = parsed.filter(s => s && s.name && isBeverageName(s.name));
-      } catch {}
+      const escolhas = normalizarCombo(item.comboSelections).filter(s => isBeverageName(s.name));
 
       const qtdDoItem = item.qty || item.quantity || 1;
       for (const sel of escolhas) {
@@ -841,7 +867,14 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       let name = cleanAscii(item.name || item.menuProduct?.name || "Item");
       name = name.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
 
-      const isItemBev = isBeverageItem(item);
+      const comboSels = normalizarCombo(item.comboSelections);
+
+      // A tag no item PAI so vale para bebida avulsa — e a mesma regra da
+      // previa na tela. Um combo cujo NOME tem a palavra "Bebidas" saia
+      // marcado como se ele proprio fosse a bebida, inclusive quando a loja ja
+      // tinha tirado a bebida de dentro dele. Dentro do combo, quem leva a tag
+      // e a linha da bebida, logo abaixo.
+      const isItemBev = comboSels.length === 0 && isBeverageItem(item);
       const bevTag = isItemBev ? "  <=== BEBIDA" : "";
       const itemLabel = `${name}${bevTag}`;
       // A inversão entra DEPOIS de montar a linha, nunca antes.
@@ -853,15 +886,6 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       // meio. É por isso que a faixa "CONTEM BEBIDA" sempre funcionou: lá a
       // inversão envolve a linha inteira, já montada.
       res += marcarBebida(makeBoxLine(`${qty}x ${itemLabel}`, priceStr), isItemBev);
-
-      const comboSels = (() => {
-        if (!item.comboSelections) return [];
-        try {
-          const parsed = typeof item.comboSelections === "string" ? JSON.parse(item.comboSelections) : item.comboSelections;
-          if (Array.isArray(parsed)) return parsed.filter((s) => s.name);
-          return [];
-        } catch { return []; }
-      })();
 
       if (comboSels.length > 0) {
         comboSels.forEach((sel) => {

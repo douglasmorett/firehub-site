@@ -1,4 +1,5 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
+import { comboParaImpressao } from "./parse-combo";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -203,7 +204,11 @@ async function printToDevice(
           customerAddress: order.customerAddress,
           deliveryType: order.deliveryType,
           paymentMethod: order.paymentMethod,
-          items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, notes: i.notes, comboSelections: (i as any).comboSelections })),
+          // `comboSelections` sai daqui SEMPRE como lista. O combo do cardápio
+          // online é gravado como `{ grupoId: { nome: qtd } }`, e o Assistente
+          // só sabe ler array: descartava o objeto inteiro e a comanda saía com
+          // o nome do combo e mais nada. Ver `comboParaImpressao`.
+          items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, notes: i.notes, comboSelections: comboParaImpressao((i as any).comboSelections) })),
           totalAmount: order.totalAmount,
           deliveryFee: order.deliveryFee,
           discountTotal: (order as any).discountTotal,

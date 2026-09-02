@@ -4,6 +4,7 @@ import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
+import { comboParaImpressao } from "@/lib/parse-combo";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila agora é lida diretamente do banco de dados no endpoint GET.
@@ -88,7 +89,22 @@ export async function GET(req: NextRequest) {
     const pc: any = (owner?.printerConfig as any) || null;
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
 
-    const jobs = recentOrders.map(order => ({
+    const jobs = recentOrders.map(pedidoDoBanco => {
+      // O Assistente só sabe ler `comboSelections` em array, e o combo do
+      // cardápio online é gravado como `{ grupoId: { nome: qtd } }`: o objeto
+      // era descartado em silêncio e a comanda saía com o nome do combo e mais
+      // nada — sem os sabores, sem a bebida. Normalizar aqui conserta a
+      // impressão sem depender de a loja atualizar o Assistente, e vale para o
+      // pedido inteiro e para cada destino (o roteamento parte deste mesmo
+      // objeto).
+      const order = {
+        ...pedidoDoBanco,
+        items: (pedidoDoBanco.items || []).map((i: any) => ({
+          ...i,
+          comboSelections: comboParaImpressao(i.comboSelections),
+        })),
+      };
+      return {
       id: "job_" + order.id,
       // ── QUEM ENTREGA ESTE PEDIDO ────────────────────────────────────
       //
@@ -143,7 +159,8 @@ export async function GET(req: NextRequest) {
         items: d.itens,
       })),
       createdAt: order.createdAt.toISOString(),
-    }));
+      };
+    });
 
     return NextResponse.json({ jobs });
   } catch (err: any) {

@@ -110,16 +110,59 @@ export function parseComboSelections(
 /**
  * Helper para simplesmente parsear o JSON do comboSelections sem normalizar.
  * Usado por APIs e lógica de negócio que precisam do objeto raw.
+ *
+ * O formato do cardápio online ({ grupoId: { nome: qtd } }) também sai daqui
+ * achatado, pelo mesmo motivo de `parseComboSelections`: devolver [] para ele
+ * fazia a detecção de bebida não enxergar a Coca-Cola DENTRO do combo — o
+ * pedido do site ia para a impressora do bar sem bebida nenhuma, e a bebida do
+ * combo não ganhava a tag na comanda.
  */
 export function safeParseCombo(raw: any): any[] {
   if (!raw) return [];
+
+  let parsed: any = raw;
   if (typeof raw === "string") {
     try {
-      const p = JSON.parse(raw);
-      return Array.isArray(p) ? p : [];
+      parsed = JSON.parse(raw);
     } catch {
       return [];
     }
   }
-  return Array.isArray(raw) ? raw : [];
+
+  if (Array.isArray(parsed)) return parsed;
+
+  if (parsed && typeof parsed === "object") {
+    const achatado: any[] = [];
+    for (const grupo of Object.values(parsed as Record<string, any>)) {
+      if (!grupo || typeof grupo !== "object" || Array.isArray(grupo)) continue;
+      for (const [nome, qtd] of Object.entries(grupo as Record<string, any>)) {
+        const n = Number(qtd);
+        if (nome && Number.isFinite(n) && n > 0) achatado.push({ name: nome, quantity: n });
+      }
+    }
+    return achatado;
+  }
+
+  return [];
+}
+
+/**
+ * `comboSelections` no formato que o Assistente de Impressão entende: lista de
+ * `{ name, quantity, price }`.
+ *
+ * O Assistente instalado nas lojas aceita SÓ array — o combo do cardápio online
+ * chega como `{ grupoId: { nome: qtd } }` e ele descarta em silêncio. Foi assim
+ * que o pedido 98 (01/09) saiu no papel como "1x Combo 10 Esfirras Simples + 2
+ * Bebidas" e nada mais: a cozinha não sabia quais esfirras fazer. Na tela saía
+ * certo, porque a tela usa `parseComboSelections`.
+ *
+ * Converter aqui, antes de enviar, conserta a impressão sem depender de a loja
+ * atualizar o Assistente.
+ *
+ * A quantidade NÃO é multiplicada pela do item pai: é assim que o array do
+ * iFood sempre chegou ao Assistente, e é ele quem imprime "2x" do lado.
+ */
+export function comboParaImpressao(raw: any): ComboItem[] | null {
+  const lista = parseComboSelections(raw, 1);
+  return lista.length > 0 ? lista : null;
 }
