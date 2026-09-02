@@ -35,12 +35,15 @@ import {
 export default function ChatbotHubClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "disparos" | "cardapio" | "phone" | "notifications" | "test" | "diagnostic">("qr");
+  const [activeTab, setActiveTab] = useState<"qr" | "marketing" | "disparos" | "cardapio" | "phone" | "notifications" | "test" | "diagnostic" | "alertas">("qr");
   // Cardápio em arquivo: o robô manda a foto/PDF quando o cliente recusa o site.
   const [menuFileSaving, setMenuFileSaving] = useState(false);
   const [menuFileMsg, setMenuFileMsg] = useState<string>("");
   // Reparo do "Aguardando mensagem" (aba Diagnóstico).
   const [reparandoSessao, setReparandoSessao] = useState(false);
+  // Aba Alertas: cadastro de quem o robô não atende.
+  const [novoNumeroMudo, setNovoNumeroMudo] = useState("");
+  const [novoNomeMudo, setNovoNomeMudo] = useState("");
 
   // Configuração principal
   const [config, setConfig] = useState<any>({
@@ -806,6 +809,16 @@ export default function ChatbotHubClient() {
             }}
           >
             <Activity size={16} /> Diagnóstico em Tempo Real
+          </button>
+          <button
+            onClick={() => setActiveTab("alertas")}
+            style={{
+              padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
+              background: activeTab === "alertas" ? "#DC2626" : "rgba(255,255,255,0.1)", color: "#fff",
+              display: "flex", alignItems: "center", gap: "8px"
+            }}
+          >
+            <Bell size={16} /> Alertas e Silêncio
           </button>
         </div>
       </div>
@@ -1642,6 +1655,214 @@ export default function ChatbotHubClient() {
               </div>
             </div>
           )}
+
+          {/* ── ABA ALERTAS E SILÊNCIO ──────────────────────────────────────
+              Duas metades do mesmo assunto: para quem o robô FALA quando algo
+              dá errado, e com quem ele NUNCA fala. */}
+          {activeTab === "alertas" && (() => {
+            const TIPOS_DE_ALERTA: Array<{ id: string; titulo: string; detalhe: string }> = [
+              {
+                id: "problema_no_pedido",
+                titulo: "Cliente com problema no pedido",
+                detalhe: "Atraso, pedido que não chegou, item faltando, veio errado, quer cancelar. O robô sai da conversa e avisa você.",
+              },
+              {
+                id: "pedido_de_atendente",
+                titulo: "Cliente pediu para falar com atendente",
+                detalhe: "Quando o cliente escreve que quer falar com uma pessoa.",
+              },
+              {
+                id: "robo_desconectado",
+                titulo: "Robô desconectou do WhatsApp",
+                detalhe: "A sessão caiu e ninguém está respondendo os clientes.",
+              },
+            ];
+            const alertas = config.alertas || {};
+            const ligado = (id: string) => (typeof alertas[id] === "boolean" ? alertas[id] : true);
+            const numerosMudos: any[] = Array.isArray(config.numerosIgnorados) ? config.numerosIgnorados : [];
+            const telefoneDeAlerta = String(stats?.notificationPhone || "");
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+
+                {/* 1. O ROBÔ SAI QUANDO O CLIENTE RECLAMA */}
+                <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.75rem" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#FEE2E2", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <AlertCircle size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>Problema no pedido chama gente</h3>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Reclamação não é dúvida — quem resolve atraso é uma pessoa, não o robô</p>
+                    </div>
+                  </div>
+
+                  <p style={{ fontSize: "0.8rem", color: "#475569", lineHeight: 1.6, margin: "0 0 12px" }}>
+                    Quando o cliente reclama de atraso, diz que não chegou, que faltou item, que veio errado
+                    ou que quer cancelar, o robô responde <strong>uma única frase</strong> avisando que vai
+                    chamar alguém — e para de falar naquela conversa. Ela aparece no balãozinho vermelho do
+                    painel e o alerta vai para o seu WhatsApp.
+                  </p>
+
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => handleSaveConfig({ escalateOnComplaint: true })}
+                      style={{
+                        flex: 1, padding: "10px", borderRadius: "10px", border: "none", cursor: "pointer", fontWeight: 800, fontSize: "0.82rem",
+                        background: config.escalateOnComplaint !== false ? "#16A34A" : "#E2E8F0",
+                        color: config.escalateOnComplaint !== false ? "#fff" : "#475569",
+                      }}
+                    >
+                      ✓ Chamar a equipe
+                    </button>
+                    <button
+                      onClick={() => handleSaveConfig({ escalateOnComplaint: false })}
+                      style={{
+                        flex: 1, padding: "10px", borderRadius: "10px", border: "none", cursor: "pointer", fontWeight: 800, fontSize: "0.82rem",
+                        background: config.escalateOnComplaint === false ? "#DC2626" : "#E2E8F0",
+                        color: config.escalateOnComplaint === false ? "#fff" : "#475569",
+                      }}
+                    >
+                      Deixar o robô responder
+                    </button>
+                  </div>
+                  {config.escalateOnComplaint === false && (
+                    <p style={{ fontSize: "0.75rem", color: "#B91C1C", marginTop: 8, lineHeight: 1.5 }}>
+                      ⚠️ Com isto desligado o robô continua respondendo quem está reclamando. Ele não liga
+                      para o motoboy nem sabe onde a entrega está — e já inventou que tinha ligado.
+                    </p>
+                  )}
+                </div>
+
+                {/* 2. QUE ALERTAS O DONO RECEBE NO WHATSAPP */}
+                <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.75rem" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F3E8FF", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Bell size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>Alertas no seu WhatsApp</h3>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>O painel só avisa quem está com ele aberto. O WhatsApp encontra você em qualquer lugar.</p>
+                    </div>
+                  </div>
+
+                  {telefoneDeAlerta ? (
+                    <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#166534", marginBottom: 12 }}>
+                      Os alertas vão para <strong>{telefoneDeAlerta}</strong>. Para trocar, vá em{" "}
+                      <a href="/store/minha-loja" style={{ color: "#166534", fontWeight: 800 }}>Minha Loja</a>.
+                    </div>
+                  ) : (
+                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#991B1B", marginBottom: 12 }}>
+                      ⚠️ Nenhum WhatsApp cadastrado para receber alertas — nada será enviado. Cadastre o seu
+                      número em <a href="/store/minha-loja" style={{ color: "#991B1B", fontWeight: 800 }}>Minha Loja</a>,
+                      no campo &quot;WhatsApp do Proprietário&quot;.
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {TIPOS_DE_ALERTA.map((t) => (
+                      <label
+                        key={t.id}
+                        style={{
+                          display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px",
+                          borderRadius: "10px", border: `1px solid ${ligado(t.id) ? "#DDD6FE" : "#E2E8F0"}`,
+                          background: ligado(t.id) ? "#FAF5FF" : "#F8FAFC", cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={ligado(t.id)}
+                          onChange={(e) => handleSaveConfig({ alertas: { ...alertas, [t.id]: e.target.checked } })}
+                          style={{ marginTop: 3, width: 16, height: 16, cursor: "pointer" }}
+                        />
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#0F172A" }}>{t.titulo}</div>
+                          <div style={{ fontSize: "0.75rem", color: "#64748B", lineHeight: 1.45 }}>{t.detalhe}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. NÚMEROS QUE O ROBÔ NÃO ATENDE */}
+                <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.75rem" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F1F5F9", color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Smartphone size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>Números que o robô não responde</h3>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Motoboys, cozinha, fornecedores — quem fala com a loja e não quer cardápio</p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: 12 }}>
+                    <input
+                      value={novoNomeMudo}
+                      onChange={(e) => setNovoNomeMudo(e.target.value)}
+                      placeholder="Nome (ex: Motoboy João)"
+                      style={{ flex: "1 1 160px", padding: "9px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.82rem" }}
+                    />
+                    <input
+                      value={novoNumeroMudo}
+                      onChange={(e) => setNovoNumeroMudo(e.target.value)}
+                      placeholder="WhatsApp com DDD"
+                      inputMode="numeric"
+                      style={{ flex: "1 1 160px", padding: "9px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.82rem" }}
+                    />
+                    <button
+                      onClick={() => {
+                        const digitos = novoNumeroMudo.replace(/\D/g, "");
+                        if (digitos.length < 10) {
+                          showToast("Informe o número com DDD (ex: 21999998888)", "#EF4444");
+                          return;
+                        }
+                        const jaTem = numerosMudos.some(
+                          (n: any) => String(n?.numero || "").replace(/\D/g, "").slice(-8) === digitos.slice(-8)
+                        );
+                        if (jaTem) {
+                          showToast("Esse número já está na lista", "#F59E0B");
+                          return;
+                        }
+                        handleSaveConfig({
+                          numerosIgnorados: [...numerosMudos, { numero: digitos, nome: novoNomeMudo.trim() || "Sem nome" }],
+                        });
+                        setNovoNumeroMudo("");
+                        setNovoNomeMudo("");
+                      }}
+                      style={{ padding: "9px 16px", borderRadius: "10px", border: "none", background: "#0F172A", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer" }}
+                    >
+                      Adicionar
+                    </button>
+                  </div>
+
+                  {numerosMudos.length === 0 ? (
+                    <p style={{ fontSize: "0.78rem", color: "#94A3B8", margin: 0 }}>
+                      Nenhum número cadastrado — o robô responde todo mundo.
+                    </p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {numerosMudos.map((n: any, i: number) => (
+                        <div key={`${n?.numero}_${i}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 12px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                          <div style={{ fontSize: "0.82rem", color: "#0F172A" }}>
+                            <strong>{n?.nome || "Sem nome"}</strong>
+                            <span style={{ color: "#64748B" }}> — {n?.numero}</span>
+                          </div>
+                          <button
+                            onClick={() => handleSaveConfig({ numerosIgnorados: numerosMudos.filter((_: any, j: number) => j !== i) })}
+                            style={{ background: "transparent", border: "none", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                            title="Remover"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ABA DISPAROS: CAMPANHA DE MARKETING PERSONALIZADA */}
           {activeTab === "disparos" && (() => {

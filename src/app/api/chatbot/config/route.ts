@@ -23,6 +23,7 @@ export async function GET() {
       paymentFees: true,
       chatbotConfig: true,
       storeCoupons: true,
+      notificationPhone: true,
     },
   });
 
@@ -63,6 +64,10 @@ export async function GET() {
       storeName: user.storeName || "Minha Loja",
       storeAddress: user.storeAddress || "Não informado",
       city: user.city || "Não informada",
+      // Para quem vão os alertas do robô. Só leitura: quem edita é Minha Loja.
+      // Sem isto a aba Alertas não teria como avisar que não há número
+      // cadastrado — e o dono ligaria alertas que nunca chegariam a ninguém.
+      notificationPhone: user.notificationPhone || "",
     },
   });
 }
@@ -123,6 +128,9 @@ export async function POST(req: NextRequest) {
       "coupon7d", "coupon15d", "coupon30d",
       "instantCouponEnabled", "instantCouponDiscount",
       "pickupAddress", "sendOrderConfirmation",
+      // Aba Alertas: o que o dono recebe no WhatsApp, quem o robô não atende, e
+      // se ele sai da conversa quando o cliente reclama do pedido.
+      "alertas", "numerosIgnorados", "escalateOnComplaint",
     ] as const;
 
     const permitido: Record<string, any> = {};

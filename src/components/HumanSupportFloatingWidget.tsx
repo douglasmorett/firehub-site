@@ -120,7 +120,9 @@ export default function HumanSupportFloatingWidget() {
               <div>
                 <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>Atendimento Humano WhatsApp</div>
                 <div style={{ fontSize: "0.72rem", color: "#FECACA" }}>
-                  {chats.length === 0 ? "Nenhum cliente aguardando no momento" : `${chats.length} cliente(s) aguardando atendimento`}
+                  {chats.length === 0
+                    ? "Nenhum cliente aguardando no momento"
+                    : `${chats.length} ${chats.length === 1 ? "cliente solicitando" : "clientes solicitando"} atendimento`}
                 </div>
               </div>
             </div>
@@ -162,6 +164,13 @@ export default function HumanSupportFloatingWidget() {
                       </div>
                       <div style={{ overflow: "hidden" }}>
                         <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>{c.clientName || c.phone || "Cliente WhatsApp"}</div>
+                        {/* Numa fila de dez, o motivo é o que diz por onde começar:
+                            quem está reclamando de atraso não pode esperar a vez. */}
+                        {c.motivo && (
+                          <div style={{ display: "inline-block", background: "#FEE2E2", color: "#B91C1C", fontSize: "0.68rem", fontWeight: 800, padding: "1px 7px", borderRadius: 6, margin: "2px 0" }}>
+                            {c.motivo}
+                          </div>
+                        )}
                         <div style={{ fontSize: "0.75rem", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.lastMessage}</div>
                       </div>
                     </div>
@@ -239,6 +248,21 @@ export default function HumanSupportFloatingWidget() {
       )}
 
       {/* BALÃOZINHO FLUTUANTE DE NOTIFICAÇÃO (BOTÃO REDONDO) */}
+      {/* O numerinho já piscava, mas um número de 22px no canto da tela não
+          chama ninguém que está olhando a cozinha. Com cliente esperando, o
+          botão inteiro ganha um anel que se expande — visível de longe, e só
+          quando há alguém de fato aguardando. */}
+      <style>{`@keyframes firehubChamando{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.9);opacity:0}}`}</style>
+      {totalUnread > 0 && !open && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute", bottom: 0, right: 0, width: 56, height: 56,
+            borderRadius: "50%", background: "#DC2626", pointerEvents: "none",
+            animation: "firehubChamando 1.6s ease-out infinite",
+          }}
+        />
+      )}
       <button
         onClick={() => setOpen(!open)}
         style={{

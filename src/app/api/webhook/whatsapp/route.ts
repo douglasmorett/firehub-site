@@ -10,7 +10,12 @@ import {
   handleOutgoingMessage,
   registerBotReply,
   clearLoopGuard,
+  passarParaAtendimentoHumano,
+  conversaEstaComHumano,
 } from '@/lib/loop-guard';
+import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema-no-pedido';
+import { numeroEstaNaListaDeIgnorados } from '@/lib/numeros-ignorados';
+import { avisarDono, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Evita timeout silencioso do Vercel (504) se a IA ou download demorar
@@ -184,7 +189,13 @@ function enqueueHumanSupport(
   pushName: string | undefined,
   userText: string,
   botText: string,
-  now: number
+  now: number,
+  /**
+   * Por que esta conversa caiu na fila. O widget usa para separar quem está com
+   * problema de quem só pediu atendente: numa fila de dez, saber onde entrar
+   * primeiro é a diferença entre atender e apagar incêndio.
+   */
+  motivo?: string
 ) {
   if (!global.__humanSupportChats) {
     global.__humanSupportChats = new Map();
@@ -195,7 +206,10 @@ function enqueueHumanSupport(
 
   const messages = existing ? existing.messages : [];
   messages.push({ sender: "user", text: userText, timestamp: now });
-  messages.push({ sender: "bot", text: botText, timestamp: Date.now() });
+  // Sem texto do robô não se inventa uma fala dele: quando a conversa já está
+  // com a equipe, o robô não respondeu nada — e um balão vazio no histórico
+  // faria a atendente achar que ele falou algo que ela não consegue ler.
+  if (botText) messages.push({ sender: "bot", text: botText, timestamp: Date.now() });
 
   global.__humanSupportChats.set(humanKey, {
     id: humanKey,
@@ -208,7 +222,10 @@ function enqueueHumanSupport(
     lastMessage: userText,
     updatedAt: Date.now(),
     messages,
-  });
+    // Um motivo antigo não é apagado por uma entrada nova sem motivo: quem
+    // entrou na fila reclamando de atraso continua sendo o caso urgente.
+    motivo: motivo || (existing as any)?.motivo,
+  } as any);
 }
 
 /**
@@ -547,6 +564,17 @@ async function handleIncomingMessage(body: any, instance: string) {
     return;
   }
 
+  // ── NÚMEROS QUE O ROBÔ NÃO ATENDE ────────────────────────────────────────
+  // Motoboy, cozinha, fornecedor, o contador: gente que fala com a loja o dia
+  // inteiro e não quer cardápio nem "posso anotar seu pedido?". O robô
+  // respondendo a esses números é ruído para os dois lados — e, no caso do
+  // motoboy em rota, atrapalha no pior momento.
+  if (numeroEstaNaListaDeIgnorados(cleanPhone, chatbotConfig.numerosIgnorados)) {
+    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔕 ${mascararTelefone(remoteJid)} está na lista de números que o robô não responde.`);
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "numero-ignorado" });
+    return;
+  }
+
   // ── DETECT JOTAJA / IFOOD AUTOMATIC ORDER CONFIRMATION MESSAGE FROM CUSTOMER ──
   const isJotajaConfirmationMsg =
     (textMessage.includes("SEU PEDIDO:") || textMessage.includes("Acompanhe abaixo o pedido") || textMessage.includes("RESUMO DO PEDIDO") || textMessage.includes("Jotajá") || textMessage.includes("jotaja.com.br")) &&
@@ -625,9 +653,90 @@ async function handleIncomingMessage(body: any, instance: string) {
     cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
 
     // Registra na fila do balãozinho flutuante de atendimento humano
-    enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, humanReply, Date.now());
+    enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, humanReply, Date.now(), "Pediu atendente");
+
+    // A fila do painel só existe para quem está com o painel aberto. Sem este
+    // aviso, o cliente que pede atendente às 21h de uma terça não é atendido
+    // por ninguém — nem pelo robô, que acabou de calar.
+    avisarDono(
+      user.id,
+      "pedido_de_atendente",
+      textoDeProblemaNoPedido({
+        nomeDoCliente: data.pushName || cleanPhone,
+        telefone: cleanPhone,
+        motivo: "pediu para falar com atendente",
+        mensagemDoCliente: textMessage,
+      })
+    ).catch(() => {});
 
     return;
+  }
+
+  // ── PROBLEMA NO PEDIDO: O ROBÔ SAI E CHAMA GENTE ─────────────────────────
+  //
+  // Reclamação não é dúvida. Em 01/09/2026 uma cliente esperou 1h40 e o robô
+  // respondeu quatro vezes, cada vez com mais confiança, até inventar uma
+  // ligação que nunca fez: "consegui falar com ele, já tá na sua rua". Ele não
+  // liga para motoboy e não sabe onde ninguém está.
+  //
+  // Nenhum ajuste de prompt conserta isso com segurança, porque o problema não
+  // é o texto — é a atribuição: quem tem que responder atraso é quem pode
+  // resolver atraso. Então o robô diz uma frase honesta e sai de cena.
+  const escalarPorProblema = chatbotConfig.escalateOnComplaint !== false;
+  if (escalarPorProblema) {
+    const historicoAtual = conversationCache.get(user.id + "_" + remoteJid) || [];
+    const problema = detectarProblemaNoPedido(textMessage, historicoAtual, now);
+
+    // Já entregue à equipe: só atualiza a fila. Repetir "vou chamar alguém" a
+    // cada nova mensagem de quem está bravo é piorar o atendimento, e o alerta
+    // ao dono viraria enxurrada.
+    if (problema.escalar && (await conversaEstaComHumano(user.id, remoteJid))) {
+      enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", now);
+      return;
+    }
+
+    if (problema.escalar) {
+      const rotulo =
+        problema.motivo === "cobranca_repetida"
+          ? "cobrou o pedido mais de uma vez"
+          : "reclamação sobre o pedido";
+
+      console.warn(
+        `[${new Date().toISOString()}] [WhatsApp Webhook] 🆘 ${mascararTelefone(remoteJid)}: ${rotulo} ` +
+          `(gatilho: "${problema.gatilho}"). Robô saindo da conversa.`
+      );
+
+      await replyToCustomer(user.id, remoteJid, FRASE_DE_TRANSFERENCIA, remoteJid || data.from || "").catch(() => {});
+
+      // Duas travas, de propósito. A do banco sobrevive ao restart do
+      // container — sem ela, um deploy no meio do problema devolveria o robô à
+      // conversa falando como se nada tivesse acontecido.
+      await passarParaAtendimentoHumano(user.id, remoteJid, `problema no pedido: ${rotulo}`, now);
+      cooldownCache.set(pausedCacheKey, Date.now() + 12 * 60 * 60 * 1000);
+
+      enqueueHumanSupport(
+        user.id, remoteJid, cleanPhone, data.pushName, textMessage, FRASE_DE_TRANSFERENCIA, now,
+        problema.motivo === "cobranca_repetida" ? "Cobrou o pedido de novo" : "Reclamação"
+      );
+
+      avisarDono(
+        user.id,
+        "problema_no_pedido",
+        textoDeProblemaNoPedido({
+          nomeDoCliente: data.pushName || cleanPhone,
+          telefone: cleanPhone,
+          motivo: rotulo,
+          mensagemDoCliente: textMessage,
+        })
+      ).catch(() => {});
+
+      registrarTrace({
+        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+        estagio: "problema-no-pedido", detalhe: `${problema.motivo}: ${problema.gatilho}`,
+      });
+
+      return;
+    }
   }
 
   // Se a conversa já estiver na fila de atendimento humano

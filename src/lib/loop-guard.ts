@@ -160,6 +160,16 @@ const CONVERSATION_RESET_MS = 6 * 60 * 60 * 1000;
  */
 export const HUMAN_TAKEOVER_SILENCE_MS = 5 * 60 * 1000;
 
+/**
+ * Validade da marca de "conversa entregue ao humano".
+ *
+ * Existe para que nenhuma conversa fique muda para sempre por causa de uma
+ * marca que ninguém apagou — o modo de falha que este arquivo já produziu uma
+ * vez, e que agora teria um caminho novo: cliente reclama, robô sai, o
+ * container reinicia, a fila em memória some e não sobra quem destrave.
+ */
+export const DEGRADED_TTL_MS = 12 * 60 * 60 * 1000;
+
 /** Hashes de mensagens que o próprio robô enviou, para reconhecer o eco. */
 const BOT_SENT_WINDOW = 10;
 
@@ -323,8 +333,27 @@ async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   }
 
   // Já degradada: a conversa está com o atendimento humano, não gasta IA.
+  //
+  // Mas com PRAZO. Marca sem validade é como este arquivo já matou conversas
+  // antes: a de "conta empresarial verificada" ficou muda para sempre porque o
+  // único caminho de volta era um atendimento humano que nunca acontecia. O
+  // mesmo valeria agora para quem reclamou de atraso — a marca vive no banco, e
+  // se o container reiniciar antes de alguém encerrar o atendimento, a fila em
+  // memória some e o cliente nunca mais é respondido.
+  //
+  // Doze horas: tempo de sobra para a loja resolver hoje, e o cliente volta a
+  // ser atendido amanhã sem ninguém precisar lembrar de destravar nada.
   if (state?.degradedAt) {
-    return { action: "ignore", reason: state.degradedReason || "conversa degradada" };
+    const idade = now - state.degradedAt.getTime();
+    if (idade < DEGRADED_TTL_MS) {
+      return { action: "ignore", reason: state.degradedReason || "conversa degradada" };
+    }
+    console.log(
+      `[LoopGuard] Destravando ${remoteJid}: degradada há ${Math.round(idade / 3_600_000)}h ` +
+        `(${state.degradedReason || "sem motivo"}), passou do prazo.`
+    );
+    await clearLoopGuard(userId, remoteJid);
+    state = await readState(userId, remoteJid);
   }
 
   const lastAt = state?.lastMessageAt ? state.lastMessageAt.getTime() : 0;
@@ -389,6 +418,51 @@ async function markDegraded(userId: string, remoteJid: string, reason: string, n
     degradedAt: new Date(now),
     degradedReason: reason,
   });
+}
+
+/**
+ * Tira o robô da conversa e deixa registrado por quê.
+ *
+ * Mesma marca que o anti-loop usa (`degradedAt`), de propósito: a checagem no
+ * início de `evaluate` já devolve "ignore" para conversa marcada, então o robô
+ * cala nas mensagens seguintes sem nenhum código novo no caminho quente.
+ *
+ * O que muda em relação a pausar só na memória do processo: isto sobrevive ao
+ * restart do container. Uma pausa que evapora no deploy devolveria o robô a uma
+ * conversa que já estava com a atendente — e ele voltaria falando como se nada
+ * tivesse acontecido, no pior momento possível.
+ */
+/**
+ * Esta conversa já está com a equipe (e ainda dentro do prazo)?
+ *
+ * Existe porque a detecção de problema no pedido roda ANTES do
+ * `evaluateLoopGuard` — precisa rodar, senão a reclamação viraria chamada de
+ * IA. Só que sem esta consulta ela não enxerga a marca que ela mesma gravou:
+ * numa segunda reclamação, depois de o container reiniciar e a pausa em
+ * memória sumir, o robô repetiria "vou chamar alguém" e dispararia outro
+ * alerta para o dono — a cada mensagem de um cliente já irritado.
+ */
+export async function conversaEstaComHumano(userId: string, remoteJid: string): Promise<boolean> {
+  try {
+    const state = await readState(userId, remoteJid);
+    if (!state?.degradedAt) return false;
+    return Date.now() - state.degradedAt.getTime() < DEGRADED_TTL_MS;
+  } catch {
+    // Na dúvida, diz que NÃO está: falar demais é recuperável, calar um cliente
+    // por engano é o defeito que este arquivo já produziu antes.
+    return false;
+  }
+}
+
+export async function passarParaAtendimentoHumano(
+  userId: string,
+  remoteJid: string,
+  motivo: string,
+  now: number = Date.now()
+) {
+  await markDegraded(userId, remoteJid, motivo, now).catch((err) =>
+    console.error("[LoopGuard] Falha ao marcar atendimento humano:", err)
+  );
 }
 
 /**

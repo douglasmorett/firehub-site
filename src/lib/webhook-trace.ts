@@ -22,6 +22,10 @@ export type TraceStage =
   | "audio-sem-bytes"
   | "audio-ok"
   | "robo-desativado"
+  /** Telefone está na lista de números que o robô não atende. */
+  | "numero-ignorado"
+  /** Cliente reclamou do pedido: o robô saiu e chamou a equipe. */
+  | "problema-no-pedido"
   | "guard-ignorou"
   | "guard-degradou"
   | "ia-chamada"

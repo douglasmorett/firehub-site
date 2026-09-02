@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { clearLoopGuard } from "@/lib/loop-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ export interface HumanSupportChat {
   phone: string;
   clientName: string;
   status: "PENDING" | "ACTIVE" | "CLOSED";
+  /** Por que caiu na fila ("Reclamação", "Pediu atendente"). Vazio = entrada antiga. */
+  motivo?: string;
   unreadCount: number;
   lastMessage: string;
   updatedAt: number;
@@ -145,6 +148,12 @@ export async function POST(req: NextRequest) {
         chat.status = "CLOSED";
         chat.unreadCount = 0;
       }
+
+      // Fechar aqui apagava só a fila em memória. Desde que problema no pedido
+      // passou a marcar a conversa no BANCO (para a pausa sobreviver ao
+      // restart), fechar sem limpar essa marca deixaria o cliente sem robô até
+      // o prazo de 12 h vencer — mesmo com o atendimento já resolvido.
+      await clearLoopGuard(targetUserId, jid).catch(() => {});
 
       // Envia aviso ao cliente no WhatsApp
       const endMessage = "Atendimento humano finalizado com sucesso! Se precisar de mais alguma coisa, nosso robô continuará te ajudando por aqui. Obrigado! 😊";
