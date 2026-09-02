@@ -106,6 +106,43 @@ export default async function StoreFinanceiroPage() {
   const fixedCosts = Array.isArray(user.fixedCosts) ? (user.fixedCosts as any[]) : [];
   const financialGoals = (user.financialGoals as any) || {};
 
+  // ── CONTAS A PAGAR ────────────────────────────────────────────────────────
+  //
+  // A aba existia só com o formulário: o lojista lançava a conta, via
+  // "registrado com sucesso" e nada aparecia — não havia consulta nenhuma no
+  // servidor, então não existia lista para mostrar. É isto que traz os dados.
+  //
+  // As datas viajam como "YYYY-MM-DD" já recortado, e não como ISO completo,
+  // porque o vencimento é uma DATA, não um instante: mandar o timestamp faz o
+  // navegador em UTC-3 exibir "vence dia 09" numa conta gravada para o dia 10.
+  let payables: any[] = [];
+  try {
+    payables = await prisma.payable.findMany({
+      where: { franchiseeId: targetFranchiseeId },
+      orderBy: { dueDate: "asc" },
+      select: {
+        id: true, supplierName: true, value: true, status: true,
+        dueDate: true, receivedDate: true, paidDate: true,
+        barcode: true, category: true, paymentType: true,
+      },
+    });
+  } catch (err) {
+    console.error("[Financeiro] Erro ao buscar contas a pagar:", err);
+  }
+
+  const payablesSerialized = payables.map((p) => ({
+    id: p.id,
+    supplierName: p.supplierName,
+    value: p.value,
+    status: p.status,
+    category: p.category,
+    paymentType: p.paymentType || null,
+    barcode: p.barcode || null,
+    dueDate: p.dueDate.toISOString().slice(0, 10),
+    receivedDate: p.receivedDate ? p.receivedDate.toISOString().slice(0, 10) : null,
+    paidDate: p.paidDate ? p.paidDate.toISOString().slice(0, 10) : null,
+  }));
+
   return (
     <DREClient
       orders={serialized}
@@ -116,6 +153,7 @@ export default async function StoreFinanceiroPage() {
       initialFixedCosts={fixedCosts}
       initialGoals={financialGoals}
       initialRepasseConfig={(user.repasseConfig as any) || {}}
+      payables={payablesSerialized}
     />
   );
 }

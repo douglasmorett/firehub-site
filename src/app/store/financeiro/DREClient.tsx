@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { isExemptAccount } from "@/lib/billing";
-import FinanceForm from "@/components/FinanceForm";
 import InvoicesClient from "@/components/InvoicesClient";
+import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
+import AjudaModulo from "@/components/AjudaModulo";
 
 type BillingCycle = {
   yearMonth: string; totalSales: number; amountDue: number;
@@ -127,7 +128,7 @@ function DRERow({ label, value, indent = 0, bold = false, color = "#0F172A", bor
   );
 }
 
-export default function DREClient({ orders, paymentFees, storeName, storeCreatedAt, produtosSemCusto = [], initialFixedCosts = [], initialGoals = {}, initialRepasseConfig = {} }: {
+export default function DREClient({ orders, paymentFees, storeName, storeCreatedAt, produtosSemCusto = [], initialFixedCosts = [], initialGoals = {}, initialRepasseConfig = {}, payables = [] }: {
   orders: Order[];
   paymentFees: any;
   storeName: string;
@@ -136,6 +137,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   initialFixedCosts?: FixedCost[];
   initialGoals?: Record<string, any>;
   initialRepasseConfig?: any;
+  payables?: PayableDTO[];
 }) {
   const { data: session } = useSession();
   const userEmailClean = session?.user?.email;
@@ -671,6 +673,18 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         {/* ===== ALERTA CMV + KPIs — visíveis apenas na aba DRE ===== */}
         {activeTab === "dre" && (
           <>
+            <AjudaModulo
+              icone="📊"
+              titulo="DRE — o resultado da sua loja"
+              oQueE="Mostra, no período escolhido, quanto entrou de venda, quanto saiu de custo e o que sobrou no bolso."
+              paraQueServe="É a resposta para “trabalhei o mês todo, mas ganhei dinheiro?”."
+              aviso="O lucro só fica correto se os produtos tiverem o custo cadastrado. Produto sem custo o sistema conta como se fosse de graça, e o lucro aparece maior do que é."
+              passos={[
+                { titulo: "Escolha o período", texto: "use os botões de data no topo (7 dias, 30 dias ou um intervalo seu)." },
+                { titulo: "Olhe a margem", texto: "é o que sobra de cada R$ 100 vendidos, depois de pagar produto, taxa e entrega." },
+                { titulo: "Caiu a margem?", texto: "confira o CMV. Quase sempre é preço de fornecedor que subiu e o cardápio não acompanhou." },
+              ]}
+            />
             {/* ALERTA PRODUTOS SEM CUSTO */}
             {produtosSemCusto.length > 0 && (
               <div style={{
@@ -852,6 +866,18 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         {/* ===== ABA EXTRATO (ESTILO BRENDI) ===== */}
         {activeTab === "extrato" && (
           <div>
+            <AjudaModulo
+              icone="💳"
+              titulo="Extrato dos pagamentos online"
+              oQueE="Mostra o dinheiro das vendas pagas por Pix e cartão pelo site: o que já está liberado e o que ainda está a caminho."
+              paraQueServe="Serve para saber quanto você tem para sacar hoje."
+              aviso="Venda no cartão não cai na hora — a operadora segura por alguns dias. Por isso o “a liberar” costuma ser maior que o “disponível”."
+              passos={[
+                { titulo: "Disponível", texto: "já é seu, pode transferir." },
+                { titulo: "A liberar", texto: "vendas confirmadas que a operadora ainda vai repassar." },
+                { titulo: "Para receber automático", texto: "cadastre sua chave Pix na aba Configurações." },
+              ]}
+            />
             {/* Cards do Topo: Saldo Disponível (Esq) vs Resumo Financeiro (Dir) */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
               {/* Esquerda: Saldo Disponível e Saldo a Liberar */}
@@ -1080,6 +1106,16 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         {/* ===== ABA RELATÓRIO (ESTILO BRENDI) ===== */}
         {activeTab === "relatorio" && (
           <div>
+            <AjudaModulo
+              icone="📈"
+              titulo="Relatório de faturamento"
+              oQueE="O total que a loja vendeu no período, separado por forma de pagamento e canal."
+              paraQueServe="Use para comparar semanas e enxergar de onde vem a maior parte do seu dinheiro."
+              passos={[
+                { titulo: "Compare períodos", texto: "veja esta semana contra a passada para saber se a loja está crescendo." },
+                { titulo: "Olhe o canal", texto: "se o iFood traz mais que o seu site, lembre que no site a comissão é bem menor." },
+              ]}
+            />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <div>
                 <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 700 }}>Faturamento Online</span>
@@ -1139,6 +1175,18 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         {/* ===== ABA CONFIGURAÇÕES (CONFIGURAÇÕES DE REPASSE BRENDI) ===== */}
         {activeTab === "configuracoes" && (
           <div>
+            <AjudaModulo
+              icone="⚙️"
+              titulo="Para onde vai o seu dinheiro"
+              oQueE="Aqui você cadastra a chave Pix da loja para receber automaticamente o que os clientes pagaram online."
+              paraQueServe="Sem essa chave o dinheiro fica parado no sistema esperando você pedir."
+              aviso="A chave precisa ser da conta da loja e estar no mesmo CNPJ/CPF do cadastro, senão o banco recusa o repasse."
+              passos={[
+                { titulo: "Escolha o tipo", texto: "CNPJ, CPF, telefone, e-mail ou chave aleatória." },
+                { titulo: "Confira o titular", texto: "o nome tem que bater com o do cadastro da loja." },
+                { titulo: "Salve", texto: "os próximos repasses caem sozinhos nessa conta." },
+              ]}
+            />
             <h3 style={{ fontWeight: 900, fontSize: "1.15rem", color: "#0F172A", marginBottom: "0.5rem" }}>Configurações financeiras de repasse</h3>
             <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.5rem" }}>
               Se você aceita pagamentos online (Pix e Cartão), cadastre a sua chave Pix/conta de repasse para receber o valor automaticamente sem ficar com o saldo retido.
@@ -1238,6 +1286,18 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       {/* ===== ABA CUSTOS FIXOS ===== */}
       {activeTab === "custosfix" && (
         <div style={{ maxWidth: 700, margin: "0 auto", padding: "1.5rem" }}>
+          <AjudaModulo
+            icone="🏢"
+            titulo="Custos fixos"
+            oQueE="São as contas que você paga todo mês vendendo muito ou vendendo pouco: aluguel, salários, luz, internet, contador."
+            paraQueServe="Com eles cadastrados, o sistema calcula quanto você precisa vender só para não ter prejuízo."
+            aviso="Cadastre o valor do MÊS inteiro, não do dia. O sistema divide sozinho quando precisa."
+            passos={[
+              { titulo: "Liste tudo", texto: "aluguel, folha, energia, água, internet, contador, sistema, taxas." },
+              { titulo: "Salve", texto: "o DRE passa a descontar esses custos e o lucro que aparece vira o lucro de verdade." },
+              { titulo: "Revise a cada mudança", texto: "contratou alguém ou o aluguel subiu? Atualize aqui." },
+            ]}
+          />
           <div style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", borderRadius: 16, padding: "1.5rem", color: "#fff", marginBottom: "1.5rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
               <Building2 size={24} />
@@ -1348,29 +1408,28 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         </div>
       )}
 
-      {/* ===== ABA CONTAS A PAGAR & LEITURA COM IA ===== */}
-      {activeTab === "contasapagar" && (
-        <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem" }}>
-          <div style={{ background: "#fff", borderRadius: "20px", border: "1px solid #E2E8F0", padding: "24px", boxShadow: "0 10px 30px rgba(0,0,0,0.04)" }}>
-            <div style={{ marginBottom: "1.5rem" }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FDF2F8", border: "1px solid #FBCFE8", color: "#DB2777", fontSize: "0.75rem", fontWeight: 800, padding: "4px 12px", borderRadius: 20, marginBottom: 8 }}>
-                ✨ LEITURA AUTOMÁTICA VIA GEMINI IA
-              </div>
-              <h2 style={{ fontSize: "1.35rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>
-                Gestão Inteligente de Contas a Pagar
-              </h2>
-              <p style={{ fontSize: "0.85rem", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
-                Tire foto do boleto ou conta de fornecedor com a câmera do celular ou suba um arquivo. A IA do Gemini lê instantaneamente o fornecedor, valor total, código de barras e data de vencimento.
-              </p>
-            </div>
-            <FinanceForm category="BUSINESS" />
-          </div>
-        </div>
-      )}
+      {/* ===== ABA CONTAS A PAGAR =====
+           Antes esta aba tinha só o <FinanceForm />: o lojista lançava a conta e
+           não via nada, porque nunca existiu listagem. Agora quem manda é o
+           ContasAPagarClient, que traz as filas de atrasadas / hoje / futuras
+           no mesmo formato do Portal Hakim. */}
+      {activeTab === "contasapagar" && <ContasAPagarClient payables={payables} />}
 
       {/* ===== ABA NOTAS DE COMPRAS ===== */}
       {activeTab === "notascompras" && (
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1rem 0" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1rem" }}>
+          <AjudaModulo
+            icone="🧾"
+            titulo="Notas de Compras"
+            oQueE="É o arquivo das notas e cupons de tudo o que a sua loja COMPRA — carne, embalagem, bebida, material de limpeza."
+            paraQueServe="Guardando as notas aqui, o sistema sabe quanto você gastou de verdade e o lucro do DRE para de ser chute."
+            aviso="Nota de compra é diferente de conta a pagar. Aqui é o comprovante do que você comprou; o boleto que ainda vai vencer entra na aba Contas a Pagar."
+            passos={[
+              { titulo: "Tire a foto", texto: "fotografe a nota ou o cupom direto do celular, ainda no balcão de recebimento da mercadoria." },
+              { titulo: "A IA lê sozinha", texto: "ela identifica o valor e a categoria da compra. Você só confere se ficou certo." },
+              { titulo: "Confirme", texto: "conferido, o gasto entra no seu custo do mês e aparece no DRE." },
+            ]}
+          />
           <InvoicesClient role={(session?.user as any)?.role || "FRANCHISEE"} canSeePersonal={false} />
         </div>
       )}

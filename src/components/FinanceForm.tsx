@@ -7,7 +7,12 @@ import { Camera, ScanLine, Loader2, FileText, PenLine, ChevronDown, ChevronUp } 
 
 type InputMode = "manual" | "ai" | null;
 
-export default function FinanceForm({ category = "BUSINESS" }: { category?: string }) {
+/**
+ * `onSaved` avisa a tela que uma conta entrou. Sem ele o formulário gravava, dizia
+ * "registrada com sucesso" e a lista continuava a mesma até um F5 — que era
+ * exatamente a impressão de que o lançamento não tinha funcionado.
+ */
+export default function FinanceForm({ category = "BUSINESS", onSaved }: { category?: string; onSaved?: () => void }) {
   const [loading, setLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [inputMode, setInputMode] = useState<InputMode>(null);
@@ -117,8 +122,9 @@ export default function FinanceForm({ category = "BUSINESS" }: { category?: stri
         setErrorMsg(result.error || "Erro desconhecido ao registrar.");
       } else {
         setFormData({ supplierName: "", barcode: "", receivedDate: "", dueDate: "", value: "" });
-        setSuccessMsg("✅ Conta registrada com sucesso!");
+        setSuccessMsg("✅ Conta registrada! Ela já aparece na lista abaixo.");
         setInputMode(null);
+        onSaved?.();
       }
     } catch (err: any) {
       setErrorMsg("Erro de conexão: " + (err?.message || "Tente novamente."));

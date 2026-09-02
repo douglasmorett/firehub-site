@@ -61,9 +61,38 @@ export async function createPayable(data: {
   }
 }
 
-export async function markPayableAsPaid(id: string) {
+/**
+ * De qual loja é a sessão atual. Funcionário (`ownerId`) responde pela loja do dono.
+ */
+async function lojaDaSessao() {
   const session = await getServerSession(authOptions);
   if (!session) throw new Error("Não autorizado");
+  const dbUser = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true, role: true },
+  });
+  if (!dbUser) throw new Error("Não autorizado");
+  return { franchiseeId: dbUser.ownerId || dbUser.id, role: dbUser.role };
+}
+
+/**
+ * Confere que a conta é DESTA loja antes de deixar mexer nela.
+ *
+ * As duas ações abaixo só checavam "existe sessão?" e chamavam update/delete
+ * direto pelo id. Como o id vem do navegador, qualquer lojista logado podia dar
+ * baixa ou apagar a conta a pagar de OUTRA loja só trocando o id na chamada.
+ */
+async function exigirPayableDaLoja(id: string) {
+  const { franchiseeId, role } = await lojaDaSessao();
+  const alvo = await prisma.payable.findUnique({ where: { id }, select: { franchiseeId: true } });
+  if (!alvo) throw new Error("Conta não encontrada");
+  if (role !== "ADMIN" && alvo.franchiseeId !== franchiseeId) {
+    throw new Error("Esta conta não é da sua loja");
+  }
+}
+
+export async function markPayableAsPaid(id: string) {
+  await exigirPayableDaLoja(id);
 
   await prisma.payable.update({
     where: { id },
@@ -77,8 +106,7 @@ export async function markPayableAsPaid(id: string) {
 }
 
 export async function deletePayable(id: string) {
-  const session = await getServerSession(authOptions);
-  if (!session) throw new Error("Não autorizado");
+  await exigirPayableDaLoja(id);
 
   await prisma.payable.delete({ where: { id } });
   revalidatePath("/store/financeiro");

@@ -325,7 +325,30 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
         {loading ? (
           <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}><Loader2 className="animate-spin" size={24} style={{ margin: "0 auto 8px" }} /><p>Carregando notas...</p></div>
         ) : invoices.length === 0 ? (
-          <p style={{ textAlign: "center", color: "#94a3b8", padding: "2rem", margin: 0 }}>Nenhuma nota registrada ainda.</p>
+          /* Tela vazia é onde o lojista decide se o módulo serve para ele. Um
+             "Nenhuma nota registrada" sozinho não ensina o próximo passo nem
+             diz o que ele ganha — e é aí que vinha a ligação para o suporte. */
+          <div style={{ textAlign: "center", padding: "2.5rem 1.5rem", margin: "0 auto", maxWidth: 460 }}>
+            <div style={{ fontSize: "2.5rem", marginBottom: 10 }}>🧾</div>
+            <h4 style={{ margin: "0 0 8px", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A" }}>
+              Nenhuma nota guardada ainda
+            </h4>
+            <p style={{ margin: "0 0 16px", fontSize: "0.86rem", color: "#64748B", lineHeight: 1.6 }}>
+              Toda vez que chegar mercadoria — carne, embalagem, bebida, limpeza —
+              fotografe a nota aqui. Leva 10 segundos e é o que faz o
+              <strong style={{ color: "#334155" }}> lucro do seu DRE virar o lucro real</strong>,
+              em vez de uma conta só com o que entrou.
+            </p>
+            <div style={{
+              background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12,
+              padding: "12px 14px", fontSize: "0.8rem", color: "#475569",
+              textAlign: "left", lineHeight: 1.6,
+            }}>
+              <strong style={{ color: "#0F172A" }}>Comece assim:</strong> clique em
+              “Nova Nota” acima, tire a foto do cupom e confira o valor que a IA leu.
+              Pronto — o gasto já entra no custo do mês.
+            </div>
+          </div>
         ) : (
           <div style={{ overflowX: "auto", width: "100%" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
