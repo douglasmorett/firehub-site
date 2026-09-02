@@ -818,7 +818,7 @@ export default function ChatbotHubClient() {
               display: "flex", alignItems: "center", gap: "8px"
             }}
           >
-            <Bell size={16} /> Alertas e Silêncio
+            <Bell size={16} /> Notificações
           </button>
         </div>
       </div>
@@ -1656,7 +1656,7 @@ export default function ChatbotHubClient() {
             </div>
           )}
 
-          {/* ── ABA ALERTAS E SILÊNCIO ──────────────────────────────────────
+          {/* ── ABA NOTIFICAÇÕES ──────────────────────────────────────
               Duas metades do mesmo assunto: para quem o robô FALA quando algo
               dá errado, e com quem ele NUNCA fala. */}
           {activeTab === "alertas" && (() => {
@@ -2410,41 +2410,41 @@ export default function ChatbotHubClient() {
 
           {/* ABA 4: TESTAR ENVIO */}
           {activeTab === "cardapio" && (
-            <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "16px", padding: "24px", border: "1px solid rgba(255,255,255,0.1)" }}>
-              <h3 style={{ color: "#fff", fontSize: "1.15rem", fontWeight: 800, margin: "0 0 6px" }}>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", border: "1px solid #E2E8F0" }}>
+              <h3 style={{ color: "#0F172A", fontSize: "1.15rem", fontWeight: 800, margin: "0 0 6px" }}>
                 📄 Cardápio em Arquivo
               </h3>
-              <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.88rem", margin: "0 0 20px", lineHeight: 1.6 }}>
+              <p style={{ color: "#475569", fontSize: "0.88rem", margin: "0 0 20px", lineHeight: 1.6 }}>
                 Suba a foto ou o PDF do seu cardápio. Quando o cliente pedir o cardápio no WhatsApp,
-                o robô manda <strong style={{ color: "#10B981" }}>primeiro o link do site</strong> (é lá que o pedido
+                o robô manda <strong style={{ color: "#047857" }}>primeiro o link do site</strong> (é lá que o pedido
                 cai sozinho, sem erro de digitação). Só se o cliente disser que prefere pedir pelo WhatsApp
                 mesmo é que ele envia este arquivo. Sem arquivo carregado, ele lista os itens por escrito,
                 como já faz hoje.
               </p>
 
-              <div style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "12px", padding: "14px 16px", marginBottom: "20px" }}>
-                <div style={{ color: "#6EE7B7", fontSize: "0.8rem", fontWeight: 800, marginBottom: "6px" }}>ORDEM QUE O ROBÔ SEGUE</div>
-                <div style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.83rem", lineHeight: 1.8 }}>
+              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "12px", padding: "14px 16px", marginBottom: "20px" }}>
+                <div style={{ color: "#047857", fontSize: "0.8rem", fontWeight: 800, marginBottom: "6px" }}>ORDEM QUE O ROBÔ SEGUE</div>
+                <div style={{ color: "#166534", fontSize: "0.83rem", lineHeight: 1.8 }}>
                   1️⃣ Manda o link do site &nbsp;→&nbsp; 2️⃣ Cliente recusa? Manda este arquivo &nbsp;→&nbsp; 3️⃣ Sem arquivo? Escreve os itens
                 </div>
               </div>
 
               {config.menuFileUrl ? (
                 <div style={{ marginBottom: "18px" }}>
-                  <div style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.85rem", fontWeight: 700, marginBottom: "10px" }}>
+                  <div style={{ color: "#0F172A", fontSize: "0.85rem", fontWeight: 700, marginBottom: "10px" }}>
                     ✅ Cardápio carregado
                   </div>
                   {String(config.menuFileUrl).toLowerCase().endsWith(".pdf") ? (
                     <a href={config.menuFileUrl} target="_blank" rel="noreferrer"
                       style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "16px 20px", borderRadius: "12px",
-                        background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#FCA5A5",
+                        background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#B91C1C",
                         textDecoration: "none", fontWeight: 700, fontSize: "0.9rem" }}>
                       📕 Ver PDF do cardápio
                     </a>
                   ) : (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img src={config.menuFileUrl} alt="Cardápio da loja"
-                      style={{ maxWidth: "100%", maxHeight: "380px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.15)", display: "block" }} />
+                      style={{ maxWidth: "100%", maxHeight: "380px", borderRadius: "12px", border: "1px solid #E2E8F0", display: "block" }} />
                   )}
                   <button
                     onClick={async () => {
@@ -2463,22 +2463,22 @@ export default function ChatbotHubClient() {
                       } finally { setMenuFileSaving(false); }
                     }}
                     disabled={menuFileSaving}
-                    style={{ marginTop: "14px", display: "block", padding: "10px 18px", borderRadius: "10px", border: "1px solid rgba(239,68,68,0.4)",
-                      background: "rgba(239,68,68,0.12)", color: "#FCA5A5", fontWeight: 700, fontSize: "0.83rem",
+                    style={{ marginTop: "14px", display: "block", padding: "10px 18px", borderRadius: "10px", border: "1px solid #FCA5A5",
+                      background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.83rem",
                       cursor: menuFileSaving ? "not-allowed" : "pointer", opacity: menuFileSaving ? 0.6 : 1 }}
                   >
                     🗑️ Remover cardápio
                   </button>
                 </div>
               ) : (
-                <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.86rem", marginBottom: "18px", padding: "24px",
-                  border: "1px dashed rgba(255,255,255,0.2)", borderRadius: "12px", textAlign: "center" }}>
+                <div style={{ color: "#64748B", fontSize: "0.86rem", marginBottom: "18px", padding: "24px",
+                  border: "1px dashed #CBD5E1", borderRadius: "12px", textAlign: "center" }}>
                   Nenhum cardápio carregado ainda.
                 </div>
               )}
 
               <label style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "12px 22px", borderRadius: "12px",
-                background: menuFileSaving ? "rgba(255,255,255,0.1)" : "linear-gradient(135deg, #10B981, #059669)", color: "#fff",
+                background: menuFileSaving ? "#CBD5E1" : "linear-gradient(135deg, #10B981, #059669)", color: "#fff",
                 fontWeight: 800, fontSize: "0.88rem", cursor: menuFileSaving ? "not-allowed" : "pointer" }}>
                 {menuFileSaving ? "Enviando..." : config.menuFileUrl ? "🔄 Trocar arquivo" : "📤 Enviar cardápio (foto ou PDF)"}
                 <input
@@ -2526,12 +2526,12 @@ export default function ChatbotHubClient() {
               </label>
 
               {menuFileMsg && (
-                <div style={{ marginTop: "14px", color: "rgba(255,255,255,0.8)", fontSize: "0.85rem" }}>
+                <div style={{ marginTop: "14px", color: "#334155", fontSize: "0.85rem" }}>
                   {menuFileMsg}
                 </div>
               )}
 
-              <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.78rem", marginTop: "18px", lineHeight: 1.6 }}>
+              <p style={{ color: "#64748B", fontSize: "0.78rem", marginTop: "18px", lineHeight: 1.6 }}>
                 Aceita PNG, JPG, WEBP ou PDF, até 8 MB. Foto costuma funcionar melhor: abre direto na conversa,
                 enquanto o PDF o cliente precisa tocar para baixar.
               </p>
