@@ -31,17 +31,41 @@
 export const CATEGORIAS_DE_INTEGRACAO = ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "99FOOD"];
 
 /**
+ * Prefixos de `id` que só o espelho tem. A categoria sozinha não basta:
+ *
+ *   - o importador antigo do JotaJá gravava a categoria do item ("Esfirras")
+ *     em vez do canal, e o espelho ia parar no meio do cardápio próprio;
+ *   - o reparo de agosto/2026 (`scratch/fast_restore_kds.js`) criou um
+ *     `restored-prod-<itemId>` para cada item de pedido órfão, usando o
+ *     `source` do PEDIDO como categoria — daí a categoria "PRESENCIAL"
+ *     aparecendo no painel com dois "Item Integrado" a R$ 1,90.
+ *
+ * Essas linhas não podem ser apagadas (são o nome do item em pedido antigo no
+ * KDS e na impressão), mas também não são cardápio. O id é o que não mente:
+ * quem cria espelho sempre carimba um prefixo próprio.
+ */
+export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "99food_", "restored-prod-"];
+
+/**
  * Trecho de `where` do Prisma que remove o espelho das integrações.
  * Use em todo canal interno: PDV, mesa, totem, KDS.
  */
 export const SEM_PRODUTO_DE_INTEGRACAO = {
-  NOT: {
-    category: { in: CATEGORIAS_DE_INTEGRACAO, mode: "insensitive" as const },
-  },
+  NOT: [
+    { category: { in: CATEGORIAS_DE_INTEGRACAO, mode: "insensitive" as const } },
+    ...PREFIXOS_DE_ESPELHO.map((prefixo) => ({ id: { startsWith: prefixo } })),
+  ],
 };
 
-/** Versão para filtrar em memória, quando os produtos já vieram do banco. */
-export function ehProdutoDeIntegracao(categoria: string | null | undefined): boolean {
+/**
+ * Versão para filtrar em memória, quando os produtos já vieram do banco.
+ * O `id` é opcional para não quebrar quem só tem a categoria em mãos.
+ */
+export function ehProdutoDeIntegracao(
+  categoria: string | null | undefined,
+  id?: string | null
+): boolean {
+  if (id && PREFIXOS_DE_ESPELHO.some((prefixo) => id.startsWith(prefixo))) return true;
   if (!categoria) return false;
   return CATEGORIAS_DE_INTEGRACAO.includes(categoria.trim().toUpperCase());
 }
