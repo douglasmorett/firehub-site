@@ -58,16 +58,30 @@ apagar o `firehub-site` NÃO quebra essas imagens. Mas enquanto elas estiverem l
 o FireHub continua dependendo da Vercel para servir logo de loja. Em dinheiro é
 irrisório (Blob Storage US$ 0,03 + Transfer US$ 0,04 no ciclo).
 
-Rodar DENTRO do container, senão o arquivo cai na máquina errada e o site
-devolve 404:
+**Não precisa de acesso a shell no servidor.** O arquivo tem que cair no volume
+do Coolify montado em `public/uploads`, e quem está com esse volume montado é o
+próprio app em produção — então a migração é uma rota de admin
+(`src/app/api/admin/migrar-blob/route.ts`, lógica em `src/lib/migrar-blob.ts`).
 
-```
-docker exec -it <container-firehub> node scripts/migrate-blob-to-uploads.js
-docker exec -it <container-firehub> node scripts/migrate-blob-to-uploads.js --apply
+Logado como **admin** em `firehubfood.com.br`, no console do navegador:
+
+```js
+// 1) ensaio — baixa tudo para conferir, não grava nada
+await (await fetch('/api/admin/migrar-blob')).json()
+
+// 2) valendo
+await (await fetch('/api/admin/migrar-blob', { method: 'POST' })).json()
 ```
 
-O primeiro é dry-run. Siga só quando imprimir `restam apontando para o Blob: 0`,
-e confira no navegador a logo das lojas que apareceram na lista.
+Terminou quando a resposta trouxer **`restam: 0`**. Cada item traz `nome`,
+`urlAntiga`, `urlNova` e o tamanho antes/depois; item com `erro` é arquivo que
+já sumiu do Blob (a imagem já está quebrada hoje) — reenvie pelo painel.
+
+Depois, confira no navegador a logo das lojas que apareceram na lista.
+
+O download vira um `File` e passa pelo `saveUploadedFile` de sempre, o mesmo
+caminho de um upload do lojista: checagem de magic number, compressão com sharp
+e nome seguro. Uma implementação só — não há cópia dessa lógica em script.
 
 ### 2. Apagar o projeto — NÃO antes de resolver 7 variáveis
 
@@ -87,11 +101,25 @@ existem na Vercel e NÃO no Coolify:**
 | `IFOOD_MERCHANT_UUID` | sem equivalente no Coolify | sim (5 arquivos) |
 | `MP_APP_ID` | sem equivalente no Coolify | sim — `client_id` do OAuth do Mercado Pago |
 
-As quatro primeiras são seguras. **As três últimas merecem checagem por fora do
-assunto Vercel**: o código lê `IFOOD_MERCHANT_UUID` em 5 lugares e `MP_APP_ID`
-como `client_id` do OAuth do Mercado Pago, e nenhum dos dois está no ambiente de
-produção do Coolify. Ou existe fallback no banco (o merchant do iFood hoje é por
-loja), ou tem coisa rodando sem valor.
+Checado uma a uma em 02/09/2026:
+
+- **iFood: está tudo certo, e de propósito.** `getMerchantId()` (a única função
+  que exige `IFOOD_MERCHANT_UUID`) não tem nenhum chamador — é código morto. Nos
+  outros usos o valor do env é só ponto de partida e é sobrescrito pelo
+  `ifoodMerchantId` da loja, vindo do banco. Em `customer-order/poll/route.ts` a
+  ausência do env é o comportamento **desejado**: com ele definido, loja sem
+  integração própria cairia no merchant da Hakim — que é exatamente o que o
+  comentário de lá diz para não deixar acontecer. Não mexer.
+- **Mercado Pago: está quebrado, e não tem a ver com a Vercel.**
+  `MP_APP_ID` e `MP_APP_SECRET` **não existem no Coolify** (44 linhas, 30 nomes
+  únicos, conferidos página por página) — e o `MP_APP_SECRET` não existe nem na
+  Vercel. O código usa os dois em `src/lib/mercadopago.ts`:
+  `getMpOnboardingUrl` monta `client_id=` vazio e `exchangeMpOAuthCode` manda
+  `client_secret: undefined`. A rota `/api/mp-connect` devolve esse
+  `onboardingUrl` para **toda loja que ainda não conectou** (`mpSellerId` nulo),
+  então hoje nenhum lojista consegue ligar a própria conta Mercado Pago para
+  receber. Falta cadastrar as duas variáveis no Coolify, com os valores do painel
+  de desenvolvedor do Mercado Pago.
 
 O `DATABASE_URL` guardado na Vercel aponta para o host do Neon **sem** o
 `-pooler` e está quebrado, então esse não serve de backup de nada.
