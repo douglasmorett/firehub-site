@@ -1,4 +1,5 @@
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
+import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { prisma } from "@/lib/prisma";
 import fs from "fs";
 
@@ -94,6 +95,9 @@ export async function processChatbotAI(
       city: true,
       slug: true,
       storeHours: true,
+      // As outras duas formas de a loja estar fechada, além do horário.
+      storePause: true,
+      storeOpen: true,
       deliveryConfig: true,
       deliveryZones: true,
       deliveryZoneType: true,
@@ -393,6 +397,24 @@ export async function processChatbotAI(
       nowStatusText = `Hoje (${currentDayName}) a loja está fechada.`;
     }
   }
+
+  // ── A LOJA ESTÁ ABERTA NESTE MINUTO? ──────────────────────────────────────
+  //
+  // O prompt já dizia o HORÁRIO ("hoje funciona das 18h às 23h"), mas não dizia
+  // que horas são — e um modelo com o cardápio na mão e sem relógio anota pedido
+  // às três da manhã. Pedido que ninguém prepara, feito por um cliente que só
+  // descobre no dia seguinte.
+  //
+  // O cálculo é no fuso da LOJA, não no do servidor: o container roda em UTC e
+  // às 21h de Brasília ele já virou o dia — foi assim que o robô perdeu o
+  // jantar uma vez. Respeita também o interruptor manual do painel e a pausa de
+  // férias: as três formas de uma loja estar fechada.
+  const estadoAtualDaLoja = estadoDaLoja({
+    storeHours: user.storeHours,
+    storePause: (user as any).storePause,
+    storeOpen: (user as any).storeOpen,
+    timezone: user.storeTimezone,
+  });
 
   // Separa o catálogo em: promoções de hoje, de amanhã, cronograma semanal,
   // combos e itens avulsos.
@@ -747,7 +769,7 @@ ${resumoEmTexto(resumo, user.storeTimezone)}
   }
 
   try {
-    const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n\n${identidade}
+    const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n${ownerContext ? "" : instrucaoDeHorario(estadoAtualDaLoja)}\n\n${identidade}
 
 REGRAS ABSOLUTAS:
 1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem. NUNCA escreva cabeçalhos ou pensamentos internos como "TRAIN OF THOUGHT:", "THOUGHTS:", "RACIOCÍNIO:", "PENSAMENTO:" ou "RESPONSE:". Responda diretamente com o texto final em linguagem humana natural!
@@ -1315,6 +1337,8 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
                   storeProducts: products,
                   autoAccept: user.chatbotConfig ? (user.chatbotConfig as any).autoAcceptOrders === true : false,
                   minimumOrderValue,
+                  lojaAberta: estadoAtualDaLoja.aberta,
+                  textoDoHorario: estadoAtualDaLoja.texto,
                 });
               }
             } else if (rawJsonPayload) {
@@ -1486,6 +1510,8 @@ async function syncAiOrderToDatabase({
   storeProducts,
   autoAccept,
   minimumOrderValue,
+  lojaAberta,
+  textoDoHorario,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -1495,9 +1521,46 @@ async function syncAiOrderToDatabase({
   autoAccept?: boolean;
   /** Piso de subtotal para ENTREGA, cadastrado pela loja. */
   minimumOrderValue?: number;
+  /** A loja está aberta agora? Pedido com a loja fechada não entra. */
+  lojaAberta?: boolean;
+  /** Frase pronta para explicar ao cliente quando a loja volta a atender. */
+  textoDoHorario?: string;
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
+
+  // ── LOJA FECHADA NÃO RECEBE PEDIDO ────────────────────────────────────────
+  //
+  // A regra está no prompt, mas prompt não é garantia — mesma lição do pedido
+  // mínimo e do "pedido confirmado" que nunca foi gravado. Com a loja fechada,
+  // o que entrava era um pedido que ninguém ia preparar: some no meio da noite
+  // e o cliente só descobre no dia seguinte.
+  //
+  // Rascunho passa: o cliente pode ir montando enquanto conversa. O que não
+  // passa é FINALIZAR — e é o `isFinal` que decide, mais abaixo, então aqui a
+  // checagem olha o mesmo sinal do payload.
+  if (lojaAberta === false && payload?.finalized === true) {
+    console.warn(
+      `[Chatbot AI Order Sync] 🕐 Pedido recusado: loja FECHADA. ` +
+      `Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
+    );
+    return {
+      gravado: false,
+      motivo: textoDoHorario
+        ? `a loja está fechada agora (${textoDoHorario})`
+        : "a loja está fechada agora",
+      // Não é falha técnica: dizer "tive um probleminha no sistema" seria
+      // mentir de novo, e chamar um atendente às 3h da manhã para avisar que a
+      // loja está fechada é o oposto de ajudar.
+      regraDeNegocio: true,
+      mensagemParaOCliente:
+        `Ihhh, no momento a gente está fechado! 😴 ${textoDoHorario || ""}
+
+` +
+        `Não consigo registrar o pedido agora, mas posso te adiantar tudo sobre o cardápio ` +
+        `por aqui — aí é só voltar no horário que eu anoto certinho! 😊`.trim(),
+    };
+  }
 
   // Formatar número de telefone de forma numérico limpa (ex: +55 (22) 99823-2027 ou (22) 99823-2027)
   let formattedCustomerPhone = "";
