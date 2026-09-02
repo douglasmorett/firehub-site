@@ -23,6 +23,11 @@ export default async function IntegracoesPage() {
       ifoodConnected: true,
       facebookPixelId: true,
       metaPixelId: true,
+      gaMeasurementId: true,
+      gtmContainerId: true,
+      // O segredo do Measurement Protocol NUNCA viaja para o navegador — vai
+      // só o booleano, para a tela saber que existe um configurado.
+      gaApiSecret: true,
       pagarmeRecipientId: true,
       mpAccessToken: true,
       mpSellerId: true,
@@ -99,6 +104,9 @@ export default async function IntegracoesPage() {
       ifoodWidgetId={user?.ifoodWidgetId || undefined}
       ifoodConnected={!!user?.ifoodConnected}
       facebookPixelId={user?.facebookPixelId || user?.metaPixelId || ""}
+      gaMeasurementId={user?.gaMeasurementId || ""}
+      gtmContainerId={user?.gtmContainerId || ""}
+      gaHasApiSecret={!!user?.gaApiSecret}
       pagarmeRecipientId={user?.pagarmeRecipientId || undefined}
       mpConnected={!!(user?.mpAccessToken || user?.mpSellerId)}
       brendiClientId={brendi.clientId}

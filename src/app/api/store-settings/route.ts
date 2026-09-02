@@ -43,6 +43,9 @@ export async function PUT(req: Request) {
     "facebookPixelId",   // Meta Pixel ID
     "metaPixelId",       // Mesmo pixel, campo usado pelo módulo Meta Ads
     "metaCapiToken",     // Token da API de Conversões (venda enviada pelo servidor)
+    "gaMeasurementId",   // GA4 — ID de métrica (G-XXXXXXXXXX)
+    "gaApiSecret",       // GA4 — segredo do Measurement Protocol (venda pelo servidor)
+    "gtmContainerId",    // Google Tag Manager — container (GTM-XXXXXXX)
     "storeLoyalty",      // Programa de fidelidade/cashback
     "city",              // Cidade / Estado (ex: Rio de Janeiro - RJ)
     "storeTimezone",     // Fuso Horário (ex: America/Sao_Paulo)

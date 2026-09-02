@@ -33,6 +33,7 @@ const PaymentGateway = dynamic(() => import("./PaymentGateway"), { ssr: false })
 import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
+import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import "./store.css";
@@ -77,6 +78,8 @@ type Franchisee = {
   storeOpen?: boolean;
   storePause?: any;
   facebookPixelId?: string | null;
+  gaMeasurementId?: string | null;
+  gtmContainerId?: string | null;
   ifoodMerchantId?: string | null;
   ifoodConnected?: boolean;
   ifoodWidgetId?: string | null;
@@ -102,6 +105,11 @@ export default function CustomerStorePage({
   storeCategories?: { id: string; name: string; sortOrder: number }[];
   storeRating?: StoreRating;
 }) {
+  // Configuração de medição do Google DESTA loja. Só o que ela preencheu na
+  // tela de Integrações — nunca uma medição do FireHub.
+  const gaMeasurementId = (franchisee.gaMeasurementId || "").trim() || null;
+  const gtmContainerId = (franchisee.gtmContainerId || "").trim() || null;
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCheckout, setIsCheckout] = useState(false);
 
@@ -514,6 +522,20 @@ export default function CustomerStorePage({
       return [...prev, { ...product, price: finalPrice, quantity: qty || 1 }];
     });
     trackPixelEvent("AddToCart", { content_name: product.name, value: finalPrice * (qty || 1), currency: "BRL" });
+    // Mesmo momento, nomenclatura do GA4. Os nomes são os recomendados
+    // (`add_to_cart`, `begin_checkout`, `purchase`): só eles alimentam os
+    // relatórios de monetização e as conversões do Google Ads — nome inventado
+    // entra como evento personalizado e não vira receita em lugar nenhum.
+    trackGaEvent("add_to_cart", {
+      currency: "BRL",
+      value: finalPrice * (qty || 1),
+      items: [{
+        item_id: String(product.id).split("_")[0],
+        item_name: product.name,
+        quantity: qty || 1,
+        price: finalPrice,
+      }],
+    });
   };
 
   const removeFromCart = (id: string) => setCart(prev => {
@@ -1062,7 +1084,13 @@ export default function CustomerStorePage({
           deliveryFee: effectiveDeliveryFee,
           couponCode: couponApplied?.code || null,
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
-          items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" }))
+          items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
+          // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
+          // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
+          // e na mesma sessão — sem eles a venda vira "Direct" e o anúncio que
+          // trouxe o cliente não leva o crédito.
+          gaClientId: lerGaClientId(),
+          gaSessionId: lerGaSessionId(gaMeasurementId),
         })
       });
       if (res.ok) {
@@ -1087,6 +1115,21 @@ export default function CustomerStorePage({
           },
           `purchase:${d.orderId}`
         );
+        // No GA4 quem impede a venda de entrar duas vezes é o `transaction_id`:
+        // o navegador e o servidor mandam o MESMO id (o do pedido), e o GA4
+        // descarta a transação repetida.
+        trackGaEvent("purchase", {
+          transaction_id: d.orderId,
+          currency: "BRL",
+          value: finalTotal,
+          shipping: effectiveDeliveryFee || 0,
+          items: cart.map(i => ({
+            item_id: i.id.split("_")[0],
+            item_name: i.name,
+            quantity: i.quantity,
+            price: i.price,
+          })),
+        });
         const pmUpper = (paymentMethod || "").toUpperCase();
         // Comparação EXATA: com includes(), "PIX_ENTREGA".includes("PIX") era
         // true e o cliente do pagamento na entrega caía no modal do gateway —
@@ -2046,6 +2089,16 @@ export default function CustomerStorePage({
                 }
                 setIsCheckout(true);
                 trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
+                trackGaEvent("begin_checkout", {
+                  currency: "BRL",
+                  value: finalTotal,
+                  items: cart.map(i => ({
+                    item_id: i.id.split("_")[0],
+                    item_name: i.name,
+                    quantity: i.quantity,
+                    price: i.price,
+                  })),
+                });
               }}
               style={{
                 width: "100%",
@@ -2113,6 +2166,14 @@ export default function CustomerStorePage({
           não dispara nada por estar olhando só um dos campos. */}
       {(franchisee.facebookPixelId || (franchisee as any).metaPixelId) && (
         <FacebookPixel pixelId={(franchisee.facebookPixelId || (franchisee as any).metaPixelId) as string} />
+      )}
+
+      {/* Google Analytics 4 / Tag Manager da LOJA. Mesmo desenho do pixel: o
+          lojista pode ter só o GA4 ("G-"), só o container do GTM ("GTM-") ou
+          os dois — mas quem já mede o GA4 por dentro do container não deve
+          preencher os dois, senão a mesma venda é contada duas vezes. */}
+      {(gaMeasurementId || gtmContainerId) && (
+        <GoogleAnalytics measurementId={gaMeasurementId} gtmId={gtmContainerId} />
       )}
 
       {/* BANNER DE PAUSA */}

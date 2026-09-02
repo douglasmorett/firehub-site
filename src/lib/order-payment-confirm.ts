@@ -111,6 +111,10 @@ export async function confirmOrderPayment(orderId: string) {
     dispararCompraNoMeta(orderId).catch((e) =>
       console.error("[ConfirmPayment] Meta CAPI:", e)
     );
+    const { dispararCompraNoGoogle } = await import("@/lib/ga-purchase");
+    dispararCompraNoGoogle(orderId).catch((e) =>
+      console.error("[ConfirmPayment] GA4 MP:", e)
+    );
   } catch (errMeta) {
     console.error("[ConfirmPayment] Meta CAPI:", errMeta);
   }

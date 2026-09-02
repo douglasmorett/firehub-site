@@ -283,6 +283,13 @@ export async function POST(req: Request) {
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,
+        // Cookies do GA4 do cliente, capturados no cardápio. É o que permite o
+        // `purchase` enviado pelo NOSSO servidor cair na mesma pessoa e na
+        // mesma sessão que veio do anúncio — sem eles a venda aparece como
+        // visitante novo, sem origem. Vazio quando o cliente bloqueia cookie
+        // ou quando a loja não usa GA4: o disparo simplesmente não acontece.
+        gaClientId: typeof body.gaClientId === "string" ? body.gaClientId.slice(0, 64) : null,
+        gaSessionId: typeof body.gaSessionId === "string" ? body.gaSessionId.slice(0, 32) : null,
         items: { create: orderItems }
       }
     });
@@ -346,6 +353,14 @@ export async function POST(req: Request) {
       const { dispararCompraNoMeta } = await import("@/lib/meta-purchase");
       dispararCompraNoMeta(order.id).catch(err =>
         console.error("[Meta CAPI] Falha ao enviar Purchase:", err)
+      );
+
+      // Mesmo evento, mesma regra, para o GA4 (Measurement Protocol). Só sai
+      // se a loja configurou GA4 e se o pedido guardou o `client_id` do
+      // cookie — sem ele a compra viraria um visitante novo sem origem.
+      const { dispararCompraNoGoogle } = await import("@/lib/ga-purchase");
+      dispararCompraNoGoogle(order.id).catch(err =>
+        console.error("[GA4 MP] Falha ao enviar purchase:", err)
       );
     }
 

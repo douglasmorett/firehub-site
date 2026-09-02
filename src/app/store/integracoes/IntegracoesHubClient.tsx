@@ -9,6 +9,9 @@ export default function IntegracoesHubClient({
   ifoodConnected: initialIfoodConnected,
   userEmail,
   facebookPixelId: initialFacebookPixelId,
+  gaMeasurementId: initialGaMeasurementId,
+  gtmContainerId: initialGtmContainerId,
+  gaHasApiSecret,
   pagarmeRecipientId,
   mpConnected,
   brendiClientId,
@@ -23,6 +26,9 @@ export default function IntegracoesHubClient({
   ifoodConnected?: boolean;
   userEmail: string;
   facebookPixelId?: string;
+  gaMeasurementId?: string;
+  gtmContainerId?: string;
+  gaHasApiSecret?: boolean;
   pagarmeRecipientId?: string;
   mpConnected?: boolean;
   brendiClientId?: string;
@@ -32,7 +38,7 @@ export default function IntegracoesHubClient({
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | "brendi" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | "brendi" | null>(null);
 
   // Meta Pixel state
   const [pixelId, setPixelId] = useState(initialFacebookPixelId || "");
@@ -62,6 +68,71 @@ export default function IntegracoesHubClient({
       setCapiResultado({ ok: false, msg: "Sem conexão com o servidor. Tente de novo." });
     } finally {
       setCapiTestando(false);
+    }
+  };
+
+  // ── Google Analytics 4 / Tag Manager ──────────────────────────────────────
+  // Mesmo desenho do Meta: o ID de métrica é público (vai no HTML do cardápio),
+  // o segredo do Measurement Protocol não volta nunca do servidor — só o
+  // booleano `gaHasApiSecret` diz que existe um gravado. Campo vazio na hora
+  // de salvar significa "não mexer", nunca "apagar".
+  const [gaMedicao, setGaMedicao] = useState(initialGaMeasurementId || "");
+  const [gtmId, setGtmId] = useState(initialGtmContainerId || "");
+  const [gaSegredo, setGaSegredo] = useState("");
+  const [gaSaving, setGaSaving] = useState(false);
+  const [gaTestando, setGaTestando] = useState(false);
+  const [gaResultado, setGaResultado] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const handleTestarGa = async () => {
+    setGaTestando(true);
+    setGaResultado(null);
+    try {
+      const res = await fetch("/api/google-analytics/testar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ measurementId: gaMedicao, apiSecret: gaSegredo }),
+      });
+      const d = await res.json();
+      setGaResultado(
+        res.ok && d.ok
+          // O endpoint de validação do Google confere o FORMATO, não o segredo:
+          // com um segredo errado ele responde sem reclamar. Por isso o teste
+          // manda também um evento de verdade, e a mensagem manda conferir no
+          // Tempo real — que é a única prova de que o segredo está certo.
+          ? { ok: true, msg: `Enviamos um evento de teste chamado "${d.nomeDoEvento || "firehub_teste_conexao"}" pelo nosso servidor. Abra o Google Analytics → Relatórios → Tempo real: se ele aparecer em até 1 minuto, está tudo certo. Se NÃO aparecer, o segredo está errado (o Google aceita a chamada mesmo assim e descarta o evento em silêncio). Nenhuma venda foi inventada no seu relatório.` }
+          : { ok: false, msg: d.erro || d.error || "Não consegui validar. Confira o ID de métrica e o segredo." }
+      );
+    } catch {
+      setGaResultado({ ok: false, msg: "Sem conexão com o servidor. Tente de novo." });
+    } finally {
+      setGaTestando(false);
+    }
+  };
+
+  const handleSaveGoogle = async () => {
+    setGaSaving(true);
+    try {
+      const res = await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gaMeasurementId: gaMedicao.trim().toUpperCase(),
+          gtmContainerId: gtmId.trim().toUpperCase(),
+          // Só vai quando o lojista digitou algo: mandar vazio apagaria o
+          // segredo já configurado, e ele não volta preenchido para reescrever.
+          ...(gaSegredo ? { gaApiSecret: gaSegredo } : {}),
+        }),
+      });
+      if (res.ok) {
+        showToast("✅ Google Analytics configurado com sucesso!", "#10B981");
+        setOpenModal(null);
+      } else {
+        showToast("⚠️ Erro ao salvar configuração do Google", "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão ao salvar", "#EF4444");
+    } finally {
+      setGaSaving(false);
     }
   };
 
@@ -724,6 +795,18 @@ export default function IntegracoesHubClient({
       description: "Rastreie PageView, Adicionar ao Carrinho e Vendas no seu cardápio via Pixel do Meta.",
     },
     {
+      id: "google" as const,
+      category: "marketing",
+      title: "Google Analytics & Tag Manager",
+      subtitle: "GA4 + Google Ads",
+      icon: "📊",
+      gradient: "linear-gradient(135deg, #F9AB00, #E37400)",
+      badge: (gaMedicao || gtmId)
+        ? { text: `🟢 Ativo (${gaMedicao || gtmId})`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" }
+        : { text: "⚪ Não Configurado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Meça visitas, carrinho e vendas do seu cardápio no GA4 — e mande a venda pelo servidor, como no Meta.",
+    },
+    {
       id: "whatsapp" as const,
       category: "marketing",
       title: "WhatsApp IA & Notificações",
@@ -1040,6 +1123,148 @@ export default function IntegracoesHubClient({
                     style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #1877F2, #0052CC)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(24,119,242,0.3)", opacity: pixelSaving ? 0.7 : 1 }}
                   >
                     <Save size={16} /> {pixelSaving ? "Salvando..." : "Salvar Pixel do Meta"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 📊 MODAL: GOOGLE ANALYTICS 4 & TAG MANAGER */}
+            {openModal === "google" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #F9AB00, #E37400)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                    📊
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Google Analytics 4 & Tag Manager</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Meça o cardápio e alimente suas campanhas do Google Ads</span>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "20px" }}>
+                  Informe o ID de métrica do seu GA4 e o sistema passa a registrar, no seu cardápio digital, os eventos de{" "}
+                  <strong>page_view</strong>, <strong>add_to_cart</strong> (Adicionar ao Carrinho), <strong>begin_checkout</strong>{" "}
+                  e <strong>purchase</strong> (Venda Concluída, com o valor). Se você usa Tag Manager, informe o container e
+                  monte suas próprias tags em cima desses eventos.
+                </p>
+
+                <div style={{ background: "#F8FAFC", borderRadius: "14px", padding: "16px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#1E293B", display: "block", marginBottom: "6px" }}>
+                    ID de métrica do GA4:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: G-XXXXXXXXXX"
+                    value={gaMedicao}
+                    onChange={(e) => setGaMedicao(e.target.value.trim().toUpperCase())}
+                    style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontFamily: "monospace", outline: "none" }}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "6px", display: "block" }}>
+                    Você encontra em <em>Google Analytics &rarr; Administrador &rarr; Fluxos de dados &rarr; seu site</em>. Começa com <code>G-</code>.
+                  </span>
+                </div>
+
+                {/* ── MEASUREMENT PROTOCOL ─────────────────────────────────
+                    O equivalente exato da API de Conversões do Meta: manda a
+                    venda pelo servidor, onde bloqueador de anúncio, iOS e
+                    Safari não alcançam. Explicado aqui, onde a dúvida nasce. */}
+                <div style={{ background: "#F8FAFC", borderRadius: "14px", padding: "16px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#1E293B", display: "block", marginBottom: "6px" }}>
+                    Segredo do Measurement Protocol <span style={{ fontWeight: 600, color: "#64748B" }}>— opcional, mas muda muito</span>
+                    {gaHasApiSecret && <span style={{ marginLeft: 8, fontWeight: 700, color: "#15803D" }}>· já configurado</span>}
+                  </label>
+                  <input
+                    type="password"
+                    placeholder={gaHasApiSecret ? "Deixe vazio para manter o atual" : "Cole aqui o segredo gerado no GA4"}
+                    value={gaSegredo}
+                    onChange={(e) => setGaSegredo(e.target.value.trim())}
+                    style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontFamily: "monospace", outline: "none" }}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "8px", display: "block", lineHeight: 1.5 }}>
+                    Com ele, a venda é enviada ao Google <strong>pelo nosso servidor</strong>, e não só pelo navegador do
+                    cliente — do mesmo jeito que a API de Conversões do Meta. Uma fatia grande das vendas não chega pelo
+                    navegador (bloqueador de anúncio, iPhone, aba fechada antes da hora), e o que não chega o Google não
+                    usa para otimizar suas campanhas.
+                    <br /><br />
+                    Onde pegar: <em>Administrador &rarr; Fluxos de dados &rarr; seu site &rarr; Measurement Protocol &rarr; Criar segredo</em>.
+                  </span>
+
+                  {gaMedicao && gaSegredo && (
+                    <button
+                      onClick={handleTestarGa}
+                      disabled={gaTestando}
+                      style={{ marginTop: "12px", padding: "10px 16px", borderRadius: "10px", border: "1.5px solid #E37400", background: "#fff", color: "#E37400", fontWeight: 800, fontSize: "0.82rem", cursor: gaTestando ? "default" : "pointer", opacity: gaTestando ? 0.6 : 1 }}
+                    >
+                      {gaTestando ? "Validando..." : "Validar configuração"}
+                    </button>
+                  )}
+
+                  {gaResultado && (
+                    <div style={{
+                      marginTop: "12px", padding: "12px 14px", borderRadius: "10px", fontSize: "0.8rem", lineHeight: 1.5,
+                      background: gaResultado.ok ? "#ECFDF3" : "#FEF2F2",
+                      border: `1px solid ${gaResultado.ok ? "#ABEFC6" : "#FECACA"}`,
+                      color: gaResultado.ok ? "#15803D" : "#B71C1C",
+                      fontWeight: 700,
+                    }}>
+                      {gaResultado.msg}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ background: "#F8FAFC", borderRadius: "14px", padding: "16px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#1E293B", display: "block", marginBottom: "6px" }}>
+                    Container do Google Tag Manager <span style={{ fontWeight: 600, color: "#64748B" }}>— opcional</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: GTM-XXXXXXX"
+                    value={gtmId}
+                    onChange={(e) => setGtmId(e.target.value.trim().toUpperCase())}
+                    style={{ width: "100%", padding: "11px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontFamily: "monospace", outline: "none" }}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "6px", display: "block", lineHeight: 1.5 }}>
+                    Os mesmos eventos são publicados no <code>dataLayer</code> no formato de e-commerce do GA4, prontos
+                    para virar gatilho das suas tags (Google Ads, remarketing, etc.).
+                  </span>
+                </div>
+
+                {gaMedicao && gtmId && (
+                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#92400E", marginBottom: "20px", lineHeight: 1.5 }}>
+                    <strong>⚠️ Atenção com os dois preenchidos ao mesmo tempo:</strong> se dentro do seu container do Tag
+                    Manager já existe uma tag do GA4 medindo este site, cada venda será contada <strong>duas vezes</strong> —
+                    uma pelo ID acima e outra pela tag do container. Nesse caso, deixe o ID de métrica em branco e meça só
+                    pelo Tag Manager.
+                  </div>
+                )}
+
+                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#1E40AF", marginBottom: "24px" }}>
+                  <strong>💡 Eventos Rastreados Automáticos:</strong>
+                  <ul style={{ margin: "4px 0 0 0", paddingLeft: "16px" }}>
+                    <li><code>page_view</code>: Sempre que alguém abre seu cardápio</li>
+                    <li><code>add_to_cart</code>: Quando o cliente escolhe um produto</li>
+                    <li><code>begin_checkout</code>: Quando começa a finalizar</li>
+                    <li><code>purchase</code>: Quando o pedido é fechado — com valor, frete e itens</li>
+                  </ul>
+                  <span style={{ display: "block", marginTop: "8px" }}>
+                    Pedido de iFood, 99Food, JotaJá, PDV e mesa não entra: essas vendas não passaram pelo cardápio e
+                    apareceriam sem origem, estragando a leitura de qual canal traz venda.
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveGoogle}
+                    disabled={gaSaving}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F9AB00, #E37400)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(227,116,0,0.3)", opacity: gaSaving ? 0.7 : 1 }}
+                  >
+                    <Save size={16} /> {gaSaving ? "Salvando..." : "Salvar Google Analytics"}
                   </button>
                 </div>
               </div>

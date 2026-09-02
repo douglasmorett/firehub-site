@@ -122,7 +122,11 @@ const nextConfig: NextConfig = {
       // e um <iframe> do login dele (FireCheckClient.tsx) e estava presa no
       // "Carregando plataforma FireCheck..." pelo mesmo motivo. O dominio
       // tambem responde 200 sem X-Frame-Options, entao so faltava a allowlist.
-      "frame-src 'self' https://*.mercadopago.com https://*.mercadolibre.com https://maps.google.com https://www.google.com https://www.firecheckapp.com.br",
+      // O googletagmanager entra aqui pelo <noscript> do GTM: o container do
+      // lojista tem um <iframe> de ns.html para o visitante sem JavaScript.
+      // Sem esta linha ele seria bloqueado em silencio, do mesmo jeito que o
+      // mapa acima — e ninguem descobriria, porque so quebra sem JS.
+      "frame-src 'self' https://*.mercadopago.com https://*.mercadolibre.com https://maps.google.com https://www.google.com https://www.googletagmanager.com https://www.firecheckapp.com.br",
       "media-src 'self' data: blob:",
       "object-src 'none'",
       "base-uri 'self'",

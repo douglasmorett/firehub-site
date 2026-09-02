@@ -88,6 +88,21 @@ model User {
   metaAdsEnabled    Boolean        @default(false) // Módulo ativo
   metaAdsWeeklyFee  Float           @default(50) // Taxa semanal FireHub pela gestão de Meta Ads (R$)
   metaAdsCampaigns  MetaAdsCampaign[]
+  // === GOOGLE ANALYTICS 4 / TAG MANAGER ===
+  /// ID de métrica do GA4 da LOJA ("G-XXXXXXXXXX"). Injetado no cardápio dela.
+  gaMeasurementId   String?
+  /// Segredo do Measurement Protocol — o equivalente da CAPI do Meta: manda a
+  /// venda pelo SERVIDOR, onde bloqueador de anúncio, iOS e Safari não chegam.
+  ///
+  /// É um segredo por loja (dá direito de escrever eventos na propriedade dela).
+  /// Nunca sai numa resposta de API para o navegador.
+  gaApiSecret       String?        @db.Text
+  /// Container do Google Tag Manager ("GTM-XXXXXXX"). Quem usa GTM configura a
+  /// tag do GA4 lá dentro — e nesse caso NÃO preenche gaMeasurementId, senão o
+  /// mesmo evento é contado duas vezes (uma pelo gtag direto, outra pela tag
+  /// do container).
+  gtmContainerId    String?
+
   // === GATEWAYS DE PAGAMENTO ===
   mpSellerId        String?        // ID do vendedor no Mercado Pago Marketplace
   mpAccessToken     String?  @db.Text // OAuth token do restaurante no MP
@@ -630,6 +645,14 @@ model CustomerOrder {
   openDeliveryOrderId     String?   @unique   // ID do pedido no Open Delivery (idempotência)
   openDeliveryReference   String?             // Número de exibição do pedido (#1234)
   openDeliveryChannel     String?             // Canal de origem: "JOTAJA"
+  // === ANALYTICS (GA4) ===
+  /// `client_id` do GA4 (cookie `_ga`) de quem fez o pedido, capturado no
+  /// navegador. É ele que amarra a venda enviada pelo servidor à MESMA pessoa
+  /// e à MESMA sessão que veio do anúncio — sem ele o Measurement Protocol
+  /// inventa um visitante novo e a compra aparece como "Direct".
+  gaClientId       String?
+  /// `session_id` do GA4 (cookie `_ga_<container>`), pelo mesmo motivo.
+  gaSessionId      String?
   // === ROTEIRIZAÇÃO ===
   routeId          String?
   isRoutePriority  Boolean             @default(false) // Destaque PRIORIDADE PARA ROTA no KDS
