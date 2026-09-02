@@ -18,10 +18,23 @@ type CostData = {
     geminiVision: number;
     geminiVisionCalls: number;
     hosting: number;
+    orders: number;
     total: number;
   };
+  ativa: boolean;
+  orders: number;
   profit: number;
   margin: number;
+};
+
+type Servico = {
+  chave: string;
+  nome: string;
+  papel: string;
+  mensalBRL: number;
+  rateio: "pedidos" | "direto" | "receita";
+  aConfirmar?: boolean;
+  observacao?: string;
 };
 
 type CostsResponse = {
@@ -31,7 +44,12 @@ type CostsResponse = {
     totalCosts: number;
     totalProfit: number;
     avgMargin: number;
+    infraMensal: number;
+    pedidosNoMes: number;
+    lojasAtivas: number;
+    lojasCadastradas: number;
   };
+  servicos: Servico[];
   lojistas: CostData[];
 };
 
@@ -90,6 +108,9 @@ export default function AdminCostsTab() {
             <div style={{ background: "#FFF", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>Custo Total Plataforma</div>
               <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#EA1D2C", marginTop: 4 }}>{fmt(data.totals.totalCosts)}</div>
+              <div style={{ fontSize: "0.75rem", color: "#94A3B8", marginTop: 4 }}>
+                {data.totals.lojasAtivas} de {data.totals.lojasCadastradas} lojas operaram · {data.totals.pedidosNoMes} pedidos
+              </div>
             </div>
             <div style={{ background: "#FFF", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>Lucro Líquido Estimado</div>
@@ -98,6 +119,52 @@ export default function AdminCostsTab() {
             <div style={{ background: "#FFF", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>Margem Média</div>
               <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#3B82F6", marginTop: 4 }}>{data.totals.avgMargin.toFixed(1)}%</div>
+            </div>
+          </div>
+
+          {/* ── DE ONDE SAI O CUSTO ────────────────────────────────────────────
+              O total acima não é um número solto: é a soma desta lista. Cada
+              serviço que a plataforma paga aparece aqui com o que faz e quanto
+              custa, para dar para vigiar quando um deles subir. */}
+          <div style={{ background: "#FFF", borderRadius: "12px", border: "1px solid #E2E8F0", padding: "16px", marginBottom: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+              <h3 style={{ fontSize: "1rem", fontWeight: 800, color: "#1E293B" }}>🧾 Serviços que a plataforma paga</h3>
+              <div style={{ fontSize: "0.8rem", color: "#64748B" }}>
+                Infraestrutura fixa: <strong style={{ color: "#EA1D2C" }}>{fmt(data.totals.infraMensal)}/mês</strong>
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {data.servicos.map(s => (
+                <div key={s.chave} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: s.mensalBRL > 0 ? "#FAFAFA" : "transparent", border: "1px solid #F1F5F9" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: "#1E293B", fontSize: "0.9rem" }}>
+                      {s.nome}
+                      {s.aConfirmar && (
+                        <span style={{ marginLeft: 8, background: "#FEF9C3", color: "#854D0E", padding: "1px 6px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 700 }}>
+                          confirmar valor
+                        </span>
+                      )}
+                      {s.rateio === "direto" && (
+                        <span style={{ marginLeft: 8, background: "#EFF6FF", color: "#2563EB", padding: "1px 6px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 700 }}>
+                          medido por loja
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 2 }}>{s.papel}</div>
+                    {s.observacao && (
+                      <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 3, lineHeight: 1.4 }}>{s.observacao}</div>
+                    )}
+                  </div>
+                  <div style={{ fontWeight: 800, color: s.mensalBRL > 0 ? "#EA1D2C" : "#10B981", fontSize: "0.9rem", whiteSpace: "nowrap" }}>
+                    {s.mensalBRL > 0 ? `${fmt(s.mensalBRL)}/mês` : "grátis"}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 12, lineHeight: 1.5 }}>
+              A infraestrutura é dividida entre as lojas na proporção dos pedidos que cada uma processou no mês.
+              Loja sem pedido não recebe rateio — ela não consumiu banco nem servidor.
+              Para mudar um valor, edite <code style={{ background: "#F1F5F9", padding: "1px 4px", borderRadius: 3 }}>src/lib/custos-plataforma.ts</code>.
             </div>
           </div>
 
@@ -118,8 +185,18 @@ export default function AdminCostsTab() {
                   <React.Fragment key={l.id}>
                     <tr style={{ borderBottom: "1px solid #E2E8F0", background: l.profit < 0 ? "#FEF2F2" : "transparent" }}>
                       <td style={{ padding: "12px 16px" }}>
-                        <div style={{ fontWeight: 700, color: "#1E293B" }}>{l.storeName}</div>
-                        <div style={{ fontSize: "0.8rem", color: "#64748B", marginTop: 4 }}>{l.email}</div>
+                        <div style={{ fontWeight: 700, color: l.ativa ? "#1E293B" : "#94A3B8" }}>
+                          {l.storeName}
+                          {!l.ativa && (
+                            <span style={{ marginLeft: 8, background: "#F1F5F9", color: "#64748B", padding: "2px 8px", borderRadius: 6, fontSize: "0.7rem", fontWeight: 700 }}>
+                              sem pedido no mês
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: "0.8rem", color: "#64748B", marginTop: 4 }}>
+                          {l.email}
+                          {l.ativa && <span style={{ marginLeft: 8, color: "#475569", fontWeight: 600 }}>· {l.orders} pedidos</span>}
+                        </div>
                       </td>
                       <td style={{ padding: "12px 16px", fontWeight: 600, color: "#1E293B" }}>
                         {fmt(l.revenue.amountDue)}
@@ -164,11 +241,22 @@ export default function AdminCostsTab() {
                               </h4>
                               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "4px 0", borderBottom: "1px solid #F1F5F9" }}>
                                 <span style={{ color: "#64748B" }}>Servidores</span>
-                                <strong style={{ color: "#1E293B" }}>Vercel/Neon/AWS</strong>
+                                <strong style={{ color: "#1E293B" }}>Neon · Coolify · Railway</strong>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "4px 0", borderBottom: "1px solid #F1F5F9" }}>
+                                <span style={{ color: "#64748B" }}>Pedidos no mês</span>
+                                <strong style={{ color: "#1E293B" }}>
+                                  {l.orders}
+                                  {data.totals.pedidosNoMes > 0 && (
+                                    <span style={{ color: "#94A3B8", fontWeight: 600 }}>
+                                      {" "}({((l.orders / data.totals.pedidosNoMes) * 100).toFixed(1)}% da carga)
+                                    </span>
+                                  )}
+                                </strong>
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "4px 0" }}>
-                                <span style={{ color: "#64748B" }}>Custo Fixo</span>
-                                <strong style={{ color: "#EA1D2C" }}>{fmt(l.costs.hosting)}</strong>
+                                <span style={{ color: "#64748B" }}>Rateio da infraestrutura</span>
+                                <strong style={{ color: l.costs.hosting > 0 ? "#EA1D2C" : "#10B981" }}>{fmt(l.costs.hosting)}</strong>
                               </div>
                             </div>
 

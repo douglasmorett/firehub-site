@@ -785,9 +785,50 @@ export async function GET(req: NextRequest) {
       user.ownerId
     ].filter(Boolean))) as string[];
 
+    // ── O FEED SÓ DEVOLVE O QUE A TELA DESENHA ───────────────────────────────
+    //
+    // Este endpoint roda em loop enquanto o painel está aberto. Sem recorte ele
+    // trazia os 200 pedidos mais recentes da loja, com TODAS as 87 colunas de
+    // CustomerOrder, a cada poucos segundos — 670 KB por rodada, dos quais o
+    // navegador jogava fora 182 pedidos já finalizados (o mais antigo tinha 11
+    // dias). Era a maior fonte de transferência de dados da fatura do banco.
+    //
+    // O corte abaixo reproduz o filtro que `filteredOrders` já aplica no
+    // cliente (StoreOrdersDashboard.tsx), então nada some da tela:
+    //   • ENCERRADO o cliente descarta sempre → não vem;
+    //   • pedido EM ANDAMENTO fica visível independente de data → sempre vem;
+    //   • finalizado/cancelado respeita o período escolhido → só vem no período.
+    //
+    // `from`/`to` chegam do próprio navegador, que é quem sabe o fuso do
+    // lojista. Sem os parâmetros o padrão é as últimas 24h, que cobre o SSR e
+    // qualquer chamada antiga que não os envie.
+    const ACTIVE_STATUSES = ["NOVO", "CRIANDO_IA", "ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA"];
+
+    const parseDate = (raw: string | null, fallback: Date) => {
+      if (!raw) return fallback;
+      const d = new Date(raw);
+      return isNaN(d.getTime()) ? fallback : d;
+    };
+    const from = parseDate(req.nextUrl.searchParams.get("from"), new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const to = parseDate(req.nextUrl.searchParams.get("to"), new Date(Date.now() + 24 * 60 * 60 * 1000));
+
     const orders = await withRetry(() => prisma.customerOrder.findMany({
       where: {
         franchiseeId: { in: validFranchiseeIds },
+        // ENCERRADO nunca é desenhado no painel — `filteredOrders` o descarta
+        // na primeira linha. Trazê-lo era transferência pura sem destino.
+        status: { not: "ENCERRADO" },
+        AND: [{
+          OR: [
+            // Em andamento: sempre visível, mesmo de ontem. É o pedido que a
+            // loja ainda precisa tocar.
+            { status: { in: ACTIVE_STATUSES } },
+            // Finalizado/cancelado: só dentro do período que a tela mostra.
+            { createdAt: { gte: from, lte: to } },
+            // Agendado para o período, ainda que criado antes dele.
+            { scheduledDatetime: { gte: from, lte: to } },
+          ],
+        }],
         // ── PENDENTE DE PAGAMENTO: O DO BALCÃO APARECE, O DO CHECKOUT NÃO ─────
         //
         // Este feed escondia TODO AGUARDANDO_PAGAMENTO. Como é ele que alimenta
@@ -815,8 +856,34 @@ export async function GET(req: NextRequest) {
           { status: "AGUARDANDO_PAGAMENTO", source: "TOTEM" },
         ],
       },
-      include: {
-        items: { include: { menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } } } },
+      // `include` puxava as 87 colunas do pedido — nota fiscal, dados da
+      // maquininha, QR do Pix, tokens de gateway — e o painel usa 41 delas.
+      // No JSON o custo não é só o valor: cada chave nula ainda viaja com o
+      // nome dela, 200 vezes por rodada. Campo novo no schema NÃO entra aqui
+      // sozinho: se a tela passar a precisar dele, some-o nesta lista.
+      select: {
+        id: true, dailyOrderNumber: true, franchiseeId: true,
+        customerName: true, customerPhone: true, customerAddress: true,
+        deliveryType: true, deliveryBy: true, deliveryFee: true,
+        paymentMethod: true, paymentPaidAt: true, gatewayProvider: true,
+        totalAmount: true, changeAmount: true,
+        discountTotal: true, discountIfood: true, discountMerchant: true, discountDetails: true,
+        status: true, source: true, notes: true, kdsStage: true,
+        createdAt: true, updatedAt: true, scheduledDatetime: true,
+        cancelledBy: true, cancelReason: true, cancelDispute: true,
+        motoboyId: true, motoboyFee: true,
+        isRoutePriority: true, routeId: true, tableSessionId: true,
+        ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
+        ifoodDriverName: true, ifoodDriverPhone: true,
+        ifoodDriverStatus: true, ifoodDriverRequestedAt: true,
+        openDeliveryOrderId: true, openDeliveryReference: true, openDeliveryChannel: true,
+        items: {
+          select: {
+            id: true, quantity: true, price: true, notes: true,
+            productName: true, comboSelections: true,
+            menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } },
+          },
+        },
         motoboy: { select: { id: true, name: true, phone: true } },
       },
       orderBy: { createdAt: "desc" },

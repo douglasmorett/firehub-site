@@ -1232,6 +1232,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
   const [dateTo, setDateTo] = useState(todayStr + "T23:59");
 
+  // O período que a tela mostra agora viaja junto do poll, para o servidor
+  // devolver só esses pedidos em vez dos 200 mais recentes da loja. Vai por ref
+  // porque o loop de polling não é recriado a cada troca de data — o ref deixa
+  // a próxima rodada já usar o período novo sem remontar o intervalo.
+  const periodoRef = useRef({ from: dateFrom, to: dateTo });
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollAgoraRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    periodoRef.current = { from: dateFrom, to: dateTo };
+    // Trocar o período muda o que o SERVIDOR devolve, não só o que a tela
+    // filtra. Sem esta busca imediata, quem escolhesse "semana passada" ficaria
+    // olhando para a lista do período anterior até o próximo tick.
+    pollAgoraRef.current();
+  }, [dateFrom, dateTo]);
+
   const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
 
   // Auto-sync dateFrom with active cash session openedAt (DISABLED - Users want to see only today's orders by default)
@@ -1462,7 +1477,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const poll = async () => {
       try {
         if (!isDraggingRef.current) {
-          const res = await fetch(`/api/customer-order/poll?t=${Date.now()}`, {
+          // O período vai no formato ISO: quem sabe o fuso do lojista é este
+          // navegador, não o container (que roda em UTC).
+          const { from, to } = periodoRef.current;
+          const janela = `&from=${encodeURIComponent(new Date(from).toISOString())}&to=${encodeURIComponent(new Date(to).toISOString())}`;
+          const res = await fetch(`/api/customer-order/poll?t=${Date.now()}${janela}`, {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" }
           });
@@ -1508,10 +1527,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           }
         }
       } catch {}
-      if (active) setTimeout(poll, 3000);
+      // 3s dava 20 rodadas por minuto e mantinha o banco acordado o mês
+      // inteiro, sem que pedido nenhum chegue nessa cadência. Em 8s o pedido
+      // novo ainda aparece antes de a cozinha reagir, e as integrações não
+      // dependem desta aba: o cron de fundo puxa iFood/JotaJá/Brendi a cada 60s
+      // mesmo com o painel fechado.
+      if (active) pollTimerRef.current = setTimeout(poll, 8000);
+    };
+    // Deixa a rodada atual acessível de fora para quem trocar o período poder
+    // pedir os pedidos novos na hora, em vez de esperar o próximo tick.
+    pollAgoraRef.current = () => {
+      if (!active) return;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      poll();
     };
     const timeout = setTimeout(poll, 1000);
-    return () => { active = false; clearTimeout(timeout); };
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      pollAgoraRef.current = () => {};
+    };
   }, [printerConfig]);
 
   useEffect(() => { setOrders(initialOrders); }, [initialOrders]);
