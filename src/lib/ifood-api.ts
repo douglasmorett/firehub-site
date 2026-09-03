@@ -181,6 +181,48 @@ export async function descobrirMerchantsPorEventos(accessToken: string): Promise
  *
  * Espiar a fila é seguro: sem `acknowledgment` o iFood mantém tudo lá.
  */
+/**
+ * As lojas iFood que um access token cobre, lidas do PRÓPRIO token.
+ *
+ * O JWT do iFood traz a claim `merchant_scope`, uma lista no formato
+ * `"<uuid>:order"`, `"<uuid>:events"` — uma entrada por loja e permissão:
+ *
+ *   "merchant_scope": [
+ *     "ea2c4d55-…:order", "ea2c4d55-…:events",
+ *     "469a9863-…:order", "469a9863-…:events",
+ *     "17ce82cb-…:order", "17ce82cb-…:events"
+ *   ]
+ *
+ * É a resposta para uma pergunta que o FireHub vinha respondendo errado.
+ * `GET /merchant/v1.0/merchants` devolve `200 []` neste app (o módulo Merchant
+ * não é autorizado por loja — só `order` e `events`, e pedir o detalhe de um
+ * merchant volta 403), então a única fonte de merchantId que o código conhecia
+ * era a fila de eventos. Com a fila vazia, conectar uma loja não gravava nada:
+ * o lojista via "conectada!" e nenhuma integração aparecia. Foi assim que a
+ * Ragnar autorizou três lojas e ficou com uma.
+ *
+ * O código antigo até abria o JWT, mas procurava `merchantId`/`merchants`, que
+ * não existem neste formato — por isso nunca achava nada.
+ */
+export function merchantsDoToken(accessToken?: string | null): string[] {
+  if (!accessToken) return [];
+  try {
+    const partes = accessToken.split(".");
+    if (partes.length !== 3) return [];
+    const payload = JSON.parse(Buffer.from(partes[1], "base64").toString("utf8"));
+    const escopo = payload?.merchant_scope;
+    if (!Array.isArray(escopo)) return [];
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return [...new Set(
+      escopo
+        .map((e: unknown) => String(e).split(":")[0].trim())
+        .filter((id: string) => uuid.test(id))
+    )];
+  } catch {
+    return [];
+  }
+}
+
 export async function descobrirMerchantsComNome(
   accessToken: string
 ): Promise<{ merchantId: string; nome: string }[]> {

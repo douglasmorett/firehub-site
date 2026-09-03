@@ -670,19 +670,36 @@ export default function IntegracoesHubClient({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast("🎉 Loja iFood vinculada com sucesso!", "#10B981");
-        const linkedMerchantId = data.merchantId || authCodeInput.trim();
-        setIfMerchant(linkedMerchantId);
-        setIfoodIntegrations(prev => [
-          { id: "main", label: "Loja Principal", merchantId: linkedMerchantId, connected: true, active: true, createdAt: new Date().toISOString() },
-          ...prev.filter(i => i.merchantId !== linkedMerchantId)
-        ]);
-        setOpenModal(null);
-        setTimeout(() => { window.location.reload(); }, 600);
-      } else if (data.hasToken) {
-        // Token obtido mas merchantId não detectado — pedir UUID manualmente
-        setNeedsMerchantId(true);
-        showToast("✅ Autorização OK! Agora cole o Merchant ID da sua loja.", "#F59E0B");
+        showToast(data.message || "🎉 Loja iFood vinculada com sucesso!", "#10B981");
+
+        // Lojas autorizadas que ele ainda não trouxe para cá: a lista aparece
+        // para ele MARCAR as que quer. Nada entra sozinho — cada adicional
+        // custa R$50/mês, e ele pode ter no portal loja que não quer no FireHub.
+        if (Array.isArray(data.merchantsDisponiveis) && data.merchantsDisponiveis.length > 0) {
+          setCandidatosIfood(
+            data.merchantsDisponiveis.map((m: any) => ({ merchantId: m.id, nome: m.name || "" }))
+          );
+        }
+
+        // ⚠️ Só marca a loja como vinculada quando o servidor devolveu um
+        // merchantId DE VERDADE. Antes, sem merchantId, usava-se o próprio
+        // código de autorização como se fosse o ID da loja: a contagem pulava
+        // para 2, o reload trazia a verdade do servidor e voltava para 1 — a
+        // tela mentia e o lojista achava que tinha desintegrado sozinho.
+        if (data.merchantId) {
+          setIfMerchant(data.merchantId);
+          setIfoodIntegrations(prev => [
+            ...prev.filter(i => i.merchantId !== data.merchantId),
+            { id: "main", label: "Loja Principal", merchantId: data.merchantId, connected: true, active: true, createdAt: new Date().toISOString() },
+          ]);
+          if (!data.merchantsDisponiveis?.length) {
+            setOpenModal(null);
+            setTimeout(() => { window.location.reload(); }, 600);
+          }
+        } else if (data.needsMerchantId) {
+          setNeedsMerchantId(true);
+        }
+        setAuthCodeInput("");
       } else {
         showToast(data.error || "Código de autorização inválido ou expirado", "#EF4444");
       }

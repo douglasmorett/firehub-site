@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { processarEventosIfood, puxarEventosIfood } from "@/lib/ifood-eventos";
+import { merchantsDoToken } from "@/lib/ifood-api";
 import { gruposDePollingIfood } from "@/lib/ifood-token";
 
 /**
@@ -13,6 +14,71 @@ import { gruposDePollingIfood } from "@/lib/ifood-token";
  */
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Allow up to 30s for processing
+
+/**
+ * O nome da loja iFood, lido do detalhe de um pedido dela.
+ *
+ * É de onde sai "Ragnar Burger". O evento traz só o UUID, e o cadastro do
+ * FireHub costuma guardar a razão social ("PIETRO CUNHA ROCHA 0179…") — nenhum
+ * dos dois serve para o lojista reconhecer a própria loja numa lista de três.
+ */
+async function nomeDaLojaNoIfood(eventos: any[], merchantId: string, token: string): Promise<string> {
+  const comPedido = eventos.find((e: any) => e?.merchantId === merchantId && e?.orderId);
+  if (!comPedido) return "";
+  try {
+    const det = await fetch(
+      `https://merchant-api.ifood.com.br/order/v1.0/orders/${comPedido.orderId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (det.ok) return (await det.json())?.merchant?.name || "";
+  } catch {
+    // Sem o nome ainda dá para operar — fica o que já estava até o próximo.
+  }
+  return "";
+}
+
+/**
+ * Conserta o rótulo de integrações que ficaram com um nome que não identifica
+ * a loja.
+ *
+ * Os caminhos de cadastro manual (colar o Merchant ID) nomeiam a integração com
+ * o storeName do FireHub, porque naquele instante não há pedido de onde tirar o
+ * nome de verdade. Resultado: três lojas iFood na tela, todas escritas "PIETRO
+ * CUNHA ROCHA 01797511238". Aqui, na primeira vez que um pedido daquela loja
+ * passa, o nome certo entra no lugar. Roda uma vez por loja: depois de trocado,
+ * o rótulo não bate mais com os criterios abaixo.
+ */
+async function corrigirRotulosIfood(opts: {
+  lojaId: string;
+  nomeDaLojaFirehub: string | null;
+  eventos: any[];
+  token: string;
+  log: string[];
+}): Promise<void> {
+  const { lojaId, nomeDaLojaFirehub, eventos, token, log } = opts;
+
+  const integracoes = await prisma.ifoodIntegration.findMany({
+    where: { userId: lojaId },
+    select: { id: true, label: true, merchantId: true },
+  });
+
+  const precisaTrocar = (label: string | null) => {
+    const l = (label || "").trim();
+    if (!l) return true;
+    if (/^loja principal$/i.test(l) || /^loja ifood/i.test(l)) return true;
+    // O nome do cadastro do FireHub repetido em toda loja não distingue nada.
+    return !!nomeDaLojaFirehub && l === nomeDaLojaFirehub.trim();
+  };
+
+  for (const integ of integracoes) {
+    if (!precisaTrocar(integ.label)) continue;
+    const nome = await nomeDaLojaNoIfood(eventos, integ.merchantId, token);
+    if (!nome || nome === integ.label) continue;
+    await prisma.ifoodIntegration.update({ where: { id: integ.id }, data: { label: nome } });
+    log.push(`[vínculo] rótulo corrigido: ${integ.merchantId} agora é "${nome}"`);
+    console.log(`[iFood Cron] Rótulo de ${integ.merchantId} corrigido para "${nome}".`);
+  }
+}
 
 /**
  * Adota as lojas iFood que apareceram na fila DESTE lojista e não pertencem a
@@ -228,6 +294,17 @@ export async function GET(req: NextRequest) {
           const minhas = new Set<string>(grupos.flatMap((g) => g.merchants));
           if (principal) minhas.add(principal);
 
+          // ⚠️ O `merchant_scope` do token NÃO é usado para vincular sozinho.
+          //
+          // Ele lista tudo o que aquela conta do iFood já autorizou ao app —
+          // e o escopo ACUMULA autorizações antigas. Um lojista com dez lojas
+          // no portal que só quer duas no FireHub ganharia as dez, e oito
+          // cobranças de R$50/mês que ele nunca pediu. Quem escolhe quais
+          // entram é ele, na tela de Integrações.
+          //
+          // O que entra sozinho aqui é só a loja que MANDOU PEDIDO (logo
+          // abaixo): aí não é palpite, e descartar o evento seria jogar fora
+          // uma venda que já aconteceu.
           for (const grupo of grupos) {
             const { eventos, erro } = await puxarEventosIfood({
               token: grupo.token,
@@ -291,6 +368,16 @@ export async function GET(req: NextRequest) {
             });
             distribuido.criados += r.created;
             distribuido.atualizados += r.updated;
+
+            // Com pedido em mãos dá para trocar "PIETRO CUNHA ROCHA 0179…"
+            // pelo nome que a loja tem no app do iFood ("Ragnar Burger").
+            await corrigirRotulosIfood({
+              lojaId: loja.id,
+              nomeDaLojaFirehub: loja.storeName,
+              eventos,
+              token: grupo.token,
+              log,
+            });
           }
         } catch (e: any) {
           distribuido.erros++;

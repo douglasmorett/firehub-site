@@ -8,12 +8,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { getIfoodToken } from "@/lib/ifood-api";
+import { getIfoodToken, merchantsDoToken } from "@/lib/ifood-api";
 import { appEscolhido, credenciaisDoApp, ErroCredencialApp } from "@/lib/ifood-app";
 import { lojaDaSessao } from "@/lib/ifood-token";
 import { prisma } from "@/lib/prisma";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
+
+/**
+ * Congela o token ATUAL da loja nas integrações que ainda dependem dele, ANTES
+ * de uma autorização nova substituí-lo.
+ *
+ * Quem conecta as lojas uma por uma — Ragnar Burguer, depois Ragnar Pizza,
+ * depois Tadala — gera uma autorização por loja, e cada uma sobrescrevia
+ * `User.ifoodAccessToken`. A loja já vinculada não guarda token próprio (ela
+ * era a principal), então passava a depender de uma credencial emitida para
+ * OUTRA loja. Enquanto as duas estão no mesmo login do iFood isso funciona por
+ * sorte; no dia em que não estiverem, a loja anterior para de receber pedido
+ * sem nada mudar na tela.
+ */
+async function preservarTokenDasIntegracoes(
+  storeId: string,
+  atual: { accessToken: string | null; refreshToken: string | null; tokenExpiresAt: Date | null },
+) {
+  if (!atual.accessToken) return;
+  try {
+    const r = await prisma.ifoodIntegration.updateMany({
+      where: { userId: storeId, accessToken: null },
+      data: {
+        accessToken: atual.accessToken,
+        refreshToken: atual.refreshToken,
+        tokenExpiresAt: atual.tokenExpiresAt,
+      },
+    });
+    if (r.count > 0) {
+      console.log(`[iFood Auth] Token anterior preservado em ${r.count} integração(ões) da loja ${storeId}.`);
+    }
+  } catch (e: any) {
+    console.warn("[iFood Auth] Aviso ao preservar token das integrações:", e?.message);
+  }
+}
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -662,15 +696,96 @@ export async function POST(req: NextRequest) {
   // A loja da sessao, necessaria para descartar merchants de OUTRAS lojas.
   const userIdAtual = storeId;
 
-  // Tentar extrair do JWT caso o iFood embute claims
-  if (!merchantId && data.accessToken) {
-    try {
-      const parts = data.accessToken.split(".");
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
-        merchantId = payload.merchantId || payload.merchant_id || (Array.isArray(payload.merchants) ? payload.merchants[0] : null);
+  // ── AS LOJAS QUE ESTA AUTORIZAÇÃO COBRE, LIDAS DO PRÓPRIO TOKEN ──────────
+  //
+  // O JWT do iFood traz `merchant_scope` — um "<uuid>:order"/"<uuid>:events"
+  // por loja autorizada. Não custa chamada nenhuma e, ao contrário da fila de
+  // eventos, funciona com a fila VAZIA. Era esse o buraco: quem conectava fora
+  // do horário de pedido recebia "🎉 Loja conectada!" e não gravava vínculo
+  // nenhum, porque não havia evento de onde tirar o merchantId. A Ragnar
+  // autorizou três lojas assim e ficou com uma.
+  //
+  // ⚠️ NÃO se vincula tudo o que está no escopo. O `merchant_scope` ACUMULA as
+  // autorizações que aquela conta do iFood já deu ao app — quem tem dez lojas
+  // no portal e quer duas no FireHub ganharia as dez, e oito cobranças de
+  // R$50/mês que nunca pediu. Vincular sozinho só quando NÃO HÁ escolha a
+  // fazer: uma única loja no escopo e a conta ainda sem nenhuma. Nos outros
+  // casos a lista volta para a tela e o lojista marca as que quer, uma a uma.
+  const lojasDoToken = merchantsDoToken(data.accessToken);
+  if (lojasDoToken.length > 0 && storeId) {
+    const jaDeOutros = await prisma.ifoodIntegration.findMany({
+      where: { merchantId: { in: lojasDoToken }, NOT: { userId: storeId } },
+      select: { merchantId: true },
+    });
+    const deOutroUser = await prisma.user.findMany({
+      where: { ifoodMerchantId: { in: lojasDoToken }, NOT: { id: storeId } },
+      select: { ifoodMerchantId: true },
+    });
+    const ocupados = new Set<string>([
+      ...jaDeOutros.map((i) => i.merchantId),
+      ...(deOutroUser.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]),
+    ]);
+
+    const credenciais = {
+      accessToken: data.accessToken ?? null,
+      refreshToken: data.refreshToken ?? null,
+      tokenExpiresAt: data.expiresIn ? new Date(Date.now() + (data.expiresIn - 60) * 1000) : null,
+      clientId,
+      clientSecret,
+    };
+
+    const livres = lojasDoToken.filter((id) => !ocupados.has(id));
+
+    // O que esta conta JÁ tem continua com o token renovado — isso não é
+    // escolha nova, é manter viva a loja que ele já usa.
+    const jaMinhas = new Set(
+      (await prisma.ifoodIntegration.findMany({
+        where: { userId: storeId, merchantId: { in: livres } },
+        select: { merchantId: true },
+      })).map((i) => i.merchantId)
+    );
+    for (const id of jaMinhas) {
+      try {
+        await prisma.ifoodIntegration.update({
+          where: { userId_merchantId: { userId: storeId, merchantId: id } },
+          data: { connected: true, active: true, ...credenciais },
+        });
+      } catch (e: any) {
+        console.warn(`[iFood Auth] Aviso ao renovar credencial de ${id}:`, e?.message);
       }
-    } catch {}
+    }
+
+    const novas = livres.filter((id) => !jaMinhas.has(id));
+
+    // Uma só, e a conta ainda vazia: não há escolha a fazer, vincula.
+    if (novas.length === 1 && jaMinhas.size === 0 && !user?.ifoodMerchantId) {
+      try {
+        await prisma.ifoodIntegration.upsert({
+          where: { userId_merchantId: { userId: storeId, merchantId: novas[0] } },
+          create: {
+            userId: storeId,
+            label: user?.storeName || user?.name || "Loja iFood",
+            merchantId: novas[0],
+            connected: true,
+            active: true,
+            ...credenciais,
+          },
+          update: { connected: true, active: true, ...credenciais },
+        });
+        merchantId = novas[0];
+      } catch (e: any) {
+        console.warn("[iFood Auth] Aviso ao vincular a única loja do escopo:", e?.message);
+      }
+    } else if (novas.length > 0) {
+      // Mais de uma disponível (ou a conta já tem loja): quem escolhe é ele.
+      merchantsAmbiguos = novas.map((id) => ({ id, name: "" }));
+    }
+
+    console.log(
+      `[iFood Auth] merchant_scope da loja ${storeId}: ${lojasDoToken.length} no escopo, ` +
+      `${jaMinhas.size} já vinculada(s), ${novas.length} disponível(is), ${ocupados.size} de outro dono.`
+    );
+    if (!merchantId && jaMinhas.size > 0) merchantId = user?.ifoodMerchantId || [...jaMinhas][0];
   }
 
   // ── DESCOBERTA DO MERCHANT ID ─────────────────────────────────────────
@@ -742,6 +857,11 @@ export async function POST(req: NextRequest) {
   // Se não encontrou merchantId mas tem token, conectar mesmo assim — o merchantId pode ser adicionado depois
   if (!merchantId) {
     if (storeId && data.accessToken) {
+      await preservarTokenDasIntegracoes(storeId, {
+        accessToken: user?.ifoodAccessToken ?? null,
+        refreshToken: user?.ifoodRefreshToken ?? null,
+        tokenExpiresAt: user?.ifoodTokenExpiresAt ?? null,
+      });
       await prisma.user.update({
         where: { id: storeId },
         data: {
@@ -773,9 +893,16 @@ export async function POST(req: NextRequest) {
       success: true,
       merchantId: null,
       needsMerchantId: true,
+      // Não dá para dizer QUAL loja é: a fila de eventos estava vazia, e o
+      // módulo Merchant não é autorizado neste app (responde 200 []). O texto
+      // precisa deixar isso claro — antes dizia "não precisa fazer mais nada" e
+      // a contagem de integrações não mudava, o que parece falha. Ela entra
+      // sozinha no primeiro pedido, mas quem quer ver agora tem o atalho.
       message:
-        "🎉 Loja iFood conectada! A identificação da loja é concluída automaticamente " +
-        "assim que chegar o primeiro pedido — não precisa fazer mais nada.",
+        "🎉 Loja autorizada! Como ela ainda não tem pedido na fila, não dá para " +
+        "saber qual das suas lojas é esta — ela aparece aqui sozinha assim que " +
+        "chegar o primeiro pedido dela. Para vê-la agora, cole o Merchant ID " +
+        "dela (o UUID) neste mesmo campo.",
     });
   }
 
@@ -822,6 +949,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Atualizar usuário principal
+    await preservarTokenDasIntegracoes(storeId, {
+      accessToken: user?.ifoodAccessToken ?? null,
+      refreshToken: user?.ifoodRefreshToken ?? null,
+      tokenExpiresAt: user?.ifoodTokenExpiresAt ?? null,
+    });
     await prisma.user.update({
       where: { id: storeId },
       data: {
@@ -833,13 +965,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // As lojas autorizadas que ele ainda NÃO trouxe para o FireHub voltam na
+    // resposta para a tela oferecer — sem vincular nada por conta própria, que
+    // é o que evita cobrar por loja que ele não quer aqui.
     return NextResponse.json({
       success: true,
       merchantId,
       isAdditional: isNewStore,
-      message: isNewStore
-        ? "🎉 Nova loja iFood adicional vinculada com sucesso (+R$50,00/mês)!"
-        : "🎉 Loja iFood vinculada com sucesso!",
+      merchantsDisponiveis: merchantsAmbiguos.length > 0 ? merchantsAmbiguos : undefined,
+      message: merchantsAmbiguos.length > 0
+        ? `🎉 Loja vinculada! Esta conta do iFood tem mais ${merchantsAmbiguos.length} loja(s) autorizada(s). ` +
+          `Escolha quais você quer no FireHub — cada uma adicional custa +R$50,00/mês.`
+        : isNewStore
+          ? "🎉 Nova loja iFood adicional vinculada com sucesso (+R$50,00/mês)!"
+          : "🎉 Loja iFood vinculada com sucesso!",
     });
   }
 
