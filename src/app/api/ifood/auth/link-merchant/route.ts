@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { merchantId } = await req.json();
+    const { merchantId, confirmarCnpjDiferente } = await req.json();
     const cleanMerchantId = merchantId?.trim();
 
     if (!cleanMerchantId) {
@@ -65,7 +65,10 @@ export async function POST(req: NextRequest) {
 
     const store = await prisma.user.findUnique({
       where: { id: storeId },
-      select: { id: true, name: true, cpfCnpj: true, fiscalConfig: true },
+      select: {
+        id: true, name: true, cpfCnpj: true, fiscalConfig: true, ifoodMerchantId: true,
+        ifoodAccessToken: true, ifoodRefreshToken: true, ifoodTokenExpiresAt: true,
+      },
     });
     if (!store) {
       return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
@@ -132,15 +135,38 @@ export async function POST(req: NextRequest) {
     const fiscalCnpj = onlyDigits((store.fiscalConfig as any)?.cnpj);
     const storeDoc = onlyDigits(store.cpfCnpj) || fiscalCnpj;
 
-    if (merchantDoc.length >= 11 && storeDoc.length >= 11 && merchantDoc !== storeDoc) {
+    // ⚠️ CNPJ diferente NÃO é mais recusa definitiva.
+    //
+    // A regra assumia "uma loja FireHub = um CNPJ", e isso brigava de frente
+    // com a integração multi-loja que a própria tela oferece (e cobra +R$50 por
+    // loja adicional): a Ragnar tem Ragnar Burguer, Ragnar Pizza e Tadala
+    // Burguer no mesmo login do iFood, cada uma com seu CNPJ. Da segunda em
+    // diante o vínculo voltava 403 e não havia caminho nenhum na tela.
+    //
+    // A proteção que importa continua inteira acima: merchant que já é de OUTRO
+    // franqueado é recusado sem apelação. O que sobra aqui é o caso do lojista
+    // colando o UUID errado — e para esse, avisar e pedir confirmação resolve,
+    // sem trancar quem tem várias lojas de verdade. A confirmação fica no log.
+    if (merchantDoc.length >= 11 && storeDoc.length >= 11 && merchantDoc !== storeDoc && !confirmarCnpjDiferente) {
       console.warn(
-        `[iFood Link Merchant] BLOQUEADO por CNPJ divergente: loja ${storeId} (${storeDoc}) x merchant ${cleanMerchantId} (${merchantDoc}).`
+        `[iFood Link Merchant] CNPJ divergente (aguardando confirmação): loja ${storeId} (${storeDoc}) x merchant ${cleanMerchantId} (${merchantDoc}).`
       );
       return NextResponse.json({
-        error: "Este Merchant ID pertence a um CNPJ diferente do cadastrado nesta loja.",
+        codigo: "CNPJ_DIVERGENTE",
+        precisaConfirmar: true,
+        cnpjDaLoja: storeDoc,
+        cnpjDoMerchant: merchantDoc,
+        nomeNoIfood: data.name || data.shortName || "",
+        error: `A loja "${data.name || data.shortName || cleanMerchantId}" está em outro CNPJ (${merchantDoc}), diferente do cadastrado aqui (${storeDoc}).`,
         details:
-          "Confira se colou o UUID da sua própria loja no iFood. Se o CNPJ do cadastro FireHub estiver desatualizado, corrija-o em Configurações e tente novamente.",
-      }, { status: 403 });
+          "Se for outra loja SUA no iFood, confirme para vincular — ela entra como integração adicional (+R$50,00/mês). " +
+          "Se você não reconhece essa loja, cancele: provavelmente o Merchant ID colado é de outro estabelecimento.",
+      }, { status: 409 });
+    }
+    if (merchantDoc.length >= 11 && storeDoc.length >= 11 && merchantDoc !== storeDoc) {
+      console.warn(
+        `[iFood Link Merchant] Loja ${storeId} (${storeDoc}) vinculou o merchant ${cleanMerchantId} de CNPJ ${merchantDoc} — confirmado pelo lojista.`
+      );
     }
     if (!merchantDoc || !storeDoc) {
       console.warn(
@@ -149,17 +175,44 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4) Gravar o vínculo NA LOJA (e não no usuário logado) ──
+    //
+    // `User.ifoodMerchantId` é o vínculo PRINCIPAL — o desenho antigo, de uma
+    // loja iFood só. Vincular a 2ª e a 3ª loja não pode sobrescrevê-lo: a
+    // principal trocava a cada vínculo, e a tela passava a mostrar o nome de
+    // uma loja com o Merchant ID de outra. Loja adicional vive na tabela de
+    // integrações, que agora é varrida pelo polling.
+    const ehAdicional = !!store.ifoodMerchantId && store.ifoodMerchantId !== cleanMerchantId;
     await prisma.user.update({
       where: { id: storeId },
       data: {
         ifoodConnected: true,
-        ifoodMerchantId: cleanMerchantId
+        ...(store.ifoodMerchantId ? {} : { ifoodMerchantId: cleanMerchantId }),
       }
     });
 
     // Espelha em IfoodIntegration (multi-loja) para que a tela de integrações
     // continue mostrando o merchant mesmo quem abriu foi um funcionário.
     try {
+      // ── LOJA ADICIONAL GUARDA O TOKEN DELA ──────────────────────────────
+      // Cada nova autorização sobrescreve `User.ifoodAccessToken`. Quem conecta
+      // as lojas UMA POR UMA — que é como o lojista da Ragnar fez — deixava a
+      // loja 2 apoiada num token que a loja 3 substituía minutos depois, e ela
+      // parava de receber pedido sem erro nenhum em lugar nenhum. Congelar aqui
+      // a credencial daquela autorização resolve.
+      //
+      // Só na ADICIONAL de propósito: a principal continua usando o token do
+      // User. Duplicar a credencial dela poria dois lugares renovando com o
+      // mesmo refresh_token, e o iFood invalida o refresh usado — o segundo a
+      // tentar levaria recusa. (Se ainda assim vencer, `gruposDePollingIfood`
+      // devolve a loja para o token do User em vez de deixá-la muda.)
+      const credenciaisDaAdicional = ehAdicional
+        ? {
+            accessToken: store.ifoodAccessToken,
+            refreshToken: store.ifoodRefreshToken,
+            tokenExpiresAt: store.ifoodTokenExpiresAt,
+          }
+        : {};
+
       await prisma.ifoodIntegration.upsert({
         where: { userId_merchantId: { userId: storeId, merchantId: cleanMerchantId } },
         create: {
@@ -168,6 +221,7 @@ export async function POST(req: NextRequest) {
           merchantId: cleanMerchantId,
           connected: true,
           active: true,
+          ...credenciaisDaAdicional,
         },
         update: { connected: true, active: true },
       });
@@ -177,7 +231,10 @@ export async function POST(req: NextRequest) {
       success: true,
       merchantId: cleanMerchantId,
       storeName,
-      message: "Loja vinculada com sucesso!"
+      adicional: ehAdicional,
+      message: ehAdicional
+        ? `${storeName} vinculada como loja adicional (+R$50,00/mês). Os pedidos dela entram no mesmo painel.`
+        : "Loja vinculada com sucesso!",
     });
   } catch (err: any) {
     console.error("[iFood Link Merchant Error]", err.message);

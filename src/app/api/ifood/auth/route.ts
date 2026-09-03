@@ -10,6 +10,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
 import { appEscolhido, credenciaisDoApp, ErroCredencialApp } from "@/lib/ifood-app";
+import { lojaDaSessao } from "@/lib/ifood-token";
 import { prisma } from "@/lib/prisma";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
@@ -357,24 +358,79 @@ export async function GET(req: NextRequest) {
     // desconectar para reconectar no merchant certo.
     // Agora limpa OS DOIS, e apaga os tokens junto para nao deixar credencial
     // orfa de uma conexao que o lojista pediu para encerrar.
-    const usuario = await prisma.user.update({
+    //
+    // ⚠️ E desconecta UMA loja quando vem `?merchantId=`. Sem isso, a conta com
+    // tres lojas iFood perdia as tres num clique: o botao chamava esta rota sem
+    // parametro e o deleteMany levava a integracao inteira da conta junto.
+    const alvo = req.nextUrl.searchParams.get("merchantId");
+
+    // A LOJA, nao o registro de quem esta logado — mesma regra de link-merchant.
+    const sessionUser = await prisma.user.findUnique({
       where: { email },
-      data: {
-        ifoodConnected: false,
-        ifoodMerchantId: null,
-        ifoodAccessToken: null,
-        ifoodRefreshToken: null,
-        ifoodTokenExpiresAt: null,
-        ifoodAuthVerifier: null,
-      },
-      select: { id: true },
+      select: { id: true, role: true, ownerId: true },
     });
+    if (!sessionUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+    const lojaAtiva =
+      req.nextUrl.searchParams.get("storeId") || req.cookies.get("firehub_active_store")?.value || null;
+    const storeId =
+      sessionUser.role === "ADMIN" && lojaAtiva && lojaAtiva !== "all"
+        ? lojaAtiva
+        : (sessionUser.ownerId || sessionUser.id);
+
+    const limparConta = {
+      ifoodConnected: false,
+      ifoodMerchantId: null,
+      ifoodAccessToken: null,
+      ifoodRefreshToken: null,
+      ifoodTokenExpiresAt: null,
+      ifoodAuthVerifier: null,
+    };
+
+    if (alvo) {
+      const removidas = await prisma.ifoodIntegration.deleteMany({
+        where: { userId: storeId, merchantId: alvo },
+      });
+      const restantes = await prisma.ifoodIntegration.findMany({
+        where: { userId: storeId, active: true },
+        orderBy: { createdAt: "asc" },
+        select: { merchantId: true },
+      });
+
+      const loja = await prisma.user.findUnique({
+        where: { id: storeId },
+        select: { ifoodMerchantId: true },
+      });
+
+      // Se saiu justamente a principal, outra assume o posto. Zerar o campo
+      // deixaria as restantes sem o vinculo que varias telas ainda leem.
+      if (loja?.ifoodMerchantId === alvo) {
+        const proxima = restantes[0]?.merchantId ?? null;
+        await prisma.user.update({
+          where: { id: storeId },
+          data: proxima ? { ifoodMerchantId: proxima } : limparConta,
+        });
+      }
+
+      console.log(
+        `[iFood Auth] Loja ${storeId}: merchant ${alvo} desconectado (${removidas.count} integração). Restam ${restantes.length}.`
+      );
+
+      return NextResponse.json({
+        success: true,
+        connected: restantes.length > 0,
+        integracoesRemovidas: removidas.count,
+        restantes: restantes.length,
+      });
+    }
+
+    await prisma.user.update({ where: { id: storeId }, data: limparConta });
 
     const removidas = await prisma.ifoodIntegration.deleteMany({
-      where: { userId: usuario.id },
+      where: { userId: storeId },
     });
 
-    console.log(`[iFood Auth] Loja ${usuario.id} desconectada. Integrações removidas: ${removidas.count}`);
+    console.log(`[iFood Auth] Loja ${storeId} desconectada. Integrações removidas: ${removidas.count}`);
 
     return NextResponse.json({
       success: true,
@@ -394,30 +450,59 @@ export async function POST(req: NextRequest) {
   const rawCode = (body.authorizationCode || body.merchantId || "").trim();
   if (!rawCode) return NextResponse.json({ error: "Código de autorização obrigatório" }, { status: 400 });
 
+  // TUDO nesta rota é gravado NA LOJA, nunca no registro de quem está logado.
+  // Token no registro do funcionário é credencial que o polling não lê: a tela
+  // diz "conectada" e a cozinha não recebe pedido.
+  const storeId = session.user?.email
+    ? await lojaDaSessao(
+        session.user.email,
+        req.nextUrl.searchParams.get("storeId") || req.cookies.get("firehub_active_store")?.value || null,
+      )
+    : null;
+
   // Se o usuário digitou diretamente um Merchant UUID (formato 8-4-4-4-12)
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCode);
-  if (isUuid && session.user?.email) {
+  if (isUuid && storeId) {
     const userRec = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true, name: true, storeName: true }
+      where: { id: storeId },
+      select: {
+        id: true, name: true, storeName: true, ifoodMerchantId: true,
+        ifoodAccessToken: true, ifoodRefreshToken: true, ifoodTokenExpiresAt: true,
+      }
     });
     if (userRec) {
       await prisma.user.update({
-        where: { email: session.user.email },
+        where: { id: storeId },
         data: {
           ifoodConnected: true,
-          ifoodMerchantId: rawCode,
+          // Loja adicional não rouba o posto da principal.
+          ...(userRec.ifoodMerchantId ? {} : { ifoodMerchantId: rawCode }),
         },
       });
       try {
+        // ── LOJA ADICIONAL GUARDA O TOKEN DELA ───────────────────────────────
+        // É isto que faz "conectar uma por uma" funcionar: cada autorização
+        // sobrescreve `User.ifoodAccessToken`, então sem congelar a credencial
+        // na linha da loja 2 ela acabava apoiada no token da loja 3 e parava de
+        // receber pedido, calada. Só na adicional — a principal segue no token
+        // do User, para não haver dois lugares renovando o mesmo refresh_token.
+        const credenciaisDaAdicional = userRec.ifoodMerchantId && userRec.ifoodMerchantId !== rawCode
+          ? {
+              accessToken: userRec.ifoodAccessToken,
+              refreshToken: userRec.ifoodRefreshToken,
+              tokenExpiresAt: userRec.ifoodTokenExpiresAt,
+            }
+          : {};
+
         await prisma.ifoodIntegration.upsert({
-          where: { userId_merchantId: { userId: userRec.id, merchantId: rawCode } },
+          where: { userId_merchantId: { userId: storeId, merchantId: rawCode } },
           create: {
-            userId: userRec.id,
+            userId: storeId,
             label: userRec.storeName || userRec.name || "Loja Principal",
             merchantId: rawCode,
             connected: true,
             active: true,
+            ...credenciaisDaAdicional,
           },
           update: { connected: true, active: true },
         });
@@ -451,7 +536,7 @@ export async function POST(req: NextRequest) {
     throw e;
   }
 
-  const user = session.user?.email ? await prisma.user.findUnique({ where: { email: session.user.email } }) : null;
+  const user = storeId ? await prisma.user.findUnique({ where: { id: storeId } }) : null;
   const verifier = user?.ifoodAuthVerifier;
 
   // Tentativa 1: Com verifier (Fluxo Distribuído UserCode)
@@ -574,11 +659,8 @@ export async function POST(req: NextRequest) {
   // lojista para ele escolher, em vez de vincular errado.
   let merchantsAmbiguos: { id: string; name: string }[] = [];
 
-  // Usuario logado, necessario para descartar merchants de OUTRAS lojas.
-  const usuarioAtual = session.user?.email
-    ? await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } })
-    : null;
-  const userIdAtual = usuarioAtual?.id || null;
+  // A loja da sessao, necessaria para descartar merchants de OUTRAS lojas.
+  const userIdAtual = storeId;
 
   // Tentar extrair do JWT caso o iFood embute claims
   if (!merchantId && data.accessToken) {
@@ -659,9 +741,9 @@ export async function POST(req: NextRequest) {
 
   // Se não encontrou merchantId mas tem token, conectar mesmo assim — o merchantId pode ser adicionado depois
   if (!merchantId) {
-    if (session.user?.email && data.accessToken) {
+    if (storeId && data.accessToken) {
       await prisma.user.update({
-        where: { email: session.user.email },
+        where: { id: storeId },
         data: {
           ifoodConnected: true,
           ifoodAccessToken: data.accessToken,
@@ -680,9 +762,10 @@ export async function POST(req: NextRequest) {
         needsMerchantId: true,
         merchantsDisponiveis: merchantsAmbiguos,
         message:
-          `🎉 Loja conectada! Foram encontradas ${merchantsAmbiguos.length} lojas nesta autorização: ` +
+          `🎉 Autorizado! Esta conta do iFood tem ${merchantsAmbiguos.length} lojas: ` +
           merchantsAmbiguos.map((m) => `${m.name || "sem nome"} (${m.id})`).join(", ") +
-          ". Cole na seção 'iFood Merchant API' o Merchant ID da SUA loja — não escolhemos automaticamente para não vincular a loja errada.",
+          ". Todas vão entrar no FireHub sozinhas — cada uma aparece aqui assim que chegar o primeiro pedido dela. " +
+          "Escolha abaixo qual delas é a loja principal, ou espere: os pedidos não se perdem.",
       });
     }
 
@@ -697,7 +780,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Salvar token e merchantId no banco
-  if (session.user?.email && merchantId) {
+  if (storeId && merchantId) {
     const userId = user?.id;
     const isPrimaryAlreadySet = !!user?.ifoodMerchantId;
     const isNewStore = isPrimaryAlreadySet && user.ifoodMerchantId !== merchantId;
@@ -740,7 +823,7 @@ export async function POST(req: NextRequest) {
 
     // Atualizar usuário principal
     await prisma.user.update({
-      where: { email: session.user.email },
+      where: { id: storeId },
       data: {
         ifoodConnected: true,
         ifoodMerchantId: isPrimaryAlreadySet && isNewStore ? user.ifoodMerchantId : merchantId,

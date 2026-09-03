@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
-import { processarEventosIfood } from "@/lib/ifood-eventos";
-import { getTokenDaLojaIfood } from "@/lib/ifood-api";
+import { processarEventosIfood, puxarEventosIfood } from "@/lib/ifood-eventos";
+import { gruposDePollingIfood } from "@/lib/ifood-token";
 
 /**
  * GET /api/cron/ifood-poll
@@ -13,6 +13,87 @@ import { getTokenDaLojaIfood } from "@/lib/ifood-api";
  */
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Allow up to 30s for processing
+
+/**
+ * Adota as lojas iFood que apareceram na fila DESTE lojista e não pertencem a
+ * ninguém no FireHub.
+ *
+ * Por que existe: o lojista da Ragnar autorizou três lojas (Ragnar Burguer,
+ * Ragnar Pizza e Tadala Burguer) conectando uma por uma. A primeira virou
+ * vínculo; da segunda em diante a tela dizia "🎉 Loja conectada!" e nada era
+ * gravado — o código só sabia criar vínculo para quem ainda não tinha nenhum.
+ * As duas ficaram autorizadas no iFood e inexistentes aqui, sem erro em lugar
+ * nenhum. Agora quem manda é o pedido: chegou evento de uma loja que este token
+ * enxerga e ninguém reivindicou, ela entra.
+ *
+ * Não há o que adivinhar sobre a posse: o token saiu da autorização que o
+ * próprio lojista deu, no login dele. Só se recusa o merchant que JÁ é de outra
+ * conta do FireHub — esse nunca muda de dono por aqui.
+ */
+async function adotarLojasIfood(opts: {
+  lojaId: string;
+  nomeDaLoja: string | null;
+  candidatos: string[];
+  eventos: any[];
+  token: string;
+  log: string[];
+  rotuloDoLog: string;
+}): Promise<string[]> {
+  const { lojaId, candidatos, eventos, token, log, rotuloDoLog } = opts;
+
+  const donoUser = await prisma.user.findMany({
+    where: { ifoodMerchantId: { in: candidatos }, NOT: { id: lojaId } },
+    select: { ifoodMerchantId: true },
+  });
+  const donoInteg = await prisma.ifoodIntegration.findMany({
+    where: { merchantId: { in: candidatos }, NOT: { userId: lojaId } },
+    select: { merchantId: true },
+  });
+  const comDono = new Set<string>([
+    ...(donoUser.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]),
+    ...donoInteg.map((i) => i.merchantId),
+  ]);
+
+  const adotados: string[] = [];
+  for (const merchantId of candidatos) {
+    if (comDono.has(merchantId)) {
+      log.push(`[vínculo] ${rotuloDoLog}: ${merchantId} já pertence a outra conta — ignorado`);
+      continue;
+    }
+
+    // O evento só traz o UUID, e ninguém reconhece a própria loja olhando para
+    // "469a9863-…". O nome sai do detalhe de um pedido dela.
+    let rotulo = "";
+    const comPedido = eventos.find((e: any) => e?.merchantId === merchantId && e?.orderId);
+    if (comPedido) {
+      try {
+        const det = await fetch(
+          `https://merchant-api.ifood.com.br/order/v1.0/orders/${comPedido.orderId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (det.ok) rotulo = (await det.json())?.merchant?.name || "";
+      } catch {
+        // Sem o nome ainda dá para operar — o UUID fica na tela até o próximo.
+      }
+    }
+
+    await prisma.ifoodIntegration.upsert({
+      where: { userId_merchantId: { userId: lojaId, merchantId } },
+      create: {
+        userId: lojaId,
+        label: rotulo || opts.nomeDaLoja || "Loja iFood",
+        merchantId,
+        connected: true,
+        active: true,
+      },
+      update: { connected: true, active: true },
+    });
+    adotados.push(merchantId);
+    log.push(`[vínculo] ${rotuloDoLog}: loja iFood "${rotulo || merchantId}" adotada automaticamente`);
+    console.log(`[iFood Cron] Loja ${lojaId} adotou o merchant ${merchantId} (${rotulo}).`);
+  }
+  return adotados;
+}
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
@@ -75,101 +156,63 @@ export async function GET(req: NextRequest) {
     // DA LOJA, renovado por refresh_token quando vencido.
     //
     // Duas trancas de isolamento:
-    //   1) header x-polling-merchants com o merchant DAQUELA loja — o iFood já
-    //      entrega só o que é dela;
-    //   2) merchantEsperado no processamento — qualquer evento que ainda assim
-    //      viesse de outro merchant é descartado antes de tocar o banco.
-    // ── VÍNCULO AUTOMÁTICO DA LOJA RECÉM-CONECTADA ────────────────────────
-    // Loja que acabou de colar o código ainda pode não ter merchantId: se a
-    // fila estava vazia no momento da conexão, não havia evento de onde tirá-lo
-    // (e o módulo Merchant não é autorizado neste app, então não há endpoint
-    // para perguntar). Aqui se tenta de novo a cada rodada, até o primeiro
-    // pedido revelar o ID — o lojista não precisa fazer nada.
-    // Loja vinculada AGORA já consumiu uma chamada de polling na descoberta.
-    // Bater de novo na mesma rodada arrisca 429 do iFood, então ela entra na
-    // passada distribuída na próxima volta (60s depois).
-    const vinculadasAgora = new Set<string>();
-
-    try {
-      const pendentes = await prisma.user.findMany({
-        where: {
-          ifoodConnected: true,
-          ifoodMerchantId: null,
-          ifoodAccessToken: { not: null },
-        },
-        select: { id: true, storeName: true, email: true },
-      });
-
-      for (const loja of pendentes) {
-        const nome = loja.storeName || loja.email || loja.id;
-        const tokenLoja = await getTokenDaLojaIfood(loja.id);
-        if (!tokenLoja) continue;
-
-        const { descobrirMerchantsPorEventos } = await import("@/lib/ifood-api");
-        const vistos = await descobrirMerchantsPorEventos(tokenLoja);
-        if (vistos.length === 0) {
-          log.push(`[vínculo] ${nome}: nenhum evento ainda — tentando na próxima rodada`);
-          continue;
-        }
-
-        // Um merchant que já é de outro dono nunca pode ser adotado aqui.
-        const ocupadosDb = await prisma.user.findMany({
-          where: { ifoodMerchantId: { in: vistos }, NOT: { id: loja.id } },
-          select: { ifoodMerchantId: true },
-        });
-        const ocupados = new Set(ocupadosDb.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]);
-        const livres = vistos.filter((id) => !ocupados.has(id));
-
-        if (livres.length !== 1) {
-          log.push(`[vínculo] ${nome}: ${livres.length} merchant(s) candidato(s) — não vinculando por segurança`);
-          continue;
-        }
-
-        await prisma.user.update({
-          where: { id: loja.id },
-          data: { ifoodMerchantId: livres[0] },
-        });
-        await prisma.ifoodIntegration.upsert({
-          where: { userId_merchantId: { userId: loja.id, merchantId: livres[0] } },
-          create: {
-            userId: loja.id,
-            label: loja.storeName || "Loja Principal",
-            merchantId: livres[0],
-            connected: true,
-            active: true,
-          },
-          update: { connected: true, active: true },
-        });
-        vinculadasAgora.add(loja.id);
-        log.push(`[vínculo] ${nome}: merchant ${livres[0]} vinculado automaticamente`);
-        console.log(`[iFood Cron] Loja ${loja.id} vinculada ao merchant ${livres[0]} pelos eventos.`);
-      }
-    } catch (e: any) {
-      log.push(`[vínculo] erro: ${e?.message}`);
-    }
-
+    //   1) o token é o DA LOJA — a fila que ele enxerga é a das lojas iFood que
+    //      o próprio lojista autorizou, e de mais ninguém;
+    //   2) merchantEsperado no processamento — evento de merchant que não é
+    //      desta conta é descartado antes de tocar o banco.
+    //
+    // ⚠️ O header `x-polling-merchants` saiu DE PROPÓSITO. Ele pedia ao iFood
+    // apenas o merchant que o FireHub já conhecia — e era isso que tornava a 2ª
+    // e a 3ª loja iFood de uma conta invisíveis para sempre: não dá para pedir
+    // o que não se sabe que existe. Sem ele, a loja recém-autorizada aparece no
+    // primeiro pedido e é adotada logo abaixo. De quebra sumiu o 403 "some
+    // polling merchants are not authorized", que derrubava a chamada inteira —
+    // e com ela as lojas que funcionavam — por causa de uma só mal cadastrada.
     const distribuido = { lojas: 0, eventos: 0, criados: 0, atualizados: 0, erros: 0 };
+
     try {
+      // Basta TER credencial: token no User (o desenho antigo, de uma loja só,
+      // e também a loja recém-autorizada que ainda não tem merchant nenhum) ou
+      // token na tabela multi-loja. O recorte antigo exigia `ifoodMerchantId`
+      // preenchido, e era ele que deixava de fora justamente quem acabou de
+      // autorizar — a loja ficava esperando um vínculo que ninguém ia fazer.
       const lojas = await prisma.user.findMany({
         where: {
           ifoodConnected: true,
-          ifoodMerchantId: { not: null },
-          ifoodAccessToken: { not: null },
+          OR: [
+            { ifoodAccessToken: { not: null } },
+            { ifoodIntegrations: { some: { active: true } } },
+          ],
         },
         select: { id: true, storeName: true, email: true, ifoodMerchantId: true },
       });
 
       log.push(`[distribuído] ${lojas.length} loja(s) com conexão própria`);
 
-      for (const loja of lojas) {
+      // A rodada agora pode fazer mais de uma chamada por loja (uma por token).
+      // Se o tempo apertar, o que sobrou entra na próxima volta, 60s depois —
+      // melhor do que a função ser cortada no meio de um pedido pela metade.
+      // A fila gira a cada minuto de propósito: varrer sempre na mesma ordem
+      // faria as últimas lojas serem as adiadas SEMPRE, e elas nunca receberiam
+      // pedido. Girando, quem ficou de fora numa volta começa a próxima.
+      const LIMITE_MS = 25_000; // maxDuration é 30s
+      let adiadas = 0;
+      const giro = lojas.length > 0 ? Math.floor(Date.now() / 60_000) % lojas.length : 0;
+      const fila = [...lojas.slice(giro), ...lojas.slice(0, giro)];
+
+      for (const loja of fila) {
         const nome = loja.storeName || loja.email || loja.id;
-        if (vinculadasAgora.has(loja.id)) {
-          log.push(`[distribuído] ${nome}: recém-vinculada, entra na próxima rodada`);
+        if (Date.now() - startTime > LIMITE_MS) {
+          adiadas++;
           continue;
         }
         try {
-          const tokenLoja = await getTokenDaLojaIfood(loja.id);
-          if (!tokenLoja) {
+          // Cada grupo é UM token com as lojas iFood que ele enxerga. Quem tem
+          // três lojas no mesmo login do iFood sai daqui com um grupo só e uma
+          // chamada só; quem conectou cada loja separadamente sai com um grupo
+          // por loja, cada um com o token dela.
+          const grupos = await gruposDePollingIfood(loja.id);
+          if (grupos.length === 0) {
             distribuido.erros++;
             log.push(`[distribuído] ${nome}: sem token utilizável — precisa reconectar`);
             continue;
@@ -177,39 +220,83 @@ export async function GET(req: NextRequest) {
 
           distribuido.lojas++;
 
-          const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true", {
-            headers: {
-              Authorization: `Bearer ${tokenLoja}`,
-              "x-polling-merchants": loja.ifoodMerchantId as string,
-            },
-          });
+          // As lojas iFood que já são desta conta.
+          let principal = loja.ifoodMerchantId;
+          const minhas = new Set<string>(grupos.flatMap((g) => g.merchants));
+          if (principal) minhas.add(principal);
 
-          if (!evRes.ok) {
-            distribuido.erros++;
-            const corpoErro = await evRes.text().catch(() => "");
-            log.push(`[distribuído] ${nome}: polling falhou ${evRes.status} ${corpoErro.slice(0, 120)}`);
-            continue;
+          for (const grupo of grupos) {
+            const { eventos, erro } = await puxarEventosIfood({
+              token: grupo.token,
+              merchants: [],
+              log,
+            });
+
+            if (erro) {
+              distribuido.erros++;
+              log.push(`[distribuído] ${nome}: polling falhou ${erro}`);
+            }
+            if (eventos.length === 0) continue;
+
+            // ── ADOÇÃO DA LOJA QUE O LOJISTA AUTORIZOU E NINGUÉM CADASTROU ──
+            const desconhecidos = [
+              ...new Set(eventos.map((e: any) => e?.merchantId).filter(Boolean) as string[]),
+            ].filter((id) => !minhas.has(id));
+
+            if (desconhecidos.length > 0) {
+              const adotados = await adotarLojasIfood({
+                lojaId: loja.id,
+                nomeDaLoja: loja.storeName,
+                candidatos: desconhecidos,
+                eventos,
+                token: grupo.token,
+                log,
+                rotuloDoLog: nome,
+              });
+              for (const id of adotados) minhas.add(id);
+
+              // Sem principal ainda: a primeira adotada assume. O campo do User
+              // é só o alvo padrão das telas de cardápio/status — quem roteia
+              // pedido é o merchantId do evento —, então deixá-lo nulo trava
+              // tela à toa.
+              if (!principal && adotados[0]) {
+                await prisma.user.update({
+                  where: { id: loja.id },
+                  data: { ifoodMerchantId: adotados[0] },
+                });
+                principal = adotados[0];
+                log.push(`[vínculo] ${nome}: ${adotados[0]} definida como loja principal`);
+              }
+            }
+
+            // Sem nenhuma loja desta conta na fila, NADA é processado. Sem esta
+            // guarda, `merchantEsperado` vazio significaria "aceita tudo" — e a
+            // conta importaria pedido de outro dono.
+            if (minhas.size === 0) {
+              log.push(`[distribuído] ${nome}: fila só com loja(s) de outra conta — nada processado`);
+              continue;
+            }
+
+            distribuido.eventos += eventos.length;
+            log.push(`[distribuído] ${nome}: ${eventos.length} evento(s), ${minhas.size} loja(s) iFood`);
+
+            const r = await processarEventosIfood({
+              events: eventos,
+              token: grupo.token,
+              log,
+              merchantEsperado: [...minhas],
+            });
+            distribuido.criados += r.created;
+            distribuido.atualizados += r.updated;
           }
-
-          const evTexto = await evRes.text();
-          const evs = evTexto ? JSON.parse(evTexto) : [];
-          if (!Array.isArray(evs) || evs.length === 0) continue;
-
-          distribuido.eventos += evs.length;
-          log.push(`[distribuído] ${nome}: ${evs.length} evento(s)`);
-
-          const r = await processarEventosIfood({
-            events: evs,
-            token: tokenLoja,
-            log,
-            merchantEsperado: loja.ifoodMerchantId,
-          });
-          distribuido.criados += r.created;
-          distribuido.atualizados += r.updated;
         } catch (e: any) {
           distribuido.erros++;
           log.push(`[distribuído] ${nome}: erro ${e?.message}`);
         }
+      }
+
+      if (adiadas > 0) {
+        log.push(`[distribuído] ${adiadas} loja(s) adiada(s) por tempo — entram na próxima rodada`);
       }
     } catch (e: any) {
       distribuido.erros++;

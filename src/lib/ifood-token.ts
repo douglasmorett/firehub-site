@@ -34,7 +34,7 @@
  * aconteceu do outro lado e repetir é seguro.
  */
 import { prisma } from "./prisma";
-import { getIfoodToken } from "./ifood-api";
+import { getIfoodToken, getTokenDaLojaIfood } from "./ifood-api";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
 
@@ -286,4 +286,109 @@ export async function lojasIfood(email: string) {
     merchantId: u.ifoodMerchantId,
     connected: u.ifoodConnected,
   }];
+}
+
+/**
+ * A LOJA da sessão — nunca o registro de quem está logado.
+ *
+ * Numa rede, o funcionário tem `ownerId` preenchido e a integração vive no
+ * franqueado. Gravar token e vínculo no registro de quem abriu a tela põe a
+ * credencial numa conta que o polling não lê: a loja fica "conectada" na tela
+ * e sem pedido nenhum na cozinha. `lojaAtivaDoAdmin` é o modo suporte, em que
+ * o ADMIN opera com a loja do cliente na tela.
+ */
+export async function lojaDaSessao(
+  email: string,
+  lojaAtivaDoAdmin?: string | null,
+): Promise<string | null> {
+  const u = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, role: true, ownerId: true },
+  });
+  if (!u) return null;
+  if (u.role === "ADMIN" && lojaAtivaDoAdmin && lojaAtivaDoAdmin !== "all") return lojaAtivaDoAdmin;
+  return u.ownerId || u.id;
+}
+
+/** Um token e as lojas iFood que ele pode puxar numa única chamada. */
+export type GrupoPolling = {
+  token: string;
+  origem: OrigemToken;
+  merchants: string[];
+};
+
+/**
+ * TODAS as lojas iFood de uma conta, agrupadas pelo token que as puxa.
+ *
+ * O polling sempre leu `User.ifoodMerchantId` — UM campo só. Quem integrou três
+ * lojas na mesma conta (Ragnar Burguer, Ragnar Pizza e Tadala Burguer, no mesmo
+ * login do iFood) via as três na tela de Integrações e pagava os +R$50 de cada
+ * adicional, mas só a que estava naquele campo recebia pedido. As outras duas
+ * ficavam mudas para sempre, sem nenhum erro em lugar nenhum.
+ *
+ * O agrupamento é POR TOKEN de propósito: quando a mesma autorização cobre
+ * várias lojas — o caso comum, um login do lojista com várias lojas — sai UMA
+ * chamada com todos os merchants no header, em vez de uma por loja (o iFood
+ * limita a frequência do polling, e três chamadas por minuto por conta é o
+ * caminho do 429). Loja com token próprio vira um grupo à parte.
+ */
+export async function gruposDePollingIfood(franchiseeId: string): Promise<GrupoPolling[]> {
+  const integracoes = await prisma.ifoodIntegration.findMany({
+    where: { userId: franchiseeId, active: true },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true, merchantId: true, accessToken: true, refreshToken: true,
+      tokenExpiresAt: true, clientId: true, clientSecret: true,
+    },
+  });
+
+  const porToken = new Map<string, GrupoPolling>();
+  const juntar = (token: string, origem: OrigemToken, merchantId: string) => {
+    const grupo = porToken.get(token) ?? { token, origem, merchants: [] };
+    if (!grupo.merchants.includes(merchantId)) grupo.merchants.push(merchantId);
+    porToken.set(token, grupo);
+  };
+
+  const vistos = new Set<string>();
+  const semTokenProprio: string[] = [];
+
+  for (const integ of integracoes) {
+    if (!integ.merchantId || vistos.has(integ.merchantId)) continue;
+    vistos.add(integ.merchantId);
+    const token = await tokenDaIntegracao(integ);
+    if (token) juntar(token, "integracao", integ.merchantId);
+    else semTokenProprio.push(integ.merchantId);
+  }
+
+  const u = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { ifoodMerchantId: true },
+  });
+  if (u?.ifoodMerchantId && !vistos.has(u.ifoodMerchantId)) {
+    vistos.add(u.ifoodMerchantId);
+    semTokenProprio.push(u.ifoodMerchantId);
+  }
+
+  if (semTokenProprio.length > 0) {
+    // Integração cadastrada pela tela (colando o Merchant ID) nasce SEM token:
+    // quem autorizou foi o login do lojista, e esse token mora no User. É o
+    // caminho normal de quem tem várias lojas no mesmo login do iFood.
+    //
+    // O `??` cai no getTokenDaLojaIfood de propósito: ele devolve o access
+    // token mesmo sem data de validade gravada, e há lojas antigas assim. Sem
+    // essa rede elas parariam de ser puxadas hoje.
+    const tokenUser = (await tokenDoUsuario(franchiseeId)) ?? (await getTokenDaLojaIfood(franchiseeId));
+    if (tokenUser) for (const m of semTokenProprio) juntar(tokenUser, "usuario", m);
+  }
+
+  // Loja RECÉM-AUTORIZADA: tem token e nenhuma loja iFood conhecida ainda. O
+  // grupo sai com a lista vazia mesmo — quem puxa a fila não filtra por
+  // merchant, e é o primeiro pedido que revela qual loja é. Devolver nada aqui
+  // era deixá-la fora do cron, esperando um vínculo que ninguém faria.
+  if (porToken.size === 0) {
+    const tokenUser = (await tokenDoUsuario(franchiseeId)) ?? (await getTokenDaLojaIfood(franchiseeId));
+    if (tokenUser) return [{ token: tokenUser, origem: "usuario", merchants: [] }];
+  }
+
+  return [...porToken.values()];
 }
