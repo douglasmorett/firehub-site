@@ -52,6 +52,10 @@ export async function GET() {
       ["KitchenItem", "stockItemId"], ["KitchenItem", "labelSize"],
       ["User", "labelFieldsConfig"], ["StockItem", "active"],
       ["MenuProduct", "priceSalao"], ["MenuProduct", "priceDelivery"],
+      // O carimbo de complemento. Sem ele na lista, o monitor dizia `esquema: ok`
+      // enquanto a coluna que decide o que aparece no cardapio podia nao existir —
+      // e a regra cairia calada na heuristica, em todas as telas de venda.
+      ["MenuProduct", "apenasEmCombo"],
       ["ComboGroupItem", "additionalPriceSalao"], ["ComboGroupItem", "additionalPriceDelivery"],
       // ── As 39 colunas garantidas por garantirColunasDoSchema() ──
       //
