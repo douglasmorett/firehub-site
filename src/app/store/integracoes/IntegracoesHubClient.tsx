@@ -212,6 +212,11 @@ export default function IntegracoesHubClient({
             setIfMerchant(data.merchantId);
             showToast(`🔍 Loja iFood descoberta: ${data.storeName || data.merchantId}${data.importedOrders > 0 ? ` — ${data.importedOrders} pedido(s) importado(s)!` : ""}`, "#10B981");
             setTimeout(() => window.location.reload(), 1500);
+          } else if (data.precisaEscolher && Array.isArray(data.candidatos)) {
+            // Mais de uma loja do iFood nesta conta: a tela pergunta em vez de
+            // ficar em silêncio. Antes, a loja simplesmente nunca recebia pedido
+            // e nada na tela dizia o porquê.
+            setCandidatosIfood(data.candidatos);
           }
         })
         .catch(() => {});
@@ -644,6 +649,10 @@ export default function IntegracoesHubClient({
 
   const [needsMerchantId, setNeedsMerchantId] = useState(false);
   const [merchantIdInput, setMerchantIdInput] = useState("");
+  // Lojas do iFood encontradas na fila quando a conta tem mais de uma. Só o
+  // lojista sabe qual é a dele — o sistema não pode chutar, porque merchant
+  // errado faz o pedido de uma loja cair no painel da outra.
+  const [candidatosIfood, setCandidatosIfood] = useState<{ merchantId: string; nome: string }[]>([]);
 
   const handleLinkAuthorizationCode = async () => {
     if (!authCodeInput.trim()) {
@@ -677,6 +686,37 @@ export default function IntegracoesHubClient({
       }
     } catch {
       showToast("Erro ao conectar com o iFood", "#EF4444");
+    } finally {
+      setConnectingAuthCode(false);
+    }
+  };
+
+  /**
+   * Vincula a loja do iFood que o lojista escolheu na lista de candidatas.
+   *
+   * Passa pela MESMA rota do UUID colado à mão, que já recusa merchant de outro
+   * dono — a lista é uma conveniência para ele não ter que caçar o UUID no
+   * portal, nunca um atalho que pula validação.
+   */
+  const handleEscolherMerchant = async (merchantId: string, nome: string) => {
+    setConnectingAuthCode(true);
+    try {
+      const res = await fetch("/api/ifood/auth/link-merchant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchantId }),
+      });
+      const data = await res.json();
+      if (res.ok && (data.success ?? true)) {
+        showToast(`🎉 ${nome || "Loja"} vinculada! Os pedidos vão começar a chegar.`, "#10B981");
+        setCandidatosIfood([]);
+        setIfMerchant(merchantId);
+        setTimeout(() => window.location.reload(), 900);
+      } else {
+        showToast(data.error || "Não consegui vincular esta loja", "#EF4444");
+      }
+    } catch {
+      showToast("Erro de rede ao vincular a loja", "#EF4444");
     } finally {
       setConnectingAuthCode(false);
     }
@@ -1585,6 +1625,54 @@ export default function IntegracoesHubClient({
                         <><Zap size={18} /> 1. Conectar e Autorizar no Portal iFood &rarr;</>
                       )}
                     </button>
+                  </div>
+                )}
+
+                {/* ─── ESCOLHA DA LOJA, quando a conta tem mais de uma ──────
+                    O lojista autoriza o app no portal e a conta dele pode ter
+                    duas lojas — e aí os pedidos das duas caem na mesma fila. O
+                    sistema se recusa a escolher (merchant errado joga o pedido
+                    de uma no painel da outra), e antes esse "não escolhi" era
+                    mudo: a loja ficava sem pedido nenhum, para sempre, sem nada
+                    na tela explicando. Agora ele vê os nomes e resolve num
+                    clique. */}
+                {candidatosIfood.length > 1 && (
+                  <div style={{ padding: "16px", borderRadius: 14, background: "#FFFBEB", border: "2px solid #FCD34D", marginBottom: "16px" }}>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 800, color: "#92400E", marginBottom: 4 }}>
+                      ⚠️ Achamos {candidatosIfood.length} lojas do iFood nesta conta
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#B45309", marginBottom: 12, lineHeight: 1.5 }}>
+                      Qual delas é <strong>esta</strong> loja do FireHub? Os pedidos só começam a
+                      entrar depois de você escolher — e é você quem sabe, porque escolher errado
+                      faria o pedido de uma loja aparecer no painel da outra.
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {candidatosIfood.map((c) => (
+                        <button
+                          key={c.merchantId}
+                          type="button"
+                          disabled={connectingAuthCode}
+                          onClick={() => handleEscolherMerchant(c.merchantId, c.nome)}
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                            padding: "12px 14px", borderRadius: 10, cursor: connectingAuthCode ? "wait" : "pointer",
+                            border: "1.5px solid #FCD34D", background: "#FFF", textAlign: "left", fontFamily: "inherit",
+                          }}
+                        >
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: "block", fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>
+                              {c.nome || "Loja sem nome"}
+                            </span>
+                            <span style={{ display: "block", fontSize: "0.7rem", color: "#94A3B8", fontFamily: "monospace" }}>
+                              {c.merchantId}
+                            </span>
+                          </span>
+                          <span style={{ flexShrink: 0, fontSize: "0.78rem", fontWeight: 800, color: "#B45309" }}>
+                            É esta →
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
