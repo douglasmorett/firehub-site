@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { orderByCardapio } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 
@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       orderBy: await orderByCardapio(),
       select: {
         id: true, name: true, description: true, price: true, priceTotem: true, imageUrl: true,
+        apenasEmCombo: true, priceSalao: true, priceDelivery: true,
         category: true, isCombo: true, isBeverage: true, tags: true, availableDays: true,
         comboConfig: true,
         comboGroups: {
@@ -90,8 +91,20 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Complemento não é item de cardápio em canal nenhum: quem escolhe um
+    // adicional faz isso DENTRO da pergunta do combo. O totem era o canal
+    // mais exposto — os 101 adicionais da Pastelaria da Paulista estão com
+    // `activeTotem` LIGADO, então apareciam todos como card de R$ 0,00 para
+    // o cliente final se servir sozinho.
+    //
+    // Calculado sobre `products` (cru), e não sobre `comPreco`: depois de
+    // resolver o preço do canal as colunas específicas somem do objeto, e a
+    // regra perde a informação de que o item tem preço em outro canal.
+    const complementos = idsSoDeOpcaoDeCombo(products as any[]);
+    const vendaveis = comPreco.filter((p: any) => !complementos.has(String(p.id)));
+
     return NextResponse.json({
-      products: comPreco,
+      products: vendaveis,
       categories: [...dbCategories, ...extras],
     });
   } catch (err) {

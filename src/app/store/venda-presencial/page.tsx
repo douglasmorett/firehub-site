@@ -121,6 +121,7 @@ export default function VendaPresencialPage() {
   const categories = useMemo(() => {
     const activeTodayProducts = products.filter(p => {
       if (p.active === false || p.activePDV === false) return false;
+      if (p.apenasOpcaoDeCombo === true) return false;
       if (!isAvailableToday(p, currentDayCode)) return false;
       if (isIntegrationItem(p)) return false;
       return true;
@@ -132,6 +133,15 @@ export default function VendaPresencialPage() {
   const filtered = products.filter(p => {
     if (p.active === false) return false;
     if (p.activePDV === false) return false;
+    // Complemento nunca é item avulso — vale aqui como vale na mesa. O
+    // servidor decide e manda a bandeira (menu-products com `?canal=`),
+    // porque só lá os quatro preços e o carimbo `apenasEmCombo` existem.
+    //
+    // Na Pastelaria da Paulista o balcão já não os mostrava, mas por
+    // coincidência do cadastro: os 101 adicionais dela estão com activePDV
+    // desligado. Loja que criar complemento sem desligar o PDV via todos
+    // eles como card de R$ 0,00.
+    if (p.apenasOpcaoDeCombo === true) return false;
     if (!isAvailableToday(p, currentDayCode)) return false;
     if (isIntegrationItem(p)) return false;
     const cat = p.isCombo ? "Combos" : (p.category || "Outros");

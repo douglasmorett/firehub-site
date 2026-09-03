@@ -119,12 +119,25 @@ export function disponivelHoje(availableDays: unknown, hoje = diaDaSemanaEmSaoPa
  * somava zero na comanda — o garçom achava que tinha lançado o adicional e o
  * cliente levava de graça.
  *
- * Três condições, e as três importam:
- *   1. alguém o usa como opção de combo;
- *   2. ele não tem grupos próprios — senão seria um combo vendável, e há
+ * ── Por que NÃO se exige mais que ele esteja dentro de um combo ────────────
+ *
+ * Exigia-se, e isso deixava passar o pior caso. Medido na Pastelaria da
+ * Paulista, em produção: dos 101 itens da categoria "Adicionais", só 55
+ * estavam vinculados a algum combo. Os outros 46 — "Catupiry", "Bacon",
+ * "Banana", "Cheddar" — não estavam em combo nenhum, escapavam da regra e
+ * viravam card de R$ 0,00 no cardápio do garçom. Era a queixa "esses
+ * complementos não têm que aparecer".
+ *
+ * E a condição nunca protegeu nada: um item sem preço em canal algum e sem
+ * grupo próprio NÃO PODE ser lançado numa comanda — somaria zero. Estar ou
+ * não dentro de um combo não muda isso.
+ *
+ * Duas condições, e as duas importam:
+ *   1. ele não tem grupos próprios — senão seria um combo vendável, e há
  *      combo de preço base R$ 0,00 cujo valor inteiro está nas opções (o
- *      "Nugget" da Hakim). Esse precisa continuar à venda;
- *   3. ele não tem preço em NENHUM canal — quem tem preço se vende sozinho,
+ *      "Nugget" da Hakim, e todo o cardápio da Paulista). Esse precisa
+ *      continuar à venda;
+ *   2. ele não tem preço em NENHUM canal — quem tem preço se vende sozinho,
  *      como a "Coca 500ml" que é item de cardápio E opção de combo.
  *
  * ── Por que a condição 3 olha os quatro preços ─────────────────────────────
@@ -168,24 +181,57 @@ function temPrecoEmAlgumCanal(p: any): boolean {
 }
 
 export function idsSoDeOpcaoDeCombo(produtos: any[]): Set<string> {
-  const usadosComoOpcao = new Set<string>();
-  for (const p of produtos || []) {
-    for (const grupo of p?.comboGroups || []) {
+  const naoVendaveis = new Set<string>();
+
+  // Quem é oferecido DENTRO da pergunta de algum combo deste cardápio.
+  const selecionadoEmCombo = new Set<string>();
+  for (const prod of produtos || []) {
+    for (const grupo of prod?.comboGroups || []) {
       for (const item of grupo?.items || []) {
         const id = item?.menuProduct?.id ?? item?.menuProductId;
-        if (id) usadosComoOpcao.add(String(id));
+        if (id) selecionadoEmCombo.add(String(id));
       }
     }
   }
 
-  const soOpcao = new Set<string>();
-  if (usadosComoOpcao.size === 0) return soOpcao;
-
   for (const p of produtos || []) {
-    if (!p?.id || !usadosComoOpcao.has(String(p.id))) continue;
+    if (!p?.id) continue;
+
+    // 1. O CARIMBO — a definição, e ela vence tudo.
+    //
+    // "Complemento é tudo aquilo que é criado e selecionado dentro do combo".
+    // Quem nasce pela pergunta do combo (MenuProductManager.criarOpcaoNaHora)
+    // sai carimbado, e continua complemento MESMO COM PREÇO — um adicional de
+    // R$ 3,00 não é item avulso.
+    if (p.apenasEmCombo === true) { naoVendaveis.add(String(p.id)); continue; }
+
+    // 2. Combo com pergunta própria: SEMPRE vendável.
+    //
+    // Preço R$ 0,00 aqui é normal e não quer dizer nada: no molde iFood o
+    // pastel é um combo de base zero e o valor sai da opção de tamanho. Todos
+    // os 143 itens da Pastelaria da Paulista são assim.
     if ((p.comboGroups || []).length > 0) continue;
-    if (temPrecoEmAlgumCanal(p)) continue;
-    soOpcao.add(String(p.id));
+
+    // 3. Cardápio ANTIGO, cadastrado antes do carimbo existir.
+    //
+    // Aqui não há como saber quem nasceu dentro do combo, então vale o que dá
+    // para observar: o item é oferecido dentro de alguma pergunta, OU está na
+    // categoria que o próprio cadastro usa para as opções ("Adicionais").
+    //
+    // A segunda metade não é preciosismo: dos 101 adicionais da Paulista, 46
+    // não estavam vinculados a combo nenhum — vieram soltos da importação — e
+    // eram justamente os que viravam card de R$ 0,00 na tela do garçom.
+    //
+    // O preço entra só como TRAVA DE SEGURANÇA, nunca como definição: item com
+    // preço próprio se vende sozinho (a "Coca 500ml" que é item de cardápio E
+    // opção de combo), então na dúvida ele APARECE. Errar mostrando um
+    // adicional custa uma linha feia na tela; errar escondendo custa venda.
+    const ehAdicionalPorCategoria =
+      String(p.category || "").trim().toLowerCase() === "adicionais";
+    const pareceOpcao = selecionadoEmCombo.has(String(p.id)) || ehAdicionalPorCategoria;
+
+    if (pareceOpcao && !temPrecoEmAlgumCanal(p)) naoVendaveis.add(String(p.id));
   }
-  return soOpcao;
+
+  return naoVendaveis;
 }

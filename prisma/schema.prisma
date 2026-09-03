@@ -155,6 +155,14 @@ model User {
   /// padrao. Json em User e o padrao da casa para config de loja
   /// (printerConfig, totemConfig, kdsScreens). Ausente = tudo ligado.
   labelFieldsConfig Json?
+
+  /// O que a loja quer ver na barra do painel de pedidos — filtros de canal e
+  /// botões de atalho. Mesma regra do `labelFieldsConfig`: Json em User, e
+  /// AUSENTE = TUDO LIGADO. Loja nova nasce com tudo aparecendo; esconder é
+  /// opcional e por loja, porque quem só faz delivery não quer "Mesas" e
+  /// "Pedidos Balcão" ocupando a barra o dia inteiro.
+  /// Formato: { "relogio": false, "filtroIfood": true, "botaoMesas": false, ... }
+  painelPedidosConfig Json?
   stockInvoices   StockInvoice[]
   menuCategories  MenuCategory[]
   routeSchedules  RouteSchedule[]
@@ -485,6 +493,11 @@ model MenuProduct {
   /// canal desliga na tela; o padrão é o cardápio inteiro em todo lugar.
   activeTotem     Boolean             @default(true)   // Disponível no Totem de autoatendimento
   activeGarcom    Boolean             @default(true)   // Disponível para o garçom (mesa)
+  /// Complemento: nasceu DENTRO da pergunta de um combo e nunca é item avulso.
+  /// O preço não serve de sinal — um adicional pode ter preço e ainda assim
+  /// não ser vendável sozinho. Carimbado na criação por MenuProductManager
+  /// (`criarOpcaoNaHora`); as telas de venda o escondem sempre.
+  apenasEmCombo   Boolean             @default(false)  // Só aparece dentro do combo
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   franchisee      User?               @relation(fields: [franchiseeId], references: [id])

@@ -204,6 +204,16 @@ export default function MesasPage() {
   const [loading, setLoading] = useState(true);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [menuCategories, setMenuCategories] = useState<string[]>([]);
+  /**
+   * Os itens que a tela escondeu por serem só opção de combo.
+   *
+   * Guardados, e não descartados, porque "sumiu do cardápio da mesa" era
+   * impossível de investigar: o garçom via um cardápio menor que o do balcão e
+   * ninguém tinha como saber o que faltava nem por quê. Agora a própria tela
+   * responde — e deixa lançar, para o caso de a loja querer vender o item.
+   */
+  const [menuOcultos, setMenuOcultos] = useState<(MenuItem & { motivo: string })[]>([]);
+  const [mostrarOcultos, setMostrarOcultos] = useState(false);
 
   // UI State
   const [selectedTable, setSelectedTable] = useState<TableItem | null>(null);
@@ -335,6 +345,18 @@ export default function MesasPage() {
             ? new Set(data.filter((p: any) => p.apenasOpcaoDeCombo).map((p: any) => String(p.id)))
             : idsSoDeOpcaoDeCombo(data);
 
+          const paraItem = (p: any) => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            category: p.isCombo ? "Combos" : (p.category || "Outros"),
+            isCombo: p.isCombo,
+            imageUrl: p.imageUrl || null,
+            comboGroups: p.comboGroups,
+            comboConfig: p.comboConfig,
+          });
+
+          // Vendáveis de verdade: o que passa por todos os filtros.
           const items = data
             .filter((p: any) => p.active !== false && !isIntegration(p))
             // O cadastro tem um interruptor por canal e esta tela era a única
@@ -342,17 +364,33 @@ export default function MesasPage() {
             // aparecendo aqui. Balcão já olha activePDV, totem já olha activeTotem.
             .filter((p: any) => p.activeGarcom !== false)
             .filter((p: any) => !soOpcaoDeCombo.has(String(p.id)))
-            .map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              price: p.price,
-              category: p.isCombo ? "Combos" : (p.category || "Outros"),
-              isCombo: p.isCombo,
-              imageUrl: p.imageUrl || null,
-              comboGroups: p.comboGroups,
-              comboConfig: p.comboConfig
-            }));
+            .map(paraItem);
           setMenuItems(items);
+
+          // ── TUDO que não entrou, e o motivo de cada um ──────────────────────
+          //
+          // Antes a tela só descartava. Quando a loja dizia "sumiu item do
+          // cardápio da mesa", não havia como saber qual nem por quê sem abrir o
+          // banco — e são quatro motivos diferentes, com consertos diferentes.
+          // Espelho de integração fica de fora da lista de propósito: aquilo
+          // nunca foi cardápio da loja e só faria ruído.
+          const motivoDeOcultar = (p: any): string | null => {
+            if (isIntegration(p)) return null;
+            if (p.active === false) return "pausado no cardápio";
+            if (p.activeGarcom === false) return "desligado para o garçom no cadastro";
+            if (p.apenasEmCombo === true) return "complemento de combo — aparece dentro da pergunta do combo";
+            if (soOpcaoDeCombo.has(String(p.id))) return "sem preço em nenhum canal — não dá para lançar na comanda";
+            return null;
+          };
+
+          setMenuOcultos(
+            data
+              .map((p: any) => {
+                const motivo = motivoDeOcultar(p);
+                return motivo ? { ...paraItem(p), motivo } : null;
+              })
+              .filter(Boolean) as (MenuItem & { motivo: string })[]
+          );
           const cats = ["Todos", ...Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros")))];
           setMenuCategories(cats as string[]);
         }
@@ -1014,6 +1052,57 @@ export default function MesasPage() {
                 }}>{cat}</button>
               ))}
             </div>
+
+            {/* ── O que a tela escondeu, e por quê ─────────────────────────
+                Sem isto o garçom via um cardápio menor que o do balcão e não
+                tinha como saber o que faltava — a queixa chegava como "sumiu
+                item da mesa" e ninguém conseguia investigar. Agora a tela
+                responde sozinha, e deixa lançar se a loja quiser vender. */}
+            {menuOcultos.length > 0 && (
+              <button
+                onClick={() => setMostrarOcultos(v => !v)}
+                style={{
+                  marginTop: 6, padding: "5px 10px", borderRadius: 8,
+                  border: "1px solid #E2E8F0", background: mostrarOcultos ? "#FEF3C7" : "#F8FAFC",
+                  color: "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  fontFamily: "inherit", width: "100%", textAlign: "left",
+                }}
+              >
+                {mostrarOcultos ? "▾" : "▸"} {menuOcultos.length} {menuOcultos.length === 1 ? "item do cardápio não aparece aqui" : "itens do cardápio não aparecem aqui"}
+                <span style={{ fontWeight: 500 }}> — toque para ver quais e por quê</span>
+              </button>
+            )}
+
+            {mostrarOcultos && menuOcultos.length > 0 && (
+              <div style={{ marginTop: 6, padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8 }}>
+                {Array.from(new Set(menuOcultos.map(o => o.motivo))).map(motivo => {
+                  const doMotivo = menuOcultos.filter(o => o.motivo === motivo);
+                  const conserto =
+                    motivo.startsWith("pausado")
+                      ? "Conserto: reativar o item no cardápio."
+                      : motivo.startsWith("desligado")
+                        ? "Conserto: ligar o interruptor do garçom no cadastro do item."
+                        : motivo.startsWith("complemento")
+                        ? "Isto é o certo: complemento não se vende avulso. Se for um item de verdade, recadastre fora do combo."
+                        : "Conserto: dar um preço de salão ao item. Sem preço ele somaria R$ 0,00 na comanda — por isso só aparece como opção dentro do combo.";
+                  return (
+                    <div key={motivo} style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#92400E" }}>
+                        {doMotivo.length} {doMotivo.length === 1 ? "item" : "itens"} — {motivo}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: "#B45309", marginBottom: 5 }}>{conserto}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {doMotivo.map(o => (
+                          <span key={o.id} style={{ fontSize: 11, background: "#fff", border: "1px solid #FDE68A", borderRadius: 6, padding: "3px 7px", color: "#92400E" }}>
+                            {o.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* ─── QUEM ESTÁ PEDINDO ───────────────────────────────────────

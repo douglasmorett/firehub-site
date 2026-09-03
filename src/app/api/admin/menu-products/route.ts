@@ -198,6 +198,7 @@ export async function GET(req: NextRequest) {
       priceSalao: true, priceDelivery: true, priceTotem: true,
       imageUrl: true, active: true, isCombo: true, isBeverage: true,
       activePDV: true, activeDelivery: true, activeTotem: true, activeGarcom: true,
+      apenasEmCombo: true,
       cost: true, tags: true, availableDays: true, description: true,
       comboConfig: true,
       comboGroups: {
