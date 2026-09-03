@@ -32,6 +32,7 @@ interface Order {
   source: string | null;
   notes: string | null;
   ifoodReference: string | null;
+  ifoodStoreName?: string | null;
   openDeliveryReference: string | null;
   kdsStage: string | null;
   kdsStationId: string | null;
@@ -93,8 +94,13 @@ function getSourceInfo(order: Order): {
   const src = (order.source || "").toLowerCase();
   const ref = order.ifoodReference || order.openDeliveryReference;
   const refStr = ref ? ` #${ref}` : "";
-  if (src.includes("ifood"))
-    return { label: `iFood${refStr}`, color: "#fff", bg: "#EA1D2C" };
+  if (src.includes("ifood")) {
+    // Com mais de uma loja iFood na conta, o nome dela entra no selo: a cozinha
+    // precisa saber que aquele pedido é da Ragnar Pizza, e não da Ragnar
+    // Burguer. Numa loja só o campo vem vazio e o selo sai como sempre saiu.
+    const loja = (order.ifoodStoreName || "").trim();
+    return { label: loja ? `iFood${refStr} · ${loja}` : `iFood${refStr}`, color: "#fff", bg: "#EA1D2C" };
+  }
   if (src.includes("jotaja") || src.includes("jotajá"))
     return { label: `Jotajá${refStr}`, color: "#fff", bg: "#7c3aed" };
   return { label: `Online${refStr}`, color: "#fff", bg: "#2563EB" };

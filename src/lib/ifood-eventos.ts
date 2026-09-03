@@ -91,6 +91,64 @@ export async function puxarEventosIfood(opts: {
   return { eventos, naoAutorizados };
 }
 
+/**
+ * O nome da loja iFood de onde veio o pedido — e, de quebra, conserta o rótulo
+ * da integração.
+ *
+ * Duas coisas que só o detalhe do pedido resolve:
+ *
+ * 1. `orderData.merchant.name` é o nome como a loja aparece no app do iFood
+ *    ("Ragnar Pizza"). É a ÚNICA fonte: este aplicativo tem só `order` e
+ *    `events` por loja, então pedir o detalhe do merchant volta 403 e a
+ *    listagem volta `200 []`.
+ *
+ * 2. A integração costuma nascer com o nome do cadastro do FireHub, porque na
+ *    hora de cadastrar não há pedido de onde tirar o nome real. Três lojas
+ *    escritas "PIETRO CUNHA ROCHA 01797511238" na tela não distinguem nada.
+ *
+ * Fica aqui, e não no cron, porque quem importa pedido durante o movimento é o
+ * polling do painel aberto (a cada 5s) — o cron de 60s quase nunca ganha a
+ * corrida. Deixar a correção só lá significava, na prática, nunca corrigir.
+ */
+export async function nomeDaLojaDoPedidoIfood(opts: {
+  franchiseeId: string;
+  merchantId?: string | null;
+  orderData: any;
+}): Promise<string | null> {
+  const nome = String(opts.orderData?.merchant?.name || "").trim();
+  if (!nome) return null;
+
+  if (opts.merchantId) {
+    try {
+      const integ = await prisma.ifoodIntegration.findFirst({
+        where: { userId: opts.franchiseeId, merchantId: opts.merchantId },
+        select: { id: true, label: true },
+      });
+      if (integ && (integ.label || "").trim() !== nome) {
+        const atual = (integ.label || "").trim();
+        const generico =
+          !atual || /^loja principal$/i.test(atual) || /^loja ifood/i.test(atual);
+        // Só troca o que não identifica a loja: o nome do cadastro repetido em
+        // todas, um placeholder, ou vazio. Nome já bom fica como está.
+        const loja = await prisma.user.findUnique({
+          where: { id: opts.franchiseeId },
+          select: { storeName: true, name: true },
+        });
+        const doCadastro =
+          atual === (loja?.storeName || "").trim() || atual === (loja?.name || "").trim();
+        if (generico || doCadastro) {
+          await prisma.ifoodIntegration.update({ where: { id: integ.id }, data: { label: nome } });
+          console.log(`[iFood] Rótulo de ${opts.merchantId} corrigido para "${nome}".`);
+        }
+      }
+    } catch {
+      // Nunca pode derrubar a importação de um pedido.
+    }
+  }
+
+  return nome;
+}
+
 export async function processarEventosIfood(opts: {
   events: any[];
   token: string;
@@ -487,6 +545,13 @@ export async function processarEventosIfood(opts: {
           // trava de ifoodOrderId único e o número dele ficava queimado. Buraco
           // na sequência, que o lojista lê como "sumiu um pedido".
           //
+          // De qual loja iFood veio — a conta pode ter várias no mesmo painel.
+          const nomeDaLoja = await nomeDaLojaDoPedidoIfood({
+            franchiseeId: eventFranchisee.id,
+            merchantId: eventMerchantId,
+            orderData,
+          });
+
           // Agora número e pedido nascem na MESMA transação: se a gravação falhar
           // — inclusive por duplicidade — o contador volta atrás junto.
           await prisma.$transaction(async (tx) => {
@@ -497,6 +562,8 @@ export async function processarEventosIfood(opts: {
               franchiseeId: eventFranchisee.id,
               dailyOrderNumber: numeroDoDia,
               ifoodOrderId: orderId,
+              ifoodStoreName: nomeDaLoja ?? undefined,
+              ifoodStoreMerchant: eventMerchantId ?? undefined,
               ifoodReference: orderData.displayId ?? undefined,
               ifoodPickupCode: ifoodPickupCode ?? undefined,
               scheduledDatetime: scheduledDatetime ?? deliveryDeadline,

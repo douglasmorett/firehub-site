@@ -537,6 +537,21 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 ? "🖥️ Totem"
                 : "Online"}
             </span>
+
+            {/* DE QUAL loja iFood veio, logo abaixo do selo.
+                Só aparece quando a conta tem mais de uma loja conectada — numa
+                loja só seria ruído repetido em todo pedido. Sem isto, três
+                marcas caem no mesmo painel indistinguíveis: o dono olhou um
+                pedido da Ragnar Pizza que tinha acabado de entrar e concluiu
+                que não tinha entrado. */}
+            {order.source === "IFOOD" && (order as any).ifoodStoreName && (
+              <span style={{
+                padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800,
+                background: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA",
+              }}>
+                🏪 {(order as any).ifoodStoreName}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1223,7 +1238,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // Drag state
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
-  const [weather, setWeather] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   // Default date — will be overridden by cash session openedAt if available
   const _now = new Date();
@@ -1348,6 +1362,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       changeAmount: order.changeAmount,
       ifoodReference: order.ifoodReference,
       ifoodPickupCode: order.ifoodPickupCode,
+      // A loja de origem tem que chegar na comanda: com três marcas na mesma
+      // impressora, o papel precisa dizer de qual delas é o pedido.
+      ifoodStoreName: (order as any).ifoodStoreName,
       openDeliveryReference: order.openDeliveryReference,
       source: order.source,
       notes: order.notes,
@@ -1407,21 +1424,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
-
-  // Weather fetch
-  useEffect(() => {
-    const fetchWeather = async () => {
-      try {
-        const latLng = user.storeLatLng as any;
-        const weatherUrl = latLng?.lat ? `/api/weather?lat=${latLng.lat}&lng=${latLng.lng}` : `/api/weather?city=${encodeURIComponent(user.city || user.storeAddress?.split(",").pop()?.trim() || "Sa\u0303o Paulo")}`;
-        const res = await fetch(weatherUrl);
-        if (res.ok) setWeather(await res.json());
-      } catch {}
-    };
-    fetchWeather();
-    const wt = setInterval(fetchWeather, 10 * 60 * 1000);
-    return () => clearInterval(wt);
-  }, [user.city, user.storeAddress, (user.storeLatLng as any)?.lat]);
 
   // FAST POLLING — 3s via lightweight API (pauses during drag)
   const isDraggingRef = useRef(false);
@@ -3842,41 +3844,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             </div>
 
-            {/* Weather + Clock — right aligned */}
+            {/* Relógio — o painel de pedidos é tela de operação, e a régua de
+                clima (temperatura, umidade, vento e previsão de dois dias)
+                ocupava a faixa toda sem ajudar em nada a despachar pedido.
+                Removida a pedido do dono. A cidade saía do clima, então some
+                junto; o relógio fica, que esse a operação usa. */}
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
-              {weather && (
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#F0F9FF", padding: "0.3rem 0.7rem", borderRadius: "10px", border: "1px solid #BAE6FD" }}>
-                  <span style={{ fontSize: "1.2rem" }}>{weather.current.icon}</span>
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>{weather.current.temp}°</span>
-                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>{weather.current.text}</span>
-                  </div>
-                  <div style={{ width: "1px", height: "22px", background: "#CBD5E1" }} />
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>💧 {weather.current.humidity}%</span>
-                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>💨 {weather.current.wind} km/h</span>
-                  </div>
-                  {weather.forecast?.length > 0 && (
-                    <>
-                      <div style={{ width: "1px", height: "22px", background: "#CBD5E1" }} />
-                      <div style={{ display: "flex", gap: "0.4rem" }}>
-                        {weather.forecast.map((f: any, i: number) => (
-                          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.2 }}>
-                            <span style={{ fontSize: "0.55rem", color: "#94A3B8" }}>
-                              {new Date(f.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
-                            </span>
-                            <span style={{ fontSize: "0.8rem" }}>{f.icon}</span>
-                            <span style={{ fontSize: "0.55rem", color: "#0F172A", fontWeight: 600 }}>{f.tempMax}°/{f.tempMin}°</span>
-                            {f.rainChance > 20 && <span style={{ fontSize: "0.5rem", color: "#3B82F6" }}>🌧 {f.rainChance}%</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                <span style={{ fontSize: "0.72rem", color: "#64748B" }}>{weather?.city || user.city || ""}{weather?.state ? `/${weather.state}` : ""}</span>
                 <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
                   <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "#0F172A" }}>
                     {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}

@@ -517,6 +517,9 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "showAddressOnMenu" BOOLEAN NOT NULL DEFAULT true`,
 
   // ── CustomerOrder — o caminho mais quente do sistema ──
+  // De qual loja iFood veio o pedido — conta com várias lojas no mesmo painel.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreName" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreMerchant" TEXT`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "gaClientId" TEXT`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "gaSessionId" TEXT`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "acceptedAt" TIMESTAMP(3)`,

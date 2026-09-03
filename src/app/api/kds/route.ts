@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
           source: true,
           notes: true,
           ifoodReference: true,
+          ifoodStoreName: true,
           openDeliveryReference: true,
           isRoutePriority: true,
           routeId: true,
