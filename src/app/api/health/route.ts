@@ -53,6 +53,36 @@ export async function GET() {
       ["User", "labelFieldsConfig"], ["StockItem", "active"],
       ["MenuProduct", "priceSalao"], ["MenuProduct", "priceDelivery"],
       ["ComboGroupItem", "additionalPriceSalao"], ["ComboGroupItem", "additionalPriceDelivery"],
+      // ── As 39 colunas garantidas por garantirColunasDoSchema() ──
+      //
+      // Esta lista existia com 12 pares e dizia `esquema: ok` enquanto faltava
+      // coluna que derruba cardápio e pedido: ela só olhava para o que alguém
+      // tinha lembrado de escrever aqui. Um buraco que o próprio monitor não vê
+      // é pior que buraco nenhum, porque compra confiança que não existe.
+      //
+      // Quem mexer no schema.prisma acrescenta o par AQUI e a instrução em
+      // src/lib/garantir-colunas.ts, no MESMO commit.
+      ["User", "gaMeasurementId"], ["User", "gaApiSecret"],
+      ["User", "gtmContainerId"], ["User", "etaConfig"],
+      ["User", "onboardingData"], ["User", "metaIaSemanaReferencia"],
+      ["User", "metaIaGeracoesUsadas"], ["User", "showAddressOnMenu"],
+      ["CustomerOrder", "gaClientId"], ["CustomerOrder", "gaSessionId"],
+      ["CustomerOrder", "acceptedAt"], ["CustomerOrder", "readyAt"],
+      ["CustomerOrder", "dispatchedAt"], ["CustomerOrder", "deliveredAt"],
+      ["CustomerOrder", "ifoodDropCodeAt"], ["CustomerOrder", "ifoodDropCodeRequired"],
+      ["CustomerOrder", "posOrderId"], ["CustomerOrder", "posTerminalId"],
+      ["CustomerOrder", "posStatus"], ["CustomerOrder", "posDadosTransacao"],
+      ["CustomerOrder", "posTentativas"], ["CustomerOrder", "tableSessionId"],
+      ["CustomerOrderItem", "notes"], ["CustomerOrderItem", "tableGuestId"],
+      ["MenuProduct", "sortOrder"], ["ComboGroup", "minQty"],
+      ["ComboGroupItem", "maxPerItem"], ["ComboGroupItem", "optionNote"],
+      ["StoreCustomer", "birthDate"], ["TotemLicense", "posTerminalId"],
+      ["Ambassador", "parentAmbassadorId"], ["Ambassador", "linkedUserId"],
+      ["Ambassador", "level2Percent"],
+      ["TableSession", "waiterId"], ["TableSession", "waiterTip"],
+      ["TableSession", "waiterCommission"],
+      ["PosTerminal", "deviceToken"], ["PosTerminal", "lastSeenAt"],
+      ["PosTerminal", "appVersion"],
     ];
     const cols = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
       SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
@@ -61,12 +91,22 @@ export async function GET() {
     const tem = new Set(cols.map((c) => `${c.tabela}.${c.coluna}`));
     const faltando = ESPERADAS.filter(([t, c]) => !tem.has(`${t}.${c}`)).map(([t, c]) => `${t}.${c}`);
 
+    // Tabelas inteiras que podem faltar. A lista da consulta e a da
+    // conferencia eram duas — mexer numa e esquecer a outra passava batido.
+    // Agora e uma so, e a consulta traz tudo para o Set filtrar aqui.
+    const TABELAS_ESPERADAS = [
+      "StockLot", "CashMovement",
+      // Nasceram entre 15/08 e 03/09/2026 e nao tem CREATE TABLE em lugar
+      // nenhum: se faltarem, quem conserta e gente rodando o push, nao o boot.
+      "Table", "TableSession", "TableGuest", "Waiter",
+      "PosTerminal", "DailyOrderCounter", "ChatbotConversationState",
+    ];
     const tabelas = await prisma.$queryRaw<{ t: string }[]>`
       SELECT table_name AS t FROM information_schema.tables
-      WHERE table_schema = current_schema() AND table_name IN ('StockLot', 'CashMovement')
+      WHERE table_schema = current_schema()
     `;
     const temTabela = new Set(tabelas.map((r) => r.t));
-    for (const t of ["StockLot", "CashMovement"]) if (!temTabela.has(t)) faltando.push(`tabela ${t}`);
+    for (const t of TABELAS_ESPERADAS) if (!temTabela.has(t)) faltando.push(`tabela ${t}`);
 
     esquema = { ok: faltando.length === 0, faltando };
   } catch (e: any) {
