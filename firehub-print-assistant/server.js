@@ -634,6 +634,13 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     ? `(${seqNumStr}) ${deliveryTypeTag}  ${refTag}`.trim()
     : `${deliveryTypeTag}  ${refTag}`.trim();
 
+  // DE QUAL loja iFood veio, quando a conta tem mais de uma no mesmo painel.
+  // O servidor so manda `ifoodStoreName` nesse caso — numa loja so o campo vem
+  // vazio e a comanda sai exatamente como sempre saiu. Sem isto, a comanda da
+  // Ragnar Pizza e a da Ragnar Burguer sao identicas e o atendente nao sabe em
+  // qual saco vai.
+  const lojaOrigem = (order.ifoodStoreName || "").toString().trim();
+
   const dByStr = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
   const srcStr = (order.source || "").toString().toUpperCase();
   const odChannelStr = (order.openDeliveryChannel || "").toString().toUpperCase();
@@ -681,6 +688,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const pCode = order.ifoodPickupCode || order.openDeliveryPickupCode || "";
 
   res += DOUBLE_HEIGHT + BOLD_ON + centerLine(headerLine) + BOLD_OFF + DOUBLE_OFF;
+  // Logo abaixo do numero, em destaque: e a primeira coisa que a cozinha
+  // precisa saber quando a mesma impressora recebe tres marcas.
+  if (lojaOrigem) {
+    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(cleanAscii(lojaOrigem).toUpperCase()) + BOLD_OFF + DOUBLE_OFF;
+  }
   if (isPartnerDriver) {
     res += DOUBLE_HEIGHT + centerLine(`*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***`)
          + centerLine("NAO USAR MOTOBOY DA LOJA!") + DOUBLE_OFF;

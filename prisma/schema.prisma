@@ -632,6 +632,18 @@ model CustomerOrder {
   // === IFOOD ===
   ifoodOrderId        String?  @unique   // ID do pedido no iFood (idempotência)
   ifoodReference      String?            // Número de exibição do pedido no iFood (#ABC123)
+  /// DE QUAL loja iFood veio o pedido, quando a conta tem mais de uma.
+  ///
+  /// A Ragnar tem Ragnar Burguer, Ragnar Pizza e Tadala Burguer no mesmo
+  /// painel. Sem isto, todo pedido chega marcado só como "iFood" e é
+  /// indistinguível: o lojista olhou um pedido da Pizza que tinha acabado de
+  /// entrar e concluiu que não tinha entrado. Na cozinha é pior — o atendente
+  /// não sabe em qual saco vai.
+  ///
+  /// Guarda o NOME (não só o id) de propósito: a tela e a comanda imprimem
+  /// direto, sem join, e o dado sobrevive à remoção da integração.
+  ifoodStoreName      String?            // "Ragnar Pizza"
+  ifoodStoreMerchant  String?            // UUID da loja de origem, para filtro e conferência
   scheduledDatetime   DateTime?          // Cen1: Data/hora agendada (SCHEDULED orders)
   changeAmount        Float?             // Cen5: Valor do troco (pagamento em dinheiro)
   customerCpfCnpj     String?            // Cen5: CPF/CNPJ do cliente para NF

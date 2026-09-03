@@ -1647,6 +1647,18 @@ export default function IntegracoesHubClient({
                           <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{integ.label || `Loja iFood (${integ.merchantId.slice(0, 6)})`}</div>
                           <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>{integ.merchantId}</div>
                         </div>
+                        {/* O selo de estado vem ANTES do preço, e é o mesmo da
+                            integração principal. Mostrar só "+R$50/mês" fazia a
+                            loja adicional parecer uma cobrança em vez de uma
+                            loja funcionando — e não dizia o que o lojista mais
+                            quer saber olhando aqui: se ela está recebendo. */}
+                        <span style={{
+                          fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
+                          background: integ.active ? "#DCFCE7" : "#F1F5F9",
+                          color: integ.active ? "#15803D" : "#64748B",
+                        }}>
+                          {integ.active ? "🟢 Ativa" : "⚪ Inativa"}
+                        </span>
                         <span style={{
                           fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
                           background: "#FEF3C7", color: "#92400E",

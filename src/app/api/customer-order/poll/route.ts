@@ -431,6 +431,21 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   return generateDailyOrderNumber(eventFranchisee.id);
                 })(),
                 ifoodOrderId: orderId,
+                // De qual loja iFood veio, e o conserto do rótulo da integração
+                // — este é o caminho que roda durante o movimento (5s), então é
+                // aqui que a correção precisa acontecer para valer na prática.
+                ...(await (async () => {
+                  const { nomeDaLojaDoPedidoIfood } = await import("@/lib/ifood-eventos");
+                  const nome = await nomeDaLojaDoPedidoIfood({
+                    franchiseeId: eventFranchisee.id,
+                    merchantId: eventMerchantId,
+                    orderData,
+                  });
+                  return {
+                    ifoodStoreName: nome ?? undefined,
+                    ifoodStoreMerchant: eventMerchantId ?? undefined,
+                  };
+                })()),
                 ifoodReference: orderData.displayId ?? undefined,
                 scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
                 changeAmount,
@@ -898,6 +913,7 @@ export async function GET(req: NextRequest) {
         motoboyId: true, motoboyFee: true,
         isRoutePriority: true, routeId: true, tableSessionId: true,
         ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
+        ifoodStoreName: true, ifoodStoreMerchant: true,
         ifoodDriverName: true, ifoodDriverPhone: true,
         ifoodDriverStatus: true, ifoodDriverRequestedAt: true,
         openDeliveryOrderId: true, openDeliveryReference: true, openDeliveryChannel: true,

@@ -219,6 +219,11 @@ async function printToDevice(
           discountDetails: (order as any).discountDetails,
           changeAmount: (order as any).changeAmount,
           ifoodReference: (order as any).ifoodReference,
+          // DE QUAL loja iFood veio, quando a conta tem mais de uma. Sem isto a
+          // comanda de Ragnar Pizza sai idêntica à de Ragnar Burguer e o
+          // atendente não sabe em qual saco vai. Assistente antigo ignora campo
+          // que não conhece, então quem não atualizou imprime como sempre.
+          ifoodStoreName: (order as any).ifoodStoreName,
           openDeliveryReference: (order as any).openDeliveryReference,
           // Quem entrega, decidido AQUI. O payload não mandava `deliveryBy`:
           // no Assistente o campo chegava vazio e sobrava o código de coleta
