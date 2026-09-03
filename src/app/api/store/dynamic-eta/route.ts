@@ -42,13 +42,28 @@ export async function GET(req: NextRequest) {
     const urlToken = req.nextUrl.searchParams.get("token") || req.headers.get("x-store-token");
     let tokenUser: any = null;
     if (urlToken) {
-      // O token aceita SOMENTE o id (cuid). Antes aceitava tambem o e-mail e o
-      // ifoodMerchantId: quem soubesse o e-mail da loja lia o movimento dela.
-      // A extensao ja envia user.id (popup.js grava data.token = user.id).
-      tokenUser = await prisma.user.findFirst({
-        where: { id: urlToken },
-        select: { id: true, name: true, ownerId: true, email: true },
-      });
+      // Existem DOIS formatos de token vivos na rua: o id cru (extensões
+      // instaladas antes da assinatura) e o `id.assinatura` que
+      // /api/store/extensao-login emite hoje. Esta rota comparava o token
+      // inteiro com o id, então SÓ o formato antigo passava — e /eta-config,
+      // que exige assinatura para gravar, só aceita o novo. Resultado: não
+      // existia um token que servisse nas duas rotas.
+      //
+      // Quem estava com o token antigo lia o ETA mas NÃO conseguia salvar a
+      // quantidade de motoboys: o número mudava na tela, o servidor seguia com
+      // o valor velho e a loja aparecia em ESTOURO o dia inteiro. Quem
+      // relogasse para consertar isso perdia a rota inteira com 401.
+      //
+      // Aqui é LEITURA, então os dois formatos passam. Escrita continua
+      // exigindo assinatura, em /eta-config.
+      const { lerTokenDeExtensao } = await import("@/lib/extensao-token");
+      const leitura = lerTokenDeExtensao(urlToken);
+      if (leitura.valido) {
+        tokenUser = await prisma.user.findFirst({
+          where: { id: leitura.userId },
+          select: { id: true, name: true, ownerId: true, email: true },
+        });
+      }
     }
 
     const hakimUser = null; // Removing Hakim fallback completely to enforce tenant isolation
