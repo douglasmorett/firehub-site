@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
-import { SEM_PRODUTO_DE_INTEGRACAO } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
@@ -198,6 +198,7 @@ export async function GET(req: NextRequest) {
       priceSalao: true, priceDelivery: true, priceTotem: true,
       imageUrl: true, active: true, isCombo: true, isBeverage: true,
       activePDV: true, activeDelivery: true, activeTotem: true, activeGarcom: true,
+      apenasEmCombo: true,
       cost: true, tags: true, availableDays: true, description: true,
       comboConfig: true,
       comboGroups: {
@@ -226,7 +227,22 @@ export async function GET(req: NextRequest) {
   // typo não virar preço errado em silêncio.
   const canal = req.nextUrl.searchParams.get("canal");
   if (canal === "salao" || canal === "delivery" || canal === "totem") {
-    return NextResponse.json(aplicarPrecoNoCardapio(products as any[], canal));
+    // ── Quem é só opção de combo se decide AQUI, com os preços crus ──────────
+    //
+    // A tela de venda não tem como calcular isso sozinha: o payload que ela
+    // recebe já teve `price` trocado pelo preço do canal e as colunas
+    // específicas removidas. Um item precificado só no delivery chega ao salão
+    // como `price: 0` e a tela o classificava como adicional — sumia da mesa
+    // sem nada dizer por quê. Foi a queixa da Pastelaria da Paulista, onde 120
+    // dos 142 itens têm preço base zero.
+    //
+    // Nesta linha os quatro preços ainda existem, então a resposta é a certa. A
+    // tela só precisa ler a bandeira.
+    const soOpcao = idsSoDeOpcaoDeCombo(products as any[]);
+    const comPreco = aplicarPrecoNoCardapio(products as any[], canal);
+    return NextResponse.json(
+      comPreco.map((p: any) => ({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }))
+    );
   }
 
   return NextResponse.json(products);

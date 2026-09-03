@@ -35,6 +35,11 @@ const INSTRUCOES = [
   // A OPÇÃO do combo também tem preço por canal. Quem modela o cardápio como o
   // iFood e o Anota AI põe o preço na opção de tamanho, e o produto fica com
   // preço base zero — nessas lojas as três colunas acima não alcançam nada.
+  // Complemento carimbado na criação, dentro da pergunta do combo. Sem esta
+  // coluna o sistema volta a adivinhar pelo preço — e adivinhava errado nos
+  // dois sentidos: escondia pastel sem preço de salão e mostrava adicional
+  // com preço como se fosse item avulso.
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "apenasEmCombo" BOOLEAN DEFAULT false`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
@@ -45,10 +50,56 @@ const ESPERADAS = [
   "MenuProduct.priceSalao",
   "MenuProduct.priceDelivery",
   "MenuProduct.priceTotem",
+  "MenuProduct.apenasEmCombo",
   "ComboGroupItem.additionalPriceSalao",
   "ComboGroupItem.additionalPriceDelivery",
   "ComboGroupItem.additionalPriceTotem",
 ];
+
+/**
+ * Carimba de uma vez os complementos que já existiam antes da coluna.
+ *
+ * O `apenasEmCombo` só é preenchido na criação, pela pergunta do combo. Todo
+ * cardápio cadastrado antes dele nasce `false` — e aí a classificação volta a
+ * depender de heurística em tempo de leitura, em toda tela, para sempre.
+ *
+ * Este UPDATE congela a classificação nos dados, uma vez, usando exatamente o
+ * que a heurística de `cardapio-interno.ts` já decide hoje: item SEM pergunta
+ * própria, SEM preço em canal nenhum, e que ou é oferecido dentro de algum
+ * combo ou está na categoria que o cadastro usa para as opções.
+ *
+ * ── O que ele NÃO toca, e é o ponto ────────────────────────────────────────
+ *
+ * Combo com pergunta própria fica de fora pelo `NOT EXISTS` em ComboGroup.
+ * Isso é o que protege o cardápio no molde iFood, onde o pastel é um combo de
+ * preço base R$ 0,00 e o valor sai da opção de tamanho — preço zero ali é
+ * normal e não quer dizer complemento nenhum.
+ *
+ * ── Por que roda a cada boot sem estragar nada ─────────────────────────────
+ *
+ * O `= false` no WHERE faz a segunda execução casar zero linhas: quem já foi
+ * carimbado sai do alcance. O corte por `createdAt` garante que item novo
+ * nunca seja carimbado por aqui — quem nasce dentro do combo já vem com o
+ * carimbo, e quem nasce fora não deve receber.
+ *
+ * RESSALVA para quem for mexer: no dia em que a tela permitir DESmarcar um
+ * complemento, este UPDATE precisa de um guarda de verdade (uma marca de
+ * migração já executada), senão o próximo boot desfaz a escolha do lojista.
+ */
+const CARIMBO_DE_COMPLEMENTO = `
+  UPDATE "MenuProduct" p SET "apenasEmCombo" = true
+  WHERE p."apenasEmCombo" = false
+    AND p."createdAt" < TIMESTAMP '2026-09-04 00:00:00'
+    AND NOT EXISTS (SELECT 1 FROM "ComboGroup" g WHERE g."menuProductId" = p."id")
+    AND COALESCE(p."price", 0) <= 0
+    AND COALESCE(p."priceSalao", 0) <= 0
+    AND COALESCE(p."priceDelivery", 0) <= 0
+    AND COALESCE(p."priceTotem", 0) <= 0
+    AND (
+      LOWER(TRIM(COALESCE(p."category", ''))) = 'adicionais'
+      OR EXISTS (SELECT 1 FROM "ComboGroupItem" i WHERE i."menuProductId" = p."id")
+    )
+`;
 
 export async function garantirColunasDePreco(): Promise<void> {
   // Ambiente sem banco de verdade (dev local usa .env higienizado): não há o
@@ -65,11 +116,17 @@ export async function garantirColunasDePreco(): Promise<void> {
         await prisma.$executeRawUnsafe(sql);
       }
 
+      // Depois das colunas existirem, e nunca antes.
+      const carimbados = await prisma.$executeRawUnsafe(CARIMBO_DE_COMPLEMENTO);
+      if (Number(carimbados) > 0) {
+        console.log(`[Boot] ${carimbados} complemento(s) antigo(s) carimbados com apenasEmCombo.`);
+      }
+
       const rows = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
         WHERE table_name IN ('MenuProduct', 'ComboGroupItem')
           AND column_name IN (
-            'priceSalao', 'priceDelivery', 'priceTotem',
+            'priceSalao', 'priceDelivery', 'priceTotem', 'apenasEmCombo',
             'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem'
           )
       `;
@@ -271,6 +328,8 @@ const INSTRUCOES_LOTES = [
   // kdsScreens), e não sofre a armadilha da coluna escalar ausente do mesmo
   // jeito, porque nada além desta tela lê o campo.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "labelFieldsConfig" JSONB`,
+  // O que a loja mostra na barra do painel de pedidos. Ausente = tudo ligado.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "painelPedidosConfig" JSONB`,
 
   // Token da API de Conversões do Meta. Sem ele a venda só existe pelo pixel do
   // navegador, que perde de 30% a 50% dos eventos.

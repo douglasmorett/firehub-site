@@ -449,7 +449,13 @@ export async function processChatbotAI(
   // de pastel, por exemplo) são cadastrados soltos e com preço zero. Se
   // entram na lista, o robô os anuncia como prato vendável — e por R$ 0,00.
   // Eles continuam aparecendo como escolha dentro do combo a que pertencem.
-  const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(products);
+  //
+  // Sobre `produtosCrus` e não `products`: em `products` o preço já foi
+  // resolvido para DELIVERY, e ali um item que a loja só precificou no salão
+  // aparece como zero — seria classificado como adicional e sumiria do robô,
+  // que é o mesmo defeito que escondia item da mesa na Pastelaria da Paulista.
+  // Na lista crua os quatro preços ainda existem, e a regra decide certo.
+  const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(produtosCrus as any[]);
 
   products.forEach((p: any) => {
     if (soOpcaoDeCombo.has(String(p.id))) return;

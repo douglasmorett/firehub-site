@@ -1031,6 +1031,9 @@ export default function MenuProductManager({
           active: true,
           isCombo: false,
           isBeverage: false,
+          // O carimbo. Nasceu dentro da pergunta do combo, então é complemento —
+          // e continua sendo mesmo que alguém lhe dê um preço depois.
+          apenasEmCombo: true,
         }),
       });
       if (!res.ok) { alert("Não consegui cadastrar o item."); return; }
