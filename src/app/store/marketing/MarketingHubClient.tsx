@@ -17,6 +17,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+import { DISPARO_EM_MASSA_LIBERADO, MOTIVO_DISPARO_DESLIGADO } from "@/lib/disparo-em-massa";
+
 export default function MarketingHubClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -280,9 +282,28 @@ export default function MarketingHubClient() {
               }}
             />
 
-            <div style={{ background: "#F0FDF4", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #BBF7D0", color: "#166534", fontSize: "0.95rem" }}>
-              🛡️ <strong>Proteção Anti-Ban Ativada:</strong> Os disparos são fracionados e enviados com pausas inteligentes humanas (aprox. 1 mensagem a cada 20 segundos). O disparo pode demorar alguns minutos para finalizar rodando em segundo plano. Nunca fechamos o ciclo de forma simultânea.
-            </div>
+            {DISPARO_EM_MASSA_LIBERADO ? (
+              <div style={{ background: "#F0FDF4", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #BBF7D0", color: "#166534", fontSize: "0.95rem" }}>
+                🛡️ <strong>Envio em ritmo humano:</strong> as mensagens saem uma a cada 12 a 28 segundos, com descanso de 45 a 75 segundos a cada dez. O disparo roda em segundo plano e leva alguns minutos.
+              </div>
+            ) : (
+              /* O aviso que estava aqui dizia "Proteção Anti-Ban Ativada" e dava a
+                 entender que o ritmo lento protegia o número. Ele não protege:
+                 mandar devagar não conserta mandar para quem não pediu. Um número
+                 da casa foi perdido com essa impressão de segurança. */
+              <div style={{ background: "#FEF2F2", padding: "18px", borderRadius: "14px", border: "2px solid #FCA5A5" }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: "1rem", color: "#991B1B", display: "flex", alignItems: "center", gap: 8 }}>
+                  🚫 Disparo de campanha desligado
+                </p>
+                <p style={{ margin: "8px 0 0", fontSize: "0.9rem", color: "#7F1D1D", lineHeight: 1.6 }}>
+                  {MOTIVO_DISPARO_DESLIGADO}
+                </p>
+                <p style={{ margin: "10px 0 0", fontSize: "0.86rem", color: "#7F1D1D", lineHeight: 1.6 }}>
+                  <strong>O que continua funcionando:</strong> o robô responde normalmente quem
+                  manda mensagem para a loja. O que saiu do ar é só o envio para uma lista.
+                </p>
+              </div>
+            )}
 
             {selectedPhones.length > 150 && (
               <div style={{ background: "#FEF2F2", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #FECACA", color: "#991B1B", fontSize: "0.95rem", marginTop: "12px" }}>
@@ -292,18 +313,20 @@ export default function MarketingHubClient() {
 
             <button
               onClick={handleSendBroadcast}
-              disabled={sendingBroadcast}
+              disabled={sendingBroadcast || !DISPARO_EM_MASSA_LIBERADO}
               style={{
                 width: "100%",
                 padding: "14px",
                 borderRadius: "12px",
                 border: "none",
-                background: "linear-gradient(135deg, #16A34A, #15803D)",
-                color: "#fff",
+                background: DISPARO_EM_MASSA_LIBERADO
+                  ? "linear-gradient(135deg, #16A34A, #15803D)"
+                  : "#E2E8F0",
+                color: DISPARO_EM_MASSA_LIBERADO ? "#fff" : "#94A3B8",
                 fontWeight: 800,
                 fontSize: "0.95rem",
-                cursor: "pointer",
-                boxShadow: "0 4px 14px rgba(22, 163, 74, 0.3)",
+                cursor: DISPARO_EM_MASSA_LIBERADO ? "pointer" : "not-allowed",
+                boxShadow: DISPARO_EM_MASSA_LIBERADO ? "0 4px 14px rgba(22, 163, 74, 0.3)" : "none",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -311,7 +334,11 @@ export default function MarketingHubClient() {
               }}
             >
               <Send size={18} />
-              {sendingBroadcast ? "Iniciando Fila Anti-Ban..." : `🚀 Disparar para ${selectedPhones.length} Cliente(s) Selecionados`}
+              {!DISPARO_EM_MASSA_LIBERADO
+                ? "Disparo desligado"
+                : sendingBroadcast
+                  ? "Enviando em segundo plano..."
+                  : `🚀 Disparar para ${selectedPhones.length} Cliente(s) Selecionados`}
             </button>
           </div>
 

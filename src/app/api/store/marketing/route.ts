@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
 import { segredoObrigatorio } from "@/lib/segredos";
+import { DISPARO_EM_MASSA_LIBERADO, MOTIVO_DISPARO_DESLIGADO } from "@/lib/disparo-em-massa";
 
 export const dynamic = "force-dynamic";
 
@@ -564,6 +565,13 @@ export async function POST(req: NextRequest) {
 
     // 3. Disparo em massa 100% INSTANTÂNEO & ASSÍNCRONO EM SEGUNDO PLANO
     if (body.action === "send_campaign" || body.action === "send_broadcast") {
+      // A trava mora AQUI, não só na tela: esconder o botão não impede um POST
+      // direto, e esta rota manda mensagem em nome do número da loja. Ver
+      // src/lib/disparo-em-massa.ts para o porquê e para as condições de religar.
+      if (!DISPARO_EM_MASSA_LIBERADO) {
+        return NextResponse.json({ error: MOTIVO_DISPARO_DESLIGADO }, { status: 403 });
+      }
+
       const { message, imageUrl, targetPhones } = body;
       if (!message || !Array.isArray(targetPhones) || targetPhones.length === 0) {
         return NextResponse.json({ error: "Mensagem e contatos alvo são obrigatórios." }, { status: 400 });
