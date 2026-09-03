@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
+import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -80,8 +81,10 @@ export default function VendaPresencialPage() {
     SAB: ["SAB", "SABADO", "SÁBADO", "6", "SAT", "SATURDAY"],
   };
 
-  const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
-  const currentDayCode = DAYS_MAP[new Date().getDay()];
+  // Dia de SÃO PAULO: o tablet do balcão pode estar com o fuso errado, e no
+  // render do servidor `new Date()` responde em UTC — depois das 21h de
+  // Brasília a promoção de amanhã já aparecia no PDV.
+  const currentDayCode = diaDaSemanaEmSaoPaulo();
 
   const parseAvailableDays = (val: any): string[] => {
     if (!val) return [];
