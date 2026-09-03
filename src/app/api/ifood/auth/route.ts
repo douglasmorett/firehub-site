@@ -89,12 +89,31 @@ export async function GET(req: NextRequest) {
   // ── Passo 4: Auto-descobre merchantId e puxa pedidos retroativos ──────────
   if (step === "discover-merchant") {
     const email = session.user?.email || "";
-    const user = await prisma.user.findUnique({
+
+    // A LOJA, não o registro de quem está logado. Resolver por e-mail da sessão
+    // punha o vínculo na conta errada em dois casos reais: funcionário abrindo a
+    // tela (o merchant ia para o registro dele, não da franquia) e ADMIN em modo
+    // suporte (ia para a conta do admin, com a loja do cliente na tela). Mesma
+    // regra de /api/ifood/auth/link-merchant.
+    const sessionUser = await prisma.user.findUnique({
       where: { email },
+      select: { id: true, role: true, ownerId: true },
+    });
+    if (!sessionUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+
+    const activeStoreId =
+      req.nextUrl.searchParams.get("storeId") || req.cookies.get("firehub_active_store")?.value || null;
+    const storeId =
+      sessionUser.role === "ADMIN" && activeStoreId && activeStoreId !== "all"
+        ? activeStoreId
+        : (sessionUser.ownerId || sessionUser.id);
+
+    const user = await prisma.user.findUnique({
+      where: { id: storeId },
       select: { id: true, ifoodMerchantId: true, ifoodConnected: true, ifoodAccessToken: true }
     });
 
-    if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    if (!user) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
 
     // Se já tem merchantId, retorna
     if (user.ifoodMerchantId) {
@@ -141,35 +160,60 @@ export async function GET(req: NextRequest) {
         log.push(`merchants API erro: ${e.message}`);
       }
 
-      // Tentativa 2: Peek events para encontrar merchantIds desconhecidos
+      // ── Tentativa 2: a fila de eventos DESTA loja ─────────────────────
+      //
+      // Duas correções nesta passagem, e as duas doeram numa loja real:
+      //
+      // 1. O token era o CENTRALIZADO (`token`). Este app é distribuído, do tipo
+      //    Authorization Code — não existe token do app que enxergue as lojas
+      //    dos outros. Espiar com ele é olhar a fila errada, e o lojista via
+      //    "não consegui descobrir" com a fila dele cheia de pedido.
+      //
+      // 2. Pegava o PRIMEIRO merchant não atribuído e seguia em frente. Quando
+      //    a conta do lojista tem duas lojas autorizadas ao app — que é comum, e
+      //    aconteceu com a Ragnar Burger e a Tadala Burger no mesmo login — isso
+      //    é escolher no cara ou coroa. Merchant errado faz o pedido de uma loja
+      //    cair no painel da outra; melhor perguntar do que adivinhar.
+      let candidatos: { merchantId: string; nome: string }[] = [];
       if (!discoveredMerchantId) {
         try {
-          const evRes = await fetch("https://merchant-api.ifood.com.br/events/v1.0/events:polling", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (evRes.ok) {
-            const evText = await evRes.text();
-            const events = evText ? JSON.parse(evText) : [];
-            log.push(`${events.length} eventos na fila`);
-            
-            const uniqueMerchantIds = [...new Set(events.map((e: any) => e.merchantId).filter(Boolean))] as string[];
-            for (const mid of uniqueMerchantIds) {
-              const existing = await prisma.user.findFirst({ where: { ifoodMerchantId: mid } as any });
-              if (!existing) {
-                discoveredMerchantId = mid;
-                log.push(`✅ merchantId descoberto via eventos: ${mid}`);
-                break;
-              }
-            }
-
-            // Ack os eventos para não perder — eles serão reprocessados pelo cron
-            // NÃO ack, deixar o cron processar
+          const { getTokenDaLojaIfood, descobrirMerchantsComNome } = await import("@/lib/ifood-api");
+          const tokenDaLoja = await getTokenDaLojaIfood(user.id);
+          if (!tokenDaLoja) {
+            log.push("sem token desta loja — reconecte o iFood");
           } else {
-            log.push(`events:polling falhou: ${evRes.status}`);
+            const vistos = await descobrirMerchantsComNome(tokenDaLoja);
+            log.push(`${vistos.length} merchant(s) na fila desta loja`);
+
+            // Merchant que já é de outro dono nunca entra na escolha.
+            const ocupadosDb = await prisma.user.findMany({
+              where: { ifoodMerchantId: { in: vistos.map((v) => v.merchantId) }, NOT: { id: user.id } },
+              select: { ifoodMerchantId: true },
+            });
+            const ocupados = new Set(ocupadosDb.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]);
+            candidatos = vistos.filter((v) => !ocupados.has(v.merchantId));
+
+            if (candidatos.length === 1) {
+              discoveredMerchantId = candidatos[0].merchantId;
+              discoveredStoreName = candidatos[0].nome || "";
+              log.push(`✅ merchantId descoberto via eventos: ${discoveredMerchantId}`);
+            }
           }
         } catch (e: any) {
           log.push(`events peek erro: ${e.message}`);
         }
+      }
+
+      // Mais de uma loja na fila: quem escolhe é o lojista, que sabe qual é a
+      // dele. A tela mostra os nomes; sem isto, a escolha seria entre UUIDs.
+      if (!discoveredMerchantId && candidatos.length > 1) {
+        return NextResponse.json({
+          success: false,
+          precisaEscolher: true,
+          candidatos,
+          message: `Encontramos ${candidatos.length} lojas do iFood nesta conta. Escolha qual delas é esta loja do FireHub.`,
+          log,
+        });
       }
 
       if (!discoveredMerchantId) {
@@ -182,7 +226,7 @@ export async function GET(req: NextRequest) {
 
       // Salvar merchantId descoberto
       await prisma.user.update({
-        where: { email },
+        where: { id: user.id },
         data: { ifoodMerchantId: discoveredMerchantId, ifoodConnected: true }
       });
 

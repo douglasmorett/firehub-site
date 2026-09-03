@@ -561,6 +561,25 @@ model ComboGroupItem {
   comboGroupId    String
   menuProductId   String
   additionalPrice Float       @default(0) // Valor adicional cobrado se este item for escolhido no combo
+  /// PREÇO DA OPÇÃO POR CANAL. Nulo (ou zero) = usa `additionalPrice`.
+  ///
+  /// O preço por canal do PRODUTO (MenuProduct.priceSalao e irmãos) não alcança
+  /// as lojas que modelam o cardápio como o iFood e o Anota AI: lá o pastel é um
+  /// item de preço base ZERO e quem carrega o preço é a opção de tamanho ("Baby
+  /// 13cm = R$ 21,90"). Na Pastel da Paulista são 120 dos 142 itens assim — para
+  /// eles, mudar só o preço do produto não muda nada no que o cliente paga.
+  ///
+  /// Vale a mesma regra do produto: zero NÃO conta como preço cadastrado (campo
+  /// apagado pela metade viraria opção de graça), e canal em branco cai no
+  /// `additionalPrice` de sempre, então quem nunca preencher nada segue com um
+  /// preço só em todo canal.
+  ///
+  /// A COLUNA TEM QUE EXISTIR NO BANCO ANTES de o campo valer aqui — campo
+  /// declarado sem coluna faz o Prisma montar SELECT com ela e o cardápio
+  /// inteiro serve 500. Quem garante é o boot (src/lib/garantir-colunas.ts).
+  additionalPriceSalao    Float?
+  additionalPriceDelivery Float?
+  additionalPriceTotem    Float?
   /// Teto de repetição DESTA opção dentro do grupo. Nulo = só o teto do grupo.
   ///
   /// É o "Máx 2" que aparece embaixo de cada adicional: o grupo aceita 4 itens

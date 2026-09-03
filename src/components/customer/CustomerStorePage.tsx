@@ -35,6 +35,7 @@ import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
+import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import "./store.css";
 
@@ -241,8 +242,10 @@ export default function CustomerStorePage({
   })();
   const pauseInfo = franchisee.storePause as any;
 
-  const DAYS_MAP = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"];
-  const currentDayCode = DAYS_MAP[new Date().getDay()];
+  // O dia é o de SÃO PAULO, não o do aparelho de quem abre o cardápio nem o do
+  // servidor (que roda em UTC e vira o dia às 21h de Brasília). Este filtro é a
+  // segunda barreira: /loja/[slug] já corta a promoção fora do dia no servidor.
+  const currentDayCode = diaDaSemanaEmSaoPaulo();
 
   const parseAvailableDays = (val: any): string[] => {
     if (!val) return [];

@@ -164,6 +164,62 @@ export async function descobrirMerchantsPorEventos(accessToken: string): Promise
   }
 }
 
+/**
+ * Os merchants que a fila desta loja revela, JÁ COM O NOME de cada um.
+ *
+ * O nome não vem no evento — vem do detalhe de um pedido daquele merchant
+ * (`merchant.name`). É um GET a mais por merchant, e vale cada um: sem ele, a
+ * escolha que sobra para o lojista é entre dois UUIDs, e ninguém sabe qual é a
+ * sua loja olhando para `469a9863-…`. Com o nome, ele lê "Ragnar Burger" e
+ * "Tadala Burger" e responde na hora.
+ *
+ * Por que isso existe: a conta do lojista no iFood pode ter MAIS DE UMA loja
+ * autorizada ao app, e aí a fila traz eventos das duas. Sem saber qual é qual,
+ * o vínculo automático se recusa a escolher (e está certo: adotar o merchant
+ * errado faz o pedido de uma loja cair no painel da outra). O resultado era a
+ * loja ficar sem pedido nenhum, para sempre e sem explicação na tela.
+ *
+ * Espiar a fila é seguro: sem `acknowledgment` o iFood mantém tudo lá.
+ */
+export async function descobrirMerchantsComNome(
+  accessToken: string
+): Promise<{ merchantId: string; nome: string }[]> {
+  try {
+    const res = await fetch(`${IFOOD_BASE}/events/v1.0/events:polling`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return [];
+    const texto = await res.text();
+    const eventos = texto ? JSON.parse(texto) : [];
+    if (!Array.isArray(eventos)) return [];
+
+    // Um pedido por merchant basta para descobrir o nome.
+    const umPedidoPorMerchant = new Map<string, string>();
+    for (const e of eventos) {
+      if (e?.merchantId && e?.orderId && !umPedidoPorMerchant.has(e.merchantId)) {
+        umPedidoPorMerchant.set(e.merchantId, e.orderId);
+      }
+    }
+
+    const saida: { merchantId: string; nome: string }[] = [];
+    for (const [merchantId, orderId] of umPedidoPorMerchant) {
+      let nome = "";
+      try {
+        const r = await fetch(`${IFOOD_BASE}/order/v1.0/orders/${orderId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (r.ok) nome = (await r.json())?.merchant?.name || "";
+      } catch {
+        // Sem o nome ainda dá para escolher pelo UUID — pior, mas não trava.
+      }
+      saida.push({ merchantId, nome });
+    }
+    return saida;
+  } catch {
+    return [];
+  }
+}
+
 /** Wrapper autenticado para LEITURAS */
 export async function ifoodFetch(
   path: string,

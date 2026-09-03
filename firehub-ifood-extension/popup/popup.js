@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnMinus = document.getElementById("btnMinus");
   const btnPlus = document.getElementById("btnPlus");
   const motoboysCountEl = document.getElementById("motoboysCount");
+  const motoboysWarningEl = document.getElementById("motoboysWarning");
   const kdsOrdersEl = document.getElementById("kdsOrders");
   const currentRuleEl = document.getElementById("currentRule");
   const recommendedEtaEl = document.getElementById("recommendedEta");
@@ -265,6 +266,36 @@ document.addEventListener("DOMContentLoaded", () => {
   // limpar os dados do Chrome fazia voltar ao padrao 2 em silencio — e 2 e
   // justamente o valor que joga a loja em "PAUSAR" no primeiro pico.
   // Persiste ate alguem mudar; nao reseta diariamente.
+  // "Salvo so neste PC" nao existe para este numero: quem calcula o prazo e o
+  // SERVIDOR, com o valor gravado nele. Enquanto a gravacao falhava, o popup
+  // mostrava 5 motoboys, o servidor seguia somando por 1 e a loja passava o dia
+  // inteiro marcada como ESTOURO — foi o que aconteceu na Hakim Centro. Entao:
+  // se nao gravou, o numero VOLTA para o do servidor e o aviso fica na tela.
+  function mostrarAvisoMotoboys(texto) {
+    if (!motoboysWarningEl) return;
+    motoboysWarningEl.textContent = texto;
+    motoboysWarningEl.style.display = "block";
+  }
+
+  function esconderAvisoMotoboys() {
+    if (motoboysWarningEl) motoboysWarningEl.style.display = "none";
+  }
+
+  async function falhouAoSalvarMotoboys(motivo) {
+    const veioDoServidor = await loadMotoboysFromServer();
+    if (veioDoServidor) {
+      mostrarAvisoMotoboys(
+        "⚠️ Nao salvou (" + motivo + "). O servidor calcula com " + count +
+        " motoboy(s) — e e esse numero que decide o prazo. Saia e entre de novo na extensao."
+      );
+    } else {
+      mostrarAvisoMotoboys(
+        "⚠️ Nao salvou (" + motivo + ") e o servidor nao respondeu. O prazo continua " +
+        "sendo calculado com o numero antigo."
+      );
+    }
+  }
+
   async function persistMotoboys(value) {
     try {
       const { data } = await apiFetchWithFallback(
@@ -276,16 +307,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       );
       if (data && data.success) {
-        firehubSyncStatus.textContent = `🟢 ${value} motoboys salvos`;
+        esconderAvisoMotoboys();
+        firehubSyncStatus.textContent = "\u{1F7E2} " + value + " motoboys salvos";
         firehubSyncStatus.style.color = "#34D399";
       } else {
-        firehubSyncStatus.textContent = `🔴 nao salvou`;
-        firehubSyncStatus.style.color = "#FCA5A5";
+        await falhouAoSalvarMotoboys("recusado pelo servidor");
       }
     } catch (err) {
-      // Offline: mantem o valor local e avisa que nao sincronizou.
-      firehubSyncStatus.textContent = `🟡 salvo so neste PC`;
-      firehubSyncStatus.style.color = "#FCD34D";
+      // apiFetchWithFallback so lanca depois de tentar TODOS os servidores da
+      // lista, 401 em cada um inclusive. Cair aqui nao quer dizer "offline",
+      // quer dizer "nao gravou em lugar nenhum".
+      await falhouAoSalvarMotoboys("sem conexao ou sessao expirada");
     }
   }
 

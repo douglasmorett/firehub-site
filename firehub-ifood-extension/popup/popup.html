@@ -247,6 +247,11 @@
           <div class="count-display" id="motoboysCount">2</div>
           <button class="btn-step" id="btnPlus">+</button>
         </div>
+        <!-- Quem calcula o prazo e o SERVIDOR, com o numero salvo la. Se a
+             gravacao falhar, este aviso fica na tela ate salvar de novo: o
+             status la de cima e reescrito pelo polling de 3s, entao um erro
+             mostrado ali some antes de o lojista ler. -->
+        <div id="motoboysWarning" style="display:none; margin-top:8px; padding:7px 9px; background:#450A0A; border:1px solid #EF4444; border-radius:8px; color:#FCA5A5; font-size:0.68rem; font-weight:700; line-height:1.35;"></div>
       </div>
 
       <div class="metrics-grid">

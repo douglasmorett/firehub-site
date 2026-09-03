@@ -52,6 +52,7 @@ export async function GET() {
       ["KitchenItem", "stockItemId"], ["KitchenItem", "labelSize"],
       ["User", "labelFieldsConfig"], ["StockItem", "active"],
       ["MenuProduct", "priceSalao"], ["MenuProduct", "priceDelivery"],
+      ["ComboGroupItem", "additionalPriceSalao"], ["ComboGroupItem", "additionalPriceDelivery"],
     ];
     const cols = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
       SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns

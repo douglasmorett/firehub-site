@@ -32,9 +32,23 @@ const INSTRUCOES = [
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceTotem" DOUBLE PRECISION`,
+  // A OPÇÃO do combo também tem preço por canal. Quem modela o cardápio como o
+  // iFood e o Anota AI põe o preço na opção de tamanho, e o produto fica com
+  // preço base zero — nessas lojas as três colunas acima não alcançam nada.
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceSalao" DOUBLE PRECISION`,
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceDelivery" DOUBLE PRECISION`,
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
 ];
 
-const ESPERADAS = ["priceSalao", "priceDelivery", "priceTotem"];
+/** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
+const ESPERADAS = [
+  "MenuProduct.priceSalao",
+  "MenuProduct.priceDelivery",
+  "MenuProduct.priceTotem",
+  "ComboGroupItem.additionalPriceSalao",
+  "ComboGroupItem.additionalPriceDelivery",
+  "ComboGroupItem.additionalPriceTotem",
+];
 
 export async function garantirColunasDePreco(): Promise<void> {
   // Ambiente sem banco de verdade (dev local usa .env higienizado): não há o
@@ -51,13 +65,16 @@ export async function garantirColunasDePreco(): Promise<void> {
         await prisma.$executeRawUnsafe(sql);
       }
 
-      const rows = await prisma.$queryRaw<{ column_name: string }[]>`
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'MenuProduct'
-          AND column_name IN ('priceSalao', 'priceDelivery', 'priceTotem')
+      const rows = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
+        SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
+        WHERE table_name IN ('MenuProduct', 'ComboGroupItem')
+          AND column_name IN (
+            'priceSalao', 'priceDelivery', 'priceTotem',
+            'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem'
+          )
       `;
-      const existentes = rows.map((r) => r.column_name);
-      const faltando = ESPERADAS.filter((c) => !existentes.includes(c));
+      const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));
+      const faltando = ESPERADAS.filter((c) => !existentes.has(c));
 
       if (faltando.length === 0) {
         console.log("[Boot] ✅ Colunas de preço por canal garantidas no banco.");

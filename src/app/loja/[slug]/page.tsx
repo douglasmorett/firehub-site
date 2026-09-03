@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { orderByCardapio } from "@/lib/menu-order";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
+import { disponivelHoje } from "@/lib/cardapio-interno";
 import { notFound } from "next/navigation";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 
@@ -97,6 +98,12 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
         isCombo: true,
         comboConfig: true,
         tags: true,
+        // Sem esta linha a promoção de dia específico vendia TODO DIA. O campo
+        // sempre esteve gravado certo no banco (["SEG","QUA","SEX"]), mas este
+        // SELECT explícito não o pedia: o produto chegava com `availableDays`
+        // undefined — e "sem dias" quer dizer "todo dia". A esfirra de segunda
+        // aparecia no domingo, e a saída do lojista era desativar o item na mão.
+        availableDays: true,
         comboGroups: {
           orderBy: { sortOrder: 'asc' },
           select: {
@@ -109,6 +116,10 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
               select: {
                 id: true,
                 additionalPrice: true,
+                // Idem: resolvido abaixo e removido do payload. Nas lojas de
+                // cardápio no molde iFood/Anota AI é AQUI que mora o preço —
+                // o produto tem base zero e quem cobra é a opção de tamanho.
+                additionalPriceDelivery: true,
                 maxPerItem: true,
                 optionNote: true,
                 menuProduct: { select: { id: true, name: true, active: true, imageUrl: true, description: true, price: true } }
@@ -159,7 +170,18 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   // Este É o delivery: se a loja tem preço próprio do canal, é ele que o
   // cliente vê — e a coluna sai do payload, para o HTML público mostrar um
   // preço só. Loja sem preço por canal continua exatamente como era.
-  const menuComPrecoDoCanal = aplicarPrecoNoCardapio(menuProducts as any[], "delivery");
+  // O corte por dia acontece AQUI, no servidor, e não no navegador do cliente:
+  // `new Date().getDay()` responde pelo fuso do APARELHO de quem abre o
+  // cardápio, e no render do servidor responde em UTC — depois das 21h de
+  // Brasília os dois já viraram o dia, e a promoção de sexta aparecia na
+  // quinta à noite. `disponivelHoje` decide pelo fuso de São Paulo.
+  //
+  // Item fora do dia nem entra no payload: além de não aparecer, não vai no
+  // HTML público. Quem é opção DENTRO de combo continua intacto — as opções
+  // vêm pela consulta aninhada, que este filtro não toca.
+  const menuDoDia = (menuProducts as any[]).filter((p) => disponivelHoje(p.availableDays));
+
+  const menuComPrecoDoCanal = aplicarPrecoNoCardapio(menuDoDia as any[], "delivery");
 
   return (
     <CustomerStorePage
