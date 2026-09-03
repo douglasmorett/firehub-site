@@ -1595,21 +1595,38 @@ export default function MenuProductManager({
                   onClick={() => setAbaPrecos(v => !v)}
                   style={{
                     width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
-                    padding: "10px 14px", borderRadius: 12,
-                    border: abaPrecos ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
-                    background: abaPrecos ? "#F5F3FF" : "#FFF",
-                    color: abaPrecos ? "#6D28D9" : "#64748B",
-                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                    padding: "13px 16px", borderRadius: 14,
+                    border: `2px solid ${abaPrecos || precoSalao || precoDelivery || precoTotem ? "#7C3AED" : "#C4B5FD"}`,
+                    background: abaPrecos || precoSalao || precoDelivery || precoTotem
+                      ? "linear-gradient(90deg, #F5F3FF 0%, #FFF 100%)"
+                      : "#FFF",
+                    boxShadow: abaPrecos || precoSalao || precoDelivery || precoTotem ? "0 2px 10px rgba(124,58,237,0.14)" : "none",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
                   }}
                 >
-                  <span style={{ fontWeight: 800, fontSize: "0.85rem" }}>
-                    💰 Preços por canal
-                    <span style={{ fontWeight: 600, opacity: 0.8 }}> (opcional)</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                      background: "#EDE9FE", fontSize: "1.05rem",
+                    }}>💰</span>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: "block", fontWeight: 800, fontSize: "0.92rem", color: "#4C1D95" }}>
+                        Preço diferente por canal
+                      </span>
+                      <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#7C3AED", opacity: 0.9 }}>
+                        Cobrar valores diferentes no balcão/mesa, no delivery e no totem
+                      </span>
+                    </span>
                   </span>
-                  <span style={{ fontSize: "0.78rem", fontWeight: 700 }}>
+                  <span style={{
+                    flexShrink: 0, fontSize: "0.76rem", fontWeight: 800, padding: "6px 12px", borderRadius: 999,
+                    background: (precoSalao || precoDelivery || precoTotem) ? "#7C3AED" : "#EDE9FE",
+                    color: (precoSalao || precoDelivery || precoTotem) ? "#FFF" : "#6D28D9",
+                  }}>
                     {(precoSalao || precoDelivery || precoTotem)
-                      ? `${[precoSalao, precoDelivery, precoTotem].filter(Boolean).length} preço(s) diferente(s)`
-                      : (abaPrecos ? "fechar" : "abrir")}
+                      ? `${[precoSalao, precoDelivery, precoTotem].filter(Boolean).length} preço próprio`
+                      : (abaPrecos ? "▲ fechar" : "▼ abrir")}
                   </span>
                 </button>
 
@@ -2032,35 +2049,56 @@ export default function MenuProductManager({
                     Desligado, cada opção tem UM preço, que vale em todo canal:
                     é o comportamento de sempre, e quem cobra igual em tudo não
                     precisa saber que isto existe. */}
-                <button
-                  type="button"
-                  onClick={() => setPrecosCanalNoCombo(v => !v)}
-                  style={{
-                    width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
-                    marginBottom: "0.9rem", padding: "10px 14px", borderRadius: 12,
-                    border: precosCanalNoCombo ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
-                    background: precosCanalNoCombo ? "#F5F3FF" : "#FFF",
-                    color: precosCanalNoCombo ? "#6D28D9" : "#64748B",
-                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                  }}
-                >
-                  <span style={{ fontWeight: 800, fontSize: "0.85rem" }}>
-                    💰 Preço diferente por canal nas opções
-                    <span style={{ fontWeight: 600, opacity: 0.8 }}> (opcional)</span>
-                  </span>
-                  <span style={{ fontSize: "0.78rem", fontWeight: 700 }}>
-                    {(() => {
-                      const n = comboGroups.reduce((soma, g) => soma + g.items.filter((it: any) =>
-                        it.additionalPriceSalao || it.additionalPriceDelivery || it.additionalPriceTotem).length, 0);
-                      return n > 0 ? `${n} opç${n > 1 ? "ões" : "ão"} com preço próprio` : (precosCanalNoCombo ? "fechar" : "abrir");
-                    })()}
-                  </span>
-                </button>
+                {(() => {
+                  const comPrecoProprio = comboGroups.reduce((soma, g) => soma + g.items.filter((it: any) =>
+                    it.additionalPriceSalao || it.additionalPriceDelivery || it.additionalPriceTotem).length, 0);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setPrecosCanalNoCombo(v => !v)}
+                      style={{
+                        width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                        marginBottom: precosCanalNoCombo ? "0.6rem" : "0.9rem", padding: "13px 16px", borderRadius: 14,
+                        border: `2px solid ${precosCanalNoCombo || comPrecoProprio > 0 ? "#7C3AED" : "#C4B5FD"}`,
+                        background: precosCanalNoCombo || comPrecoProprio > 0
+                          ? "linear-gradient(90deg, #F5F3FF 0%, #FFF 100%)"
+                          : "#FFF",
+                        boxShadow: precosCanalNoCombo || comPrecoProprio > 0 ? "0 2px 10px rgba(124,58,237,0.14)" : "none",
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                      }}
+                    >
+                      <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                        <span style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                          background: "#EDE9FE", fontSize: "1.05rem",
+                        }}>💰</span>
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ display: "block", fontWeight: 800, fontSize: "0.92rem", color: "#4C1D95" }}>
+                            Preço diferente por canal nas opções
+                          </span>
+                          <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#7C3AED", opacity: 0.9 }}>
+                            Cobrar valores diferentes no balcão/mesa, no delivery e no totem
+                          </span>
+                        </span>
+                      </span>
+                      <span style={{
+                        flexShrink: 0, fontSize: "0.76rem", fontWeight: 800, padding: "6px 12px", borderRadius: 999,
+                        background: comPrecoProprio > 0 ? "#7C3AED" : "#EDE9FE",
+                        color: comPrecoProprio > 0 ? "#FFF" : "#6D28D9",
+                      }}>
+                        {comPrecoProprio > 0
+                          ? `${comPrecoProprio} opç${comPrecoProprio > 1 ? "ões" : "ão"} com preço próprio`
+                          : (precosCanalNoCombo ? "▲ fechar" : "▼ abrir")}
+                      </span>
+                    </button>
+                  );
+                })()}
 
                 {precosCanalNoCombo && (
-                  <p style={{ margin: "-0.4rem 0 0.9rem", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.5, padding: "0 2px" }}>
-                    Canal em branco cobra o <strong>+R$</strong> normal da opção. Preencha só onde o
-                    preço muda — 🍽️ balcão e mesa, 🛵 delivery (cardápio, iFood, WhatsApp) e 📲 totem.
+                  <p style={{ margin: "0 0 0.9rem", fontSize: "0.78rem", color: "#5B21B6", lineHeight: 1.55, padding: "9px 12px", background: "#FAF5FF", border: "1px dashed #DDD6FE", borderRadius: 10 }}>
+                    Cada opção abaixo ganhou os três campos. <strong>Canal em branco cobra o +R$ normal</strong> da
+                    opção (o campo mostra qual valor é esse) — preencha só onde o preço muda.
                   </p>
                 )}
 
@@ -2222,26 +2260,55 @@ export default function MenuProductManager({
                                 </button>
 
                                 {precosCanalNoCombo && (
-                                  <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "2px", paddingTop: "7px", borderTop: "1px dashed #CBD5E1" }}>
+                                  <div style={{ flexBasis: "100%", display: "flex", alignItems: "stretch", gap: "8px", flexWrap: "wrap", marginTop: "6px", padding: "9px 10px", background: "#F5F3FF", borderRadius: "10px", border: "1.5px solid #DDD6FE" }}>
                                     {[
-                                      { campo: "additionalPriceSalao", rotulo: "🍽️ Balcão/mesa", titulo: "Preço desta opção no balcão e na mesa." },
-                                      { campo: "additionalPriceDelivery", rotulo: "🛵 Delivery", titulo: "Preço desta opção no cardápio online, iFood, JotaJá, 99Food e WhatsApp." },
-                                      { campo: "additionalPriceTotem", rotulo: "📲 Totem", titulo: "Preço desta opção no totem de autoatendimento." },
-                                    ].map(c => (
-                                      <span key={c.campo} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                        <label style={{ fontSize: "0.71rem", color: "#6D28D9", fontWeight: 700 }} title={c.titulo}>{c.rotulo}</label>
-                                        <input
-                                          type="number"
-                                          step="0.50"
-                                          min="0"
-                                          placeholder={Number(it.additionalPrice) > 0 ? String(it.additionalPrice) : "0.00"}
-                                          value={(it as any)[c.campo] ?? ""}
-                                          onChange={e => updateGroupItemField(gIdx, it.id, c.campo, e.target.value ? parseFloat(e.target.value) : null)}
+                                      { campo: "additionalPriceSalao", icone: "🍽️", rotulo: "Balcão/mesa", cor: "#B45309", fundo: "#FFFBEB", borda: "#FCD34D", titulo: "Preço desta opção no balcão e na mesa." },
+                                      { campo: "additionalPriceDelivery", icone: "🛵", rotulo: "Delivery", cor: "#1D4ED8", fundo: "#EFF6FF", borda: "#BFDBFE", titulo: "Preço desta opção no cardápio online, iFood, JotaJá, 99Food e WhatsApp." },
+                                      { campo: "additionalPriceTotem", icone: "📲", rotulo: "Totem", cor: "#6D28D9", fundo: "#FAF5FF", borda: "#DDD6FE", titulo: "Preço desta opção no totem de autoatendimento." },
+                                    ].map(c => {
+                                      // Preenchido = este canal cobra o seu próprio preço. Vazio = herda o
+                                      // "+R$" da opção, e o campo diz qual valor é esse em vez de ficar em
+                                      // branco — senão a única forma de saber é conferir o campo de cima.
+                                      const proprio = (it as any)[c.campo] != null && (it as any)[c.campo] !== "";
+                                      const herdado = Number(it.additionalPrice) > 0
+                                        ? Number(it.additionalPrice).toFixed(2).replace(".", ",")
+                                        : "0,00";
+                                      return (
+                                        <div
+                                          key={c.campo}
                                           title={c.titulo}
-                                          style={{ width: "72px", padding: "3px 7px", borderRadius: "6px", border: "1.5px solid #DDD6FE", background: "#FFF", fontSize: "0.78rem", fontWeight: 700, textAlign: "right" }}
-                                        />
-                                      </span>
-                                    ))}
+                                          style={{
+                                            flex: "1 1 150px", display: "flex", alignItems: "center", gap: "7px",
+                                            padding: "6px 9px", borderRadius: "9px",
+                                            background: proprio ? c.fundo : "#FFF",
+                                            border: `1.5px solid ${proprio ? c.borda : "#E9E5F8"}`,
+                                          }}
+                                        >
+                                          <span style={{ fontSize: "0.95rem", lineHeight: 1 }}>{c.icone}</span>
+                                          <label style={{ flex: 1, fontSize: "0.74rem", fontWeight: 800, color: proprio ? c.cor : "#64748B", lineHeight: 1.2 }}>
+                                            {c.rotulo}
+                                            <span style={{ display: "block", fontSize: "0.66rem", fontWeight: 600, color: proprio ? c.cor : "#94A3B8", opacity: 0.85 }}>
+                                              {proprio ? "preço próprio" : `igual: R$ ${herdado}`}
+                                            </span>
+                                          </label>
+                                          <input
+                                            type="number"
+                                            step="0.50"
+                                            min="0"
+                                            placeholder={herdado}
+                                            value={(it as any)[c.campo] ?? ""}
+                                            onChange={e => updateGroupItemField(gIdx, it.id, c.campo, e.target.value ? parseFloat(e.target.value) : null)}
+                                            title={c.titulo}
+                                            style={{
+                                              width: "74px", padding: "6px 8px", borderRadius: "8px",
+                                              border: `2px solid ${proprio ? c.borda : "#E2E8F0"}`,
+                                              background: "#FFF", color: proprio ? c.cor : "#0F172A",
+                                              fontSize: "0.88rem", fontWeight: 800, textAlign: "right",
+                                            }}
+                                          />
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
