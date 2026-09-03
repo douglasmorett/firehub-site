@@ -124,12 +124,49 @@ export function disponivelHoje(availableDays: unknown, hoje = diaDaSemanaEmSaoPa
  *   2. ele não tem grupos próprios — senão seria um combo vendável, e há
  *      combo de preço base R$ 0,00 cujo valor inteiro está nas opções (o
  *      "Nugget" da Hakim). Esse precisa continuar à venda;
- *   3. o preço próprio é zero — quem tem preço se vende sozinho, como a
- *      "Coca 500ml" que é item de cardápio E opção de combo.
+ *   3. ele não tem preço em NENHUM canal — quem tem preço se vende sozinho,
+ *      como a "Coca 500ml" que é item de cardápio E opção de combo.
+ *
+ * ── Por que a condição 3 olha os quatro preços ─────────────────────────────
+ *
+ * Ela olhava só `price`, e isso quebrou quando o preço por canal entrou. Duas
+ * armadilhas, e as duas já morderam:
+ *
+ *   a) Esta função é chamada por quem JÁ resolveu o preço do canal
+ *      (menu-products com `?canal=`, chatbot-ai com "delivery"). Ali `price`
+ *      não é mais o preço próprio do produto: é o preço NAQUELE canal. Um item
+ *      com preço só no delivery vira `price: 0` no salão e sumia da mesa —
+ *      exatamente a queixa da Pastelaria da Paulista, onde 120 dos 142 itens
+ *      têm preço base zero.
+ *
+ *   b) Zero deixou de significar "não tem preço" e passou a significar também
+ *      "não tem preço NESTE canal". Item que a loja vende no balcão mas não no
+ *      delivery é legítimo, e some do canal onde ele existe.
+ *
+ * Por isso: tem preço em qualquer um dos quatro campos, não é adicional. E
+ * quem chama deve passar os produtos CRUS — com as colunas por canal ainda no
+ * objeto. Passar a lista já resolvida continua funcionando (cai no `price`),
+ * só perde a proteção do item que tem preço em outro canal.
  *
  * Recebe a lista COMPLETA do cardápio: quem é opção só se descobre olhando os
  * combos dos outros.
  */
+/**
+ * O produto tem preço em ALGUM canal?
+ *
+ * Os quatro campos contam, e nenhum sozinho basta: `price` é o preço de
+ * tabela e os três por canal o substituem onde estiverem preenchidos. Quando a
+ * lista já vem com o preço do canal resolvido, as colunas específicas não
+ * existem mais no objeto e sobra o `price` — que ali já é o do canal.
+ */
+function temPrecoEmAlgumCanal(p: any): boolean {
+  const positivo = (v: any) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0;
+  };
+  return positivo(p?.price) || positivo(p?.priceSalao) || positivo(p?.priceDelivery) || positivo(p?.priceTotem);
+}
+
 export function idsSoDeOpcaoDeCombo(produtos: any[]): Set<string> {
   const usadosComoOpcao = new Set<string>();
   for (const p of produtos || []) {
@@ -147,7 +184,7 @@ export function idsSoDeOpcaoDeCombo(produtos: any[]): Set<string> {
   for (const p of produtos || []) {
     if (!p?.id || !usadosComoOpcao.has(String(p.id))) continue;
     if ((p.comboGroups || []).length > 0) continue;
-    if ((Number(p.price) || 0) > 0) continue;
+    if (temPrecoEmAlgumCanal(p)) continue;
     soOpcao.add(String(p.id));
   }
   return soOpcao;

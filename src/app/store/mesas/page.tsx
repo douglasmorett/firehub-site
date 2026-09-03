@@ -324,7 +324,16 @@ export default function MesasPage() {
 
           // Adicionais e sabores são MenuProduct de R$ 0,00 que existem só para
           // preencher a pergunta do combo. Viravam card no cardápio do garçom.
-          const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(data);
+          //
+          // Quem decide isso é o SERVIDOR, em `apenasOpcaoDeCombo`. Aqui o
+          // `price` já veio trocado pelo preço do salão, então um item que a
+          // loja precificou só no delivery chega como zero — e calcular a regra
+          // com esse número escondia item vendável da mesa, calado. O cálculo
+          // local fica como reserva para um payload antigo, sem a bandeira.
+          const temBandeira = data.some((p: any) => p.apenasOpcaoDeCombo !== undefined);
+          const soOpcaoDeCombo = temBandeira
+            ? new Set(data.filter((p: any) => p.apenasOpcaoDeCombo).map((p: any) => String(p.id)))
+            : idsSoDeOpcaoDeCombo(data);
 
           const items = data
             .filter((p: any) => p.active !== false && !isIntegration(p))
@@ -332,7 +341,7 @@ export default function MesasPage() {
             // que ignorava o dela: o que a loja desligava para a mesa continuava
             // aparecendo aqui. Balcão já olha activePDV, totem já olha activeTotem.
             .filter((p: any) => p.activeGarcom !== false)
-            .filter((p: any) => !soOpcaoDeCombo.has(p.id))
+            .filter((p: any) => !soOpcaoDeCombo.has(String(p.id)))
             .map((p: any) => ({
               id: p.id,
               name: p.name,
