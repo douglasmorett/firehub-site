@@ -692,7 +692,17 @@ export async function processarEventosIfood(opts: {
 
           if (newStatus) {
             const updateData: any = { status: newStatus };
-            if (isConcluded) {
+            // ⚠️ `ifoodDriverStatus = CONCLUDED` SÓ em pedido que teve entregador
+            // do iFood de verdade.
+            //
+            // Antes era carimbado em todo pedido concluído, inclusive nos
+            // entregues pelo motoboy da loja. O painel decide "entrega parceira"
+            // por esse campo, então o pedido saía certo com o nome do entregador
+            // e, ao virar Finalizado, trocava para "Motoboy iFood": a tela
+            // mandava "não enviar motoboy da loja" num pedido que era da loja, e
+            // o entregador que fez a corrida sumia do registro que fecha o
+            // pagamento dele. 4.130 pedidos na base quando foi medido.
+            if (isConcluded && (exists as any)?.ifoodDriverName) {
               updateData.ifoodDriverStatus = "CONCLUDED";
             }
 

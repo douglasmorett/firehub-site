@@ -526,7 +526,11 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
               if (newStatus && (STATUS_RANK[newStatus] || 0) >= currentRank) {
                 const updateData: any = { status: newStatus };
-                if (isConcluded) {
+                // Mesmo motivo do cron (lib/ifood-eventos.ts): carimbar
+                // CONCLUDED em pedido SEM entregador do iFood fazia o painel
+                // tratar entrega da própria loja como entrega parceira, apagando
+                // da tela o motoboy que fez a corrida.
+                if (isConcluded && (exists as any)?.ifoodDriverName) {
                   updateData.ifoodDriverStatus = "CONCLUDED";
                 }
 
