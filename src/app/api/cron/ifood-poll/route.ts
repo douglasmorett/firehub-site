@@ -86,7 +86,10 @@ async function adotarLojasIfood(opts: {
         connected: true,
         active: true,
       },
-      update: { connected: true, active: true },
+      // O nome vindo do pedido vale mais que o que já estava: é como a loja
+      // aparece no app do iFood ("Ragnar Burguer"), e não a razão social que o
+      // cadastro do FireHub costuma guardar ("PIETRO CUNHA ROCHA 0179…").
+      update: { connected: true, active: true, ...(rotulo ? { label: rotulo } : {}) },
     });
     adotados.push(merchantId);
     log.push(`[vínculo] ${rotuloDoLog}: loja iFood "${rotulo || merchantId}" adotada automaticamente`);

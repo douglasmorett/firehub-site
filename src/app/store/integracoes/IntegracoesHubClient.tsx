@@ -8,6 +8,7 @@ export default function IntegracoesHubClient({
   ifoodWidgetId,
   ifoodConnected: initialIfoodConnected,
   userEmail,
+  storeName,
   facebookPixelId: initialFacebookPixelId,
   gaMeasurementId: initialGaMeasurementId,
   gtmContainerId: initialGtmContainerId,
@@ -25,6 +26,7 @@ export default function IntegracoesHubClient({
   ifoodWidgetId?: string;
   ifoodConnected?: boolean;
   userEmail: string;
+  storeName?: string;
   facebookPixelId?: string;
   gaMeasurementId?: string;
   gtmContainerId?: string;
@@ -815,7 +817,11 @@ export default function IntegracoesHubClient({
   };
 
   const handleRemoveIfoodIntegration = async (id: string) => {
-    if (!confirm("Tem certeza que deseja remover esta integração iFood?")) return;
+    // Pelo nome, não por "esta integração": numa conta com três lojas iFood o
+    // lojista precisa ler QUAL delas vai parar de receber pedido.
+    const alvo = ifoodIntegrations.find(i => i.id === id);
+    const nomeDela = alvo?.label?.trim() || alvo?.merchantId || "esta loja";
+    if (!confirm(`Remover "${nomeDela}" do iFood?\n\nSó ela para de receber pedido. As outras lojas iFood desta conta continuam conectadas.`)) return;
     try {
       const res = await fetch(`/api/ifood/integration/delete?id=${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -1523,16 +1529,22 @@ export default function IntegracoesHubClient({
                               ifoodIntegrations.find(i => i.merchantId === ifMerchant) ?? ifoodIntegrations?.[0];
                             const rotulo = (principal as any)?.label?.trim();
                             const generico = !rotulo || /^loja principal$/i.test(rotulo) || /^loja ifood/i.test(rotulo);
-                            const titulo = generico
-                              ? (ifMerchant ? "Integração Principal" : "Loja iFood Conectada")
-                              : rotulo;
+
+                            // O NOME da loja, sempre — nunca o e-mail da conta.
+                            // Com três lojas iFood no mesmo painel, "Integração
+                            // Principal" e um e-mail embaixo não dizem QUAL loja
+                            // é: o lojista não tem como saber o que está
+                            // desconectando. Nome em cima, Merchant ID embaixo.
+                            const titulo = !generico
+                              ? rotulo
+                              : (storeName?.trim() || "Loja iFood Conectada");
                             return (
                               <>
                                 <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
                                   {titulo}
                                 </div>
-                                <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>
-                                  {ifMerchant || userEmail}
+                                <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: ifMerchant ? "monospace" : "inherit" }}>
+                                  {ifMerchant || "Identificando a loja — entra sozinha no primeiro pedido"}
                                 </div>
                               </>
                             );
@@ -1544,10 +1556,18 @@ export default function IntegracoesHubClient({
                             // O merchant vai na URL de propósito: sem ele a rota
                             // desconecta a CONTA inteira, e quem tem três lojas
                             // iFood perdia as três num clique só.
+                            //
+                            // E o aviso diz o NOME da loja que vai sair. Com
+                            // várias no mesmo painel, "desconectar a integração
+                            // iFood" não informa nada: o lojista clica sem saber
+                            // qual das lojas dele para de receber pedido.
+                            const principal =
+                              ifoodIntegrations.find(i => i.merchantId === ifMerchant) ?? ifoodIntegrations?.[0];
+                            const nomeDela = (principal as any)?.label?.trim() || storeName?.trim() || "esta loja";
                             const outras = ifoodIntegrations.filter(i => i.merchantId !== ifMerchant).length;
                             const pergunta = outras > 0
-                              ? `Desconectar esta loja do iFood?\n\nAs outras ${outras} loja(s) iFood desta conta continuam conectadas.`
-                              : "Deseja desconectar a integração iFood desta loja?";
+                              ? `Desconectar "${nomeDela}" do iFood?\n\nSó ela para de receber pedido. As outras ${outras} loja(s) iFood desta conta continuam conectadas.`
+                              : `Desconectar "${nomeDela}" do iFood?\n\nOs pedidos dela param de chegar no FireHub até você conectar de novo.`;
                             if (!confirm(pergunta)) return;
                             try {
                               const r = await fetch(

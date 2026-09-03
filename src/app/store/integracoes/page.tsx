@@ -18,6 +18,8 @@ export default async function IntegracoesPage() {
       id: true,
       ownerId: true,
       email: true,
+      name: true,
+      storeName: true,
       ifoodWidgetId: true,
       ifoodMerchantId: true,
       ifoodConnected: true,
@@ -37,6 +39,20 @@ export default async function IntegracoesPage() {
   });
 
   const franchiseeId = user?.ownerId || user?.id;
+
+  // O estado do iFood é DA LOJA, não de quem abriu a tela. Um funcionário lia o
+  // próprio registro — sempre vazio — e a tela jurava que a loja não estava
+  // conectada, com os pedidos entrando normalmente por trás.
+  const loja =
+    franchiseeId && franchiseeId !== user?.id
+      ? await prisma.user.findUnique({
+          where: { id: franchiseeId },
+          select: {
+            name: true, storeName: true,
+            ifoodWidgetId: true, ifoodMerchantId: true, ifoodConnected: true,
+          },
+        })
+      : user;
 
   // ── Credenciais Brendi ────────────────────────────────────────────────────
   // As colunas brendi* nascem por SQL cru no boot (ensureBrendiColumns), não
@@ -94,15 +110,16 @@ export default async function IntegracoesPage() {
       })
     : [];
 
-  const effectiveMerchantId = user?.ifoodMerchantId || ifoodIntegrations[0]?.merchantId || "";
+  const effectiveMerchantId = loja?.ifoodMerchantId || ifoodIntegrations[0]?.merchantId || "";
 
   return (
     <IntegracoesHubClient
       userEmail={session.user?.email || ""}
+      storeName={loja?.storeName || loja?.name || ""}
       ifoodMerchantId={effectiveMerchantId}
       ifoodClientId={clientId}
-      ifoodWidgetId={user?.ifoodWidgetId || undefined}
-      ifoodConnected={!!user?.ifoodConnected}
+      ifoodWidgetId={loja?.ifoodWidgetId || undefined}
+      ifoodConnected={!!loja?.ifoodConnected}
       facebookPixelId={user?.facebookPixelId || user?.metaPixelId || ""}
       gaMeasurementId={user?.gaMeasurementId || ""}
       gtmContainerId={user?.gtmContainerId || ""}
