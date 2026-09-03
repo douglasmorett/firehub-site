@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
-import { aplicarPrecoDoCanal } from "@/lib/preco-por-canal";
+import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
 
@@ -217,7 +217,9 @@ export async function POST(req: NextRequest) {
 
       // Mesma conta do cardápio, do modal e do robô — src/lib/preco-combo.ts.
       // Canal TOTEM: cobra o mesmo preço que /api/totem/menu anunciou na tela.
-      const produtoNoCanal = aplicarPrecoDoCanal(product as any, "totem");
+      // ComCombo: o preço da OPÇÃO de tamanho também é do canal, e é ele que
+      // /api/totem/menu anunciou na tela.
+      const produtoNoCanal = aplicarPrecoDoCanalComCombo(product as any, "totem");
       let itemPrice = precoUnitarioDoItem(produtoNoCanal as any, item.comboSelections);
 
       // Piso de segurança: produto cujo valor mora nas opções (o "Nugget" da

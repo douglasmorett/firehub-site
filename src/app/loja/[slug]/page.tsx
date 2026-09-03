@@ -109,6 +109,10 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
               select: {
                 id: true,
                 additionalPrice: true,
+                // Idem: resolvido abaixo e removido do payload. Nas lojas de
+                // cardápio no molde iFood/Anota AI é AQUI que mora o preço —
+                // o produto tem base zero e quem cobra é a opção de tamanho.
+                additionalPriceDelivery: true,
                 maxPerItem: true,
                 optionNote: true,
                 menuProduct: { select: { id: true, name: true, active: true, imageUrl: true, description: true, price: true } }

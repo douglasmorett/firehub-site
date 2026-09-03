@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
-import { aplicarPrecoDoCanal } from "@/lib/preco-por-canal";
+import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
@@ -115,7 +115,10 @@ export async function POST(req: Request) {
       // Canal DELIVERY: o preço cobrado tem que ser o MESMO que a vitrine
       // mostrou (loja/[slug] aplica o preço do canal antes de renderizar).
       // Cobrar pela base aqui seria mostrar um preço e cobrar outro.
-      const produtoNoCanal = aplicarPrecoDoCanal(product as any, "delivery");
+      // ComCombo, não só o produto: nas lojas que põem o preço na OPÇÃO de
+      // tamanho (base R$ 0,00), resolver só a base cobraria o preço de tabela
+      // das opções — e a vitrine já mostrou o do delivery.
+      const produtoNoCanal = aplicarPrecoDoCanalComCombo(product as any, "delivery");
       let precoUnitario = precoUnitarioDoItem(produtoNoCanal as any, item.comboSelections);
 
       // Piso: se a escolha não vier, vier vazia, ou o nome não casar com nenhuma

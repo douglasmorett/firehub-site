@@ -601,7 +601,9 @@ export default function MenuProductManager({
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
   const [activeGarcom, setActiveGarcom] = useState(true);
-  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; items: { id: string; additionalPrice: number; maxPerItem: number | null; optionNote: string | null }[] }[]>([]);
+  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null }[] }[]>([]);
+  /** Mostra os três campos de preço por canal em cada opção do combo. */
+  const [precosCanalNoCombo, setPrecosCanalNoCombo] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("TODAS");
 
@@ -725,6 +727,7 @@ export default function MenuProductManager({
     setPrecoSalao(""); setPrecoDelivery(""); setPrecoTotem(""); setAbaPrecos(false);
     setCategory(dynCategories[0]?.name || "");
     setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
+    setPrecosCanalNoCombo(false);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(true);
     setAvailableDaysMode("all"); setSelectedDays([]);
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
@@ -777,11 +780,25 @@ export default function MenuProductManager({
         items: (g.items || []).map((i: any) => ({
           id: i.menuProduct?.id || i.menuProductId || i.id,
           additionalPrice: Number(i.additionalPrice) || 0,
+          // Mesma regra do produto: só conta o que REALMENTE tem preço próprio.
+          // Zero aqui é o normal (opção que não cobra nada), e virar "0" no
+          // campo faria a tela mentir que existe preço de canal cadastrado.
+          additionalPriceSalao: Number(i.additionalPriceSalao) > 0 ? Number(i.additionalPriceSalao) : null,
+          additionalPriceDelivery: Number(i.additionalPriceDelivery) > 0 ? Number(i.additionalPriceDelivery) : null,
+          additionalPriceTotem: Number(i.additionalPriceTotem) > 0 ? Number(i.additionalPriceTotem) : null,
           maxPerItem: i.maxPerItem === null || i.maxPerItem === undefined ? null : Number(i.maxPerItem),
           optionNote: i.optionNote ?? null,
         }))
       })));
-    } else { setComboGroups([]); }
+      // Já abre destravado quando o combo tem preço por canal em alguma opção:
+      // escondido atrás de um clique, alguém edita o combo sem ver que os
+      // canais cobram valores diferentes.
+      setPrecosCanalNoCombo(
+        (p.comboGroups || []).some((g: any) => (g.items || []).some((i: any) =>
+          Number(i.additionalPriceSalao) > 0 || Number(i.additionalPriceDelivery) > 0 || Number(i.additionalPriceTotem) > 0
+        ))
+      );
+    } else { setComboGroups([]); setPrecosCanalNoCombo(false); }
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
     setEditingId(p.id); setShowForm(true);
   };
@@ -899,7 +916,7 @@ export default function MenuProductManager({
     setComboGroups(prev => prev.map((g, i) => {
       if (i !== gIdx) return g;
       if (g.items.some((it: any) => it.id === itemId)) return g;
-      return { ...g, items: [...g.items, { id: itemId, additionalPrice: 0, maxPerItem: null, optionNote: null }] };
+      return { ...g, items: [...g.items, { id: itemId, additionalPrice: 0, additionalPriceSalao: null, additionalPriceDelivery: null, additionalPriceTotem: null, maxPerItem: null, optionNote: null }] };
     }));
   };
   const removeGroupItem = (gIdx: number, itemId: string) => {
@@ -1028,7 +1045,7 @@ export default function MenuProductManager({
       setComboGroups(prev => prev.map((g, i) => {
         if (i !== gIdx) return g;
         if (g.items.some((it: any) => it.id === criado.id)) return g;
-        return { ...g, items: [...g.items, { id: criado.id, additionalPrice: acrescimo, maxPerItem: null, optionNote: null }] };
+        return { ...g, items: [...g.items, { id: criado.id, additionalPrice: acrescimo, additionalPriceSalao: null, additionalPriceDelivery: null, additionalPriceTotem: null, maxPerItem: null, optionNote: null }] };
       }));
 
       // Mantém o formulário aberto: quem cadastra adicional cadastra vários
@@ -2005,6 +2022,48 @@ export default function MenuProductManager({
                   </p>
                 </div>
 
+                {/* ─── PREÇO POR CANAL NAS OPÇÕES ────────────────────────────
+                    O campo "Preços por canal" lá de cima vale para o preço do
+                    PRODUTO. Só que num cardápio no molde iFood/Anota AI o
+                    produto tem base R$ 0,00 e quem cobra é a opção de tamanho
+                    ("Baby 13cm = R$ 21,90") — mexer só lá em cima não muda um
+                    centavo do que o cliente paga.
+
+                    Desligado, cada opção tem UM preço, que vale em todo canal:
+                    é o comportamento de sempre, e quem cobra igual em tudo não
+                    precisa saber que isto existe. */}
+                <button
+                  type="button"
+                  onClick={() => setPrecosCanalNoCombo(v => !v)}
+                  style={{
+                    width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                    marginBottom: "0.9rem", padding: "10px 14px", borderRadius: 12,
+                    border: precosCanalNoCombo ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
+                    background: precosCanalNoCombo ? "#F5F3FF" : "#FFF",
+                    color: precosCanalNoCombo ? "#6D28D9" : "#64748B",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  }}
+                >
+                  <span style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                    💰 Preço diferente por canal nas opções
+                    <span style={{ fontWeight: 600, opacity: 0.8 }}> (opcional)</span>
+                  </span>
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700 }}>
+                    {(() => {
+                      const n = comboGroups.reduce((soma, g) => soma + g.items.filter((it: any) =>
+                        it.additionalPriceSalao || it.additionalPriceDelivery || it.additionalPriceTotem).length, 0);
+                      return n > 0 ? `${n} opç${n > 1 ? "ões" : "ão"} com preço próprio` : (precosCanalNoCombo ? "fechar" : "abrir");
+                    })()}
+                  </span>
+                </button>
+
+                {precosCanalNoCombo && (
+                  <p style={{ margin: "-0.4rem 0 0.9rem", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.5, padding: "0 2px" }}>
+                    Canal em branco cobra o <strong>+R$</strong> normal da opção. Preencha só onde o
+                    preço muda — 🍽️ balcão e mesa, 🛵 delivery (cardápio, iFood, WhatsApp) e 📲 totem.
+                  </p>
+                )}
+
                 {comboGroups.length === 0 && (
                   <div style={{ padding: "1.1rem", background: "#FFF", border: "1px dashed #CBD5E1", borderRadius: "12px", textAlign: "center", marginBottom: "0.9rem" }}>
                     <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: 0 }}>Nenhuma pergunta ainda.</p>
@@ -2161,6 +2220,30 @@ export default function MenuProductManager({
                                 <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444" }} title="Tirar item da pergunta">
                                   <Trash2 size={15} />
                                 </button>
+
+                                {precosCanalNoCombo && (
+                                  <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "2px", paddingTop: "7px", borderTop: "1px dashed #CBD5E1" }}>
+                                    {[
+                                      { campo: "additionalPriceSalao", rotulo: "🍽️ Balcão/mesa", titulo: "Preço desta opção no balcão e na mesa." },
+                                      { campo: "additionalPriceDelivery", rotulo: "🛵 Delivery", titulo: "Preço desta opção no cardápio online, iFood, JotaJá, 99Food e WhatsApp." },
+                                      { campo: "additionalPriceTotem", rotulo: "📲 Totem", titulo: "Preço desta opção no totem de autoatendimento." },
+                                    ].map(c => (
+                                      <span key={c.campo} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                        <label style={{ fontSize: "0.71rem", color: "#6D28D9", fontWeight: 700 }} title={c.titulo}>{c.rotulo}</label>
+                                        <input
+                                          type="number"
+                                          step="0.50"
+                                          min="0"
+                                          placeholder={Number(it.additionalPrice) > 0 ? String(it.additionalPrice) : "0.00"}
+                                          value={(it as any)[c.campo] ?? ""}
+                                          onChange={e => updateGroupItemField(gIdx, it.id, c.campo, e.target.value ? parseFloat(e.target.value) : null)}
+                                          title={c.titulo}
+                                          style={{ width: "72px", padding: "3px 7px", borderRadius: "6px", border: "1.5px solid #DDD6FE", background: "#FFF", fontSize: "0.78rem", fontWeight: 700, textAlign: "right" }}
+                                        />
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

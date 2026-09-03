@@ -103,9 +103,20 @@ function dadosDoGrupo(g: any, gIdx: number) {
     items: {
       create: (Array.isArray(g?.items) ? g.items : []).map((it: any) => {
         const maxItem = Number(it?.maxPerItem);
+        // Preço por canal da OPÇÃO: só grava o que é número positivo. Zero,
+        // vazio e lixo viram NULL, que é "usa o additionalPrice" — a mesma
+        // regra do preço por canal do produto, e pelo mesmo motivo: campo
+        // apagado pela metade não pode virar opção de graça no cardápio.
+        const porCanal = (v: any) => {
+          const n = Number(v);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        };
         return {
           menuProductId: comboItemId(it) as string,
           additionalPrice: typeof it === "object" ? (Number(it?.additionalPrice) || 0) : 0,
+          additionalPriceSalao: typeof it === "object" ? porCanal(it?.additionalPriceSalao) : null,
+          additionalPriceDelivery: typeof it === "object" ? porCanal(it?.additionalPriceDelivery) : null,
+          additionalPriceTotem: typeof it === "object" ? porCanal(it?.additionalPriceTotem) : null,
           maxPerItem: Number.isFinite(maxItem) && maxItem > 0 ? Math.trunc(maxItem) : null,
           optionNote:
             typeof it === "object" && typeof it?.optionNote === "string" && it.optionNote.trim()

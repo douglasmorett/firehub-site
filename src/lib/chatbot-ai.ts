@@ -190,7 +190,16 @@ export async function processChatbotAI(
             // no Camarão com Catupiry enquanto o robô dizia R$ 131,40 ao
             // cliente no WhatsApp, com o mesmo produto e a mesma função.
             id: true, title: true, maxQty: true, minQty: true,
-            items: { select: { additionalPrice: true, menuProduct: { select: { id: true, name: true, price: true } } } },
+            // `additionalPriceDelivery` pelo mesmo motivo do `priceDelivery`
+            // acima: nas lojas de cardápio no molde iFood/Anota AI o preço mora
+            // na OPÇÃO de tamanho, não no produto — sem esta coluna o robô
+            // cotaria o preço do balcão para quem pede pelo WhatsApp.
+            items: {
+              select: {
+                additionalPrice: true, additionalPriceDelivery: true,
+                menuProduct: { select: { id: true, name: true, price: true } },
+              },
+            },
           },
         },
       },
