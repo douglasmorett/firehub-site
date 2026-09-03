@@ -736,6 +736,27 @@ export async function POST(req: NextRequest) {
 
     const livres = lojasDoToken.filter((id) => !ocupados.has(id));
 
+    // ── QUAL LOJA ESTE CÓDIGO ACABOU DE AUTORIZAR ────────────────────────
+    //
+    // O escopo do token é CUMULATIVO: ele lista tudo o que aquela conta do
+    // iFood já autorizou ao app, então sozinho ele não diz qual loja o lojista
+    // acabou de conectar. Mas a DIFERENÇA diz. Ele autorizou uma loja no
+    // portal e colou o código dela; se o escopo novo tem um merchant que o
+    // anterior não tinha, é esse — e vincular direto poupa o lojista de
+    // escolher entre UUIDs sem nome, que é impossível de acertar.
+    //
+    // O escopo anterior é a união do token do User com o de cada integração:
+    // quem conecta uma loja por vez tem pedaços do histórico espalhados.
+    const tokensAnteriores = [
+      user?.ifoodAccessToken,
+      ...(await prisma.ifoodIntegration.findMany({
+        where: { userId: storeId },
+        select: { accessToken: true },
+      })).map((i) => i.accessToken),
+    ];
+    const escopoAnterior = new Set(tokensAnteriores.flatMap((t) => merchantsDoToken(t)));
+    const recemAutorizadas = livres.filter((id) => !escopoAnterior.has(id));
+
     // O que esta conta JÁ tem continua com o token renovado — isso não é
     // escolha nova, é manter viva a loja que ele já usa.
     const jaMinhas = new Set(
@@ -757,28 +778,50 @@ export async function POST(req: NextRequest) {
 
     const novas = livres.filter((id) => !jaMinhas.has(id));
 
-    // Uma só, e a conta ainda vazia: não há escolha a fazer, vincula.
-    if (novas.length === 1 && jaMinhas.size === 0 && !user?.ifoodMerchantId) {
+    // Vincula sozinho em dois casos, e só neles:
+    //   1. a loja que ESTE código acabou de autorizar (a diferença de escopo);
+    //   2. escopo com uma loja só e a conta ainda vazia — não há o que escolher.
+    // Fora disso a lista volta para a tela: o escopo carrega autorizações
+    // antigas, e vincular tudo cobraria R$50/mês por loja que ele não pediu.
+    const paraVincular =
+      recemAutorizadas.length === 1
+        ? recemAutorizadas[0]
+        : (novas.length === 1 && jaMinhas.size === 0 && !user?.ifoodMerchantId ? novas[0] : null);
+
+    if (paraVincular) {
       try {
         await prisma.ifoodIntegration.upsert({
-          where: { userId_merchantId: { userId: storeId, merchantId: novas[0] } },
+          where: { userId_merchantId: { userId: storeId, merchantId: paraVincular } },
           create: {
             userId: storeId,
             label: user?.storeName || user?.name || "Loja iFood",
-            merchantId: novas[0],
+            merchantId: paraVincular,
             connected: true,
             active: true,
             ...credenciais,
           },
           update: { connected: true, active: true, ...credenciais },
         });
-        merchantId = novas[0];
+        merchantId = user?.ifoodMerchantId || paraVincular;
+        if (recemAutorizadas.length === 1) {
+          console.log(`[iFood Auth] Loja ${storeId}: ${paraVincular} vinculada — é a que este código autorizou.`);
+        }
       } catch (e: any) {
-        console.warn("[iFood Auth] Aviso ao vincular a única loja do escopo:", e?.message);
+        console.warn("[iFood Auth] Aviso ao vincular a loja do código:", e?.message);
       }
-    } else if (novas.length > 0) {
-      // Mais de uma disponível (ou a conta já tem loja): quem escolhe é ele.
-      merchantsAmbiguos = novas.map((id) => ({ id, name: "" }));
+    }
+
+    // ⚠️ O que sobrou NÃO vira lista de UUID para ele escolher.
+    //
+    // Lista sem nome não adianta: este app não consegue o nome de uma loja que
+    // ainda não mandou pedido (o detalhe do merchant volta 403), então seria
+    // pedir para o lojista apontar qual é a dele olhando para
+    // "ea2c4d55-efd2-4fa7-8aa7-fc1ecd6b8d52" — e errar põe o pedido de uma loja
+    // no painel da outra. Quem oferece as que faltam é
+    // /api/ifood/integration/escopo, com uma confirmação só e o preço na frente.
+    const restantes = novas.filter((id) => id !== paraVincular);
+    if (restantes.length > 0) {
+      console.log(`[iFood Auth] Loja ${storeId}: ${restantes.length} loja(s) autorizada(s) ainda fora do FireHub.`);
     }
 
     console.log(

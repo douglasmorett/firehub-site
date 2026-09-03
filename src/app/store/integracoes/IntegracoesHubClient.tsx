@@ -619,6 +619,7 @@ export default function IntegracoesHubClient({
       .then(d => { if (d.integrations) setIfoodIntegrations(d.integrations); })
       .catch(() => {})
       .finally(() => setIfoodLoading(false));
+    carregarEscopoIfood();
   }, []);
 
   const handleConnectIfoodOAuth = () => {
@@ -656,6 +657,35 @@ export default function IntegracoesHubClient({
   // errado faz o pedido de uma loja cair no painel da outra.
   const [candidatosIfood, setCandidatosIfood] = useState<{ merchantId: string; nome: string }[]>([]);
 
+  // Lojas que a conta do iFood já autorizou e que ainda não estão aqui. Vêm do
+  // escopo do token, porque o iFood não tem endpoint que as liste neste app.
+  const [escopoPendentes, setEscopoPendentes] = useState(0);
+  const [escopoTrazendo, setEscopoTrazendo] = useState(false);
+
+  const carregarEscopoIfood = async () => {
+    try {
+      const d = await fetch("/api/ifood/integration/escopo").then(r => r.json());
+      setEscopoPendentes(Array.isArray(d?.pendentes) ? d.pendentes.length : 0);
+    } catch { setEscopoPendentes(0); }
+  };
+
+  const trazerLojasDoEscopo = async () => {
+    const preco = (escopoPendentes * 50).toFixed(2);
+    if (!confirm(
+      `Conectar ${escopoPendentes} loja(s) do iFood que você já autorizou?\n\n` +
+      `Elas passam a receber pedido neste mesmo painel. O nome de cada uma aparece ` +
+      `no primeiro pedido dela.\n\nCusto adicional: até +R$${preco}/mês.`
+    )) return;
+    setEscopoTrazendo(true);
+    try {
+      const d = await fetch("/api/ifood/integration/escopo", { method: "POST" }).then(r => r.json());
+      showToast(d?.message || "Lojas conectadas!", "#10B981");
+      setTimeout(() => window.location.reload(), 1200);
+    } catch {
+      showToast("⚠️ Erro ao conectar as lojas", "#EF4444");
+    } finally { setEscopoTrazendo(false); }
+  };
+
   const handleLinkAuthorizationCode = async () => {
     if (!authCodeInput.trim()) {
       showToast("⚠️ Digite o código de autorização gerado no iFood", "#EF4444");
@@ -681,24 +711,22 @@ export default function IntegracoesHubClient({
           );
         }
 
-        // ⚠️ Só marca a loja como vinculada quando o servidor devolveu um
-        // merchantId DE VERDADE. Antes, sem merchantId, usava-se o próprio
-        // código de autorização como se fosse o ID da loja: a contagem pulava
-        // para 2, o reload trazia a verdade do servidor e voltava para 1 — a
-        // tela mentia e o lojista achava que tinha desintegrado sozinho.
-        if (data.merchantId) {
-          setIfMerchant(data.merchantId);
-          setIfoodIntegrations(prev => [
-            ...prev.filter(i => i.merchantId !== data.merchantId),
-            { id: "main", label: "Loja Principal", merchantId: data.merchantId, connected: true, active: true, createdAt: new Date().toISOString() },
-          ]);
-          if (!data.merchantsDisponiveis?.length) {
-            setOpenModal(null);
-            setTimeout(() => { window.location.reload(); }, 600);
-          }
-        } else if (data.needsMerchantId) {
-          setNeedsMerchantId(true);
-        }
+        // ⚠️ NADA de linha inventada aqui. Duas mentiras moravam neste ponto:
+        // sem merchantId usava-se o próprio código de autorização como se
+        // fosse o ID da loja (a contagem pulava para 2 e o reload devolvia
+        // para 1), e o rótulo entrava como "Loja Principal", que sobrescrevia
+        // na tela o nome real da loja — o card virava "PIETRO CUNHA ROCHA" e
+        // só voltava a ser "Ragnar Burger" quando o lojista saía e entrava.
+        //
+        // A lista vem do servidor, que é quem sabe.
+        if (data.merchantId) setIfMerchant(data.merchantId);
+        else if (data.needsMerchantId) setNeedsMerchantId(true);
+
+        try {
+          const lista = await fetch("/api/ifood/integration/list").then(r => r.json());
+          if (lista?.integrations) setIfoodIntegrations(lista.integrations);
+        } catch {}
+
         setAuthCodeInput("");
       } else {
         showToast(data.error || "Código de autorização inválido ou expirado", "#EF4444");
@@ -1637,6 +1665,43 @@ export default function IntegracoesHubClient({
                   </div>
                 )}
 
+                {/* ── LOJAS AUTORIZADAS QUE FALTAM ──────────────────────────
+                    Sem lista e sem escolha: o iFood não dá o nome de uma loja
+                    que ainda não mandou pedido, então pedir para o lojista
+                    apontar UUID é pedir para ele errar. Aqui é um botão só,
+                    com o preço na frente, e o nome de cada uma se corrige no
+                    primeiro pedido dela. */}
+                {escopoPendentes > 0 && (
+                  <div style={{ padding: "14px 16px", borderRadius: 14, background: "#EFF6FF", border: "1.5px solid #93C5FD", marginBottom: "16px" }}>
+                    <div style={{ fontSize: "0.88rem", fontWeight: 800, color: "#1E40AF", marginBottom: 4 }}>
+                      Você tem {escopoPendentes} loja{escopoPendentes > 1 ? "s" : ""} do iFood autorizada{escopoPendentes > 1 ? "s" : ""} fora do FireHub
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#1D4ED8", marginBottom: 12, lineHeight: 1.5 }}>
+                      {escopoPendentes > 1 ? "Elas já estão" : "Ela já está"} autorizada{escopoPendentes > 1 ? "s" : ""} no
+                      seu iFood, mas {escopoPendentes > 1 ? "não recebem" : "não recebe"} pedido aqui.
+                      Conectando, {escopoPendentes > 1 ? "os pedidos delas caem" : "os pedidos dela caem"} neste
+                      mesmo painel. O nome aparece no primeiro pedido.
+                      <br />
+                      <strong>+R$50,00/mês por loja adicional.</strong>
+                    </div>
+                    <button
+                      onClick={trazerLojasDoEscopo}
+                      disabled={escopoTrazendo}
+                      style={{
+                        padding: "10px 16px", borderRadius: 10, border: "none",
+                        background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff",
+                        fontWeight: 800, fontSize: "0.85rem", cursor: escopoTrazendo ? "wait" : "pointer",
+                        fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6,
+                        opacity: escopoTrazendo ? 0.7 : 1,
+                      }}
+                    >
+                      {escopoTrazendo
+                        ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Conectando...</>
+                        : <><Plus size={14} /> Conectar {escopoPendentes > 1 ? `as ${escopoPendentes}` : "a loja"}</>}
+                    </button>
+                  </div>
+                )}
+
                 {/* Formulário para adicionar nova integração */}
                 {showAddIfoodForm ? (
                   <div style={{ padding: "16px", borderRadius: 14, border: "1.5px dashed #CBD5E1", background: "#F8FAFC", marginBottom: "16px" }}>
@@ -1712,18 +1777,37 @@ export default function IntegracoesHubClient({
                     mudo: a loja ficava sem pedido nenhum, para sempre, sem nada
                     na tela explicando. Agora ele vê os nomes e resolve num
                     clique. */}
-                {candidatosIfood.length > 1 && (
+                {/* Só entra em tela a lista que TEM NOME — a que veio dos
+                    eventos, onde o nome sai do detalhe de um pedido. Lista de
+                    UUID sem nome não adianta: ninguém reconhece a própria loja
+                    olhando para "ea2c4d55-efd2-4fa7-…", e errar põe o pedido de
+                    uma loja no painel da outra. As lojas autorizadas sem pedido
+                    ainda são oferecidas pelo bloco de baixo, com uma
+                    confirmação só. */}
+                {candidatosIfood.filter(c => c.nome?.trim()).length > 1 && (
                   <div style={{ padding: "16px", borderRadius: 14, background: "#FFFBEB", border: "2px solid #FCD34D", marginBottom: "16px" }}>
                     <div style={{ fontSize: "0.9rem", fontWeight: 800, color: "#92400E", marginBottom: 4 }}>
                       ⚠️ Achamos {candidatosIfood.length} lojas do iFood nesta conta
                     </div>
+                    {/* O iFood não entrega o nome destas lojas: este aplicativo
+                        tem só `order` e `events` por loja, e pedir o detalhe do
+                        merchant volta 403. O nome só existe dentro de um pedido.
+                        Então o texto precisa dizer o caminho que NÃO exige
+                        adivinhar UUID — autorizar cada loja e colar o código
+                        dela, que agora vincula aquela loja direto. */}
                     <div style={{ fontSize: "0.78rem", color: "#B45309", marginBottom: 12, lineHeight: 1.5 }}>
-                      Qual delas é <strong>esta</strong> loja do FireHub? Os pedidos só começam a
-                      entrar depois de você escolher — e é você quem sabe, porque escolher errado
-                      faria o pedido de uma loja aparecer no painel da outra.
+                      São lojas suas que já estão autorizadas no iFood, mas ainda não estão aqui.
+                      O iFood não informa o nome delas — ele só aparece no primeiro pedido.
+                      <br /><br />
+                      <strong>Não precisa adivinhar pelo código.</strong> Clique em
+                      &quot;1. Conectar e Autorizar&quot; com a loja que você quer selecionada lá no
+                      iFood e cole o código dela aqui: ela entra sozinha, sem você escolher da
+                      lista. Use a lista abaixo só se souber o ID de cor.
+                      <br /><br />
+                      Cada loja adicional custa <strong>+R$50,00/mês</strong>.
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {candidatosIfood.map((c) => (
+                      {candidatosIfood.filter(c => c.nome?.trim()).map((c) => (
                         <button
                           key={c.merchantId}
                           type="button"
