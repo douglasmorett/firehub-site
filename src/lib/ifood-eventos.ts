@@ -25,19 +25,89 @@ export type ResultadoEventos = {
   descartados: number;
 };
 
+/**
+ * Puxa a fila de eventos do iFood com UM token.
+ *
+ * `merchants` vazio (o que o cron faz) significa SEM o header
+ * `x-polling-merchants`: o iFood entrega tudo o que aquele token enxerga. É
+ * assim que uma loja iFood recém-autorizada aparece — filtrando, ela nunca
+ * apareceria, porque não dá para pedir o que não se sabe que existe. Quem
+ * chama sem filtro precisa peneirar depois, no `merchantEsperado`.
+ *
+ * Com lista, o header é tudo ou nada: basta UMA loja não estar autorizada
+ * para aquele token e o iFood responde 403 na chamada inteira, levando junto
+ * as que funcionavam. Por isso, no 403, repete-se loja a loja — as autorizadas
+ * entregam seus pedidos e as recusadas voltam nomeadas.
+ */
+export async function puxarEventosIfood(opts: {
+  token: string;
+  merchants: string[];
+  log?: string[];
+}): Promise<{ eventos: any[]; naoAutorizados: string[]; erro?: string }> {
+  const url = "https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true";
+
+  const pedir = async (lista: string[]) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${opts.token}` };
+    if (lista.length > 0) headers["x-polling-merchants"] = lista.join(",");
+    const res = await fetch(url, { method: "GET", headers });
+    const texto = await res.text().catch(() => "");
+    return { res, texto };
+  };
+
+  const lerEventos = (texto: string): any[] => {
+    if (!texto) return [];
+    try {
+      const lidos = JSON.parse(texto);
+      return Array.isArray(lidos) ? lidos : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const primeira = await pedir(opts.merchants);
+  if (primeira.res.ok) {
+    return { eventos: lerEventos(primeira.texto), naoAutorizados: [] };
+  }
+
+  if (primeira.res.status !== 403 || opts.merchants.length < 2) {
+    return {
+      eventos: [],
+      naoAutorizados: primeira.res.status === 403 ? [...opts.merchants] : [],
+      erro: `${primeira.res.status} ${primeira.texto.slice(0, 120)}`,
+    };
+  }
+
+  opts.log?.push(`  [!] 403 no polling com ${opts.merchants.length} lojas — repetindo uma a uma`);
+  const eventos: any[] = [];
+  const naoAutorizados: string[] = [];
+  for (const merchant of opts.merchants) {
+    const uma = await pedir([merchant]);
+    if (uma.res.ok) eventos.push(...lerEventos(uma.texto));
+    else naoAutorizados.push(merchant);
+  }
+  if (naoAutorizados.length > 0) {
+    opts.log?.push(`  [!] loja(s) sem autorização para este token: ${naoAutorizados.join(", ")}`);
+  }
+  return { eventos, naoAutorizados };
+}
+
 export async function processarEventosIfood(opts: {
   events: any[];
   token: string;
   log: string[];
-  merchantEsperado?: string | null;
+  /** Uma loja, ou TODAS as lojas daquela chamada de polling. */
+  merchantEsperado?: string | string[] | null;
 }): Promise<ResultadoEventos> {
   const { token, log } = opts;
 
   let descartados = 0;
   let events = opts.events || [];
-  if (opts.merchantEsperado) {
+  const esperados = opts.merchantEsperado
+    ? new Set((Array.isArray(opts.merchantEsperado) ? opts.merchantEsperado : [opts.merchantEsperado]).filter(Boolean))
+    : null;
+  if (esperados && esperados.size > 0) {
     const antes = events.length;
-    events = events.filter((e) => e && e.merchantId === opts.merchantEsperado);
+    events = events.filter((e) => e && esperados.has(e.merchantId));
     descartados = antes - events.length;
     if (descartados > 0) {
       log.push("  [x] " + descartados + " evento(s) de outro merchant descartado(s)");

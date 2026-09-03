@@ -67,12 +67,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // O verifier vai NA LOJA, não no registro de quem abriu a tela. Quando um
+    // funcionário gerava o código, o verifier ficava na conta dele e a troca do
+    // código — que lê o da loja — seguia sem verifier, o caminho que devolve
+    // token sem concessão de loja nenhuma.
     if (data.authorizationCodeVerifier && session.user?.email) {
       try {
-        await prisma.user.update({
-          where: { email: session.user.email },
-          data: { ifoodAuthVerifier: data.authorizationCodeVerifier },
-        });
+        const { lojaDaSessao } = await import("@/lib/ifood-token");
+        const storeId = await lojaDaSessao(
+          session.user.email,
+          req.nextUrl.searchParams.get("storeId") || req.cookies.get("firehub_active_store")?.value || null,
+        );
+        if (storeId) {
+          await prisma.user.update({
+            where: { id: storeId },
+            data: { ifoodAuthVerifier: data.authorizationCodeVerifier },
+          });
+        }
       } catch (e: any) {
         console.warn("[iFood userCode] aviso ao salvar verifier:", e?.message);
       }
