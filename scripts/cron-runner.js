@@ -33,6 +33,23 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Mantem a loja ABERTA no 99Food sem ninguem abrir o gestor deles.
+    //
+    // O lojista fechava o app do 99Food e a loja ficava offline la. O swagger
+    // deles diz que, uma vez offline, ela so volta por esta API ou abrindo o
+    // app na mao. Era esta a reclamacao de "so entra pedido se eu deixar o 99
+    // aberto": nunca foi o app que trazia pedido (isso e o webhook, servidor a
+    // servidor), era o app que segurava a loja online.
+    //
+    // De 5 em 5 minutos porque tambem e o que mantem o auth_token vivo: a
+    // renovacao do 99Food so acontecia no uso, entao loja parada mais de um dia
+    // perto do vencimento perdia o token, e sem token o webhook descarta pedido
+    // novo em silencio.
+    name: '99food-abertura',
+    path: '/api/cron/99food-abertura',
+    intervalMs: 5 * 60_000, // 5 minutos
+  },
+  {
     name: 'gateway-keepalive',
     path: '/api/cron/gateway-keepalive',
     intervalMs: 5 * 60_000, // 5 minutos

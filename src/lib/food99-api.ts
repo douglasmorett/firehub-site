@@ -528,3 +528,163 @@ export async function desvincularLoja(authToken: string): Promise<{ ok: true } |
   cacheLojas = null;
   return { ok: true };
 }
+
+/**
+ * Confirma a loja ONLINE no 99Food.
+ *
+ * ── O problema que isto resolve ─────────────────────────────────────────────
+ *
+ * Até aqui o FireHub nunca mexeu no estado da loja no lado deles: quem punha a
+ * loja online era o lojista, abrindo o app do 99Food. Fechou o app, loja
+ * offline — e a descrição deste endpoint no swagger deles diz, com todas as
+ * letras, que dali não se sai sozinho:
+ *
+ *   "If biz_status is offline, this shop will never be online until the
+ *    biz_status set to online with this api or be online from didi's app
+ *    manually."
+ *
+ * Ou seja: sem esta chamada, a ÚNICA forma de reabrir era abrir o app deles na
+ * mão. É exatamente a reclamação que chegou — "só entra pedido se eu deixar o
+ * 99 aberto". Não era o app aberto que fazia entrar pedido; era o app aberto
+ * que mantinha a loja online.
+ *
+ * ── Por que só existe "online" aqui ─────────────────────────────────────────
+ *
+ * Esta função não fecha loja, e a assinatura não aceita "fechar" de propósito.
+ * O horário do FireHub (`storeOpen`, `storeHours`) governa o NOSSO cardápio
+ * digital e mais nada; o 99Food tem agenda própria, feita no painel deles. São
+ * duas coisas sem relação, e amarrá-las fecharia a loja no horário errado.
+ *
+ * ── biz_status e auto_switch ────────────────────────────────────────────────
+ *
+ * `biz_status: 1` é o online — o estado do qual a loja não sai sozinha.
+ *
+ * `auto_switch: 3` = "set store online and offline automatically, order
+ * release is enabled": é ele que faz o 99Food abrir E fechar a loja sozinho,
+ * pela agenda cadastrada lá, sem ninguém tocar no app. É o valor que traduz o
+ * pedido do dono — "ligado sem precisar abrir o gestor deles".
+ *
+ * Não usamos 1 ("online automatically"), que põe a loja online mas não a fecha:
+ * a loja ficaria recebendo pedido fora do horário de funcionamento dela, e
+ * pedido aceito que ninguém prepara vira cancelamento e punição no 99Food.
+ *
+ * Fonte: .99food-docs/swagger.yaml, /v1/shop/shop/setStatus.
+ */
+export async function setShopStatus(
+  authToken: string,
+  autoSwitch: 1 | 2 | 3
+): Promise<{ ok: true; online: boolean } | { ok: false; erro: string }> {
+  const r = await chamar<{ biz_status?: boolean; auto_switch?: boolean }>("/v1/shop/shop/setStatus", {
+    metodo: "POST",
+    corpo: {
+      auth_token: authToken,
+      biz_status: 1,
+      auto_switch: autoSwitch,
+    },
+  });
+
+  if (r.errno !== 0) return { ok: false, erro: `${r.errno} ${r.errmsg}` };
+
+  // errno 0 NÃO quer dizer que a loja ficou online: o 99Food aceita a chamada e
+  // responde biz_status=false quando ela continua offline por motivo dele (loja
+  // bloqueada, vínculo suspenso, sem entregador). Tratar isso como sucesso faria
+  // o log mentir "confirmada ONLINE" e travaria a retentativa. Só é sucesso se
+  // ele confirmar online.
+  if (r.data?.biz_status === false) {
+    return { ok: false, erro: "setStatus aceito (errno 0) mas o 99Food manteve a loja OFFLINE" };
+  }
+  return { ok: true, online: true };
+}
+
+/**
+ * Quem pode confirmar pedido: o app do 99Food, ou o nosso sistema.
+ *
+ * ── ESTA é a causa raiz de "só entra pedido se eu deixar o 99 aberto" ───────
+ *
+ * O swagger deles, em /v1/shop/shop/setconfirmmethod:
+ *
+ *   "If order_confirm_method is BAPP, both DiDi/99 Food's APP and your POS
+ *    system can confirm new orders, but DiDi/99 Food's APP MUST REMAIN ONLINE.
+ *    If order_confirm_method is OPENAPI, only your POS system can confirm new
+ *    orders, and the DiDi/99 Food's APP DOES NOT NEED TO BE ONLINE.
+ *    If the store is unbound, we will change the ordering method to BAPP by
+ *    default."
+ *
+ * O padrão é BAPP, e nada no FireHub nunca mexeu nisso — então toda loja
+ * conectada está em BAPP, exigindo o app deles online. Manter a loja online
+ * pelo `setShopStatus` ajuda, mas não remove essa exigência: quem remove é
+ * trocar para OPENAPI.
+ *
+ * ── Por que isto NÃO é chamado automaticamente ──────────────────────────────
+ *
+ * Em OPENAPI, SÓ o nosso sistema confirma pedido. Se o caminho de confirmação
+ * daqui falhar por qualquer motivo — token vencido, webhook mudo, loja sem
+ * vínculo — o pedido não é confirmado por ninguém, e o 99Food cancela. O modo
+ * BAPP, com todos os seus defeitos, ao menos deixa o lojista salvar o pedido
+ * na mão pelo app deles.
+ *
+ * Por isso a troca é DELIBERADA, uma loja por vez, e só depois de ver pedido
+ * entrando e sendo confirmado sozinho naquela loja. Ligar isto antes disso
+ * troca "o lojista precisa deixar o app aberto" por "os pedidos são
+ * cancelados", que é estritamente pior.
+ *
+ * Fonte: .99food-docs/swagger.yaml, /v1/shop/shop/setconfirmmethod.
+ */
+export type MetodoConfirmacao99 = "BAPP" | "OPENAPI";
+
+export async function setConfirmMethod(
+  authToken: string,
+  metodo: MetodoConfirmacao99
+): Promise<{ ok: true } | { ok: false; erro: string }> {
+  const r = await chamar<{ order_confirm_method?: boolean }>("/v1/shop/shop/setconfirmmethod", {
+    metodo: "POST",
+    corpo: {
+      auth_token: authToken,
+      order_confirm_method: metodo === "OPENAPI" ? 2 : 1,
+    },
+  });
+
+  if (r.errno !== 0) return { ok: false, erro: `${r.errno} ${r.errmsg}` };
+  return { ok: true };
+}
+
+/**
+ * O estado operacional da loja no 99Food, agora — sem cache.
+ *
+ * Separado de `detalheDaLoja` de propósito: aquele guarda nome e endereço por 5
+ * minutos, o que é certo para um rótulo de tela e errado para decidir se a loja
+ * está no ar. Aqui o valor velho é pior que nenhum.
+ *
+ * `sub_biz_status` é o campo que importa, porque distingue coisas que
+ * `biz_status` junta (swagger.yaml, ShopModel):
+ *
+ *   0 padrão · 1 aberta · 2 PAUSADA pelo lojista · 3 fechada ·
+ *   4 DESCONECTADA · 5 fechada no dia · 6 bloqueada ·
+ *   7 fechada pelo sistema (sem entregador)
+ *
+ * O 4 é o problema do dono: é o estado em que a loja cai quando o gestor do
+ * 99Food é fechado no PC. O 2 e o 5 são decisão do lojista, e religar por cima
+ * deles seria trocar o problema por um pior — pedido entrando numa cozinha que
+ * decidiu parar vira cancelamento e punição.
+ */
+export type EstadoOperacional99 = {
+  nome: string | null;
+  bizStatus: number | null;
+  subBizStatus: number | null;
+  autoSwitch: number | null;
+};
+
+export async function estadoOperacionalDaLoja(
+  authToken: string
+): Promise<EstadoOperacional99 | null> {
+  const r = await chamar<any>("/v1/shop/shop/detail", { query: { auth_token: authToken } });
+  if (r.errno !== 0 || !r.data) return null;
+  const d = r.data;
+  const num = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    nome: d.name ? String(d.name).trim() : null,
+    bizStatus: num(d.biz_status),
+    subBizStatus: num(d.sub_biz_status),
+    autoSwitch: num(d.auto_switch),
+  };
+}

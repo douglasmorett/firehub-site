@@ -1608,11 +1608,43 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     });
   }, [orders, autoAccept]);
 
+  // ── O aceite automatico precisa existir FORA deste navegador ─────────────
+  //
+  // Este interruptor so vivia no localStorage, entao ele valia enquanto esta
+  // aba estivesse aberta e so nela: fechou o painel, parou de aceitar. E o
+  // servidor nunca ficava sabendo — a coluna `autoAcceptOrders` do User (a
+  // mesma que o cardapio proprio ja usa em customer-order/route.ts) continuava
+  // false para todo mundo, porque nenhuma tela a escrevia.
+  //
+  // Isso passou a importar de verdade com o 99Food: e esta coluna que decide se
+  // a loja pode ir para OPENAPI (o modo em que o app do 99Food nao precisa ficar
+  // online) — porque OPENAPI so e seguro onde o FireHub confirma o pedido
+  // sozinho, e quem faz o webhook confirmar sozinho e justamente o aceite
+  // automatico. Ver src/lib/food99-abertura.ts.
+  const gravarAceiteAutomatico = (valor: boolean) =>
+    fetch("/api/store-settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoAcceptOrders: valor }),
+    }).catch(() => {});
+
+  // Quem ja tinha o aceite ligado neste navegador nao pode perder a escolha:
+  // na primeira montagem o valor local sobe para o servidor uma vez. Sem isto,
+  // a coluna ficaria false ate o lojista desligar e religar o botao.
+  const aceiteMigradoRef = useRef(false);
+  useEffect(() => {
+    if (aceiteMigradoRef.current) return;
+    aceiteMigradoRef.current = true;
+    if (autoAccept) gravarAceiteAutomatico(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Toggle auto accept
   const toggleAutoAccept = () => {
     const next = !autoAccept;
     setAutoAccept(next);
     localStorage.setItem("autoAcceptOrders", next.toString());
+    gravarAceiteAutomatico(next);
   };
 
   // Pre-initialize AudioContext on first user interaction (required by browser autoplay policy)
