@@ -112,8 +112,15 @@ export default function VendaPresencialPage() {
 
   // Esconde itens stub de integração (iFood, JotaJá, 99Food)
   const HIDDEN_CATEGORIES = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
+  // O prefixo do id diz como o registro NASCEU, não o que ele É hoje: cardápio
+  // importado reaproveita ids `ifood-…` (ver SEM_PRODUTO_DE_INTEGRACAO em
+  // cardapio-interno.ts — o servidor já filtra assim). Condenar por prefixo
+  // escondia do balcão os mesmos 8 pastéis de carne que sumiam da mesa na
+  // Pastelaria da Paulista. Prefixo só condena espelho não adotado: o inativo.
   const isIntegrationItem = (p: any) => {
-    if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
+    const temPrefixoDeEspelho =
+      p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-");
+    if (temPrefixoDeEspelho && p.active === false) return true;
     const cat = (p.category || "").toUpperCase().trim();
     return HIDDEN_CATEGORIES.has(cat);
   };

@@ -98,12 +98,21 @@ export const SEM_PRODUTO_DE_INTEGRACAO = {
 /**
  * Versão para filtrar em memória, quando os produtos já vieram do banco.
  * O `id` é opcional para não quebrar quem só tem a categoria em mãos.
+ *
+ * O prefixo obedece à MESMA regra do `where` acima: sozinho ele não condena —
+ * só condena espelho que ninguém adotou, isto é, com `ativo === false`
+ * explícito. Esta função dizia o contrário (prefixo bastava) e era exatamente
+ * a versão antiga da regra que o comentário acima manda não usar; as telas de
+ * mesa e balcão tinham cópias dela e esconderam 8 dos 13 pastéis de carne da
+ * Pastelaria da Paulista. Quem não sabe se o produto está ativo não passa o
+ * terceiro argumento — e aí só a categoria decide, que é o lado seguro.
  */
 export function ehProdutoDeIntegracao(
   categoria: string | null | undefined,
-  id?: string | null
+  id?: string | null,
+  ativo?: boolean | null
 ): boolean {
-  if (id && PREFIXOS_DE_ESPELHO.some((prefixo) => id.startsWith(prefixo))) return true;
+  if (id && ativo === false && PREFIXOS_DE_ESPELHO.some((prefixo) => id.startsWith(prefixo))) return true;
   if (!categoria) return false;
   return CATEGORIAS_DE_INTEGRACAO.includes(categoria.trim().toUpperCase());
 }

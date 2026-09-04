@@ -329,8 +329,18 @@ export default function MesasPage() {
         if (Array.isArray(data)) {
           // Esconde itens stub de integração (iFood, JotaJá, 99Food)
           const HIDDEN_CATS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
+          // O prefixo do id diz como o registro NASCEU, não o que ele É hoje:
+          // cardápio importado do sistema antigo reaproveita ids `ifood-…` (o
+          // porquê está em SEM_PRODUTO_DE_INTEGRACAO, cardapio-interno.ts — o
+          // servidor já filtra assim). Condenar por prefixo escondia desta tela
+          // 8 dos 13 pastéis de carne da Pastelaria da Paulista — ativos, com
+          // categoria própria e combo montado — e sem aparecer nem no aviso de
+          // ocultos, porque espelho fica fora dele de propósito. Prefixo só
+          // condena o espelho que ninguém adotou: o inativo.
           const isIntegration = (p: any) => {
-            if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
+            const temPrefixoDeEspelho =
+              p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-");
+            if (temPrefixoDeEspelho && p.active === false) return true;
             return HIDDEN_CATS.has((p.category || "").toUpperCase().trim());
           };
 
