@@ -282,3 +282,31 @@ export function idsSoDeOpcaoDeCombo(produtos: any[]): Set<string> {
 
   return naoVendaveis;
 }
+
+/**
+ * Em quais combos cada produto aparece como opção.
+ *
+ * É o "usado em: Pastel de Carne, Pastel de Queijo…" que o painel mostra ao
+ * abrir uma opção — sem isso, quem edita um "Adicional de Catupiry" não tem
+ * como saber o que muda no cardápio ao mexer nele. E é o que separa a opção
+ * que mora dentro de algum "Complementos" da que ficou solta (na Paulista, 46
+ * dos 101 adicionais vieram da importação sem combo nenhum).
+ */
+export function combosQueUsamOpcao(produtos: any[]): Map<string, { id: string; name: string }[]> {
+  const mapa = new Map<string, { id: string; name: string }[]>();
+  for (const p of produtos || []) {
+    if (!p?.id || !(p.comboGroups || []).length) continue;
+    const vistos = new Set<string>();
+    for (const grupo of p.comboGroups) {
+      for (const item of grupo?.items || []) {
+        const id = item?.menuProduct?.id ?? item?.menuProductId;
+        if (!id || vistos.has(String(id))) continue;
+        vistos.add(String(id));
+        const lista = mapa.get(String(id)) || [];
+        lista.push({ id: String(p.id), name: String(p.name || "") });
+        mapa.set(String(id), lista);
+      }
+    }
+  }
+  return mapa;
+}
