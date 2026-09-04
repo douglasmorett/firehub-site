@@ -42,6 +42,8 @@ interface SessionOrder {
   createdAt: string;
   status: string;
   items: {
+    /** Necessário para EDITAR o item lançado (quantidade / remover). */
+    id: string;
     quantity: number;
     price: number;
     menuProduct: { name: string };
@@ -418,6 +420,69 @@ export default function MesasPage() {
       }
     } catch { /* silent */ }
   }, []);
+
+  // ── EDITAR PEDIDO JÁ LANÇADO ───────────────────────────────────────────
+  //
+  // Garçom lança errado, cliente muda de ideia — e a comanda era leitura pura:
+  // a única saída era fechar a conta com item que ninguém consumiu. Só em mesa
+  // ABERTA (o servidor também recusa fechada); cancelar o pedido devolve o
+  // estoque baixado, reduzir quantidade não (a devolução registrada é por
+  // pedido — está avisado no confirm).
+  const [editandoItem, setEditandoItem] = useState<string | null>(null);
+
+  const editarQtdItem = useCallback(async (orderId: string, itemId: string, quantity: number) => {
+    if (!selectedTable?.openSession || quantity < 1 || editandoItem) return;
+    setEditandoItem(itemId);
+    try {
+      const res = await fetch(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itens: [{ itemId, quantity }] }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) alert(data.error || "Não consegui alterar o item.");
+      await fetchSessionDetail(selectedTable.openSession.id);
+      fetchTables();
+    } catch { alert("Sem conexão — o item não foi alterado."); }
+    finally { setEditandoItem(null); }
+  }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
+
+  const removerItemPedido = useCallback(async (orderId: string, itemId: string, nome: string, ultimo: boolean) => {
+    if (!selectedTable?.openSession || editandoItem) return;
+    const aviso = ultimo
+      ? `Remover "${nome}"?\n\nÉ o último item: o PEDIDO INTEIRO será cancelado e o estoque devolvido.`
+      : `Remover "${nome}" deste pedido?\n\n(O estoque deste item não volta sozinho — se precisar, ajuste no Estoque.)`;
+    if (!confirm(aviso)) return;
+    setEditandoItem(itemId);
+    try {
+      const res = await fetch(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removerItemIds: [itemId] }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) alert(data.error || "Não consegui remover o item.");
+      await fetchSessionDetail(selectedTable.openSession.id);
+      fetchTables();
+    } catch { alert("Sem conexão — o item não foi removido."); }
+    finally { setEditandoItem(null); }
+  }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
+
+  const cancelarPedidoMesa = useCallback(async (orderId: string, numero: string | number) => {
+    if (!selectedTable?.openSession || editandoItem) return;
+    if (!confirm(`Cancelar o pedido #${numero} inteiro?\n\nEle sai da conta da mesa e o estoque baixado é devolvido.`)) return;
+    setEditandoItem(orderId);
+    try {
+      const res = await fetch(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) alert(data.error || "Não consegui cancelar o pedido.");
+      await fetchSessionDetail(selectedTable.openSession.id);
+      fetchTables();
+    } catch { alert("Sem conexão — o pedido não foi cancelado."); }
+    finally { setEditandoItem(null); }
+  }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
 
   /** Quem está sentado na mesa. Recarrega junto com a comanda. */
   const carregarPessoas = useCallback(async (sessionId: string) => {
@@ -901,7 +966,12 @@ export default function MesasPage() {
   // do que a mesa era realmente cobrada.
   const cartTotal = cart.reduce((s, c) => s + (c.unitPrice ?? c.item.price) * c.qty, 0);
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
-  const sessionTotal = sessionDetail?.orders.reduce((s, o) => s + o.totalAmount, 0) || selectedTable?.openSession?.totalAmount || 0;
+  // Cancelado fora da soma: o fechamento e a conta já o descontam no servidor
+  // — mostrar um total maior aqui faria a tela discordar do caixa na frente do
+  // cliente, exatamente na hora de pagar.
+  const sessionTotal = sessionDetail?.orders
+    .filter((o) => o.status !== "CANCELADO" && o.status !== "CANCELED" && o.status !== "CANCELLED")
+    .reduce((s, o) => s + o.totalAmount, 0) || selectedTable?.openSession?.totalAmount || 0;
 
   // ─── Fechamento ───────────────────────────────────────────────────────────
   // O consumo vem da conta do servidor quando ela já chegou. É o mesmo número
@@ -1618,17 +1688,38 @@ export default function MesasPage() {
                 Pedidos da mesa
               </div>
               {sessionDetail?.orders && sessionDetail.orders.length > 0 ? (
-                sessionDetail.orders.map((order, i) => (
+                sessionDetail.orders.map((order, i) => {
+                  // Cancelado fica visível — riscado — em vez de sumir: quem
+                  // olha a comanda precisa ver que o pedido existiu e foi
+                  // cancelado, não se perguntar para onde ele foi.
+                  const cancelado = order.status === "CANCELADO" || order.status === "CANCELED" || order.status === "CANCELLED";
+                  return (
                   <div key={order.id} style={{
                     padding: "10px 12px", marginBottom: 6, borderRadius: 10,
-                    background: "#F8FAFC", border: "1px solid #F1F5F9",
+                    background: cancelado ? "#FEF2F2" : "#F8FAFC",
+                    border: cancelado ? "1px solid #FECACA" : "1px solid #F1F5F9",
+                    opacity: cancelado ? 0.75 : 1,
                   }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: "#334155" }}>
-                        Pedido #{order.dailyOrderNumber || "—"}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: cancelado ? "#B91C1C" : "#334155", textDecoration: cancelado ? "line-through" : "none" }}>
+                        Pedido #{order.dailyOrderNumber || "—"}{cancelado ? " (cancelado)" : ""}
                       </span>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: "#7C3AED" }}>
-                        {fmt(order.totalAmount)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: cancelado ? "#B91C1C" : "#7C3AED", textDecoration: cancelado ? "line-through" : "none" }}>
+                          {fmt(order.totalAmount)}
+                        </span>
+                        {!cancelado && (
+                          <button
+                            onClick={() => cancelarPedidoMesa(order.id, order.dailyOrderNumber || "—")}
+                            disabled={!!editandoItem}
+                            title="Cancelar este pedido inteiro (devolve o estoque)"
+                            style={{
+                              border: "1px solid #FECACA", background: "#fff", color: "#DC2626",
+                              borderRadius: 7, padding: "2px 8px", fontSize: 11, fontWeight: 800,
+                              cursor: editandoItem ? "wait" : "pointer",
+                            }}
+                          >Cancelar</button>
+                        )}
                       </span>
                     </div>
                     {order.items.map((item, j) => {
@@ -1637,15 +1728,49 @@ export default function MesasPage() {
                       const dono = item.tableGuestId
                         ? pessoas.find(p => p.id === item.tableGuestId)
                         : null;
+                      const travado = editandoItem === item.id;
                       return (
-                        <div key={j} style={{ fontSize: 12, color: "#64748B", paddingLeft: 4 }}>
-                          {item.quantity}x {item.menuProduct.name} — {fmt(item.price * item.quantity)}
-                          <span style={{
-                            marginLeft: 6, fontSize: 11, fontWeight: 700,
-                            color: item.tableGuestId ? "#0369A1" : "#94A3B8",
-                          }}>
-                            {item.tableGuestId ? `👤 ${dono?.name || "cliente"}` : "🍽️ mesa"}
+                        <div key={j} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#64748B", paddingLeft: 4, marginBottom: 2, textDecoration: cancelado ? "line-through" : "none" }}>
+                          {/* Quantidade EDITÁVEL: − / número / +. O total do
+                              pedido é recalculado no servidor, nunca aqui. */}
+                          {!cancelado ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                              <button
+                                onClick={() => item.quantity <= 1
+                                  ? removerItemPedido(order.id, item.id, item.menuProduct.name, order.items.length === 1)
+                                  : editarQtdItem(order.id, item.id, item.quantity - 1)}
+                                disabled={!!editandoItem}
+                                title={item.quantity <= 1 ? "Remover o item" : "Diminuir"}
+                                style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", color: "#DC2626", fontWeight: 900, fontSize: 12, cursor: editandoItem ? "wait" : "pointer", lineHeight: 1 }}
+                              >−</button>
+                              <span style={{ minWidth: 22, textAlign: "center", fontWeight: 800, color: travado ? "#94A3B8" : "#334155" }}>{item.quantity}x</span>
+                              <button
+                                onClick={() => editarQtdItem(order.id, item.id, item.quantity + 1)}
+                                disabled={!!editandoItem}
+                                title="Aumentar"
+                                style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", color: "#16A34A", fontWeight: 900, fontSize: 12, cursor: editandoItem ? "wait" : "pointer", lineHeight: 1 }}
+                              >+</button>
+                            </span>
+                          ) : (
+                            <span style={{ fontWeight: 800, flexShrink: 0 }}>{item.quantity}x</span>
+                          )}
+                          <span style={{ minWidth: 0 }}>
+                            {item.menuProduct.name} — {fmt(item.price * item.quantity)}
+                            <span style={{
+                              marginLeft: 6, fontSize: 11, fontWeight: 700,
+                              color: item.tableGuestId ? "#0369A1" : "#94A3B8",
+                            }}>
+                              {item.tableGuestId ? `👤 ${dono?.name || "cliente"}` : "🍽️ mesa"}
+                            </span>
                           </span>
+                          {!cancelado && (
+                            <button
+                              onClick={() => removerItemPedido(order.id, item.id, item.menuProduct.name, order.items.length === 1)}
+                              disabled={!!editandoItem}
+                              title="Remover este item"
+                              style={{ marginLeft: "auto", border: "none", background: "none", color: "#DC2626", cursor: editandoItem ? "wait" : "pointer", fontSize: 13, flexShrink: 0, padding: "0 2px" }}
+                            >🗑️</button>
+                          )}
                         </div>
                       );
                     })}
@@ -1653,7 +1778,8 @@ export default function MesasPage() {
                       {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <div style={{ textAlign: "center", padding: 30, color: "#CBD5E1" }}>
                   <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>

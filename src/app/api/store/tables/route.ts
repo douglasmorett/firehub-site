@@ -38,7 +38,12 @@ export async function GET(req: NextRequest) {
       const activeSession = table.sessions[0] || null;
       let openSession = null;
       if (activeSession) {
-        const totalAmount = activeSession.orders.reduce((sum: number, order: any) => {
+        // Pedido CANCELADO na mesa (editável desde 04/09/2026) não soma nem
+        // conta: o card da mesa tem que bater com a conta que o caixa cobra.
+        const vivos = activeSession.orders.filter(
+          (o: any) => o.status !== "CANCELADO" && o.status !== "CANCELED" && o.status !== "CANCELLED"
+        );
+        const totalAmount = vivos.reduce((sum: number, order: any) => {
           return sum + (order.totalAmount || 0);
         }, 0);
         openSession = {
@@ -47,7 +52,7 @@ export async function GET(req: NextRequest) {
           waiterName: activeSession.waiterName,
           openedAt: activeSession.openedAt,
           totalAmount,
-          orderCount: activeSession.orders.length,
+          orderCount: vivos.length,
         };
       }
 
