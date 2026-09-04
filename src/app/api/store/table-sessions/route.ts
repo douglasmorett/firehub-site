@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-      select: { id: true, ownerId: true }
-    });
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+    // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+    const operador = await resolverOperadorDaMesa();
+    if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const targetFranchiseeId = operador.franchiseeId;
 
     const url = new URL(req.url);
     const sessionId = url.searchParams.get("sessionId");
@@ -64,15 +58,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-      select: { id: true, ownerId: true }
-    });
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+    // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+    const operador = await resolverOperadorDaMesa();
+    if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const targetFranchiseeId = operador.franchiseeId;
 
     const data = await req.json();
     const { tableId, customerName, waiterName, waiterId } = data;
@@ -96,13 +85,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Table already has an open session" }, { status: 400 });
     }
 
+    // Quem abre a mesa pelo link do garçom abre SEMPRE em nome próprio: o id
+    // que vier no corpo é ignorado, senão bastaria mandar outro para a comissão
+    // da mesa cair na conta de outro garçom. Pelo painel vale o que o gerente
+    // escolheu — desde que seja garçom DESTA loja; id de fora vira "sem garçom".
+    let garcomDaMesa: { id: string; name: string } | null = null;
+    if (operador.tipo === "garcom") {
+      garcomDaMesa = { id: operador.garcom.id, name: operador.garcom.name };
+    } else if (waiterId) {
+      garcomDaMesa = await prisma.waiter.findFirst({
+        where: { id: String(waiterId), franchiseeId: targetFranchiseeId },
+        select: { id: true, name: true },
+      });
+    }
+
     const tableSession = await prisma.tableSession.create({
       data: {
         tableId,
         franchiseeId: targetFranchiseeId,
         customerName: customerName || null,
-        waiterName: waiterName || null,
-        waiterId: waiterId || null,
+        waiterName: garcomDaMesa?.name || waiterName || null,
+        waiterId: garcomDaMesa?.id || null,
         status: "OPEN",
         openedAt: new Date()
       }

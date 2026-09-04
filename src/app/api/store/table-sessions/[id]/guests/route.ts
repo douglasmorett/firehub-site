@@ -11,24 +11,18 @@
  * e é aí que a mesa trava, a fila cresce e alguém acaba pagando a mais.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 
 export const dynamic = "force-dynamic";
 
 /** Confere que a sessão existe e pertence à loja de quem está logado. */
 async function autorizar(sessionId: string) {
-  const auth = await getServerSession(authOptions);
-  if (!auth?.user?.email) return { erro: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
+  // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+  const operador = await resolverOperadorDaMesa();
+  if (!operador) return { erro: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
 
-  const usuario = await prisma.user.findUnique({
-    where: { email: auth.user.email },
-    select: { id: true, ownerId: true },
-  });
-  if (!usuario) return { erro: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
-
-  const lojaId = usuario.ownerId || usuario.id;
+  const lojaId = operador.franchiseeId;
 
   const mesa = await prisma.tableSession.findUnique({
     where: { id: sessionId },

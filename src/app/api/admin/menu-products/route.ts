@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
 import { SEM_PRODUTO_DE_INTEGRACAO } from "@/lib/cardapio-interno";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
+import { SELECT_DO_CARDAPIO } from "@/lib/cardapio-da-loja";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -190,33 +191,9 @@ export async function GET(req: NextRequest) {
   const products = await prisma.menuProduct.findMany({
     where,
     orderBy: await orderByCardapio(),
-    select: {
-      id: true, name: true, price: true, category: true,
-      // Os preços por canal vêm CRUS por padrão: esta rota alimenta a tela de
-      // CADASTRO, que precisa deles para editar. As telas de VENDA pedem
-      // `?canal=` e recebem o `price` já resolvido, sem estas colunas.
-      priceSalao: true, priceDelivery: true, priceTotem: true,
-      imageUrl: true, active: true, isCombo: true, isBeverage: true,
-      activePDV: true, activeDelivery: true, activeTotem: true, activeGarcom: true,
-      cost: true, tags: true, availableDays: true, description: true,
-      comboConfig: true,
-      comboGroups: {
-        orderBy: { sortOrder: "asc" },
-        include: {
-          items: {
-            include: {
-              // imageUrl NAO entra aqui de proposito. A tela de combo mostra so o
-              // NOME da opcao ("6 Nuggets"), nunca a foto. Como o mesmo produto
-              // aparece em varios combos, a imagem vinha DUPLICADA a cada combo:
-              // uma foto de 1,8 MB usada em 6 combos virava 10,6 MB no JSON.
-              // Medido em producao: payload de 14,63 MB, sendo 10,59 MB so de
-              // copias aninhadas. 38 segundos para abrir o balcao.
-              menuProduct: { select: { id: true, name: true, active: true } }
-            }
-          }
-        }
-      }
-    },
+    // Colunas em src/lib/cardapio-da-loja.ts: a mesma lista alimenta o
+    // cardápio do garçom pelo link (/api/garcom/cardapio).
+    select: SELECT_DO_CARDAPIO,
   });
 
   // Tela de VENDA (balcão, mesa): `?canal=salao` troca `price` pelo preço do

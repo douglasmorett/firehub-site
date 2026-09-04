@@ -19,6 +19,8 @@
 export const TELAS_SEM_WIDGET = [
   /** Mesa do garçom: o widget tapava o Total e o "Fechar Conta". */
   "/store/mesas",
+  /** A mesma tela de mesa, pelo link próprio do garçom. */
+  "/garcom",
   /** Balcão (PDV presencial). */
   "/store/venda-presencial",
   /** KDS: tela de cozinha, ninguém conversa por ali. */

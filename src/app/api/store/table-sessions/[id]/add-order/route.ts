@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export async function POST(
@@ -9,15 +8,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-      select: { id: true, ownerId: true }
-    });
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+    // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+    const operador = await resolverOperadorDaMesa();
+    if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const targetFranchiseeId = operador.franchiseeId;
 
     const { id } = await params;
     if (!id) return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
@@ -117,7 +111,7 @@ export async function POST(
 
       if (fullOrder) {
         const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
-        pushJobToPrintQueue(targetFranchiseeId, fullOrder, dbUser.ownerId ? "FIREHUB" : "HAKIM RIO DAS OSTRAS");
+        pushJobToPrintQueue(targetFranchiseeId, fullOrder, operador.tipo === "loja" && operador.ownerId ? "FIREHUB" : "HAKIM RIO DAS OSTRAS");
       }
     } catch (printErr) {
       console.error("[Mesa] Erro ao enfileirar impressão automática:", printErr);

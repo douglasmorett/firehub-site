@@ -1,21 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-      select: { id: true, ownerId: true }
-    });
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+    // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+    const operador = await resolverOperadorDaMesa();
+    if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const targetFranchiseeId = operador.franchiseeId;
 
     const tables = await prisma.table.findMany({
       where: { franchiseeId: targetFranchiseeId },
@@ -70,15 +62,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-      select: { id: true, ownerId: true }
-    });
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+    // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+    const operador = await resolverOperadorDaMesa();
+    if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Cadastrar, renumerar e apagar mesa é gestão: só pelo painel. O garçom
+    // pelo link lança pedido e fecha conta, não redesenha o salão.
+    if (operador.tipo === "garcom") {
+      return NextResponse.json({ error: "Cadastro de mesa é feito pelo painel, não pelo acesso do garçom" }, { status: 403 });
+    }
+    const targetFranchiseeId = operador.franchiseeId;
 
     const data = await req.json();
     let { number, label, capacity } = data;
@@ -118,15 +110,15 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-      select: { id: true, ownerId: true }
-    });
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+    // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+    const operador = await resolverOperadorDaMesa();
+    if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Cadastrar, renumerar e apagar mesa é gestão: só pelo painel. O garçom
+    // pelo link lança pedido e fecha conta, não redesenha o salão.
+    if (operador.tipo === "garcom") {
+      return NextResponse.json({ error: "Cadastro de mesa é feito pelo painel, não pelo acesso do garçom" }, { status: 403 });
+    }
+    const targetFranchiseeId = operador.franchiseeId;
 
     const data = await req.json();
     const { id, number, label, capacity, isActive } = data;
@@ -166,15 +158,15 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const dbUser = await prisma.user.findUnique({
-      where: { email: session.user.email! },
-      select: { id: true, ownerId: true }
-    });
-    if (!dbUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-    const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+    // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+    const operador = await resolverOperadorDaMesa();
+    if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Cadastrar, renumerar e apagar mesa é gestão: só pelo painel. O garçom
+    // pelo link lança pedido e fecha conta, não redesenha o salão.
+    if (operador.tipo === "garcom") {
+      return NextResponse.json({ error: "Cadastro de mesa é feito pelo painel, não pelo acesso do garçom" }, { status: 403 });
+    }
+    const targetFranchiseeId = operador.franchiseeId;
 
     const url = new URL(req.url);
     const id = url.searchParams.get("id");

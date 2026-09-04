@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Users, DollarSign, Loader2, ArrowLeft, Calendar, FileText, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Edit2, Trash2, Users, DollarSign, Loader2, ArrowLeft, Calendar, FileText, CheckCircle2, XCircle, Link2, Copy, Check, KeyRound, Eye, EyeOff, ExternalLink } from "lucide-react";
 import { useSession } from "next-auth/react";
 
 interface Waiter {
@@ -10,7 +10,18 @@ interface Waiter {
   phone: string | null;
   commissionRate: number;
   active: boolean;
+  /** Login pelo link do garçom. Nulo = sem acesso próprio. */
+  login: string | null;
+  lastLoginAt: string | null;
 }
+
+/** O que /api/store/waiters/acesso devolve para montar o link. */
+interface AcessoDoGarcom {
+  slug: string | null;
+  caminho: string | null;
+}
+
+const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, login: "", password: "" };
 
 interface TableSessionData {
   id: string;
@@ -32,7 +43,32 @@ export default function GarconsPage() {
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ name: "", phone: "", commissionRate: 10, active: true });
+  const [formData, setFormData] = useState(FORM_VAZIO);
+  const [erroDoForm, setErroDoForm] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  // Link de acesso do garçom
+  const [acesso, setAcesso] = useState<AcessoDoGarcom | null>(null);
+  const [copiado, setCopiado] = useState(false);
+  // Montado no navegador: é o domínio que o gerente está usando de fato.
+  const linkDoGarcom = acesso?.caminho && typeof window !== "undefined"
+    ? `${window.location.origin}${acesso.caminho}`
+    : "";
+
+  const copiarLink = async () => {
+    if (!linkDoGarcom) return;
+    try {
+      await navigator.clipboard.writeText(linkDoGarcom);
+    } catch {
+      // Navegador sem clipboard (http, webview antigo): seleciona para o gerente copiar.
+      const campo = document.getElementById("link-do-garcom") as HTMLInputElement | null;
+      campo?.select();
+      try { document.execCommand("copy"); } catch { /* fica selecionado */ }
+    }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  };
 
   // Report states
   const [viewingWaiter, setViewingWaiter] = useState<Waiter | null>(null);
@@ -51,9 +87,15 @@ export default function GarconsPage() {
   const fetchWaiters = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/store/waiters");
+      const [res, resAcesso] = await Promise.all([
+        fetch("/api/store/waiters"),
+        fetch("/api/store/waiters/acesso"),
+      ]);
       if (res.ok) {
         setWaiters(await res.json());
+      }
+      if (resAcesso.ok) {
+        setAcesso(await resAcesso.json());
       }
     } finally {
       setLoading(false);
@@ -119,17 +161,26 @@ export default function GarconsPage() {
     const method = editingId ? "PUT" : "POST";
     const body = editingId ? { id: editingId, ...formData } : formData;
 
-    const res = await fetch("/api/store/waiters", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    setErroDoForm("");
+    setSalvando(true);
+    try {
+      const res = await fetch("/api/store/waiters", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    if (res.ok) {
-      setShowModal(false);
-      fetchWaiters();
-    } else {
-      alert("Erro ao salvar garçom");
+      if (res.ok) {
+        setShowModal(false);
+        fetchWaiters();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setErroDoForm(data?.error || "Erro ao salvar garçom");
+      }
+    } catch {
+      setErroDoForm("Sem conexão. Tente de novo.");
+    } finally {
+      setSalvando(false);
     }
   };
 
@@ -141,13 +192,17 @@ export default function GarconsPage() {
 
   const openNew = () => {
     setEditingId(null);
-    setFormData({ name: "", phone: "", commissionRate: 10, active: true });
+    setFormData(FORM_VAZIO);
+    setErroDoForm("");
+    setMostrarSenha(false);
     setShowModal(true);
   };
 
   const openEdit = (w: Waiter) => {
     setEditingId(w.id);
-    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active });
+    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, login: w.login || "", password: "" });
+    setErroDoForm("");
+    setMostrarSenha(false);
     setShowModal(true);
   };
 
@@ -183,6 +238,42 @@ export default function GarconsPage() {
             </button>
           </div>
 
+          {/* ─── LINK DE ACESSO DO GARÇOM ─── */}
+          <div style={{ background: "linear-gradient(135deg, #F5F3FF, #EEF2FF)", border: "1px solid #DDD6FE", borderRadius: 14, padding: 18, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <Link2 size={18} color="#7C3AED" />
+              <strong style={{ color: "#4C1D95", fontSize: 15 }}>Link de acesso do garçom</strong>
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#5B21B6", lineHeight: 1.5 }}>
+              Mande este link para a equipe. O garçom entra com o login e a senha que você define no cadastro dele
+              e vê só o módulo de mesas — nada mais do painel.
+            </p>
+            {linkDoGarcom ? (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input id="link-do-garcom" readOnly value={linkDoGarcom} onFocus={e => e.target.select()}
+                  style={{ flex: 1, minWidth: 220, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #C4B5FD", background: "#fff", fontSize: 13, fontFamily: "inherit", color: "#1E293B" }} />
+                <button type="button" onClick={copiarLink} style={{
+                  background: copiado ? "#16A34A" : "#7C3AED", color: "#fff", border: "none", padding: "10px 14px",
+                  borderRadius: 10, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  {copiado ? <Check size={16} /> : <Copy size={16} />} {copiado ? "Copiado!" : "Copiar link"}
+                </button>
+                <a href={linkDoGarcom} target="_blank" rel="noreferrer" style={{
+                  background: "#fff", color: "#6D28D9", border: "1.5px solid #C4B5FD", padding: "10px 14px",
+                  borderRadius: 10, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  <ExternalLink size={16} /> Abrir
+                </a>
+              </div>
+            ) : acesso && !acesso.slug ? (
+              <p style={{ margin: 0, fontSize: 13, color: "#B45309", fontWeight: 600 }}>
+                Sua loja ainda não tem um endereço próprio (slug). Fale com o suporte do FireHub para definir.
+              </p>
+            ) : (
+              <p style={{ margin: 0, fontSize: 13, color: "#94A3B8" }}>Carregando link...</p>
+            )}
+          </div>
+
           {loading ? (
             <div style={{ textAlign: "center", padding: 40, color: "#94A3B8" }}><Loader2 className="animate-spin mx-auto" size={32} /></div>
           ) : (
@@ -192,6 +283,7 @@ export default function GarconsPage() {
                   <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "left" }}>
                     <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Nome</th>
                     <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Telefone</th>
+                    <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Acesso</th>
                     <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Status</th>
                     <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Ações</th>
                   </tr>
@@ -208,6 +300,15 @@ export default function GarconsPage() {
                         </div>
                       </td>
                       <td style={{ padding: "14px 16px", color: "#64748B" }}>{w.phone || "-"}</td>
+                      <td style={{ padding: "14px 16px" }}>
+                        {w.login ? (
+                          <span title={w.lastLoginAt ? `Último acesso: ${fmtDate(w.lastLoginAt)}` : "Nunca entrou"} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#F5F3FF", color: "#6D28D9", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>
+                            <KeyRound size={12} /> {w.login}
+                          </span>
+                        ) : (
+                          <span style={{ color: "#94A3B8", fontSize: 12 }}>sem acesso</span>
+                        )}
+                      </td>
                       <td style={{ padding: "14px 16px" }}>
                         <span style={{
                           background: w.active ? "#DCFCE7" : "#FEE2E2",
@@ -228,7 +329,7 @@ export default function GarconsPage() {
                     </tr>
                   ))}
                   {waiters.length === 0 && (
-                    <tr><td colSpan={4} style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Nenhum garçom cadastrado</td></tr>
+                    <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Nenhum garçom cadastrado</td></tr>
                   )}
                 </tbody>
               </table>
@@ -360,6 +461,35 @@ export default function GarconsPage() {
                   style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit" }} />
               </div>
 
+              {/* Acesso pelo link do garçom */}
+              <div style={{ marginBottom: 16, padding: 14, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 13, fontWeight: 800, color: "#4C1D95" }}>
+                  <KeyRound size={14} /> Acesso pelo link do garçom
+                </div>
+                <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, color: "#475569" }}>Login</label>
+                <input value={formData.login}
+                  onChange={e => setFormData({ ...formData, login: e.target.value.toLowerCase().replace(/\s+/g, "") })}
+                  placeholder="ex: joao" autoCapitalize="none" autoCorrect="off" autoComplete="off"
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit", marginBottom: 10 }} />
+                <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, color: "#475569" }}>
+                  {editingId && waiters.find(w => w.id === editingId)?.login ? "Nova senha (em branco = manter a atual)" : "Senha"}
+                </label>
+                <div style={{ position: "relative" }}>
+                  <input type={mostrarSenha ? "text" : "password"} value={formData.password}
+                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="mínimo 4 caracteres" autoComplete="new-password"
+                    style={{ width: "100%", padding: "10px 40px 10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit" }} />
+                  <button type="button" onClick={() => setMostrarSenha(v => !v)} aria-label={mostrarSenha ? "Esconder senha" : "Mostrar senha"}
+                    style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: 6, cursor: "pointer", color: "#64748B" }}>
+                    {mostrarSenha ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <p style={{ margin: "8px 0 0", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
+                  Sem login o garçom não entra pelo link, mas continua disponível para escolher ao abrir uma mesa.
+                  Trocar a senha desconecta o celular dele na hora.
+                </p>
+              </div>
+
               <div style={{ marginBottom: 24 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                   <input type="checkbox" checked={formData.active} onChange={e => setFormData({ ...formData, active: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#7C3AED" }} />
@@ -367,14 +497,20 @@ export default function GarconsPage() {
                 </label>
               </div>
 
+              {erroDoForm && (
+                <div role="alert" style={{ background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
+                  {erroDoForm}
+                </div>
+              )}
+
               <div style={{ display: "flex", gap: 10 }}>
                 <button type="button" onClick={() => setShowModal(false)}
                   style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#F8FAFC", cursor: "pointer", fontWeight: 700, color: "#64748B" }}>
                   Cancelar
                 </button>
-                <button type="submit"
-                  style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "#7C3AED", color: "#fff", cursor: "pointer", fontWeight: 800 }}>
-                  Salvar
+                <button type="submit" disabled={salvando}
+                  style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "#7C3AED", color: "#fff", cursor: "pointer", fontWeight: 800, opacity: salvando ? 0.7 : 1 }}>
+                  {salvando ? "Salvando..." : "Salvar"}
                 </button>
               </div>
             </form>

@@ -1074,13 +1074,28 @@ model Waiter {
   active           Boolean         @default(true)
   commissionRate   Float?          @default(10) // Ex: 10% padrão de comissão
   notes            String?
-  
+
+  /// Acesso próprio do garçom pelo link /garcom/<slug-da-loja>.
+  ///
+  /// O garçom não é User: ele não tem e-mail, não entra pelo /login e não pode
+  /// ver mais nada do painel além do módulo de mesa. Login é único DENTRO da
+  /// loja (o "joao" de uma loja não conflita com o de outra) e nulo significa
+  /// "este garçom não tem acesso pelo link". A senha nunca sai do banco em
+  /// claro: só o hash bcrypt fica aqui.
+  login                String?
+  passwordHash         String?
+  /// Carimbado toda vez que a senha muda. Sessão emitida antes disto é
+  /// recusada — trocar a senha de quem saiu derruba o celular dele na hora.
+  credentialsUpdatedAt DateTime?
+  lastLoginAt          DateTime?
+
   franchisee       User            @relation(fields: [franchiseeId], references: [id])
   tableSessions    TableSession[]
-  
+
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  @@unique([franchiseeId, login])
   @@index([franchiseeId])
 }
 

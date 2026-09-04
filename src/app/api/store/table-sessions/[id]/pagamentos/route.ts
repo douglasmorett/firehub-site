@@ -22,9 +22,8 @@
  * fazia sentido pedir uma para guardar uma lista que já cabe onde está.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import {
   lerPagamentos,
   somarPagamentos,
@@ -37,19 +36,12 @@ export const dynamic = "force-dynamic";
 
 /** Resolve a loja da sessão e confere que a mesa é dela. */
 async function abrirContexto(req: NextRequest, id: string) {
-  const auth = await getServerSession(authOptions);
-  if (!auth?.user?.email) {
+  // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+  const operador = await resolverOperadorDaMesa();
+  if (!operador) {
     return { erro: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
   }
-
-  const usuario = await prisma.user.findUnique({
-    where: { email: auth.user.email },
-    select: { id: true, ownerId: true },
-  });
-  if (!usuario) {
-    return { erro: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
-  }
-  const lojaId = usuario.ownerId || usuario.id;
+  const lojaId = operador.franchiseeId;
 
   // O dono vem da MESA, não do campo solto da sessão.
   //

@@ -17,9 +17,8 @@
  * centavo para sempre.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -27,15 +26,10 @@ const emCentavos = (v: number) => Math.round((Number(v) || 0) * 100);
 const emReais = (c: number) => Math.round(c) / 100;
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await getServerSession(authOptions);
-  if (!auth?.user?.email) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-
-  const usuario = await prisma.user.findUnique({
-    where: { email: auth.user.email },
-    select: { id: true, ownerId: true },
-  });
-  if (!usuario) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
-  const lojaId = usuario.ownerId || usuario.id;
+  // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
+  const operador = await resolverOperadorDaMesa();
+  if (!operador) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  const lojaId = operador.franchiseeId;
 
   const { id } = await params;
 
