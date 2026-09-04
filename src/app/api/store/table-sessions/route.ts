@@ -27,7 +27,11 @@ export async function GET(req: NextRequest) {
           },
         },
       });
-      if (!tableSession) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      // Isolamento: a sessão pedida tem que ser desta loja. Sem esta linha, qualquer
+      // id de mesa de outra loja voltava com os pedidos e os nomes dos clientes.
+      if (!tableSession || tableSession.franchiseeId !== targetFranchiseeId) {
+        return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      }
       return NextResponse.json(tableSession);
     }
 
