@@ -526,6 +526,31 @@ export default function PrinterSetupClient({
           </button>
         </div>
 
+        {/* QR do Motoboy na comanda — ligado por padrão (regra da casa: loja
+            nova nasce com tudo ativo; desligar é opcional). O QR carrega só o
+            número da comanda; quem autoriza puxar é o app do motoboy logado. */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: ((config as any).qrPuxarPedido !== false) ? "#F5F3FF" : "#F8FAFC", border: `1.5px solid ${((config as any).qrPuxarPedido !== false) ? "#DDD6FE" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
+              🛵
+            </div>
+            <div>
+              <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Imprimir QR code para o motoboy puxar o pedido</p>
+              <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>
+                {((config as any).qrPuxarPedido !== false)
+                  ? "✅ A comanda de entrega sai com um QR — o entregador escaneia no app dele e o pedido entra no nome de quem puxou"
+                  : "Desativado — o entregador ainda pode puxar digitando o número da comanda no app"}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setConfig(c => ({ ...c, qrPuxarPedido: (c as any).qrPuxarPedido === false ? true : false } as any))}
+            style={{ width: 52, height: 28, borderRadius: 14, background: ((config as any).qrPuxarPedido !== false) ? "#7C3AED" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+          >
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: ((config as any).qrPuxarPedido !== false) ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+          </button>
+        </div>
+
         {/* Marcador Inteligente de Bebidas */}
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>

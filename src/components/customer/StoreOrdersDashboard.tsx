@@ -906,9 +906,36 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   {motoboys?.map((m: any) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
+                  {/* O motoboy ATRIBUÍDO aparece mesmo se foi desativado depois:
+                      sem isto o select mostrava borda verde de "atribuído" com o
+                      rótulo vazio "Motoboy", e a loja não via QUEM está com o
+                      pedido — justamente o caso em que mais precisa ver. */}
+                  {(order.motoboyId || (order as any).motoboy?.id) &&
+                    !motoboys?.some((m: any) => m.id === (order.motoboyId || (order as any).motoboy?.id)) &&
+                    (order as any).motoboy?.name && (
+                    <option value={order.motoboyId || (order as any).motoboy?.id}>
+                      {(order as any).motoboy.name} (inativo)
+                    </option>
+                  )}
                 </select>
               );
             })()}
+
+            {/* "puxou 19:42": o ENTREGADOR pegou este pedido pelo app (QR ou
+                número) — em oposição a "a loja atribuiu". É a testemunha
+                quando dois entregadores discutem quem levou. */}
+            {(order as any).motoboyPuxadoEm && order.motoboyId && (
+              <span
+                title="O entregador puxou este pedido pelo app"
+                style={{
+                  fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: 6,
+                  background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                🛵 puxou {new Date((order as any).motoboyPuxadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
           </div>
 
           {/* Right: Icon buttons */}
@@ -1393,9 +1420,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const seqNum = getDisplayOrderNumber(order);
 
     // 1. Prepara dados do pedido
+    // Espalha a config REAL por baixo do fallback: o formato antigo descartava
+    // o objeto inteiro quando `printers` estava vazio — e com ele iam flags
+    // como a do QR do motoboy, justamente na loja de uma impressora só.
     const activeConfig = printerConfig && printerConfig.printers?.length > 0
       ? printerConfig
-      : { autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
+      : { ...(printerConfig || {}), autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
 
     const payStr = (order.paymentMethod || "").toString();
     const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;

@@ -225,6 +225,32 @@ async function printToDevice(
           // que não conhece, então quem não atualizou imprime como sempre.
           ifoodStoreName: (order as any).ifoodStoreName,
           openDeliveryReference: (order as any).openDeliveryReference,
+          // ── QR "PUXAR PEDIDO" na comanda ────────────────────────────────
+          // O código é só AAAAMMDD-numero — o mesmo número que já sai em corpo
+          // dobrado no topo desta comanda, nada de segredo no papel. Quem
+          // autoriza o puxar é a sessão assinada do motoboy logado no app.
+          // Só em ENTREGA DA LOJA: comanda de mesa/balcão/parceira não tem o
+          // que puxar. A flag da loja (printerConfig.qrPuxarPedido) decide se
+          // o Assistente imprime; Assistente antigo ignora campo desconhecido.
+          ...(await (async () => {
+            const cfg = printerConfig as any;
+            if (cfg?.qrPuxarPedido === false) return {};
+            const ehEntrega = ((order as any).deliveryType || "DELIVERY") === "DELIVERY";
+            const numero = (order as any).dailyOrderNumber;
+            if (!ehEntrega || !numero) return {};
+            try {
+              const { infoDaEntrega } = await import("@/lib/entrega-parceira");
+              if (infoDaEntrega(order).parceira) return {};
+              const { codigoDoPedido, urlDoPuxar } = await import("@/lib/qr-puxar");
+              const criadoEm = (order as any).createdAt || new Date().toISOString();
+              const codigo = codigoDoPedido(criadoEm, Number(numero));
+              const slug = (cfg?.storeSlug as string) || "";
+              return {
+                qrPuxarCodigo: codigo,
+                qrPuxarUrl: slug ? urlDoPuxar("https://firehubfood.com.br", slug, codigo) : codigo,
+              };
+            } catch { return {}; }
+          })()),
           // Quem entrega, decidido AQUI. O payload não mandava `deliveryBy`:
           // no Assistente o campo chegava vazio e sobrava o código de coleta
           // para decidir, então todo pedido do iFood com código saía com

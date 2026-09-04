@@ -1005,6 +1005,39 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     res += DOUBLE_HEIGHT + BOLD_ON + wrapLines("!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
   }
 
+  // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────────────
+  //
+  // So sai quando o servidor mandou `qrPuxarUrl` — ele ja decidiu tudo la
+  // (entrega da loja, nao-parceira, flag da loja ligada). O QR carrega a URL
+  // do app do motoboy com ?p=AAAAMMDD-numero: NADA de segredo no papel, o
+  // numero ja esta impresso em corpo dobrado no topo desta mesma comanda.
+  //
+  // ESC/POS: GS ( k — o comando de QR do padrao Epson, que as POS-58/80
+  // genericas seguem. Impressora que NAO conhece o comando simplesmente o
+  // ignora (dados de funcao ficam fora do fluxo de texto), e o rodape com o
+  // numero digitavel sai do mesmo jeito — o app aceita digitar o numero, entao
+  // nenhuma loja fica sem o recurso por causa da impressora. No perfil
+  // "legacy" o QR nem e tentado: e o perfil das impressoras que imprimem lixo
+  // com comando desconhecido.
+  if (order.qrPuxarUrl && profile !== "legacy") {
+    const dadosQr = String(order.qrPuxarUrl);
+    const len = dadosQr.length + 3;
+    const pL = String.fromCharCode(len & 0xff);
+    const pH = String.fromCharCode((len >> 8) & 0xff);
+    res += LF + CENTER;
+    res += GS + "(k" + "\x04\x00" + "\x31\x41" + "\x32\x00";            // modelo 2
+    res += GS + "(k" + "\x03\x00" + "\x31\x43" + "\x06";                // modulo 6
+    res += GS + "(k" + "\x03\x00" + "\x31\x45" + "\x31";                // correcao M
+    res += GS + "(k" + pL + pH + "\x31\x50\x30" + dadosQr;              // dados
+    res += GS + "(k" + "\x03\x00" + "\x31\x51\x30";                     // imprime
+    res += LF + BOLD_ON + centerLine("MOTOBOY: escaneie para puxar") + BOLD_OFF;
+    const codigoCurto = String(order.qrPuxarCodigo || "").split("-").pop() || "";
+    if (codigoCurto) {
+      res += centerLine("ou digite o numero " + codigoCurto + " no app");
+    }
+    res += LEFT;
+  }
+
   res += LF + centerLine("Obrigado pela preferencia!") + LEFT + FEED + CUT;
   return Buffer.from(res, "binary");
 }

@@ -86,6 +86,7 @@ export async function GET(req: NextRequest) {
         deliveryType: true,
         createdAt: true,
         updatedAt: true,
+        motoboyPuxadoEm: true,
         items: {
           select: {
             quantity: true,
@@ -162,6 +163,193 @@ export async function GET(req: NextRequest) {
  * os mesmos efeitos rodam aqui, e nenhum deles pode derrubar a baixa em si:
  * falha de sync vira log, não erro para o entregador na rua.
  */
+/**
+ * POST /api/motoboys/orders  { codigo }   — PUXAR um pedido pela comanda
+ * DELETE /api/motoboys/orders { codigo }  — soltar (10 min de arrependimento)
+ *
+ * O verbo do QR da comanda. O QR carrega só `AAAAMMDD-numero` (o número que já
+ * sai impresso em corpo dobrado no topo do MESMO papel) — nada de token no
+ * papel: a via grampeada no saco e a comanda no lixo não valem nada sozinhas.
+ * Quem autoriza é a SESSÃO ASSINADA do motoboy logado (Authorization: Bearer),
+ * obrigatória desde o primeiro dia: sem ela, isto seria um endpoint público de
+ * escrita que destrava WhatsApp, iFood conclude e NFC-e.
+ *
+ * `motoboyId`/`storeId` NÃO viajam no corpo — saem da sessão. É o ponto todo.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const { exigirMotoboy } = await import("@/lib/motoboy-sessao");
+    const mb = await exigirMotoboy(req);
+    if (!mb) {
+      return NextResponse.json({ error: "Sessão expirada. Entre de novo.", precisaLogin: true }, { status: 401 });
+    }
+
+    const { checkRateLimit } = await import("@/lib/rateLimit");
+    const rl = checkRateLimit(`motoboy-puxar:${mb.id}`, { windowMs: 60_000, maxRequests: 20 });
+    if (!rl.allowed) return NextResponse.json({ error: "Aguarde um instante." }, { status: 429 });
+
+    const { codigo } = await req.json().catch(() => ({} as any));
+    const bruto = String(codigo || "").trim();
+    // QR: AAAAMMDD-numero. Digitado: só o numero.
+    const mQr = bruto.match(/^(\d{8})-(\d{1,6})$/);
+    const mNum = bruto.match(/^(\d{1,6})$/);
+    if (!mQr && !mNum) {
+      return NextResponse.json({ error: "Código inválido. Use o número da comanda." }, { status: 400 });
+    }
+
+    const { chaveDoDiaSP, inicioDoDiaSP } = await import("@/lib/qr-puxar");
+    const numero = Number(mQr ? mQr[2] : mNum![1]);
+
+    // O contador diário reseta à MEIA-NOITE de SP, mas o expediente vira às 5h:
+    // entre 00:00 e 05:00 o mesmo número existe duas vezes dentro do turno.
+    // Quem digitasse "47" à 00:30 sem isto puxaria o pedido de OUTRO cliente.
+    const agora = new Date();
+    const hojeSP = chaveDoDiaSP(agora);
+    const horaSP = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false }).format(agora));
+    const ontemSP = chaveDoDiaSP(new Date(agora.getTime() - 24 * 3600_000));
+    const chavesValidas = horaSP < 5 ? [hojeSP, ontemSP] : [hojeSP];
+
+    let chaves: string[];
+    if (mQr) {
+      if (!chavesValidas.includes(mQr[1])) {
+        return NextResponse.json({ error: "Esta comanda não é do expediente de hoje." }, { status: 409 });
+      }
+      chaves = [mQr[1]];
+    } else {
+      chaves = chavesValidas;
+    }
+
+    const { STATUS_PUXAVEIS, STATUS_FINALIZADOS, STATUS_CANCELADOS } = await import("@/lib/status-pedido");
+    const { infoDaEntrega } = await import("@/lib/entrega-parceira");
+
+    // Candidatos por dia-chave (o índice franchiseeId+createdAt já existe).
+    const candidatos: any[] = [];
+    for (const chave of chaves) {
+      const inicio = inicioDoDiaSP(chave);
+      const achados = await prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: mb.franchiseeId,
+          dailyOrderNumber: numero,
+          createdAt: { gte: inicio, lt: new Date(inicio.getTime() + 24 * 3600_000) },
+        },
+        select: {
+          id: true, status: true, motoboyId: true, deliveryType: true, deliveryBy: true,
+          source: true, openDeliveryChannel: true, ifoodDriverName: true,
+          ifoodDriverStatus: true, ifoodPickupCode: true, dailyOrderNumber: true,
+          motoboy: { select: { name: true } },
+        },
+      });
+      candidatos.push(...achados);
+    }
+
+    if (candidatos.length === 0) {
+      return NextResponse.json({ error: `Não achei o pedido #${numero} de hoje. Confira o número.` }, { status: 404 });
+    }
+
+    // `dailyOrderNumber` é da LOJA INTEIRA: mesa, balcão, totem e marketplaces
+    // usam a mesma sequência. Sem este filtro dava para puxar — e "entregar" —
+    // a comanda de quem está comendo no salão, disparando NFC-e e o WhatsApp
+    // "seu pedido chegou". Entrega parceira (motoboy do iFood) também fica fora.
+    const entregaveis = candidatos.filter(
+      (p) => p.deliveryType === "DELIVERY" && !infoDaEntrega(p).parceira
+    );
+    if (entregaveis.length === 0) {
+      return NextResponse.json({ error: "Este pedido não é uma entrega da loja." }, { status: 409 });
+    }
+
+    const puxaveis = entregaveis.filter((p) => (STATUS_PUXAVEIS as readonly string[]).includes(p.status) && !p.motoboyId);
+    const alvo = puxaveis[0] ?? entregaveis[0];
+    if (entregaveis.length > 1 && puxaveis.length !== 1) {
+      return NextResponse.json({ error: "Há mais de um pedido com este número. Confirme com a loja." }, { status: 409 });
+    }
+
+    // ── ESCRITA ATÔMICA: o Postgres decide a corrida de dois motoboys ───────
+    // `motoboyId: null` no WHERE — o segundo scan espera o lock, reavalia
+    // contra o commit do primeiro, casa zero linhas. Sem findFirst+update, que
+    // é como se perde a corrida em silêncio.
+    const r = await prisma.customerOrder.updateMany({
+      where: {
+        id: alvo.id,
+        franchiseeId: mb.franchiseeId,
+        motoboyId: null,
+        deliveryType: "DELIVERY",
+        status: { in: [...STATUS_PUXAVEIS] },
+      },
+      data: { motoboyId: mb.id, motoboyPuxadoEm: new Date() },
+    });
+
+    if (r.count === 0) {
+      const agora2 = await prisma.customerOrder.findUnique({
+        where: { id: alvo.id },
+        select: { status: true, motoboyId: true, motoboy: { select: { name: true } } },
+      });
+      if (agora2?.motoboyId === mb.id) {
+        // Duplo toque ou 4G repetindo o request: o pedido já é dele. Tela
+        // vermelha aqui seria pior que o problema.
+        return NextResponse.json({ success: true, jaEraSeu: true, orderId: alvo.id, numero });
+      }
+      if (agora2?.motoboyId) {
+        const primeiroNome = String(agora2.motoboy?.name || "outro entregador").split(/\s+/)[0];
+        return NextResponse.json({ erro: "PEGO", error: `Este pedido já foi puxado por ${primeiroNome}. Fale com a loja.` }, { status: 409 });
+      }
+      if (agora2 && (STATUS_FINALIZADOS as readonly string[]).includes(agora2.status)) {
+        return NextResponse.json({ error: "Este pedido já foi finalizado." }, { status: 409 });
+      }
+      if (agora2 && (STATUS_CANCELADOS as readonly string[]).includes(agora2.status)) {
+        return NextResponse.json({ error: "Este pedido foi CANCELADO — não entregue. Confirme com a loja." }, { status: 409 });
+      }
+      return NextResponse.json({ error: "Não consegui puxar este pedido. Confirme com a loja." }, { status: 409 });
+    }
+
+    console.log(`[Motoboy Puxou] pedido ${alvo.id} #${numero} loja ${mb.franchiseeId} por ${mb.id}/${mb.name}`);
+    // Resposta MÍNIMA de propósito: o app refaz o GET. Devolver o pedido aqui
+    // transformaria o claim num endpoint de leitura paginada de clientes.
+    return NextResponse.json({ success: true, orderId: alvo.id, numero });
+  } catch (err: any) {
+    console.error("[Motoboy Puxar Error]", err);
+    return NextResponse.json({ error: "Erro ao puxar o pedido" }, { status: 500 });
+  }
+}
+
+/** Soltar um pedido puxado por engano — só o PRÓPRIO, e só por 10 minutos. */
+export async function DELETE(req: NextRequest) {
+  try {
+    const { exigirMotoboy } = await import("@/lib/motoboy-sessao");
+    const mb = await exigirMotoboy(req);
+    if (!mb) {
+      return NextResponse.json({ error: "Sessão expirada. Entre de novo.", precisaLogin: true }, { status: 401 });
+    }
+    const { checkRateLimit } = await import("@/lib/rateLimit");
+    // 5/hora: "soltar" ilimitado fecharia o laço puxar→ler→soltar→N+1, que
+    // vira um exportador paginado de clientes. Curto + logado + atribuível.
+    const rl = checkRateLimit(`motoboy-soltar:${mb.id}`, { windowMs: 3_600_000, maxRequests: 5 });
+    if (!rl.allowed) return NextResponse.json({ error: "Limite de devoluções por hora. Fale com a loja." }, { status: 429 });
+
+    const { orderId } = await req.json().catch(() => ({} as any));
+    if (!orderId) return NextResponse.json({ error: "orderId obrigatório" }, { status: 400 });
+
+    const { STATUS_FINALIZADOS, STATUS_CANCELADOS } = await import("@/lib/status-pedido");
+    const r = await prisma.customerOrder.updateMany({
+      where: {
+        id: String(orderId),
+        franchiseeId: mb.franchiseeId,
+        motoboyId: mb.id,
+        motoboyPuxadoEm: { gte: new Date(Date.now() - 10 * 60_000) },
+        status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] },
+      },
+      data: { motoboyId: null, motoboyPuxadoEm: null },
+    });
+    if (r.count === 0) {
+      return NextResponse.json({ error: "Não dá mais para devolver este pedido — fale com a loja." }, { status: 409 });
+    }
+    console.log(`[Motoboy Soltou] pedido ${orderId} loja ${mb.franchiseeId} por ${mb.id}/${mb.name}`);
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    console.error("[Motoboy Soltar Error]", err);
+    return NextResponse.json({ error: "Erro ao devolver o pedido" }, { status: 500 });
+  }
+}
+
 export async function PATCH(req: NextRequest) {
   try {
     const { orderId, motoboyId, storeId } = await req.json().catch(() => ({} as any));

@@ -129,8 +129,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Sessão ASSINADA, criada DEPOIS do re-hash oportunista acima — a
+    // assinatura embute o hash da senha, e assinar com o hash antigo geraria
+    // um token que nasce inválido. É esta credencial que autoriza o verbo de
+    // PUXAR pedido (QR da comanda); o localStorage sozinho nunca autoriza nada.
+    const { criarSessaoDeMotoboy } = await import("@/lib/motoboy-sessao");
+    const token = criarSessaoDeMotoboy(
+      motoboy.id,
+      storeUser.id,
+      conferencia.hashParaGravar ?? motoboy.password
+    );
+
     return NextResponse.json({
       success: true,
+      token,
       motoboyId: motoboy.id,
       motoboyName: motoboy.name,
       // A tela usa isto para cobrar a troca de quem ainda está na senha padrão.
@@ -191,7 +203,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const motoboy = await prisma.motoboy.findUnique({ where: { id: motoboyId } });
-    if (!motoboy) {
+    if (!motoboy || motoboy.active === false) {
       return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
     }
 
@@ -200,13 +212,20 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Senha atual incorreta!" }, { status: 401 });
     }
 
+    const hashNovo = await hashDeSenha(nova);
     await prisma.motoboy.update({
       where: { id: motoboyId },
-      data: { password: await hashDeSenha(nova) }
+      data: { password: hashNovo }
     });
 
+    // A troca de senha INVALIDA todas as sessões antigas por construção (o
+    // hash entra na assinatura) — então devolve um token novo, senão o próprio
+    // aparelho que trocou a senha seria deslogado no tique seguinte.
+    const { criarSessaoDeMotoboy } = await import("@/lib/motoboy-sessao");
+    const token = criarSessaoDeMotoboy(motoboy.id, motoboy.franchiseeId, hashNovo);
+
     // A resposta devolvia o registro inteiro do motoboy — senha inclusive.
-    return NextResponse.json({ success: true, message: "Senha alterada com sucesso!" });
+    return NextResponse.json({ success: true, token, message: "Senha alterada com sucesso!" });
   } catch (err: any) {
     console.error("[Motoboy Change Password Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao alterar senha" }, { status: 500 });

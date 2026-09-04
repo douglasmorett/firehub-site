@@ -624,6 +624,11 @@ model CustomerOrder {
   motoboyFee       Float?
   deliveryDistance Float?
   motoboyId        String?
+  /// Quando o ENTREGADOR puxou o pedido pelo app (QR da comanda ou número
+  /// digitado) — em oposição a "a loja atribuiu". É a única testemunha quando
+  /// dois entregadores discutem quem levou; a loja atribuir/desatribuir limpa
+  /// o campo, senão o selo "puxou 19:42" ficaria ao lado do nome errado.
+  motoboyPuxadoEm  DateTime?
   status           String              @default("NOVO")
   source           String              @default("ONLINE")
   notes            String?

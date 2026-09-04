@@ -914,6 +914,10 @@ export async function GET(req: NextRequest) {
         createdAt: true, updatedAt: true, scheduledDatetime: true,
         cancelledBy: true, cancelReason: true, cancelDispute: true,
         motoboyId: true, motoboyFee: true,
+        // Quando o ENTREGADOR puxou pelo app (QR/número): o select é explícito,
+        // campo novo não chega sozinho — e sem ele o selo "puxou 19:42" não
+        // teria de onde sair.
+        motoboyPuxadoEm: true,
         isRoutePriority: true, routeId: true, tableSessionId: true,
         ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
         ifoodStoreName: true, ifoodStoreMerchant: true,
