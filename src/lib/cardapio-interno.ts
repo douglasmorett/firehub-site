@@ -50,10 +50,43 @@ export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "99food_", "
  * Trecho de `where` do Prisma que remove o espelho das integrações.
  * Use em todo canal interno: PDV, mesa, totem, KDS.
  */
+/**
+ * ── O prefixo sozinho condenava cardápio de verdade ────────────────────────
+ *
+ * O id `ifood-…` dizia "isto é espelho" e bastava para sumir com o produto de
+ * TODA tela de venda. Só que o espelho não fica espelho para sempre: a tela de
+ * cadastro os mostra (ela não aplica este filtro), e o lojista, sem ter como
+ * saber a diferença, constrói o cardápio em cima deles — dá categoria, marca
+ * como combo, monta os grupos, põe preço nas opções.
+ *
+ * Medido na Pastelaria da Paulista, em produção, pelo `?diagnostico=1`: dos 70
+ * produtos que este filtro derrubava, 43 tinham id com prefixo `ifood-` e
+ * **nenhum deles tinha categoria de integração**. 40 estavam ATIVOS e 38 eram
+ * COMBO, com categoria real — "Pastel de Carne moída" em Pastéis de carne,
+ * "Costela com mussarela", "Batata M", "Caldo verde", "Bobó de camarão".
+ * Era o cardápio da loja inteiro, invisível na mesa, no balcão, no totem e no
+ * cardápio online. Foi a queixa "muitos sabores de pastel não aparecem".
+ *
+ * ── Por que a categoria basta ──────────────────────────────────────────────
+ *
+ * Espelho NOVO nasce com `category: "iFood"` e os quatro canais em false
+ * (src/lib/ifood-itens.ts) — a regra de categoria já o pega, e o prefixo não
+ * acrescenta nada. O mesmo vale para o 99Food (`category: "99Food"`).
+ *
+ * Então o prefixo passa a excluir apenas o espelho que CONTINUA inativo, isto
+ * é, o que ninguém adotou. Produto ativo, com categoria própria, é cardápio —
+ * não importa como o id dele nasceu.
+ *
+ * A assimetria é deliberada: deixar escapar um espelho antigo custa uma linha
+ * a mais na tela, que o lojista apaga; esconder 43 itens ativos custou venda,
+ * em silêncio, por tempo indeterminado.
+ */
 export const SEM_PRODUTO_DE_INTEGRACAO = {
   NOT: [
     { category: { in: CATEGORIAS_DE_INTEGRACAO, mode: "insensitive" as const } },
-    ...PREFIXOS_DE_ESPELHO.map((prefixo) => ({ id: { startsWith: prefixo } })),
+    ...PREFIXOS_DE_ESPELHO.map((prefixo) => ({
+      AND: [{ id: { startsWith: prefixo } }, { active: false }],
+    })),
   ],
 };
 
