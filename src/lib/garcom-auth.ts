@@ -25,7 +25,7 @@
  * decidido no banco a cada requisição — desativar na aba Garçons derruba o
  * celular dele na hora.
  */
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { encode, decode } from "next-auth/jwt";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth";
@@ -52,6 +52,8 @@ export type GarcomAutenticado = {
   name: string;
   login: string;
   franchiseeId: string;
+  /** Comissão cadastrada (%), sugerida como taxa de serviço no fechamento. */
+  commissionRate: number | null;
 };
 
 export type ResultadoDoGarcom =
@@ -112,7 +114,7 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
 
   const w = await prisma.waiter.findUnique({
     where: { id: token.gid },
-    select: { id: true, name: true, login: true, active: true, franchiseeId: true, credentialsUpdatedAt: true },
+    select: { id: true, name: true, login: true, active: true, franchiseeId: true, credentialsUpdatedAt: true, commissionRate: true },
   });
 
   if (!w || w.franchiseeId !== token.lid) {
@@ -136,7 +138,10 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
     return { ok: false, status: 401, erro: "A senha foi alterada. Entre de novo.", codigo: "SENHA_ALTERADA" };
   }
 
-  return { ok: true, garcom: { id: w.id, name: w.name, login: w.login, franchiseeId: w.franchiseeId } };
+  return {
+    ok: true,
+    garcom: { id: w.id, name: w.name, login: w.login, franchiseeId: w.franchiseeId, commissionRate: w.commissionRate },
+  };
 }
 
 /**
@@ -153,7 +158,26 @@ export type OperadorDaMesa =
   | { tipo: "loja"; franchiseeId: string; userId: string; ownerId: string | null }
   | { tipo: "garcom"; franchiseeId: string; garcom: GarcomAutenticado };
 
+/** Cabeçalho com que a tela do garçom se identifica em toda chamada. */
+export const CABECALHO_DO_OPERADOR = "x-operador";
+
 export async function resolverOperadorDaMesa(): Promise<OperadorDaMesa | null> {
+  // A tela do garçom declara quem é. Sem isto, o gerente que abre o link do
+  // garçom no MESMO navegador em que está logado no painel veria a tela do
+  // garçom operando com a sessão do painel — e, sendo admin ou de outra loja,
+  // operando as mesas da loja errada. Com o cabeçalho, só o cookie do garçom
+  // vale; se ele não serve, a resposta é 401 e a tela volta ao login.
+  let pedeGarcom = false;
+  try {
+    pedeGarcom = (await headers()).get(CABECALHO_DO_OPERADOR) === "garcom";
+  } catch {
+    // fora de requisição (não acontece nas rotas); segue o caminho normal
+  }
+  if (pedeGarcom) {
+    const r = await autenticarGarcom();
+    return r.ok ? { tipo: "garcom", franchiseeId: r.garcom.franchiseeId, garcom: r.garcom } : null;
+  }
+
   try {
     const session = await getServerSession(authOptions);
     if (session?.user?.email) {
@@ -171,6 +195,17 @@ export async function resolverOperadorDaMesa(): Promise<OperadorDaMesa | null> {
   if (r.ok) return { tipo: "garcom", franchiseeId: r.garcom.franchiseeId, garcom: r.garcom };
   return null;
 }
+
+/**
+ * O que pode sair do banco sobre um garçom, para qualquer rota do painel.
+ * `passwordHash` NUNCA está aqui — nem para o dono da loja: ele define a
+ * senha, não a lê. Todo `prisma.waiter.*` que responde ao navegador usa este
+ * select; devolver o Waiter inteiro foi o que fez o relatório vazar o hash.
+ */
+export const CAMPOS_DO_GARCOM = {
+  id: true, name: true, phone: true, active: true, commissionRate: true, notes: true,
+  login: true, lastLoginAt: true, createdAt: true, updatedAt: true,
+} as const;
 
 /** Formato de login aceito: minúsculas, números, ponto, traço e sublinhado. */
 export const FORMATO_DO_LOGIN = /^[a-z0-9._-]{3,30}$/;

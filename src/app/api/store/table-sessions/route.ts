@@ -108,7 +108,9 @@ export async function POST(req: NextRequest) {
         tableId,
         franchiseeId: targetFranchiseeId,
         customerName: customerName || null,
-        waiterName: garcomDaMesa?.name || waiterName || null,
+        // waiterId informado mas não é desta loja: nem o nome entra, senão o
+        // card da mesa mostraria um garçom que não existe aqui.
+        waiterName: garcomDaMesa?.name || (waiterId ? null : waiterName || null),
         waiterId: garcomDaMesa?.id || null,
         status: "OPEN",
         openedAt: new Date()

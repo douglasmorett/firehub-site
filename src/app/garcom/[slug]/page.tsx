@@ -12,8 +12,15 @@ import LoginDoGarcom from "./LoginDoGarcom";
 
 export const dynamic = "force-dynamic";
 
-export default async function PaginaDeLoginDoGarcom({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PaginaDeLoginDoGarcom({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ motivo?: string }>;
+}) {
   const { slug } = await params;
+  const { motivo } = await searchParams;
 
   const loja = await prisma.user.findUnique({
     where: { slug },
@@ -26,5 +33,12 @@ export default async function PaginaDeLoginDoGarcom({ params }: { params: Promis
     redirect(`/garcom/${encodeURIComponent(slug)}/mesas`);
   }
 
-  return <LoginDoGarcom slug={slug} nomeDaLoja={loja.storeName || loja.name || "Restaurante"} logo={loja.storeLogo} />;
+  return (
+    <LoginDoGarcom
+      slug={slug}
+      nomeDaLoja={loja.storeName || loja.name || "Restaurante"}
+      logo={loja.storeLogo}
+      motivo={motivo || null}
+    />
+  );
 }

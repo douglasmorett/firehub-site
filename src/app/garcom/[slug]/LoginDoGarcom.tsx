@@ -7,15 +7,23 @@ import { Eye, EyeOff, LogIn } from "lucide-react";
  * Formulário de login do garçom. Simples de propósito: é digitado no celular,
  * muitas vezes com a mão molhada, entre uma mesa e outra.
  */
+/** Por que o garçom voltou para o login (vem em ?motivo=). */
+const AVISOS: Record<string, string> = {
+  sessao: "Sua sessão terminou ou o gerente alterou seu acesso. Entre de novo.",
+};
+
 export default function LoginDoGarcom({
   slug,
   nomeDaLoja,
   logo,
+  motivo,
 }: {
   slug: string;
   nomeDaLoja: string;
   logo: string | null;
+  motivo: string | null;
 }) {
+  const aviso = motivo ? AVISOS[motivo] || null : null;
   const [login, setLogin] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -131,6 +139,15 @@ export default function LoginDoGarcom({
             {mostrarSenha ? <EyeOff size={20} /> : <Eye size={20} />}
           </button>
         </div>
+
+        {aviso && !erro && (
+          <div role="status" style={{
+            background: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A",
+            borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, marginBottom: 14,
+          }}>
+            {aviso}
+          </div>
+        )}
 
         {erro && (
           <div role="alert" style={{

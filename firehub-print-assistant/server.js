@@ -700,7 +700,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // 2. CLIENTE SECTION
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
   if (order.customerName) res += wrapLines("Nome: " + cleanAscii(order.customerName), 2);
-  if (order.customerPhone) res += wrapLines("Telefone: " + cleanAscii(order.customerPhone), 2);
+  // Pedido de mesa nasce com telefone "00000000000" (campo obrigatorio no
+  // banco): imprimir isso e ruido no papel.
+  if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {
+    res += wrapLines("Telefone: " + cleanAscii(order.customerPhone), 2);
+  }
   res += "Qtd Pedidos: 1" + LF;
 
   // 3. ENTREGA SECTION
@@ -953,6 +957,23 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   res += boxBorder;
 
   // 6. PAYMENT METHOD & SAFETY NOTE
+  // ── CONTA DA MESA ────────────────────────────────────────────────────
+  //
+  // O servidor manda a conta como um "pedido" (src/lib/conta-da-mesa.ts) com
+  // `rateio` = quanto cada pessoa paga. Assistente antigo ignora o campo e
+  // imprime a conta como comanda comum, com a divisao dentro do nome do
+  // cliente; este imprime o bloco proprio.
+  const ehMesa = order.deliveryType === "MESA" || order.kind === "CONTA_DA_MESA";
+  if (Array.isArray(order.rateio) && order.rateio.length > 0) {
+    res += LF + DOUBLE_HEIGHT + makeHeaderTitle("DIVISAO POR PESSOA") + DOUBLE_OFF + LF;
+    res += boxBorder;
+    for (const parte of order.rateio) {
+      const valor = "R$ " + Number(parte?.valor || 0).toFixed(2).replace(".", ",");
+      res += makeBoxLine(cleanAscii(parte?.nome || "Pessoa"), valor);
+    }
+    res += boxBorder;
+  }
+
   const payMethodRaw = cleanAscii(order.paymentMethod || "");
   const payMethodClean = payMethodRaw.toLowerCase();
   const isExplicitOffline =
@@ -977,7 +998,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     res += DOUBLE_HEIGHT + wrapLines("(Pago via " + onlineSource + " - NAO COBRAR)", 2) + DOUBLE_OFF;
   } else {
     res += BOLD_ON + wrapLines("Forma de Pagamento: " + baseMethodName, 2) + BOLD_OFF;
-    res += DOUBLE_HEIGHT + wrapLines("(COBRAR NA ENTREGA)", 2) + DOUBLE_OFF;
+    res += DOUBLE_HEIGHT + wrapLines(ehMesa ? "(PAGAR NO CAIXA OU NA MESA)" : "(COBRAR NA ENTREGA)", 2) + DOUBLE_OFF;
 
     if (order.changeAmount != null && Number(order.changeAmount) > 0) {
       const changeFor = Number(order.changeAmount);
@@ -990,7 +1011,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     }
 
     res += divider;
-    res += DOUBLE_HEIGHT + BOLD_ON + wrapLines("!! COBRAR DO CLIENTE NA ENTREGA: " + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
+    res += DOUBLE_HEIGHT + BOLD_ON + wrapLines((ehMesa ? "!! TOTAL A PAGAR: " : "!! COBRAR DO CLIENTE NA ENTREGA: ") + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
   }
 
   res += LF + centerLine("Obrigado pela preferencia!") + LEFT + FEED + CUT;

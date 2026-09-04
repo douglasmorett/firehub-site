@@ -89,12 +89,13 @@ export default function GarconsPage() {
       setLoading(true);
       const [res, resAcesso] = await Promise.all([
         fetch("/api/store/waiters"),
-        fetch("/api/store/waiters/acesso"),
+        // Se o link falhar, a lista de garçons não pode ficar vazia por causa dele.
+        fetch("/api/store/waiters/acesso").catch(() => null),
       ]);
       if (res.ok) {
         setWaiters(await res.json());
       }
-      if (resAcesso.ok) {
+      if (resAcesso?.ok) {
         setAcesso(await resAcesso.json());
       }
     } finally {
@@ -477,7 +478,7 @@ export default function GarconsPage() {
                 <div style={{ position: "relative" }}>
                   <input type={mostrarSenha ? "text" : "password"} value={formData.password}
                     onChange={e => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="mínimo 4 caracteres" autoComplete="new-password"
+                    placeholder="mínimo 6 caracteres" autoComplete="new-password"
                     style={{ width: "100%", padding: "10px 40px 10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit" }} />
                   <button type="button" onClick={() => setMostrarSenha(v => !v)} aria-label={mostrarSenha ? "Esconder senha" : "Mostrar senha"}
                     style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: 6, cursor: "pointer", color: "#64748B" }}>

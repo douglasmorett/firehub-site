@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { FORMATO_DO_LOGIN, normalizarLogin } from "@/lib/garcom-auth";
+import { CAMPOS_DO_GARCOM, FORMATO_DO_LOGIN, normalizarLogin } from "@/lib/garcom-auth";
 
 async function getFranchiseeId() {
   const session = await getServerSession(authOptions);
@@ -16,55 +16,54 @@ async function getFranchiseeId() {
   return dbUser.ownerId || dbUser.id;
 }
 
-/**
- * O que a aba Garçons recebe. `passwordHash` NUNCA sai daqui — nem para o
- * dono da loja: ele define a senha, não a lê.
- */
-const CAMPOS_DO_GARCOM = {
-  id: true, name: true, phone: true, active: true, commissionRate: true, notes: true,
-  login: true, lastLoginAt: true, createdAt: true, updatedAt: true,
-} as const;
+const TAMANHO_MINIMO_DA_SENHA = 6;
 
-const TAMANHO_MINIMO_DA_SENHA = 4;
+type Credenciais = { login?: string | null; passwordHash?: string | null; credentialsUpdatedAt?: Date };
 
 /**
  * Valida login e senha vindos do formulário.
  *
- * Devolve `{ erro }` com a frase para o gerente, ou os campos prontos para
- * gravar. `login: null` significa "sem acesso pelo link"; `undefined` em
- * qualquer campo significa "não mexer".
+ * Devolve `{ erro }` com a frase para o gerente, ou só os campos que precisam
+ * mudar (campo ausente = não mexer). `atual` é o que está no banco — nulo no
+ * cadastro novo. É ele que evita gravar senha sem login, carimbar
+ * `credentialsUpdatedAt` num garçom que nunca teve acesso, ou aceitar login
+ * novo sem senha (o gerente acharia que configurou e o garçom não entraria).
  */
 async function credenciaisDoCorpo(
   data: any,
-  opcoes: { novo: boolean }
-): Promise<
-  | { erro: string }
-  | { login?: string | null; passwordHash?: string | null; credentialsUpdatedAt?: Date }
-> {
+  atual: { login: string | null; passwordHash: string | null } | null
+): Promise<{ erro: string } | Credenciais> {
   const temLogin = data.login !== undefined;
   const temSenha = typeof data.password === "string" && data.password.length > 0;
   const login = temLogin ? normalizarLogin(data.login) : undefined;
+  // Como fica o login depois deste salvamento.
+  const loginFinal = login === undefined ? atual?.login ?? null : login || null;
 
-  if (login !== undefined && login !== "" && !FORMATO_DO_LOGIN.test(login)) {
+  if (login && !FORMATO_DO_LOGIN.test(login)) {
     return { erro: "Login: use de 3 a 30 caracteres, só letras minúsculas, números, ponto, traço ou sublinhado." };
   }
   if (temSenha && String(data.password).length < TAMANHO_MINIMO_DA_SENHA) {
     return { erro: `Senha: use pelo menos ${TAMANHO_MINIMO_DA_SENHA} caracteres.` };
   }
-
-  // Login novo sem senha não serve para nada — o garçom não conseguiria entrar
-  // e o gerente acharia que configurou. Só vale para quem ESTÁ criando acesso.
-  if (login && !temSenha && opcoes.novo) {
+  if (temSenha && loginFinal && String(data.password).trim().toLowerCase() === loginFinal) {
+    return { erro: "A senha não pode ser igual ao login." };
+  }
+  if (temSenha && !loginFinal) {
+    return { erro: "Informe o login do garçom junto com a senha." };
+  }
+  if (loginFinal && !atual?.passwordHash && !temSenha) {
     return { erro: "Defina uma senha para o login do garçom." };
   }
 
-  const out: { login?: string | null; passwordHash?: string | null; credentialsUpdatedAt?: Date } = {};
+  const out: Credenciais = {};
   if (login === "") {
-    // Tirar o login tira o acesso inteiro; a senha antiga não fica esperando.
-    out.login = null;
-    out.passwordHash = null;
-    out.credentialsUpdatedAt = new Date();
-  } else if (login) {
+    // Tirar o login tira o acesso inteiro — mas só há o que tirar se havia algo.
+    if (atual?.login || atual?.passwordHash) {
+      out.login = null;
+      out.passwordHash = null;
+      out.credentialsUpdatedAt = new Date();
+    }
+  } else if (login && login !== atual?.login) {
     out.login = login;
   }
   if (temSenha) {
@@ -104,7 +103,7 @@ export async function POST(req: Request) {
     const data = await req.json();
     if (!data.name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
-    const credenciais = await credenciaisDoCorpo(data, { novo: true });
+    const credenciais = await credenciaisDoCorpo(data, null);
     if ("erro" in credenciais) return NextResponse.json({ error: credenciais.erro }, { status: 400 });
 
     const waiter = await prisma.waiter.create({
@@ -143,9 +142,7 @@ export async function PUT(req: Request) {
     });
     if (!atual) return NextResponse.json({ error: "Garçom não encontrado" }, { status: 404 });
 
-    // Criar acesso num garçom que ainda não tinha exige senha junto.
-    const criandoAcesso = !atual.login && !!normalizarLogin(data.login);
-    const credenciais = await credenciaisDoCorpo(data, { novo: criandoAcesso || !atual.passwordHash });
+    const credenciais = await credenciaisDoCorpo(data, atual);
     if ("erro" in credenciais) return NextResponse.json({ error: credenciais.erro }, { status: 400 });
 
     const waiter = await prisma.waiter.update({

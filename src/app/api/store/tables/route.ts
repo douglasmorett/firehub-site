@@ -37,6 +37,8 @@ export async function GET(req: NextRequest) {
           id: activeSession.id,
           customerName: activeSession.customerName,
           waiterName: activeSession.waiterName,
+          // Para a tela sugerir a taxa de serviço cadastrada desse garçom.
+          waiterId: activeSession.waiterId,
           openedAt: activeSession.openedAt,
           totalAmount,
           orderCount: activeSession.orders.length,

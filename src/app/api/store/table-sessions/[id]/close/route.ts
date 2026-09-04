@@ -40,8 +40,16 @@ export async function POST(
     // valor e o fechamento recusaria por "faltar" dinheiro que ninguém deve.
     const pedidosValidos = tableSession.orders.filter((o) => o.status !== "CANCELADO");
     const subtotal = pedidosValidos.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
-    const serviceFee = serviceFeePercent ? (subtotal * serviceFeePercent) / 100 : 0;
-    const tipAmount = waiterTip ? Number(waiterTip) : 0;
+    // Taxa e gorjeta nunca negativas nem fora da faixa: com taxa de -100% a
+    // conta zerava e a mesa fechava "paga" sem um centavo. Fora da faixa é
+    // pedido malformado, não conta.
+    const taxaPct = Number(serviceFeePercent) || 0;
+    const gorjeta = Number(waiterTip) || 0;
+    if (!Number.isFinite(taxaPct) || taxaPct < 0 || taxaPct > 100 || !Number.isFinite(gorjeta) || gorjeta < 0) {
+      return NextResponse.json({ error: "Taxa de serviço ou gorjeta inválida" }, { status: 400 });
+    }
+    const serviceFee = taxaPct ? (subtotal * taxaPct) / 100 : 0;
+    const tipAmount = gorjeta;
     const totalAmount = subtotal + serviceFee + tipAmount;
 
     // ── A SOMA DOS PAGAMENTOS TEM QUE FECHAR COM A CONTA ──────────────────

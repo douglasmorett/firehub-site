@@ -6,6 +6,8 @@ import ComboModal from "@/components/customer/ComboModal";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
+import { printOrder } from "@/lib/print";
+import { impressoraAtendeModulo } from "@/lib/modulo-do-pedido";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface TableItem {
@@ -18,6 +20,7 @@ interface TableItem {
     id: string;
     customerName: string | null;
     waiterName: string | null;
+    waiterId?: string | null;
     openedAt: string;
     totalAmount: number;
     orderCount: number;
@@ -120,6 +123,10 @@ const getEffectiveComboGroups = (prod: any) => {
  * a tela toda, que é o que importa na hora de lançar.
  */
 const ESTILO_TABLET = `
+  /* 100vh no celular é a altura COM a barra do navegador escondida; com a barra
+     visível o rodapé do painel da mesa (o Total) ficava atrás dela. dvh
+     acompanha a barra; onde não existe, fica o 100vh de sempre. */
+  @supports (height: 100dvh) { .mesa-tela { height: 100dvh !important; } }
   .mesa-lancar {
     display: grid;
     grid-template-columns: 1fr 340px;
@@ -206,7 +213,7 @@ export default function MesasApp({
 }: {
   modo?: ModoDaTela;
   /** Garçom logado pelo link. Só existe em modo "garcom". */
-  garcom?: { id: string; name: string } | null;
+  garcom?: { id: string; name: string; commissionRate?: number | null } | null;
   /** Slug da loja, para o "Sair" do garçom voltar ao login certo. */
   slug?: string;
 }) {
@@ -217,6 +224,24 @@ export default function MesasApp({
   const ehGarcom = modo === "garcom" && !!garcom;
   /** Em modo garçom a mesa abre sempre em nome dele; no painel, quem escolhe é o gerente. */
   const garcomFixo = ehGarcom && garcom ? garcom.id : "";
+
+  /**
+   * Toda chamada de API da tela passa por aqui. Em modo garçom: (1) declara ao
+   * servidor que é o garçom falando, para o cookie do painel — se houver no
+   * mesmo navegador — não valer nesta tela; (2) 401 significa que o acesso
+   * acabou (senha trocada, desativado, apagado, sessão vencida): em vez de
+   * deixar a grade congelada com "Unauthorized", volta ao login dizendo por quê.
+   */
+  const chamar = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (!ehGarcom) return fetch(input, init);
+    const cabecalhos = new Headers(init?.headers || {});
+    cabecalhos.set("x-operador", "garcom");
+    const res = await fetch(input, { ...init, headers: cabecalhos });
+    if (res.status === 401) {
+      window.location.assign(`/garcom/${encodeURIComponent(slug)}?motivo=sessao`);
+    }
+    return res;
+  };
 
   // Data
   const [tables, setTables] = useState<TableItem[]>([]);
@@ -261,6 +286,7 @@ export default function MesasApp({
   const [editNumber, setEditNumber] = useState("");
   const [editLabel, setEditLabel] = useState("");
   const [showFreeConfirm, setShowFreeConfirm] = useState(false);
+  const [imprimindoConta, setImprimindoConta] = useState(false);
 
   // Open table form
   const [openCustomerName, setOpenCustomerName] = useState("");
@@ -275,7 +301,7 @@ export default function MesasApp({
       setOpenWaiterId(garcom.id);
       return;
     }
-    fetch("/api/store/waiters")
+    chamar("/api/store/waiters")
       .then(r => r.ok ? r.json() : [])
       .then(data => {
         if (Array.isArray(data)) setWaiters(data.filter(w => w.active));
@@ -323,7 +349,7 @@ export default function MesasApp({
   // ─── Data Fetching ─────────────────────────────────────────────────────────
   const fetchTables = useCallback(async () => {
     try {
-      const res = await fetch("/api/store/tables");
+      const res = await chamar("/api/store/tables");
       if (res.ok) {
         const data = await res.json();
         setTables(data.tables || []);
@@ -338,7 +364,7 @@ export default function MesasApp({
       // Mesa é canal SALÃO: `price` já vem resolvido pelo preço do canal.
       // Pelo link do garçom não há sessão do painel; a rota própria entrega o
       // mesmo cardápio (src/lib/cardapio-da-loja.ts).
-      const res = await fetch(ehGarcom ? "/api/garcom/cardapio" : "/api/admin/menu-products?canal=salao");
+      const res = await chamar(ehGarcom ? "/api/garcom/cardapio" : "/api/admin/menu-products?canal=salao");
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -380,7 +406,7 @@ export default function MesasApp({
 
   const fetchSessionDetail = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/store/table-sessions?sessionId=${sessionId}`);
+      const res = await chamar(`/api/store/table-sessions?sessionId=${sessionId}`);
       if (res.ok) {
         const data = await res.json();
         setSessionDetail(data);
@@ -391,7 +417,7 @@ export default function MesasApp({
   /** Quem está sentado na mesa. Recarrega junto com a comanda. */
   const carregarPessoas = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/store/table-sessions/${sessionId}/guests`);
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/guests`);
       if (res.ok) {
         const data = await res.json();
         setPessoas(data.guests || []);
@@ -406,7 +432,7 @@ export default function MesasApp({
       // A taxa e a gorjeta vão na primeira busca também: sem elas o modal
       // abriria mostrando um total sem taxa e se corrigiria meio segundo
       // depois — tempo suficiente para o garçom ler o número errado em voz alta.
-      const res = await fetch(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${gorjeta}`);
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${gorjeta}`);
       if (res.ok) setConta(await res.json());
     } catch { /* o modal mostra o total simples se a conta não vier */ } finally {
       setCarregandoConta(false);
@@ -416,7 +442,7 @@ export default function MesasApp({
   const adicionarPessoas = async (quantidade?: number, nome?: string) => {
     const sessionId = selectedTable?.openSession?.id;
     if (!sessionId) return;
-    const res = await fetch(`/api/store/table-sessions/${sessionId}/guests`, {
+    const res = await chamar(`/api/store/table-sessions/${sessionId}/guests`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(quantidade ? { quantidade } : { name: nome }),
@@ -428,7 +454,7 @@ export default function MesasApp({
   const renomearPessoa = async (guestId: string, nome: string) => {
     const sessionId = selectedTable?.openSession?.id;
     if (!sessionId || !nome.trim()) return;
-    const res = await fetch(`/api/store/table-sessions/${sessionId}/guests`, {
+    const res = await chamar(`/api/store/table-sessions/${sessionId}/guests`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ guestId, name: nome.trim() }),
@@ -439,7 +465,7 @@ export default function MesasApp({
   const removerPessoa = async (guestId: string) => {
     const sessionId = selectedTable?.openSession?.id;
     if (!sessionId) return;
-    const res = await fetch(`/api/store/table-sessions/${sessionId}/guests?guestId=${guestId}`, {
+    const res = await chamar(`/api/store/table-sessions/${sessionId}/guests?guestId=${guestId}`, {
       method: "DELETE",
     });
     if (res.ok) {
@@ -486,7 +512,7 @@ export default function MesasApp({
     try {
       const waiterIdEscolhido = garcomFixo || openWaiterId;
       const selectedWaiter = waiters.find(w => w.id === waiterIdEscolhido);
-      const res = await fetch("/api/store/table-sessions", {
+      const res = await chamar("/api/store/table-sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -503,7 +529,7 @@ export default function MesasApp({
         setOpenWaiterId(garcomFixo);
         await fetchTables();
         // Select the now-opened table
-        const updated = await fetch("/api/store/tables");
+        const updated = await chamar("/api/store/tables");
         if (updated.ok) {
           const data = await updated.json();
           const t = (data.tables || []).find((t: TableItem) => t.id === confirmOpen.id);
@@ -534,7 +560,7 @@ export default function MesasApp({
     }
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/store/table-sessions/${selectedTable.openSession.id}/close`, {
+      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentMethods: [], serviceFeePercent: 0 }),
@@ -559,7 +585,7 @@ export default function MesasApp({
     if (!selectedTable?.openSession || cart.length === 0) return;
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/store/table-sessions/${selectedTable.openSession.id}/add-order`, {
+      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/add-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -579,7 +605,7 @@ export default function MesasApp({
         setView("grid");
         await fetchTables();
         // Refresh selected table
-        const updated = await fetch("/api/store/tables");
+        const updated = await chamar("/api/store/tables");
         if (updated.ok) {
           const data = await updated.json();
           const t = (data.tables || []).find((t: TableItem) => t.id === selectedTable.id);
@@ -598,13 +624,79 @@ export default function MesasApp({
   };
 
   /** Abre o fechamento e busca a conta já rateada pelo servidor. */
+  /**
+   * Taxa de serviço sugerida: a comissão cadastrada do garçom da mesa (aba
+   * Garçons). Sem garçom vinculado, ou sem comissão, 10% — o que a casa
+   * costuma cobrar. O gerente pode mudar no modal; aqui é só o ponto de
+   * partida, para não ter que lembrar de cabeça a taxa de cada garçom.
+   */
+  const taxaSugeridaDaMesa = (t: TableItem | null): number => {
+    const padrao = 10;
+    if (ehGarcom && garcom?.commissionRate != null) return Number(garcom.commissionRate) || padrao;
+    const waiterId = t?.openSession?.waiterId;
+    const w = waiterId ? waiters.find((x) => x.id === waiterId) : null;
+    return w && w.commissionRate != null ? Number(w.commissionRate) || padrao : padrao;
+  };
+
+  /**
+   * Manda a conta da mesa para a impressora. O servidor monta o cupom e o
+   * deixa na fila da nuvem, que o Assistente do caixa puxa em até 3 s — o
+   * mesmo caminho das comandas. No painel, ainda tenta a impressora local na
+   * hora; o Assistente deduplica pelo id do cupom, então não sai duas vezes.
+   */
+  const imprimirConta = async (taxa?: number, gorjeta?: number) => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!sessionId || imprimindoConta) return;
+    setImprimindoConta(true);
+    try {
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/imprimir-conta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taxa, gorjeta }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(`❌ ${data?.error || "Não foi possível imprimir a conta"}`);
+        return;
+      }
+
+      let saiuLocal = false;
+      if (!ehGarcom && data?.cupom) {
+        try {
+          const cfgRes = await chamar("/api/store/printer-config");
+          const cfg = cfgRes.ok ? await cfgRes.json() : null;
+          if (cfg) {
+            // Conta é papel do caixa: impressora do salão que tira a comanda
+            // inteira. Nem a só-de-bebida, nem a que filtra por categoria.
+            const doSalao = (cfg.printers || []).filter((p: any) =>
+              p?.name && impressoraAtendeModulo(p.modulos, "salao") && p.somenteBebidas !== true);
+            const doCaixa = doSalao.filter((p: any) => !(Array.isArray(p.categories) && p.categories.length > 0));
+            const escolhidas = (doCaixa.length > 0 ? doCaixa : doSalao).map((p: any) => ({ ...p, categories: [] }));
+            const r = await printOrder(data.cupom as any, cfg.storeName || "FIREHUB", { ...cfg, printers: escolhidas }, {}, false);
+            saiuLocal = r.success;
+          }
+        } catch { /* sem Assistente nesta máquina: a fila da nuvem entrega */ }
+      }
+      showToast(saiuLocal
+        ? `🧾 Conta impressa (taxa ${data?.taxaPct ?? "?"}%)`
+        : `🧾 Conta enviada para a impressora do caixa (taxa ${data?.taxaPct ?? "?"}%)`);
+    } catch {
+      showToast("❌ Erro de conexão");
+    } finally {
+      setImprimindoConta(false);
+    }
+  };
+
   const abrirFechamento = async () => {
     const sessionId = selectedTable?.openSession?.id;
     if (!sessionId) return;
+    // Sugere a taxa cadastrada do garçom da mesa; o gerente ajusta se quiser.
+    const taxa = taxaSugeridaDaMesa(selectedTable);
+    setServiceFee(taxa);
     setShowCloseModal(true);
     setValorPagamento("");
     await Promise.all([
-      carregarConta(sessionId, useServiceFee ? serviceFee : 0, Number(waiterTip) || 0),
+      carregarConta(sessionId, useServiceFee ? taxa : 0, Number(waiterTip) || 0),
       carregarPagamentos(sessionId),
     ]);
   };
@@ -621,7 +713,7 @@ export default function MesasApp({
 
     setActionLoading(true);
     try {
-      const res = await fetch(`/api/store/table-sessions/${selectedTable.openSession.id}/close`, {
+      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -680,7 +772,7 @@ export default function MesasApp({
 
   const carregarPagamentos = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/store/table-sessions/${sessionId}/pagamentos`);
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/pagamentos`);
       if (res.ok) {
         const data = await res.json();
         setPagamentosDaMesa(Array.isArray(data.pagamentos) ? data.pagamentos : []);
@@ -697,7 +789,7 @@ export default function MesasApp({
 
     setRegistrandoPagamento(true);
     try {
-      const res = await fetch(`/api/store/table-sessions/${sessionId}/pagamentos`, {
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/pagamentos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ valor, metodo: formaPagamento, guestId: donoPagamento }),
@@ -723,7 +815,7 @@ export default function MesasApp({
     const sessionId = selectedTable?.openSession?.id;
     if (!sessionId) return;
     try {
-      const res = await fetch(`/api/store/table-sessions/${sessionId}/pagamentos?uid=${encodeURIComponent(uid)}`, {
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/pagamentos?uid=${encodeURIComponent(uid)}`, {
         method: "DELETE",
       });
       const data = await res.json().catch(() => ({}));
@@ -767,7 +859,7 @@ export default function MesasApp({
       const body: Record<string, unknown> = { id: showEditModal.id };
       if (editNumber) body.number = parseInt(editNumber);
       if (editLabel !== undefined) body.label = editLabel || null;
-      const res = await fetch("/api/store/tables", {
+      const res = await chamar("/api/store/tables", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -780,7 +872,7 @@ export default function MesasApp({
         await fetchTables();
         // Update selected table if it was the one being edited
         if (selectedTable?.id === showEditModal.id) {
-          const updated = await fetch("/api/store/tables");
+          const updated = await chamar("/api/store/tables");
           if (updated.ok) {
             const data = await updated.json();
             const t = (data.tables || []).find((t: TableItem) => t.id === showEditModal.id);
@@ -802,7 +894,7 @@ export default function MesasApp({
       const body: Record<string, unknown> = {};
       if (newTableNumber) body.number = parseInt(newTableNumber);
       if (newTableLabel) body.label = newTableLabel;
-      const res = await fetch("/api/store/tables", {
+      const res = await chamar("/api/store/tables", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -825,7 +917,7 @@ export default function MesasApp({
   const deleteTable = async (id: string) => {
     if (!confirm("Tem certeza que deseja remover esta mesa?")) return;
     try {
-      const res = await fetch(`/api/store/tables?id=${id}`, { method: "DELETE" });
+      const res = await chamar(`/api/store/tables?id=${id}`, { method: "DELETE" });
       if (res.ok) {
         showToast("✅ Mesa removida!");
         await fetchTables();
@@ -853,7 +945,7 @@ export default function MesasApp({
   /** Sai do acesso do garçom: apaga o cookie e volta para o login da loja. */
   const sairDoGarcom = async () => {
     try {
-      await fetch("/api/garcom/logout", { method: "POST" });
+      await chamar("/api/garcom/logout", { method: "POST" });
     } catch { /* o login recusa o cookie de qualquer jeito se ele ficou */ }
     window.location.assign(`/garcom/${encodeURIComponent(slug)}`);
   };
@@ -914,7 +1006,7 @@ export default function MesasApp({
     if (!showCloseModal || !sessionId) return;
     const t = setTimeout(() => {
       const taxa = useServiceFee ? serviceFee : 0;
-      fetch(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${Number(waiterTip) || 0}`)
+      chamar(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${Number(waiterTip) || 0}`)
         .then(r => (r.ok ? r.json() : null))
         .then(d => { if (d) setConta(d); })
         .catch(() => { /* mantém a conta anterior */ });
@@ -1227,7 +1319,7 @@ export default function MesasApp({
 
   // ─── GRID VIEW (main view) ────────────────────────────────────────────────
   return (
-    <div style={{
+    <div className="mesa-tela" style={{
       display: "flex", flexDirection: "column", height: "100vh",
       background: "linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)",
       fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
@@ -1254,7 +1346,7 @@ export default function MesasApp({
           }}>🍽️</div>
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 800, color: "#0F172A", margin: 0 }}>Mesas</h1>
-            <div style={{ display: "flex", gap: 8, fontSize: 12 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
               <span style={{ color: "#16A34A", fontWeight: 700 }}>🟢 {freeTables.length} livres</span>
               <span style={{ color: "#DC2626", fontWeight: 700 }}>🔴 {occupiedTables.length} ocupadas</span>
               {totalConsumo > 0 && <span style={{ color: "#D97706", fontWeight: 700 }}>{fmt(totalConsumo)} em consumo</span>}
@@ -1310,7 +1402,7 @@ export default function MesasApp({
                   <button onClick={() => {
                     (async () => {
                       for (let i = 1; i <= 10; i++) {
-                        await fetch("/api/store/tables", {
+                        await chamar("/api/store/tables", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ number: i }),
@@ -1457,6 +1549,11 @@ export default function MesasApp({
                 background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", boxShadow: "0 2px 6px rgba(220,38,38,0.2)",
               }}>💰 Fechar Conta</button>
+              <button onClick={() => imprimirConta()} disabled={imprimindoConta} style={{
+                padding: "10px 0", borderRadius: 10, border: "1.5px solid #C4B5FD",
+                background: "#F5F3FF", color: "#6D28D9", fontWeight: 800, fontSize: 13,
+                cursor: "pointer", gridColumn: "1 / -1", opacity: imprimindoConta ? 0.6 : 1,
+              }}>{imprimindoConta ? "Enviando conta..." : `🧾 Imprimir Conta (taxa ${taxaSugeridaDaMesa(selectedTable)}%)`}</button>
               {(selectedTable.openSession.totalAmount === 0) && (
                 <button onClick={() => setShowFreeConfirm(true)} style={{
                   padding: "10px 0", borderRadius: 10, border: "1.5px solid #F59E0B",
@@ -2090,6 +2187,14 @@ export default function MesasApp({
                 </div>
               )}
 
+              <button onClick={() => imprimirConta(useServiceFee ? serviceFee : 0, Number(waiterTip) || 0)}
+                disabled={imprimindoConta} style={{
+                width: "100%", background: "#fff", color: "#6D28D9",
+                border: "1.5px solid #C4B5FD", borderRadius: 12, padding: "12px 0", fontWeight: 800, fontSize: 14,
+                cursor: "pointer", fontFamily: "inherit", marginBottom: 8, opacity: imprimindoConta ? 0.6 : 1,
+              }}>
+                {imprimindoConta ? "Enviando conta..." : `🧾 Imprimir conta para o cliente${useServiceFee ? ` (taxa ${serviceFee}%)` : " (sem taxa)"}`}
+              </button>
               <button onClick={closeSession} disabled={actionLoading || !podeFechar} style={{
                 width: "100%", background: podeFechar ? "#DC2626" : "#CBD5E1", color: "#fff",
                 border: "none", borderRadius: 12, padding: "16px 0", fontWeight: 800, fontSize: 16,

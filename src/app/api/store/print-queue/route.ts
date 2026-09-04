@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
+import { impressoraAtendeModulo } from "@/lib/modulo-do-pedido";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
@@ -84,7 +85,7 @@ export async function GET(req: NextRequest) {
     // Uma unica leitura da config da loja (nao repete o JSON por pedido)
     const owner = await prisma.user.findUnique({
       where: { id: franchiseeId },
-      select: { printerConfig: true },
+      select: { printerConfig: true, storeName: true, name: true },
     });
     const pc: any = (owner?.printerConfig as any) || null;
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
@@ -162,7 +163,55 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ jobs });
+    // ── IMPRESSÕES AVULSAS (conta da mesa) ───────────────────────────
+    //
+    // Não nascem de pedido: ficam em PrintRequest, já no formato de cupom
+    // (src/lib/conta-da-mesa.ts). Vão para as impressoras do SALÃO que tiram
+    // a comanda inteira — nem a só-de-bebida, nem a que filtra por categoria
+    // (a da cozinha): conta é papel do caixa. Sem impressora assim, todas as
+    // do salão; sem nenhuma cadastrada, `destinos` vazio e o Assistente usa
+    // a padrão, como sempre fez.
+    const avulsas = await prisma.printRequest.findMany({
+      where: { franchiseeId, createdAt: { gt: sinceDate } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const doSalao = printers.filter(
+      (p) => p && p.name && impressoraAtendeModulo(p.modulos, "salao") && p.somenteBebidas !== true
+    );
+    const doCaixa = doSalao.filter((p) => !(Array.isArray(p.categories) && p.categories.length > 0));
+    const paraConta = doCaixa.length > 0 ? doCaixa : doSalao;
+
+    const jobsAvulsos = avulsas.map((pedido) => {
+      const order: any = pedido.payload;
+      return {
+        id: "job_" + pedido.id,
+        order,
+        storeName: owner?.storeName || owner?.name || "FIREHUB",
+        paperWidth: printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
+        columns: printers[0]?.columns,
+        escposProfile: printers[0]?.escposProfile,
+        printerConfig: {
+          autoprint: pc?.autoprint !== false,
+          autoBeverageTag: pc?.autoBeverageTag !== false,
+          customBeverageKeywords: pc?.customBeverageKeywords || "",
+          defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
+          printers,
+        },
+        destinos: paraConta.map((d) => ({
+          printer: d.name,
+          copies: Number(d.copies) > 0 ? Number(d.copies) : 1,
+          paperWidth: d.paperWidth || pc?.defaultPaperWidth || "80mm",
+          columns: d.columns ?? undefined,
+          escposProfile: d.escposProfile ?? undefined,
+          somenteBebidas: false,
+          items: Array.isArray(order?.items) ? order.items : [],
+        })),
+        createdAt: pedido.createdAt.toISOString(),
+      };
+    });
+
+    return NextResponse.json({ jobs: [...jobs, ...jobsAvulsos] });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

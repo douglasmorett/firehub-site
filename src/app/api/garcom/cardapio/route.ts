@@ -21,7 +21,14 @@ export async function GET() {
   }
   try {
     const produtos = await cardapioDaLoja(auth.garcom.franchiseeId, "salao");
-    return NextResponse.json(produtos);
+    // O garçom vê o que o cliente pode pedir na mesa, e nada mais: item
+    // inativo ou desligado para o salão fica de fora aqui, não só na tela; e o
+    // custo de compra e os interruptores dos outros canais não viajam para o
+    // papel de menor confiança do sistema.
+    const paraOGarcom = (produtos as any[])
+      .filter((p) => p.active !== false && p.activeGarcom !== false)
+      .map(({ cost, activePDV, activeDelivery, activeTotem, ...resto }) => resto);
+    return NextResponse.json(paraOGarcom);
   } catch (err: any) {
     console.error("[garcom/cardapio]", err);
     return NextResponse.json({ error: "Erro ao carregar o cardápio" }, { status: 500 });

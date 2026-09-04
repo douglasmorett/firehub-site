@@ -28,5 +28,11 @@ export default async function PaginaDeMesasDoGarcom({ params }: { params: Promis
   });
   if (!loja || loja.slug !== slug) redirect(destinoDoLogin);
 
-  return <MesasApp modo="garcom" garcom={{ id: auth.garcom.id, name: auth.garcom.name }} slug={slug} />;
+  return (
+    <MesasApp
+      modo="garcom"
+      garcom={{ id: auth.garcom.id, name: auth.garcom.name, commissionRate: auth.garcom.commissionRate }}
+      slug={slug}
+    />
+  );
 }

@@ -29,8 +29,11 @@ export async function GET(
     const { id } = await params;
     if (!id) return NextResponse.json({ error: "Waiter ID is required" }, { status: 400 });
 
+    // Só o que o relatório usa. Sem select vinha o Waiter inteiro — inclusive
+    // o passwordHash — para qualquer usuário do painel que abrisse a aba.
     const waiter = await prisma.waiter.findUnique({
-      where: { id, franchiseeId }
+      where: { id, franchiseeId },
+      select: { id: true, name: true, commissionRate: true, active: true },
     });
 
     if (!waiter) return NextResponse.json({ error: "Waiter not found" }, { status: 404 });

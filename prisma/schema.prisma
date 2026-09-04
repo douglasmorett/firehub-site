@@ -1099,6 +1099,24 @@ model Waiter {
   @@index([franchiseeId])
 }
 
+// ========== IMPRESSÃO AVULSA ==========
+/// Impressão que não nasce de um pedido — hoje, a conta da mesa.
+///
+/// A fila da nuvem (GET /api/store/print-queue) só lia CustomerOrder, e o
+/// Assistente instalado em cada loja só muda com instalador novo. Guardando o
+/// "pedido" sintético aqui, o Assistente de hoje puxa e imprime a conta do
+/// mesmo jeito que puxa uma comanda, sem atualização. `payload` já está no
+/// formato que o cupom entende (id, items, totalAmount, deliveryType...).
+model PrintRequest {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  kind         String   // CONTA_DA_MESA
+  payload      Json
+  createdAt    DateTime @default(now())
+
+  @@index([franchiseeId, createdAt])
+}
+
 // ========== SESSÕES DE CAIXA ==========
 model CashSession {
   id              String    @id @default(cuid())

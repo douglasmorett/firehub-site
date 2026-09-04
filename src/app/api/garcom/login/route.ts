@@ -26,6 +26,11 @@ import {
 
 const RECUSA = "Usuário ou senha incorretos.";
 
+// Comparado quando o login não existe, para o tempo de resposta ser o mesmo
+// de "senha errada". Sem isto a mensagem era única mas a demora do bcrypt
+// (~250 ms) entregava quais logins existem na loja.
+const HASH_FALSO = bcrypt.hashSync("senha-que-nunca-bate", 12);
+
 export async function POST(req: NextRequest) {
   let body: any;
   try {
@@ -69,8 +74,8 @@ export async function POST(req: NextRequest) {
     select: { id: true, name: true, active: true, passwordHash: true, franchiseeId: true },
   });
 
-  const confere = garcom?.passwordHash ? await bcrypt.compare(senha, garcom.passwordHash) : false;
-  if (!garcom || !confere) {
+  const confere = await bcrypt.compare(senha, garcom?.passwordHash || HASH_FALSO);
+  if (!garcom || !garcom.passwordHash || !confere) {
     registrarFalhaDeLogin(chaveDoFreio, origem);
     return NextResponse.json({ error: RECUSA }, { status: 401 });
   }

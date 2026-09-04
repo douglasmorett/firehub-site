@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
+import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
+import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
 
 export async function POST(
   req: NextRequest,
@@ -38,6 +42,74 @@ export async function POST(
       return NextResponse.json({ error: "Session is not open" }, { status: 400 });
     }
 
+    // ── PREÇO E PRODUTO SÃO DO SERVIDOR, NÃO DO CORPO ─────────────────────
+    // A rota gravava o `price` que a tela mandava e aceitava qualquer
+    // menuProductId. Com o módulo aberto ao garçom pelo link — o papel de
+    // menor confiança do sistema — bastaria uma requisição montada na mão para
+    // lançar o combo por R$ 0,01 ou um produto de outra loja. Mesma regra do
+    // totem (api/totem/order): produto da loja, ativo e liberado para o
+    // salão; preço recalculado pelo canal a partir das escolhas do combo, com
+    // o mínimo do produto como piso; quantidade inteira de 1 a 99.
+    const idsPedidos = [...new Set(items.map((i: any) => String(i?.menuProductId ?? "")).filter(Boolean))] as string[];
+    const produtosDaLoja = await prisma.menuProduct.findMany({
+      where: {
+        id: { in: idsPedidos },
+        franchiseeId: targetFranchiseeId,
+        active: true,
+        activeGarcom: true,
+        ...SEM_PRODUTO_DE_INTEGRACAO,
+      },
+      include: { comboGroups: { include: { items: { include: { menuProduct: true } } } } },
+    });
+    const porId = new Map(produtosDaLoja.map((p) => [p.id, p]));
+
+    const recusados: string[] = [];
+    const itensValidados: {
+      menuProductId: string;
+      quantity: number;
+      price: number;
+      comboSelections: any;
+      tableGuestId: string | null;
+    }[] = [];
+
+    for (const item of items) {
+      const produto = porId.get(String(item?.menuProductId ?? ""));
+      if (!produto) {
+        recusados.push(String(item?.menuProductId ?? "?"));
+        continue;
+      }
+      // Produto de dia específico não sai fora do dia; a tela pode estar
+      // aberta desde ontem.
+      if (!disponivelHoje(produto.availableDays)) {
+        recusados.push(produto.name);
+        continue;
+      }
+      // Mesma conta do cardápio, do modal e do totem (src/lib/preco-combo.ts).
+      const noCanal = aplicarPrecoDoCanalComCombo(produto as any, "salao");
+      let preco = precoUnitarioDoItem(noCanal as any, item.comboSelections);
+      const minimo = precoMinimoDoProduto(noCanal as any);
+      if (preco < minimo) preco = minimo;
+      const quantity = Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1)));
+      itensValidados.push({
+        menuProductId: produto.id,
+        quantity,
+        price: preco,
+        comboSelections: item.comboSelections ?? null,
+        tableGuestId: item.tableGuestId ? String(item.tableGuestId) : null,
+      });
+    }
+
+    if (recusados.length > 0) {
+      // Recusar o pedido inteiro, não o item: lançar MENOS do que o garçom
+      // conferiu com o cliente é pior do que pedir para lançar de novo.
+      return NextResponse.json(
+        { error: `Estes itens não estão no cardápio da mesa: ${recusados.join(", ")}. Atualize a tela e lance de novo.` },
+        { status: 400 }
+      );
+    }
+
+    const totalAmount = itensValidados.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
     // Só aceita vincular a item quem realmente está NESTA mesa. Sem esta
     // conferência, um id qualquer no corpo da requisição jogaria o consumo na
     // conta de uma pessoa de outra mesa.
@@ -53,8 +125,6 @@ export async function POST(
 
     const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
     
-    // Calculate total amount for this specific order
-    const totalAmount = items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
 
     const defaultName = customerName || tableSession.customerName || `Mesa ${tableSession.table.number}`;
 
@@ -74,7 +144,7 @@ export async function POST(
         source: "PRESENCIAL",
         tableSessionId: id,
         items: {
-          create: items.map((item: any) => ({
+          create: itensValidados.map((item): Prisma.CustomerOrderItemUncheckedCreateWithoutOrderInput => ({
             menuProductId: item.menuProductId,
             quantity: item.quantity,
             price: item.price,
@@ -83,8 +153,10 @@ export async function POST(
             // É o que permite rachar a conta pelo consumo real de cada um em
             // vez de dividir por igual — que é onde alguém sempre paga a
             // bebida do outro.
-            tableGuestId: idsValidos.has(item.tableGuestId) ? item.tableGuestId : null,
-            comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : null,
+            tableGuestId: item.tableGuestId && idsValidos.has(item.tableGuestId) ? item.tableGuestId : null,
+            // Coluna Json: ausente (undefined) vira o nulo do banco; null literal o
+            // Prisma recusa para Json.
+            comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : undefined,
           })),
         },
       },
