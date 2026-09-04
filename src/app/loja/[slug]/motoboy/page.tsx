@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useRef, use } from "react";
 import {
   MapPin,
   Phone,
@@ -43,6 +43,39 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  // ── Estado de sincronização VISÍVEL ─────────────────────────────────────
+  // Antes, falha de rede só ia para console.error: a lista congelava e a tela
+  // dizia "Nenhuma entrega pendente!" com quatro entregas atribuídas.
+  const [jaSincronizou, setJaSincronizou] = useState(false);
+  const [syncErro, setSyncErro] = useState<"rede" | "servidor" | null>(null);
+  const [ultimaSync, setUltimaSync] = useState<Date | null>(null);
+  const falhasSeguidasRef = useRef(0);
+
+  /** Trava por pedido: baixa em andamento não aceita segundo toque. */
+  const baixandoRef = useRef<Set<string>>(new Set());
+  /** Baixas confirmadas há <30s: o polling não pode ressuscitá-las. */
+  const baixasLocaisRef = useRef<Map<string, number>>(new Map());
+  /** Descarta resposta de polling que chegou fora de ordem. */
+  const reqIdRef = useRef(0);
+  /** Sessão vigente: resposta de outra sessão (troca de turno) é ignorada. */
+  const sessaoRef = useRef<string | null>(null);
+
+  /** Reimpõe ENTREGUE nas baixas locais recentes (janela de 30s). */
+  const aplicarBaixasLocais = (lista: any[]): any[] => {
+    const agora = Date.now();
+    for (const [id, quando] of baixasLocaisRef.current) {
+      if (agora - quando > 30_000) baixasLocaisRef.current.delete(id);
+    }
+    if (baixasLocaisRef.current.size === 0) return lista;
+    // Sobrescreve o status (não filtra: filtrar tiraria o pedido do contador
+    // "CONCLUÍDAS HOJE" e ele cairia na frente do entregador).
+    return lista.map((o) =>
+      baixasLocaisRef.current.has(o.id) && o.status !== "ENTREGUE" && o.status !== "ENCERRADO"
+        ? { ...o, status: "ENTREGUE" }
+        : o
+    );
+  };
+
   // Load Saved Motoboy Session from Cookie / localStorage
   useEffect(() => {
     try {
@@ -56,21 +89,51 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // Fetch Orders for Authenticated Motoboy
   const fetchMotoboyOrders = async () => {
     if (!session) return;
+    // Número desta requisição: resposta antiga que chegar DEPOIS de uma mais
+    // nova é descartada — era ela que ressuscitava o pedido recém-entregue.
+    const reqId = ++reqIdRef.current;
+    const sessaoDaChamada = session.motoboyId;
     setLoadingOrders(true);
     try {
       const res = await fetch(`/api/motoboys/orders?motoboyId=${session.motoboyId}&storeId=${session.storeId}`);
+      if (reqId !== reqIdRef.current || sessaoRef.current !== sessaoDaChamada) return;
       if (res.ok) {
         const data = await res.json();
-        setOrders(data.orders || []);
+        if (reqId !== reqIdRef.current || sessaoRef.current !== sessaoDaChamada) return;
+        setOrders(aplicarBaixasLocais(data.orders || []));
         setBevKeywords(data.customBeverageKeywords || "");
+        setJaSincronizou(true);
+        setSyncErro(null);
+        setUltimaSync(new Date());
+        falhasSeguidasRef.current = 0;
+        // Servidor concorda com a baixa → solta a trava local daquele pedido.
+        for (const o of data.orders || []) {
+          if ((o.status === "ENTREGUE" || o.status === "ENCERRADO") && baixasLocaisRef.current.has(o.id)) {
+            baixasLocaisRef.current.delete(o.id);
+          }
+        }
+      } else {
+        const data = await res.json().catch(() => ({} as any));
+        if ((data as any)?.precisaRelogar) {
+          // Cadastro desativado no painel: derruba a sessão na hora.
+          handleLogout();
+          setLoginError("Seu acesso foi encerrado pela loja.");
+          return;
+        }
+        // Um 500 solto de restart se cura no tique seguinte; só pinta o
+        // vermelho na SEGUNDA falha seguida.
+        falhasSeguidasRef.current++;
+        if (falhasSeguidasRef.current >= 2) setSyncErro("servidor");
       }
       // O localStorage "firehub_created_routes" que era lido aqui só existia no
       // navegador da LOJA — no celular do motoboy estava sempre vazio. A rota
       // (nome, cor, sequência) agora vem do servidor, junto com cada pedido.
     } catch (err) {
       console.error("Erro ao carregar pedidos do motoboy:", err);
+      falhasSeguidasRef.current++;
+      if (falhasSeguidasRef.current >= 2) setSyncErro("rede");
     } finally {
-      setLoadingOrders(false);
+      if (reqId === reqIdRef.current) setLoadingOrders(false);
     }
   };
 
@@ -81,6 +144,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
   useEffect(() => {
     if (!session) return;
+    sessaoRef.current = session.motoboyId;
 
     fetchMotoboyOrders();
     const interval = setInterval(fetchMotoboyOrders, 10000); // Polling 10s
@@ -99,7 +163,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       fetch("/api/motoboys/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ motoboyId: session.motoboyId, lat, lng })
+        body: JSON.stringify({ motoboyId: session.motoboyId, storeId: session.storeId, lat, lng })
       }).then(() => setGpsStatus("ativo"))
         .catch(e => console.warn("Erro enviando GPS do motoboy:", e));
     };
@@ -127,6 +191,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     // 12s): é o momento em que a loja mais precisa saber onde ele está.
     const aoVoltar = () => {
       if (document.visibilityState !== "visible") return;
+      // Celular no bolso suspende o polling junto com o GPS: na volta, a
+      // lista também pode estar velha — sincroniza os dois na hora.
+      fetchMotoboyOrders();
       if ("geolocation" in navigator) {
         ultimoEnvio = 0;
         navigator.geolocation.getCurrentPosition(
@@ -191,6 +258,10 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         storeAddress
       };
 
+      // Limpa o que era do entregador ANTERIOR antes de entrar o novo — cobre
+      // a troca de turno no mesmo celular que não passou pelo botão Sair.
+      limparDadosDeSessao();
+      sessaoRef.current = motoboyId;
       setSession(sessObj);
       localStorage.setItem(`firehub_motoboy_session_${slug}`, JSON.stringify(sessObj));
 
@@ -202,8 +273,32 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     }
   };
 
+  /**
+   * Zera tudo o que pertence a UM entregador. O componente não é desmontado na
+   * saída: sem isto, o próximo motoboy no mesmo celular abria o app vendo
+   * nome, telefone, endereço e valor dos clientes do anterior — com o botão
+   * verde de "Confirmar Entrega" funcionando.
+   */
+  const limparDadosDeSessao = () => {
+    setOrders([]);
+    setBevKeywords("");
+    setBeverageModalOrder(null);
+    setBeveragesList([]);
+    setToastMsg(null);
+    setLoadingOrders(false);
+    setJaSincronizou(false);
+    setSyncErro(null);
+    setUltimaSync(null);
+    falhasSeguidasRef.current = 0;
+    baixandoRef.current.clear();
+    baixasLocaisRef.current.clear();
+    reqIdRef.current++;
+  };
+
   // Logout
   const handleLogout = () => {
+    sessaoRef.current = null;
+    limparDadosDeSessao();
     setSession(null);
     localStorage.removeItem(`firehub_motoboy_session_${slug}`);
   };
@@ -235,6 +330,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // ESTE motoboy NESTA loja) e dispara os efeitos: parceiro, WhatsApp, fatura.
   const handleMarkDelivered = async (orderId: string) => {
     if (!session) return;
+    // Trava POR PEDIDO, conferida aqui (e não só no botão): dois toques
+    // rápidos — ou o botão do modal de bebidas chamando direto — disparavam
+    // dois PATCH, e cada um mandava WhatsApp, iFood conclude e NFC-e. A trava
+    // antiga era UMA string para a lista inteira: tocar no pedido B liberava
+    // o botão de A com o PATCH de A ainda no ar.
+    if (baixandoRef.current.has(orderId)) return;
+    baixandoRef.current.add(orderId);
     setUpdatingOrderId(orderId);
 
     // A confirmação de entrega É uma posição conhecida: o motoboy está na
@@ -247,7 +349,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
           fetch("/api/motoboys/location", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ motoboyId: session.motoboyId, lat: pos.coords.latitude, lng: pos.coords.longitude })
+            body: JSON.stringify({ motoboyId: session.motoboyId, storeId: session.storeId, lat: pos.coords.latitude, lng: pos.coords.longitude })
           }).then(() => setGpsStatus("ativo")).catch(() => {});
         },
         () => {},
@@ -264,8 +366,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success) {
+        // Registra a baixa ANTES do estado: o polling de 10s pode voltar com
+        // uma resposta que saiu do servidor antes do PATCH e "ressuscitar" o
+        // pedido na lista — o entregador via a entrega desfazer sozinha.
+        // aplicarBaixasLocais() reimpõe ENTREGUE por até 30s (a loja PODE
+        // reverter uma baixa errada; trava eterna esconderia a reversão).
+        baixasLocaisRef.current.set(orderId, Date.now());
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "ENTREGUE" } : o));
-        setToastMsg("✅ Entrega confirmada com sucesso!");
+        setToastMsg(data.jaEntregue ? "✅ Este pedido já estava confirmado." : "✅ Entrega confirmada com sucesso!");
         setTimeout(() => setToastMsg(null), 3000);
       } else {
         // Falha SEM mensagem é o que escondeu este botão quebrado por meses.
@@ -276,6 +384,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       setToastMsg("⚠️ Sem conexão — a entrega NÃO foi confirmada. Tente de novo.");
       setTimeout(() => setToastMsg(null), 4500);
     } finally {
+      baixandoRef.current.delete(orderId);
       setUpdatingOrderId(null);
     }
   };
@@ -287,15 +396,21 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // sequência que a loja montou no mapa (routeSequence 1º, 2º, 3º…); quem não
   // tem sequência entra depois, do pedido mais antigo para o mais novo, que é
   // a ordem justa de atendimento.
+  // ENCERRADO conta como CONCLUÍDO. O filtro antigo só conhecia ENTREGUE, e o
+  // pedido que a loja encerrava voltava para a lista de PENDENTES do
+  // entregador — que confirmava de novo, num laço sem fim. E CANCELLED (grafia
+  // que caminhos antigos gravaram) não era escondido.
+  const FINALIZADO = (s: string) => s === "ENTREGUE" || s === "ENCERRADO";
+  const CANCELADO = (s: string) => s === "CANCELADO" || s === "CANCELED" || s === "CANCELLED";
   const activeOrders = orders
-    .filter(o => o.status !== "ENTREGUE" && o.status !== "CANCELADO" && o.status !== "CANCELED")
+    .filter(o => !FINALIZADO(o.status) && !CANCELADO(o.status))
     .sort((a, b) => {
       const sa = a.routeSequence ?? Infinity;
       const sb = b.routeSequence ?? Infinity;
       if (sa !== sb) return sa - sb;
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
-  const completedOrders = orders.filter(o => o.status === "ENTREGUE");
+  const completedOrders = orders.filter(o => FINALIZADO(o.status));
 
   // Change Password State
   const [showPassModal, setShowPassModal] = useState(false);
@@ -424,7 +539,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 gap: 8, marginTop: "0.5rem", boxShadow: "0 4px 14px rgba(37,99,235,0.4)"
               }}
             >
-              {loadingLogin ? <Loader2 size={20} className="animate-spin" /> : <Lock size={18} />}
+              {loadingLogin ? <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} /> : <Lock size={18} />}
               Entrar no aplicativo
             </button>
           </form>
@@ -488,7 +603,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               onClick={fetchMotoboyOrders}
               style={{ background: "#334155", color: "#fff", border: "none", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
             >
-              <RefreshCw size={14} className={loadingOrders ? "animate-spin" : ""} /> Sync
+              <RefreshCw size={14} style={loadingOrders ? { animation: "spin 1s linear infinite" } : undefined} /> Sync
             </button>
 
             <button
@@ -513,24 +628,52 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
           <div style={{ textAlign: "center" }}>
             <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 700 }}>ENTREGAS PENDENTES</span>
             <p style={{ margin: "4px 0 0 0", fontSize: "1.6rem", fontWeight: 900, color: "#2563EB" }}>
-              {activeOrders.length}
+              {jaSincronizou ? activeOrders.length : "–"}
             </p>
           </div>
 
           <div style={{ textAlign: "center", borderLeft: "1px solid #E2E8F0" }}>
             <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 700 }}>CONCLUÍDAS HOJE</span>
             <p style={{ margin: "4px 0 0 0", fontSize: "1.6rem", fontWeight: 900, color: "#16A34A" }}>
-              {completedOrders.length}
+              {jaSincronizou ? completedOrders.length : "–"}
             </p>
           </div>
         </div>
+
+        {/* Tarja de sync quebrado — a lista pode estar VELHA e o entregador
+            precisa saber. Tocável para tentar de novo na hora. */}
+        {syncErro && (
+          <div
+            onClick={fetchMotoboyOrders}
+            style={{
+              background: "#FEF2F2", border: "1.5px solid #FECACA", color: "#B91C1C",
+              borderRadius: "12px", padding: "10px 14px", marginBottom: "1rem",
+              fontSize: "0.82rem", fontWeight: 800, cursor: "pointer", textAlign: "center",
+            }}
+          >
+            ⚠️ {syncErro === "rede" ? "Sem conexão" : "Erro no servidor"} — a lista pode estar desatualizada.
+            {ultimaSync ? ` Última atualização: ${ultimaSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.` : ""}
+            {" "}Toque para tentar agora.
+          </div>
+        )}
 
         {/* Section: ACTIVE ROUTES */}
         <h2 style={{ fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: 6 }}>
           <MapPin size={18} color="#2563EB" /> Minhas Entregas Pendentes ({activeOrders.length})
         </h2>
 
-        {activeOrders.length === 0 ? (
+        {/* Três estados, não dois: antes da PRIMEIRA sincronização a tela não
+            pode afirmar "nenhuma entrega" — era mentira sempre que a rede
+            falhava no boot, e o entregador confiava. Preso a `jaSincronizou`
+            (não a loadingOrders) para não piscar esqueleto a cada polling. */}
+        {!jaSincronizou ? (
+          <div style={{ background: "#FFFFFF", borderRadius: "14px", padding: "2.5rem 1rem", textAlign: "center", color: "#94A3B8", border: "1px solid #E2E8F0" }}>
+            <Loader2 size={40} style={{ margin: "0 auto 0.5rem", animation: "spin 1s linear infinite" }} />
+            <p style={{ fontWeight: 800, fontSize: "0.95rem", color: "#334155", margin: 0 }}>
+              Carregando suas entregas…
+            </p>
+          </div>
+        ) : activeOrders.length === 0 ? (
           <div style={{ background: "#FFFFFF", borderRadius: "14px", padding: "2.5rem 1rem", textAlign: "center", color: "#94A3B8", border: "1px solid #E2E8F0" }}>
             <PackageCheck size={48} style={{ margin: "0 auto 0.5rem", opacity: 0.5 }} />
             <p style={{ fontWeight: 800, fontSize: "0.95rem", color: "#334155", margin: "0 0 4px 0" }}>
@@ -723,7 +866,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   }}
                 >
                   {updatingOrderId === order.id ? (
-                    <Loader2 size={18} className="animate-spin" />
+                    <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} />
                   ) : (
                     <CheckCircle2 size={18} />
                   )}

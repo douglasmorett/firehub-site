@@ -28,13 +28,26 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 54 fotos a ~1s cada cabem com folga
 
 export async function POST(req: NextRequest) {
+  return internalizar(req);
+}
+
+// GET com os padrões: é o que o cron-runner (que só fala GET, de dentro do
+// container, com o CRON_SECRET do ambiente) chama a cada 6 horas. Idempotente:
+// sem foto apontando para fora, é uma consulta barata e nada mais. Assim a
+// regra "cardápio importado não depende da plataforma de origem" vale para
+// TODA importação futura, não só a de hoje.
+export async function GET(req: NextRequest) {
+  return internalizar(req);
+}
+
+async function internalizar(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => ({}));
-  const dominio = String(body?.dominio || "menudino");
-  const franchiseeId = body?.franchiseeId ? String(body.franchiseeId) : null;
+  const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+  const dominio = String((body as any)?.dominio || "menudino");
+  const franchiseeId = (body as any)?.franchiseeId ? String((body as any).franchiseeId) : null;
 
   const produtos = await prisma.menuProduct.findMany({
     where: {

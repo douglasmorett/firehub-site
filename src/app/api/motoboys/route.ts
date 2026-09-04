@@ -24,7 +24,9 @@ export async function GET() {
   // entregas e os ganhos do motoboy zeravam as 21:00 de Brasilia, no meio do
   // turno dele — o painel dizia "0 entregas" para quem tinha acabado de rodar a
   // noite inteira.
-  const today = inicioDoExpedienteDaLoja();
+  // Com o fuso DA LOJA: sem argumento a função cai em São Paulo, e fora de SP
+  // a tela da loja e o app do motoboy viravam o dia em instantes diferentes.
+  const today = inicioDoExpedienteDaLoja(user.storeTimezone);
 
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId },

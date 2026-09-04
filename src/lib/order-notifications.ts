@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { STATUS_CANCELADOS } from "./status-pedido";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { inicioDoExpedienteDaLoja } from "./fuso";
 
@@ -59,7 +60,7 @@ export async function sendOrderNotification(
       where: {
         franchiseeId: order.franchiseeId,
         createdAt: { gte: dayStart },
-        status: { notIn: ["CANCELADO", "CANCELED"] }
+        status: { notIn: [...STATUS_CANCELADOS] }
       },
       select: { id: true },
       orderBy: { createdAt: "asc" }

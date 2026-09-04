@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
 
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
     if (Array.isArray(orderIds) && orderIds.length > 0) {
       try {
         await prisma.customerOrder.updateMany({
-          where: { id: { in: orderIds }, status: { notIn: ["ENTREGUE", "CANCELADO", "CANCELED"] } },
+          where: { id: { in: orderIds }, status: { notIn: ["ENTREGUE", ...STATUS_CANCELADOS] } },
           data: { status: "SAIU_ENTREGA" },
         });
 

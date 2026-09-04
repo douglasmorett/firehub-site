@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getStartOfDayUTC, toLocalISODate } from "@/lib/timezone";
+import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
+import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,6 +11,17 @@ export async function GET(req: NextRequest) {
 
     if (!motoboyId || !storeId) {
       return NextResponse.json({ error: "motoboyId e storeId são obrigatórios" }, { status: 400 });
+    }
+
+    // Entregador desativado no painel para de ver pedido NA HORA. Antes o
+    // `active` só era conferido no login — e a sessão do app vive para sempre
+    // no localStorage, então demitido continuava dentro.
+    const motoboy = await prisma.motoboy.findFirst({
+      where: { id: motoboyId, franchiseeId: storeId, active: true },
+      select: { id: true },
+    });
+    if (!motoboy) {
+      return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
     }
 
     const storeOwner = await prisma.user.findUnique({
@@ -23,33 +35,67 @@ export async function GET(req: NextRequest) {
     // Sem elas, a bebida que só a loja conhece passava sem o "você entregou?".
     const customBeverageKeywords = (storeOwner?.printerConfig as any)?.customBeverageKeywords || "";
 
-    const localTodayStr = toLocalISODate(new Date(), tz);
-    const todayStart = getStartOfDayUTC(localTodayStr, tz);
-    // Busca apenas os pedidos desta loja atribuídos a ESTE MOTOBOY E ESPECÍFICOS DE HOJE para concluídos
+    // Janela pelo EXPEDIENTE (vira às 5h), não pela meia-noite: o contador
+    // "CONCLUÍDAS HOJE" zerava às 00:00 no meio do turno, enquanto a tela de
+    // motoboys da loja — que já usa expediente — seguia mostrando o total e
+    // pagando a diária em cima dele.
+    const todayStart = inicioDoExpedienteDaLoja(tz);
+
+    // Piso para os PENDENTES: pedido esquecido de semanas atrás ficava na tela
+    // do entregador para sempre, ocupando vaga do take:100 e abrindo espaço
+    // para baixa acidental. 7 dias cobre qualquer pendência legítima.
+    const pisoPendentes = new Date(Date.now() - 7 * 24 * 3600_000);
+
     const orders = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: storeId,
         motoboyId: motoboyId,
-        status: { notIn: ["CANCELLED", "CANCELED"] },
+        // As TRÊS grafias de cancelado. Só as inglesas eram filtradas — e o
+        // sistema grava "CANCELADO": pedido cancelado com motoboy atribuído
+        // era reenviado ao celular a cada 10s, para sempre.
+        status: { notIn: [...STATUS_CANCELADOS] },
         OR: [
-          // 1. Pedidos ativos pendentes de entrega
-          { status: { notIn: ["ENTREGUE", "ENCERRADO"] } },
-          // 2. Pedidos entregues HOJE por este motoboy
+          // 1. Pedidos ativos pendentes de entrega (até 7 dias)
+          { status: { notIn: [...STATUS_FINALIZADOS] }, createdAt: { gte: pisoPendentes } },
+          // 2. Pedidos entregues NESTE EXPEDIENTE por este motoboy
           {
-            status: { in: ["ENTREGUE", "ENCERRADO"] },
+            status: { in: [...STATUS_FINALIZADOS] },
             updatedAt: { gte: todayStart }
           }
         ]
       },
-      include: {
+      // ⚠️ `select` explícito, não `include`. O include trazia TODAS as colunas
+      // do pedido e do produto para uma rota que não tem sessão: CPF do
+      // cliente (customerCpfCnpj), QR do PIX, dados fiscais e até o CUSTO de
+      // cada produto da loja. Nada disso é usado na tela do entregador.
+      select: {
+        id: true,
+        dailyOrderNumber: true,
+        ifoodReference: true,
+        openDeliveryReference: true,
+        customerName: true,
+        customerPhone: true,
+        customerAddress: true,
+        paymentMethod: true,
+        totalAmount: true,
+        deliveryFee: true,
+        changeAmount: true,
+        notes: true,
+        status: true,
+        source: true,
+        deliveryType: true,
+        createdAt: true,
+        updatedAt: true,
         items: {
-          include: {
-            menuProduct: true
-          }
+          select: {
+            quantity: true,
+            productName: true,
+            notes: true,
+            comboSelections: true,
+            menuProduct: { select: { name: true, category: true, isBeverage: true } },
+          },
         },
         // Nome e cor da rota, para o app dizer DE QUAL rota cada parada é.
-        // Antes o app tentava ler isso do localStorage do próprio celular —
-        // dados que só existiam no navegador da LOJA, nunca no do motoboy.
         routeSchedule: {
           select: { id: true, routeNumber: true, color: true }
         }
@@ -123,6 +169,16 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "orderId, motoboyId e storeId são obrigatórios" }, { status: 400 });
     }
 
+    // Demitido não dá baixa: `active` vale em toda rota de execução, não só
+    // no login (a sessão do app vive para sempre no localStorage).
+    const motoboyAtivo = await prisma.motoboy.findFirst({
+      where: { id: String(motoboyId), franchiseeId: String(storeId), active: true },
+      select: { id: true },
+    });
+    if (!motoboyAtivo) {
+      return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
+    }
+
     const order = await prisma.customerOrder.findFirst({
       where: { id: String(orderId), franchiseeId: String(storeId), motoboyId: String(motoboyId) },
     });
@@ -133,17 +189,39 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    if (order.status === "ENTREGUE" || order.status === "ENCERRADO") {
+    if ((STATUS_FINALIZADOS as readonly string[]).includes(order.status)) {
       return NextResponse.json({ success: true, jaEntregue: true });
     }
-    if (order.status === "CANCELADO" || order.status === "CANCELED") {
+    if ((STATUS_CANCELADOS as readonly string[]).includes(order.status)) {
       return NextResponse.json({ error: "Este pedido foi CANCELADO — não entregue. Confirme com a loja." }, { status: 409 });
     }
 
-    await prisma.customerOrder.update({
-      where: { id: order.id },
+    // ── ESCRITA ATÔMICA: o Postgres decide a corrida ────────────────────────
+    //
+    // Dois toques rápidos no botão (ou o mesmo request duplicado pelo 4G)
+    // passavam os DOIS pelo findFirst acima — e cada um disparava iFood
+    // conclude, WhatsApp "seu pedido chegou", faturamento e NFC-e. Em dobro.
+    //
+    // O updateMany condicional só casa a linha cujo status AINDA não é final:
+    // o segundo request espera o lock, reavalia o WHERE contra o commit do
+    // primeiro, casa zero linhas — e os efeitos só rodam quando count === 1.
+    const escrita = await prisma.customerOrder.updateMany({
+      where: {
+        id: order.id,
+        status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] },
+      },
       data: { status: "ENTREGUE", kdsStage: "FINISHED", kdsStationId: null },
     });
+    if (escrita.count === 0) {
+      const agora = await prisma.customerOrder.findUnique({
+        where: { id: order.id },
+        select: { status: true },
+      });
+      if (agora && (STATUS_CANCELADOS as readonly string[]).includes(agora.status)) {
+        return NextResponse.json({ error: "Este pedido foi CANCELADO — não entregue. Confirme com a loja." }, { status: 409 });
+      }
+      return NextResponse.json({ success: true, jaEntregue: true });
+    }
 
     // ── Efeitos da entrega, em segundo plano ────────────────────────────────
     // O entregador está na porta do cliente com o celular na mão: a resposta

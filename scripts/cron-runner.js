@@ -60,6 +60,15 @@ const jobs = [
     intervalMs: 5 * 60_000, // 5 minutos — monitora saúde + alerta WhatsApp
   },
   {
+    // Fotos de cardápio importado (MenuDino etc.) baixadas para o volume da
+    // loja, com a URL trocada no cadastro. Idempotente: sem foto apontando
+    // para fora, é uma consulta e nada mais. Cardápio importado não pode
+    // depender da plataforma de onde veio.
+    name: 'internalizar-imagens',
+    path: '/api/admin/internalizar-imagens',
+    intervalMs: 6 * 60 * 60_000, // 6 horas
+  },
+  {
     // Ensina ao gateway o LID de cada cliente. Sem isso, a PRIMEIRA resposta a
     // quem chega pelo endereço novo do WhatsApp (@lid) não decifra no aparelho.
     // De hora em hora porque o mapa do gateway vive em memória e zera no
