@@ -225,7 +225,6 @@ export async function POST(req: NextRequest) {
 async function createOrderFromIfoodData(orderId: string, orderData: any, franchiseeId: string, token: string) {
   const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
     franchiseeId,
-    active: true,
   });
 
   const total = typeof orderData.total === "object"

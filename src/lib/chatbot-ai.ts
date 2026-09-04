@@ -1042,25 +1042,45 @@ ${hoursText}
 
 TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO:
 ${(() => {
+  // ⚠️ Este bloco cotava R$ 5,00 para TODA loja e prometia frete grátis
+  // desligado. Três erros somados, medidos em produção em 03/09/2026:
+  //
+  // 1. O tipo gravado pela tela de entrega é "KM" — o código comparava com
+  //    "RADIUS", que não existe em NENHUMA loja da base (as 6 com faixas usam
+  //    "KM"). Os ramos por zona nunca rodaram para ninguém.
+  // 2. A faixa é {km, fee, time} — o código lia z.radius/z.maxKm, que não
+  //    existem. Mesmo casando o tipo, as faixas sairiam como "? km".
+  // 3. O frete grátis lia só o VALOR (freeShippingMinValue), ignorando o
+  //    TOGGLE (freeShippingActive). A Pastel da Paulista desativou a regra, o
+  //    valor 60 ficou gravado, e o robô seguiu prometendo "grátis acima de 60"
+  //    — enquanto o pedido real saía com taxa de R$ 13.
+  //
+  // E o fallback inventava "R$ 5,00" para loja sem config — número que não
+  // existe em lugar nenhum. Robô não inventa preço: sem config, ele diz que a
+  // taxa é confirmada pelo endereço.
   const zones = Array.isArray((user as any).deliveryZones) ? (user as any).deliveryZones : [];
   const zoneType = (user as any).deliveryZoneType || "";
   const dc = (user.deliveryConfig as any) || {};
   const fixedFee = dc.fixedFee ?? dc.defaultFee ?? dc.deliveryFee ?? dc.fixedDeliveryFee ?? dc.fee ?? null;
-  const freeMin = dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0;
+  const freteGratisLigado = dc.freeShippingActive !== false && dc.freeDeliveryActive !== false;
+  const freeMin = freteGratisLigado ? (dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0) : 0;
+  const kmDaFaixa = (z: any) => Number(z.km ?? z.radius ?? z.maxKm ?? 0);
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
     taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
-  } else if (zones.length > 0 && zoneType === "RADIUS") {
-    const maxKm = Math.max(...zones.map((z: any) => Number(z.radius || z.maxKm || 0)));
+  } else if (zones.length > 0) {
+    const maxKm = Math.max(...zones.map(kmDaFaixa));
     taxaText = `TIPO DE ENTREGA DA LOJA: POR RAIO DE DISTÂNCIA DA LOJA!\n- FAIXAS DE KM E TAXAS PERMITIDAS:\n` +
-      zones.map((z: any) => `  * Até ${z.radius || z.maxKm || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
-      `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.`;
+      zones.map((z: any) => `  * Até ${kmDaFaixa(z) || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
+      `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.` +
+      `\n- A TAXA EXATA de um endereço vem da validação no mapa. NUNCA cite uma taxa única como se valesse para todo mundo.`;
   } else if (fixedFee !== null) {
     taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
-    taxaText = "- Taxa Padrão de Entrega da Loja: R$ 5,00 (ou conforme distância/bairro do cliente).";
+    taxaText = "- A loja NÃO tem taxa fixa cadastrada. NUNCA invente um valor de entrega: peça o endereço e diga que a taxa é confirmada pelo mapa.";
   }
   if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS para pedidos acima de R$ ${Number(freeMin).toFixed(2)}`;
+  else taxaText += `\n- NÃO EXISTE frete grátis nesta loja. NUNCA prometa isenção de taxa por valor de pedido.`;
   return taxaText;
 })()}
 

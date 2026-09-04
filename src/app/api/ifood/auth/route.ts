@@ -314,7 +314,6 @@ export async function GET(req: NextRequest) {
 
               const items = await montarItensDoPedidoIfood(orderData.items || [], {
                 franchiseeId: user.id,
-                active: false,
                 // Aqui o item pode chegar sem `id` (payload resumido do onboarding);
                 // o externalCode é o que resta para não jogar todos no mesmo produto.
                 idDoItem: (i: any, idx: number) => i?.id || i?.externalCode || `sem-id-${idx}`,

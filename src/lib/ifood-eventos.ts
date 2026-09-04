@@ -311,7 +311,6 @@ export async function processarEventosIfood(opts: {
                 if (cancelFranchisee) {
                   const cancelItems = await montarItensDoPedidoIfood(cancelOrderData.items ?? [], {
                     franchiseeId: cancelFranchisee.id,
-                    active: true,
                   });
 
                   const cancelTotal = typeof cancelOrderData.total === "object"
@@ -426,7 +425,6 @@ export async function processarEventosIfood(opts: {
           // Extract items
           const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
             franchiseeId: eventFranchisee.id,
-            active: false,
           });
 
           const total = typeof orderData.total === "object"

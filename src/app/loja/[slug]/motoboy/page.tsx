@@ -550,8 +550,34 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             const cleanPhone = (order.customerPhone || "").replace(/\D/g, "");
             const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
 
-            const mapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addr}`)}`;
-            const wazeNavUrl = `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`;
+            // ── O QUE VAI PARA O NAVEGADOR DE MAPA NÃO É O QUE O HUMANO LÊ ──
+            //
+            // O endereço do pedido carrega "Comp: Esquina Com Sn17" e
+            // "Ref: Em Frente A Uninter" — ótimos para o entregador, veneno
+            // para o geocodificador: o Google Maps abria com esse texto,
+            // não resolvia o destino e NÃO GERAVA A ROTA (reclamação da
+            // Ragnar em 03/09/2026). Para o mapa vai só o que geocodifica:
+            // rua, número, bairro e cidade. Complemento e referência ficam
+            // no card, onde sempre estiveram.
+            // O corte é em " - " COM espaços dos dois lados, que é o separador
+            // do iFood. Hífen colado é nome de rua — "Tv. WE-34", "Rod. BR-101"
+            // — e cortá-lo mandaria "Tv. WE, 34" para o geocodificador.
+            const addrParaMapa = addr
+              .split(/\s+[-|]\s+/)
+              .filter((parte: string) => !/^\s*(comp(lemento)?|ref(er[êe]ncia)?|obs)\s*[:.]/i.test(parte.trim()))
+              .join(", ")
+              // \s+ e não \s{2,}: há endereço em produção com QUEBRA DE LINHA no
+              // meio ("Rua Gertrudes..., 1001\n1001 - Comp: ..."), e um \n
+              // sozinho vira %0A na URL — mais um jeito de o mapa abrir sem rota.
+              .replace(/\s+/g, " ")
+              .trim();
+            const temDestino = addrParaMapa && addrParaMapa !== "Endereço a confirmar";
+            const mapsNavUrl = temDestino
+              ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addrParaMapa)}&travelmode=driving&dir_action=navigate`
+              : null;
+            const wazeNavUrl = temDestino
+              ? `https://waze.com/ul?q=${encodeURIComponent(addrParaMapa)}&navigate=yes`
+              : null;
 
             const changeAmount = (order as any).changeAmount;
             const rawNotes = order.notes || "";
@@ -636,7 +662,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   )}
                 </div>
 
-                {/* Quick Navigation Buttons (Google Maps + Waze + WhatsApp) */}
+                {/* Quick Navigation Buttons (Google Maps + Waze + WhatsApp).
+                    Sem destino geocodificável os botões nem aparecem: um link
+                    para "Endereço a confirmar" abre o mapa sem rota nenhuma e
+                    o entregador perde tempo achando que o app quebrou. */}
+                {mapsNavUrl && wazeNavUrl && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.85rem" }}>
                   <a
                     href={mapsNavUrl}
@@ -664,6 +694,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                     🧭 Waze
                   </a>
                 </div>
+                )}
 
                 {waLink && (
                   <a

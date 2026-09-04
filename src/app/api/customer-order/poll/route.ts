@@ -303,7 +303,6 @@ async function pollIfoodEvents(sessionUserId?: string) {
             // no totem. O espelho é sempre categoria "iFood".
             const items = await montarItensDoPedidoIfood(rawIfoodItems, {
               franchiseeId: eventFranchisee.id,
-              active: false,
               idDoItem: (i: any, idx: number) =>
                 i?.id || i?.externalCode || i?.code || `ifitem-${idx}-${Math.random().toString(36).slice(2)}`,
             });
