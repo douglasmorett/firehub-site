@@ -21,6 +21,9 @@ export default function LoginDoGarcom({
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
+  // Logo que não carrega (URL antiga, blob apagado) vira o ícone padrão em
+  // vez do quadrado quebrado do navegador.
+  const [logoQuebrada, setLogoQuebrada] = useState(false);
 
   const entrar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,9 +68,14 @@ export default function LoginDoGarcom({
         boxShadow: "0 10px 40px rgba(15,23,42,0.08)", border: "1px solid #E2E8F0",
       }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 24 }}>
-          {logo ? (
+          {logo && !logoQuebrada ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logo} alt="" style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover" }} />
+            <img
+              src={logo}
+              alt=""
+              onError={() => setLogoQuebrada(true)}
+              style={{ width: 64, height: 64, borderRadius: 16, objectFit: "cover" }}
+            />
           ) : (
             <div style={{
               width: 64, height: 64, borderRadius: 16, background: "#7C3AED",
