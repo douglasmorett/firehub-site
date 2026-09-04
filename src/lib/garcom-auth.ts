@@ -114,7 +114,11 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
 
   const w = await prisma.waiter.findUnique({
     where: { id: token.gid },
-    select: { id: true, name: true, login: true, active: true, franchiseeId: true, credentialsUpdatedAt: true, commissionRate: true },
+    select: {
+      id: true, name: true, login: true, active: true, franchiseeId: true,
+      credentialsUpdatedAt: true, commissionRate: true,
+      franchisee: { select: { caixaFechadoEm: true } },
+    },
   });
 
   if (!w || w.franchiseeId !== token.lid) {
@@ -138,6 +142,19 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
     return { ok: false, status: 401, erro: "A senha foi alterada. Entre de novo.", codigo: "SENHA_ALTERADA" };
   }
 
+  // Fechar o caixa encerra o turno: todo garçom precisa entrar de novo. É o
+  // "sair" que ninguém lembra de fazer no celular no fim da noite — sem isto,
+  // o celular de quem já foi embora continuaria abrindo mesa no dia seguinte.
+  const caixaFechadoEm = w.franchisee?.caixaFechadoEm;
+  if (caixaFechadoEm && token.iat * 1000 + 999 < caixaFechadoEm.getTime()) {
+    return {
+      ok: false,
+      status: 401,
+      erro: "O caixa foi fechado e o turno encerrou. Entre de novo.",
+      codigo: "CAIXA_FECHADO",
+    };
+  }
+
   return {
     ok: true,
     garcom: { id: w.id, name: w.name, login: w.login, franchiseeId: w.franchiseeId, commissionRate: w.commissionRate },
@@ -155,7 +172,7 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
  * grava na loja do dono, e garçom grava na loja que o cadastrou.
  */
 export type OperadorDaMesa =
-  | { tipo: "loja"; franchiseeId: string; userId: string; ownerId: string | null }
+  | { tipo: "loja"; franchiseeId: string; userId: string; ownerId: string | null; name: string }
   | { tipo: "garcom"; franchiseeId: string; garcom: GarcomAutenticado };
 
 /** Cabeçalho com que a tela do garçom se identifica em toda chamada. */
@@ -183,9 +200,17 @@ export async function resolverOperadorDaMesa(): Promise<OperadorDaMesa | null> {
     if (session?.user?.email) {
       const u = await prisma.user.findUnique({
         where: { email: session.user.email },
-        select: { id: true, ownerId: true },
+        select: { id: true, ownerId: true, name: true, email: true },
       });
-      if (u) return { tipo: "loja", franchiseeId: u.ownerId || u.id, userId: u.id, ownerId: u.ownerId };
+      if (u) {
+        return {
+          tipo: "loja",
+          franchiseeId: u.ownerId || u.id,
+          userId: u.id,
+          ownerId: u.ownerId,
+          name: u.name || u.email || "painel",
+        };
+      }
     }
   } catch (err) {
     console.error("[resolverOperadorDaMesa] Erro ao ler sessão do painel:", err);
@@ -206,6 +231,11 @@ export const CAMPOS_DO_GARCOM = {
   id: true, name: true, phone: true, active: true, commissionRate: true, notes: true,
   login: true, lastLoginAt: true, createdAt: true, updatedAt: true,
 } as const;
+
+/** Como o operador aparece em registro (quem fechou a mesa, quem registrou o pagamento). */
+export function rotuloDoOperador(op: OperadorDaMesa): string {
+  return op.tipo === "garcom" ? `Garçom ${op.garcom.name}` : op.name;
+}
 
 /** Formato de login aceito: minúsculas, números, ponto, traço e sublinhado. */
 export const FORMATO_DO_LOGIN = /^[a-z0-9._-]{3,30}$/;

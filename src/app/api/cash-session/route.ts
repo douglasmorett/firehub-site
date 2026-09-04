@@ -549,7 +549,9 @@ export async function PUT(req: Request) {
   // Marcar caixa como fechado no user e no owner
   await prisma.user.updateMany({
     where: { OR: [{ id: user.targetId }, { ownerId: user.targetId }] },
-    data: { cashOpen: false },
+    // `caixaFechadoEm` encerra o turno dos garçons pelo link: sessão emitida
+    // antes deste instante é recusada e o celular volta para o login.
+    data: { cashOpen: false, caixaFechadoEm: new Date() },
   });
 
   const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true } });

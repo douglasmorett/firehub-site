@@ -23,6 +23,8 @@ export type PagamentoDaMesa = {
   guestId: string | null;
   guestName: string | null;
   at: string;
+  /** Quem registrou: nome do usuário do painel ou "Garçom X". Nulo em baixa antiga. */
+  por: string | null;
 };
 
 export const emCentavos = (v: number) => Math.round((Number(v) || 0) * 100);
@@ -47,6 +49,7 @@ export function lerPagamentos(bruto: unknown): PagamentoDaMesa[] {
       guestId: typeof p?.guestId === "string" ? p.guestId : null,
       guestName: typeof p?.guestName === "string" ? p.guestName : null,
       at: typeof p?.at === "string" ? p.at : "",
+      por: typeof p?.por === "string" ? p.por : null,
     }))
     .filter((p) => p.amount > 0);
 }

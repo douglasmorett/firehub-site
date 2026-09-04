@@ -238,7 +238,15 @@ export default function MesasApp({
     cabecalhos.set("x-operador", "garcom");
     const res = await fetch(input, { ...init, headers: cabecalhos });
     if (res.status === 401) {
-      window.location.assign(`/garcom/${encodeURIComponent(slug)}?motivo=sessao`);
+      // Descobre o motivo (senha trocada, caixa fechado, desativado...) para
+      // a tela de login explicar, em vez de só pedir a senha de novo.
+      let motivo = "sessao";
+      try {
+        const me = await fetch("/api/garcom/me", { cache: "no-store" });
+        const d = await me.json().catch(() => ({}));
+        if (!me.ok && typeof d?.codigo === "string") motivo = d.codigo;
+      } catch { /* fica o genérico */ }
+      window.location.assign(`/garcom/${encodeURIComponent(slug)}?motivo=${encodeURIComponent(motivo)}`);
     }
     return res;
   };
@@ -928,15 +936,36 @@ export default function MesasApp({
     } catch { showToast("❌ Erro"); }
   };
 
+  /**
+   * Move a conta inteira para outra mesa. Antes dizia "em breve", e a saída
+   * era liberar a mesa errada e relançar tudo na certa — com o pedido saindo
+   * de novo na cozinha.
+   */
   const transferTable = async (toTableId: string) => {
-    // Transfer session to another table
     if (!selectedTable?.openSession) return;
     setActionLoading(true);
     try {
-      // Close current session and open new one on target table
-      // For now, show toast
-      showToast("🔄 Funcionalidade de transferência em breve!");
+      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/transferir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toTableId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(`❌ ${data?.error || "Não foi possível transferir"}`);
+        return;
+      }
+      showToast(`↔️ Conta movida da mesa ${data.de} para a mesa ${data.para}`);
       setShowTransferModal(false);
+      await fetchTables();
+      const updated = await chamar("/api/store/tables");
+      if (updated.ok) {
+        const d = await updated.json();
+        const t = (d.tables || []).find((x: TableItem) => x.id === toTableId);
+        if (t) setSelectedTable(t);
+      }
+    } catch {
+      showToast("❌ Erro de conexão");
     } finally {
       setActionLoading(false);
     }
@@ -1554,6 +1583,13 @@ export default function MesasApp({
                 background: "#F5F3FF", color: "#6D28D9", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", gridColumn: "1 / -1", opacity: imprimindoConta ? 0.6 : 1,
               }}>{imprimindoConta ? "Enviando conta..." : `🧾 Imprimir Conta (taxa ${taxaSugeridaDaMesa(selectedTable)}%)`}</button>
+              <button onClick={() => setShowTransferModal(true)} disabled={freeTables.length === 0}
+                title={freeTables.length === 0 ? "Nenhuma mesa livre" : "Mover a conta para outra mesa"} style={{
+                padding: "10px 0", borderRadius: 10, border: "1.5px solid #E2E8F0",
+                background: "#F8FAFC", color: "#475569", fontWeight: 800, fontSize: 13,
+                cursor: freeTables.length === 0 ? "not-allowed" : "pointer", gridColumn: "1 / -1",
+                opacity: freeTables.length === 0 ? 0.5 : 1,
+              }}>↔️ Transferir para outra mesa</button>
               {(selectedTable.openSession.totalAmount === 0) && (
                 <button onClick={() => setShowFreeConfirm(true)} style={{
                   padding: "10px 0", borderRadius: 10, border: "1.5px solid #F59E0B",
@@ -2046,6 +2082,9 @@ export default function MesasApp({
                         {p.guestName ? `👤 ${p.guestName}` : "🍽️ Da mesa"}
                       </span>
                       <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>{p.method}</span>
+                      {p.por && (
+                        <span title={`Registrado por ${p.por}`} style={{ fontSize: 11, color: "#64748B", whiteSpace: "nowrap" }}>· {p.por}</span>
+                      )}
                       <span style={{ fontSize: 14, fontWeight: 900, color: "#15803D" }}>{fmt(p.amount)}</span>
                       <button
                         onClick={() => apagarPagamento(p.uid)}
@@ -2209,6 +2248,47 @@ export default function MesasApp({
                     : `Faltam ${fmt(faltaPagar)} para fechar`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TRANSFER MODAL ─── */}
+      {showTransferModal && selectedTable?.openSession && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+        }} onClick={() => setShowTransferModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "#fff", borderRadius: 20, padding: 24, width: "100%", maxWidth: 420,
+            maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <h3 style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>
+              ↔️ Transferir a Mesa {selectedTable.number}
+            </h3>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748B" }}>
+              A conta inteira (pedidos, pessoas e pagamentos) vai para a mesa escolhida. Nada é relançado na cozinha.
+            </p>
+            {freeTables.length === 0 ? (
+              <p style={{ color: "#B45309", fontWeight: 700, fontSize: 14 }}>Nenhuma mesa livre no momento.</p>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 8 }}>
+                {freeTables.map(t => (
+                  <button key={t.id} onClick={() => transferTable(t.id)} disabled={actionLoading} style={{
+                    padding: "14px 6px", borderRadius: 12, border: "2px solid #E2E8F0", background: "#fff",
+                    fontWeight: 800, fontSize: 15, color: "#0F172A", cursor: "pointer",
+                    opacity: actionLoading ? 0.6 : 1,
+                  }}>
+                    Mesa {t.number}
+                    {t.label && <div style={{ fontSize: 11, fontWeight: 600, color: "#64748B", marginTop: 2 }}>{t.label}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setShowTransferModal(false)} style={{
+              marginTop: 16, width: "100%", padding: "12px 0", borderRadius: 12,
+              border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#64748B",
+              fontWeight: 700, fontSize: 14, cursor: "pointer",
+            }}>Cancelar</button>
           </div>
         </div>
       )}

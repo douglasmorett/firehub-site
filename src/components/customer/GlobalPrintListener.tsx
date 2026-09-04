@@ -39,6 +39,27 @@ function claimOrderPrint(order: any) {
   }
 }
 
+/**
+ * Desfaz a reivindicação quando a impressão FALHOU.
+ *
+ * A reivindicação vem antes de imprimir (e precisa vir: é o que impede dois
+ * polls de imprimir o mesmo pedido). Mas, se a impressão falha — Assistente
+ * fechado, spooler ocupado, impressora religando — a marca ficava e o pedido
+ * nunca mais saía, sem aviso nenhum. Solto, ele volta na próxima rodada de
+ * 5 s enquanto estiver dentro dos 30 minutos que a tela considera recente.
+ */
+function releaseOrderPrint(order: any) {
+  if (!order || typeof window === "undefined") return;
+  const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string> | undefined;
+  const keys = [order.id, order.ifoodReference, order.openDeliveryReference].filter(Boolean);
+  for (const key of keys) {
+    memorySet?.delete(key);
+    try {
+      localStorage.removeItem(LOCK_PREFIX + key);
+    } catch {}
+  }
+}
+
 export default function GlobalPrintListener() {
   const { data: session } = useSession();
   const lastPollHash = useRef("");
@@ -205,6 +226,9 @@ export default function GlobalPrintListener() {
                   );
 
                   if (!result.success) {
+                    // Não saiu: solta a reivindicação para tentar de novo no
+                    // próximo poll, em vez de dar o pedido por impresso.
+                    releaseOrderPrint(order);
                     // Fallback para Fila de Impressão na nuvem
                     await fetch("/api/store/print-queue", {
                       method: "POST",
@@ -223,6 +247,7 @@ export default function GlobalPrintListener() {
                     });
                   }
                 } catch (err) {
+                  releaseOrderPrint(order);
                   console.warn("[GlobalPrint Master] Erro ao imprimir:", err);
                 }
               }

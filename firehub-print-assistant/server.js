@@ -1230,6 +1230,39 @@ function markOrderAsPrinted(order, printerName) {
   }
 }
 
+function unmarkOrderAsPrinted(order, printerName) {
+  for (const k of getOrderDeduplicationKeys(order, printerName)) printedOrdersCache.delete(String(k));
+}
+
+/* ── Falha DEPOIS de marcado como impresso ───────────────────────────
+ *
+ * A marca vem antes do rawPrint (e precisa vir: e o que impede a fila da
+ * nuvem, que volta a cada 3 s, de imprimir o mesmo pedido duas vezes). Mas,
+ * quando a impressao falhava — spooler ocupado, impressora religando, nome
+ * errado —, a marca ficava e a comanda nunca mais saia, sem erro na tela de
+ * ninguem. Agora a falha desmarca, e o proximo ciclo tenta de novo.
+ *
+ * Com limite: impressora que nao existe falharia a cada 3 s para sempre.
+ * Depois de MAX_TENTATIVAS o pedido fica marcado e o log diz por que. */
+const tentativasFalhas = new Map();
+const MAX_TENTATIVAS = 3;
+const chaveDeFalha = (order, printerName) =>
+  `${String(printerName || "").toLowerCase().trim()}::${order?.id || order?.ifoodReference || order?.openDeliveryReference || order?.dailyOrderNumber || ""}`;
+
+function liberarParaNovaTentativa(order, printerName) {
+  if (!order || !printerName) return;
+  const chave = chaveDeFalha(order, printerName);
+  const falhas = (tentativasFalhas.get(chave) || 0) + 1;
+  tentativasFalhas.set(chave, falhas);
+  const rotulo = order.dailyOrderNumber || order.id;
+  if (falhas >= MAX_TENTATIVAS) {
+    console.error(`[PrintServer] Pedido #${rotulo} falhou ${falhas}x em ${printerName}; desistindo (fica como impresso).`);
+    return;
+  }
+  unmarkOrderAsPrinted(order, printerName);
+  console.warn(`[PrintServer] Pedido #${rotulo} liberado para nova tentativa (${falhas}/${MAX_TENTATIVAS}).`);
+}
+
 /* ─── Fila Serial de Impressão (FIFO Queue — Evita gargalos, spooler lock e ordem errada) ─ */
 const printJobQueue = [];
 let isProcessingPrintQueue = false;
@@ -1242,8 +1275,8 @@ async function processPrintQueue() {
     const job = printJobQueue.shift();
     const { printer, order, storeName, copies = 1, paperWidth, columns, escposProfile, force = false, resolve, reject } = job;
 
+    let targetPrinter = printer || currentConfig.printer;
     try {
-      let targetPrinter = printer || currentConfig.printer;
       if (!targetPrinter) {
         const detected = listPrintersCached();
         if (detected.length > 0) targetPrinter = detected[0].name;
@@ -1297,9 +1330,11 @@ async function processPrintQueue() {
       // Pausa de 150ms entre impressões para liberar a spooler do Windows com segurança
       await new Promise(r => setTimeout(r, 150));
 
+      tentativasFalhas.delete(chaveDeFalha(order, targetPrinter));
       resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols - perfil ${perfil.profile})` });
     } catch (e) {
       console.error("[PrintServer] Erro ao imprimir job:", e.message);
+      liberarParaNovaTentativa(order, targetPrinter);
       reject(e);
     }
   }

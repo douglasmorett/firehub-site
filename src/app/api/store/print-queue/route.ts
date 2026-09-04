@@ -85,9 +85,18 @@ export async function GET(req: NextRequest) {
     // Uma unica leitura da config da loja (nao repete o JSON por pedido)
     const owner = await prisma.user.findUnique({
       where: { id: franchiseeId },
-      select: { printerConfig: true, storeName: true, name: true },
+      select: { printerConfig: true, storeName: true, name: true, printQueuePolledAt: true },
     });
     const pc: any = (owner?.printerConfig as any) || null;
+
+    // Carimba a consulta — no máximo uma vez por minuto (o Assistente bate a
+    // cada 3 s). É o que deixa o painel avisar "a impressão parou" antes de a
+    // loja descobrir pela comanda que não saiu.
+    if (owner && Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000) {
+      prisma.user
+        .update({ where: { id: franchiseeId }, data: { printQueuePolledAt: new Date() } })
+        .catch((err) => console.error("[PrintQueue] carimbo do poll:", err));
+    }
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
 
     const jobs = recentOrders.map(pedidoDoBanco => {

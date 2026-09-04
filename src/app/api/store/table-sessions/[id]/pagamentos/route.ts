@@ -23,7 +23,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import {
   lerPagamentos,
   somarPagamentos,
@@ -63,7 +63,7 @@ async function abrirContexto(req: NextRequest, id: string) {
     return { erro: NextResponse.json({ error: "Mesa não encontrada" }, { status: 404 }) };
   }
 
-  return { mesa };
+  return { mesa, operador };
 }
 
 /** Grava a lista e mantém `totalPaid` igual à soma — os dois nunca divergem. */
@@ -137,6 +137,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     guestId,
     guestName,
     at: new Date().toISOString(),
+    // Com o módulo aberto ao garçom pelo link, cada baixa precisa ter dono.
+    por: rotuloDoOperador(ctx.operador!),
   });
 
   return NextResponse.json(await gravar(id, lista));
@@ -163,6 +165,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "uid_obrigatorio" }, { status: 400 });
   }
 
-  const lista = lerPagamentos(ctx.mesa!.paymentMethods).filter((p) => p.uid !== uid);
+  const antes = lerPagamentos(ctx.mesa!.paymentMethods);
+  const apagado = antes.find((p) => p.uid === uid);
+  const lista = antes.filter((p) => p.uid !== uid);
+  if (apagado) {
+    // Rastro no log do servidor: quem apagou o quê, de qual mesa.
+    console.log(
+      `[Mesa ${id}] pagamento apagado por ${rotuloDoOperador(ctx.operador!)}: ${apagado.method} R$ ${apagado.amount}` +
+      (apagado.guestName ? ` (${apagado.guestName})` : "") + (apagado.por ? ` — registrado por ${apagado.por}` : "")
+    );
+  }
   return NextResponse.json(await gravar(id, lista));
 }

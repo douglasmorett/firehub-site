@@ -61,7 +61,9 @@ function safeUrl(path: string, base: string): URL {
   return new URL(path, "https://firehubfood.com.br");
 }
 
-export async function middleware(request: NextRequest) {
+// Next 16 renomeou a convenção `middleware` para `proxy` (roda no runtime
+// Node.js). Mesma lógica de sempre; só o nome do arquivo e da função mudaram.
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ─── Force HTTPS in production ───

@@ -9,6 +9,7 @@ import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
 import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
+import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 
@@ -146,6 +147,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           <div style={{ padding: "1rem 1.5rem 0" }}>
             <AvisoCaixaAberto24h />
             <AvisoRoboDesconectado />
+            <AvisoImpressaoParada />
           </div>
         </HideOnCompras>
 

@@ -146,7 +146,7 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy", value: csp },
           {
             key: "Permissions-Policy",
-            // Tem que ser IGUAL ao de middleware.ts — o middleware sobrescreve
+            // Tem que ser IGUAL ao de proxy.ts (ex-middleware) — o proxy sobrescreve
             // este valor em toda resposta, entao os dois divergirem so serve
             // para o proximo leitor acreditar no arquivo errado. Ver la o
             // motivo de `camera` e `geolocation` precisarem de (self).

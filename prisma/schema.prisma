@@ -58,6 +58,13 @@ model User {
   repasseConfig   Json?           // Configurações de Repasse Automático: { chavePix, tipoChave, titular, cpfCnpj, frequencia, horario, status }
   resetToken      String?         // Token de recuperação de senha
   resetTokenExp   DateTime?       // Expiração do token de recuperação
+  /// Último fechamento de caixa. Sessão de garçom emitida antes disto é
+  /// recusada: fechar o caixa encerra o turno de todo mundo no celular.
+  caixaFechadoEm  DateTime?
+  /// Última vez que o Assistente de Impressão desta loja consultou a fila da
+  /// nuvem (GET /api/store/print-queue). Nulo = nunca. É o que permite o painel
+  /// avisar que a impressão parou antes de a loja descobrir pela comanda que não saiu.
+  printQueuePolledAt DateTime?
   trialEndsAt     DateTime?       // Data limite de teste/benefício concedido
   notificationPhone String?       // Telefone VIP para receber alertas e acessar relatórios pelo bot oficial
   isFireHubSystem   Boolean       @default(false) // Define se esta conta é a matriz oficial do sistema FireHub
@@ -790,6 +797,10 @@ model TableSession {
   waiterCommission Float?         // Valor total da comissão (serviço + gorjeta)
   totalPaid       Float?          // Total pago no fechamento
   paymentMethods  Json?           // [{method: "Pix", amount: 100}, ...]
+  /// Quem fechou: "loja" (painel) ou "garcom" (pelo link), e o nome. Com o
+  /// módulo aberto ao garçom, o fechamento precisa ter dono.
+  closedByKind    String?
+  closedByName    String?
   orders          CustomerOrder[]
   guests          TableGuest[]
   createdAt       DateTime        @default(now())

@@ -10,6 +10,12 @@ import { Eye, EyeOff, LogIn } from "lucide-react";
 /** Por que o garçom voltou para o login (vem em ?motivo=). */
 const AVISOS: Record<string, string> = {
   sessao: "Sua sessão terminou ou o gerente alterou seu acesso. Entre de novo.",
+  SEM_SESSAO: "Sua sessão terminou. Entre de novo.",
+  CAIXA_FECHADO: "O caixa foi fechado e o turno encerrou. Entre de novo para continuar.",
+  SENHA_ALTERADA: "O gerente alterou sua senha. Entre com a senha nova.",
+  GARCOM_DESATIVADO: "Seu acesso foi desativado. Fale com o gerente.",
+  GARCOM_INEXISTENTE: "Este acesso não existe mais. Peça ao gerente um novo login.",
+  SEM_LOGIN: "Este garçom não tem login pelo link. Peça ao gerente para cadastrar.",
 };
 
 export default function LoginDoGarcom({

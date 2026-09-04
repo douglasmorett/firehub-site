@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 
 export async function POST(
@@ -123,6 +123,9 @@ export async function POST(
         data: {
           status: "CLOSED",
           closedAt: new Date(),
+          // Quem fechou: pelo painel (nome do usuário) ou pelo link do garçom.
+          closedByKind: operador.tipo,
+          closedByName: rotuloDoOperador(operador),
           totalPaid,
           serviceFee,
           waiterTip: tipAmount > 0 ? tipAmount : undefined,
