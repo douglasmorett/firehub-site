@@ -168,6 +168,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .first-badge { animation: none; }
+    a.btn-flame[href*="sympla.com.br"] { animation: none; }
   }
   .eyebrow {
     display: inline-flex;
@@ -346,6 +347,12 @@
     box-shadow: 0 8px 32px rgba(255, 90, 31, 0.35);
   }
   .btn-flame:hover { background: var(--flame-deep); transform: translateY(-2px); }
+  @keyframes pulse-btn {
+    0% { box-shadow: 0 8px 32px rgba(255, 90, 31, 0.35), 0 0 0 0 rgba(255, 90, 31, 0.45); }
+    70% { box-shadow: 0 8px 32px rgba(255, 90, 31, 0.35), 0 0 0 16px rgba(255, 90, 31, 0); }
+    100% { box-shadow: 0 8px 32px rgba(255, 90, 31, 0.35), 0 0 0 0 rgba(255, 90, 31, 0); }
+  }
+  a.btn-flame[href*="sympla.com.br"] { animation: pulse-btn 2.2s ease-out infinite; }
   .btn-flame svg { width: 18px; height: 18px; stroke: var(--bg); flex: none; }
   .btn-ghost {
     border: 1px solid var(--line);
