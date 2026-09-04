@@ -29,6 +29,14 @@ const nextConfig: NextConfig = {
           source: "/E/:code",
           destination: "/e/:code",
         },
+        // ─── Landing do evento FireHub Conect: URL limpa para divulgação ───
+        // A página é um único HTML autocontido em public/conect.html (fotos
+        // embutidas em data URI); o rewrite só tira o ".html" do link que vai
+        // para Instagram e WhatsApp: firehubfood.com.br/conect.
+        {
+          source: "/conect",
+          destination: "/conect.html",
+        },
         // ─── Icebox: raiz → catálogo Icebox independente ───
         {
           source: "/",
