@@ -1408,6 +1408,12 @@ setInterval(async () => {
               ...job.order,
               items: Array.isArray(destino.items) ? destino.items : job.order?.items,
               somenteBebidas: destino.somenteBebidas === true,
+              // O QR do motoboy e POR IMPRESSORA: o servidor poe qrPuxarUrl
+              // dentro do destino que deve imprimi-lo, e deixa de fora o da
+              // cozinha. O que vier no job.order inteiro nao vale aqui — e o
+              // que o Assistente antigo imprimia em todas, sem distinguir.
+              qrPuxarUrl: destino.qrPuxarUrl || undefined,
+              qrPuxarCodigo: destino.qrPuxarCodigo || undefined,
             },
             storeName: job.storeName || "FIREHUB",
             copies: Number(destino.copies) > 0 ? Number(destino.copies) : perfil.copies,

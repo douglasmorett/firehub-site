@@ -30,6 +30,8 @@ export type ImpressoraConfigurada = {
   escposProfile?: string | null;
   modulos?: ModuloDePedido[] | null;
   somenteBebidas?: boolean | null;
+  /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
+  qrPuxar?: boolean | null;
 };
 
 type ItemDoPedido = {

@@ -18,7 +18,7 @@ export default async function ImpressorasPage() {
   const ownerId = me.ownerId || me.id;
   const user = await prisma.user.findUnique({
     where: { id: ownerId },
-    select: { id: true, storeName: true, printerConfig: true },
+    select: { id: true, storeName: true, printerConfig: true, slug: true },
   });
   if (!user) redirect("/");
 
@@ -75,6 +75,9 @@ export default async function ImpressorasPage() {
   return (
     <PrinterSetupClient
       storeName={user.storeName || ""}
+      // O QR da comanda de teste aponta para o app do motoboy DESTA loja,
+      // e a URL é montada pelo slug — o printerConfig do banco não o tem.
+      storeSlug={user.slug || ""}
       franchiseeId={ownerId}
       initialConfig={user.printerConfig as any}
       categories={categories}

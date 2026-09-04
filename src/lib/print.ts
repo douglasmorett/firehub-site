@@ -1,5 +1,6 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import { comboParaImpressao } from "./parse-combo";
+import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -87,11 +88,11 @@ type PrintOrder = {
  *
  * MANTENHA IGUAL a firehub-print-assistant/package.json ao gerar um instalador.
  */
-// ⚠️ SÓ suba para "1.2.3" NO MESMO COMMIT que trocar o instalador em
-// public/downloads pelo build 1.2.3. Anunciar versão nova com instalador
+// ⚠️ SÓ suba para "1.2.4" NO MESMO COMMIT que trocar o instalador em
+// public/downloads pelo build 1.2.4. Anunciar versão nova com instalador
 // velho no site faz o auto-update de TODAS as lojas baixar e reinstalar o
-// 1.2.2 em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.3";
+// 1.2.3 em loop, a cada 6 horas, para sempre.
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.4";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
@@ -113,6 +114,9 @@ type PrinterEntry = {
      Ausente ou vazio = os dois, que e como toda loja configurada antes
      desta opcao existir continua funcionando. */
   modulos?: ModuloDePedido[];
+  /* QR "puxar pedido" do motoboy no rodape da comanda de entrega.
+     Ausente = LIGADO (nasce ligado em todas; a loja desliga onde nao quer). */
+  qrPuxar?: boolean;
 };
 
 type PrinterConfig = {
@@ -165,7 +169,9 @@ async function printToDevice(
   columns?: number,
   escposProfile?: EscPosProfile,
   semValores = false,
-  somenteBebidas = false
+  somenteBebidas = false,
+  /** ESTA impressora imprime o QR do motoboy? Decidido por impressora, la no printOrder. */
+  qrPuxar = true
 ): Promise<boolean> {
   try {
     const baseUrl = await getAssistantUrl();
@@ -230,27 +236,11 @@ async function printToDevice(
           // dobrado no topo desta comanda, nada de segredo no papel. Quem
           // autoriza o puxar é a sessão assinada do motoboy logado no app.
           // Só em ENTREGA DA LOJA: comanda de mesa/balcão/parceira não tem o
-          // que puxar. A flag da loja (printerConfig.qrPuxarPedido) decide se
-          // o Assistente imprime; Assistente antigo ignora campo desconhecido.
-          ...(await (async () => {
-            const cfg = printerConfig as any;
-            if (cfg?.qrPuxarPedido === false) return {};
-            const ehEntrega = ((order as any).deliveryType || "DELIVERY") === "DELIVERY";
-            const numero = (order as any).dailyOrderNumber;
-            if (!ehEntrega || !numero) return {};
-            try {
-              const { infoDaEntrega } = await import("@/lib/entrega-parceira");
-              if (infoDaEntrega(order).parceira) return {};
-              const { codigoDoPedido, urlDoPuxar } = await import("@/lib/qr-puxar");
-              const criadoEm = (order as any).createdAt || new Date().toISOString();
-              const codigo = codigoDoPedido(criadoEm, Number(numero));
-              const slug = (cfg?.storeSlug as string) || "";
-              return {
-                qrPuxarCodigo: codigo,
-                qrPuxarUrl: slug ? urlDoPuxar("https://firehubfood.com.br", slug, codigo) : codigo,
-              };
-            } catch { return {}; }
-          })()),
+          // que puxar (regra em lib/qr-puxar.ts, a mesma da fila da nuvem).
+          // A marca é POR IMPRESSORA: a da cozinha pode ficar sem QR enquanto
+          // a do balcão, que grampeia a via no saco, imprime. Assistente antigo
+          // ignora campo desconhecido.
+          ...(qrPuxar ? camposDoQrPuxar(order as any, (printerConfig as any)?.storeSlug) : {}),
           // Quem entrega, decidido AQUI. O payload não mandava `deliveryBy`:
           // no Assistente o campo chegava vazio e sobrava o código de coleta
           // para decidir, então todo pedido do iFood com código saía com
@@ -387,7 +377,8 @@ export async function printOrder(
       resolveColumns(printer) ?? printerConfig?.defaultColumns,
       printer.escposProfile,
       semValores,
-      printer.somenteBebidas === true
+      printer.somenteBebidas === true,
+      qrLigadoNaImpressora(printer, printerConfig as any)
     );
     if (result) printed++;
   }
@@ -427,6 +418,10 @@ export async function printTestReceipt(
     notes: `Impressao de Teste FireHub (${larguraTxt})`,
     createdAt: new Date().toISOString(),
   };
+  // A comanda de teste sai com o QR quando ESTA impressora esta marcada para
+  // isso: e assim que o lojista descobre, antes do primeiro pedido, se a
+  // impressora entende o comando de QR — ou se so o numero digitavel sai.
+  const entrada = (printerConfig?.printers || []).find(p => p.name === printerName);
   return printToDevice(
     printerName,
     dummy as any,
@@ -437,7 +432,10 @@ export async function printTestReceipt(
     /* config real da loja: sem ela a tarja de bebida cairia no default ligado */
     printerConfig || ({ autoprint: true, autoBeverageTag: false, printers: [] } as PrinterConfig),
     columns,
-    escposProfile
+    escposProfile,
+    false,
+    false,
+    qrLigadoNaImpressora(entrada, printerConfig as any)
   );
 }
 
