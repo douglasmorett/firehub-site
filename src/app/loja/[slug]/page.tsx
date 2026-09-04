@@ -79,7 +79,13 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       // precisa estar ativo para o grupo enxergá-lo — os itens do combo vêm por
       // outra query, abaixo, sem este filtro — sem virar um item solto de R$ 0,00
       // no meio do cardápio.
-      where: { active: true, activeDelivery: true, franchiseeId: franchisee.id },
+      // `apenasEmCombo` fora da LISTA: o molho que só existe dentro da pergunta
+      // do combo aparecia como item avulso nas Entradas ("Molho BBQ R$ 4,00"
+      // antes do primeiro lanche — visto na importação da Ragnar). Ele continua
+      // alcançável pelos combos, porque os itens de grupo vêm ANINHADOS pelo
+      // produto-pai (comboGroups → items → menuProduct), sem passar por aqui.
+      // NOT em vez de `apenasEmCombo: false` para cobrir NULL de linha antiga.
+      where: { active: true, activeDelivery: true, franchiseeId: franchisee.id, NOT: { apenasEmCombo: true } },
       orderBy: await orderByCardapio(),
       // SELECT explícito: com include, TODAS as colunas do produto iam
       // serializadas para o HTML público — inclusive `cost` (o CUSTO de

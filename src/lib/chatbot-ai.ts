@@ -171,7 +171,18 @@ export async function processChatbotAI(
       // preço de canal (que embute a comissão da plataforma). Sem este filtro o
       // robô listava o mesmo item duas vezes com valores diferentes e podia
       // cotar o preço do iFood para quem pede direto no WhatsApp.
-      where: { franchiseeId: targetFranchiseeId, active: true, ...SEM_PRODUTO_DE_INTEGRACAO },
+      // E o complemento que só existe dentro do combo também: sem este filtro,
+      // o robô oferecia "Molho BBQ — R$ 4,00" como se fosse um prato.
+      //
+      // Os dois filtros vivem dentro de um AND, e não um NOT solto ao lado do
+      // spread: SEM_PRODUTO_DE_INTEGRACAO também traz um NOT, e num objeto
+      // literal o segundo NOT sobrescreve o primeiro — o filtro de complemento
+      // parecia estar lá e não valia ("NOT is specified more than once").
+      where: {
+        franchiseeId: targetFranchiseeId,
+        active: true,
+        AND: [{ NOT: { apenasEmCombo: true } }, SEM_PRODUTO_DE_INTEGRACAO],
+      },
       select: {
         id: true, name: true, description: true, price: true, priceDelivery: true, category: true,
         isCombo: true, isBeverage: true, availableDays: true, tags: true,
