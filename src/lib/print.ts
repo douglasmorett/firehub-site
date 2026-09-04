@@ -1,6 +1,7 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
+import { impressorasDaLoja } from "./loja-de-origem";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -117,6 +118,10 @@ type PrinterEntry = {
   /* QR "puxar pedido" do motoboy no rodape da comanda de entrega.
      Ausente = LIGADO (nasce ligado em todas; a loja desliga onde nao quer). */
   qrPuxar?: boolean;
+  /* De quais LOJAS recebe pedido, quando a conta tem mais de uma na mesma
+     integracao (tres marcas no iFood, duas no 99Food). Chaves de
+     lib/loja-de-origem.ts. Ausente ou vazio = de todas. */
+  lojas?: string[];
 };
 
 type PrinterConfig = {
@@ -317,6 +322,13 @@ export async function printOrder(
   // de engolir o pedido. Mesma regra que ja vale para a categoria que nao
   // casa com ninguem — comanda que nao sai e prejuizo, comanda a mais e papel.
   printersToUse = doModulo.length > 0 ? doModulo : printersToUse;
+
+  // ── DE QUAL LOJA E ESTE PEDIDO ───────────────────────────────────────────
+  // Tres marcas no iFood no mesmo painel: a impressora da Ragnar Pizza nao
+  // quer a comanda da Ragnar Burguer, e categoria/canal nao separam uma marca
+  // da outra. Mesma regra da fila da nuvem (roteamento-de-impressao.ts), com o
+  // mesmo resgate: nenhuma impressora marcada para esta loja = todas.
+  printersToUse = impressorasDaLoja(printersToUse, order as any);
 
   // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
   const uniquePrinters: PrinterEntry[] = [];

@@ -558,6 +558,12 @@ export async function POST(req: NextRequest) {
                 // So nao estava sendo usado na hora de gravar.
                 openDeliveryReference: p.numeroNoParceiro || displayId || "",
                 openDeliveryChannel: "99FOOD",
+                // DE QUAL loja do 99Food veio, quando a conta tem mais de uma:
+                // e por aqui que a impressora de uma marca recebe so a comanda
+                // dela (lib/loja-de-origem.ts). Os dois ids, porque o evento
+                // ora traz um, ora o outro.
+                food99AppShopId: appShopId ? String(appShopId) : undefined,
+                food99ShopId: merchantId ? String(merchantId) : undefined,
                 deliveryBy: p.entreguePor,
                 items: { create: items },
               },

@@ -662,6 +662,12 @@ model CustomerOrder {
   /// direto, sem join, e o dado sobrevive à remoção da integração.
   ifoodStoreName      String?            // "Ragnar Pizza"
   ifoodStoreMerchant  String?            // UUID da loja de origem, para filtro e conferência
+  /// De qual loja do 99Food veio — a conta pode ter mais de uma no mesmo
+  /// painel (Food99Store). O `app_shop_id` é o vínculo; o `shop_id` é o id do
+  /// lado deles. Os dois, porque o evento ora traz um, ora o outro. É por eles
+  /// que a impressora de uma marca recebe só a comanda daquela marca.
+  food99AppShopId     String?
+  food99ShopId        String?
   scheduledDatetime   DateTime?          // Cen1: Data/hora agendada (SCHEDULED orders)
   changeAmount        Float?             // Cen5: Valor do troco (pagamento em dinheiro)
   customerCpfCnpj     String?            // Cen5: CPF/CNPJ do cliente para NF

@@ -34,7 +34,14 @@ type PrinterEntry = {
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
+  // De quais LOJAS recebe pedido, quando a conta tem mais de uma na mesma
+  // integracao (tres marcas no iFood). Chaves de lib/loja-de-origem.ts.
+  // Ausente ou vazio = de todas.
+  lojas?: string[];
 };
+
+/** Uma loja de origem que a impressora pode escolher receber. */
+export type LojaDeOrigem = { chave: string; nome: string; emoji: string; origem: string };
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
 type DetectedPrinter = { name: string; driver: string; port: string; status: string };
@@ -43,7 +50,7 @@ const ASSISTANT_URL = "http://localhost:7891";
 
 /* ─── Componente principal ───────────────────────────────────── */
 export default function PrinterSetupClient({
-  storeName, storeSlug, franchiseeId, initialConfig, categories,
+  storeName, storeSlug, franchiseeId, initialConfig, categories, lojasDeOrigem = [],
 }: {
   storeName: string;
   /** Slug da loja: monta a URL do QR do motoboy na comanda de teste. */
@@ -51,6 +58,8 @@ export default function PrinterSetupClient({
   franchiseeId: string;
   initialConfig: PrinterConfig | null;
   categories: string[];
+  /** As lojas de origem que uma impressora pode escolher (vazio = a conta tem uma só). */
+  lojasDeOrigem?: LojaDeOrigem[];
 }) {
   const [status, setStatus] = useState<AssistantStatus>("checking");
   const [availablePrinters, setAvailablePrinters] = useState<DetectedPrinter[]>([]);
@@ -232,6 +241,7 @@ export default function PrinterSetupClient({
               modulos: pr.modulos || [],
               somenteBebidas: pr.somenteBebidas === true,
               qrPuxar: pr.qrPuxar !== false,
+              lojas: pr.lojas || [],
             })),
           }),
         }).catch(() => {});
@@ -295,6 +305,15 @@ export default function PrinterSetupClient({
       ...c,
       printers: c.printers.map(p => p.id === id ? { ...p, ...patch } : p),
     }));
+  };
+
+  const toggleLoja = (printerId: string, chave: string) => {
+    const printer = config.printers.find(p => p.id === printerId);
+    if (!printer) return;
+    const atuais = printer.lojas || [];
+    updatePrinter(printerId, {
+      lojas: atuais.includes(chave) ? atuais.filter(c => c !== chave) : [...atuais, chave],
+    });
   };
 
   const toggleCategory = (printerId: string, cat: string) => {
@@ -838,6 +857,40 @@ export default function PrinterSetupClient({
                 Os dois ligados = esta impressora recebe tudo. Pelo menos um precisa ficar ligado.
               </p>
             </div>
+
+            {/* ── De qual loja ──
+                Só aparece quando a conta tem mais de uma loja na mesma
+                integração (três marcas no iFood, duas no 99Food) ou é um grupo
+                de lojas. Categoria e canal não separam uma marca da outra —
+                para eles é tudo "iFood". Vazio = recebe de todas, que é como
+                toda impressora configurada antes continua funcionando. */}
+            {lojasDeOrigem.length > 0 && (
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", letterSpacing: "0.4px", display: "block", marginBottom: 6 }}>
+                  DE QUAIS LOJAS ESTA IMPRESSORA RECEBE
+                  <span style={{ fontWeight: 400, marginLeft: 6 }}>(vazio = todas)</span>
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {lojasDeOrigem.map(loja => {
+                    const active = (printer.lojas || []).includes(loja.chave);
+                    return (
+                      <button
+                        key={loja.chave}
+                        onClick={() => toggleLoja(printer.id, loja.chave)}
+                        title={`${loja.origem}: ${loja.nome}`}
+                        style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${active ? "#0F766E" : "#E2E8F0"}`, background: active ? "#0F766E12" : "#fff", color: active ? "#0F766E" : "#64748B", fontSize: "0.78rem", fontWeight: active ? 700 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+                      >
+                        {active ? "✓ " : ""}{loja.emoji} {loja.origem} · {loja.nome}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0", lineHeight: 1.4 }}>
+                  💡 Três marcas no iFood na mesma conta: a impressora da cozinha da pizza marca só a loja da pizza.
+                  Pedido de uma loja que nenhuma impressora marcou sai em todas, para não ficar sem comanda.
+                </p>
+              </div>
+            )}
 
             {/* ── Só bebida ──
                 Filtrar por categoria não alcança a bebida que vem DENTRO de um

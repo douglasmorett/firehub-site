@@ -921,6 +921,8 @@ export async function GET(req: NextRequest) {
         isRoutePriority: true, routeId: true, tableSessionId: true,
         ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
         ifoodStoreName: true, ifoodStoreMerchant: true,
+        // De qual loja do 99Food veio: a impressora de uma marca filtra por isto.
+        food99AppShopId: true, food99ShopId: true,
         ifoodDriverName: true, ifoodDriverPhone: true,
         ifoodDriverStatus: true, ifoodDriverRequestedAt: true,
         openDeliveryOrderId: true, openDeliveryReference: true, openDeliveryChannel: true,

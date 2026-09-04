@@ -579,6 +579,9 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // De qual loja iFood veio o pedido — conta com várias lojas no mesmo painel.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreName" TEXT`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreMerchant" TEXT`,
+  // De qual loja do 99Food veio — conta com mais de uma no mesmo painel.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "food99AppShopId" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "food99ShopId" TEXT`,
   // Quando o ENTREGADOR puxou o pedido pelo app (QR/número da comanda).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "motoboyPuxadoEm" TIMESTAMP(3)`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "gaClientId" TEXT`,

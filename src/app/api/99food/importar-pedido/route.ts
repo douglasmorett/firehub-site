@@ -137,6 +137,9 @@ export async function POST(req: NextRequest) {
       openDeliveryOrderId: p.orderId || orderId,
       openDeliveryReference: p.numeroNoParceiro,
       openDeliveryChannel: "99FOOD",
+      // De qual loja do 99Food veio (filtro por loja na impressora).
+      food99AppShopId: p.appShopId || undefined,
+      food99ShopId: p.shopId || undefined,
       deliveryBy: p.entreguePor,
       items: { create: items },
     },

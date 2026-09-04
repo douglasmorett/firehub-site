@@ -1461,6 +1461,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       // A loja de origem tem que chegar na comanda: com três marcas na mesma
       // impressora, o papel precisa dizer de qual delas é o pedido.
       ifoodStoreName: (order as any).ifoodStoreName,
+      // DE QUAL LOJA veio, para a impressora que recebe só uma marca
+      // (lib/loja-de-origem.ts): o merchant do iFood, a loja do 99Food, ou a
+      // própria loja. Sem isto o roteamento por loja não tem o que comparar.
+      ifoodStoreMerchant: (order as any).ifoodStoreMerchant,
+      food99AppShopId: (order as any).food99AppShopId,
+      food99ShopId: (order as any).food99ShopId,
+      franchiseeId: (order as any).franchiseeId,
       openDeliveryReference: order.openDeliveryReference,
       source: order.source,
       notes: order.notes,

@@ -19,6 +19,7 @@
  * Agora a decisão é tomada aqui, e os dois caminhos chamam esta função.
  */
 import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./modulo-do-pedido";
+import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
 
 export type ImpressoraConfigurada = {
   name?: string | null;
@@ -32,6 +33,8 @@ export type ImpressoraConfigurada = {
   somenteBebidas?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
   qrPuxar?: boolean | null;
+  /** De quais lojas recebe (chaves de lib/loja-de-origem.ts). Vazio = todas. */
+  lojas?: string[] | null;
 };
 
 type ItemDoPedido = {
@@ -109,7 +112,16 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   impressoras: ImpressoraConfigurada[],
   pedido: { source?: unknown; items?: T[] | null }
 ): { impressora: ImpressoraConfigurada; itens: T[] }[] {
-  const validas = (impressoras || []).filter((p) => p && texto(p.name));
+  // ── DE QUAL LOJA É ESTE PEDIDO ──
+  // Três marcas no iFood no mesmo painel: a impressora da Ragnar Pizza não
+  // quer a comanda da Ragnar Burguer. Filtro por categoria e por canal não
+  // separam uma marca da outra — para eles é tudo "iFood". Nenhuma impressora
+  // marcada para a loja deste pedido = todas continuam candidatas, em vez de
+  // engolir o pedido (regra de lib/loja-de-origem.ts).
+  const validas = impressorasDaLoja(
+    (impressoras || []).filter((p) => p && texto(p.name)),
+    pedido as PedidoComOrigem
+  );
 
   // Deduplica pela impressora FÍSICA: duas linhas apontando para o mesmo nome
   // do Windows fariam o mesmo papel sair duas vezes.
