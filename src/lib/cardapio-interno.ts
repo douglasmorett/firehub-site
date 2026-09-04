@@ -54,10 +54,15 @@ export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "99food_", "
  * ── O prefixo sozinho condenava cardápio de verdade ────────────────────────
  *
  * O id `ifood-…` dizia "isto é espelho" e bastava para sumir com o produto de
- * TODA tela de venda. Só que o espelho não fica espelho para sempre: a tela de
- * cadastro os mostra (ela não aplica este filtro), e o lojista, sem ter como
- * saber a diferença, constrói o cardápio em cima deles — dá categoria, marca
- * como combo, monta os grupos, põe preço nas opções.
+ * TODA tela de venda. Só que o espelho não fica espelho para sempre: quando o
+ * cardápio da loja é IMPORTADO do sistema antigo, a importação reaproveita
+ * esses mesmos ids. O produto ganha categoria própria, vira combo, recebe os
+ * grupos e o preço — e segue carregando um id que nasceu de um pedido.
+ *
+ * Foi assim na Pastelaria da Paulista: o cardápio dela foi lançado por
+ * importação, não montado à mão em cima de espelho.
+ *
+ * Ou seja: o prefixo diz como o registro NASCEU, não o que ele É hoje.
  *
  * Medido na Pastelaria da Paulista, em produção, pelo `?diagnostico=1`: dos 70
  * produtos que este filtro derrubava, 43 tinham id com prefixo `ifood-` e
