@@ -80,7 +80,26 @@ export async function POST(req: Request) {
     // `cost` — a margem do concorrente.
     const productIds = items.map((i: any) => i.menuProductId).filter(Boolean);
     const menuProducts = await prisma.menuProduct.findMany({
-      where: { id: { in: productIds }, active: true, franchiseeId: franchisee.id },
+      // ── A MESMA REGRA DA VITRINE, e por que ela precisa estar AQUI ────────
+      //
+      // A vitrine (loja/[slug]) já não mostra complemento nem item desligado no
+      // delivery. Mas esta rota aceitava qualquer id: bastava um POST direto —
+      // ou uma aba aberta desde antes — para o "Adicional de Bacon" (preço
+      // R$ 0,00, `apenasEmCombo: true`) entrar no carrinho e ser gravado. O piso
+      // de `precoMinimoDoProduto` não segura: complemento não tem grupo próprio,
+      // então o mínimo dele é o próprio zero, e a comanda saía com bacon de graça.
+      //
+      // Item não encontrado aqui já vira 400 com texto claro (logo abaixo), que é
+      // exatamente o comportamento certo: recusar explicando, não cobrar zero.
+      //
+      // `NOT` em vez de `apenasEmCombo: false` para cobrir linha antiga com NULL.
+      where: {
+        id: { in: productIds },
+        active: true,
+        activeDelivery: true,
+        franchiseeId: franchisee.id,
+        NOT: { apenasEmCombo: true },
+      },
       // Os grupos vêm junto porque o preço do item depende deles: sem isso o
       // servidor não tem como saber quanto custa a opção que o cliente marcou.
       include: {
