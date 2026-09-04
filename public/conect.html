@@ -641,6 +641,38 @@
   }
   .partner p { font-size: 14px; margin-top: 6px; }
 
+  /* patrocinadores */
+  .sponsors { padding-top: 0; }
+  .sponsor-tag {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mist);
+    margin: -32px 0 28px;
+  }
+  .sponsor-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    max-width: 940px;
+  }
+  .sponsor-pills li {
+    list-style: none;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 999px;
+    padding: 14px 28px;
+    font-family: var(--display);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 19px;
+    color: var(--paper);
+    transition: border-color 0.25s ease;
+  }
+  .sponsor-pills li:hover { border-color: var(--flame); }
+
   /* realizadora */
   .org-sec { padding: 0 0 88px; }
   .organizer {
@@ -1133,6 +1165,25 @@
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section class="sponsors">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="eyebrow">Patrocinadores oficiais</p>
+        <h2>Juntos pelo fortalecimento do <em>setor</em></h2>
+      </div>
+      <p class="sponsor-tag rv">Marcas que fazem o food service da região girar:</p>
+      <ul class="sponsor-pills rv">
+        <li>TPO Embalagens</li>
+        <li>Sr. Grão</li>
+        <li>Trama Inox</li>
+        <li>Tô No Trabalho</li>
+        <li>Padeiro Novicki</li>
+        <li>JotaJá</li>
+        <li>Abrasel Leste Fluminense RJ</li>
+      </ul>
     </div>
   </section>
 
