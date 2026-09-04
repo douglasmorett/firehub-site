@@ -1060,7 +1060,10 @@ export default function StoreTopNav({
                 {/* Gruda no rodapé do cartão enquanto a tabela rola: o botão
                     de encerrar fica sempre à vista, seja qual for a altura da
                     tela. */}
-                <div style={{ display:"flex", gap:8, position:"sticky", bottom:0, background:"#fff", paddingTop:10, boxShadow:"0 -10px 12px -8px rgba(15,23,42,0.12)" }}>
+                <div style={{ display:"flex", gap:8, position:"sticky", bottom:0, background:"#fff", paddingTop:10, boxShadow:"0 -10px 12px -8px rgba(15,23,42,0.12)",
+                              // Sticky para dentro do padding do cartão: sem isto a linha
+                              // de baixo da tabela aparecia por uma fresta embaixo dos botões.
+                              marginBottom:"-1.5rem", paddingBottom:"1.5rem" }}>
                   <a href="/store/caixa/historico" style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.85rem", cursor:"pointer", textAlign:"center", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                     <History size={15} /> Histórico
                   </a>
