@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
-import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
@@ -225,6 +225,60 @@ export async function GET(req: NextRequest) {
   // número. Sem o parâmetro, comportamento de sempre: preços crus para o
   // cadastro. Canal desconhecido é ignorado de propósito (fica cru), para um
   // typo não virar preço errado em silêncio.
+  // ── ?diagnostico=1 — quem o cardápio de venda não está enxergando ─────────
+  //
+  // A tela de cadastro (/store/cardapio) consulta a mesma tabela SEM o filtro
+  // de espelho de integração; esta rota consulta COM. Quando os dois números
+  // divergem, não havia como saber quais produtos ficaram de fora nem por quê —
+  // e foi assim que a Pastelaria da Paulista passou a ter 186 itens no cadastro
+  // e 143 na venda, com 38 combos sumindo em silêncio.
+  //
+  // Só leitura, mesmo escopo de loja do GET normal.
+  if (req.nextUrl.searchParams.get("diagnostico") === "1") {
+    const escopoDaLoja = scope.isAdmin
+      ? (scope.adminStoreId ? { franchiseeId: scope.adminStoreId } : {})
+      : { franchiseeId: scope.storeId };
+
+    const todos = await prisma.menuProduct.findMany({
+      where: escopoDaLoja,
+      select: { id: true, name: true, category: true, isCombo: true, active: true, franchiseeId: true },
+    });
+
+    const visiveis = new Set(products.map((p) => p.id));
+    const forviaFiltro = todos.filter((p) => !visiveis.has(p.id));
+
+    // Por que cada um caiu, avaliado com a MESMA regra do `where`.
+    const motivo = (p: (typeof todos)[number]) => {
+      const cat = String(p.category || "").trim().toUpperCase();
+      if (CATEGORIAS_DE_INTEGRACAO.includes(cat)) return `categoria de integração (${p.category})`;
+      const pref = PREFIXOS_DE_ESPELHO.find((x) => p.id.startsWith(x));
+      if (pref) return `id com prefixo de espelho (${pref})`;
+      return "MOTIVO DESCONHECIDO — o filtro derrubou sem se encaixar em nenhuma regra";
+    };
+
+    return NextResponse.json({
+      escopo: scope.isAdmin ? (scope.adminStoreId || "todas as lojas") : scope.storeId,
+      noCadastro: todos.length,
+      naVenda: products.length,
+      forviaFiltro: forviaFiltro.length,
+      porMotivo: forviaFiltro.reduce((acc: Record<string, number>, p) => {
+        const m = motivo(p);
+        acc[m] = (acc[m] || 0) + 1;
+        return acc;
+      }, {}),
+      lojasEnvolvidas: [...new Set(forviaFiltro.map((p) => p.franchiseeId))],
+      itens: forviaFiltro.slice(0, 60).map((p) => ({
+        id: p.id,
+        nome: p.name,
+        categoria: p.category,
+        combo: p.isCombo,
+        ativo: p.active,
+        loja: p.franchiseeId,
+        motivo: motivo(p),
+      })),
+    });
+  }
+
   const canal = req.nextUrl.searchParams.get("canal");
   if (canal === "salao" || canal === "delivery" || canal === "totem") {
     // ── Quem é só opção de combo se decide AQUI, com os preços crus ──────────
