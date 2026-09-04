@@ -1478,7 +1478,7 @@ export default function MenuProductManager({
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 800 }} title="Ver cardápio completo com itens e combos agrupados por categoria, exatamente como no site e no iFood">
-            📋 Cardápio Completo ({products.filter(p => !isHiddenIntegrationItem(p)).length})
+            📋 Cardápio Completo ({itemProducts.length + comboProducts.length})
           </button>
           <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
             🍔 Apenas Itens ({itemProducts.length})
