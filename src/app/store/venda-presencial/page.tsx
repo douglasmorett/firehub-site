@@ -126,7 +126,12 @@ export default function VendaPresencialPage() {
       if (isIntegrationItem(p)) return false;
       return true;
     });
-    const cats = Array.from(new Set(activeTodayProducts.map(p => p.isCombo ? "Combos" : (p.category || "Outros"))));
+    // A categoria REAL, sempre — mesma correção da mesa. Combo virava "Combos"
+    // e apagava a aba da categoria dele; numa loja de cardápio no molde iFood,
+    // onde quase tudo é combo, sobrava uma aba só com o cardápio inteiro dentro.
+    const reais = Array.from(new Set(activeTodayProducts.map(p => p.category || "Outros"))).sort();
+    const temCombo = activeTodayProducts.some(p => p.isCombo);
+    const cats = [...(temCombo ? ["Combos"] : []), ...reais];
     return ["Todos", ...cats.sort()];
   }, [products, currentDayCode]);
 
@@ -144,8 +149,11 @@ export default function VendaPresencialPage() {
     if (p.apenasOpcaoDeCombo === true) return false;
     if (!isAvailableToday(p, currentDayCode)) return false;
     if (isIntegrationItem(p)) return false;
-    const cat = p.isCombo ? "Combos" : (p.category || "Outros");
-    if (selectedCategory !== "Todos" && cat !== selectedCategory) return false;
+    // "Combos" é aba transversal: o item aparece na categoria dele e também lá.
+    if (selectedCategory !== "Todos") {
+      const bate = selectedCategory === "Combos" ? !!p.isCombo : (p.category || "Outros") === selectedCategory;
+      if (!bate) return false;
+    }
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });

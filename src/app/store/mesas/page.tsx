@@ -349,7 +349,13 @@ export default function MesasPage() {
             id: p.id,
             name: p.name,
             price: p.price,
-            category: p.isCombo ? "Combos" : (p.category || "Outros"),
+            // A categoria REAL, sempre. Antes todo combo virava "Combos" e perdia
+            // a dele — e numa loja onde quase todo item é combo (a Pastelaria da
+            // Paulista tem 69 de 186) isso apagava as abas de "Pastéis de carne",
+            // "Pastéis Doces", "Pastéis especiais"... O garçom procurava a aba,
+            // não achava, e concluía que os pastéis não estavam no sistema.
+            // Combo continua tendo aba própria: ela é montada à parte, abaixo.
+            category: p.category || "Outros",
             isCombo: p.isCombo,
             imageUrl: p.imageUrl || null,
             comboGroups: p.comboGroups,
@@ -391,7 +397,12 @@ export default function MesasPage() {
               })
               .filter(Boolean) as (MenuItem & { motivo: string })[]
           );
-          const cats = ["Todos", ...Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros")))];
+          // "Combos" é uma aba TRANSVERSAL: o combo aparece na categoria dele e
+          // também aqui, para quem quer ver só os montados. Só entra na lista se
+          // a loja tiver algum.
+          const reais = Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros"))).sort();
+          const temCombo = items.some((i: MenuItem) => i.isCombo);
+          const cats = ["Todos", ...(temCombo ? ["Combos"] : []), ...reais];
           setMenuCategories(cats as string[]);
         }
       }
@@ -877,7 +888,10 @@ export default function MesasPage() {
   const filteredMenu = useMemo(() => {
     return menuItems.filter(m => {
       const matchSearch = m.name.toLowerCase().includes(menuSearch.toLowerCase());
-      const matchCat = menuCat === "Todos" || m.category === menuCat;
+      const matchCat =
+        menuCat === "Todos" ? true
+          : menuCat === "Combos" ? !!m.isCombo
+            : m.category === menuCat;
       return matchSearch && matchCat;
     });
   }, [menuItems, menuSearch, menuCat]);
